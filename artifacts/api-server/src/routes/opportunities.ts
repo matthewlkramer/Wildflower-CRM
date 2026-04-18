@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { opportunities, individuals, households, fundingEntities, users } from "@workspace/db/schema";
 import { eq, and, desc, count } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
-import { newId } from "../lib/helpers";
+import { newId, parseOptionalFiscalYear } from "../lib/helpers";
 
 const router = Router();
 
@@ -15,7 +15,9 @@ router.get("/pipeline", async (req, res, next) => {
 
     const conditions: any[] = [];
     if (fund) conditions.push(eq(opportunities.fund, fund as any));
-    if (fiscalYear) conditions.push(eq(opportunities.fiscalYear, fiscalYear as any));
+    const parsedFiscalYearPipeline = parseOptionalFiscalYear(fiscalYear);
+    if (parsedFiscalYearPipeline)
+      conditions.push(eq(opportunities.fiscalYear, parsedFiscalYearPipeline));
 
     const stages = [
       "pre_conversation", "conversation", "solicitation", "negotiation",
@@ -54,7 +56,9 @@ router.get("/", async (req, res, next) => {
     if (donorType) conditions.push(eq(opportunities.donorType, donorType as any));
     if (subtype) conditions.push(eq(opportunities.subtype, subtype as any));
     if (ownerId) conditions.push(eq(opportunities.ownerUserId, ownerId));
-    if (fiscalYear) conditions.push(eq(opportunities.fiscalYear, fiscalYear as any));
+    const parsedFiscalYear = parseOptionalFiscalYear(fiscalYear);
+    if (parsedFiscalYear)
+      conditions.push(eq(opportunities.fiscalYear, parsedFiscalYear));
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 

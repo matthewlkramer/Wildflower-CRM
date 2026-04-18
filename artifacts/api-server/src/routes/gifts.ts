@@ -11,7 +11,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, gte, lte, desc, count, inArray } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
-import { newId } from "../lib/helpers";
+import { newId, parseOptionalFiscalYear } from "../lib/helpers";
 
 const router = Router();
 
@@ -164,7 +164,7 @@ router.post("/", async (req, res, next) => {
           giftId,
           fund: a.fund as any,
           amount: a.amount,
-          fiscalYear: a.fiscalYear as any,
+          fiscalYear: parseOptionalFiscalYear(a.fiscalYear),
           notes: a.notes,
         })),
       )
@@ -269,7 +269,7 @@ router.patch("/:id", async (req, res, next) => {
             giftId: updated.id,
             fund: a.fund as any,
             amount: a.amount,
-            fiscalYear: a.fiscalYear as any,
+            fiscalYear: parseOptionalFiscalYear(a.fiscalYear),
             notes: a.notes,
           })),
         );

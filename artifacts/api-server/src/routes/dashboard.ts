@@ -13,25 +13,36 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, lte, gte, desc, lt, sql, or, inArray, count } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
-import { currentFiscalYear } from "../lib/helpers";
+import {
+  currentFiscalYear,
+  parseFiscalYear,
+  type FiscalYear,
+} from "../lib/helpers";
 
 const router = Router();
 router.use(requireAuth);
 
-function fyBounds(fyLabel: string): { start: Date; end: Date } {
-  const year = Number(fyLabel.replace("FY", ""));
+function fyBoundsForYear(year: number): { start: Date; end: Date } {
   return {
     start: new Date(`${year - 1}-07-01`),
     end: new Date(`${year}-06-30T23:59:59.999Z`),
   };
 }
 
+function fyBounds(fyLabel: FiscalYear): { start: Date; end: Date } {
+  return fyBoundsForYear(Number(fyLabel.replace("FY", "")));
+}
+
 router.get("/summary", async (req, res, next) => {
   try {
-    const fiscalYear = (req.query.fiscalYear as string) ?? currentFiscalYear();
+    const fiscalYear: FiscalYear =
+      req.query.fiscalYear !== undefined
+        ? parseFiscalYear(req.query.fiscalYear)
+        : currentFiscalYear();
     const { start, end } = fyBounds(fiscalYear);
-    const lastFyLabel = `FY${Number(fiscalYear.replace("FY", "")) - 1}`;
-    const { start: lastStart, end: lastEnd } = fyBounds(lastFyLabel);
+    const { start: lastStart, end: lastEnd } = fyBoundsForYear(
+      Number(fiscalYear.replace("FY", "")) - 1,
+    );
 
     const now = new Date();
     const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -63,7 +74,7 @@ router.get("/summary", async (req, res, next) => {
         .from(opportunities)
         .where(
           and(
-            eq(opportunities.fiscalYear, fiscalYear as any),
+            eq(opportunities.fiscalYear, fiscalYear),
             inArray(opportunities.stage, [...openStages]),
           ),
         )

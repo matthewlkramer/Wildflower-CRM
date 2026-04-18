@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { campaigns } from "@workspace/db/schema";
 import { eq, and, sql, desc, count } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
-import { newId } from "../lib/helpers";
+import { newId, parseOptionalFiscalYear } from "../lib/helpers";
 
 const router = Router();
 router.use(requireAuth);
@@ -27,7 +27,9 @@ router.get("/", async (req, res, next) => {
     if (fund) conditions.push(eq(campaigns.fund, fund as any));
     if (isActive !== undefined)
       conditions.push(eq(campaigns.isActive, isActive === "true"));
-    if (fiscalYear) conditions.push(eq(campaigns.fiscalYear, fiscalYear as any));
+    const parsedFiscalYear = parseOptionalFiscalYear(fiscalYear);
+    if (parsedFiscalYear)
+      conditions.push(eq(campaigns.fiscalYear, parsedFiscalYear));
     const where = conditions.length ? and(...conditions) : undefined;
 
     const [totalResult, rows] = await Promise.all([

@@ -5,6 +5,7 @@ import { clerkMiddleware } from "@clerk/express";
 import { CLERK_PROXY_PATH, clerkProxyMiddleware } from "./middlewares/clerkProxyMiddleware";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { FiscalYearValidationError } from "./lib/helpers";
 
 const app: Express = express();
 
@@ -37,5 +38,21 @@ app.use(express.urlencoded({ extended: true }));
 app.use(clerkMiddleware());
 
 app.use("/api", router);
+
+app.use(
+  (
+    err: unknown,
+    _req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    if (res.headersSent) return next(err);
+    if (err instanceof FiscalYearValidationError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    next(err);
+  },
+);
 
 export default app;
