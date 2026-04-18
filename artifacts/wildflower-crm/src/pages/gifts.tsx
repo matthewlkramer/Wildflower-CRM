@@ -1,20 +1,42 @@
-import { useListGifts, getListGiftsQueryKey } from "@workspace/api-client-react";
+import {
+  useListGifts,
+  getListGiftsQueryKey,
+  useCreateGift,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { formatCurrency, formatFund, formatDate } from "@/lib/format";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { GiftFormDialog } from "@/components/gift-form-dialog";
 
 export default function Gifts() {
+  const queryClient = useQueryClient();
   const { data, isLoading } = useListGifts(undefined, {
     query: {
-      queryKey: getListGiftsQueryKey()
-    }
+      queryKey: getListGiftsQueryKey(),
+    },
+  });
+
+  const createMutation = useCreateGift({
+    mutation: {
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: getListGiftsQueryKey() }),
+    },
   });
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-serif font-bold text-foreground">Gifts Ledger</h1>
+        <GiftFormDialog
+          mode="create"
+          isPending={createMutation.isPending}
+          trigger={<Button>New Gift</Button>}
+          onSubmit={async (body) => {
+            await createMutation.mutateAsync({ data: body });
+          }}
+        />
       </div>
 
       <div className="rounded-md border bg-card overflow-hidden">

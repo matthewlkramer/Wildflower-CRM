@@ -98,6 +98,18 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+const DATE_FIELDS = ["cashReceivedDate", "acknowledgmentSentDate"] as const;
+function coerceGiftDates(body: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...body };
+  for (const f of DATE_FIELDS) {
+    const v = out[f];
+    if (typeof v === "string" && v.length > 0) {
+      out[f] = new Date(v);
+    }
+  }
+  return out;
+}
+
 function validatePayer(body: any): string | null {
   if (
     body.payerFundingEntityId &&
@@ -141,7 +153,7 @@ router.post("/", async (req, res, next) => {
     const giftId = newId();
     const [created] = await db
       .insert(gifts)
-      .values({ id: giftId, ...(giftBody as any) })
+      .values({ id: giftId, ...(coerceGiftDates(giftBody) as any) })
       .returning();
 
     const createdAllocs = await db
@@ -225,7 +237,7 @@ router.patch("/:id", async (req, res, next) => {
 
     const [updated] = await db
       .update(gifts)
-      .set({ ...giftBody, updatedAt: new Date() })
+      .set({ ...coerceGiftDates(giftBody), updatedAt: new Date() })
       .where(eq(gifts.id, req.params.id))
       .returning();
     if (!updated) { res.status(404).json({ error: "Not found" }); return; }
