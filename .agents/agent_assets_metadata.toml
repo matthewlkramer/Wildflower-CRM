@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "FDbmgiBNooXz0Ih8KitYP"
+uri = "file://docs/database-schema.md"
+type = "text"
+title = "Database Schema Reference"
