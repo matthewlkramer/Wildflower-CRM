@@ -178,8 +178,24 @@ router.post("/", async (req, res, next) => {
 
 router.get("/:id", async (req, res, next) => {
   try {
-    const [row] = await db.select().from(gifts).where(eq(gifts.id, req.params.id));
-    if (!row) { res.status(404).json({ error: "Not found" }); return; }
+    const [joined] = await db
+      .select({
+        gift: gifts,
+        individualFirstName: individuals.firstName,
+        individualLastName: individuals.lastName,
+        householdName: households.name,
+        entityName: fundingEntities.legalName,
+      })
+      .from(gifts)
+      .leftJoin(individuals, eq(gifts.individualId, individuals.id))
+      .leftJoin(households, eq(gifts.householdId, households.id))
+      .leftJoin(fundingEntities, eq(gifts.fundingEntityId, fundingEntities.id))
+      .where(eq(gifts.id, req.params.id));
+    if (!joined) { res.status(404).json({ error: "Not found" }); return; }
+    const row = joined.gift;
+    const donorName = joined.individualFirstName
+      ? `${joined.individualFirstName} ${joined.individualLastName}`
+      : joined.householdName ?? joined.entityName ?? null;
     const [allocs, softCredits] = await Promise.all([
       db
         .select()
@@ -201,7 +217,7 @@ router.get("/:id", async (req, res, next) => {
         .leftJoin(individuals, eq(giftSoftCredits.individualId, individuals.id))
         .where(eq(giftSoftCredits.giftId, row.id)),
     ]);
-    res.json({ ...row, allocations: allocs, softCredits });
+    res.json({ ...row, donorName, allocations: allocs, softCredits });
   } catch (err) {
     next(err);
   }

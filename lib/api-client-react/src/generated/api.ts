@@ -56,6 +56,7 @@ import type {
   GetProjectionsForecastParams,
   GetRecentActivityParams,
   Gift,
+  GiftDetail,
   GiftSoftCredit,
   GrantsCalendarEntry,
   HealthStatus,
@@ -3237,8 +3238,8 @@ export const getGetGiftUrl = (id: string) => {
 export const getGift = async (
   id: string,
   options?: RequestInit,
-): Promise<Gift> => {
-  return customFetch<Gift>(getGetGiftUrl(id), {
+): Promise<GiftDetail> => {
+  return customFetch<GiftDetail>(getGetGiftUrl(id), {
     ...options,
     method: "GET",
   });

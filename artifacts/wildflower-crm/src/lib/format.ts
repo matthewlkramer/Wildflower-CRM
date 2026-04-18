@@ -1,12 +1,14 @@
 import { format, parseISO } from "date-fns";
 
-export function formatCurrency(amount: number | null | undefined): string {
-  if (amount === null || amount === undefined) return "—";
+export function formatCurrency(amount: number | string | null | undefined): string {
+  if (amount === null || amount === undefined || amount === "") return "—";
+  const num = typeof amount === "string" ? Number(amount) : amount;
+  if (Number.isNaN(num)) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(num);
 }
 
 export function formatDate(dateString: string | null | undefined): string {

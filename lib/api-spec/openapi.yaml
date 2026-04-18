@@ -935,7 +935,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Gift"
+                $ref: "#/components/schemas/GiftDetail"
     patch:
       operationId: updateGift
       tags: [gifts]
@@ -2077,6 +2077,12 @@ components:
           type: string
         sourceDetail:
           type: string
+        birthday:
+          type: string
+          format: date
+        customFields:
+          type: object
+          additionalProperties: true
 
     UpdateIndividualBody:
       type: object
@@ -2153,6 +2159,14 @@ components:
               items: { type: string }
             raceEthnicityOther:
               type: string
+        birthday:
+          type: string
+          format: date
+          nullable: true
+        customFields:
+          type: object
+          additionalProperties: true
+          nullable: true
 
     # ─── Household ─────────────────────────────────────────────────────────────
     Household:
@@ -2297,6 +2311,9 @@ components:
         formationDate:
           type: string
           format: date
+        customFields:
+          type: object
+          additionalProperties: true
 
     UpdateHouseholdBody:
       type: object
@@ -2328,6 +2345,10 @@ components:
         dissolvedDate:
           type: string
           format: date
+        customFields:
+          type: object
+          additionalProperties: true
+          nullable: true
 
     AddHouseholdMemberBody:
       type: object
@@ -2548,6 +2569,13 @@ components:
           type: string
         notes:
           type: string
+        status:
+          $ref: "#/components/schemas/FundingEntityStatus"
+        parentFundingEntityId:
+          type: string
+        customFields:
+          type: object
+          additionalProperties: true
 
     UpdateFundingEntityBody:
       type: object
@@ -2607,6 +2635,15 @@ components:
             geography:
               type: array
               items: { type: string }
+        status:
+          $ref: "#/components/schemas/FundingEntityStatus"
+        parentFundingEntityId:
+          type: string
+          nullable: true
+        customFields:
+          type: object
+          additionalProperties: true
+          nullable: true
 
     CreateAffiliationBody:
       type: object
@@ -3164,53 +3201,55 @@ components:
       properties:
         id:
           type: string
-        donorType:
-          type: string
-          enum: [individual, funding_entity]
-        donorId:
-          type: string
-        donorName:
-          type: string
-        amount:
-          type: number
-        currency:
-          type: string
-          default: USD
-        campaignId:
-          type: string
-          nullable: true
-        cashReceivedDate:
-          type: string
-          format: date
-        reconciled:
-          type: boolean
-        reconciliationDate:
-          type: string
-          format: date
-          nullable: true
-        paymentMethod:
-          type: string
-          nullable: true
-        paymentReference:
-          type: string
-          nullable: true
-        pledgeId:
-          type: string
-          nullable: true
-        opportunityId:
+        individualId:
           type: string
           nullable: true
         householdId:
           type: string
           nullable: true
-        householdName:
+        fundingEntityId:
           type: string
           nullable: true
-        acknowledgementSent:
-          type: boolean
-        acknowledgementDate:
+        donorName:
+          type: string
+          nullable: true
+          description: Computed display name of the donor (individual, household, or funding entity).
+        pledgeId:
+          type: string
+          nullable: true
+        campaignId:
+          type: string
+          nullable: true
+        amount:
+          type: number
+        currency:
+          type: string
+          default: USD
+        cashReceivedDate:
           type: string
           format: date
+        paymentMethod:
+          type: string
+          enum: [check, wire, ach, credit_card, stock, daf_grant, in_kind, other]
+          nullable: true
+        checkNumber:
+          type: string
+          nullable: true
+        reconciled:
+          type: boolean
+        directToSchoolPassthrough:
+          type: boolean
+        fiscalSponsorFundingEntityId:
+          type: string
+          nullable: true
+        fiscalSponsorOrganizationId:
+          type: string
+          nullable: true
+        payerFundingEntityId:
+          type: string
+          nullable: true
+        payerOrganizationId:
+          type: string
           nullable: true
         acknowledgmentSentDate:
           type: string
@@ -3218,61 +3257,42 @@ components:
           nullable: true
         taxReceiptSent:
           type: boolean
-        payerFundingEntityId:
+        notes:
           type: string
           nullable: true
-        payerOrganizationId:
-          type: string
-          nullable: true
-        restrictionNotes:
-          type: string
-          nullable: true
-        quickbooksReference:
-          type: string
-          nullable: true
-        directToSchoolPassthrough:
-          type: boolean
-        schoolReference:
-          type: string
-          nullable: true
-        fiscalSponsorFundingEntityId:
-          type: string
-          nullable: true
-        fiscalSponsorOrganizationId:
-          type: string
-          nullable: true
-        restrictionType:
-          type: string
-          nullable: true
-        geographyDesignation:
-          type: string
-          nullable: true
-        timePeriod:
-          type: string
-          nullable: true
-        programType:
-          type: string
-          nullable: true
-        restrictionFormality:
-          type: string
-          enum: [formal, conversational]
-          nullable: true
+        allocations:
+          type: array
+          items:
+            $ref: "#/components/schemas/GiftAllocation"
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-      required: [id, donorType, donorId, donorName, amount, currency, cashReceivedDate, reconciled, acknowledgementSent, directToSchoolPassthrough, createdAt, updatedAt]
+      required: [id, amount, currency, cashReceivedDate, reconciled, directToSchoolPassthrough, taxReceiptSent, allocations, createdAt, updatedAt]
+
+    GiftDetail:
+      allOf:
+        - $ref: "#/components/schemas/Gift"
+        - type: object
+          properties:
+            softCredits:
+              type: array
+              items:
+                $ref: "#/components/schemas/GiftSoftCredit"
+          required: [softCredits]
 
     CreateGiftBody:
       type: object
-      required: [donorType, donorId, amount, cashReceivedDate, allocations]
+      required: [amount, cashReceivedDate, allocations]
+      description: Exactly one of individualId, householdId, or fundingEntityId must be set.
       properties:
-        donorType:
+        individualId:
           type: string
-          enum: [individual, funding_entity]
-        donorId:
+        householdId:
+          type: string
+        fundingEntityId:
           type: string
         amount:
           type: number
@@ -3291,16 +3311,11 @@ components:
           format: date
         paymentMethod:
           type: string
-        paymentReference:
+          enum: [check, wire, ach, credit_card, stock, daf_grant, in_kind, other]
+        checkNumber:
           type: string
         pledgeId:
           type: string
-        opportunityId:
-          type: string
-        householdId:
-          type: string
-        acknowledgementSent:
-          type: boolean
         acknowledgmentSentDate:
           type: string
           format: date
@@ -3310,27 +3325,14 @@ components:
           type: string
         payerOrganizationId:
           type: string
-        restrictionNotes:
-          type: string
         directToSchoolPassthrough:
           type: boolean
-        schoolReference:
-          type: string
         fiscalSponsorFundingEntityId:
           type: string
         fiscalSponsorOrganizationId:
           type: string
-        restrictionType:
+        notes:
           type: string
-        geographyDesignation:
-          type: string
-        timePeriod:
-          type: string
-        programType:
-          type: string
-        restrictionFormality:
-          type: string
-          enum: [formal, conversational]
 
     UpdateGiftBody:
       type: object
@@ -3350,16 +3352,6 @@ components:
             $ref: "#/components/schemas/CreateGiftAllocationBody"
         reconciled:
           type: boolean
-        reconciliationDate:
-          type: string
-          format: date
-        quickbooksReference:
-          type: string
-        acknowledgementSent:
-          type: boolean
-        acknowledgementDate:
-          type: string
-          format: date
         acknowledgmentSentDate:
           type: string
           format: date
@@ -3372,12 +3364,25 @@ components:
         payerOrganizationId:
           type: string
           nullable: true
-        restrictionNotes:
+        notes:
           type: string
+          nullable: true
         paymentMethod:
           type: string
-        paymentReference:
+          enum: [check, wire, ach, credit_card, stock, daf_grant, in_kind, other]
+        checkNumber:
           type: string
+        directToSchoolPassthrough:
+          type: boolean
+        fiscalSponsorFundingEntityId:
+          type: string
+          nullable: true
+        fiscalSponsorOrganizationId:
+          type: string
+          nullable: true
+        pledgeId:
+          type: string
+          nullable: true
 
     # ─── Move ────────────────────────────────────────────────────────────────────
     Move:

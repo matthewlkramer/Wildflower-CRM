@@ -158,6 +158,8 @@ export const CreateIndividualBody = zod.object({
   biography: zod.string().optional(),
   howAcquired: zod.string().optional(),
   sourceDetail: zod.string().optional(),
+  birthday: zod.coerce.date().optional(),
+  customFields: zod.record(zod.string(), zod.unknown()).optional(),
 });
 
 /**
@@ -592,6 +594,8 @@ export const UpdateIndividualBody = zod.object({
       raceEthnicityOther: zod.string().optional(),
     })
     .optional(),
+  birthday: zod.coerce.date().nullish(),
+  customFields: zod.record(zod.string(), zod.unknown()).nullish(),
 });
 
 export const UpdateIndividualResponse = zod.object({
@@ -739,6 +743,7 @@ export const CreateHouseholdBody = zod.object({
   familyPhilanthropyNotes: zod.string().optional(),
   notes: zod.string().optional(),
   formationDate: zod.coerce.date().optional(),
+  customFields: zod.record(zod.string(), zod.unknown()).optional(),
 });
 
 /**
@@ -939,42 +944,71 @@ export const GetHouseholdResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            donorType: zod.enum(["individual", "funding_entity"]),
-            donorId: zod.string(),
-            donorName: zod.string(),
+            individualId: zod.string().nullish(),
+            householdId: zod.string().nullish(),
+            fundingEntityId: zod.string().nullish(),
+            donorName: zod
+              .string()
+              .nullish()
+              .describe(
+                "Computed display name of the donor (individual, household, or funding entity).",
+              ),
+            pledgeId: zod.string().nullish(),
+            campaignId: zod.string().nullish(),
             amount: zod.number(),
             currency: zod
               .string()
               .default(getHouseholdResponseTwoGivingHistoryItemCurrencyDefault),
-            campaignId: zod.string().nullish(),
             cashReceivedDate: zod.coerce.date(),
+            paymentMethod: zod
+              .enum([
+                "check",
+                "wire",
+                "ach",
+                "credit_card",
+                "stock",
+                "daf_grant",
+                "in_kind",
+                "other",
+              ])
+              .nullish(),
+            checkNumber: zod.string().nullish(),
             reconciled: zod.boolean(),
-            reconciliationDate: zod.coerce.date().nullish(),
-            paymentMethod: zod.string().nullish(),
-            paymentReference: zod.string().nullish(),
-            pledgeId: zod.string().nullish(),
-            opportunityId: zod.string().nullish(),
-            householdId: zod.string().nullish(),
-            householdName: zod.string().nullish(),
-            acknowledgementSent: zod.boolean(),
-            acknowledgementDate: zod.coerce.date().nullish(),
-            acknowledgmentSentDate: zod.coerce.date().nullish(),
-            taxReceiptSent: zod.boolean().optional(),
-            payerFundingEntityId: zod.string().nullish(),
-            payerOrganizationId: zod.string().nullish(),
-            restrictionNotes: zod.string().nullish(),
-            quickbooksReference: zod.string().nullish(),
             directToSchoolPassthrough: zod.boolean(),
-            schoolReference: zod.string().nullish(),
             fiscalSponsorFundingEntityId: zod.string().nullish(),
             fiscalSponsorOrganizationId: zod.string().nullish(),
-            restrictionType: zod.string().nullish(),
-            geographyDesignation: zod.string().nullish(),
-            timePeriod: zod.string().nullish(),
-            programType: zod.string().nullish(),
-            restrictionFormality: zod
-              .enum(["formal", "conversational"])
-              .nullish(),
+            payerFundingEntityId: zod.string().nullish(),
+            payerOrganizationId: zod.string().nullish(),
+            acknowledgmentSentDate: zod.coerce.date().nullish(),
+            taxReceiptSent: zod.boolean(),
+            notes: zod.string().nullish(),
+            allocations: zod.array(
+              zod.object({
+                id: zod.string(),
+                giftId: zod.string(),
+                fund: zod.enum([
+                  "general_operating",
+                  "seed_fund",
+                  "black_wildflowers",
+                  "sunlight",
+                ]),
+                amount: zod.number(),
+                fiscalYear: zod
+                  .enum([
+                    "FY23",
+                    "FY24",
+                    "FY25",
+                    "FY26",
+                    "FY27",
+                    "FY28",
+                    "FY29",
+                    "FY30",
+                  ])
+                  .nullish(),
+                notes: zod.string().nullish(),
+                createdAt: zod.coerce.date(),
+              }),
+            ),
             createdAt: zod.coerce.date(),
             updatedAt: zod.coerce.date(),
           }),
@@ -1011,6 +1045,7 @@ export const UpdateHouseholdBody = zod.object({
   status: zod.enum(["active", "dissolved"]).optional(),
   formationDate: zod.coerce.date().optional(),
   dissolvedDate: zod.coerce.date().optional(),
+  customFields: zod.record(zod.string(), zod.unknown()).nullish(),
 });
 
 export const UpdateHouseholdResponse = zod.object({
@@ -1243,6 +1278,9 @@ export const CreateFundingEntityBody = zod.object({
     .optional(),
   sponsoringInstitution: zod.string().optional(),
   notes: zod.string().optional(),
+  status: zod.enum(["active", "defunct", "merged"]).optional(),
+  parentFundingEntityId: zod.string().optional(),
+  customFields: zod.record(zod.string(), zod.unknown()).optional(),
 });
 
 /**
@@ -1434,44 +1472,73 @@ export const GetFundingEntityResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            donorType: zod.enum(["individual", "funding_entity"]),
-            donorId: zod.string(),
-            donorName: zod.string(),
+            individualId: zod.string().nullish(),
+            householdId: zod.string().nullish(),
+            fundingEntityId: zod.string().nullish(),
+            donorName: zod
+              .string()
+              .nullish()
+              .describe(
+                "Computed display name of the donor (individual, household, or funding entity).",
+              ),
+            pledgeId: zod.string().nullish(),
+            campaignId: zod.string().nullish(),
             amount: zod.number(),
             currency: zod
               .string()
               .default(
                 getFundingEntityResponseTwoGivingHistoryItemCurrencyDefault,
               ),
-            campaignId: zod.string().nullish(),
             cashReceivedDate: zod.coerce.date(),
+            paymentMethod: zod
+              .enum([
+                "check",
+                "wire",
+                "ach",
+                "credit_card",
+                "stock",
+                "daf_grant",
+                "in_kind",
+                "other",
+              ])
+              .nullish(),
+            checkNumber: zod.string().nullish(),
             reconciled: zod.boolean(),
-            reconciliationDate: zod.coerce.date().nullish(),
-            paymentMethod: zod.string().nullish(),
-            paymentReference: zod.string().nullish(),
-            pledgeId: zod.string().nullish(),
-            opportunityId: zod.string().nullish(),
-            householdId: zod.string().nullish(),
-            householdName: zod.string().nullish(),
-            acknowledgementSent: zod.boolean(),
-            acknowledgementDate: zod.coerce.date().nullish(),
-            acknowledgmentSentDate: zod.coerce.date().nullish(),
-            taxReceiptSent: zod.boolean().optional(),
-            payerFundingEntityId: zod.string().nullish(),
-            payerOrganizationId: zod.string().nullish(),
-            restrictionNotes: zod.string().nullish(),
-            quickbooksReference: zod.string().nullish(),
             directToSchoolPassthrough: zod.boolean(),
-            schoolReference: zod.string().nullish(),
             fiscalSponsorFundingEntityId: zod.string().nullish(),
             fiscalSponsorOrganizationId: zod.string().nullish(),
-            restrictionType: zod.string().nullish(),
-            geographyDesignation: zod.string().nullish(),
-            timePeriod: zod.string().nullish(),
-            programType: zod.string().nullish(),
-            restrictionFormality: zod
-              .enum(["formal", "conversational"])
-              .nullish(),
+            payerFundingEntityId: zod.string().nullish(),
+            payerOrganizationId: zod.string().nullish(),
+            acknowledgmentSentDate: zod.coerce.date().nullish(),
+            taxReceiptSent: zod.boolean(),
+            notes: zod.string().nullish(),
+            allocations: zod.array(
+              zod.object({
+                id: zod.string(),
+                giftId: zod.string(),
+                fund: zod.enum([
+                  "general_operating",
+                  "seed_fund",
+                  "black_wildflowers",
+                  "sunlight",
+                ]),
+                amount: zod.number(),
+                fiscalYear: zod
+                  .enum([
+                    "FY23",
+                    "FY24",
+                    "FY25",
+                    "FY26",
+                    "FY27",
+                    "FY28",
+                    "FY29",
+                    "FY30",
+                  ])
+                  .nullish(),
+                notes: zod.string().nullish(),
+                createdAt: zod.coerce.date(),
+              }),
+            ),
             createdAt: zod.coerce.date(),
             updatedAt: zod.coerce.date(),
           }),
@@ -1548,6 +1615,9 @@ export const UpdateFundingEntityBody = zod.object({
       geography: zod.array(zod.string()).optional(),
     })
     .optional(),
+  status: zod.enum(["active", "defunct", "merged"]).optional(),
+  parentFundingEntityId: zod.string().nullish(),
+  customFields: zod.record(zod.string(), zod.unknown()).nullish(),
 });
 
 export const UpdateFundingEntityResponse = zod.object({
@@ -2558,38 +2628,69 @@ export const ListGiftsResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      donorType: zod.enum(["individual", "funding_entity"]),
-      donorId: zod.string(),
-      donorName: zod.string(),
+      individualId: zod.string().nullish(),
+      householdId: zod.string().nullish(),
+      fundingEntityId: zod.string().nullish(),
+      donorName: zod
+        .string()
+        .nullish()
+        .describe(
+          "Computed display name of the donor (individual, household, or funding entity).",
+        ),
+      pledgeId: zod.string().nullish(),
+      campaignId: zod.string().nullish(),
       amount: zod.number(),
       currency: zod.string().default(listGiftsResponseDataItemCurrencyDefault),
-      campaignId: zod.string().nullish(),
       cashReceivedDate: zod.coerce.date(),
+      paymentMethod: zod
+        .enum([
+          "check",
+          "wire",
+          "ach",
+          "credit_card",
+          "stock",
+          "daf_grant",
+          "in_kind",
+          "other",
+        ])
+        .nullish(),
+      checkNumber: zod.string().nullish(),
       reconciled: zod.boolean(),
-      reconciliationDate: zod.coerce.date().nullish(),
-      paymentMethod: zod.string().nullish(),
-      paymentReference: zod.string().nullish(),
-      pledgeId: zod.string().nullish(),
-      opportunityId: zod.string().nullish(),
-      householdId: zod.string().nullish(),
-      householdName: zod.string().nullish(),
-      acknowledgementSent: zod.boolean(),
-      acknowledgementDate: zod.coerce.date().nullish(),
-      acknowledgmentSentDate: zod.coerce.date().nullish(),
-      taxReceiptSent: zod.boolean().optional(),
-      payerFundingEntityId: zod.string().nullish(),
-      payerOrganizationId: zod.string().nullish(),
-      restrictionNotes: zod.string().nullish(),
-      quickbooksReference: zod.string().nullish(),
       directToSchoolPassthrough: zod.boolean(),
-      schoolReference: zod.string().nullish(),
       fiscalSponsorFundingEntityId: zod.string().nullish(),
       fiscalSponsorOrganizationId: zod.string().nullish(),
-      restrictionType: zod.string().nullish(),
-      geographyDesignation: zod.string().nullish(),
-      timePeriod: zod.string().nullish(),
-      programType: zod.string().nullish(),
-      restrictionFormality: zod.enum(["formal", "conversational"]).nullish(),
+      payerFundingEntityId: zod.string().nullish(),
+      payerOrganizationId: zod.string().nullish(),
+      acknowledgmentSentDate: zod.coerce.date().nullish(),
+      taxReceiptSent: zod.boolean(),
+      notes: zod.string().nullish(),
+      allocations: zod.array(
+        zod.object({
+          id: zod.string(),
+          giftId: zod.string(),
+          fund: zod.enum([
+            "general_operating",
+            "seed_fund",
+            "black_wildflowers",
+            "sunlight",
+          ]),
+          amount: zod.number(),
+          fiscalYear: zod
+            .enum([
+              "FY23",
+              "FY24",
+              "FY25",
+              "FY26",
+              "FY27",
+              "FY28",
+              "FY29",
+              "FY30",
+            ])
+            .nullish(),
+          notes: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+        }),
+      ),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
     }),
@@ -2604,15 +2705,120 @@ export const ListGiftsResponse = zod.object({
  */
 export const createGiftBodyCurrencyDefault = `USD`;
 
-export const CreateGiftBody = zod.object({
-  donorType: zod.enum(["individual", "funding_entity"]),
-  donorId: zod.string(),
-  amount: zod.number(),
-  currency: zod.string().default(createGiftBodyCurrencyDefault),
-  campaignId: zod.string().optional(),
-  allocations: zod
-    .array(
+export const CreateGiftBody = zod
+  .object({
+    individualId: zod.string().optional(),
+    householdId: zod.string().optional(),
+    fundingEntityId: zod.string().optional(),
+    amount: zod.number(),
+    currency: zod.string().default(createGiftBodyCurrencyDefault),
+    campaignId: zod.string().optional(),
+    allocations: zod
+      .array(
+        zod.object({
+          fund: zod.enum([
+            "general_operating",
+            "seed_fund",
+            "black_wildflowers",
+            "sunlight",
+          ]),
+          amount: zod.number(),
+          fiscalYear: zod
+            .enum([
+              "FY23",
+              "FY24",
+              "FY25",
+              "FY26",
+              "FY27",
+              "FY28",
+              "FY29",
+              "FY30",
+            ])
+            .optional(),
+          notes: zod.string().optional(),
+        }),
+      )
+      .min(1),
+    cashReceivedDate: zod.coerce.date(),
+    paymentMethod: zod
+      .enum([
+        "check",
+        "wire",
+        "ach",
+        "credit_card",
+        "stock",
+        "daf_grant",
+        "in_kind",
+        "other",
+      ])
+      .optional(),
+    checkNumber: zod.string().optional(),
+    pledgeId: zod.string().optional(),
+    acknowledgmentSentDate: zod.coerce.date().optional(),
+    taxReceiptSent: zod.boolean().optional(),
+    payerFundingEntityId: zod.string().optional(),
+    payerOrganizationId: zod.string().optional(),
+    directToSchoolPassthrough: zod.boolean().optional(),
+    fiscalSponsorFundingEntityId: zod.string().optional(),
+    fiscalSponsorOrganizationId: zod.string().optional(),
+    notes: zod.string().optional(),
+  })
+  .describe(
+    "Exactly one of individualId, householdId, or fundingEntityId must be set.",
+  );
+
+/**
+ * @summary Get gift by ID
+ */
+export const GetGiftParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const getGiftResponseOneCurrencyDefault = `USD`;
+
+export const GetGiftResponse = zod
+  .object({
+    id: zod.string(),
+    individualId: zod.string().nullish(),
+    householdId: zod.string().nullish(),
+    fundingEntityId: zod.string().nullish(),
+    donorName: zod
+      .string()
+      .nullish()
+      .describe(
+        "Computed display name of the donor (individual, household, or funding entity).",
+      ),
+    pledgeId: zod.string().nullish(),
+    campaignId: zod.string().nullish(),
+    amount: zod.number(),
+    currency: zod.string().default(getGiftResponseOneCurrencyDefault),
+    cashReceivedDate: zod.coerce.date(),
+    paymentMethod: zod
+      .enum([
+        "check",
+        "wire",
+        "ach",
+        "credit_card",
+        "stock",
+        "daf_grant",
+        "in_kind",
+        "other",
+      ])
+      .nullish(),
+    checkNumber: zod.string().nullish(),
+    reconciled: zod.boolean(),
+    directToSchoolPassthrough: zod.boolean(),
+    fiscalSponsorFundingEntityId: zod.string().nullish(),
+    fiscalSponsorOrganizationId: zod.string().nullish(),
+    payerFundingEntityId: zod.string().nullish(),
+    payerOrganizationId: zod.string().nullish(),
+    acknowledgmentSentDate: zod.coerce.date().nullish(),
+    taxReceiptSent: zod.boolean(),
+    notes: zod.string().nullish(),
+    allocations: zod.array(
       zod.object({
+        id: zod.string(),
+        giftId: zod.string(),
         fund: zod.enum([
           "general_operating",
           "seed_fund",
@@ -2631,80 +2837,38 @@ export const CreateGiftBody = zod.object({
             "FY29",
             "FY30",
           ])
-          .optional(),
-        notes: zod.string().optional(),
+          .nullish(),
+        notes: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
       }),
-    )
-    .min(1),
-  cashReceivedDate: zod.coerce.date(),
-  paymentMethod: zod.string().optional(),
-  paymentReference: zod.string().optional(),
-  pledgeId: zod.string().optional(),
-  opportunityId: zod.string().optional(),
-  householdId: zod.string().optional(),
-  acknowledgementSent: zod.boolean().optional(),
-  acknowledgmentSentDate: zod.coerce.date().optional(),
-  taxReceiptSent: zod.boolean().optional(),
-  payerFundingEntityId: zod.string().optional(),
-  payerOrganizationId: zod.string().optional(),
-  restrictionNotes: zod.string().optional(),
-  directToSchoolPassthrough: zod.boolean().optional(),
-  schoolReference: zod.string().optional(),
-  fiscalSponsorFundingEntityId: zod.string().optional(),
-  fiscalSponsorOrganizationId: zod.string().optional(),
-  restrictionType: zod.string().optional(),
-  geographyDesignation: zod.string().optional(),
-  timePeriod: zod.string().optional(),
-  programType: zod.string().optional(),
-  restrictionFormality: zod.enum(["formal", "conversational"]).optional(),
-});
-
-/**
- * @summary Get gift by ID
- */
-export const GetGiftParams = zod.object({
-  id: zod.coerce.string(),
-});
-
-export const getGiftResponseCurrencyDefault = `USD`;
-
-export const GetGiftResponse = zod.object({
-  id: zod.string(),
-  donorType: zod.enum(["individual", "funding_entity"]),
-  donorId: zod.string(),
-  donorName: zod.string(),
-  amount: zod.number(),
-  currency: zod.string().default(getGiftResponseCurrencyDefault),
-  campaignId: zod.string().nullish(),
-  cashReceivedDate: zod.coerce.date(),
-  reconciled: zod.boolean(),
-  reconciliationDate: zod.coerce.date().nullish(),
-  paymentMethod: zod.string().nullish(),
-  paymentReference: zod.string().nullish(),
-  pledgeId: zod.string().nullish(),
-  opportunityId: zod.string().nullish(),
-  householdId: zod.string().nullish(),
-  householdName: zod.string().nullish(),
-  acknowledgementSent: zod.boolean(),
-  acknowledgementDate: zod.coerce.date().nullish(),
-  acknowledgmentSentDate: zod.coerce.date().nullish(),
-  taxReceiptSent: zod.boolean().optional(),
-  payerFundingEntityId: zod.string().nullish(),
-  payerOrganizationId: zod.string().nullish(),
-  restrictionNotes: zod.string().nullish(),
-  quickbooksReference: zod.string().nullish(),
-  directToSchoolPassthrough: zod.boolean(),
-  schoolReference: zod.string().nullish(),
-  fiscalSponsorFundingEntityId: zod.string().nullish(),
-  fiscalSponsorOrganizationId: zod.string().nullish(),
-  restrictionType: zod.string().nullish(),
-  geographyDesignation: zod.string().nullish(),
-  timePeriod: zod.string().nullish(),
-  programType: zod.string().nullish(),
-  restrictionFormality: zod.enum(["formal", "conversational"]).nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
-});
+    ),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .and(
+    zod.object({
+      softCredits: zod.array(
+        zod.object({
+          id: zod.string(),
+          giftId: zod.string(),
+          individualId: zod.string(),
+          creditType: zod.enum([
+            "spouse",
+            "advisor",
+            "introducer",
+            "event_captain",
+            "household_member",
+            "other",
+          ]),
+          percentage: zod.number().nullish(),
+          notes: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+          individualFirstName: zod.string().nullish(),
+          individualLastName: zod.string().nullish(),
+        }),
+      ),
+    }),
+  );
 
 /**
  * @summary Update gift (e.g. mark reconciled)
@@ -2748,55 +2912,88 @@ export const UpdateGiftBody = zod.object({
       "When provided, replaces all allocations. Sum must equal amount.",
     ),
   reconciled: zod.boolean().optional(),
-  reconciliationDate: zod.coerce.date().optional(),
-  quickbooksReference: zod.string().optional(),
-  acknowledgementSent: zod.boolean().optional(),
-  acknowledgementDate: zod.coerce.date().optional(),
   acknowledgmentSentDate: zod.coerce.date().nullish(),
   taxReceiptSent: zod.boolean().optional(),
   payerFundingEntityId: zod.string().nullish(),
   payerOrganizationId: zod.string().nullish(),
-  restrictionNotes: zod.string().optional(),
-  paymentMethod: zod.string().optional(),
-  paymentReference: zod.string().optional(),
+  notes: zod.string().nullish(),
+  paymentMethod: zod
+    .enum([
+      "check",
+      "wire",
+      "ach",
+      "credit_card",
+      "stock",
+      "daf_grant",
+      "in_kind",
+      "other",
+    ])
+    .optional(),
+  checkNumber: zod.string().optional(),
+  directToSchoolPassthrough: zod.boolean().optional(),
+  fiscalSponsorFundingEntityId: zod.string().nullish(),
+  fiscalSponsorOrganizationId: zod.string().nullish(),
+  pledgeId: zod.string().nullish(),
 });
 
 export const updateGiftResponseCurrencyDefault = `USD`;
 
 export const UpdateGiftResponse = zod.object({
   id: zod.string(),
-  donorType: zod.enum(["individual", "funding_entity"]),
-  donorId: zod.string(),
-  donorName: zod.string(),
+  individualId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  fundingEntityId: zod.string().nullish(),
+  donorName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Computed display name of the donor (individual, household, or funding entity).",
+    ),
+  pledgeId: zod.string().nullish(),
+  campaignId: zod.string().nullish(),
   amount: zod.number(),
   currency: zod.string().default(updateGiftResponseCurrencyDefault),
-  campaignId: zod.string().nullish(),
   cashReceivedDate: zod.coerce.date(),
+  paymentMethod: zod
+    .enum([
+      "check",
+      "wire",
+      "ach",
+      "credit_card",
+      "stock",
+      "daf_grant",
+      "in_kind",
+      "other",
+    ])
+    .nullish(),
+  checkNumber: zod.string().nullish(),
   reconciled: zod.boolean(),
-  reconciliationDate: zod.coerce.date().nullish(),
-  paymentMethod: zod.string().nullish(),
-  paymentReference: zod.string().nullish(),
-  pledgeId: zod.string().nullish(),
-  opportunityId: zod.string().nullish(),
-  householdId: zod.string().nullish(),
-  householdName: zod.string().nullish(),
-  acknowledgementSent: zod.boolean(),
-  acknowledgementDate: zod.coerce.date().nullish(),
-  acknowledgmentSentDate: zod.coerce.date().nullish(),
-  taxReceiptSent: zod.boolean().optional(),
-  payerFundingEntityId: zod.string().nullish(),
-  payerOrganizationId: zod.string().nullish(),
-  restrictionNotes: zod.string().nullish(),
-  quickbooksReference: zod.string().nullish(),
   directToSchoolPassthrough: zod.boolean(),
-  schoolReference: zod.string().nullish(),
   fiscalSponsorFundingEntityId: zod.string().nullish(),
   fiscalSponsorOrganizationId: zod.string().nullish(),
-  restrictionType: zod.string().nullish(),
-  geographyDesignation: zod.string().nullish(),
-  timePeriod: zod.string().nullish(),
-  programType: zod.string().nullish(),
-  restrictionFormality: zod.enum(["formal", "conversational"]).nullish(),
+  payerFundingEntityId: zod.string().nullish(),
+  payerOrganizationId: zod.string().nullish(),
+  acknowledgmentSentDate: zod.coerce.date().nullish(),
+  taxReceiptSent: zod.boolean(),
+  notes: zod.string().nullish(),
+  allocations: zod.array(
+    zod.object({
+      id: zod.string(),
+      giftId: zod.string(),
+      fund: zod.enum([
+        "general_operating",
+        "seed_fund",
+        "black_wildflowers",
+        "sunlight",
+      ]),
+      amount: zod.number(),
+      fiscalYear: zod
+        .enum(["FY23", "FY24", "FY25", "FY26", "FY27", "FY28", "FY29", "FY30"])
+        .nullish(),
+      notes: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

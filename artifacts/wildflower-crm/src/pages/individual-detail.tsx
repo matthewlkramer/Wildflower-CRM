@@ -1,37 +1,66 @@
 import { useParams, Link } from "wouter";
-import { useGetIndividual, getGetIndividualQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useGetIndividual, getGetIndividualQueryKey, useUpdateIndividual, type UpdateIndividualBody } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EditDialog } from "@/components/edit-dialog";
 import { formatCurrency, formatDate, formatEnum, formatCapacity } from "@/lib/format";
 
 export default function IndividualDetail() {
   const params = useParams();
   const id = params.id as string;
 
+  const queryClient = useQueryClient();
   const { data: individual, isLoading } = useGetIndividual(id, {
     query: {
       enabled: !!id,
       queryKey: getGetIndividualQueryKey(id)
     }
   });
+  const updateMutation = useUpdateIndividual({
+    mutation: {
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetIndividualQueryKey(id) }),
+    },
+  });
 
   if (isLoading) return <div className="p-8 text-muted-foreground animate-pulse">Loading individual...</div>;
   if (!individual) return <div className="p-8 text-destructive">Individual not found.</div>;
 
+  const primaryEmail = individual.emails?.find((e) => e.isPrimary) ?? individual.emails?.[0];
+  const primaryPhone = individual.phones?.find((p) => p.isPrimary) ?? individual.phones?.[0];
+  const primaryAddress = individual.addresses?.find((a) => a.isPrimary) ?? individual.addresses?.[0];
+  const customFieldEntries = individual.customFields ? Object.entries(individual.customFields) : [];
+
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">
             {individual.firstName} {individual.lastName}
           </h1>
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
             <Badge variant="outline">{formatEnum(individual.donorCultivationStage)}</Badge>
             <Badge variant="secondary">{formatEnum(individual.enthusiasm)}</Badge>
             <span className="text-sm text-muted-foreground">{formatCapacity(individual.capacityRating)}</span>
+            {individual.birthday && (
+              <span className="text-sm text-muted-foreground">🎂 {formatDate(individual.birthday)}</span>
+            )}
           </div>
         </div>
+        <EditDialog<Pick<UpdateIndividualBody, "birthday" | "customFields">>
+          trigger={<Button variant="outline" size="sm">Edit</Button>}
+          title="Edit individual"
+          isPending={updateMutation.isPending}
+          fields={[
+            { kind: "date", key: "birthday", label: "Birthday", value: individual.birthday },
+            { kind: "json", key: "customFields", label: "Custom fields (JSON)", value: individual.customFields ?? null },
+          ]}
+          onSubmit={async (values) => {
+            await updateMutation.mutateAsync({ id, data: values });
+          }}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -41,19 +70,43 @@ export default function IndividualDetail() {
               <CardTitle className="text-lg">Contact Info</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
-              <div><span className="font-medium">Email:</span> {individual.primaryEmail || "—"}</div>
-              <div><span className="font-medium">Phone:</span> {individual.primaryPhone || "—"}</div>
-              <div><span className="font-medium">Location:</span> {individual.metroArea || "—"}</div>
-              {individual.householdId && (
+              <div><span className="font-medium">Email:</span> {primaryEmail?.email || "—"}</div>
+              <div><span className="font-medium">Phone:</span> {primaryPhone?.phone || "—"}</div>
+              <div><span className="font-medium">Location:</span> {primaryAddress ? [primaryAddress.city, primaryAddress.state].filter(Boolean).join(", ") || "—" : "—"}</div>
+              {individual.household && (
                 <div>
                   <span className="font-medium">Household:</span>{" "}
-                  <Link href={`/households/${individual.householdId}`} className="text-primary hover:underline">
-                    {individual.householdName || "View Household"}
+                  <Link href={`/households/${individual.household.id}`} className="text-primary hover:underline">
+                    {individual.household.name}
+                  </Link>
+                </div>
+              )}
+              {individual.spouseId && (
+                <div>
+                  <span className="font-medium">Spouse:</span>{" "}
+                  <Link href={`/individuals/${individual.spouseId}`} className="text-primary hover:underline">
+                    {individual.spouseName || "View"}
                   </Link>
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {customFieldEntries.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Custom Fields</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {customFieldEntries.map(([key, value]) => (
+                  <div key={key}>
+                    <span className="font-medium">{formatEnum(key)}:</span>{" "}
+                    <span className="text-muted-foreground">{String(value)}</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="md:col-span-2">
@@ -85,7 +138,15 @@ export default function IndividualDetail() {
                <Card>
                 <CardHeader><CardTitle>Opportunities</CardTitle></CardHeader>
                 <CardContent>
-                   <p className="text-sm text-muted-foreground">No opportunities to display.</p>
+                  {individual.openOpportunities && individual.openOpportunities.length > 0 ? (
+                    <ul className="text-sm space-y-1">
+                      {individual.openOpportunities.map((o) => (
+                        <li key={o.id} className="text-muted-foreground">{o.name} — {formatCurrency(o.amountRequested)}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No opportunities to display.</p>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

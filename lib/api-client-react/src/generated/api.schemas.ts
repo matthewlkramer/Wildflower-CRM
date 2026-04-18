@@ -584,6 +584,8 @@ export type IndividualDetail = Individual & {
   household?: Household | null;
 };
 
+export type CreateIndividualBodyCustomFields = { [key: string]: unknown };
+
 export interface CreateIndividualBody {
   firstName: string;
   lastName: string;
@@ -599,6 +601,8 @@ export interface CreateIndividualBody {
   biography?: string;
   howAcquired?: string;
   sourceDetail?: string;
+  birthday?: string;
+  customFields?: CreateIndividualBodyCustomFields;
 }
 
 export type UpdateIndividualBodyInterests = {
@@ -612,6 +616,10 @@ export type UpdateIndividualBodyDemographics = {
   raceEthnicity?: string[];
   raceEthnicityOther?: string;
 };
+
+export type UpdateIndividualBodyCustomFields = {
+  [key: string]: unknown;
+} | null;
 
 export interface UpdateIndividualBody {
   firstName?: string;
@@ -640,6 +648,8 @@ export interface UpdateIndividualBody {
   newsletterSubscribed?: boolean;
   interests?: UpdateIndividualBodyInterests;
   demographics?: UpdateIndividualBodyDemographics;
+  birthday?: string | null;
+  customFields?: UpdateIndividualBodyCustomFields;
 }
 
 export interface HouseholdMember {
@@ -683,56 +693,70 @@ export interface FundingEntity {
   updatedAt: string;
 }
 
-export type GiftDonorType = (typeof GiftDonorType)[keyof typeof GiftDonorType];
-
-export const GiftDonorType = {
-  individual: "individual",
-  funding_entity: "funding_entity",
-} as const;
-
-export type GiftRestrictionFormality =
-  | (typeof GiftRestrictionFormality)[keyof typeof GiftRestrictionFormality]
+export type GiftPaymentMethod =
+  | (typeof GiftPaymentMethod)[keyof typeof GiftPaymentMethod]
   | null;
 
-export const GiftRestrictionFormality = {
-  formal: "formal",
-  conversational: "conversational",
+export const GiftPaymentMethod = {
+  check: "check",
+  wire: "wire",
+  ach: "ach",
+  credit_card: "credit_card",
+  stock: "stock",
+  daf_grant: "daf_grant",
+  in_kind: "in_kind",
+  other: "other",
 } as const;
+
+export type GiftAllocationFiscalYear =
+  | (typeof GiftAllocationFiscalYear)[keyof typeof GiftAllocationFiscalYear]
+  | null;
+
+export const GiftAllocationFiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
+
+export interface GiftAllocation {
+  id: string;
+  giftId: string;
+  fund: Fund;
+  amount: number;
+  fiscalYear?: GiftAllocationFiscalYear;
+  notes?: string | null;
+  createdAt: string;
+}
 
 export interface Gift {
   id: string;
-  donorType: GiftDonorType;
-  donorId: string;
-  donorName: string;
+  individualId?: string | null;
+  householdId?: string | null;
+  fundingEntityId?: string | null;
+  /** Computed display name of the donor (individual, household, or funding entity). */
+  donorName?: string | null;
+  pledgeId?: string | null;
+  campaignId?: string | null;
   amount: number;
   currency: string;
-  campaignId?: string | null;
   cashReceivedDate: string;
+  paymentMethod?: GiftPaymentMethod;
+  checkNumber?: string | null;
   reconciled: boolean;
-  reconciliationDate?: string | null;
-  paymentMethod?: string | null;
-  paymentReference?: string | null;
-  pledgeId?: string | null;
-  opportunityId?: string | null;
-  householdId?: string | null;
-  householdName?: string | null;
-  acknowledgementSent: boolean;
-  acknowledgementDate?: string | null;
-  acknowledgmentSentDate?: string | null;
-  taxReceiptSent?: boolean;
-  payerFundingEntityId?: string | null;
-  payerOrganizationId?: string | null;
-  restrictionNotes?: string | null;
-  quickbooksReference?: string | null;
   directToSchoolPassthrough: boolean;
-  schoolReference?: string | null;
   fiscalSponsorFundingEntityId?: string | null;
   fiscalSponsorOrganizationId?: string | null;
-  restrictionType?: string | null;
-  geographyDesignation?: string | null;
-  timePeriod?: string | null;
-  programType?: string | null;
-  restrictionFormality?: GiftRestrictionFormality;
+  payerFundingEntityId?: string | null;
+  payerOrganizationId?: string | null;
+  acknowledgmentSentDate?: string | null;
+  taxReceiptSent: boolean;
+  notes?: string | null;
+  allocations: GiftAllocation[];
   createdAt: string;
   updatedAt: string;
 }
@@ -748,6 +772,8 @@ export type HouseholdDetail = Household & {
   givingHistory?: Gift[];
 };
 
+export type CreateHouseholdBodyCustomFields = { [key: string]: unknown };
+
 export interface CreateHouseholdBody {
   name: string;
   primaryOwnerUserId?: string;
@@ -758,6 +784,7 @@ export interface CreateHouseholdBody {
   familyPhilanthropyNotes?: string;
   notes?: string;
   formationDate?: string;
+  customFields?: CreateHouseholdBodyCustomFields;
 }
 
 export type UpdateHouseholdBodyStatus =
@@ -767,6 +794,8 @@ export const UpdateHouseholdBodyStatus = {
   active: "active",
   dissolved: "dissolved",
 } as const;
+
+export type UpdateHouseholdBodyCustomFields = { [key: string]: unknown } | null;
 
 export interface UpdateHouseholdBody {
   name?: string;
@@ -781,6 +810,7 @@ export interface UpdateHouseholdBody {
   status?: UpdateHouseholdBodyStatus;
   formationDate?: string;
   dissolvedDate?: string;
+  customFields?: UpdateHouseholdBodyCustomFields;
 }
 
 export interface AddHouseholdMemberBody {
@@ -810,6 +840,8 @@ export type FundingEntityDetail = FundingEntity & {
   givingHistory?: Gift[];
 };
 
+export type CreateFundingEntityBodyCustomFields = { [key: string]: unknown };
+
 export interface CreateFundingEntityBody {
   legalName: string;
   displayName?: string;
@@ -826,6 +858,9 @@ export interface CreateFundingEntityBody {
   enthusiasm?: Enthusiasm;
   sponsoringInstitution?: string;
   notes?: string;
+  status?: FundingEntityStatus;
+  parentFundingEntityId?: string;
+  customFields?: CreateFundingEntityBodyCustomFields;
 }
 
 export type UpdateFundingEntityBodyGivingFocus = {
@@ -834,6 +869,10 @@ export type UpdateFundingEntityBodyGivingFocus = {
   governanceModel?: string[];
   geography?: string[];
 };
+
+export type UpdateFundingEntityBodyCustomFields = {
+  [key: string]: unknown;
+} | null;
 
 export interface UpdateFundingEntityBody {
   legalName?: string;
@@ -857,6 +896,9 @@ export interface UpdateFundingEntityBody {
   sponsoringInstitution?: string;
   notes?: string;
   givingFocus?: UpdateFundingEntityBodyGivingFocus;
+  status?: FundingEntityStatus;
+  parentFundingEntityId?: string | null;
+  customFields?: UpdateFundingEntityBodyCustomFields;
 }
 
 export interface CreateAffiliationBody {
@@ -1138,20 +1180,22 @@ export interface UpdateInstallmentBody {
   giftId?: string;
 }
 
-export type CreateGiftBodyDonorType =
-  (typeof CreateGiftBodyDonorType)[keyof typeof CreateGiftBodyDonorType];
+export type GiftDetail = Gift & {
+  softCredits: GiftSoftCredit[];
+};
 
-export const CreateGiftBodyDonorType = {
-  individual: "individual",
-  funding_entity: "funding_entity",
-} as const;
+export type CreateGiftBodyPaymentMethod =
+  (typeof CreateGiftBodyPaymentMethod)[keyof typeof CreateGiftBodyPaymentMethod];
 
-export type CreateGiftBodyRestrictionFormality =
-  (typeof CreateGiftBodyRestrictionFormality)[keyof typeof CreateGiftBodyRestrictionFormality];
-
-export const CreateGiftBodyRestrictionFormality = {
-  formal: "formal",
-  conversational: "conversational",
+export const CreateGiftBodyPaymentMethod = {
+  check: "check",
+  wire: "wire",
+  ach: "ach",
+  credit_card: "credit_card",
+  stock: "stock",
+  daf_grant: "daf_grant",
+  in_kind: "in_kind",
+  other: "other",
 } as const;
 
 export type CreateGiftAllocationBodyFiscalYear =
@@ -1175,36 +1219,45 @@ export interface CreateGiftAllocationBody {
   notes?: string;
 }
 
+/**
+ * Exactly one of individualId, householdId, or fundingEntityId must be set.
+ */
 export interface CreateGiftBody {
-  donorType: CreateGiftBodyDonorType;
-  donorId: string;
+  individualId?: string;
+  householdId?: string;
+  fundingEntityId?: string;
   amount: number;
   currency?: string;
   campaignId?: string;
   /** @minItems 1 */
   allocations: CreateGiftAllocationBody[];
   cashReceivedDate: string;
-  paymentMethod?: string;
-  paymentReference?: string;
+  paymentMethod?: CreateGiftBodyPaymentMethod;
+  checkNumber?: string;
   pledgeId?: string;
-  opportunityId?: string;
-  householdId?: string;
-  acknowledgementSent?: boolean;
   acknowledgmentSentDate?: string;
   taxReceiptSent?: boolean;
   payerFundingEntityId?: string;
   payerOrganizationId?: string;
-  restrictionNotes?: string;
   directToSchoolPassthrough?: boolean;
-  schoolReference?: string;
   fiscalSponsorFundingEntityId?: string;
   fiscalSponsorOrganizationId?: string;
-  restrictionType?: string;
-  geographyDesignation?: string;
-  timePeriod?: string;
-  programType?: string;
-  restrictionFormality?: CreateGiftBodyRestrictionFormality;
+  notes?: string;
 }
+
+export type UpdateGiftBodyPaymentMethod =
+  (typeof UpdateGiftBodyPaymentMethod)[keyof typeof UpdateGiftBodyPaymentMethod];
+
+export const UpdateGiftBodyPaymentMethod = {
+  check: "check",
+  wire: "wire",
+  ach: "ach",
+  credit_card: "credit_card",
+  stock: "stock",
+  daf_grant: "daf_grant",
+  in_kind: "in_kind",
+  other: "other",
+} as const;
 
 export interface UpdateGiftBody {
   amount?: number;
@@ -1216,17 +1269,17 @@ export interface UpdateGiftBody {
    */
   allocations?: CreateGiftAllocationBody[];
   reconciled?: boolean;
-  reconciliationDate?: string;
-  quickbooksReference?: string;
-  acknowledgementSent?: boolean;
-  acknowledgementDate?: string;
   acknowledgmentSentDate?: string | null;
   taxReceiptSent?: boolean;
   payerFundingEntityId?: string | null;
   payerOrganizationId?: string | null;
-  restrictionNotes?: string;
-  paymentMethod?: string;
-  paymentReference?: string;
+  notes?: string | null;
+  paymentMethod?: UpdateGiftBodyPaymentMethod;
+  checkNumber?: string;
+  directToSchoolPassthrough?: boolean;
+  fiscalSponsorFundingEntityId?: string | null;
+  fiscalSponsorOrganizationId?: string | null;
+  pledgeId?: string | null;
 }
 
 export type CreateMoveBodyLevel =
@@ -1579,31 +1632,6 @@ export interface UpdateCampaignBody {
   fiscalYear?: UpdateCampaignBodyFiscalYear;
   goalAmount?: number | null;
   isActive?: boolean;
-}
-
-export type GiftAllocationFiscalYear =
-  | (typeof GiftAllocationFiscalYear)[keyof typeof GiftAllocationFiscalYear]
-  | null;
-
-export const GiftAllocationFiscalYear = {
-  FY23: "FY23",
-  FY24: "FY24",
-  FY25: "FY25",
-  FY26: "FY26",
-  FY27: "FY27",
-  FY28: "FY28",
-  FY29: "FY29",
-  FY30: "FY30",
-} as const;
-
-export interface GiftAllocation {
-  id: string;
-  giftId: string;
-  fund: Fund;
-  amount: number;
-  fiscalYear?: GiftAllocationFiscalYear;
-  notes?: string | null;
-  createdAt: string;
 }
 
 export interface CultivationTeamMember {
