@@ -6,3 +6,9 @@ id = "FDbmgiBNooXz0Ih8KitYP"
 uri = "file://docs/database-schema.md"
 type = "text"
 title = "Database Schema Reference"
+
+[[outputs]]
+id = "nRtMD-x3eYB9NxQPIjvv8"
+uri = "file://DATABASE_STRUCTURE.md"
+type = "text"
+title = "Wildflower CRM Database Structure"
