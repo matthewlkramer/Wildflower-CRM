@@ -1,0 +1,497 @@
+import { db } from "@workspace/db";
+import {
+  users,
+  households,
+  individuals,
+  fundingEntities,
+  opportunities,
+  pledges,
+  pledgeInstallments,
+  gifts,
+  moves,
+} from "@workspace/db/schema";
+import { nanoid } from "nanoid";
+
+function id() {
+  return nanoid();
+}
+
+async function main() {
+  console.log("Seeding database...");
+
+  await db.delete(moves).execute();
+  await db.delete(gifts).execute();
+  await db.delete(pledgeInstallments).execute();
+  await db.delete(pledges).execute();
+  await db.delete(opportunities).execute();
+  await db.delete(individuals).execute();
+  await db.delete(households).execute();
+  await db.delete(fundingEntities).execute();
+  await db.delete(users).execute();
+
+  const [u1, u2, u3] = await db
+    .insert(users)
+    .values([
+      {
+        id: id(),
+        clerkId: "demo_alice",
+        email: "alice@wildflowerschools.org",
+        firstName: "Alice",
+        lastName: "Okafor",
+        displayName: "Alice Okafor",
+        role: "admin" as const,
+        defaultFund: "general_operating" as const,
+      },
+      {
+        id: id(),
+        clerkId: "demo_ben",
+        email: "ben@wildflowerschools.org",
+        firstName: "Ben",
+        lastName: "Reston",
+        displayName: "Ben Reston",
+        role: "team_member" as const,
+        defaultFund: "seed_fund" as const,
+      },
+      {
+        id: id(),
+        clerkId: "demo_carla",
+        email: "carla@wildflowerschools.org",
+        firstName: "Carla",
+        lastName: "Santos",
+        displayName: "Carla Santos",
+        role: "finance" as const,
+      },
+    ])
+    .returning();
+
+  const [hh1, hh2] = await db
+    .insert(households)
+    .values([
+      {
+        id: id(),
+        name: "Chen-Nakamura Household",
+        primaryOwnerUserId: u1.id,
+        notes: "High-capacity couple, both in tech. Met at FY24 gala.",
+      },
+      {
+        id: id(),
+        name: "Okonkwo Family",
+        primaryOwnerUserId: u2.id,
+        notes: "Strong advocates. Introduced by board member Dr. Eze.",
+      },
+    ])
+    .returning();
+
+  const [ind1, ind2, ind3, ind4, ind5] = await db
+    .insert(individuals)
+    .values([
+      {
+        id: id(),
+        firstName: "Maya",
+        lastName: "Chen-Nakamura",
+        pronouns: "she/her",
+        primaryEmail: "maya@techventures.com",
+        primaryPhone: "415-555-0101",
+        metroArea: "San Francisco Bay Area",
+        householdId: hh1.id,
+        relationshipOwnerUserId: u1.id,
+        strategyUserId: u1.id,
+        donorCultivationStage: "in_relationship" as const,
+        enthusiasm: "advocate" as const,
+        capacityRating: "tier_250k_1m" as const,
+        lastMoveDate: new Date("2026-04-01"),
+        lastGiftDate: new Date("2025-12-15"),
+        lastGiftAmount: "50000",
+        totalGiving: "175000",
+        notes: "Lead donor on Seed Fund expansion. Wants quarterly impact updates.",
+      },
+      {
+        id: id(),
+        firstName: "Kenji",
+        lastName: "Nakamura",
+        pronouns: "he/him",
+        primaryEmail: "kenji@nakamura.io",
+        metroArea: "San Francisco Bay Area",
+        householdId: hh1.id,
+        relationshipOwnerUserId: u1.id,
+        donorCultivationStage: "connected" as const,
+        enthusiasm: "supportive" as const,
+        capacityRating: "tier_250k_1m" as const,
+        lastMoveDate: new Date("2026-03-15"),
+        totalGiving: "50000",
+      },
+      {
+        id: id(),
+        firstName: "Adaeze",
+        lastName: "Okonkwo",
+        pronouns: "she/her",
+        primaryEmail: "adaeze.okonkwo@gmail.com",
+        primaryPhone: "212-555-0202",
+        metroArea: "New York City",
+        householdId: hh2.id,
+        relationshipOwnerUserId: u2.id,
+        donorCultivationStage: "in_relationship" as const,
+        enthusiasm: "advocate" as const,
+        capacityRating: "tier_50k_250k" as const,
+        lastMoveDate: new Date("2026-04-10"),
+        lastGiftDate: new Date("2025-11-01"),
+        lastGiftAmount: "25000",
+        totalGiving: "75000",
+      },
+      {
+        id: id(),
+        firstName: "James",
+        lastName: "Whitfield",
+        pronouns: "he/him",
+        primaryEmail: "j.whitfield@prospectpartners.com",
+        metroArea: "Boston",
+        relationshipOwnerUserId: u2.id,
+        donorCultivationStage: "qualified" as const,
+        enthusiasm: "warm" as const,
+        capacityRating: "tier_50k_250k" as const,
+        lastMoveDate: new Date("2026-02-20"),
+        totalGiving: "0",
+      },
+      {
+        id: id(),
+        firstName: "Priya",
+        lastName: "Sharma",
+        pronouns: "she/her",
+        primaryEmail: "priya.sharma@montessorialliance.org",
+        metroArea: "Chicago",
+        relationshipOwnerUserId: u1.id,
+        donorCultivationStage: "connected" as const,
+        enthusiasm: "supportive" as const,
+        capacityRating: "tier_10k_50k" as const,
+        lastMoveDate: new Date("2026-03-28"),
+        lastGiftDate: new Date("2025-06-15"),
+        lastGiftAmount: "10000",
+        totalGiving: "35000",
+      },
+    ])
+    .returning();
+
+  const [fe1, fe2, fe3] = await db
+    .insert(fundingEntities)
+    .values([
+      {
+        id: id(),
+        legalName: "Berkshire Education Foundation",
+        displayName: "Berkshire Ed Foundation",
+        subtype: "institutional_foundation" as const,
+        website: "https://berkshireed.org",
+        primaryContactId: ind4.id,
+        relationshipOwnerUserId: u1.id,
+        institutionalCultivationStage: "proposal" as const,
+        enthusiasm: "warm",
+        typicalGrantSizeMin: "50000",
+        typicalGrantSizeMax: "250000",
+        totalGiving: "150000",
+        lastGiftDate: new Date("2025-03-01"),
+        notes: "Typically funds over 2-year cycles. LOI due June 1.",
+      },
+      {
+        id: id(),
+        legalName: "Wildberry Family Foundation",
+        displayName: "Wildberry Family Foundation",
+        subtype: "family_foundation" as const,
+        primaryContactId: ind5.id,
+        relationshipOwnerUserId: u2.id,
+        institutionalCultivationStage: "funded" as const,
+        enthusiasm: "supportive",
+        typicalGrantSizeMin: "10000",
+        typicalGrantSizeMax: "50000",
+        totalGiving: "85000",
+        lastGiftDate: new Date("2025-09-15"),
+        notes: "Repeat funder. Focus on equity and access.",
+      },
+      {
+        id: id(),
+        legalName: "US Dept of Education - Innovation & Early Learning",
+        displayName: "Dept of Ed - Early Learning",
+        subtype: "government_agency" as const,
+        relationshipOwnerUserId: u1.id,
+        governmentCultivationStage: "rfp_active" as const,
+        typicalGrantSizeMin: "200000",
+        typicalGrantSizeMax: "1000000",
+        totalGiving: "0",
+        notes: "FY26 RFP expected Q4. Need 501c3 partnership letter.",
+      },
+    ])
+    .returning();
+
+  const now = new Date();
+  const fy = "FY2026";
+
+  const [opp1, opp2, opp3, opp4, opp5, opp6] = await db
+    .insert(opportunities)
+    .values([
+      {
+        id: id(),
+        name: "Maya Chen-Nakamura – Seed Fund FY26",
+        subtype: "ongoing_rolling" as const,
+        donorType: "individual" as const,
+        individualId: ind1.id,
+        householdId: hh1.id,
+        ownerUserId: u1.id,
+        fund: "seed_fund" as const,
+        amountExpected: "75000",
+        probability: 85,
+        probabilityOverridden: true,
+        stage: "negotiation" as const,
+        expectedCloseDate: new Date("2026-06-30"),
+        fiscalYear: fy,
+        askAmount: "75000",
+        askRationale: "Continuation of FY25 gift with 50% increase based on school expansion milestones.",
+      },
+      {
+        id: id(),
+        name: "Okonkwo – Black Wildflowers Fund",
+        subtype: "targeted_deadline" as const,
+        donorType: "household" as const,
+        householdId: hh2.id,
+        ownerUserId: u2.id,
+        fund: "black_wildflowers" as const,
+        amountExpected: "25000",
+        probability: 70,
+        probabilityOverridden: false,
+        stage: "solicitation" as const,
+        expectedCloseDate: new Date("2026-05-15"),
+        fiscalYear: fy,
+        askAmount: "25000",
+        askRationale: "First year at this level. Strong alignment with fund mission.",
+      },
+      {
+        id: id(),
+        name: "Berkshire Ed Foundation – General Operating",
+        subtype: "targeted_deadline" as const,
+        donorType: "institutional_foundation" as const,
+        fundingEntityId: fe1.id,
+        ownerUserId: u1.id,
+        fund: "general_operating" as const,
+        amountExpected: "150000",
+        probability: 55,
+        probabilityOverridden: false,
+        stage: "conversation" as const,
+        expectedCloseDate: new Date("2026-09-01"),
+        fiscalYear: fy,
+        loiDeadline: new Date("2026-06-01"),
+        proposalDeadline: new Date("2026-08-01"),
+      },
+      {
+        id: id(),
+        name: "Wildberry Family – Seed Fund Renewal",
+        subtype: "ongoing_rolling" as const,
+        donorType: "family_foundation" as const,
+        fundingEntityId: fe2.id,
+        ownerUserId: u2.id,
+        fund: "seed_fund" as const,
+        amountExpected: "35000",
+        probability: 90,
+        probabilityOverridden: true,
+        stage: "committed" as const,
+        expectedCloseDate: new Date("2026-07-01"),
+        fiscalYear: fy,
+      },
+      {
+        id: id(),
+        name: "James Whitfield – General Operating Discovery",
+        subtype: "ongoing_rolling" as const,
+        donorType: "individual" as const,
+        individualId: ind4.id,
+        ownerUserId: u2.id,
+        fund: "general_operating" as const,
+        amountExpected: "50000",
+        probability: 30,
+        probabilityOverridden: false,
+        stage: "conversation" as const,
+        expectedCloseDate: new Date("2026-08-30"),
+        fiscalYear: fy,
+      },
+      {
+        id: id(),
+        name: "Dept of Ed – Early Learning Innovation RFP",
+        subtype: "rfp_proposal" as const,
+        donorType: "government_rfp" as const,
+        fundingEntityId: fe3.id,
+        ownerUserId: u1.id,
+        fund: "general_operating" as const,
+        amountExpected: "500000",
+        probability: 20,
+        probabilityOverridden: true,
+        stage: "pre_conversation" as const,
+        governmentStage: "rfp_active" as const,
+        expectedCloseDate: new Date("2026-12-15"),
+        fiscalYear: fy,
+        proposalDeadline: new Date("2026-10-15"),
+        loiDeadline: new Date("2026-08-30"),
+        notes: "Multi-year potential. Need external evaluator partner.",
+      },
+    ])
+    .returning();
+
+  const [pledge1] = await db
+    .insert(pledges)
+    .values([
+      {
+        id: id(),
+        name: "Maya Chen-Nakamura 3-Year Seed Fund Pledge",
+        fund: "seed_fund" as const,
+        individualId: ind1.id,
+        householdId: hh1.id,
+        totalCommittedAmount: "225000",
+        pledgeDate: new Date("2024-01-15"),
+        numberOfInstallments: 3,
+        status: "active" as const,
+        amountReceived: "150000",
+        legalDocumentOnFile: true,
+        notes: "Year 3 installment due Q4 FY26.",
+      },
+    ])
+    .returning();
+
+  await db.insert(pledgeInstallments).values([
+    {
+      id: id(),
+      pledgeId: pledge1.id,
+      installmentNumber: 1,
+      dueDate: new Date("2024-06-30"),
+      amount: "75000",
+      status: "paid" as const,
+      paidDate: new Date("2024-06-15"),
+    },
+    {
+      id: id(),
+      pledgeId: pledge1.id,
+      installmentNumber: 2,
+      dueDate: new Date("2025-06-30"),
+      amount: "75000",
+      status: "paid" as const,
+      paidDate: new Date("2025-06-20"),
+    },
+    {
+      id: id(),
+      pledgeId: pledge1.id,
+      installmentNumber: 3,
+      dueDate: new Date("2026-06-30"),
+      amount: "75000",
+      status: "scheduled" as const,
+    },
+  ]);
+
+  await db.insert(gifts).values([
+    {
+      id: id(),
+      fund: "seed_fund" as const,
+      individualId: ind1.id,
+      householdId: hh1.id,
+      pledgeId: pledge1.id,
+      amount: "75000",
+      cashReceivedDate: new Date("2025-06-20"),
+      paymentMethod: "wire" as const,
+      reconciled: true,
+      fiscalYear: "FY2025",
+    },
+    {
+      id: id(),
+      fund: "black_wildflowers" as const,
+      individualId: ind3.id,
+      householdId: hh2.id,
+      amount: "25000",
+      cashReceivedDate: new Date("2025-11-01"),
+      paymentMethod: "check" as const,
+      reconciled: true,
+      fiscalYear: "FY2026",
+    },
+    {
+      id: id(),
+      fund: "seed_fund" as const,
+      fundingEntityId: fe2.id,
+      amount: "35000",
+      cashReceivedDate: new Date("2025-09-15"),
+      paymentMethod: "ach" as const,
+      reconciled: true,
+      fiscalYear: "FY2026",
+    },
+    {
+      id: id(),
+      fund: "general_operating" as const,
+      individualId: ind5.id,
+      amount: "10000",
+      cashReceivedDate: new Date("2025-06-15"),
+      paymentMethod: "check" as const,
+      reconciled: false,
+      fiscalYear: "FY2025",
+    },
+  ]);
+
+  await db.insert(moves).values([
+    {
+      id: id(),
+      subject: "Quarterly impact call – Maya Chen-Nakamura",
+      moveType: "call" as const,
+      moveLevel: "individual" as const,
+      individualId: ind1.id,
+      opportunityId: opp1.id,
+      date: new Date("2026-04-01"),
+      summary: "Reviewed school expansion in Austin and Denver. Maya excited about the new cohort data. She confirmed intention to renew at $75K and mentioned potentially involving her sister.",
+      outcome: "Positive – will proceed with formal ask in April",
+      nextStep: "Send updated investment memo and formal ask letter",
+      nextStepDueDate: new Date("2026-04-18"),
+      isDraft: false,
+      source: "manual" as const,
+    },
+    {
+      id: id(),
+      subject: "Introductory meeting – James Whitfield",
+      moveType: "meeting" as const,
+      moveLevel: "individual" as const,
+      individualId: ind4.id,
+      opportunityId: opp5.id,
+      date: new Date("2026-02-20"),
+      summary: "First in-person meeting at his Beacon Hill office. Genuinely curious about the Montessori model. No prior exposure to Wildflower. Wants to see long-term outcome data.",
+      outcome: "Warm – requested follow-up with data package",
+      nextStep: "Send outcome data package and schedule site visit",
+      nextStepDueDate: new Date("2026-03-10"),
+      isDraft: false,
+      source: "manual" as const,
+    },
+    {
+      id: id(),
+      subject: "Annual report delivery – Okonkwo family",
+      moveType: "email" as const,
+      moveLevel: "household" as const,
+      householdId: hh2.id,
+      date: new Date("2026-04-10"),
+      summary: "Sent FY25 annual report and personal note. Adaeze replied immediately expressing pride in the Black Wildflowers fund momentum.",
+      outcome: "Strong – ready for formal ask conversation",
+      nextStep: "Schedule ask meeting for May",
+      nextStepDueDate: new Date("2026-04-25"),
+      isDraft: false,
+      source: "gmail" as const,
+    },
+    {
+      id: id(),
+      subject: "Berkshire Ed LOI prep call",
+      moveType: "call" as const,
+      moveLevel: "funding_entity" as const,
+      fundingEntityId: fe1.id,
+      opportunityId: opp3.id,
+      date: new Date("2026-03-28"),
+      summary: "Spoke with program director. Confirmed interest in multi-year operating support. They want a 2-year ask with option to renew. LOI should emphasize equity outcomes.",
+      outcome: "Constructive – clear direction for LOI",
+      nextStep: "Draft LOI and share with team for review",
+      nextStepDueDate: new Date("2026-05-15"),
+      isDraft: false,
+      source: "manual" as const,
+    },
+  ]);
+
+  console.log("Seed complete!");
+  process.exit(0);
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

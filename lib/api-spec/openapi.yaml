@@ -3,20 +3,43 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Wildflower Fundraising CRM API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: individuals
+    description: Individual donor/prospect records
+  - name: households
+    description: Household groupings
+  - name: funding-entities
+    description: Funding entities (foundations, DAFs, government agencies)
+  - name: opportunities
+    description: Fundraising opportunities
+  - name: pledges
+    description: Multi-installment pledge commitments
+  - name: gifts
+    description: Cash received records
+  - name: moves
+    description: Logged interactions/touchpoints
+  - name: relationships
+    description: Cross-entity relationship links
+  - name: dashboard
+    description: Dashboard and summary views
+  - name: projections
+    description: Revenue projection and forecast data
+  - name: grants-calendar
+    description: Grants calendar and deadline tracking
+  - name: users
+    description: Team member/user management
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +47,3187 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ─── Individuals ────────────────────────────────────────────────────────────
+  /individuals:
+    get:
+      operationId: listIndividuals
+      tags: [individuals]
+      summary: List individuals with filters
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: owner
+          in: query
+          schema: { type: string }
+        - name: cultivationStage
+          in: query
+          schema: { type: string }
+        - name: fund
+          in: query
+          schema: { $ref: "#/components/schemas/Fund" }
+        - name: metroArea
+          in: query
+          schema: { type: string }
+        - name: capacityRating
+          in: query
+          schema: { type: string }
+        - name: enthusiasm
+          in: query
+          schema: { type: string }
+        - name: lastMoveRecency
+          in: query
+          description: "Filter by days since last move: 30, 60, 90, 180, 365"
+          schema: { type: integer }
+        - name: householdId
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: List of individuals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Individual"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [data, total, page, limit]
+    post:
+      operationId: createIndividual
+      tags: [individuals]
+      summary: Create a new individual
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIndividualBody"
+      responses:
+        "201":
+          description: Created individual
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Individual"
+
+  /individuals/{id}:
+    get:
+      operationId: getIndividual
+      tags: [individuals]
+      summary: Get individual by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Individual record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IndividualDetail"
+    patch:
+      operationId: updateIndividual
+      tags: [individuals]
+      summary: Update individual
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIndividualBody"
+      responses:
+        "200":
+          description: Updated individual
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Individual"
+    delete:
+      operationId: deleteIndividual
+      tags: [individuals]
+      summary: Soft-delete individual
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+
+  # ─── Households ─────────────────────────────────────────────────────────────
+  /households:
+    get:
+      operationId: listHouseholds
+      tags: [households]
+      summary: List households
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: owner
+          in: query
+          schema: { type: string }
+        - name: fund
+          in: query
+          schema: { $ref: "#/components/schemas/Fund" }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: List of households
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Household"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [data, total, page, limit]
+    post:
+      operationId: createHousehold
+      tags: [households]
+      summary: Create a new household
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateHouseholdBody"
+      responses:
+        "201":
+          description: Created household
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Household"
+
+  /households/{id}:
+    get:
+      operationId: getHousehold
+      tags: [households]
+      summary: Get household by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Household record with members and giving history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdDetail"
+    patch:
+      operationId: updateHousehold
+      tags: [households]
+      summary: Update household
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateHouseholdBody"
+      responses:
+        "200":
+          description: Updated household
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Household"
+    delete:
+      operationId: deleteHousehold
+      tags: [households]
+      summary: Soft-delete household
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+
+  /households/{id}/members:
+    get:
+      operationId: getHouseholdMembers
+      tags: [households]
+      summary: Get household members
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: List of household members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HouseholdMember"
+    post:
+      operationId: addHouseholdMember
+      tags: [households]
+      summary: Add a member to a household
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddHouseholdMemberBody"
+      responses:
+        "201":
+          description: Added member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdMember"
+
+  /households/{id}/members/{individualId}:
+    delete:
+      operationId: removeHouseholdMember
+      tags: [households]
+      summary: Remove a member from a household
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: individualId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+
+  # ─── Funding Entities ────────────────────────────────────────────────────────
+  /funding-entities:
+    get:
+      operationId: listFundingEntities
+      tags: [funding-entities]
+      summary: List funding entities
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: subtype
+          in: query
+          schema: { $ref: "#/components/schemas/FundingEntitySubtype" }
+        - name: owner
+          in: query
+          schema: { type: string }
+        - name: fund
+          in: query
+          schema: { $ref: "#/components/schemas/Fund" }
+        - name: cultivationStage
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: List of funding entities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FundingEntity"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [data, total, page, limit]
+    post:
+      operationId: createFundingEntity
+      tags: [funding-entities]
+      summary: Create a new funding entity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFundingEntityBody"
+      responses:
+        "201":
+          description: Created funding entity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FundingEntity"
+
+  /funding-entities/{id}:
+    get:
+      operationId: getFundingEntity
+      tags: [funding-entities]
+      summary: Get funding entity by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Funding entity record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FundingEntityDetail"
+    patch:
+      operationId: updateFundingEntity
+      tags: [funding-entities]
+      summary: Update funding entity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFundingEntityBody"
+      responses:
+        "200":
+          description: Updated funding entity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FundingEntity"
+    delete:
+      operationId: deleteFundingEntity
+      tags: [funding-entities]
+      summary: Soft-delete funding entity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+
+  /funding-entities/{id}/people:
+    get:
+      operationId: getFundingEntityPeople
+      tags: [funding-entities]
+      summary: Get people associated with a funding entity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Associated individuals with roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EntityPersonLink"
+    post:
+      operationId: addFundingEntityPerson
+      tags: [funding-entities]
+      summary: Link a person to a funding entity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddEntityPersonBody"
+      responses:
+        "201":
+          description: Person linked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntityPersonLink"
+
+  /funding-entities/{id}/people/{individualId}:
+    delete:
+      operationId: removeFundingEntityPerson
+      tags: [funding-entities]
+      summary: Remove a person link from a funding entity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: individualId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+
+  # ─── Opportunities ───────────────────────────────────────────────────────────
+  /opportunities:
+    get:
+      operationId: listOpportunities
+      tags: [opportunities]
+      summary: List opportunities
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: fund
+          in: query
+          schema: { $ref: "#/components/schemas/Fund" }
+        - name: owner
+          in: query
+          schema: { type: string }
+        - name: stage
+          in: query
+          schema: { type: string }
+        - name: subtype
+          in: query
+          schema: { $ref: "#/components/schemas/OpportunitySubtype" }
+        - name: region
+          in: query
+          schema: { type: string }
+        - name: donorId
+          in: query
+          schema: { type: string }
+        - name: donorType
+          in: query
+          schema: { type: string, enum: [individual, funding_entity] }
+        - name: fiscalYear
+          in: query
+          schema: { type: integer }
+        - name: rollForward
+          in: query
+          description: Filter for opportunities in roll-forward status
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: List of opportunities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Opportunity"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [data, total, page, limit]
+    post:
+      operationId: createOpportunity
+      tags: [opportunities]
+      summary: Create a new opportunity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOpportunityBody"
+      responses:
+        "201":
+          description: Created opportunity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Opportunity"
+
+  /opportunities/{id}:
+    get:
+      operationId: getOpportunity
+      tags: [opportunities]
+      summary: Get opportunity by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Opportunity record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpportunityDetail"
+    patch:
+      operationId: updateOpportunity
+      tags: [opportunities]
+      summary: Update opportunity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOpportunityBody"
+      responses:
+        "200":
+          description: Updated opportunity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Opportunity"
+    delete:
+      operationId: deleteOpportunity
+      tags: [opportunities]
+      summary: Soft-delete opportunity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+
+  /opportunities/pipeline:
+    get:
+      operationId: getOpportunityPipeline
+      tags: [opportunities]
+      summary: Get opportunity pipeline grouped by stage (kanban)
+      parameters:
+        - name: fund
+          in: query
+          schema: { $ref: "#/components/schemas/Fund" }
+        - name: owner
+          in: query
+          schema: { type: string }
+        - name: fiscalYear
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Pipeline grouped by stage
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PipelineStage"
+                  totalValue:
+                    type: number
+                  totalCount:
+                    type: integer
+                required: [stages, totalValue, totalCount]
+
+  # ─── Pledges ─────────────────────────────────────────────────────────────────
+  /pledges:
+    get:
+      operationId: listPledges
+      tags: [pledges]
+      summary: List pledges
+      parameters:
+        - name: donorId
+          in: query
+          schema: { type: string }
+        - name: fund
+          in: query
+          schema: { $ref: "#/components/schemas/Fund" }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: upcomingInstallments
+          in: query
+          description: Filter for pledges with upcoming installments in next N days
+          schema: { type: integer }
+        - name: overdueInstallments
+          in: query
+          description: Include only pledges with overdue installments
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: List of pledges
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Pledge"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [data, total, page, limit]
+    post:
+      operationId: createPledge
+      tags: [pledges]
+      summary: Create a new pledge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePledgeBody"
+      responses:
+        "201":
+          description: Created pledge with installments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PledgeDetail"
+
+  /pledges/{id}:
+    get:
+      operationId: getPledge
+      tags: [pledges]
+      summary: Get pledge by ID with installments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Pledge with installments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PledgeDetail"
+    patch:
+      operationId: updatePledge
+      tags: [pledges]
+      summary: Update pledge
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePledgeBody"
+      responses:
+        "200":
+          description: Updated pledge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pledge"
+
+  /pledges/{id}/installments/{installmentId}:
+    patch:
+      operationId: updatePledgeInstallment
+      tags: [pledges]
+      summary: Mark an installment as paid or update its details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: installmentId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInstallmentBody"
+      responses:
+        "200":
+          description: Updated installment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PledgeInstallment"
+
+  # ─── Gifts ───────────────────────────────────────────────────────────────────
+  /gifts:
+    get:
+      operationId: listGifts
+      tags: [gifts]
+      summary: List gifts
+      parameters:
+        - name: donorId
+          in: query
+          schema: { type: string }
+        - name: donorType
+          in: query
+          schema: { type: string, enum: [individual, funding_entity] }
+        - name: fund
+          in: query
+          schema: { $ref: "#/components/schemas/Fund" }
+        - name: reconciled
+          in: query
+          schema: { type: boolean }
+        - name: pledgeId
+          in: query
+          schema: { type: string }
+        - name: householdId
+          in: query
+          schema: { type: string }
+        - name: fromDate
+          in: query
+          schema: { type: string, format: date }
+        - name: toDate
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: List of gifts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Gift"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [data, total, page, limit]
+    post:
+      operationId: createGift
+      tags: [gifts]
+      summary: Record a new gift
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGiftBody"
+      responses:
+        "201":
+          description: Created gift
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Gift"
+
+  /gifts/{id}:
+    get:
+      operationId: getGift
+      tags: [gifts]
+      summary: Get gift by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Gift record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Gift"
+    patch:
+      operationId: updateGift
+      tags: [gifts]
+      summary: Update gift (e.g. mark reconciled)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGiftBody"
+      responses:
+        "200":
+          description: Updated gift
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Gift"
+
+  # ─── Moves ───────────────────────────────────────────────────────────────────
+  /moves:
+    get:
+      operationId: listMoves
+      tags: [moves]
+      summary: List moves (activity log)
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: donorId
+          in: query
+          schema: { type: string }
+        - name: householdId
+          in: query
+          schema: { type: string }
+        - name: fundingEntityId
+          in: query
+          schema: { type: string }
+        - name: opportunityId
+          in: query
+          schema: { type: string }
+        - name: moveType
+          in: query
+          schema: { type: string }
+        - name: participantUserId
+          in: query
+          schema: { type: string }
+        - name: fromDate
+          in: query
+          schema: { type: string, format: date }
+        - name: toDate
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: List of moves
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Move"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [data, total, page, limit]
+    post:
+      operationId: createMove
+      tags: [moves]
+      summary: Log a new move/touchpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMoveBody"
+      responses:
+        "201":
+          description: Logged move
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Move"
+
+  /moves/{id}:
+    get:
+      operationId: getMove
+      tags: [moves]
+      summary: Get move by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Move record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Move"
+    patch:
+      operationId: updateMove
+      tags: [moves]
+      summary: Update a move
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMoveBody"
+      responses:
+        "200":
+          description: Updated move
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Move"
+    delete:
+      operationId: deleteMove
+      tags: [moves]
+      summary: Delete a move
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+
+  # ─── Dashboard ──────────────────────────────────────────────────────────────
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary for the current user
+      parameters:
+        - name: userId
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/activity:
+    get:
+      operationId: getRecentActivity
+      tags: [dashboard]
+      summary: Get recent activity across the team
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Recent activity items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  /dashboard/overdue-next-steps:
+    get:
+      operationId: getOverdueNextSteps
+      tags: [dashboard]
+      summary: Get overdue next steps from moves
+      parameters:
+        - name: userId
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Overdue next steps
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OverdueNextStep"
+
+  /dashboard/donors-gone-quiet:
+    get:
+      operationId: getDonorsGoneQuiet
+      tags: [dashboard]
+      summary: Get donors with no recent activity (>90 days in active cultivation)
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 90 }
+        - name: fund
+          in: query
+          schema: { $ref: "#/components/schemas/Fund" }
+        - name: owner
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Donors gone quiet
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DonorQuietAlert"
+
+  # ─── Projections ─────────────────────────────────────────────────────────────
+  /projections/forecast:
+    get:
+      operationId: getProjectionsForecast
+      tags: [projections]
+      summary: Get 3-year fiscal year revenue forecast
+      parameters:
+        - name: fund
+          in: query
+          schema: { $ref: "#/components/schemas/Fund" }
+        - name: owner
+          in: query
+          schema: { type: string }
+        - name: region
+          in: query
+          schema: { type: string }
+        - name: opportunitySubtype
+          in: query
+          schema: { $ref: "#/components/schemas/OpportunitySubtype" }
+      responses:
+        "200":
+          description: 3-year forecast by fiscal year
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectionsForecast"
+
+  /projections/pledge-schedule:
+    get:
+      operationId: getPledgeSchedule
+      tags: [projections]
+      summary: Get pledge cash-flow schedule
+      parameters:
+        - name: fund
+          in: query
+          schema: { $ref: "#/components/schemas/Fund" }
+        - name: months
+          in: query
+          schema: { type: integer, default: 36 }
+      responses:
+        "200":
+          description: Monthly/quarterly pledge installment schedule
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedule:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PledgeSchedulePeriod"
+                required: [schedule]
+
+  # ─── Grants Calendar ─────────────────────────────────────────────────────────
+  /grants-calendar:
+    get:
+      operationId: getGrantsCalendar
+      tags: [grants-calendar]
+      summary: Get RFP/proposal opportunities with upcoming deadlines
+      parameters:
+        - name: fund
+          in: query
+          schema: { $ref: "#/components/schemas/Fund" }
+        - name: owner
+          in: query
+          schema: { type: string }
+        - name: daysAhead
+          in: query
+          schema: { type: integer, default: 90 }
+      responses:
+        "200":
+          description: RFP deadlines calendar
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GrantsCalendarEntry"
+
+  # ─── Users ────────────────────────────────────────────────────────────────────
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List team members
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /users/me:
+    get:
+      operationId: getCurrentUser
+      tags: [users]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    patch:
+      operationId: updateCurrentUser
+      tags: [users]
+      summary: Update current user preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserBody"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
 components:
   schemas:
+    # ─── Enums ──────────────────────────────────────────────────────────────────
+    Fund:
+      type: string
+      enum: [general_operating, seed_fund, black_wildflowers, sunlight]
+
+    FundingEntitySubtype:
+      type: string
+      enum: [institutional_foundation, family_foundation, daf_account, government_agency, corporate]
+
+    OpportunitySubtype:
+      type: string
+      enum: [ongoing_rolling, targeted_deadline, rfp_proposal]
+
+    CultivationStage:
+      type: string
+      enum: [pre_qualified, qualified, have_path_to_connect, connected, in_relationship, lapsed_relationship]
+
+    InstitutionalCultivationStage:
+      type: string
+      enum: [pre_research, researched, have_path_to_connect, connected, in_relationship, lapsed_relationship]
+
+    GovernmentCultivationStage:
+      type: string
+      enum: [never_applied, active_grantee, lapsed_grantee]
+
+    Enthusiasm:
+      type: string
+      enum: [active_opposition, unsupportive, skeptical, neutral, warm, supportive, advocate]
+
+    OpportunityStage:
+      type: string
+      enum: [pre_conversation, conversation, solicitation, negotiation, committed, funded, stewarding, declined, withdrawn]
+
+    GovernmentOpportunityStage:
+      type: string
+      enum: [opportunity_identified, eligibility_confirmed, bid_no_bid, loi_in_progress, loi_submitted, application_in_progress, application_submitted, under_review, awarded, not_awarded, in_grant_management]
+
+    HouseholdMemberRole:
+      type: string
+      enum: [principal, spouse, partner, adult_child, matriarch_patriarch, trustee, in_law, other]
+
+    EntityPersonRole:
+      type: string
+      enum: [principal_founder, donor_advisor, board_member, program_officer, staff, other_contact]
+
+    UserRole:
+      type: string
+      enum: [admin, team_member, finance, read_only]
+
+    PledgeStatus:
+      type: string
+      enum: [active, completed, revised, defaulted]
+
+    PledgeInstallmentSchedule:
+      type: string
+      enum: [annual, semi_annual, quarterly, custom]
+
+    MoveType:
+      type: string
+      enum: [discovery_call, cultivation_meeting_in_person, cultivation_meeting_virtual, site_visit, event_attendance, email_exchange, phone_call, proposal_sent, loi_sent, letter_sent, thank_you_sent, impact_report_sent, stewardship_touch, introduction_made, referral_received, research_note]
+
+    CapacityRating:
+      type: string
+      enum: [tier_1k_10k, tier_10k_50k, tier_50k_250k, tier_250k_1m, tier_1m_plus]
+
+    # ─── Shared/Simple ───────────────────────────────────────────────────────────
     HealthStatus:
       type: object
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    DeleteResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        id:
+          type: string
+      required: [success, id]
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        clerkUserId:
+          type: string
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/UserRole"
+        defaultFund:
+          $ref: "#/components/schemas/Fund"
+        avatarUrl:
+          type: string
+          nullable: true
+        isWildflowerStaff:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, clerkUserId, email, firstName, lastName, displayName, role, isWildflowerStaff, createdAt]
+
+    UpdateUserBody:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          $ref: "#/components/schemas/UserRole"
+        defaultFund:
+          $ref: "#/components/schemas/Fund"
+        isWildflowerStaff:
+          type: boolean
+
+    # ─── Individual ──────────────────────────────────────────────────────────────
+    Individual:
+      type: object
+      properties:
+        id:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        preferredName:
+          type: string
+          nullable: true
+        pronouns:
+          type: string
+          nullable: true
+        primaryEmail:
+          type: string
+          nullable: true
+        primaryPhone:
+          type: string
+          nullable: true
+        metroArea:
+          type: string
+          nullable: true
+        householdId:
+          type: string
+          nullable: true
+        householdName:
+          type: string
+          nullable: true
+        relationshipOwnerUserId:
+          type: string
+          nullable: true
+        relationshipOwnerName:
+          type: string
+          nullable: true
+        strategyUserId:
+          type: string
+          nullable: true
+        strategyUserName:
+          type: string
+          nullable: true
+        donorCultivationStage:
+          $ref: "#/components/schemas/CultivationStage"
+        institutionalContactStage:
+          $ref: "#/components/schemas/CultivationStage"
+        enthusiasm:
+          $ref: "#/components/schemas/Enthusiasm"
+        capacityRating:
+          $ref: "#/components/schemas/CapacityRating"
+          nullable: true
+        lastMoveDate:
+          type: string
+          format: date
+          nullable: true
+        lastGiftDate:
+          type: string
+          format: date
+          nullable: true
+        lastGiftAmount:
+          type: number
+          nullable: true
+        totalGiving:
+          type: number
+          nullable: true
+        doNotContact:
+          type: boolean
+        isDeceased:
+          type: boolean
+        isWildflowerStaff:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, firstName, lastName, donorCultivationStage, institutionalContactStage, enthusiasm, doNotContact, isDeceased, isWildflowerStaff, createdAt, updatedAt]
+
+    IndividualDetail:
+      allOf:
+        - $ref: "#/components/schemas/Individual"
+        - type: object
+          properties:
+            secondaryEmails:
+              type: array
+              items:
+                type: string
+            phones:
+              type: array
+              items:
+                type: object
+                properties:
+                  number: { type: string }
+                  label: { type: string }
+                required: [number]
+            mailingAddress:
+              type: string
+              nullable: true
+            spouseId:
+              type: string
+              nullable: true
+            spouseName:
+              type: string
+              nullable: true
+            assistantId:
+              type: string
+              nullable: true
+            assistantName:
+              type: string
+              nullable: true
+            biography:
+              type: string
+              nullable: true
+            givingPhilosophyNotes:
+              type: string
+              nullable: true
+            capacityNotes:
+              type: string
+              nullable: true
+            capacityRatingSource:
+              type: string
+              nullable: true
+            interests:
+              type: object
+              properties:
+                thematic:
+                  type: array
+                  items: { type: string }
+                ageLevel:
+                  type: array
+                  items: { type: string }
+                governanceModel:
+                  type: array
+                  items: { type: string }
+                geographyOfInterest:
+                  type: array
+                  items: { type: string }
+            demographics:
+              type: object
+              properties:
+                raceEthnicity:
+                  type: array
+                  items: { type: string }
+                raceEthnicityOther:
+                  type: string
+                  nullable: true
+            childrenAtWildflower:
+              type: string
+              nullable: true
+            newsletterSubscribed:
+              type: boolean
+            deceasedDate:
+              type: string
+              format: date
+              nullable: true
+            howAcquired:
+              type: string
+              nullable: true
+            sourceDetail:
+              type: string
+              nullable: true
+            linkedFundingEntities:
+              type: array
+              items:
+                $ref: "#/components/schemas/EntityPersonLink"
+            recentMoves:
+              type: array
+              items:
+                $ref: "#/components/schemas/Move"
+            openOpportunities:
+              type: array
+              items:
+                $ref: "#/components/schemas/Opportunity"
+            household:
+              $ref: "#/components/schemas/Household"
+              nullable: true
+
+    CreateIndividualBody:
+      type: object
+      required: [firstName, lastName]
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        preferredName:
+          type: string
+        pronouns:
+          type: string
+        primaryEmail:
+          type: string
+        primaryPhone:
+          type: string
+        metroArea:
+          type: string
+        householdId:
+          type: string
+        relationshipOwnerUserId:
+          type: string
+        strategyUserId:
+          type: string
+        donorCultivationStage:
+          $ref: "#/components/schemas/CultivationStage"
+        institutionalContactStage:
+          $ref: "#/components/schemas/CultivationStage"
+        enthusiasm:
+          $ref: "#/components/schemas/Enthusiasm"
+        capacityRating:
+          $ref: "#/components/schemas/CapacityRating"
+        capacityNotes:
+          type: string
+        biography:
+          type: string
+        howAcquired:
+          type: string
+        sourceDetail:
+          type: string
+
+    UpdateIndividualBody:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        preferredName:
+          type: string
+        pronouns:
+          type: string
+        primaryEmail:
+          type: string
+        primaryPhone:
+          type: string
+        mailingAddress:
+          type: string
+        metroArea:
+          type: string
+        householdId:
+          type: string
+        relationshipOwnerUserId:
+          type: string
+        strategyUserId:
+          type: string
+        spouseId:
+          type: string
+        assistantId:
+          type: string
+        donorCultivationStage:
+          $ref: "#/components/schemas/CultivationStage"
+        institutionalContactStage:
+          $ref: "#/components/schemas/CultivationStage"
+        enthusiasm:
+          $ref: "#/components/schemas/Enthusiasm"
+        capacityRating:
+          $ref: "#/components/schemas/CapacityRating"
+        capacityNotes:
+          type: string
+        capacityRatingSource:
+          type: string
+        biography:
+          type: string
+        givingPhilosophyNotes:
+          type: string
+        doNotContact:
+          type: boolean
+        isDeceased:
+          type: boolean
+        deceasedDate:
+          type: string
+          format: date
+        isWildflowerStaff:
+          type: boolean
+        childrenAtWildflower:
+          type: string
+        newsletterSubscribed:
+          type: boolean
+        interests:
+          type: object
+          properties:
+            thematic:
+              type: array
+              items: { type: string }
+            ageLevel:
+              type: array
+              items: { type: string }
+            governanceModel:
+              type: array
+              items: { type: string }
+            geographyOfInterest:
+              type: array
+              items: { type: string }
+        demographics:
+          type: object
+          properties:
+            raceEthnicity:
+              type: array
+              items: { type: string }
+            raceEthnicityOther:
+              type: string
+
+    # ─── Household ─────────────────────────────────────────────────────────────
+    Household:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        primaryOwnerUserId:
+          type: string
+          nullable: true
+        primaryOwnerName:
+          type: string
+          nullable: true
+        strategyUserId:
+          type: string
+          nullable: true
+        strategyUserName:
+          type: string
+          nullable: true
+        primaryGivingIndividualId:
+          type: string
+          nullable: true
+        primaryGivingIndividualName:
+          type: string
+          nullable: true
+        capacityRating:
+          $ref: "#/components/schemas/CapacityRating"
+          nullable: true
+        memberCount:
+          type: integer
+        totalGiving:
+          type: number
+          nullable: true
+        lastActivityDate:
+          type: string
+          format: date
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, memberCount, createdAt, updatedAt]
+
+    HouseholdDetail:
+      allOf:
+        - $ref: "#/components/schemas/Household"
+        - type: object
+          properties:
+            decisionMakingNotes:
+              type: string
+              nullable: true
+            familyPhilanthropyNotes:
+              type: string
+              nullable: true
+            familyOfficeNotes:
+              type: string
+              nullable: true
+            notes:
+              type: string
+              nullable: true
+            members:
+              type: array
+              items:
+                $ref: "#/components/schemas/HouseholdMember"
+            linkedFundingEntities:
+              type: array
+              items:
+                $ref: "#/components/schemas/FundingEntity"
+            openOpportunities:
+              type: array
+              items:
+                $ref: "#/components/schemas/Opportunity"
+            givingHistory:
+              type: array
+              items:
+                $ref: "#/components/schemas/Gift"
+
+    HouseholdMember:
+      type: object
+      properties:
+        id:
+          type: string
+        householdId:
+          type: string
+        individualId:
+          type: string
+        individualName:
+          type: string
+        role:
+          $ref: "#/components/schemas/HouseholdMemberRole"
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        endDate:
+          type: string
+          format: date
+          nullable: true
+      required: [id, householdId, individualId, individualName, role]
+
+    CreateHouseholdBody:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        primaryOwnerUserId:
+          type: string
+        strategyUserId:
+          type: string
+        primaryGivingIndividualId:
+          type: string
+        capacityRating:
+          $ref: "#/components/schemas/CapacityRating"
+        decisionMakingNotes:
+          type: string
+        familyPhilanthropyNotes:
+          type: string
+        notes:
+          type: string
+
+    UpdateHouseholdBody:
+      type: object
+      properties:
+        name:
+          type: string
+        primaryOwnerUserId:
+          type: string
+        strategyUserId:
+          type: string
+        primaryGivingIndividualId:
+          type: string
+        capacityRating:
+          $ref: "#/components/schemas/CapacityRating"
+        decisionMakingNotes:
+          type: string
+        familyPhilanthropyNotes:
+          type: string
+        familyOfficeNotes:
+          type: string
+        notes:
+          type: string
+
+    AddHouseholdMemberBody:
+      type: object
+      required: [individualId, role]
+      properties:
+        individualId:
+          type: string
+        role:
+          $ref: "#/components/schemas/HouseholdMemberRole"
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+
+    # ─── Funding Entity ──────────────────────────────────────────────────────────
+    FundingEntity:
+      type: object
+      properties:
+        id:
+          type: string
+        legalName:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        subtype:
+          $ref: "#/components/schemas/FundingEntitySubtype"
+        ein:
+          type: string
+          nullable: true
+        website:
+          type: string
+          nullable: true
+        relationshipOwnerUserId:
+          type: string
+          nullable: true
+        relationshipOwnerName:
+          type: string
+          nullable: true
+        strategyUserId:
+          type: string
+          nullable: true
+        strategyUserName:
+          type: string
+          nullable: true
+        institutionalCultivationStage:
+          $ref: "#/components/schemas/InstitutionalCultivationStage"
+          nullable: true
+        governmentCultivationStage:
+          $ref: "#/components/schemas/GovernmentCultivationStage"
+          nullable: true
+        enthusiasm:
+          $ref: "#/components/schemas/Enthusiasm"
+        primaryContactId:
+          type: string
+          nullable: true
+        primaryContactName:
+          type: string
+          nullable: true
+        metroArea:
+          type: string
+          nullable: true
+        typicalGrantSizeMin:
+          type: number
+          nullable: true
+        typicalGrantSizeMax:
+          type: number
+          nullable: true
+        totalGiving:
+          type: number
+          nullable: true
+        lastGiftDate:
+          type: string
+          format: date
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, legalName, subtype, enthusiasm, createdAt, updatedAt]
+
+    FundingEntityDetail:
+      allOf:
+        - $ref: "#/components/schemas/FundingEntity"
+        - type: object
+          properties:
+            address:
+              type: string
+              nullable: true
+            sponsoringInstitution:
+              type: string
+              nullable: true
+            annualGivingProgram:
+              type: boolean
+              nullable: true
+            fundingCycleNotes:
+              type: string
+              nullable: true
+            applicationRequirementsNotes:
+              type: string
+              nullable: true
+            givingFocus:
+              type: object
+              properties:
+                thematic:
+                  type: array
+                  items: { type: string }
+                ageLevel:
+                  type: array
+                  items: { type: string }
+                governanceModel:
+                  type: array
+                  items: { type: string }
+                geography:
+                  type: array
+                  items: { type: string }
+            notes:
+              type: string
+              nullable: true
+            people:
+              type: array
+              items:
+                $ref: "#/components/schemas/EntityPersonLink"
+            openOpportunities:
+              type: array
+              items:
+                $ref: "#/components/schemas/Opportunity"
+            givingHistory:
+              type: array
+              items:
+                $ref: "#/components/schemas/Gift"
+
+    EntityPersonLink:
+      type: object
+      properties:
+        id:
+          type: string
+        fundingEntityId:
+          type: string
+        individualId:
+          type: string
+        individualName:
+          type: string
+        role:
+          $ref: "#/components/schemas/EntityPersonRole"
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        endDate:
+          type: string
+          format: date
+          nullable: true
+      required: [id, fundingEntityId, individualId, individualName, role]
+
+    CreateFundingEntityBody:
+      type: object
+      required: [legalName, subtype]
+      properties:
+        legalName:
+          type: string
+        displayName:
+          type: string
+        subtype:
+          $ref: "#/components/schemas/FundingEntitySubtype"
+        ein:
+          type: string
+        website:
+          type: string
+        address:
+          type: string
+        metroArea:
+          type: string
+        primaryContactId:
+          type: string
+        relationshipOwnerUserId:
+          type: string
+        strategyUserId:
+          type: string
+        institutionalCultivationStage:
+          $ref: "#/components/schemas/InstitutionalCultivationStage"
+        governmentCultivationStage:
+          $ref: "#/components/schemas/GovernmentCultivationStage"
+        enthusiasm:
+          $ref: "#/components/schemas/Enthusiasm"
+        sponsoringInstitution:
+          type: string
+        notes:
+          type: string
+
+    UpdateFundingEntityBody:
+      type: object
+      properties:
+        legalName:
+          type: string
+        displayName:
+          type: string
+        subtype:
+          $ref: "#/components/schemas/FundingEntitySubtype"
+        ein:
+          type: string
+        website:
+          type: string
+        address:
+          type: string
+        metroArea:
+          type: string
+        primaryContactId:
+          type: string
+        relationshipOwnerUserId:
+          type: string
+        strategyUserId:
+          type: string
+        institutionalCultivationStage:
+          $ref: "#/components/schemas/InstitutionalCultivationStage"
+        governmentCultivationStage:
+          $ref: "#/components/schemas/GovernmentCultivationStage"
+        enthusiasm:
+          $ref: "#/components/schemas/Enthusiasm"
+        annualGivingProgram:
+          type: boolean
+        typicalGrantSizeMin:
+          type: number
+        typicalGrantSizeMax:
+          type: number
+        fundingCycleNotes:
+          type: string
+        applicationRequirementsNotes:
+          type: string
+        sponsoringInstitution:
+          type: string
+        notes:
+          type: string
+        givingFocus:
+          type: object
+          properties:
+            thematic:
+              type: array
+              items: { type: string }
+            ageLevel:
+              type: array
+              items: { type: string }
+            governanceModel:
+              type: array
+              items: { type: string }
+            geography:
+              type: array
+              items: { type: string }
+
+    AddEntityPersonBody:
+      type: object
+      required: [individualId, role]
+      properties:
+        individualId:
+          type: string
+        role:
+          $ref: "#/components/schemas/EntityPersonRole"
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+
+    # ─── Opportunity ─────────────────────────────────────────────────────────────
+    Opportunity:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        subtype:
+          $ref: "#/components/schemas/OpportunitySubtype"
+        donorType:
+          type: string
+          enum: [individual, funding_entity]
+        donorId:
+          type: string
+        donorName:
+          type: string
+        ownerUserId:
+          type: string
+          nullable: true
+        ownerName:
+          type: string
+          nullable: true
+        fund:
+          $ref: "#/components/schemas/Fund"
+        region:
+          type: string
+          nullable: true
+        amountRequested:
+          type: number
+          nullable: true
+        amountExpected:
+          type: number
+          nullable: true
+        probability:
+          type: number
+          nullable: true
+        probabilityOverridden:
+          type: boolean
+        stage:
+          $ref: "#/components/schemas/OpportunityStage"
+        governmentStage:
+          $ref: "#/components/schemas/GovernmentOpportunityStage"
+          nullable: true
+        expectedCloseDate:
+          type: string
+          format: date
+          nullable: true
+        expectedFirstPaymentDate:
+          type: string
+          format: date
+          nullable: true
+        rollForwardCount:
+          type: integer
+        fiscalYear:
+          type: integer
+          nullable: true
+        priority:
+          type: string
+          enum: [high, medium, low]
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, subtype, donorType, donorId, donorName, fund, stage, rollForwardCount, probabilityOverridden, createdAt, updatedAt]
+
+    OpportunityDetail:
+      allOf:
+        - $ref: "#/components/schemas/Opportunity"
+        - type: object
+          properties:
+            tags:
+              type: array
+              items: { type: string }
+            # Ongoing rolling fields
+            lastGiftDate:
+              type: string
+              format: date
+              nullable: true
+            lastGiftAmount:
+              type: number
+              nullable: true
+            nextExpectedAskDate:
+              type: string
+              format: date
+              nullable: true
+            askCadence:
+              type: string
+              nullable: true
+            autoRollForward:
+              type: boolean
+              nullable: true
+            # Targeted deadline fields
+            targetAskAmount:
+              type: number
+              nullable: true
+            askRationale:
+              type: string
+              nullable: true
+            plannedAskDate:
+              type: string
+              format: date
+              nullable: true
+            askMaterialsStatus:
+              type: string
+              nullable: true
+            decisionMakers:
+              type: string
+              nullable: true
+            keyBlockers:
+              type: string
+              nullable: true
+            # RFP fields
+            nofoNumber:
+              type: string
+              nullable: true
+            issuingAgency:
+              type: string
+              nullable: true
+            loiDeadline:
+              type: string
+              format: date-time
+              nullable: true
+            loiSubmittedDate:
+              type: string
+              format: date
+              nullable: true
+            proposalDeadline:
+              type: string
+              format: date-time
+              nullable: true
+            proposalSubmittedDate:
+              type: string
+              format: date
+              nullable: true
+            budgetCeiling:
+              type: number
+              nullable: true
+            performancePeriodStart:
+              type: string
+              format: date
+              nullable: true
+            performancePeriodEnd:
+              type: string
+              format: date
+              nullable: true
+            decisionExpectedDate:
+              type: string
+              format: date
+              nullable: true
+            submissionConfirmationNumber:
+              type: string
+              nullable: true
+            programOfficerContactId:
+              type: string
+              nullable: true
+            programOfficerContactName:
+              type: string
+              nullable: true
+            moves:
+              type: array
+              items:
+                $ref: "#/components/schemas/Move"
+            linkedPledge:
+              $ref: "#/components/schemas/Pledge"
+              nullable: true
+
+    CreateOpportunityBody:
+      type: object
+      required: [subtype, donorType, donorId, fund, stage]
+      properties:
+        name:
+          type: string
+        subtype:
+          $ref: "#/components/schemas/OpportunitySubtype"
+        donorType:
+          type: string
+          enum: [individual, funding_entity]
+        donorId:
+          type: string
+        ownerUserId:
+          type: string
+        fund:
+          $ref: "#/components/schemas/Fund"
+        region:
+          type: string
+        amountRequested:
+          type: number
+        amountExpected:
+          type: number
+        probability:
+          type: number
+        stage:
+          $ref: "#/components/schemas/OpportunityStage"
+        governmentStage:
+          $ref: "#/components/schemas/GovernmentOpportunityStage"
+        expectedCloseDate:
+          type: string
+          format: date
+        expectedFirstPaymentDate:
+          type: string
+          format: date
+        fiscalYear:
+          type: integer
+        priority:
+          type: string
+          enum: [high, medium, low]
+        description:
+          type: string
+        # RFP fields
+        nofoNumber:
+          type: string
+        loiDeadline:
+          type: string
+          format: date-time
+        proposalDeadline:
+          type: string
+          format: date-time
+        budgetCeiling:
+          type: number
+
+    UpdateOpportunityBody:
+      type: object
+      properties:
+        name:
+          type: string
+        stage:
+          $ref: "#/components/schemas/OpportunityStage"
+        governmentStage:
+          $ref: "#/components/schemas/GovernmentOpportunityStage"
+        ownerUserId:
+          type: string
+        fund:
+          $ref: "#/components/schemas/Fund"
+        region:
+          type: string
+        amountRequested:
+          type: number
+        amountExpected:
+          type: number
+        probability:
+          type: number
+        probabilityOverridden:
+          type: boolean
+        expectedCloseDate:
+          type: string
+          format: date
+        expectedFirstPaymentDate:
+          type: string
+          format: date
+        fiscalYear:
+          type: integer
+        priority:
+          type: string
+          enum: [high, medium, low]
+        description:
+          type: string
+        tags:
+          type: array
+          items: { type: string }
+        # Ongoing
+        nextExpectedAskDate:
+          type: string
+          format: date
+        askCadence:
+          type: string
+        autoRollForward:
+          type: boolean
+        # Targeted
+        targetAskAmount:
+          type: number
+        askRationale:
+          type: string
+        plannedAskDate:
+          type: string
+          format: date
+        askMaterialsStatus:
+          type: string
+        decisionMakers:
+          type: string
+        keyBlockers:
+          type: string
+        # RFP
+        nofoNumber:
+          type: string
+        loiDeadline:
+          type: string
+          format: date-time
+        loiSubmittedDate:
+          type: string
+          format: date
+        proposalDeadline:
+          type: string
+          format: date-time
+        proposalSubmittedDate:
+          type: string
+          format: date
+        budgetCeiling:
+          type: number
+        decisionExpectedDate:
+          type: string
+          format: date
+        submissionConfirmationNumber:
+          type: string
+
+    PipelineStage:
+      type: object
+      properties:
+        stage:
+          type: string
+        count:
+          type: integer
+        totalValue:
+          type: number
+        weightedValue:
+          type: number
+        opportunities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Opportunity"
+      required: [stage, count, totalValue, weightedValue, opportunities]
+
+    # ─── Pledge ───────────────────────────────────────────────────────────────────
+    Pledge:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        donorType:
+          type: string
+          enum: [individual, funding_entity]
+        donorId:
+          type: string
+        donorName:
+          type: string
+        opportunityId:
+          type: string
+          nullable: true
+        fund:
+          $ref: "#/components/schemas/Fund"
+        totalCommittedAmount:
+          type: number
+        currency:
+          type: string
+        pledgeDate:
+          type: string
+          format: date
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        installmentSchedule:
+          $ref: "#/components/schemas/PledgeInstallmentSchedule"
+        numberOfInstallments:
+          type: integer
+        status:
+          $ref: "#/components/schemas/PledgeStatus"
+        paymentMethodExpectation:
+          type: string
+          nullable: true
+        legalDocumentOnFile:
+          type: boolean
+        recognitionLanguage:
+          type: string
+          nullable: true
+        amountReceived:
+          type: number
+        remainingAmount:
+          type: number
+        nextInstallmentDate:
+          type: string
+          format: date
+          nullable: true
+        nextInstallmentAmount:
+          type: number
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, donorType, donorId, donorName, fund, totalCommittedAmount, currency, pledgeDate, installmentSchedule, numberOfInstallments, status, legalDocumentOnFile, amountReceived, remainingAmount, createdAt, updatedAt]
+
+    PledgeDetail:
+      allOf:
+        - $ref: "#/components/schemas/Pledge"
+        - type: object
+          properties:
+            installments:
+              type: array
+              items:
+                $ref: "#/components/schemas/PledgeInstallment"
+
+    PledgeInstallment:
+      type: object
+      properties:
+        id:
+          type: string
+        pledgeId:
+          type: string
+        installmentNumber:
+          type: integer
+        expectedDate:
+          type: string
+          format: date
+        expectedAmount:
+          type: number
+        status:
+          type: string
+          enum: [expected, paid, overdue, waived]
+        paidDate:
+          type: string
+          format: date
+          nullable: true
+        paidAmount:
+          type: number
+          nullable: true
+        giftId:
+          type: string
+          nullable: true
+      required: [id, pledgeId, installmentNumber, expectedDate, expectedAmount, status]
+
+    CreatePledgeBody:
+      type: object
+      required: [donorType, donorId, fund, totalCommittedAmount, pledgeDate, installmentSchedule, numberOfInstallments]
+      properties:
+        name:
+          type: string
+        donorType:
+          type: string
+          enum: [individual, funding_entity]
+        donorId:
+          type: string
+        opportunityId:
+          type: string
+        fund:
+          $ref: "#/components/schemas/Fund"
+        totalCommittedAmount:
+          type: number
+        currency:
+          type: string
+          default: USD
+        pledgeDate:
+          type: string
+          format: date
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        installmentSchedule:
+          $ref: "#/components/schemas/PledgeInstallmentSchedule"
+        numberOfInstallments:
+          type: integer
+        paymentMethodExpectation:
+          type: string
+        legalDocumentOnFile:
+          type: boolean
+          default: false
+        recognitionLanguage:
+          type: string
+
+    UpdatePledgeBody:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          $ref: "#/components/schemas/PledgeStatus"
+        paymentMethodExpectation:
+          type: string
+        legalDocumentOnFile:
+          type: boolean
+        recognitionLanguage:
+          type: string
+
+    UpdateInstallmentBody:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [expected, paid, overdue, waived]
+        paidDate:
+          type: string
+          format: date
+        paidAmount:
+          type: number
+        giftId:
+          type: string
+
+    # ─── Gift ────────────────────────────────────────────────────────────────────
+    Gift:
+      type: object
+      properties:
+        id:
+          type: string
+        donorType:
+          type: string
+          enum: [individual, funding_entity]
+        donorId:
+          type: string
+        donorName:
+          type: string
+        fund:
+          $ref: "#/components/schemas/Fund"
+        amount:
+          type: number
+        cashReceivedDate:
+          type: string
+          format: date
+        reconciled:
+          type: boolean
+        reconciliationDate:
+          type: string
+          format: date
+          nullable: true
+        paymentMethod:
+          type: string
+          nullable: true
+        paymentReference:
+          type: string
+          nullable: true
+        pledgeId:
+          type: string
+          nullable: true
+        opportunityId:
+          type: string
+          nullable: true
+        householdId:
+          type: string
+          nullable: true
+        householdName:
+          type: string
+          nullable: true
+        acknowledgementSent:
+          type: boolean
+        acknowledgementDate:
+          type: string
+          format: date
+          nullable: true
+        restrictionNotes:
+          type: string
+          nullable: true
+        quickbooksReference:
+          type: string
+          nullable: true
+        directToSchoolPassthrough:
+          type: boolean
+        schoolReference:
+          type: string
+          nullable: true
+        softCredits:
+          type: array
+          items:
+            $ref: "#/components/schemas/SoftCredit"
+        restrictionType:
+          type: string
+          nullable: true
+        geographyDesignation:
+          type: string
+          nullable: true
+        timePeriod:
+          type: string
+          nullable: true
+        programType:
+          type: string
+          nullable: true
+        restrictionFormality:
+          type: string
+          enum: [formal, conversational]
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, donorType, donorId, donorName, fund, amount, cashReceivedDate, reconciled, acknowledgementSent, directToSchoolPassthrough, softCredits, createdAt, updatedAt]
+
+    SoftCredit:
+      type: object
+      properties:
+        id:
+          type: string
+        individualId:
+          type: string
+        individualName:
+          type: string
+        percentage:
+          type: number
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      required: [id, individualId, individualName]
+
+    CreateGiftBody:
+      type: object
+      required: [donorType, donorId, fund, amount, cashReceivedDate]
+      properties:
+        donorType:
+          type: string
+          enum: [individual, funding_entity]
+        donorId:
+          type: string
+        fund:
+          $ref: "#/components/schemas/Fund"
+        amount:
+          type: number
+        cashReceivedDate:
+          type: string
+          format: date
+        paymentMethod:
+          type: string
+        paymentReference:
+          type: string
+        pledgeId:
+          type: string
+        opportunityId:
+          type: string
+        householdId:
+          type: string
+        acknowledgementSent:
+          type: boolean
+        restrictionNotes:
+          type: string
+        directToSchoolPassthrough:
+          type: boolean
+        schoolReference:
+          type: string
+        softCredits:
+          type: array
+          items:
+            type: object
+            required: [individualId]
+            properties:
+              individualId:
+                type: string
+              percentage:
+                type: number
+              notes:
+                type: string
+        restrictionType:
+          type: string
+        geographyDesignation:
+          type: string
+        timePeriod:
+          type: string
+        programType:
+          type: string
+        restrictionFormality:
+          type: string
+          enum: [formal, conversational]
+
+    UpdateGiftBody:
+      type: object
+      properties:
+        reconciled:
+          type: boolean
+        reconciliationDate:
+          type: string
+          format: date
+        quickbooksReference:
+          type: string
+        acknowledgementSent:
+          type: boolean
+        acknowledgementDate:
+          type: string
+          format: date
+        restrictionNotes:
+          type: string
+        paymentMethod:
+          type: string
+        paymentReference:
+          type: string
+
+    # ─── Move ────────────────────────────────────────────────────────────────────
+    Move:
+      type: object
+      properties:
+        id:
+          type: string
+        subject:
+          type: string
+        moveType:
+          $ref: "#/components/schemas/MoveType"
+        date:
+          type: string
+          format: date
+        level:
+          type: string
+          enum: [household, funding_entity, individual]
+        individualId:
+          type: string
+          nullable: true
+        individualName:
+          type: string
+          nullable: true
+        householdId:
+          type: string
+          nullable: true
+        householdName:
+          type: string
+          nullable: true
+        fundingEntityId:
+          type: string
+          nullable: true
+        fundingEntityName:
+          type: string
+          nullable: true
+        opportunityId:
+          type: string
+          nullable: true
+        opportunityName:
+          type: string
+          nullable: true
+        participantUserIds:
+          type: array
+          items: { type: string }
+        participantUserNames:
+          type: array
+          items: { type: string }
+        summary:
+          type: string
+          nullable: true
+        outcome:
+          type: string
+          nullable: true
+        nextStep:
+          type: string
+          nullable: true
+        nextStepOwnerUserId:
+          type: string
+          nullable: true
+        nextStepOwnerName:
+          type: string
+          nullable: true
+        nextStepDueDate:
+          type: string
+          format: date
+          nullable: true
+        isDraft:
+          type: boolean
+        source:
+          type: string
+          enum: [manual, gmail, calendar]
+        createdByUserId:
+          type: string
+        createdByName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, subject, moveType, date, level, participantUserIds, participantUserNames, isDraft, source, createdByUserId, createdByName, createdAt, updatedAt]
+
+    CreateMoveBody:
+      type: object
+      required: [subject, moveType, date, level]
+      properties:
+        subject:
+          type: string
+        moveType:
+          $ref: "#/components/schemas/MoveType"
+        date:
+          type: string
+          format: date
+        level:
+          type: string
+          enum: [household, funding_entity, individual]
+        individualId:
+          type: string
+        householdId:
+          type: string
+        fundingEntityId:
+          type: string
+        opportunityId:
+          type: string
+        participantUserIds:
+          type: array
+          items: { type: string }
+        summary:
+          type: string
+        outcome:
+          type: string
+        nextStep:
+          type: string
+        nextStepOwnerUserId:
+          type: string
+        nextStepDueDate:
+          type: string
+          format: date
+        isDraft:
+          type: boolean
+          default: false
+
+    UpdateMoveBody:
+      type: object
+      properties:
+        subject:
+          type: string
+        moveType:
+          $ref: "#/components/schemas/MoveType"
+        date:
+          type: string
+          format: date
+        summary:
+          type: string
+        outcome:
+          type: string
+        nextStep:
+          type: string
+        nextStepOwnerUserId:
+          type: string
+        nextStepDueDate:
+          type: string
+          format: date
+        isDraft:
+          type: boolean
+        participantUserIds:
+          type: array
+          items: { type: string }
+
+    # ─── Dashboard ──────────────────────────────────────────────────────────────
+    DashboardSummary:
+      type: object
+      properties:
+        openOpportunitiesCount:
+          type: integer
+        openOpportunitiesValue:
+          type: number
+        overdueNextStepsCount:
+          type: integer
+        donorsGoneQuietCount:
+          type: integer
+        upcomingDeadlinesCount:
+          type: integer
+        pledgeInstallmentsDueCount:
+          type: integer
+        totalGivingCurrentFY:
+          type: number
+        totalGivingLastFY:
+          type: number
+        opportunitiesByFund:
+          type: array
+          items:
+            type: object
+            properties:
+              fund:
+                $ref: "#/components/schemas/Fund"
+              count:
+                type: integer
+              value:
+                type: number
+            required: [fund, count, value]
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityItem"
+      required: [openOpportunitiesCount, openOpportunitiesValue, overdueNextStepsCount, donorsGoneQuietCount, upcomingDeadlinesCount, pledgeInstallmentsDueCount, totalGivingCurrentFY, totalGivingLastFY, opportunitiesByFund, recentActivity]
+
+    ActivityItem:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [move, gift, opportunity_created, opportunity_stage_change, pledge_created, individual_created]
+        entityType:
+          type: string
+          enum: [individual, household, funding_entity, opportunity, gift, pledge, move]
+        entityId:
+          type: string
+        entityName:
+          type: string
+        description:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+      required: [id, type, entityType, entityId, entityName, description, userId, userName, timestamp]
+
+    OverdueNextStep:
+      type: object
+      properties:
+        moveId:
+          type: string
+        entityType:
+          type: string
+          enum: [individual, household, funding_entity]
+        entityId:
+          type: string
+        entityName:
+          type: string
+        nextStep:
+          type: string
+        dueDate:
+          type: string
+          format: date
+        daysOverdue:
+          type: integer
+        ownerName:
+          type: string
+      required: [moveId, entityType, entityId, entityName, nextStep, dueDate, daysOverdue, ownerName]
+
+    DonorQuietAlert:
+      type: object
+      properties:
+        entityType:
+          type: string
+          enum: [individual, household, funding_entity]
+        entityId:
+          type: string
+        entityName:
+          type: string
+        lastMoveDate:
+          type: string
+          format: date
+          nullable: true
+        daysSinceLastMove:
+          type: integer
+        cultivationStage:
+          type: string
+        ownerName:
+          type: string
+          nullable: true
+        openOpportunitiesCount:
+          type: integer
+      required: [entityType, entityId, entityName, daysSinceLastMove, cultivationStage, openOpportunitiesCount]
+
+    # ─── Projections ─────────────────────────────────────────────────────────────
+    ProjectionsForecast:
+      type: object
+      properties:
+        fiscalYears:
+          type: array
+          items:
+            $ref: "#/components/schemas/FiscalYearForecast"
+        totalConfirmed:
+          type: number
+        totalWeightedPipeline:
+          type: number
+        totalForecast:
+          type: number
+      required: [fiscalYears, totalConfirmed, totalWeightedPipeline, totalForecast]
+
+    FiscalYearForecast:
+      type: object
+      properties:
+        fiscalYear:
+          type: integer
+        label:
+          type: string
+        confirmed:
+          type: number
+        verballyCommitted:
+          type: number
+        weightedPipeline:
+          type: number
+        stretch:
+          type: number
+        totalForecast:
+          type: number
+        target:
+          type: number
+          nullable: true
+        gap:
+          type: number
+          nullable: true
+        byFund:
+          type: array
+          items:
+            type: object
+            properties:
+              fund:
+                $ref: "#/components/schemas/Fund"
+              confirmed:
+                type: number
+              weightedPipeline:
+                type: number
+              totalForecast:
+                type: number
+            required: [fund, confirmed, weightedPipeline, totalForecast]
+      required: [fiscalYear, label, confirmed, verballyCommitted, weightedPipeline, stretch, totalForecast, byFund]
+
+    PledgeSchedulePeriod:
+      type: object
+      properties:
+        period:
+          type: string
+        year:
+          type: integer
+        month:
+          type: integer
+        expectedAmount:
+          type: number
+        installments:
+          type: array
+          items:
+            type: object
+            properties:
+              pledgeId:
+                type: string
+              donorName:
+                type: string
+              amount:
+                type: number
+              fund:
+                $ref: "#/components/schemas/Fund"
+              status:
+                type: string
+            required: [pledgeId, donorName, amount, fund, status]
+      required: [period, year, month, expectedAmount, installments]
+
+    # ─── Grants Calendar ─────────────────────────────────────────────────────────
+    GrantsCalendarEntry:
+      type: object
+      properties:
+        opportunityId:
+          type: string
+        opportunityName:
+          type: string
+          nullable: true
+        donorName:
+          type: string
+        fund:
+          $ref: "#/components/schemas/Fund"
+        ownerName:
+          type: string
+          nullable: true
+        stage:
+          type: string
+        governmentStage:
+          type: string
+          nullable: true
+        loiDeadline:
+          type: string
+          format: date-time
+          nullable: true
+        loiSubmitted:
+          type: boolean
+        proposalDeadline:
+          type: string
+          format: date-time
+          nullable: true
+        proposalSubmitted:
+          type: boolean
+        decisionExpectedDate:
+          type: string
+          format: date
+          nullable: true
+        amountRequested:
+          type: number
+          nullable: true
+        nextDeadline:
+          type: string
+          format: date-time
+          nullable: true
+        daysUntilNextDeadline:
+          type: integer
+          nullable: true
+      required: [opportunityId, donorName, fund, loiSubmitted, proposalSubmitted]

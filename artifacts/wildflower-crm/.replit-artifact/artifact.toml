@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Wildflower Fundraising CRM"
+version = "1.0.0"
+id = "artifacts/wildflower-crm"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21297
+
+[services.development]
+run = "pnpm --filter @workspace/wildflower-crm run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/wildflower-crm", "run", "build" ]
+publicDir = "artifacts/wildflower-crm/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21297"
+BASE_PATH = "/"
