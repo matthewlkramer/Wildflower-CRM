@@ -78,7 +78,7 @@ export default function FundingEntityDetail() {
             { kind: "json", key: "customFields", label: "Custom fields (JSON)", value: entity.customFields ?? null },
           ]}
           onSubmit={async (values) => {
-            await updateMutation.mutateAsync({ id, data: values });
+            await updateMutation.mutateAsync({ id, data: values as Pick<UpdateFundingEntityBody, "status" | "parentFundingEntityId" | "notes" | "customFields"> });
           }}
         />
       </div>
@@ -138,15 +138,38 @@ export default function FundingEntityDetail() {
           <CardHeader><CardTitle>Recent Gifts</CardTitle></CardHeader>
           <CardContent>
             {entity.givingHistory && entity.givingHistory.length > 0 ? (
-              <ul className="space-y-2 text-sm">
-                {entity.givingHistory.slice(0, 8).map((g) => (
-                  <li key={g.id} className="flex items-center justify-between">
-                    <Link href={`/gifts/${g.id}`} className="text-primary hover:underline">
-                      {formatDate(g.cashReceivedDate)}
-                    </Link>
-                    <span className="font-medium">{formatCurrency(g.amount)}</span>
-                  </li>
-                ))}
+              <ul className="space-y-3 text-sm">
+                {entity.givingHistory.slice(0, 8).map((g) => {
+                  const payerNote =
+                    g.payerName && g.payerName !== g.donorName
+                      ? `paid by ${g.payerName}`
+                      : g.fiscalSponsorName
+                      ? `via ${g.fiscalSponsorName}`
+                      : null;
+                  return (
+                    <li
+                      key={g.id}
+                      className="flex items-start justify-between gap-3"
+                      data-testid={`row-funder-gift-${g.id}`}
+                    >
+                      <div className="min-w-0">
+                        <Link
+                          href={`/gifts/${g.id}`}
+                          className="text-primary hover:underline block truncate"
+                        >
+                          {g.donorName ?? "Unknown donor"}
+                        </Link>
+                        <div className="text-xs text-muted-foreground">
+                          {formatDate(g.cashReceivedDate)}
+                          {payerNote ? ` • ${payerNote}` : ""}
+                        </div>
+                      </div>
+                      <span className="font-medium whitespace-nowrap">
+                        {formatCurrency(g.amount)}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <p className="text-sm text-muted-foreground">No gifts recorded.</p>

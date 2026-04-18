@@ -65,7 +65,7 @@ export default function HouseholdDetail() {
             { kind: "json", key: "customFields", label: "Custom fields (JSON)", value: household.customFields ?? null },
           ]}
           onSubmit={async (values) => {
-            await updateMutation.mutateAsync({ id, data: values });
+            await updateMutation.mutateAsync({ id, data: values as Pick<UpdateHouseholdBody, "status" | "notes" | "customFields"> });
           }}
         />
       </div>
@@ -135,6 +135,49 @@ export default function HouseholdDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader><CardTitle>Giving History</CardTitle></CardHeader>
+        <CardContent>
+          {household.givingHistory && household.givingHistory.length > 0 ? (
+            <ul className="space-y-3 text-sm">
+              {household.givingHistory.map((g) => {
+                const payerNote =
+                  g.payerName && g.payerName !== g.donorName
+                    ? `paid by ${g.payerName}`
+                    : g.fiscalSponsorName
+                    ? `via ${g.fiscalSponsorName}`
+                    : null;
+                return (
+                  <li
+                    key={g.id}
+                    className="flex items-start justify-between gap-3"
+                    data-testid={`row-household-gift-${g.id}`}
+                  >
+                    <div className="min-w-0">
+                      <Link
+                        href={`/gifts/${g.id}`}
+                        className="text-primary hover:underline block truncate"
+                      >
+                        {g.donorName ?? "Unknown donor"}
+                      </Link>
+                      <div className="text-xs text-muted-foreground">
+                        {formatDate(g.cashReceivedDate)}
+                        {payerNote ? ` • ${payerNote}` : ""}
+                      </div>
+                    </div>
+                    <span className="font-medium whitespace-nowrap">
+                      {formatCurrency(g.amount)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">No gifts recorded.</p>
+          )}
+        </CardContent>
+      </Card>
 
       {customFieldEntries.length > 0 && (
         <Card>

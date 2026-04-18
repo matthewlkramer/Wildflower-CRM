@@ -2044,6 +2044,10 @@ components:
             household:
               $ref: "#/components/schemas/Household"
               nullable: true
+            givingHistory:
+              type: array
+              items:
+                $ref: "#/components/schemas/Gift"
 
     CreateIndividualBody:
       type: object
@@ -3214,6 +3218,14 @@ components:
           type: string
           nullable: true
           description: Computed display name of the donor (individual, household, or funding entity).
+        payerName:
+          type: string
+          nullable: true
+          description: Computed display name of the payer (funding entity or organization paying on behalf of the donor), when distinct from the donor.
+        fiscalSponsorName:
+          type: string
+          nullable: true
+          description: Computed display name of the fiscal sponsor (funding entity or organization), when applicable.
         pledgeId:
           type: string
           nullable: true

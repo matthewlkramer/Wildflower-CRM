@@ -559,6 +559,78 @@ export interface Household {
   updatedAt: string;
 }
 
+export type GiftPaymentMethod =
+  | (typeof GiftPaymentMethod)[keyof typeof GiftPaymentMethod]
+  | null;
+
+export const GiftPaymentMethod = {
+  check: "check",
+  wire: "wire",
+  ach: "ach",
+  credit_card: "credit_card",
+  stock: "stock",
+  daf_grant: "daf_grant",
+  in_kind: "in_kind",
+  other: "other",
+} as const;
+
+export type GiftAllocationFiscalYear =
+  | (typeof GiftAllocationFiscalYear)[keyof typeof GiftAllocationFiscalYear]
+  | null;
+
+export const GiftAllocationFiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
+
+export interface GiftAllocation {
+  id: string;
+  giftId: string;
+  fund: Fund;
+  amount: number;
+  fiscalYear?: GiftAllocationFiscalYear;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export interface Gift {
+  id: string;
+  individualId?: string | null;
+  householdId?: string | null;
+  fundingEntityId?: string | null;
+  /** Computed display name of the donor (individual, household, or funding entity). */
+  donorName?: string | null;
+  /** Computed display name of the payer (funding entity or organization paying on behalf of the donor), when distinct from the donor. */
+  payerName?: string | null;
+  /** Computed display name of the fiscal sponsor (funding entity or organization), when applicable. */
+  fiscalSponsorName?: string | null;
+  pledgeId?: string | null;
+  campaignId?: string | null;
+  amount: number;
+  currency: string;
+  cashReceivedDate: string;
+  paymentMethod?: GiftPaymentMethod;
+  checkNumber?: string | null;
+  reconciled: boolean;
+  directToSchoolPassthrough: boolean;
+  fiscalSponsorFundingEntityId?: string | null;
+  fiscalSponsorOrganizationId?: string | null;
+  payerFundingEntityId?: string | null;
+  payerOrganizationId?: string | null;
+  acknowledgmentSentDate?: string | null;
+  taxReceiptSent: boolean;
+  notes?: string | null;
+  allocations: GiftAllocation[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type IndividualDetail = Individual & {
   emails?: ContactEmail[];
   phones?: ContactPhone[];
@@ -582,6 +654,7 @@ export type IndividualDetail = Individual & {
   recentMoves?: Move[];
   openOpportunities?: Opportunity[];
   household?: Household | null;
+  givingHistory?: Gift[];
 };
 
 export type CreateIndividualBodyCustomFields = { [key: string]: unknown };
@@ -689,74 +762,6 @@ export interface FundingEntity {
   typicalGrantSizeMax?: number | null;
   totalGiving?: number | null;
   lastGiftDate?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type GiftPaymentMethod =
-  | (typeof GiftPaymentMethod)[keyof typeof GiftPaymentMethod]
-  | null;
-
-export const GiftPaymentMethod = {
-  check: "check",
-  wire: "wire",
-  ach: "ach",
-  credit_card: "credit_card",
-  stock: "stock",
-  daf_grant: "daf_grant",
-  in_kind: "in_kind",
-  other: "other",
-} as const;
-
-export type GiftAllocationFiscalYear =
-  | (typeof GiftAllocationFiscalYear)[keyof typeof GiftAllocationFiscalYear]
-  | null;
-
-export const GiftAllocationFiscalYear = {
-  FY23: "FY23",
-  FY24: "FY24",
-  FY25: "FY25",
-  FY26: "FY26",
-  FY27: "FY27",
-  FY28: "FY28",
-  FY29: "FY29",
-  FY30: "FY30",
-} as const;
-
-export interface GiftAllocation {
-  id: string;
-  giftId: string;
-  fund: Fund;
-  amount: number;
-  fiscalYear?: GiftAllocationFiscalYear;
-  notes?: string | null;
-  createdAt: string;
-}
-
-export interface Gift {
-  id: string;
-  individualId?: string | null;
-  householdId?: string | null;
-  fundingEntityId?: string | null;
-  /** Computed display name of the donor (individual, household, or funding entity). */
-  donorName?: string | null;
-  pledgeId?: string | null;
-  campaignId?: string | null;
-  amount: number;
-  currency: string;
-  cashReceivedDate: string;
-  paymentMethod?: GiftPaymentMethod;
-  checkNumber?: string | null;
-  reconciled: boolean;
-  directToSchoolPassthrough: boolean;
-  fiscalSponsorFundingEntityId?: string | null;
-  fiscalSponsorOrganizationId?: string | null;
-  payerFundingEntityId?: string | null;
-  payerOrganizationId?: string | null;
-  acknowledgmentSentDate?: string | null;
-  taxReceiptSent: boolean;
-  notes?: string | null;
-  allocations: GiftAllocation[];
   createdAt: string;
   updatedAt: string;
 }

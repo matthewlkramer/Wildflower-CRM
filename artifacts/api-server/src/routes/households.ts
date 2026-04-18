@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { households, householdMembers, individuals } from "@workspace/db/schema";
+import { households, householdMembers, individuals, gifts } from "@workspace/db/schema";
 import { eq, and, desc, sql, count } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { newId } from "../lib/helpers";
+import { fetchGiftsWith } from "../lib/giftQueries";
 
 const router = Router();
 
@@ -42,7 +43,8 @@ router.get("/:id", async (req, res, next) => {
   try {
     const [row] = await db.select().from(households).where(eq(households.id, req.params.id));
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
-    res.json(row);
+    const givingHistory = await fetchGiftsWith(eq(gifts.householdId, row.id));
+    res.json({ ...row, givingHistory });
   } catch (err) {
     next(err);
   }

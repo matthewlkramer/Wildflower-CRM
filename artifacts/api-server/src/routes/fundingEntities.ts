@@ -5,10 +5,12 @@ import {
   affiliations,
   individuals,
   users,
+  gifts,
 } from "@workspace/db/schema";
-import { eq, and, sql, desc, count } from "drizzle-orm";
+import { eq, and, or, sql, desc, count } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { newId } from "../lib/helpers";
+import { fetchGiftsWith } from "../lib/giftQueries";
 
 const router = Router();
 
@@ -84,7 +86,13 @@ router.get("/:id", async (req, res, next) => {
       .from(fundingEntities)
       .where(eq(fundingEntities.id, req.params.id));
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
-    res.json(row);
+    const givingHistory = await fetchGiftsWith(
+      or(
+        eq(gifts.fundingEntityId, row.id),
+        eq(gifts.payerFundingEntityId, row.id),
+      ),
+    );
+    res.json({ ...row, givingHistory });
   } catch (err) {
     next(err);
   }

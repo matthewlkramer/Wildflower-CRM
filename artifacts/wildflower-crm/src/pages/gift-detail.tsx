@@ -69,7 +69,9 @@ export default function GiftDetail() {
             )}
             {gift.directToSchoolPassthrough && <Badge variant="outline">Direct-to-school passthrough</Badge>}
             {fiscalSponsorId && (
-              <Badge variant="outline">Fiscal sponsor on file</Badge>
+              <Badge variant="outline">
+                Fiscal sponsor: {gift.fiscalSponsorName ?? "on file"}
+              </Badge>
             )}
           </div>
         </div>
@@ -84,7 +86,7 @@ export default function GiftDetail() {
             { kind: "textarea", key: "notes", label: "Notes", value: gift.notes ?? null },
           ]}
           onSubmit={async (values) => {
-            await updateMutation.mutateAsync({ id, data: values });
+            await updateMutation.mutateAsync({ id, data: values as Pick<UpdateGiftBody, "reconciled" | "taxReceiptSent" | "acknowledgmentSentDate" | "notes"> });
           }}
         />
       </div>
@@ -108,10 +110,25 @@ export default function GiftDetail() {
                 <span className="font-medium">Payer (different from donor):</span>{" "}
                 {gift.payerFundingEntityId ? (
                   <Link href={`/funding-entities/${gift.payerFundingEntityId}`} className="text-primary hover:underline">
-                    View paying entity
+                    {gift.payerName ?? "View paying entity"}
                   </Link>
                 ) : (
-                  <span className="text-muted-foreground">{payerEntityId}</span>
+                  <span className="text-muted-foreground">{gift.payerName ?? payerEntityId}</span>
+                )}
+              </div>
+            )}
+            {gift.fiscalSponsorName && (
+              <div>
+                <span className="font-medium">Fiscal sponsor:</span>{" "}
+                {gift.fiscalSponsorFundingEntityId ? (
+                  <Link
+                    href={`/funding-entities/${gift.fiscalSponsorFundingEntityId}`}
+                    className="text-primary hover:underline"
+                  >
+                    {gift.fiscalSponsorName}
+                  </Link>
+                ) : (
+                  <span className="text-muted-foreground">{gift.fiscalSponsorName}</span>
                 )}
               </div>
             )}

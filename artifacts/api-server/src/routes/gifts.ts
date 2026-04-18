@@ -5,13 +5,15 @@ import {
   giftAllocations,
   giftSoftCredits,
   individuals,
-  households,
-  fundingEntities,
-  pledges,
 } from "@workspace/db/schema";
 import { eq, and, gte, lte, desc, count, inArray } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { newId, parseOptionalFiscalYear } from "../lib/helpers";
+import {
+  selectGiftsWithJoins,
+  resolveGiftNames,
+  type GiftJoinRow,
+} from "../lib/giftQueries";
 
 const router = Router();
 
@@ -59,22 +61,10 @@ router.get("/", async (req, res, next) => {
 
     const [totalResult, rows] = await Promise.all([
       db.select({ count: count() }).from(gifts).where(where),
-      db
-        .select({
-          gift: gifts,
-          individualFirstName: individuals.firstName,
-          individualLastName: individuals.lastName,
-          householdName: households.name,
-          entityName: fundingEntities.legalName,
-        })
-        .from(gifts)
-        .leftJoin(individuals, eq(gifts.individualId, individuals.id))
-        .leftJoin(households, eq(gifts.householdId, households.id))
-        .leftJoin(fundingEntities, eq(gifts.fundingEntityId, fundingEntities.id))
-        .where(where)
+      selectGiftsWithJoins(where)
         .orderBy(desc(gifts.cashReceivedDate))
         .limit(limit)
-        .offset(offset),
+        .offset(offset) as Promise<GiftJoinRow[]>,
     ]);
 
     const giftIds = rows.map((r) => r.gift.id);
@@ -96,9 +86,7 @@ router.get("/", async (req, res, next) => {
     res.json({
       data: rows.map((r) => ({
         ...r.gift,
-        donorName: r.individualFirstName
-          ? `${r.individualFirstName} ${r.individualLastName}`
-          : r.householdName ?? r.entityName,
+        ...resolveGiftNames(r),
         allocations: allocsByGift[r.gift.id] ?? [],
       })),
       total: totalResult[0].count,
@@ -178,24 +166,13 @@ router.post("/", async (req, res, next) => {
 
 router.get("/:id", async (req, res, next) => {
   try {
-    const [joined] = await db
-      .select({
-        gift: gifts,
-        individualFirstName: individuals.firstName,
-        individualLastName: individuals.lastName,
-        householdName: households.name,
-        entityName: fundingEntities.legalName,
-      })
-      .from(gifts)
-      .leftJoin(individuals, eq(gifts.individualId, individuals.id))
-      .leftJoin(households, eq(gifts.householdId, households.id))
-      .leftJoin(fundingEntities, eq(gifts.fundingEntityId, fundingEntities.id))
-      .where(eq(gifts.id, req.params.id));
+    const joinedRows = (await selectGiftsWithJoins(
+      eq(gifts.id, req.params.id),
+    )) as GiftJoinRow[];
+    const joined = joinedRows[0];
     if (!joined) { res.status(404).json({ error: "Not found" }); return; }
     const row = joined.gift;
-    const donorName = joined.individualFirstName
-      ? `${joined.individualFirstName} ${joined.individualLastName}`
-      : joined.householdName ?? joined.entityName ?? null;
+    const names = resolveGiftNames(joined);
     const [allocs, softCredits] = await Promise.all([
       db
         .select()
@@ -217,7 +194,7 @@ router.get("/:id", async (req, res, next) => {
         .leftJoin(individuals, eq(giftSoftCredits.individualId, individuals.id))
         .where(eq(giftSoftCredits.giftId, row.id)),
     ]);
-    res.json({ ...row, donorName, allocations: allocs, softCredits });
+    res.json({ ...row, ...names, allocations: allocs, softCredits });
   } catch (err) {
     next(err);
   }

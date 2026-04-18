@@ -169,6 +169,8 @@ export const GetIndividualParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const getIndividualResponseTwoGivingHistoryItemCurrencyDefault = `USD`;
+
 export const GetIndividualResponse = zod
   .object({
     id: zod.string(),
@@ -509,6 +511,94 @@ export const GetIndividualResponse = zod
           updatedAt: zod.coerce.date(),
         })
         .nullish(),
+      givingHistory: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            individualId: zod.string().nullish(),
+            householdId: zod.string().nullish(),
+            fundingEntityId: zod.string().nullish(),
+            donorName: zod
+              .string()
+              .nullish()
+              .describe(
+                "Computed display name of the donor (individual, household, or funding entity).",
+              ),
+            payerName: zod
+              .string()
+              .nullish()
+              .describe(
+                "Computed display name of the payer (funding entity or organization paying on behalf of the donor), when distinct from the donor.",
+              ),
+            fiscalSponsorName: zod
+              .string()
+              .nullish()
+              .describe(
+                "Computed display name of the fiscal sponsor (funding entity or organization), when applicable.",
+              ),
+            pledgeId: zod.string().nullish(),
+            campaignId: zod.string().nullish(),
+            amount: zod.number(),
+            currency: zod
+              .string()
+              .default(
+                getIndividualResponseTwoGivingHistoryItemCurrencyDefault,
+              ),
+            cashReceivedDate: zod.coerce.date(),
+            paymentMethod: zod
+              .enum([
+                "check",
+                "wire",
+                "ach",
+                "credit_card",
+                "stock",
+                "daf_grant",
+                "in_kind",
+                "other",
+              ])
+              .nullish(),
+            checkNumber: zod.string().nullish(),
+            reconciled: zod.boolean(),
+            directToSchoolPassthrough: zod.boolean(),
+            fiscalSponsorFundingEntityId: zod.string().nullish(),
+            fiscalSponsorOrganizationId: zod.string().nullish(),
+            payerFundingEntityId: zod.string().nullish(),
+            payerOrganizationId: zod.string().nullish(),
+            acknowledgmentSentDate: zod.coerce.date().nullish(),
+            taxReceiptSent: zod.boolean(),
+            notes: zod.string().nullish(),
+            allocations: zod.array(
+              zod.object({
+                id: zod.string(),
+                giftId: zod.string(),
+                fund: zod.enum([
+                  "general_operating",
+                  "seed_fund",
+                  "black_wildflowers",
+                  "sunlight",
+                ]),
+                amount: zod.number(),
+                fiscalYear: zod
+                  .enum([
+                    "FY23",
+                    "FY24",
+                    "FY25",
+                    "FY26",
+                    "FY27",
+                    "FY28",
+                    "FY29",
+                    "FY30",
+                  ])
+                  .nullish(),
+                notes: zod.string().nullish(),
+                createdAt: zod.coerce.date(),
+              }),
+            ),
+            createdAt: zod.coerce.date(),
+            updatedAt: zod.coerce.date(),
+          }),
+        )
+        .optional(),
     }),
   );
 
@@ -952,6 +1042,18 @@ export const GetHouseholdResponse = zod
               .nullish()
               .describe(
                 "Computed display name of the donor (individual, household, or funding entity).",
+              ),
+            payerName: zod
+              .string()
+              .nullish()
+              .describe(
+                "Computed display name of the payer (funding entity or organization paying on behalf of the donor), when distinct from the donor.",
+              ),
+            fiscalSponsorName: zod
+              .string()
+              .nullish()
+              .describe(
+                "Computed display name of the fiscal sponsor (funding entity or organization), when applicable.",
               ),
             pledgeId: zod.string().nullish(),
             campaignId: zod.string().nullish(),
@@ -1480,6 +1582,18 @@ export const GetFundingEntityResponse = zod
               .nullish()
               .describe(
                 "Computed display name of the donor (individual, household, or funding entity).",
+              ),
+            payerName: zod
+              .string()
+              .nullish()
+              .describe(
+                "Computed display name of the payer (funding entity or organization paying on behalf of the donor), when distinct from the donor.",
+              ),
+            fiscalSponsorName: zod
+              .string()
+              .nullish()
+              .describe(
+                "Computed display name of the fiscal sponsor (funding entity or organization), when applicable.",
               ),
             pledgeId: zod.string().nullish(),
             campaignId: zod.string().nullish(),
@@ -2637,6 +2751,18 @@ export const ListGiftsResponse = zod.object({
         .describe(
           "Computed display name of the donor (individual, household, or funding entity).",
         ),
+      payerName: zod
+        .string()
+        .nullish()
+        .describe(
+          "Computed display name of the payer (funding entity or organization paying on behalf of the donor), when distinct from the donor.",
+        ),
+      fiscalSponsorName: zod
+        .string()
+        .nullish()
+        .describe(
+          "Computed display name of the fiscal sponsor (funding entity or organization), when applicable.",
+        ),
       pledgeId: zod.string().nullish(),
       campaignId: zod.string().nullish(),
       amount: zod.number(),
@@ -2787,6 +2913,18 @@ export const GetGiftResponse = zod
       .nullish()
       .describe(
         "Computed display name of the donor (individual, household, or funding entity).",
+      ),
+    payerName: zod
+      .string()
+      .nullish()
+      .describe(
+        "Computed display name of the payer (funding entity or organization paying on behalf of the donor), when distinct from the donor.",
+      ),
+    fiscalSponsorName: zod
+      .string()
+      .nullish()
+      .describe(
+        "Computed display name of the fiscal sponsor (funding entity or organization), when applicable.",
       ),
     pledgeId: zod.string().nullish(),
     campaignId: zod.string().nullish(),
@@ -2948,6 +3086,18 @@ export const UpdateGiftResponse = zod.object({
     .nullish()
     .describe(
       "Computed display name of the donor (individual, household, or funding entity).",
+    ),
+  payerName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Computed display name of the payer (funding entity or organization paying on behalf of the donor), when distinct from the donor.",
+    ),
+  fiscalSponsorName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Computed display name of the fiscal sponsor (funding entity or organization), when applicable.",
     ),
   pledgeId: zod.string().nullish(),
   campaignId: zod.string().nullish(),

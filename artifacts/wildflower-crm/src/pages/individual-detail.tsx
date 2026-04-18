@@ -58,7 +58,7 @@ export default function IndividualDetail() {
             { kind: "json", key: "customFields", label: "Custom fields (JSON)", value: individual.customFields ?? null },
           ]}
           onSubmit={async (values) => {
-            await updateMutation.mutateAsync({ id, data: values });
+            await updateMutation.mutateAsync({ id, data: values as Pick<UpdateIndividualBody, "birthday" | "customFields"> });
           }}
         />
       </div>
@@ -128,9 +128,48 @@ export default function IndividualDetail() {
             <TabsContent value="giving" className="mt-4">
               <Card>
                 <CardHeader><CardTitle>Giving History</CardTitle></CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">Total Giving: {formatCurrency(individual.totalGiving)}</p>
-                  <p className="text-sm text-muted-foreground">Last Gift: {formatCurrency(individual.lastGiftAmount)} on {formatDate(individual.lastGiftDate)}</p>
+                <CardContent className="space-y-4">
+                  <div className="text-sm">
+                    <p className="text-muted-foreground">Total Giving: {formatCurrency(individual.totalGiving)}</p>
+                    <p className="text-muted-foreground">Last Gift: {formatCurrency(individual.lastGiftAmount)} on {formatDate(individual.lastGiftDate)}</p>
+                  </div>
+                  {individual.givingHistory && individual.givingHistory.length > 0 ? (
+                    <ul className="space-y-3 text-sm border-t pt-4">
+                      {individual.givingHistory.map((g) => {
+                        const payerNote =
+                          g.payerName && g.payerName !== g.donorName
+                            ? `paid by ${g.payerName}`
+                            : g.fiscalSponsorName
+                            ? `via ${g.fiscalSponsorName}`
+                            : null;
+                        return (
+                          <li
+                            key={g.id}
+                            className="flex items-start justify-between gap-3"
+                            data-testid={`row-individual-gift-${g.id}`}
+                          >
+                            <div className="min-w-0">
+                              <Link
+                                href={`/gifts/${g.id}`}
+                                className="text-primary hover:underline block truncate"
+                              >
+                                {g.donorName ?? "Unknown donor"}
+                              </Link>
+                              <div className="text-xs text-muted-foreground">
+                                {formatDate(g.cashReceivedDate)}
+                                {payerNote ? ` • ${payerNote}` : ""}
+                              </div>
+                            </div>
+                            <span className="font-medium whitespace-nowrap">
+                              {formatCurrency(g.amount)}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted-foreground border-t pt-4">No gifts recorded.</p>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
