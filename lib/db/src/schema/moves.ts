@@ -4,11 +4,14 @@ import {
   timestamp,
   boolean,
   pgEnum,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { individuals } from "./individuals";
 import { households } from "./households";
 import { fundingEntities } from "./fundingEntities";
 import { opportunities } from "./opportunities";
+import { users } from "./users";
 
 export const moveLevelEnum = pgEnum("move_level", [
   "individual",
@@ -53,7 +56,9 @@ export const moves = pgTable("moves", {
   opportunityId: text("opportunity_id").references(() => opportunities.id, {
     onDelete: "set null",
   }),
-  staffUserId: text("staff_user_id"),
+  staffUserId: text("staff_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
   summary: text("summary"),
   outcome: text("outcome"),
   nextStep: text("next_step"),
@@ -62,14 +67,33 @@ export const moves = pgTable("moves", {
   source: moveSourceEnum("source").default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  exactlyOneSubject: check(
+    "moves_exactly_one_subject",
+    sql`(
+      (CASE WHEN ${t.individualId} IS NOT NULL THEN 1 ELSE 0 END)
+      + (CASE WHEN ${t.householdId} IS NOT NULL THEN 1 ELSE 0 END)
+      + (CASE WHEN ${t.fundingEntityId} IS NOT NULL THEN 1 ELSE 0 END)
+    ) = 1`,
+  ),
+  levelMatchesSubject: check(
+    "moves_level_matches_subject",
+    sql`(
+      (${t.moveLevel} = 'individual' AND ${t.individualId} IS NOT NULL)
+      OR (${t.moveLevel} = 'household' AND ${t.householdId} IS NOT NULL)
+      OR (${t.moveLevel} = 'funding_entity' AND ${t.fundingEntityId} IS NOT NULL)
+    )`,
+  ),
+}));
 
 export const moveParticipants = pgTable("move_participants", {
   id: text("id").primaryKey(),
   moveId: text("move_id")
     .notNull()
     .references(() => moves.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -14,6 +14,38 @@ export const Fund = {
   sunlight: "sunlight",
 } as const;
 
+export type FiscalYear = (typeof FiscalYear)[keyof typeof FiscalYear];
+
+export const FiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
+
+export type CultivationTeamRole =
+  (typeof CultivationTeamRole)[keyof typeof CultivationTeamRole];
+
+export const CultivationTeamRole = {
+  relationship_owner: "relationship_owner",
+  strategy: "strategy",
+  support: "support",
+  primary_solicitor: "primary_solicitor",
+} as const;
+
+export type CultivationTeamOwnerType =
+  (typeof CultivationTeamOwnerType)[keyof typeof CultivationTeamOwnerType];
+
+export const CultivationTeamOwnerType = {
+  individual: "individual",
+  household: "household",
+  funding_entity: "funding_entity",
+} as const;
+
 export type FundingEntitySubtype =
   (typeof FundingEntitySubtype)[keyof typeof FundingEntitySubtype];
 
@@ -388,6 +420,21 @@ export const OpportunityDonorType = {
   funding_entity: "funding_entity",
 } as const;
 
+export type OpportunityFiscalYear =
+  | (typeof OpportunityFiscalYear)[keyof typeof OpportunityFiscalYear]
+  | null;
+
+export const OpportunityFiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
+
 export type OpportunityPriority =
   | (typeof OpportunityPriority)[keyof typeof OpportunityPriority]
   | null;
@@ -419,7 +466,7 @@ export interface Opportunity {
   expectedCloseDate?: string | null;
   expectedFirstPaymentDate?: string | null;
   rollForwardCount: number;
-  fiscalYear?: number | null;
+  fiscalYear?: OpportunityFiscalYear;
   priority?: OpportunityPriority;
   description?: string | null;
   fiscalSponsorFundingEntityId?: string | null;
@@ -829,6 +876,20 @@ export const CreateOpportunityBodyDonorType = {
   funding_entity: "funding_entity",
 } as const;
 
+export type CreateOpportunityBodyFiscalYear =
+  (typeof CreateOpportunityBodyFiscalYear)[keyof typeof CreateOpportunityBodyFiscalYear];
+
+export const CreateOpportunityBodyFiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
+
 export type CreateOpportunityBodyPriority =
   (typeof CreateOpportunityBodyPriority)[keyof typeof CreateOpportunityBodyPriority];
 
@@ -854,7 +915,7 @@ export interface CreateOpportunityBody {
   governmentStage?: GovernmentOpportunityStage;
   expectedCloseDate?: string;
   expectedFirstPaymentDate?: string;
-  fiscalYear?: number;
+  fiscalYear?: CreateOpportunityBodyFiscalYear;
   priority?: CreateOpportunityBodyPriority;
   description?: string;
   fiscalSponsorFundingEntityId?: string;
@@ -864,6 +925,20 @@ export interface CreateOpportunityBody {
   proposalDeadline?: string;
   budgetCeiling?: number;
 }
+
+export type UpdateOpportunityBodyFiscalYear =
+  (typeof UpdateOpportunityBodyFiscalYear)[keyof typeof UpdateOpportunityBodyFiscalYear];
+
+export const UpdateOpportunityBodyFiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
 
 export type UpdateOpportunityBodyPriority =
   (typeof UpdateOpportunityBodyPriority)[keyof typeof UpdateOpportunityBodyPriority];
@@ -888,7 +963,7 @@ export interface UpdateOpportunityBody {
   probabilityOverridden?: boolean;
   expectedCloseDate?: string;
   expectedFirstPaymentDate?: string;
-  fiscalYear?: number;
+  fiscalYear?: UpdateOpportunityBodyFiscalYear;
   priority?: UpdateOpportunityBodyPriority;
   description?: string;
   fiscalSponsorFundingEntityId?: string;
@@ -1014,10 +1089,24 @@ export const CreateGiftBodyRestrictionFormality = {
   conversational: "conversational",
 } as const;
 
+export type CreateGiftAllocationBodyFiscalYear =
+  (typeof CreateGiftAllocationBodyFiscalYear)[keyof typeof CreateGiftAllocationBodyFiscalYear];
+
+export const CreateGiftAllocationBodyFiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
+
 export interface CreateGiftAllocationBody {
   fund: Fund;
   amount: number;
-  fiscalYear?: string;
+  fiscalYear?: CreateGiftAllocationBodyFiscalYear;
   notes?: string;
 }
 
@@ -1203,6 +1292,20 @@ export interface DonorQuietAlert {
   openOpportunitiesCount: number;
 }
 
+export type FiscalYearForecastFiscalYear =
+  (typeof FiscalYearForecastFiscalYear)[keyof typeof FiscalYearForecastFiscalYear];
+
+export const FiscalYearForecastFiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
+
 export type FiscalYearForecastByFundItem = {
   fund: Fund;
   confirmed: number;
@@ -1211,7 +1314,7 @@ export type FiscalYearForecastByFundItem = {
 };
 
 export interface FiscalYearForecast {
-  fiscalYear: number;
+  fiscalYear: FiscalYearForecastFiscalYear;
   label: string;
   confirmed: number;
   verballyCommitted: number;
@@ -1325,6 +1428,21 @@ export interface UpdateContactAddressBody {
   isMailingPreferred?: boolean;
 }
 
+export type CampaignFiscalYear =
+  | (typeof CampaignFiscalYear)[keyof typeof CampaignFiscalYear]
+  | null;
+
+export const CampaignFiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
+
 export interface Campaign {
   id: string;
   name: string;
@@ -1332,12 +1450,26 @@ export interface Campaign {
   description?: string | null;
   startDate?: string | null;
   endDate?: string | null;
-  fiscalYear?: string | null;
+  fiscalYear?: CampaignFiscalYear;
   goalAmount?: number | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
+
+export type CreateCampaignBodyFiscalYear =
+  (typeof CreateCampaignBodyFiscalYear)[keyof typeof CreateCampaignBodyFiscalYear];
+
+export const CreateCampaignBodyFiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
 
 export interface CreateCampaignBody {
   name: string;
@@ -1345,10 +1477,25 @@ export interface CreateCampaignBody {
   description?: string;
   startDate?: string;
   endDate?: string;
-  fiscalYear?: string;
+  fiscalYear?: CreateCampaignBodyFiscalYear;
   goalAmount?: number;
   isActive?: boolean;
 }
+
+export type UpdateCampaignBodyFiscalYear =
+  | (typeof UpdateCampaignBodyFiscalYear)[keyof typeof UpdateCampaignBodyFiscalYear]
+  | null;
+
+export const UpdateCampaignBodyFiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
 
 export interface UpdateCampaignBody {
   name?: string;
@@ -1356,19 +1503,58 @@ export interface UpdateCampaignBody {
   description?: string | null;
   startDate?: string | null;
   endDate?: string | null;
-  fiscalYear?: string | null;
+  fiscalYear?: UpdateCampaignBodyFiscalYear;
   goalAmount?: number | null;
   isActive?: boolean;
 }
+
+export type GiftAllocationFiscalYear =
+  | (typeof GiftAllocationFiscalYear)[keyof typeof GiftAllocationFiscalYear]
+  | null;
+
+export const GiftAllocationFiscalYear = {
+  FY23: "FY23",
+  FY24: "FY24",
+  FY25: "FY25",
+  FY26: "FY26",
+  FY27: "FY27",
+  FY28: "FY28",
+  FY29: "FY29",
+  FY30: "FY30",
+} as const;
 
 export interface GiftAllocation {
   id: string;
   giftId: string;
   fund: Fund;
   amount: number;
-  fiscalYear?: string | null;
+  fiscalYear?: GiftAllocationFiscalYear;
   notes?: string | null;
   createdAt: string;
+}
+
+export interface CultivationTeamMember {
+  id: string;
+  ownerType: CultivationTeamOwnerType;
+  ownerId: string;
+  userId: string;
+  role: CultivationTeamRole;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CultivationTeamMemberCreate {
+  ownerType: CultivationTeamOwnerType;
+  ownerId: string;
+  userId: string;
+  role: CultivationTeamRole;
+  notes?: string;
+}
+
+export interface CultivationTeamMemberUpdate {
+  role?: CultivationTeamRole;
+  notes?: string | null;
 }
 
 export type ListIndividualsParams = {
@@ -1611,4 +1797,9 @@ export type ListCampaigns200 = {
   total: number;
   page: number;
   limit: number;
+};
+
+export type ListCultivationTeamMembersParams = {
+  ownerType: CultivationTeamOwnerType;
+  ownerId: string;
 };

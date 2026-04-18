@@ -13,6 +13,7 @@ import grantsCalendarRouter from "./grantsCalendar";
 import usersRouter from "./usersRoute";
 import contactsRouter from "./contacts";
 import campaignsRouter from "./campaigns";
+import cultivationTeamRouter from "./cultivationTeam";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use("/grants-calendar", grantsCalendarRouter);
 router.use("/users", usersRouter);
 router.use("/contacts", contactsRouter);
 router.use("/campaigns", campaignsRouter);
+router.use("/cultivation-team", cultivationTeamRouter);
 
 export default router;

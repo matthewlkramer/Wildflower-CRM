@@ -145,22 +145,22 @@ async function main() {
   ]);
 
   const [camp1, camp2] = await db.insert(campaigns).values([
-    { id: id(), name: "FY26 Annual Fund", fund: "general_operating" as const, fiscalYear: "FY2026", startDate: "2025-07-01", endDate: "2026-06-30", goalAmount: "500000", description: "Unrestricted operating support for FY26.", isActive: true },
-    { id: id(), name: "Black Wildflowers Fall Drive 2025", fund: "black_wildflowers" as const, fiscalYear: "FY2026", startDate: "2025-09-01", endDate: "2025-12-31", goalAmount: "100000", description: "Targeted fall drive for Black Wildflowers Fund.", isActive: false },
+    { id: id(), name: "FY26 Annual Fund", fund: "general_operating" as const, fiscalYear: "FY26" as const, startDate: "2025-07-01", endDate: "2026-06-30", goalAmount: "500000", description: "Unrestricted operating support for FY26.", isActive: true },
+    { id: id(), name: "Black Wildflowers Fall Drive 2025", fund: "black_wildflowers" as const, fiscalYear: "FY26" as const, startDate: "2025-09-01", endDate: "2025-12-31", goalAmount: "100000", description: "Targeted fall drive for Black Wildflowers Fund.", isActive: false },
   ]).returning();
 
-  const fy = "FY2026";
+  const fy = "FY26" as const;
   const [opp1, opp2, opp3, opp4, opp5, opp6] = await db.insert(opportunities).values([
-    { id: id(), name: "Maya Chen-Nakamura – Seed Fund FY26", subtype: "ongoing_rolling" as const, donorType: "individual" as const, individualId: ind1.id, householdId: hh1.id, ownerUserId: u1.id, fund: "seed_fund" as const, amountExpected: "75000", probability: 85, probabilityOverridden: true, stage: "negotiation" as const, expectedCloseDate: new Date("2026-06-30"), fiscalYear: fy, askAmount: "75000", askRationale: "Continuation of FY25 gift with 50% increase." },
-    { id: id(), name: "Okonkwo – Black Wildflowers Fund", subtype: "targeted_deadline" as const, donorType: "household" as const, householdId: hh2.id, ownerUserId: u2.id, fund: "black_wildflowers" as const, amountExpected: "25000", probability: 70, stage: "solicitation" as const, expectedCloseDate: new Date("2026-05-15"), fiscalYear: fy, askAmount: "25000", campaignId: camp2.id },
-    { id: id(), name: "Berkshire Ed Foundation – General Operating", subtype: "targeted_deadline" as const, donorType: "institutional_foundation" as const, fundingEntityId: fe1.id, ownerUserId: u1.id, fund: "general_operating" as const, amountExpected: "150000", probability: 55, stage: "conversation" as const, expectedCloseDate: new Date("2026-09-01"), fiscalYear: fy, loiDeadline: new Date("2026-06-01"), proposalDeadline: new Date("2026-08-01") },
-    { id: id(), name: "Wildberry Family – Seed Fund Renewal", subtype: "ongoing_rolling" as const, donorType: "family_foundation" as const, fundingEntityId: fe2.id, ownerUserId: u2.id, fund: "seed_fund" as const, amountExpected: "35000", probability: 90, probabilityOverridden: true, stage: "committed" as const, expectedCloseDate: new Date("2026-07-01"), fiscalYear: fy },
-    { id: id(), name: "James Whitfield – General Operating Discovery", subtype: "ongoing_rolling" as const, donorType: "individual" as const, individualId: ind4.id, ownerUserId: u2.id, fund: "general_operating" as const, amountExpected: "50000", probability: 30, stage: "conversation" as const, expectedCloseDate: new Date("2026-08-30"), fiscalYear: fy, campaignId: camp1.id },
-    { id: id(), name: "Dept of Ed – Early Learning Innovation RFP", subtype: "rfp_proposal" as const, donorType: "government_rfp" as const, fundingEntityId: fe3.id, ownerUserId: u1.id, fund: "general_operating" as const, amountExpected: "500000", probability: 20, probabilityOverridden: true, stage: "pre_conversation" as const, governmentStage: "application_in_progress" as const, expectedCloseDate: new Date("2026-12-15"), fiscalYear: fy, proposalDeadline: new Date("2026-10-15"), loiDeadline: new Date("2026-08-30"), notes: "Multi-year potential." },
+    { id: id(), name: "Maya Chen-Nakamura – Seed Fund FY26", subtype: "ongoing_rolling" as const, donorType: "individual" as const, individualId: ind1.id, ownerUserId: u1.id, fund: "seed_fund" as const, amountExpected: "75000", probability: 85, probabilityOverridden: true, stage: "negotiation" as const, expectedCloseDate: new Date("2026-06-30"), fiscalYear: "FY26" as const, askAmount: "75000", askRationale: "Continuation of FY25 gift with 50% increase." },
+    { id: id(), name: "Okonkwo – Black Wildflowers Fund", subtype: "targeted_deadline" as const, donorType: "household" as const, householdId: hh2.id, ownerUserId: u2.id, fund: "black_wildflowers" as const, amountExpected: "25000", probability: 70, stage: "solicitation" as const, expectedCloseDate: new Date("2026-05-15"), fiscalYear: "FY26" as const, askAmount: "25000", campaignId: camp2.id },
+    { id: id(), name: "Berkshire Ed Foundation – General Operating", subtype: "targeted_deadline" as const, donorType: "institutional_foundation" as const, fundingEntityId: fe1.id, ownerUserId: u1.id, fund: "general_operating" as const, amountExpected: "150000", probability: 55, stage: "conversation" as const, expectedCloseDate: new Date("2026-09-01"), fiscalYear: "FY26" as const, loiDeadline: new Date("2026-06-01"), proposalDeadline: new Date("2026-08-01") },
+    { id: id(), name: "Wildberry Family – Seed Fund Renewal", subtype: "ongoing_rolling" as const, donorType: "family_foundation" as const, fundingEntityId: fe2.id, ownerUserId: u2.id, fund: "seed_fund" as const, amountExpected: "35000", probability: 90, probabilityOverridden: true, stage: "committed" as const, expectedCloseDate: new Date("2026-07-01"), fiscalYear: "FY26" as const },
+    { id: id(), name: "James Whitfield – General Operating Discovery", subtype: "ongoing_rolling" as const, donorType: "individual" as const, individualId: ind4.id, ownerUserId: u2.id, fund: "general_operating" as const, amountExpected: "50000", probability: 30, stage: "conversation" as const, expectedCloseDate: new Date("2026-08-30"), fiscalYear: "FY26" as const, campaignId: camp1.id },
+    { id: id(), name: "Dept of Ed – Early Learning Innovation RFP", subtype: "rfp_proposal" as const, donorType: "government_rfp" as const, fundingEntityId: fe3.id, ownerUserId: u1.id, fund: "general_operating" as const, amountExpected: "500000", probability: 20, probabilityOverridden: true, stage: "pre_conversation" as const, governmentStage: "application_in_progress" as const, expectedCloseDate: new Date("2026-12-15"), fiscalYear: "FY26" as const, proposalDeadline: new Date("2026-10-15"), loiDeadline: new Date("2026-08-30"), notes: "Multi-year potential." },
   ]).returning();
 
   const [pledge1] = await db.insert(pledges).values([
-    { id: id(), name: "Maya Chen-Nakamura 3-Year Seed Fund Pledge", fund: "seed_fund" as const, individualId: ind1.id, householdId: hh1.id, totalCommittedAmount: "225000", pledgeDate: new Date("2024-01-15"), numberOfInstallments: 3, status: "active" as const, amountReceived: "150000", legalDocumentOnFile: true, notes: "Year 3 installment due Q4 FY26." },
+    { id: id(), name: "Maya Chen-Nakamura 3-Year Seed Fund Pledge", fund: "seed_fund" as const, individualId: ind1.id, totalCommittedAmount: "225000", pledgeDate: new Date("2024-01-15"), numberOfInstallments: 3, status: "active" as const, amountReceived: "150000", legalDocumentOnFile: true, notes: "Year 3 installment due Q4 FY26." },
   ]).returning();
 
   await db.insert(pledgeInstallments).values([
@@ -170,17 +170,17 @@ async function main() {
   ]);
 
   const [g1, g2, g3, g4] = await db.insert(gifts).values([
-    { id: id(), individualId: ind1.id, householdId: hh1.id, pledgeId: pledge1.id, amount: "75000", currency: "USD", cashReceivedDate: new Date("2025-06-20"), paymentMethod: "wire" as const, reconciled: true },
-    { id: id(), individualId: ind3.id, householdId: hh2.id, amount: "25000", currency: "USD", cashReceivedDate: new Date("2025-11-01"), paymentMethod: "check" as const, reconciled: true, campaignId: camp2.id },
+    { id: id(), individualId: ind1.id, pledgeId: pledge1.id, amount: "75000", currency: "USD", cashReceivedDate: new Date("2025-06-20"), paymentMethod: "wire" as const, reconciled: true },
+    { id: id(), individualId: ind3.id, amount: "25000", currency: "USD", cashReceivedDate: new Date("2025-11-01"), paymentMethod: "check" as const, reconciled: true, campaignId: camp2.id },
     { id: id(), fundingEntityId: fe2.id, amount: "35000", currency: "USD", cashReceivedDate: new Date("2025-09-15"), paymentMethod: "ach" as const, reconciled: true },
     { id: id(), individualId: ind5.id, amount: "10000", currency: "USD", cashReceivedDate: new Date("2025-06-15"), paymentMethod: "check" as const, reconciled: false, campaignId: camp1.id },
   ]).returning();
 
   await db.insert(giftAllocations).values([
-    { id: id(), giftId: g1.id, fund: "seed_fund" as const, amount: "75000", fiscalYear: "FY2025" },
-    { id: id(), giftId: g2.id, fund: "black_wildflowers" as const, amount: "25000", fiscalYear: "FY2026" },
-    { id: id(), giftId: g3.id, fund: "seed_fund" as const, amount: "35000", fiscalYear: "FY2026" },
-    { id: id(), giftId: g4.id, fund: "general_operating" as const, amount: "10000", fiscalYear: "FY2025" },
+    { id: id(), giftId: g1.id, fund: "seed_fund" as const, amount: "75000", fiscalYear: "FY25" as const },
+    { id: id(), giftId: g2.id, fund: "black_wildflowers" as const, amount: "25000", fiscalYear: "FY26" as const },
+    { id: id(), giftId: g3.id, fund: "seed_fund" as const, amount: "35000", fiscalYear: "FY26" as const },
+    { id: id(), giftId: g4.id, fund: "general_operating" as const, amount: "10000", fiscalYear: "FY25" as const },
   ]);
 
   await db.insert(giftSoftCredits).values([

@@ -7,12 +7,13 @@ import {
   boolean,
 } from "drizzle-orm/pg-core";
 import { fundEnum } from "./users";
+import { fiscalYearEnum } from "./_enums";
 
 export const campaigns = pgTable("campaigns", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   fund: fundEnum("fund"),
-  fiscalYear: text("fiscal_year"),
+  fiscalYear: fiscalYearEnum("fiscal_year"),
   startDate: date("start_date"),
   endDate: date("end_date"),
   goalAmount: numeric("goal_amount", { precision: 15, scale: 2 }),

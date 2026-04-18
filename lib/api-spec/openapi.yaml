@@ -1551,12 +1551,78 @@ paths:
       responses:
         "204": { description: Deleted }
 
+  /cultivation-team:
+    get:
+      operationId: listCultivationTeamMembers
+      tags: [cultivation-team]
+      parameters:
+        - { name: ownerType, in: query, required: true, schema: { $ref: "#/components/schemas/CultivationTeamOwnerType" } }
+        - { name: ownerId, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CultivationTeamMember" }
+    post:
+      operationId: createCultivationTeamMember
+      tags: [cultivation-team]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CultivationTeamMemberCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CultivationTeamMember" }
+  /cultivation-team/{id}:
+    patch:
+      operationId: updateCultivationTeamMember
+      tags: [cultivation-team]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CultivationTeamMemberUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CultivationTeamMember" }
+    delete:
+      operationId: deleteCultivationTeamMember
+      tags: [cultivation-team]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+
 components:
   schemas:
     # ─── Enums ──────────────────────────────────────────────────────────────────
     Fund:
       type: string
       enum: [general_operating, seed_fund, black_wildflowers, sunlight]
+
+    FiscalYear:
+      type: string
+      enum: [FY23, FY24, FY25, FY26, FY27, FY28, FY29, FY30]
+
+    CultivationTeamRole:
+      type: string
+      enum: [relationship_owner, strategy, support, primary_solicitor]
+
+    CultivationTeamOwnerType:
+      type: string
+      enum: [individual, household, funding_entity]
 
     FundingEntitySubtype:
       type: string
@@ -2475,7 +2541,8 @@ components:
         rollForwardCount:
           type: integer
         fiscalYear:
-          type: integer
+          type: string
+          enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30]
           nullable: true
         priority:
           type: string
@@ -2637,7 +2704,8 @@ components:
           type: string
           format: date
         fiscalYear:
-          type: integer
+          type: string
+          enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30]
         priority:
           type: string
           enum: [high, medium, low]
@@ -2692,7 +2760,8 @@ components:
           type: string
           format: date
         fiscalYear:
-          type: integer
+          type: string
+          enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30]
         priority:
           type: string
           enum: [high, medium, low]
@@ -3413,7 +3482,8 @@ components:
       type: object
       properties:
         fiscalYear:
-          type: integer
+          type: string
+          enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30]
         label:
           type: string
         confirmed:
@@ -3660,7 +3730,7 @@ components:
         description: { type: string, nullable: true }
         startDate: { type: string, format: date, nullable: true }
         endDate: { type: string, format: date, nullable: true }
-        fiscalYear: { type: string, nullable: true }
+        fiscalYear: { type: string, enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30], nullable: true }
         goalAmount: { type: number, nullable: true }
         isActive: { type: boolean }
         createdAt: { type: string, format: date-time }
@@ -3676,7 +3746,7 @@ components:
         description: { type: string }
         startDate: { type: string, format: date }
         endDate: { type: string, format: date }
-        fiscalYear: { type: string }
+        fiscalYear: { type: string, enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30] }
         goalAmount: { type: number }
         isActive: { type: boolean }
 
@@ -3688,7 +3758,7 @@ components:
         description: { type: string, nullable: true }
         startDate: { type: string, format: date, nullable: true }
         endDate: { type: string, format: date, nullable: true }
-        fiscalYear: { type: string, nullable: true }
+        fiscalYear: { type: string, enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30], nullable: true }
         goalAmount: { type: number, nullable: true }
         isActive: { type: boolean }
 
@@ -3700,7 +3770,7 @@ components:
         giftId: { type: string }
         fund: { $ref: "#/components/schemas/Fund" }
         amount: { type: number }
-        fiscalYear: { type: string, nullable: true }
+        fiscalYear: { type: string, enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30], nullable: true }
         notes: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
       required: [id, giftId, fund, amount, createdAt]
@@ -3711,5 +3781,34 @@ components:
       properties:
         fund: { $ref: "#/components/schemas/Fund" }
         amount: { type: number }
-        fiscalYear: { type: string }
+        fiscalYear: { type: string, enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30] }
         notes: { type: string }
+
+    CultivationTeamMember:
+      type: object
+      properties:
+        id: { type: string }
+        ownerType: { $ref: "#/components/schemas/CultivationTeamOwnerType" }
+        ownerId: { type: string }
+        userId: { type: string }
+        role: { $ref: "#/components/schemas/CultivationTeamRole" }
+        notes: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, ownerType, ownerId, userId, role, createdAt, updatedAt]
+
+    CultivationTeamMemberCreate:
+      type: object
+      required: [ownerType, ownerId, userId, role]
+      properties:
+        ownerType: { $ref: "#/components/schemas/CultivationTeamOwnerType" }
+        ownerId: { type: string }
+        userId: { type: string }
+        role: { $ref: "#/components/schemas/CultivationTeamRole" }
+        notes: { type: string }
+
+    CultivationTeamMemberUpdate:
+      type: object
+      properties:
+        role: { $ref: "#/components/schemas/CultivationTeamRole" }
+        notes: { type: string, nullable: true }

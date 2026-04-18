@@ -452,7 +452,18 @@ export const GetIndividualResponse = zod
             expectedCloseDate: zod.coerce.date().nullish(),
             expectedFirstPaymentDate: zod.coerce.date().nullish(),
             rollForwardCount: zod.number(),
-            fiscalYear: zod.number().nullish(),
+            fiscalYear: zod
+              .enum([
+                "FY23",
+                "FY24",
+                "FY25",
+                "FY26",
+                "FY27",
+                "FY28",
+                "FY29",
+                "FY30",
+              ])
+              .nullish(),
             priority: zod.enum(["high", "medium", "low"]).nullish(),
             description: zod.string().nullish(),
             fiscalSponsorFundingEntityId: zod.string().nullish(),
@@ -888,7 +899,18 @@ export const GetHouseholdResponse = zod
             expectedCloseDate: zod.coerce.date().nullish(),
             expectedFirstPaymentDate: zod.coerce.date().nullish(),
             rollForwardCount: zod.number(),
-            fiscalYear: zod.number().nullish(),
+            fiscalYear: zod
+              .enum([
+                "FY23",
+                "FY24",
+                "FY25",
+                "FY26",
+                "FY27",
+                "FY28",
+                "FY29",
+                "FY30",
+              ])
+              .nullish(),
             priority: zod.enum(["high", "medium", "low"]).nullish(),
             description: zod.string().nullish(),
             fiscalSponsorFundingEntityId: zod.string().nullish(),
@@ -1349,7 +1371,18 @@ export const GetFundingEntityResponse = zod
             expectedCloseDate: zod.coerce.date().nullish(),
             expectedFirstPaymentDate: zod.coerce.date().nullish(),
             rollForwardCount: zod.number(),
-            fiscalYear: zod.number().nullish(),
+            fiscalYear: zod
+              .enum([
+                "FY23",
+                "FY24",
+                "FY25",
+                "FY26",
+                "FY27",
+                "FY28",
+                "FY29",
+                "FY30",
+              ])
+              .nullish(),
             priority: zod.enum(["high", "medium", "low"]).nullish(),
             description: zod.string().nullish(),
             fiscalSponsorFundingEntityId: zod.string().nullish(),
@@ -1689,7 +1722,9 @@ export const ListOpportunitiesResponse = zod.object({
       expectedCloseDate: zod.coerce.date().nullish(),
       expectedFirstPaymentDate: zod.coerce.date().nullish(),
       rollForwardCount: zod.number(),
-      fiscalYear: zod.number().nullish(),
+      fiscalYear: zod
+        .enum(["FY23", "FY24", "FY25", "FY26", "FY27", "FY28", "FY29", "FY30"])
+        .nullish(),
       priority: zod.enum(["high", "medium", "low"]).nullish(),
       description: zod.string().nullish(),
       fiscalSponsorFundingEntityId: zod.string().nullish(),
@@ -1751,7 +1786,9 @@ export const CreateOpportunityBody = zod.object({
     .optional(),
   expectedCloseDate: zod.coerce.date().optional(),
   expectedFirstPaymentDate: zod.coerce.date().optional(),
-  fiscalYear: zod.number().optional(),
+  fiscalYear: zod
+    .enum(["FY23", "FY24", "FY25", "FY26", "FY27", "FY28", "FY29", "FY30"])
+    .optional(),
   priority: zod.enum(["high", "medium", "low"]).optional(),
   description: zod.string().optional(),
   fiscalSponsorFundingEntityId: zod.string().optional(),
@@ -1820,7 +1857,9 @@ export const GetOpportunityResponse = zod
     expectedCloseDate: zod.coerce.date().nullish(),
     expectedFirstPaymentDate: zod.coerce.date().nullish(),
     rollForwardCount: zod.number(),
-    fiscalYear: zod.number().nullish(),
+    fiscalYear: zod
+      .enum(["FY23", "FY24", "FY25", "FY26", "FY27", "FY28", "FY29", "FY30"])
+      .nullish(),
     priority: zod.enum(["high", "medium", "low"]).nullish(),
     description: zod.string().nullish(),
     fiscalSponsorFundingEntityId: zod.string().nullish(),
@@ -1995,7 +2034,9 @@ export const UpdateOpportunityBody = zod.object({
   probabilityOverridden: zod.boolean().optional(),
   expectedCloseDate: zod.coerce.date().optional(),
   expectedFirstPaymentDate: zod.coerce.date().optional(),
-  fiscalYear: zod.number().optional(),
+  fiscalYear: zod
+    .enum(["FY23", "FY24", "FY25", "FY26", "FY27", "FY28", "FY29", "FY30"])
+    .optional(),
   priority: zod.enum(["high", "medium", "low"]).optional(),
   description: zod.string().optional(),
   fiscalSponsorFundingEntityId: zod.string().optional(),
@@ -2070,7 +2111,9 @@ export const UpdateOpportunityResponse = zod.object({
   expectedCloseDate: zod.coerce.date().nullish(),
   expectedFirstPaymentDate: zod.coerce.date().nullish(),
   rollForwardCount: zod.number(),
-  fiscalYear: zod.number().nullish(),
+  fiscalYear: zod
+    .enum(["FY23", "FY24", "FY25", "FY26", "FY27", "FY28", "FY29", "FY30"])
+    .nullish(),
   priority: zod.enum(["high", "medium", "low"]).nullish(),
   description: zod.string().nullish(),
   fiscalSponsorFundingEntityId: zod.string().nullish(),
@@ -2164,7 +2207,18 @@ export const GetOpportunityPipelineResponse = zod.object({
           expectedCloseDate: zod.coerce.date().nullish(),
           expectedFirstPaymentDate: zod.coerce.date().nullish(),
           rollForwardCount: zod.number(),
-          fiscalYear: zod.number().nullish(),
+          fiscalYear: zod
+            .enum([
+              "FY23",
+              "FY24",
+              "FY25",
+              "FY26",
+              "FY27",
+              "FY28",
+              "FY29",
+              "FY30",
+            ])
+            .nullish(),
           priority: zod.enum(["high", "medium", "low"]).nullish(),
           description: zod.string().nullish(),
           fiscalSponsorFundingEntityId: zod.string().nullish(),
@@ -2511,7 +2565,18 @@ export const CreateGiftBody = zod.object({
           "sunlight",
         ]),
         amount: zod.number(),
-        fiscalYear: zod.string().optional(),
+        fiscalYear: zod
+          .enum([
+            "FY23",
+            "FY24",
+            "FY25",
+            "FY26",
+            "FY27",
+            "FY28",
+            "FY29",
+            "FY30",
+          ])
+          .optional(),
         notes: zod.string().optional(),
       }),
     )
@@ -2599,7 +2664,18 @@ export const UpdateGiftBody = zod.object({
           "sunlight",
         ]),
         amount: zod.number(),
-        fiscalYear: zod.string().optional(),
+        fiscalYear: zod
+          .enum([
+            "FY23",
+            "FY24",
+            "FY25",
+            "FY26",
+            "FY27",
+            "FY28",
+            "FY29",
+            "FY30",
+          ])
+          .optional(),
         notes: zod.string().optional(),
       }),
     )
@@ -3082,7 +3158,16 @@ export const GetProjectionsForecastQueryParams = zod.object({
 export const GetProjectionsForecastResponse = zod.object({
   fiscalYears: zod.array(
     zod.object({
-      fiscalYear: zod.number(),
+      fiscalYear: zod.enum([
+        "FY23",
+        "FY24",
+        "FY25",
+        "FY26",
+        "FY27",
+        "FY28",
+        "FY29",
+        "FY30",
+      ]),
       label: zod.string(),
       confirmed: zod.number(),
       verballyCommitted: zod.number(),
@@ -3534,7 +3619,9 @@ export const ListCampaignsResponse = zod.object({
       description: zod.string().nullish(),
       startDate: zod.coerce.date().nullish(),
       endDate: zod.coerce.date().nullish(),
-      fiscalYear: zod.string().nullish(),
+      fiscalYear: zod
+        .enum(["FY23", "FY24", "FY25", "FY26", "FY27", "FY28", "FY29", "FY30"])
+        .nullish(),
       goalAmount: zod.number().nullish(),
       isActive: zod.boolean(),
       createdAt: zod.coerce.date(),
@@ -3557,7 +3644,9 @@ export const CreateCampaignBody = zod.object({
   description: zod.string().optional(),
   startDate: zod.coerce.date().optional(),
   endDate: zod.coerce.date().optional(),
-  fiscalYear: zod.string().optional(),
+  fiscalYear: zod
+    .enum(["FY23", "FY24", "FY25", "FY26", "FY27", "FY28", "FY29", "FY30"])
+    .optional(),
   goalAmount: zod.number().optional(),
   isActive: zod.boolean().optional(),
 });
@@ -3578,7 +3667,9 @@ export const GetCampaignResponse = zod.object({
   description: zod.string().nullish(),
   startDate: zod.coerce.date().nullish(),
   endDate: zod.coerce.date().nullish(),
-  fiscalYear: zod.string().nullish(),
+  fiscalYear: zod
+    .enum(["FY23", "FY24", "FY25", "FY26", "FY27", "FY28", "FY29", "FY30"])
+    .nullish(),
   goalAmount: zod.number().nullish(),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),
@@ -3597,7 +3688,9 @@ export const UpdateCampaignBody = zod.object({
   description: zod.string().nullish(),
   startDate: zod.coerce.date().nullish(),
   endDate: zod.coerce.date().nullish(),
-  fiscalYear: zod.string().nullish(),
+  fiscalYear: zod
+    .enum(["FY23", "FY24", "FY25", "FY26", "FY27", "FY28", "FY29", "FY30"])
+    .nullish(),
   goalAmount: zod.number().nullish(),
   isActive: zod.boolean().optional(),
 });
@@ -3614,7 +3707,9 @@ export const UpdateCampaignResponse = zod.object({
   description: zod.string().nullish(),
   startDate: zod.coerce.date().nullish(),
   endDate: zod.coerce.date().nullish(),
-  fiscalYear: zod.string().nullish(),
+  fiscalYear: zod
+    .enum(["FY23", "FY24", "FY25", "FY26", "FY27", "FY28", "FY29", "FY30"])
+    .nullish(),
   goalAmount: zod.number().nullish(),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),
@@ -3622,5 +3717,73 @@ export const UpdateCampaignResponse = zod.object({
 });
 
 export const DeleteCampaignParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ListCultivationTeamMembersQueryParams = zod.object({
+  ownerType: zod.enum(["individual", "household", "funding_entity"]),
+  ownerId: zod.coerce.string(),
+});
+
+export const ListCultivationTeamMembersResponseItem = zod.object({
+  id: zod.string(),
+  ownerType: zod.enum(["individual", "household", "funding_entity"]),
+  ownerId: zod.string(),
+  userId: zod.string(),
+  role: zod.enum([
+    "relationship_owner",
+    "strategy",
+    "support",
+    "primary_solicitor",
+  ]),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListCultivationTeamMembersResponse = zod.array(
+  ListCultivationTeamMembersResponseItem,
+);
+
+export const CreateCultivationTeamMemberBody = zod.object({
+  ownerType: zod.enum(["individual", "household", "funding_entity"]),
+  ownerId: zod.string(),
+  userId: zod.string(),
+  role: zod.enum([
+    "relationship_owner",
+    "strategy",
+    "support",
+    "primary_solicitor",
+  ]),
+  notes: zod.string().optional(),
+});
+
+export const UpdateCultivationTeamMemberParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateCultivationTeamMemberBody = zod.object({
+  role: zod
+    .enum(["relationship_owner", "strategy", "support", "primary_solicitor"])
+    .optional(),
+  notes: zod.string().nullish(),
+});
+
+export const UpdateCultivationTeamMemberResponse = zod.object({
+  id: zod.string(),
+  ownerType: zod.enum(["individual", "household", "funding_entity"]),
+  ownerId: zod.string(),
+  userId: zod.string(),
+  role: zod.enum([
+    "relationship_owner",
+    "strategy",
+    "support",
+    "primary_solicitor",
+  ]),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+export const DeleteCultivationTeamMemberParams = zod.object({
   id: zod.coerce.string(),
 });

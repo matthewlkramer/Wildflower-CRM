@@ -5,7 +5,9 @@ import {
   numeric,
   boolean,
   pgEnum,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { individuals } from "./individuals";
 import { households } from "./households";
 import { fundingEntities } from "./fundingEntities";
@@ -60,7 +62,16 @@ export const gifts = pgTable("gifts", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  exactlyOneDonor: check(
+    "gifts_exactly_one_donor",
+    sql`(
+      (CASE WHEN ${t.individualId} IS NOT NULL THEN 1 ELSE 0 END)
+      + (CASE WHEN ${t.householdId} IS NOT NULL THEN 1 ELSE 0 END)
+      + (CASE WHEN ${t.fundingEntityId} IS NOT NULL THEN 1 ELSE 0 END)
+    ) = 1`,
+  ),
+}));
 
 export type Gift = typeof gifts.$inferSelect;
 export type NewGift = typeof gifts.$inferInsert;

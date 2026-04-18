@@ -36,6 +36,9 @@ import type {
   CreateMoveBody,
   CreateOpportunityBody,
   CreatePledgeBody,
+  CultivationTeamMember,
+  CultivationTeamMemberCreate,
+  CultivationTeamMemberUpdate,
   DashboardSummary,
   DeleteResult,
   DonorQuietAlert,
@@ -64,6 +67,7 @@ import type {
   ListContactAddressesParams,
   ListContactEmailsParams,
   ListContactPhonesParams,
+  ListCultivationTeamMembersParams,
   ListFundingEntities200,
   ListFundingEntitiesParams,
   ListGifts200,
@@ -6139,4 +6143,350 @@ export const useDeleteCampaign = <
   TContext
 > => {
   return useMutation(getDeleteCampaignMutationOptions(options));
+};
+
+export const getListCultivationTeamMembersUrl = (
+  params: ListCultivationTeamMembersParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/cultivation-team?${stringifiedParams}`
+    : `/api/cultivation-team`;
+};
+
+export const listCultivationTeamMembers = async (
+  params: ListCultivationTeamMembersParams,
+  options?: RequestInit,
+): Promise<CultivationTeamMember[]> => {
+  return customFetch<CultivationTeamMember[]>(
+    getListCultivationTeamMembersUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListCultivationTeamMembersQueryKey = (
+  params?: ListCultivationTeamMembersParams,
+) => {
+  return [`/api/cultivation-team`, ...(params ? [params] : [])] as const;
+};
+
+export const getListCultivationTeamMembersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCultivationTeamMembers>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListCultivationTeamMembersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCultivationTeamMembers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListCultivationTeamMembersQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCultivationTeamMembers>>
+  > = ({ signal }) =>
+    listCultivationTeamMembers(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCultivationTeamMembers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCultivationTeamMembersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCultivationTeamMembers>>
+>;
+export type ListCultivationTeamMembersQueryError = ErrorType<unknown>;
+
+export function useListCultivationTeamMembers<
+  TData = Awaited<ReturnType<typeof listCultivationTeamMembers>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListCultivationTeamMembersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCultivationTeamMembers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCultivationTeamMembersQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateCultivationTeamMemberUrl = () => {
+  return `/api/cultivation-team`;
+};
+
+export const createCultivationTeamMember = async (
+  cultivationTeamMemberCreate: CultivationTeamMemberCreate,
+  options?: RequestInit,
+): Promise<CultivationTeamMember> => {
+  return customFetch<CultivationTeamMember>(
+    getCreateCultivationTeamMemberUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(cultivationTeamMemberCreate),
+    },
+  );
+};
+
+export const getCreateCultivationTeamMemberMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCultivationTeamMember>>,
+    TError,
+    { data: BodyType<CultivationTeamMemberCreate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCultivationTeamMember>>,
+  TError,
+  { data: BodyType<CultivationTeamMemberCreate> },
+  TContext
+> => {
+  const mutationKey = ["createCultivationTeamMember"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCultivationTeamMember>>,
+    { data: BodyType<CultivationTeamMemberCreate> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createCultivationTeamMember(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCultivationTeamMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCultivationTeamMember>>
+>;
+export type CreateCultivationTeamMemberMutationBody =
+  BodyType<CultivationTeamMemberCreate>;
+export type CreateCultivationTeamMemberMutationError = ErrorType<unknown>;
+
+export const useCreateCultivationTeamMember = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCultivationTeamMember>>,
+    TError,
+    { data: BodyType<CultivationTeamMemberCreate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCultivationTeamMember>>,
+  TError,
+  { data: BodyType<CultivationTeamMemberCreate> },
+  TContext
+> => {
+  return useMutation(getCreateCultivationTeamMemberMutationOptions(options));
+};
+
+export const getUpdateCultivationTeamMemberUrl = (id: string) => {
+  return `/api/cultivation-team/${id}`;
+};
+
+export const updateCultivationTeamMember = async (
+  id: string,
+  cultivationTeamMemberUpdate: CultivationTeamMemberUpdate,
+  options?: RequestInit,
+): Promise<CultivationTeamMember> => {
+  return customFetch<CultivationTeamMember>(
+    getUpdateCultivationTeamMemberUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(cultivationTeamMemberUpdate),
+    },
+  );
+};
+
+export const getUpdateCultivationTeamMemberMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCultivationTeamMember>>,
+    TError,
+    { id: string; data: BodyType<CultivationTeamMemberUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCultivationTeamMember>>,
+  TError,
+  { id: string; data: BodyType<CultivationTeamMemberUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateCultivationTeamMember"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCultivationTeamMember>>,
+    { id: string; data: BodyType<CultivationTeamMemberUpdate> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateCultivationTeamMember(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCultivationTeamMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateCultivationTeamMember>>
+>;
+export type UpdateCultivationTeamMemberMutationBody =
+  BodyType<CultivationTeamMemberUpdate>;
+export type UpdateCultivationTeamMemberMutationError = ErrorType<unknown>;
+
+export const useUpdateCultivationTeamMember = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCultivationTeamMember>>,
+    TError,
+    { id: string; data: BodyType<CultivationTeamMemberUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateCultivationTeamMember>>,
+  TError,
+  { id: string; data: BodyType<CultivationTeamMemberUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateCultivationTeamMemberMutationOptions(options));
+};
+
+export const getDeleteCultivationTeamMemberUrl = (id: string) => {
+  return `/api/cultivation-team/${id}`;
+};
+
+export const deleteCultivationTeamMember = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteCultivationTeamMemberUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteCultivationTeamMemberMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCultivationTeamMember>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteCultivationTeamMember>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteCultivationTeamMember"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteCultivationTeamMember>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteCultivationTeamMember(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteCultivationTeamMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteCultivationTeamMember>>
+>;
+
+export type DeleteCultivationTeamMemberMutationError = ErrorType<unknown>;
+
+export const useDeleteCultivationTeamMember = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCultivationTeamMember>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteCultivationTeamMember>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteCultivationTeamMemberMutationOptions(options));
 };

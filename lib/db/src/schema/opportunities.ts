@@ -6,7 +6,9 @@ import {
   boolean,
   integer,
   pgEnum,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { users } from "./users";
 import { fundEnum } from "./users";
 import { individuals } from "./individuals";
@@ -14,6 +16,7 @@ import { households } from "./households";
 import { fundingEntities } from "./fundingEntities";
 import { organizations } from "./organizations";
 import { campaigns } from "./campaigns";
+import { fiscalYearEnum } from "./_enums";
 
 export const opportunitySubtypeEnum = pgEnum("opportunity_subtype", [
   "ongoing_rolling",
@@ -80,7 +83,7 @@ export const opportunities = pgTable("opportunities", {
   stage: opportunityStageEnum("stage").notNull().default("pre_conversation"),
   governmentStage: governmentOpportunityStageEnum("government_stage"),
   expectedCloseDate: timestamp("expected_close_date"),
-  fiscalYear: text("fiscal_year"),
+  fiscalYear: fiscalYearEnum("fiscal_year"),
   rollForwardCount: integer("roll_forward_count").default(0),
   loiDeadline: timestamp("loi_deadline"),
   loiSubmitted: boolean("loi_submitted").default(false),
@@ -104,7 +107,24 @@ export const opportunities = pgTable("opportunities", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  exactlyOneDonor: check(
+    "opportunities_exactly_one_donor",
+    sql`(
+      (CASE WHEN ${t.individualId} IS NOT NULL THEN 1 ELSE 0 END)
+      + (CASE WHEN ${t.householdId} IS NOT NULL THEN 1 ELSE 0 END)
+      + (CASE WHEN ${t.fundingEntityId} IS NOT NULL THEN 1 ELSE 0 END)
+    ) = 1`,
+  ),
+  donorTypeMatches: check(
+    "opportunities_donor_type_matches",
+    sql`(
+      (${t.donorType} = 'individual' AND ${t.individualId} IS NOT NULL)
+      OR (${t.donorType} = 'household' AND ${t.householdId} IS NOT NULL)
+      OR (${t.donorType} IN ('family_foundation','institutional_foundation','daf_account','government_rfp') AND ${t.fundingEntityId} IS NOT NULL)
+    )`,
+  ),
+}));
 
 export type Opportunity = typeof opportunities.$inferSelect;
 export type NewOpportunity = typeof opportunities.$inferInsert;
