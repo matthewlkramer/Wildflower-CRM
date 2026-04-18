@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { individuals, households, users } from "@workspace/db/schema";
+import { individuals, users } from "@workspace/db/schema";
 import { eq, and, desc, sql, count } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { newId } from "../lib/helpers";
@@ -16,7 +16,6 @@ router.get("/", async (req, res, next) => {
       stage,
       enthusiasm,
       capacityRating,
-      householdId,
       ownerId,
       limit: limitStr = "50",
       page: pageStr = "1",
@@ -35,7 +34,6 @@ router.get("/", async (req, res, next) => {
     if (stage) conditions.push(eq(individuals.donorCultivationStage, stage as any));
     if (enthusiasm) conditions.push(eq(individuals.enthusiasm, enthusiasm as any));
     if (capacityRating) conditions.push(eq(individuals.capacityRating, capacityRating as any));
-    if (householdId) conditions.push(eq(individuals.householdId, householdId));
     if (ownerId) conditions.push(eq(individuals.relationshipOwnerUserId, ownerId));
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -45,11 +43,9 @@ router.get("/", async (req, res, next) => {
       db
         .select({
           individual: individuals,
-          householdName: households.name,
           ownerDisplayName: users.displayName,
         })
         .from(individuals)
-        .leftJoin(households, eq(individuals.householdId, households.id))
         .leftJoin(users, eq(individuals.relationshipOwnerUserId, users.id))
         .where(where)
         .orderBy(desc(individuals.updatedAt))
@@ -60,7 +56,6 @@ router.get("/", async (req, res, next) => {
     res.json({
       data: rows.map((r) => ({
         ...r.individual,
-        householdName: r.householdName,
         ownerDisplayName: r.ownerDisplayName,
       })),
       total: totalResult[0].count,
@@ -74,10 +69,9 @@ router.get("/", async (req, res, next) => {
 
 router.post("/", async (req, res, next) => {
   try {
-    const body = req.body;
     const [created] = await db
       .insert(individuals)
-      .values({ id: newId(), ...body })
+      .values({ id: newId(), ...req.body })
       .returning();
     res.status(201).json(created);
   } catch (err) {
@@ -90,16 +84,14 @@ router.get("/:id", async (req, res, next) => {
     const [row] = await db
       .select({
         individual: individuals,
-        householdName: households.name,
         ownerDisplayName: users.displayName,
       })
       .from(individuals)
-      .leftJoin(households, eq(individuals.householdId, households.id))
       .leftJoin(users, eq(individuals.relationshipOwnerUserId, users.id))
       .where(eq(individuals.id, req.params.id));
 
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
-    res.json({ ...row.individual, householdName: row.householdName, ownerDisplayName: row.ownerDisplayName });
+    res.json({ ...row.individual, ownerDisplayName: row.ownerDisplayName });
   } catch (err) {
     next(err);
   }

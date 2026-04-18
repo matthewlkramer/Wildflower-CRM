@@ -12,6 +12,7 @@ import { fundEnum } from "./users";
 import { individuals } from "./individuals";
 import { households } from "./households";
 import { fundingEntities } from "./fundingEntities";
+import { organizations } from "./organizations";
 export const opportunitySubtypeEnum = pgEnum("opportunity_subtype", [
   "ongoing_rolling",
   "targeted_deadline",
@@ -87,6 +88,14 @@ export const opportunities = pgTable("opportunities", {
   askAmount: numeric("ask_amount", { precision: 15, scale: 2 }),
   askRationale: text("ask_rationale"),
   pledgeId: text("pledge_id"),
+  fiscalSponsorFundingEntityId: text("fiscal_sponsor_funding_entity_id").references(
+    () => fundingEntities.id,
+    { onDelete: "set null" },
+  ),
+  fiscalSponsorOrganizationId: text("fiscal_sponsor_organization_id").references(
+    () => organizations.id,
+    { onDelete: "set null" },
+  ),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

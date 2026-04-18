@@ -84,18 +84,5 @@ export const fundingEntities = pgTable("funding_entities", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const fundingEntityPeople = pgTable("funding_entity_people", {
-  id: text("id").primaryKey(),
-  fundingEntityId: text("funding_entity_id")
-    .notNull()
-    .references(() => fundingEntities.id, { onDelete: "cascade" }),
-  individualId: text("individual_id")
-    .notNull()
-    .references(() => individuals.id, { onDelete: "cascade" }),
-  role: text("role"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
 export type FundingEntity = typeof fundingEntities.$inferSelect;
 export type NewFundingEntity = typeof fundingEntities.$inferInsert;
-export type FundingEntityPerson = typeof fundingEntityPeople.$inferSelect;

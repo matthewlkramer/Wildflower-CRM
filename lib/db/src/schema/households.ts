@@ -1,5 +1,10 @@
-import { pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
 import { users } from "./users";
+
+export const householdStatusEnum = pgEnum("household_status", [
+  "active",
+  "dissolved",
+]);
 
 export const households = pgTable("households", {
   id: text("id").primaryKey(),
@@ -7,6 +12,9 @@ export const households = pgTable("households", {
   primaryOwnerUserId: text("primary_owner_user_id").references(() => users.id, {
     onDelete: "set null",
   }),
+  status: householdStatusEnum("status").notNull().default("active"),
+  formationDate: timestamp("formation_date"),
+  dissolvedDate: timestamp("dissolved_date"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

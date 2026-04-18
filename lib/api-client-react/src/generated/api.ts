@@ -18,8 +18,9 @@ import type {
 
 import type {
   ActivityItem,
-  AddEntityPersonBody,
   AddHouseholdMemberBody,
+  Affiliation,
+  CreateAffiliationBody,
   CreateFundingEntityBody,
   CreateGiftBody,
   CreateHouseholdBody,
@@ -30,7 +31,6 @@ import type {
   DashboardSummary,
   DeleteResult,
   DonorQuietAlert,
-  EntityPersonLink,
   FundingEntity,
   FundingEntityDetail,
   GetDashboardSummaryParams,
@@ -1767,8 +1767,8 @@ export const getGetFundingEntityPeopleUrl = (id: string) => {
 export const getFundingEntityPeople = async (
   id: string,
   options?: RequestInit,
-): Promise<EntityPersonLink[]> => {
-  return customFetch<EntityPersonLink[]>(getGetFundingEntityPeopleUrl(id), {
+): Promise<Affiliation[]> => {
+  return customFetch<Affiliation[]>(getGetFundingEntityPeopleUrl(id), {
     ...options,
     method: "GET",
   });
@@ -1854,14 +1854,14 @@ export const getAddFundingEntityPersonUrl = (id: string) => {
 
 export const addFundingEntityPerson = async (
   id: string,
-  addEntityPersonBody: AddEntityPersonBody,
+  createAffiliationBody: CreateAffiliationBody,
   options?: RequestInit,
-): Promise<EntityPersonLink> => {
-  return customFetch<EntityPersonLink>(getAddFundingEntityPersonUrl(id), {
+): Promise<Affiliation> => {
+  return customFetch<Affiliation>(getAddFundingEntityPersonUrl(id), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(addEntityPersonBody),
+    body: JSON.stringify(createAffiliationBody),
   });
 };
 
@@ -1872,14 +1872,14 @@ export const getAddFundingEntityPersonMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof addFundingEntityPerson>>,
     TError,
-    { id: string; data: BodyType<AddEntityPersonBody> },
+    { id: string; data: BodyType<CreateAffiliationBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof addFundingEntityPerson>>,
   TError,
-  { id: string; data: BodyType<AddEntityPersonBody> },
+  { id: string; data: BodyType<CreateAffiliationBody> },
   TContext
 > => {
   const mutationKey = ["addFundingEntityPerson"];
@@ -1893,7 +1893,7 @@ export const getAddFundingEntityPersonMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof addFundingEntityPerson>>,
-    { id: string; data: BodyType<AddEntityPersonBody> }
+    { id: string; data: BodyType<CreateAffiliationBody> }
   > = (props) => {
     const { id, data } = props ?? {};
 
@@ -1906,7 +1906,8 @@ export const getAddFundingEntityPersonMutationOptions = <
 export type AddFundingEntityPersonMutationResult = NonNullable<
   Awaited<ReturnType<typeof addFundingEntityPerson>>
 >;
-export type AddFundingEntityPersonMutationBody = BodyType<AddEntityPersonBody>;
+export type AddFundingEntityPersonMutationBody =
+  BodyType<CreateAffiliationBody>;
 export type AddFundingEntityPersonMutationError = ErrorType<unknown>;
 
 /**
@@ -1919,14 +1920,14 @@ export const useAddFundingEntityPerson = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof addFundingEntityPerson>>,
     TError,
-    { id: string; data: BodyType<AddEntityPersonBody> },
+    { id: string; data: BodyType<CreateAffiliationBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof addFundingEntityPerson>>,
   TError,
-  { id: string; data: BodyType<AddEntityPersonBody> },
+  { id: string; data: BodyType<CreateAffiliationBody> },
   TContext
 > => {
   return useMutation(getAddFundingEntityPersonMutationOptions(options));

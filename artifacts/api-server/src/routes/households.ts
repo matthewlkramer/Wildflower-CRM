@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { households, individuals } from "@workspace/db/schema";
+import { households, householdMembers, individuals } from "@workspace/db/schema";
 import { eq, and, desc, sql, count } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { newId } from "../lib/helpers";
@@ -73,8 +73,15 @@ router.delete("/:id", async (req, res, next) => {
 
 router.get("/:id/members", async (req, res, next) => {
   try {
-    const members = await db.select().from(individuals).where(eq(individuals.householdId, req.params.id));
-    res.json(members);
+    const rows = await db
+      .select({
+        member: householdMembers,
+        individual: individuals,
+      })
+      .from(householdMembers)
+      .innerJoin(individuals, eq(householdMembers.individualId, individuals.id))
+      .where(and(eq(householdMembers.householdId, req.params.id), eq(householdMembers.isCurrent, true)));
+    res.json(rows.map((r) => ({ ...r.individual, membershipRole: r.member.role, membershipStartDate: r.member.startDate })));
   } catch (err) {
     next(err);
   }
@@ -82,14 +89,20 @@ router.get("/:id/members", async (req, res, next) => {
 
 router.post("/:id/members", async (req, res, next) => {
   try {
-    const { individualId } = req.body;
+    const { individualId, role, startDate } = req.body;
     if (!individualId) { res.status(400).json({ error: "individualId required" }); return; }
-    const [updated] = await db
-      .update(individuals)
-      .set({ householdId: req.params.id, updatedAt: new Date() })
-      .where(eq(individuals.id, individualId))
+    const [created] = await db
+      .insert(householdMembers)
+      .values({
+        id: newId(),
+        householdId: req.params.id,
+        individualId,
+        role: (role as any) ?? "other",
+        startDate: startDate ?? null,
+        isCurrent: true,
+      })
       .returning();
-    res.status(201).json(updated);
+    res.status(201).json(created);
   } catch (err) {
     next(err);
   }
@@ -98,9 +111,13 @@ router.post("/:id/members", async (req, res, next) => {
 router.delete("/:id/members/:individualId", async (req, res, next) => {
   try {
     await db
-      .update(individuals)
-      .set({ householdId: null, updatedAt: new Date() })
-      .where(and(eq(individuals.id, req.params.individualId), eq(individuals.householdId, req.params.id)));
+      .delete(householdMembers)
+      .where(
+        and(
+          eq(householdMembers.householdId, req.params.id),
+          eq(householdMembers.individualId, req.params.individualId),
+        ),
+      );
     res.status(204).end();
   } catch (err) {
     next(err);

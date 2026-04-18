@@ -115,26 +115,23 @@ export type HouseholdMemberRole =
   (typeof HouseholdMemberRole)[keyof typeof HouseholdMemberRole];
 
 export const HouseholdMemberRole = {
-  principal: "principal",
-  spouse: "spouse",
-  partner: "partner",
-  adult_child: "adult_child",
-  matriarch_patriarch: "matriarch_patriarch",
-  trustee: "trustee",
-  in_law: "in_law",
+  primary: "primary",
+  spouse_partner: "spouse_partner",
+  dependent: "dependent",
   other: "other",
 } as const;
 
-export type EntityPersonRole =
-  (typeof EntityPersonRole)[keyof typeof EntityPersonRole];
+export type AffiliationType =
+  (typeof AffiliationType)[keyof typeof AffiliationType];
 
-export const EntityPersonRole = {
-  principal_founder: "principal_founder",
-  donor_advisor: "donor_advisor",
+export const AffiliationType = {
+  employee: "employee",
   board_member: "board_member",
-  program_officer: "program_officer",
-  staff: "staff",
-  other_contact: "other_contact",
+  trustee: "trustee",
+  advisor: "advisor",
+  founder: "founder",
+  volunteer: "volunteer",
+  other: "other",
 } as const;
 
 export type UserRole = (typeof UserRole)[keyof typeof UserRole];
@@ -237,8 +234,6 @@ export interface Individual {
   primaryEmail?: string | null;
   primaryPhone?: string | null;
   metroArea?: string | null;
-  householdId?: string | null;
-  householdName?: string | null;
   relationshipOwnerUserId?: string | null;
   relationshipOwnerName?: string | null;
   strategyUserId?: string | null;
@@ -275,14 +270,20 @@ export type IndividualDetailDemographics = {
   raceEthnicityOther?: string | null;
 };
 
-export interface EntityPersonLink {
+export interface Affiliation {
   id: string;
-  fundingEntityId: string;
+  fundingEntityId?: string | null;
+  organizationId?: string | null;
   individualId: string;
   individualName: string;
-  role: EntityPersonRole;
+  affiliationType: AffiliationType;
+  role?: string | null;
   startDate?: string | null;
   endDate?: string | null;
+  isCurrent: boolean;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type MoveLevel = (typeof MoveLevel)[keyof typeof MoveLevel];
@@ -372,9 +373,19 @@ export interface Opportunity {
   fiscalYear?: number | null;
   priority?: OpportunityPriority;
   description?: string | null;
+  fiscalSponsorFundingEntityId?: string | null;
+  fiscalSponsorOrganizationId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+export type HouseholdStatus =
+  (typeof HouseholdStatus)[keyof typeof HouseholdStatus];
+
+export const HouseholdStatus = {
+  active: "active",
+  dissolved: "dissolved",
+} as const;
 
 export interface Household {
   id: string;
@@ -389,6 +400,9 @@ export interface Household {
   memberCount: number;
   totalGiving?: number | null;
   lastActivityDate?: string | null;
+  status: HouseholdStatus;
+  formationDate?: string | null;
+  dissolvedDate?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -412,7 +426,7 @@ export type IndividualDetail = Individual & {
   deceasedDate?: string | null;
   howAcquired?: string | null;
   sourceDetail?: string | null;
-  linkedFundingEntities?: EntityPersonLink[];
+  linkedFundingEntities?: Affiliation[];
   recentMoves?: Move[];
   openOpportunities?: Opportunity[];
   household?: Household | null;
@@ -426,7 +440,6 @@ export interface CreateIndividualBody {
   primaryEmail?: string;
   primaryPhone?: string;
   metroArea?: string;
-  householdId?: string;
   relationshipOwnerUserId?: string;
   strategyUserId?: string;
   donorCultivationStage?: CultivationStage;
@@ -460,7 +473,6 @@ export interface UpdateIndividualBody {
   primaryPhone?: string;
   mailingAddress?: string;
   metroArea?: string;
-  householdId?: string;
   relationshipOwnerUserId?: string;
   strategyUserId?: string;
   spouseId?: string;
@@ -491,6 +503,7 @@ export interface HouseholdMember {
   role: HouseholdMemberRole;
   startDate?: string | null;
   endDate?: string | null;
+  isCurrent: boolean;
 }
 
 export interface FundingEntity {
@@ -525,14 +538,6 @@ export const GiftDonorType = {
   funding_entity: "funding_entity",
 } as const;
 
-export interface SoftCredit {
-  id: string;
-  individualId: string;
-  individualName: string;
-  percentage?: number | null;
-  notes?: string | null;
-}
-
 export type GiftRestrictionFormality =
   | (typeof GiftRestrictionFormality)[keyof typeof GiftRestrictionFormality]
   | null;
@@ -564,7 +569,8 @@ export interface Gift {
   quickbooksReference?: string | null;
   directToSchoolPassthrough: boolean;
   schoolReference?: string | null;
-  softCredits: SoftCredit[];
+  fiscalSponsorFundingEntityId?: string | null;
+  fiscalSponsorOrganizationId?: string | null;
   restrictionType?: string | null;
   geographyDesignation?: string | null;
   timePeriod?: string | null;
@@ -594,7 +600,16 @@ export interface CreateHouseholdBody {
   decisionMakingNotes?: string;
   familyPhilanthropyNotes?: string;
   notes?: string;
+  formationDate?: string;
 }
+
+export type UpdateHouseholdBodyStatus =
+  (typeof UpdateHouseholdBodyStatus)[keyof typeof UpdateHouseholdBodyStatus];
+
+export const UpdateHouseholdBodyStatus = {
+  active: "active",
+  dissolved: "dissolved",
+} as const;
 
 export interface UpdateHouseholdBody {
   name?: string;
@@ -606,6 +621,9 @@ export interface UpdateHouseholdBody {
   familyPhilanthropyNotes?: string;
   familyOfficeNotes?: string;
   notes?: string;
+  status?: UpdateHouseholdBodyStatus;
+  formationDate?: string;
+  dissolvedDate?: string;
 }
 
 export interface AddHouseholdMemberBody {
@@ -630,7 +648,7 @@ export type FundingEntityDetail = FundingEntity & {
   applicationRequirementsNotes?: string | null;
   givingFocus?: FundingEntityDetailGivingFocus;
   notes?: string | null;
-  people?: EntityPersonLink[];
+  people?: Affiliation[];
   openOpportunities?: Opportunity[];
   givingHistory?: Gift[];
 };
@@ -684,11 +702,13 @@ export interface UpdateFundingEntityBody {
   givingFocus?: UpdateFundingEntityBodyGivingFocus;
 }
 
-export interface AddEntityPersonBody {
+export interface CreateAffiliationBody {
   individualId: string;
-  role: EntityPersonRole;
+  affiliationType: AffiliationType;
+  role?: string;
   startDate?: string;
   endDate?: string;
+  notes?: string;
 }
 
 export type PledgeDonorType =
@@ -791,6 +811,8 @@ export interface CreateOpportunityBody {
   fiscalYear?: number;
   priority?: CreateOpportunityBodyPriority;
   description?: string;
+  fiscalSponsorFundingEntityId?: string;
+  fiscalSponsorOrganizationId?: string;
   nofoNumber?: string;
   loiDeadline?: string;
   proposalDeadline?: string;
@@ -822,6 +844,8 @@ export interface UpdateOpportunityBody {
   fiscalYear?: number;
   priority?: UpdateOpportunityBodyPriority;
   description?: string;
+  fiscalSponsorFundingEntityId?: string;
+  fiscalSponsorOrganizationId?: string;
   tags?: string[];
   nextExpectedAskDate?: string;
   askCadence?: string;
@@ -935,12 +959,6 @@ export const CreateGiftBodyDonorType = {
   funding_entity: "funding_entity",
 } as const;
 
-export type CreateGiftBodySoftCreditsItem = {
-  individualId: string;
-  percentage?: number;
-  notes?: string;
-};
-
 export type CreateGiftBodyRestrictionFormality =
   (typeof CreateGiftBodyRestrictionFormality)[keyof typeof CreateGiftBodyRestrictionFormality];
 
@@ -964,7 +982,8 @@ export interface CreateGiftBody {
   restrictionNotes?: string;
   directToSchoolPassthrough?: boolean;
   schoolReference?: string;
-  softCredits?: CreateGiftBodySoftCreditsItem[];
+  fiscalSponsorFundingEntityId?: string;
+  fiscalSponsorOrganizationId?: string;
   restrictionType?: string;
   geographyDesignation?: string;
   timePeriod?: string;
@@ -1192,7 +1211,6 @@ export type ListIndividualsParams = {
    * Filter by days since last move: 30, 60, 90, 180, 365
    */
   lastMoveRecency?: number;
-  householdId?: string;
   page?: number;
   limit?: number;
 };

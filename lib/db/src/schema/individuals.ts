@@ -7,7 +7,6 @@ import {
   pgEnum,
 } from "drizzle-orm/pg-core";
 import { users } from "./users";
-import { households } from "./households";
 
 export const donorCultivationStageEnum = pgEnum("donor_cultivation_stage", [
   "pre_qualified",
@@ -58,9 +57,6 @@ export const individuals = pgTable("individuals", {
   secondaryEmail: text("secondary_email"),
   linkedinUrl: text("linkedin_url"),
   metroArea: text("metro_area"),
-  householdId: text("household_id").references(() => households.id, {
-    onDelete: "set null",
-  }),
   relationshipOwnerUserId: text("relationship_owner_user_id").references(
     () => users.id,
     { onDelete: "set null" },

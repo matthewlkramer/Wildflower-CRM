@@ -80,9 +80,6 @@ paths:
           in: query
           description: "Filter by days since last move: 30, 60, 90, 180, 365"
           schema: { type: integer }
-        - name: householdId
-          in: query
-          schema: { type: string }
         - name: page
           in: query
           schema: { type: integer, default: 1 }
@@ -500,7 +497,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/EntityPersonLink"
+                  $ref: "#/components/schemas/Affiliation"
     post:
       operationId: addFundingEntityPerson
       tags: [funding-entities]
@@ -515,14 +512,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AddEntityPersonBody"
+              $ref: "#/components/schemas/CreateAffiliationBody"
       responses:
         "201":
           description: Person linked
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EntityPersonLink"
+                $ref: "#/components/schemas/Affiliation"
 
   /funding-entities/{id}/people/{individualId}:
     delete:
@@ -1345,11 +1342,11 @@ components:
 
     HouseholdMemberRole:
       type: string
-      enum: [principal, spouse, partner, adult_child, matriarch_patriarch, trustee, in_law, other]
+      enum: [primary, spouse_partner, dependent, other]
 
-    EntityPersonRole:
+    AffiliationType:
       type: string
-      enum: [principal_founder, donor_advisor, board_member, program_officer, staff, other_contact]
+      enum: [employee, board_member, trustee, advisor, founder, volunteer, other]
 
     UserRole:
       type: string
@@ -1454,12 +1451,6 @@ components:
           type: string
           nullable: true
         metroArea:
-          type: string
-          nullable: true
-        householdId:
-          type: string
-          nullable: true
-        householdName:
           type: string
           nullable: true
         relationshipOwnerUserId:
@@ -1597,7 +1588,7 @@ components:
             linkedFundingEntities:
               type: array
               items:
-                $ref: "#/components/schemas/EntityPersonLink"
+                $ref: "#/components/schemas/Affiliation"
             recentMoves:
               type: array
               items:
@@ -1627,8 +1618,6 @@ components:
         primaryPhone:
           type: string
         metroArea:
-          type: string
-        householdId:
           type: string
         relationshipOwnerUserId:
           type: string
@@ -1669,8 +1658,6 @@ components:
         mailingAddress:
           type: string
         metroArea:
-          type: string
-        householdId:
           type: string
         relationshipOwnerUserId:
           type: string
@@ -1771,13 +1758,24 @@ components:
           type: string
           format: date
           nullable: true
+        status:
+          type: string
+          enum: [active, dissolved]
+        formationDate:
+          type: string
+          format: date
+          nullable: true
+        dissolvedDate:
+          type: string
+          format: date
+          nullable: true
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-      required: [id, name, memberCount, createdAt, updatedAt]
+      required: [id, name, memberCount, status, createdAt, updatedAt]
 
     HouseholdDetail:
       allOf:
@@ -1834,7 +1832,9 @@ components:
           type: string
           format: date
           nullable: true
-      required: [id, householdId, individualId, individualName, role]
+        isCurrent:
+          type: boolean
+      required: [id, householdId, individualId, individualName, role, isCurrent]
 
     CreateHouseholdBody:
       type: object
@@ -1856,6 +1856,9 @@ components:
           type: string
         notes:
           type: string
+        formationDate:
+          type: string
+          format: date
 
     UpdateHouseholdBody:
       type: object
@@ -1878,6 +1881,15 @@ components:
           type: string
         notes:
           type: string
+        status:
+          type: string
+          enum: [active, dissolved]
+        formationDate:
+          type: string
+          format: date
+        dissolvedDate:
+          type: string
+          format: date
 
     AddHouseholdMemberBody:
       type: object
@@ -2004,7 +2016,7 @@ components:
             people:
               type: array
               items:
-                $ref: "#/components/schemas/EntityPersonLink"
+                $ref: "#/components/schemas/Affiliation"
             openOpportunities:
               type: array
               items:
@@ -2014,19 +2026,26 @@ components:
               items:
                 $ref: "#/components/schemas/Gift"
 
-    EntityPersonLink:
+    Affiliation:
       type: object
       properties:
         id:
           type: string
         fundingEntityId:
           type: string
+          nullable: true
+        organizationId:
+          type: string
+          nullable: true
         individualId:
           type: string
         individualName:
           type: string
+        affiliationType:
+          $ref: "#/components/schemas/AffiliationType"
         role:
-          $ref: "#/components/schemas/EntityPersonRole"
+          type: string
+          nullable: true
         startDate:
           type: string
           format: date
@@ -2035,7 +2054,18 @@ components:
           type: string
           format: date
           nullable: true
-      required: [id, fundingEntityId, individualId, individualName, role]
+        isCurrent:
+          type: boolean
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, individualId, individualName, affiliationType, isCurrent, createdAt, updatedAt]
 
     CreateFundingEntityBody:
       type: object
@@ -2131,20 +2161,24 @@ components:
               type: array
               items: { type: string }
 
-    AddEntityPersonBody:
+    CreateAffiliationBody:
       type: object
-      required: [individualId, role]
+      required: [individualId, affiliationType]
       properties:
         individualId:
           type: string
+        affiliationType:
+          $ref: "#/components/schemas/AffiliationType"
         role:
-          $ref: "#/components/schemas/EntityPersonRole"
+          type: string
         startDate:
           type: string
           format: date
         endDate:
           type: string
           format: date
+        notes:
+          type: string
 
     # ─── Opportunity ─────────────────────────────────────────────────────────────
     Opportunity:
@@ -2209,6 +2243,12 @@ components:
           enum: [high, medium, low]
           nullable: true
         description:
+          type: string
+          nullable: true
+        fiscalSponsorFundingEntityId:
+          type: string
+          nullable: true
+        fiscalSponsorOrganizationId:
           type: string
           nullable: true
         createdAt:
@@ -2362,6 +2402,10 @@ components:
           enum: [high, medium, low]
         description:
           type: string
+        fiscalSponsorFundingEntityId:
+          type: string
+        fiscalSponsorOrganizationId:
+          type: string
         # RFP fields
         nofoNumber:
           type: string
@@ -2409,6 +2453,10 @@ components:
           type: string
           enum: [high, medium, low]
         description:
+          type: string
+        fiscalSponsorFundingEntityId:
+          type: string
+        fiscalSponsorOrganizationId:
           type: string
         tags:
           type: array
@@ -2713,10 +2761,12 @@ components:
         schoolReference:
           type: string
           nullable: true
-        softCredits:
-          type: array
-          items:
-            $ref: "#/components/schemas/SoftCredit"
+        fiscalSponsorFundingEntityId:
+          type: string
+          nullable: true
+        fiscalSponsorOrganizationId:
+          type: string
+          nullable: true
         restrictionType:
           type: string
           nullable: true
@@ -2739,24 +2789,7 @@ components:
         updatedAt:
           type: string
           format: date-time
-      required: [id, donorType, donorId, donorName, fund, amount, cashReceivedDate, reconciled, acknowledgementSent, directToSchoolPassthrough, softCredits, createdAt, updatedAt]
-
-    SoftCredit:
-      type: object
-      properties:
-        id:
-          type: string
-        individualId:
-          type: string
-        individualName:
-          type: string
-        percentage:
-          type: number
-          nullable: true
-        notes:
-          type: string
-          nullable: true
-      required: [id, individualId, individualName]
+      required: [id, donorType, donorId, donorName, fund, amount, cashReceivedDate, reconciled, acknowledgementSent, directToSchoolPassthrough, createdAt, updatedAt]
 
     CreateGiftBody:
       type: object
@@ -2792,18 +2825,10 @@ components:
           type: boolean
         schoolReference:
           type: string
-        softCredits:
-          type: array
-          items:
-            type: object
-            required: [individualId]
-            properties:
-              individualId:
-                type: string
-              percentage:
-                type: number
-              notes:
-                type: string
+        fiscalSponsorFundingEntityId:
+          type: string
+        fiscalSponsorOrganizationId:
+          type: string
         restrictionType:
           type: string
         geographyDesignation:

@@ -10,6 +10,7 @@ import { fundEnum } from "./users";
 import { individuals } from "./individuals";
 import { households } from "./households";
 import { fundingEntities } from "./fundingEntities";
+import { organizations } from "./organizations";
 import { pledges } from "./pledges";
 
 export const paymentMethodEnum = pgEnum("payment_method", [
@@ -47,11 +48,14 @@ export const gifts = pgTable("gifts", {
   directToSchoolPassthrough: boolean("direct_to_school_passthrough").default(
     false,
   ),
-  softCreditIndividualId: text("soft_credit_individual_id").references(
-    () => individuals.id,
+  fiscalSponsorFundingEntityId: text("fiscal_sponsor_funding_entity_id").references(
+    () => fundingEntities.id,
     { onDelete: "set null" },
   ),
-  softCreditNotes: text("soft_credit_notes"),
+  fiscalSponsorOrganizationId: text("fiscal_sponsor_organization_id").references(
+    () => organizations.id,
+    { onDelete: "set null" },
+  ),
   fiscalYear: text("fiscal_year"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

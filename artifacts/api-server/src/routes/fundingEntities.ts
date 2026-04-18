@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import {
   fundingEntities,
-  fundingEntityPeople,
+  affiliations,
   individuals,
   users,
 } from "@workspace/db/schema";
@@ -119,13 +119,31 @@ router.get("/:id/people", async (req, res, next) => {
   try {
     const rows = await db
       .select({
-        link: fundingEntityPeople,
+        link: affiliations,
         individual: individuals,
       })
-      .from(fundingEntityPeople)
-      .leftJoin(individuals, eq(fundingEntityPeople.individualId, individuals.id))
-      .where(eq(fundingEntityPeople.fundingEntityId, req.params.id));
-    res.json(rows.map((r) => ({ ...r.link, individual: r.individual })));
+      .from(affiliations)
+      .leftJoin(individuals, eq(affiliations.individualId, individuals.id))
+      .where(and(eq(affiliations.fundingEntityId, req.params.id), eq(affiliations.isCurrent, true)));
+    res.json(
+      rows.map((r) => ({
+        id: r.link.id,
+        fundingEntityId: r.link.fundingEntityId,
+        organizationId: r.link.organizationId,
+        individualId: r.link.individualId,
+        individualName: r.individual
+          ? `${r.individual.firstName ?? ""} ${r.individual.lastName ?? ""}`.trim()
+          : "",
+        affiliationType: r.link.affiliationType,
+        role: r.link.role,
+        startDate: r.link.startDate,
+        endDate: r.link.endDate,
+        isCurrent: r.link.isCurrent,
+        notes: r.link.notes,
+        createdAt: r.link.createdAt,
+        updatedAt: r.link.updatedAt,
+      })),
+    );
   } catch (err) {
     next(err);
   }
@@ -133,14 +151,16 @@ router.get("/:id/people", async (req, res, next) => {
 
 router.post("/:id/people", async (req, res, next) => {
   try {
-    const { individualId, role } = req.body;
+    const { individualId, role, affiliationType } = req.body;
     const [created] = await db
-      .insert(fundingEntityPeople)
+      .insert(affiliations)
       .values({
         id: newId(),
         fundingEntityId: req.params.id,
         individualId,
         role,
+        affiliationType: (affiliationType as any) ?? "employee",
+        isCurrent: true,
       })
       .returning();
     res.status(201).json(created);
@@ -152,11 +172,11 @@ router.post("/:id/people", async (req, res, next) => {
 router.delete("/:id/people/:individualId", async (req, res, next) => {
   try {
     await db
-      .delete(fundingEntityPeople)
+      .delete(affiliations)
       .where(
         and(
-          eq(fundingEntityPeople.fundingEntityId, req.params.id),
-          eq(fundingEntityPeople.individualId, req.params.individualId),
+          eq(affiliations.fundingEntityId, req.params.id),
+          eq(affiliations.individualId, req.params.individualId),
         ),
       );
     res.status(204).end();
