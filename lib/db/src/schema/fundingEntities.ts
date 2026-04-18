@@ -5,9 +5,13 @@ import {
   numeric,
   pgEnum,
   integer,
+  jsonb,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { users } from "./users";
 import { individuals } from "./individuals";
+import { enthusiasmEnum } from "./individuals";
+import { fundingEntityStatusEnum } from "./_enums";
 
 export const fundingEntitySubtypeEnum = pgEnum("funding_entity_subtype", [
   "institutional_foundation",
@@ -15,6 +19,9 @@ export const fundingEntitySubtypeEnum = pgEnum("funding_entity_subtype", [
   "daf_account",
   "government_agency",
   "corporate",
+  "501c4",
+  "personal_giving_vehicle",
+  "family_office_trust",
 ]);
 
 export const institutionalCultivationStageEnum = pgEnum(
@@ -66,7 +73,12 @@ export const fundingEntities = pgTable("funding_entities", {
   governmentCultivationStage: governmentCultivationStageEnum(
     "government_cultivation_stage",
   ),
-  enthusiasm: text("enthusiasm"),
+  enthusiasm: enthusiasmEnum("enthusiasm").default("neutral"),
+  status: fundingEntityStatusEnum("status").notNull().default("active"),
+  parentFundingEntityId: text("parent_funding_entity_id").references(
+    (): AnyPgColumn => fundingEntities.id,
+    { onDelete: "set null" },
+  ),
   typicalGrantSizeMin: numeric("typical_grant_size_min", {
     precision: 15,
     scale: 2,
@@ -80,6 +92,7 @@ export const fundingEntities = pgTable("funding_entities", {
   ),
   lastGiftDate: timestamp("last_gift_date"),
   notes: text("notes"),
+  customFields: jsonb("custom_fields").default({}).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

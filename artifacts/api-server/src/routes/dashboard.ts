@@ -63,7 +63,7 @@ router.get("/summary", async (req, res, next) => {
         .from(opportunities)
         .where(
           and(
-            eq(opportunities.fiscalYear, fiscalYear),
+            eq(opportunities.fiscalYear, fiscalYear as any),
             inArray(opportunities.stage, [...openStages]),
           ),
         )

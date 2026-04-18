@@ -27,7 +27,7 @@ router.get("/", async (req, res, next) => {
     if (fund) conditions.push(eq(campaigns.fund, fund as any));
     if (isActive !== undefined)
       conditions.push(eq(campaigns.isActive, isActive === "true"));
-    if (fiscalYear) conditions.push(eq(campaigns.fiscalYear, fiscalYear));
+    if (fiscalYear) conditions.push(eq(campaigns.fiscalYear, fiscalYear as any));
     const where = conditions.length ? and(...conditions) : undefined;
 
     const [totalResult, rows] = await Promise.all([

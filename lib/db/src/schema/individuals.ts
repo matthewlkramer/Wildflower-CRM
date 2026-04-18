@@ -6,6 +6,7 @@ import {
   numeric,
   date,
   pgEnum,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
@@ -76,6 +77,8 @@ export const individuals = pgTable("individuals", {
     "0",
   ),
   deceasedDate: date("deceased_date"),
+  birthday: date("birthday"),
+  customFields: jsonb("custom_fields").default({}).notNull(),
   emailOptOut: boolean("email_opt_out").default(false).notNull(),
   callOptOut: boolean("call_opt_out").default(false).notNull(),
   mailOptOut: boolean("mail_opt_out").default(false).notNull(),

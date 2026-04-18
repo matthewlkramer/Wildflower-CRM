@@ -55,7 +55,56 @@ export const FundingEntitySubtype = {
   daf_account: "daf_account",
   government_agency: "government_agency",
   corporate: "corporate",
+  "501c4": "501c4",
+  personal_giving_vehicle: "personal_giving_vehicle",
+  family_office_trust: "family_office_trust",
 } as const;
+
+export type FundingEntityStatus =
+  (typeof FundingEntityStatus)[keyof typeof FundingEntityStatus];
+
+export const FundingEntityStatus = {
+  active: "active",
+  defunct: "defunct",
+  merged: "merged",
+} as const;
+
+export type GiftSoftCreditType =
+  (typeof GiftSoftCreditType)[keyof typeof GiftSoftCreditType];
+
+export const GiftSoftCreditType = {
+  spouse: "spouse",
+  advisor: "advisor",
+  introducer: "introducer",
+  event_captain: "event_captain",
+  household_member: "household_member",
+  other: "other",
+} as const;
+
+export interface GiftSoftCredit {
+  id: string;
+  giftId: string;
+  individualId: string;
+  creditType: GiftSoftCreditType;
+  percentage?: number | null;
+  notes?: string | null;
+  createdAt: string;
+  individualFirstName?: string | null;
+  individualLastName?: string | null;
+}
+
+export interface CreateGiftSoftCreditBody {
+  individualId: string;
+  creditType: GiftSoftCreditType;
+  percentage?: number;
+  notes?: string;
+}
+
+export interface UpdateGiftSoftCreditBody {
+  creditType?: GiftSoftCreditType;
+  percentage?: number | null;
+  notes?: string | null;
+}
 
 export type OpportunitySubtype =
   (typeof OpportunitySubtype)[keyof typeof OpportunitySubtype];
@@ -257,6 +306,8 @@ export interface UpdateUserBody {
   isWildflowerStaff?: boolean;
 }
 
+export type IndividualCustomFields = { [key: string]: unknown } | null;
+
 export interface Individual {
   id: string;
   firstName: string;
@@ -272,6 +323,8 @@ export interface Individual {
   enthusiasm: Enthusiasm;
   capacityRating?: CapacityRating | null;
   lastMoveDate?: string | null;
+  birthday?: string | null;
+  customFields?: IndividualCustomFields;
   lastGiftDate?: string | null;
   lastGiftAmount?: number | null;
   totalGiving?: number | null;
@@ -483,6 +536,8 @@ export const HouseholdStatus = {
   dissolved: "dissolved",
 } as const;
 
+export type HouseholdCustomFields = { [key: string]: unknown } | null;
+
 export interface Household {
   id: string;
   name: string;
@@ -495,6 +550,7 @@ export interface Household {
   capacityRating?: CapacityRating | null;
   memberCount: number;
   totalGiving?: number | null;
+  customFields?: HouseholdCustomFields;
   lastActivityDate?: string | null;
   status: HouseholdStatus;
   formationDate?: string | null;
@@ -597,6 +653,8 @@ export interface HouseholdMember {
   isCurrent: boolean;
 }
 
+export type FundingEntityCustomFields = { [key: string]: unknown } | null;
+
 export interface FundingEntity {
   id: string;
   legalName: string;
@@ -611,6 +669,9 @@ export interface FundingEntity {
   institutionalCultivationStage?: InstitutionalCultivationStage | null;
   governmentCultivationStage?: GovernmentCultivationStage | null;
   enthusiasm: Enthusiasm;
+  status?: FundingEntityStatus;
+  parentFundingEntityId?: string | null;
+  customFields?: FundingEntityCustomFields;
   primaryContactId?: string | null;
   primaryContactName?: string | null;
   metroArea?: string | null;
@@ -657,6 +718,10 @@ export interface Gift {
   householdName?: string | null;
   acknowledgementSent: boolean;
   acknowledgementDate?: string | null;
+  acknowledgmentSentDate?: string | null;
+  taxReceiptSent?: boolean;
+  payerFundingEntityId?: string | null;
+  payerOrganizationId?: string | null;
   restrictionNotes?: string | null;
   quickbooksReference?: string | null;
   directToSchoolPassthrough: boolean;
@@ -1125,6 +1190,10 @@ export interface CreateGiftBody {
   opportunityId?: string;
   householdId?: string;
   acknowledgementSent?: boolean;
+  acknowledgmentSentDate?: string;
+  taxReceiptSent?: boolean;
+  payerFundingEntityId?: string;
+  payerOrganizationId?: string;
   restrictionNotes?: string;
   directToSchoolPassthrough?: boolean;
   schoolReference?: string;
@@ -1151,6 +1220,10 @@ export interface UpdateGiftBody {
   quickbooksReference?: string;
   acknowledgementSent?: boolean;
   acknowledgementDate?: string;
+  acknowledgmentSentDate?: string | null;
+  taxReceiptSent?: boolean;
+  payerFundingEntityId?: string | null;
+  payerOrganizationId?: string | null;
   restrictionNotes?: string;
   paymentMethod?: string;
   paymentReference?: string;

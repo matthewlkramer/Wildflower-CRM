@@ -15,7 +15,7 @@ router.get("/pipeline", async (req, res, next) => {
 
     const conditions: any[] = [];
     if (fund) conditions.push(eq(opportunities.fund, fund as any));
-    if (fiscalYear) conditions.push(eq(opportunities.fiscalYear, fiscalYear));
+    if (fiscalYear) conditions.push(eq(opportunities.fiscalYear, fiscalYear as any));
 
     const stages = [
       "pre_conversation", "conversation", "solicitation", "negotiation",
@@ -54,7 +54,7 @@ router.get("/", async (req, res, next) => {
     if (donorType) conditions.push(eq(opportunities.donorType, donorType as any));
     if (subtype) conditions.push(eq(opportunities.subtype, subtype as any));
     if (ownerId) conditions.push(eq(opportunities.ownerUserId, ownerId));
-    if (fiscalYear) conditions.push(eq(opportunities.fiscalYear, fiscalYear));
+    if (fiscalYear) conditions.push(eq(opportunities.fiscalYear, fiscalYear as any));
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 

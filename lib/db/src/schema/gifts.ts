@@ -59,6 +59,16 @@ export const gifts = pgTable("gifts", {
   fiscalSponsorOrganizationId: text(
     "fiscal_sponsor_organization_id",
   ).references(() => organizations.id, { onDelete: "set null" }),
+  payerFundingEntityId: text("payer_funding_entity_id").references(
+    () => fundingEntities.id,
+    { onDelete: "set null" },
+  ),
+  payerOrganizationId: text("payer_organization_id").references(
+    () => organizations.id,
+    { onDelete: "set null" },
+  ),
+  acknowledgmentSentDate: timestamp("acknowledgment_sent_date"),
+  taxReceiptSent: boolean("tax_receipt_sent").default(false).notNull(),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -70,6 +80,13 @@ export const gifts = pgTable("gifts", {
       + (CASE WHEN ${t.householdId} IS NOT NULL THEN 1 ELSE 0 END)
       + (CASE WHEN ${t.fundingEntityId} IS NOT NULL THEN 1 ELSE 0 END)
     ) = 1`,
+  ),
+  atMostOnePayer: check(
+    "gifts_at_most_one_payer",
+    sql`(
+      (CASE WHEN ${t.payerFundingEntityId} IS NOT NULL THEN 1 ELSE 0 END)
+      + (CASE WHEN ${t.payerOrganizationId} IS NOT NULL THEN 1 ELSE 0 END)
+    ) <= 1`,
   ),
 }));
 

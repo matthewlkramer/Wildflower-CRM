@@ -17,3 +17,9 @@ export const cultivationTeamRoleEnum = pgEnum("cultivation_team_role", [
   "support",
   "primary_solicitor",
 ]);
+
+export const fundingEntityStatusEnum = pgEnum("funding_entity_status", [
+  "active",
+  "defunct",
+  "merged",
+]);

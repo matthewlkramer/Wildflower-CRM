@@ -84,6 +84,8 @@ export const ListIndividualsResponse = zod.object({
         ])
         .nullish(),
       lastMoveDate: zod.coerce.date().nullish(),
+      birthday: zod.coerce.date().nullish(),
+      customFields: zod.record(zod.string(), zod.unknown()).nullish(),
       lastGiftDate: zod.coerce.date().nullish(),
       lastGiftAmount: zod.number().nullish(),
       totalGiving: zod.number().nullish(),
@@ -211,6 +213,8 @@ export const GetIndividualResponse = zod
       ])
       .nullish(),
     lastMoveDate: zod.coerce.date().nullish(),
+    birthday: zod.coerce.date().nullish(),
+    customFields: zod.record(zod.string(), zod.unknown()).nullish(),
     lastGiftDate: zod.coerce.date().nullish(),
     lastGiftAmount: zod.number().nullish(),
     totalGiving: zod.number().nullish(),
@@ -494,6 +498,7 @@ export const GetIndividualResponse = zod
             .nullish(),
           memberCount: zod.number(),
           totalGiving: zod.number().nullish(),
+          customFields: zod.record(zod.string(), zod.unknown()).nullish(),
           lastActivityDate: zod.coerce.date().nullish(),
           status: zod.enum(["active", "dissolved"]),
           formationDate: zod.coerce.date().nullish(),
@@ -634,6 +639,8 @@ export const UpdateIndividualResponse = zod.object({
     ])
     .nullish(),
   lastMoveDate: zod.coerce.date().nullish(),
+  birthday: zod.coerce.date().nullish(),
+  customFields: zod.record(zod.string(), zod.unknown()).nullish(),
   lastGiftDate: zod.coerce.date().nullish(),
   lastGiftAmount: zod.number().nullish(),
   totalGiving: zod.number().nullish(),
@@ -697,6 +704,7 @@ export const ListHouseholdsResponse = zod.object({
         .nullish(),
       memberCount: zod.number(),
       totalGiving: zod.number().nullish(),
+      customFields: zod.record(zod.string(), zod.unknown()).nullish(),
       lastActivityDate: zod.coerce.date().nullish(),
       status: zod.enum(["active", "dissolved"]),
       formationDate: zod.coerce.date().nullish(),
@@ -763,6 +771,7 @@ export const GetHouseholdResponse = zod
       .nullish(),
     memberCount: zod.number(),
     totalGiving: zod.number().nullish(),
+    customFields: zod.record(zod.string(), zod.unknown()).nullish(),
     lastActivityDate: zod.coerce.date().nullish(),
     status: zod.enum(["active", "dissolved"]),
     formationDate: zod.coerce.date().nullish(),
@@ -802,6 +811,9 @@ export const GetHouseholdResponse = zod
               "daf_account",
               "government_agency",
               "corporate",
+              "501c4",
+              "personal_giving_vehicle",
+              "family_office_trust",
             ]),
             ein: zod.string().nullish(),
             website: zod.string().nullish(),
@@ -831,6 +843,9 @@ export const GetHouseholdResponse = zod
               "supportive",
               "advocate",
             ]),
+            status: zod.enum(["active", "defunct", "merged"]).optional(),
+            parentFundingEntityId: zod.string().nullish(),
+            customFields: zod.record(zod.string(), zod.unknown()).nullish(),
             primaryContactId: zod.string().nullish(),
             primaryContactName: zod.string().nullish(),
             metroArea: zod.string().nullish(),
@@ -943,6 +958,10 @@ export const GetHouseholdResponse = zod
             householdName: zod.string().nullish(),
             acknowledgementSent: zod.boolean(),
             acknowledgementDate: zod.coerce.date().nullish(),
+            acknowledgmentSentDate: zod.coerce.date().nullish(),
+            taxReceiptSent: zod.boolean().optional(),
+            payerFundingEntityId: zod.string().nullish(),
+            payerOrganizationId: zod.string().nullish(),
             restrictionNotes: zod.string().nullish(),
             quickbooksReference: zod.string().nullish(),
             directToSchoolPassthrough: zod.boolean(),
@@ -1014,6 +1033,7 @@ export const UpdateHouseholdResponse = zod.object({
     .nullish(),
   memberCount: zod.number(),
   totalGiving: zod.number().nullish(),
+  customFields: zod.record(zod.string(), zod.unknown()).nullish(),
   lastActivityDate: zod.coerce.date().nullish(),
   status: zod.enum(["active", "dissolved"]),
   formationDate: zod.coerce.date().nullish(),
@@ -1097,6 +1117,9 @@ export const ListFundingEntitiesQueryParams = zod.object({
       "daf_account",
       "government_agency",
       "corporate",
+      "501c4",
+      "personal_giving_vehicle",
+      "family_office_trust",
     ])
     .optional(),
   owner: zod.coerce.string().optional(),
@@ -1120,6 +1143,9 @@ export const ListFundingEntitiesResponse = zod.object({
         "daf_account",
         "government_agency",
         "corporate",
+        "501c4",
+        "personal_giving_vehicle",
+        "family_office_trust",
       ]),
       ein: zod.string().nullish(),
       website: zod.string().nullish(),
@@ -1149,6 +1175,9 @@ export const ListFundingEntitiesResponse = zod.object({
         "supportive",
         "advocate",
       ]),
+      status: zod.enum(["active", "defunct", "merged"]).optional(),
+      parentFundingEntityId: zod.string().nullish(),
+      customFields: zod.record(zod.string(), zod.unknown()).nullish(),
       primaryContactId: zod.string().nullish(),
       primaryContactName: zod.string().nullish(),
       metroArea: zod.string().nullish(),
@@ -1177,6 +1206,9 @@ export const CreateFundingEntityBody = zod.object({
     "daf_account",
     "government_agency",
     "corporate",
+    "501c4",
+    "personal_giving_vehicle",
+    "family_office_trust",
   ]),
   ein: zod.string().optional(),
   website: zod.string().optional(),
@@ -1233,6 +1265,9 @@ export const GetFundingEntityResponse = zod
       "daf_account",
       "government_agency",
       "corporate",
+      "501c4",
+      "personal_giving_vehicle",
+      "family_office_trust",
     ]),
     ein: zod.string().nullish(),
     website: zod.string().nullish(),
@@ -1262,6 +1297,9 @@ export const GetFundingEntityResponse = zod
       "supportive",
       "advocate",
     ]),
+    status: zod.enum(["active", "defunct", "merged"]).optional(),
+    parentFundingEntityId: zod.string().nullish(),
+    customFields: zod.record(zod.string(), zod.unknown()).nullish(),
     primaryContactId: zod.string().nullish(),
     primaryContactName: zod.string().nullish(),
     metroArea: zod.string().nullish(),
@@ -1417,6 +1455,10 @@ export const GetFundingEntityResponse = zod
             householdName: zod.string().nullish(),
             acknowledgementSent: zod.boolean(),
             acknowledgementDate: zod.coerce.date().nullish(),
+            acknowledgmentSentDate: zod.coerce.date().nullish(),
+            taxReceiptSent: zod.boolean().optional(),
+            payerFundingEntityId: zod.string().nullish(),
+            payerOrganizationId: zod.string().nullish(),
             restrictionNotes: zod.string().nullish(),
             quickbooksReference: zod.string().nullish(),
             directToSchoolPassthrough: zod.boolean(),
@@ -1455,6 +1497,9 @@ export const UpdateFundingEntityBody = zod.object({
       "daf_account",
       "government_agency",
       "corporate",
+      "501c4",
+      "personal_giving_vehicle",
+      "family_office_trust",
     ])
     .optional(),
   ein: zod.string().optional(),
@@ -1515,6 +1560,9 @@ export const UpdateFundingEntityResponse = zod.object({
     "daf_account",
     "government_agency",
     "corporate",
+    "501c4",
+    "personal_giving_vehicle",
+    "family_office_trust",
   ]),
   ein: zod.string().nullish(),
   website: zod.string().nullish(),
@@ -1544,6 +1592,9 @@ export const UpdateFundingEntityResponse = zod.object({
     "supportive",
     "advocate",
   ]),
+  status: zod.enum(["active", "defunct", "merged"]).optional(),
+  parentFundingEntityId: zod.string().nullish(),
+  customFields: zod.record(zod.string(), zod.unknown()).nullish(),
   primaryContactId: zod.string().nullish(),
   primaryContactName: zod.string().nullish(),
   metroArea: zod.string().nullish(),
@@ -2524,6 +2575,10 @@ export const ListGiftsResponse = zod.object({
       householdName: zod.string().nullish(),
       acknowledgementSent: zod.boolean(),
       acknowledgementDate: zod.coerce.date().nullish(),
+      acknowledgmentSentDate: zod.coerce.date().nullish(),
+      taxReceiptSent: zod.boolean().optional(),
+      payerFundingEntityId: zod.string().nullish(),
+      payerOrganizationId: zod.string().nullish(),
       restrictionNotes: zod.string().nullish(),
       quickbooksReference: zod.string().nullish(),
       directToSchoolPassthrough: zod.boolean(),
@@ -2588,6 +2643,10 @@ export const CreateGiftBody = zod.object({
   opportunityId: zod.string().optional(),
   householdId: zod.string().optional(),
   acknowledgementSent: zod.boolean().optional(),
+  acknowledgmentSentDate: zod.coerce.date().optional(),
+  taxReceiptSent: zod.boolean().optional(),
+  payerFundingEntityId: zod.string().optional(),
+  payerOrganizationId: zod.string().optional(),
   restrictionNotes: zod.string().optional(),
   directToSchoolPassthrough: zod.boolean().optional(),
   schoolReference: zod.string().optional(),
@@ -2628,6 +2687,10 @@ export const GetGiftResponse = zod.object({
   householdName: zod.string().nullish(),
   acknowledgementSent: zod.boolean(),
   acknowledgementDate: zod.coerce.date().nullish(),
+  acknowledgmentSentDate: zod.coerce.date().nullish(),
+  taxReceiptSent: zod.boolean().optional(),
+  payerFundingEntityId: zod.string().nullish(),
+  payerOrganizationId: zod.string().nullish(),
   restrictionNotes: zod.string().nullish(),
   quickbooksReference: zod.string().nullish(),
   directToSchoolPassthrough: zod.boolean(),
@@ -2689,6 +2752,10 @@ export const UpdateGiftBody = zod.object({
   quickbooksReference: zod.string().optional(),
   acknowledgementSent: zod.boolean().optional(),
   acknowledgementDate: zod.coerce.date().optional(),
+  acknowledgmentSentDate: zod.coerce.date().nullish(),
+  taxReceiptSent: zod.boolean().optional(),
+  payerFundingEntityId: zod.string().nullish(),
+  payerOrganizationId: zod.string().nullish(),
   restrictionNotes: zod.string().optional(),
   paymentMethod: zod.string().optional(),
   paymentReference: zod.string().optional(),
@@ -2715,6 +2782,10 @@ export const UpdateGiftResponse = zod.object({
   householdName: zod.string().nullish(),
   acknowledgementSent: zod.boolean(),
   acknowledgementDate: zod.coerce.date().nullish(),
+  acknowledgmentSentDate: zod.coerce.date().nullish(),
+  taxReceiptSent: zod.boolean().optional(),
+  payerFundingEntityId: zod.string().nullish(),
+  payerOrganizationId: zod.string().nullish(),
   restrictionNotes: zod.string().nullish(),
   quickbooksReference: zod.string().nullish(),
   directToSchoolPassthrough: zod.boolean(),
@@ -2728,6 +2799,106 @@ export const UpdateGiftResponse = zod.object({
   restrictionFormality: zod.enum(["formal", "conversational"]).nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary List soft credits for a gift
+ */
+export const ListGiftSoftCreditsParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ListGiftSoftCreditsResponseItem = zod.object({
+  id: zod.string(),
+  giftId: zod.string(),
+  individualId: zod.string(),
+  creditType: zod.enum([
+    "spouse",
+    "advisor",
+    "introducer",
+    "event_captain",
+    "household_member",
+    "other",
+  ]),
+  percentage: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  individualFirstName: zod.string().nullish(),
+  individualLastName: zod.string().nullish(),
+});
+export const ListGiftSoftCreditsResponse = zod.array(
+  ListGiftSoftCreditsResponseItem,
+);
+
+/**
+ * @summary Add a soft credit to a gift
+ */
+export const CreateGiftSoftCreditParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const CreateGiftSoftCreditBody = zod.object({
+  individualId: zod.string(),
+  creditType: zod.enum([
+    "spouse",
+    "advisor",
+    "introducer",
+    "event_captain",
+    "household_member",
+    "other",
+  ]),
+  percentage: zod.number().optional(),
+  notes: zod.string().optional(),
+});
+
+/**
+ * @summary Update a soft credit
+ */
+export const UpdateGiftSoftCreditParams = zod.object({
+  id: zod.coerce.string(),
+  softCreditId: zod.coerce.string(),
+});
+
+export const UpdateGiftSoftCreditBody = zod.object({
+  creditType: zod
+    .enum([
+      "spouse",
+      "advisor",
+      "introducer",
+      "event_captain",
+      "household_member",
+      "other",
+    ])
+    .optional(),
+  percentage: zod.number().nullish(),
+  notes: zod.string().nullish(),
+});
+
+export const UpdateGiftSoftCreditResponse = zod.object({
+  id: zod.string(),
+  giftId: zod.string(),
+  individualId: zod.string(),
+  creditType: zod.enum([
+    "spouse",
+    "advisor",
+    "introducer",
+    "event_captain",
+    "household_member",
+    "other",
+  ]),
+  percentage: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  individualFirstName: zod.string().nullish(),
+  individualLastName: zod.string().nullish(),
+});
+
+/**
+ * @summary Delete a soft credit
+ */
+export const DeleteGiftSoftCreditParams = zod.object({
+  id: zod.coerce.string(),
+  softCreditId: zod.coerce.string(),
 });
 
 /**

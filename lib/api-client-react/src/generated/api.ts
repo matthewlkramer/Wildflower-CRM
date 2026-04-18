@@ -31,6 +31,7 @@ import type {
   CreateContactPhoneBody,
   CreateFundingEntityBody,
   CreateGiftBody,
+  CreateGiftSoftCreditBody,
   CreateHouseholdBody,
   CreateIndividualBody,
   CreateMoveBody,
@@ -55,6 +56,7 @@ import type {
   GetProjectionsForecastParams,
   GetRecentActivityParams,
   Gift,
+  GiftSoftCredit,
   GrantsCalendarEntry,
   HealthStatus,
   Household,
@@ -96,6 +98,7 @@ import type {
   UpdateContactPhoneBody,
   UpdateFundingEntityBody,
   UpdateGiftBody,
+  UpdateGiftSoftCreditBody,
   UpdateHouseholdBody,
   UpdateIndividualBody,
   UpdateInstallmentBody,
@@ -3386,6 +3389,384 @@ export const useUpdateGift = <
   TContext
 > => {
   return useMutation(getUpdateGiftMutationOptions(options));
+};
+
+/**
+ * @summary List soft credits for a gift
+ */
+export const getListGiftSoftCreditsUrl = (id: string) => {
+  return `/api/gifts/${id}/soft-credits`;
+};
+
+export const listGiftSoftCredits = async (
+  id: string,
+  options?: RequestInit,
+): Promise<GiftSoftCredit[]> => {
+  return customFetch<GiftSoftCredit[]>(getListGiftSoftCreditsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListGiftSoftCreditsQueryKey = (id: string) => {
+  return [`/api/gifts/${id}/soft-credits`] as const;
+};
+
+export const getListGiftSoftCreditsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listGiftSoftCredits>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listGiftSoftCredits>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListGiftSoftCreditsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listGiftSoftCredits>>
+  > = ({ signal }) => listGiftSoftCredits(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listGiftSoftCredits>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListGiftSoftCreditsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listGiftSoftCredits>>
+>;
+export type ListGiftSoftCreditsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List soft credits for a gift
+ */
+
+export function useListGiftSoftCredits<
+  TData = Awaited<ReturnType<typeof listGiftSoftCredits>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listGiftSoftCredits>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListGiftSoftCreditsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add a soft credit to a gift
+ */
+export const getCreateGiftSoftCreditUrl = (id: string) => {
+  return `/api/gifts/${id}/soft-credits`;
+};
+
+export const createGiftSoftCredit = async (
+  id: string,
+  createGiftSoftCreditBody: CreateGiftSoftCreditBody,
+  options?: RequestInit,
+): Promise<GiftSoftCredit> => {
+  return customFetch<GiftSoftCredit>(getCreateGiftSoftCreditUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createGiftSoftCreditBody),
+  });
+};
+
+export const getCreateGiftSoftCreditMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createGiftSoftCredit>>,
+    TError,
+    { id: string; data: BodyType<CreateGiftSoftCreditBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createGiftSoftCredit>>,
+  TError,
+  { id: string; data: BodyType<CreateGiftSoftCreditBody> },
+  TContext
+> => {
+  const mutationKey = ["createGiftSoftCredit"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createGiftSoftCredit>>,
+    { id: string; data: BodyType<CreateGiftSoftCreditBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createGiftSoftCredit(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateGiftSoftCreditMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createGiftSoftCredit>>
+>;
+export type CreateGiftSoftCreditMutationBody =
+  BodyType<CreateGiftSoftCreditBody>;
+export type CreateGiftSoftCreditMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add a soft credit to a gift
+ */
+export const useCreateGiftSoftCredit = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createGiftSoftCredit>>,
+    TError,
+    { id: string; data: BodyType<CreateGiftSoftCreditBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createGiftSoftCredit>>,
+  TError,
+  { id: string; data: BodyType<CreateGiftSoftCreditBody> },
+  TContext
+> => {
+  return useMutation(getCreateGiftSoftCreditMutationOptions(options));
+};
+
+/**
+ * @summary Update a soft credit
+ */
+export const getUpdateGiftSoftCreditUrl = (
+  id: string,
+  softCreditId: string,
+) => {
+  return `/api/gifts/${id}/soft-credits/${softCreditId}`;
+};
+
+export const updateGiftSoftCredit = async (
+  id: string,
+  softCreditId: string,
+  updateGiftSoftCreditBody: UpdateGiftSoftCreditBody,
+  options?: RequestInit,
+): Promise<GiftSoftCredit> => {
+  return customFetch<GiftSoftCredit>(
+    getUpdateGiftSoftCreditUrl(id, softCreditId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateGiftSoftCreditBody),
+    },
+  );
+};
+
+export const getUpdateGiftSoftCreditMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateGiftSoftCredit>>,
+    TError,
+    {
+      id: string;
+      softCreditId: string;
+      data: BodyType<UpdateGiftSoftCreditBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateGiftSoftCredit>>,
+  TError,
+  {
+    id: string;
+    softCreditId: string;
+    data: BodyType<UpdateGiftSoftCreditBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["updateGiftSoftCredit"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateGiftSoftCredit>>,
+    {
+      id: string;
+      softCreditId: string;
+      data: BodyType<UpdateGiftSoftCreditBody>;
+    }
+  > = (props) => {
+    const { id, softCreditId, data } = props ?? {};
+
+    return updateGiftSoftCredit(id, softCreditId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateGiftSoftCreditMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateGiftSoftCredit>>
+>;
+export type UpdateGiftSoftCreditMutationBody =
+  BodyType<UpdateGiftSoftCreditBody>;
+export type UpdateGiftSoftCreditMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a soft credit
+ */
+export const useUpdateGiftSoftCredit = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateGiftSoftCredit>>,
+    TError,
+    {
+      id: string;
+      softCreditId: string;
+      data: BodyType<UpdateGiftSoftCreditBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateGiftSoftCredit>>,
+  TError,
+  {
+    id: string;
+    softCreditId: string;
+    data: BodyType<UpdateGiftSoftCreditBody>;
+  },
+  TContext
+> => {
+  return useMutation(getUpdateGiftSoftCreditMutationOptions(options));
+};
+
+/**
+ * @summary Delete a soft credit
+ */
+export const getDeleteGiftSoftCreditUrl = (
+  id: string,
+  softCreditId: string,
+) => {
+  return `/api/gifts/${id}/soft-credits/${softCreditId}`;
+};
+
+export const deleteGiftSoftCredit = async (
+  id: string,
+  softCreditId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteGiftSoftCreditUrl(id, softCreditId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteGiftSoftCreditMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteGiftSoftCredit>>,
+    TError,
+    { id: string; softCreditId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteGiftSoftCredit>>,
+  TError,
+  { id: string; softCreditId: string },
+  TContext
+> => {
+  const mutationKey = ["deleteGiftSoftCredit"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteGiftSoftCredit>>,
+    { id: string; softCreditId: string }
+  > = (props) => {
+    const { id, softCreditId } = props ?? {};
+
+    return deleteGiftSoftCredit(id, softCreditId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteGiftSoftCreditMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteGiftSoftCredit>>
+>;
+
+export type DeleteGiftSoftCreditMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a soft credit
+ */
+export const useDeleteGiftSoftCredit = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteGiftSoftCredit>>,
+    TError,
+    { id: string; softCreditId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteGiftSoftCredit>>,
+  TError,
+  { id: string; softCreditId: string },
+  TContext
+> => {
+  return useMutation(getDeleteGiftSoftCreditMutationOptions(options));
 };
 
 /**

@@ -959,6 +959,92 @@ paths:
               schema:
                 $ref: "#/components/schemas/Gift"
 
+  /gifts/{id}/soft-credits:
+    get:
+      operationId: listGiftSoftCredits
+      tags: [gifts]
+      summary: List soft credits for a gift
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Soft credits for the gift
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GiftSoftCredit"
+    post:
+      operationId: createGiftSoftCredit
+      tags: [gifts]
+      summary: Add a soft credit to a gift
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGiftSoftCreditBody"
+      responses:
+        "201":
+          description: Created soft credit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GiftSoftCredit"
+
+  /gifts/{id}/soft-credits/{softCreditId}:
+    patch:
+      operationId: updateGiftSoftCredit
+      tags: [gifts]
+      summary: Update a soft credit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: softCreditId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGiftSoftCreditBody"
+      responses:
+        "200":
+          description: Updated soft credit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GiftSoftCredit"
+    delete:
+      operationId: deleteGiftSoftCredit
+      tags: [gifts]
+      summary: Delete a soft credit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: softCreditId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Deleted
+
   # ─── Moves ───────────────────────────────────────────────────────────────────
   /moves:
     get:
@@ -1626,7 +1712,45 @@ components:
 
     FundingEntitySubtype:
       type: string
-      enum: [institutional_foundation, family_foundation, daf_account, government_agency, corporate]
+      enum: [institutional_foundation, family_foundation, daf_account, government_agency, corporate, 501c4, personal_giving_vehicle, family_office_trust]
+
+    FundingEntityStatus:
+      type: string
+      enum: [active, defunct, merged]
+
+    GiftSoftCreditType:
+      type: string
+      enum: [spouse, advisor, introducer, event_captain, household_member, other]
+
+    GiftSoftCredit:
+      type: object
+      properties:
+        id: { type: string }
+        giftId: { type: string }
+        individualId: { type: string }
+        creditType: { $ref: "#/components/schemas/GiftSoftCreditType" }
+        percentage: { type: number, nullable: true }
+        notes: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        individualFirstName: { type: string, nullable: true }
+        individualLastName: { type: string, nullable: true }
+      required: [id, giftId, individualId, creditType, createdAt]
+
+    CreateGiftSoftCreditBody:
+      type: object
+      required: [individualId, creditType]
+      properties:
+        individualId: { type: string }
+        creditType: { $ref: "#/components/schemas/GiftSoftCreditType" }
+        percentage: { type: number }
+        notes: { type: string }
+
+    UpdateGiftSoftCreditBody:
+      type: object
+      properties:
+        creditType: { $ref: "#/components/schemas/GiftSoftCreditType" }
+        percentage: { type: number, nullable: true }
+        notes: { type: string, nullable: true }
 
     OpportunitySubtype:
       type: string
@@ -1784,6 +1908,14 @@ components:
         lastMoveDate:
           type: string
           format: date
+          nullable: true
+        birthday:
+          type: string
+          format: date
+          nullable: true
+        customFields:
+          type: object
+          additionalProperties: true
           nullable: true
         lastGiftDate:
           type: string
@@ -2056,6 +2188,10 @@ components:
         totalGiving:
           type: number
           nullable: true
+        customFields:
+          type: object
+          additionalProperties: true
+          nullable: true
         lastActivityDate:
           type: string
           format: date
@@ -2247,6 +2383,15 @@ components:
           nullable: true
         enthusiasm:
           $ref: "#/components/schemas/Enthusiasm"
+        status:
+          $ref: "#/components/schemas/FundingEntityStatus"
+        parentFundingEntityId:
+          type: string
+          nullable: true
+        customFields:
+          type: object
+          additionalProperties: true
+          nullable: true
         primaryContactId:
           type: string
           nullable: true
@@ -3067,6 +3212,18 @@ components:
           type: string
           format: date
           nullable: true
+        acknowledgmentSentDate:
+          type: string
+          format: date
+          nullable: true
+        taxReceiptSent:
+          type: boolean
+        payerFundingEntityId:
+          type: string
+          nullable: true
+        payerOrganizationId:
+          type: string
+          nullable: true
         restrictionNotes:
           type: string
           nullable: true
@@ -3144,6 +3301,15 @@ components:
           type: string
         acknowledgementSent:
           type: boolean
+        acknowledgmentSentDate:
+          type: string
+          format: date
+        taxReceiptSent:
+          type: boolean
+        payerFundingEntityId:
+          type: string
+        payerOrganizationId:
+          type: string
         restrictionNotes:
           type: string
         directToSchoolPassthrough:
@@ -3194,6 +3360,18 @@ components:
         acknowledgementDate:
           type: string
           format: date
+        acknowledgmentSentDate:
+          type: string
+          format: date
+          nullable: true
+        taxReceiptSent:
+          type: boolean
+        payerFundingEntityId:
+          type: string
+          nullable: true
+        payerOrganizationId:
+          type: string
+          nullable: true
         restrictionNotes:
           type: string
         paymentMethod:

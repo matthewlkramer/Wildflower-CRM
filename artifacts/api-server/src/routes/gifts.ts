@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import {
   gifts,
   giftAllocations,
+  giftSoftCredits,
   individuals,
   households,
   fundingEntities,
@@ -109,6 +110,20 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+function validatePayer(body: any): string | null {
+  if (
+    body.payerFundingEntityId &&
+    body.fundingEntityId &&
+    body.payerFundingEntityId === body.fundingEntityId
+  ) {
+    return "payerFundingEntityId must differ from donor funding entity (leave null if donor is payer)";
+  }
+  if (body.payerFundingEntityId && body.payerOrganizationId) {
+    return "Only one of payerFundingEntityId or payerOrganizationId may be set";
+  }
+  return null;
+}
+
 router.post("/", async (req, res, next) => {
   try {
     const { allocations, ...giftBody } = req.body as {
@@ -129,6 +144,12 @@ router.post("/", async (req, res, next) => {
       return;
     }
 
+    const payerErr = validatePayer(giftBody);
+    if (payerErr) {
+      res.status(400).json({ error: payerErr });
+      return;
+    }
+
     const giftId = newId();
     const [created] = await db
       .insert(gifts)
@@ -143,7 +164,7 @@ router.post("/", async (req, res, next) => {
           giftId,
           fund: a.fund as any,
           amount: a.amount,
-          fiscalYear: a.fiscalYear,
+          fiscalYear: a.fiscalYear as any,
           notes: a.notes,
         })),
       )
@@ -159,11 +180,28 @@ router.get("/:id", async (req, res, next) => {
   try {
     const [row] = await db.select().from(gifts).where(eq(gifts.id, req.params.id));
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
-    const allocs = await db
-      .select()
-      .from(giftAllocations)
-      .where(eq(giftAllocations.giftId, row.id));
-    res.json({ ...row, allocations: allocs });
+    const [allocs, softCredits] = await Promise.all([
+      db
+        .select()
+        .from(giftAllocations)
+        .where(eq(giftAllocations.giftId, row.id)),
+      db
+        .select({
+          id: giftSoftCredits.id,
+          giftId: giftSoftCredits.giftId,
+          individualId: giftSoftCredits.individualId,
+          creditType: giftSoftCredits.creditType,
+          percentage: giftSoftCredits.percentage,
+          notes: giftSoftCredits.notes,
+          createdAt: giftSoftCredits.createdAt,
+          individualFirstName: individuals.firstName,
+          individualLastName: individuals.lastName,
+        })
+        .from(giftSoftCredits)
+        .leftJoin(individuals, eq(giftSoftCredits.individualId, individuals.id))
+        .where(eq(giftSoftCredits.giftId, row.id)),
+    ]);
+    res.json({ ...row, allocations: allocs, softCredits });
   } catch (err) {
     next(err);
   }
@@ -175,6 +213,22 @@ router.patch("/:id", async (req, res, next) => {
       allocations?: Array<{ fund: string; amount: string; fiscalYear?: string; notes?: string }>;
       [k: string]: any;
     };
+
+    const [existing] = await db
+      .select()
+      .from(gifts)
+      .where(eq(gifts.id, req.params.id));
+    if (!existing) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const merged = { ...existing, ...giftBody };
+    const payerErr = validatePayer(merged);
+    if (payerErr) {
+      res.status(400).json({ error: payerErr });
+      return;
+    }
 
     const [updated] = await db
       .update(gifts)
@@ -199,7 +253,7 @@ router.patch("/:id", async (req, res, next) => {
             giftId: updated.id,
             fund: a.fund as any,
             amount: a.amount,
-            fiscalYear: a.fiscalYear,
+            fiscalYear: a.fiscalYear as any,
             notes: a.notes,
           })),
         );
@@ -211,6 +265,144 @@ router.patch("/:id", async (req, res, next) => {
       .from(giftAllocations)
       .where(eq(giftAllocations.giftId, updated.id));
     res.json({ ...updated, allocations: finalAllocs });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Soft credits ──────────────────────────────────────────────────────────
+router.get("/:id/soft-credits", async (req, res, next) => {
+  try {
+    const rows = await db
+      .select({
+        id: giftSoftCredits.id,
+        giftId: giftSoftCredits.giftId,
+        individualId: giftSoftCredits.individualId,
+        creditType: giftSoftCredits.creditType,
+        percentage: giftSoftCredits.percentage,
+        notes: giftSoftCredits.notes,
+        createdAt: giftSoftCredits.createdAt,
+        individualFirstName: individuals.firstName,
+        individualLastName: individuals.lastName,
+      })
+      .from(giftSoftCredits)
+      .leftJoin(individuals, eq(giftSoftCredits.individualId, individuals.id))
+      .where(eq(giftSoftCredits.giftId, req.params.id));
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+const SOFT_CREDIT_TYPES = new Set([
+  "spouse",
+  "advisor",
+  "introducer",
+  "event_captain",
+  "household_member",
+  "other",
+]);
+
+function validateSoftCreditBody(body: any, requireAll: boolean): string | null {
+  if (requireAll || body.creditType !== undefined) {
+    if (!body.creditType || !SOFT_CREDIT_TYPES.has(body.creditType)) {
+      return `creditType must be one of ${[...SOFT_CREDIT_TYPES].join(", ")}`;
+    }
+  }
+  if (body.percentage !== undefined && body.percentage !== null) {
+    const p = Number(body.percentage);
+    if (Number.isNaN(p) || p < 0 || p > 100) {
+      return "percentage must be a number between 0 and 100";
+    }
+  }
+  if (requireAll && !body.individualId) {
+    return "individualId is required";
+  }
+  return null;
+}
+
+router.post("/:id/soft-credits", async (req, res, next) => {
+  try {
+    const err = validateSoftCreditBody(req.body, true);
+    if (err) {
+      res.status(400).json({ error: err });
+      return;
+    }
+    const [parent] = await db
+      .select({ id: gifts.id })
+      .from(gifts)
+      .where(eq(gifts.id, req.params.id));
+    if (!parent) {
+      res.status(404).json({ error: "Gift not found" });
+      return;
+    }
+    const { individualId, creditType, percentage, notes } = req.body as any;
+    const [created] = await db
+      .insert(giftSoftCredits)
+      .values({
+        id: newId(),
+        giftId: req.params.id,
+        individualId,
+        creditType,
+        percentage,
+        notes,
+      })
+      .returning();
+    res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/:id/soft-credits/:softCreditId", async (req, res, next) => {
+  try {
+    const validationErr = validateSoftCreditBody(req.body, false);
+    if (validationErr) {
+      res.status(400).json({ error: validationErr });
+      return;
+    }
+    const { creditType, percentage, notes } = req.body as any;
+    const patch: Record<string, unknown> = {};
+    if (creditType !== undefined) patch.creditType = creditType;
+    if (percentage !== undefined) patch.percentage = percentage;
+    if (notes !== undefined) patch.notes = notes;
+
+    const [updated] = await db
+      .update(giftSoftCredits)
+      .set(patch)
+      .where(
+        and(
+          eq(giftSoftCredits.id, req.params.softCreditId),
+          eq(giftSoftCredits.giftId, req.params.id),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/:id/soft-credits/:softCreditId", async (req, res, next) => {
+  try {
+    const deleted = await db
+      .delete(giftSoftCredits)
+      .where(
+        and(
+          eq(giftSoftCredits.id, req.params.softCreditId),
+          eq(giftSoftCredits.giftId, req.params.id),
+        ),
+      )
+      .returning({ id: giftSoftCredits.id });
+    if (deleted.length === 0) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    res.status(204).end();
   } catch (err) {
     next(err);
   }
