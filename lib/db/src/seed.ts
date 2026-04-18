@@ -21,14 +21,19 @@ const {
   organizations,
   fundingEntities,
   affiliations,
+  campaigns,
   opportunities,
   pledges,
   pledgeInstallments,
   gifts,
+  giftAllocations,
   giftSoftCredits,
   moves,
   tags,
   tagLinks,
+  contactEmails,
+  contactPhones,
+  contactAddresses,
 } = schema;
 
 function id() {
@@ -40,12 +45,17 @@ async function main() {
 
   await db.delete(tagLinks);
   await db.delete(tags);
+  await db.delete(contactEmails);
+  await db.delete(contactPhones);
+  await db.delete(contactAddresses);
   await db.delete(giftSoftCredits);
+  await db.delete(giftAllocations);
   await db.delete(moves);
   await db.delete(gifts);
   await db.delete(pledgeInstallments);
   await db.delete(pledges);
   await db.delete(opportunities);
+  await db.delete(campaigns);
   await db.delete(affiliations);
   await db.delete(individualRelationships);
   await db.delete(householdMembers);
@@ -72,12 +82,34 @@ async function main() {
   ]).returning();
 
   const [ind1, ind2, ind3, ind4, ind5] = await db.insert(individuals).values([
-    { id: id(), firstName: "Maya", lastName: "Chen-Nakamura", pronouns: "she/her", primaryEmail: "maya@techventures.com", primaryPhone: "415-555-0101", metroArea: "San Francisco Bay Area", relationshipOwnerUserId: u1.id, strategyUserId: u1.id, donorCultivationStage: "in_relationship" as const, enthusiasm: "advocate" as const, capacityRating: "tier_250k_1m" as const, lastMoveDate: new Date("2026-04-01"), lastGiftDate: new Date("2025-12-15"), lastGiftAmount: "50000", totalGiving: "175000", notes: "Lead donor on Seed Fund expansion." },
-    { id: id(), firstName: "Kenji", lastName: "Nakamura", pronouns: "he/him", primaryEmail: "kenji@nakamura.io", metroArea: "San Francisco Bay Area", relationshipOwnerUserId: u1.id, donorCultivationStage: "connected" as const, enthusiasm: "supportive" as const, capacityRating: "tier_250k_1m" as const, lastMoveDate: new Date("2026-03-15"), totalGiving: "50000" },
-    { id: id(), firstName: "Adaeze", lastName: "Okonkwo", pronouns: "she/her", primaryEmail: "adaeze.okonkwo@gmail.com", primaryPhone: "212-555-0202", metroArea: "New York City", relationshipOwnerUserId: u2.id, donorCultivationStage: "in_relationship" as const, enthusiasm: "advocate" as const, capacityRating: "tier_50k_250k" as const, lastMoveDate: new Date("2026-04-10"), lastGiftDate: new Date("2025-11-01"), lastGiftAmount: "25000", totalGiving: "75000" },
-    { id: id(), firstName: "James", lastName: "Whitfield", pronouns: "he/him", primaryEmail: "j.whitfield@prospectpartners.com", metroArea: "Boston", relationshipOwnerUserId: u2.id, donorCultivationStage: "qualified" as const, enthusiasm: "warm" as const, capacityRating: "tier_50k_250k" as const, lastMoveDate: new Date("2026-02-20"), totalGiving: "0" },
-    { id: id(), firstName: "Priya", lastName: "Sharma", pronouns: "she/her", primaryEmail: "priya.sharma@montessorialliance.org", metroArea: "Chicago", relationshipOwnerUserId: u1.id, donorCultivationStage: "connected" as const, enthusiasm: "supportive" as const, capacityRating: "tier_10k_50k" as const, lastMoveDate: new Date("2026-03-28"), lastGiftDate: new Date("2025-06-15"), lastGiftAmount: "10000", totalGiving: "35000" },
+    { id: id(), firstName: "Maya", lastName: "Chen-Nakamura", pronouns: "she/her", relationshipOwnerUserId: u1.id, strategyUserId: u1.id, donorCultivationStage: "in_relationship" as const, enthusiasm: "advocate" as const, capacityRating: "tier_250k_1m" as const, lastMoveDate: new Date("2026-04-01"), lastGiftDate: new Date("2025-12-15"), lastGiftAmount: "50000", totalGiving: "175000", notes: "Lead donor on Seed Fund expansion." },
+    { id: id(), firstName: "Kenji", lastName: "Nakamura", pronouns: "he/him", relationshipOwnerUserId: u1.id, donorCultivationStage: "connected" as const, enthusiasm: "supportive" as const, capacityRating: "tier_250k_1m" as const, lastMoveDate: new Date("2026-03-15"), totalGiving: "50000" },
+    { id: id(), firstName: "Adaeze", lastName: "Okonkwo", pronouns: "she/her", relationshipOwnerUserId: u2.id, donorCultivationStage: "in_relationship" as const, enthusiasm: "advocate" as const, capacityRating: "tier_50k_250k" as const, lastMoveDate: new Date("2026-04-10"), lastGiftDate: new Date("2025-11-01"), lastGiftAmount: "25000", totalGiving: "75000" },
+    { id: id(), firstName: "James", lastName: "Whitfield", pronouns: "he/him", relationshipOwnerUserId: u2.id, donorCultivationStage: "qualified" as const, enthusiasm: "warm" as const, capacityRating: "tier_50k_250k" as const, lastMoveDate: new Date("2026-02-20"), totalGiving: "0" },
+    { id: id(), firstName: "Priya", lastName: "Sharma", pronouns: "she/her", relationshipOwnerUserId: u1.id, donorCultivationStage: "connected" as const, enthusiasm: "supportive" as const, capacityRating: "tier_10k_50k" as const, lastMoveDate: new Date("2026-03-28"), lastGiftDate: new Date("2025-06-15"), lastGiftAmount: "10000", totalGiving: "35000" },
   ]).returning();
+
+  await db.insert(contactEmails).values([
+    { id: id(), ownerType: "individual" as const, ownerId: ind1.id, email: "maya@techventures.com", label: "work" as const, isPrimary: true },
+    { id: id(), ownerType: "individual" as const, ownerId: ind1.id, email: "maya.cn@gmail.com", label: "personal" as const, isPrimary: false },
+    { id: id(), ownerType: "individual" as const, ownerId: ind2.id, email: "kenji@nakamura.io", label: "personal" as const, isPrimary: true },
+    { id: id(), ownerType: "individual" as const, ownerId: ind3.id, email: "adaeze.okonkwo@gmail.com", label: "personal" as const, isPrimary: true },
+    { id: id(), ownerType: "individual" as const, ownerId: ind4.id, email: "j.whitfield@prospectpartners.com", label: "work" as const, isPrimary: true },
+    { id: id(), ownerType: "individual" as const, ownerId: ind5.id, email: "priya.sharma@montessorialliance.org", label: "work" as const, isPrimary: true },
+  ]);
+
+  await db.insert(contactPhones).values([
+    { id: id(), ownerType: "individual" as const, ownerId: ind1.id, phone: "415-555-0101", label: "mobile" as const, isPrimary: true },
+    { id: id(), ownerType: "individual" as const, ownerId: ind3.id, phone: "212-555-0202", label: "mobile" as const, isPrimary: true },
+  ]);
+
+  await db.insert(contactAddresses).values([
+    { id: id(), ownerType: "individual" as const, ownerId: ind1.id, line1: "100 Market St, Apt 4B", city: "San Francisco", state: "CA", postalCode: "94103", metroArea: "San Francisco Bay Area", label: "home" as const, isPrimary: true },
+    { id: id(), ownerType: "individual" as const, ownerId: ind2.id, line1: "100 Market St, Apt 4B", city: "San Francisco", state: "CA", postalCode: "94103", metroArea: "San Francisco Bay Area", label: "home" as const, isPrimary: true },
+    { id: id(), ownerType: "individual" as const, ownerId: ind3.id, line1: "55 W 22nd St", city: "New York", state: "NY", postalCode: "10010", metroArea: "New York City", label: "home" as const, isPrimary: true },
+    { id: id(), ownerType: "individual" as const, ownerId: ind4.id, line1: "200 Beacon St", city: "Boston", state: "MA", postalCode: "02116", metroArea: "Boston", label: "home" as const, isPrimary: true },
+    { id: id(), ownerType: "individual" as const, ownerId: ind5.id, line1: "1500 N Lake Shore Dr", city: "Chicago", state: "IL", postalCode: "60610", metroArea: "Chicago", label: "home" as const, isPrimary: true },
+  ]);
 
   await db.insert(householdMembers).values([
     { id: id(), householdId: hh1.id, individualId: ind1.id, role: "primary" as const, startDate: "2018-09-01", isCurrent: true },
@@ -95,6 +127,16 @@ async function main() {
     { id: id(), legalName: "US Dept of Education - Innovation & Early Learning", displayName: "Dept of Ed - Early Learning", subtype: "government_agency" as const, relationshipOwnerUserId: u1.id, governmentCultivationStage: "rfp_active" as const, typicalGrantSizeMin: "200000", typicalGrantSizeMax: "1000000", totalGiving: "0", notes: "FY26 RFP expected Q4." },
   ]).returning();
 
+  await db.insert(contactEmails).values([
+    { id: id(), ownerType: "funding_entity" as const, ownerId: fe1.id, email: "grants@berkshireed.org", label: "work" as const, isPrimary: true },
+    { id: id(), ownerType: "funding_entity" as const, ownerId: fe2.id, email: "info@wildberryfamily.org", label: "work" as const, isPrimary: true },
+  ]);
+
+  await db.insert(contactAddresses).values([
+    { id: id(), ownerType: "funding_entity" as const, ownerId: fe1.id, line1: "75 Tremont St", city: "Boston", state: "MA", postalCode: "02108", metroArea: "Boston", label: "mailing" as const, isPrimary: true },
+    { id: id(), ownerType: "funding_entity" as const, ownerId: fe3.id, line1: "400 Maryland Ave SW", city: "Washington", state: "DC", postalCode: "20202", metroArea: "Washington DC", label: "mailing" as const, isPrimary: true },
+  ]);
+
   await db.insert(affiliations).values([
     { id: id(), individualId: ind4.id, fundingEntityId: fe1.id, role: "Program Officer", affiliationType: "employee" as const, startDate: "2020-01-01", isCurrent: true },
     { id: id(), individualId: ind5.id, fundingEntityId: fe2.id, role: "Trustee", affiliationType: "trustee" as const, isCurrent: true },
@@ -102,13 +144,18 @@ async function main() {
     { id: id(), individualId: ind5.id, organizationId: org2.id, role: "Director of Partnerships", affiliationType: "employee" as const, isCurrent: true },
   ]);
 
+  const [camp1, camp2] = await db.insert(campaigns).values([
+    { id: id(), name: "FY26 Annual Fund", fund: "general_operating" as const, fiscalYear: "FY2026", startDate: "2025-07-01", endDate: "2026-06-30", goalAmount: "500000", description: "Unrestricted operating support for FY26.", isActive: true },
+    { id: id(), name: "Black Wildflowers Fall Drive 2025", fund: "black_wildflowers" as const, fiscalYear: "FY2026", startDate: "2025-09-01", endDate: "2025-12-31", goalAmount: "100000", description: "Targeted fall drive for Black Wildflowers Fund.", isActive: false },
+  ]).returning();
+
   const fy = "FY2026";
   const [opp1, opp2, opp3, opp4, opp5, opp6] = await db.insert(opportunities).values([
     { id: id(), name: "Maya Chen-Nakamura – Seed Fund FY26", subtype: "ongoing_rolling" as const, donorType: "individual" as const, individualId: ind1.id, householdId: hh1.id, ownerUserId: u1.id, fund: "seed_fund" as const, amountExpected: "75000", probability: 85, probabilityOverridden: true, stage: "negotiation" as const, expectedCloseDate: new Date("2026-06-30"), fiscalYear: fy, askAmount: "75000", askRationale: "Continuation of FY25 gift with 50% increase." },
-    { id: id(), name: "Okonkwo – Black Wildflowers Fund", subtype: "targeted_deadline" as const, donorType: "household" as const, householdId: hh2.id, ownerUserId: u2.id, fund: "black_wildflowers" as const, amountExpected: "25000", probability: 70, stage: "solicitation" as const, expectedCloseDate: new Date("2026-05-15"), fiscalYear: fy, askAmount: "25000" },
+    { id: id(), name: "Okonkwo – Black Wildflowers Fund", subtype: "targeted_deadline" as const, donorType: "household" as const, householdId: hh2.id, ownerUserId: u2.id, fund: "black_wildflowers" as const, amountExpected: "25000", probability: 70, stage: "solicitation" as const, expectedCloseDate: new Date("2026-05-15"), fiscalYear: fy, askAmount: "25000", campaignId: camp2.id },
     { id: id(), name: "Berkshire Ed Foundation – General Operating", subtype: "targeted_deadline" as const, donorType: "institutional_foundation" as const, fundingEntityId: fe1.id, ownerUserId: u1.id, fund: "general_operating" as const, amountExpected: "150000", probability: 55, stage: "conversation" as const, expectedCloseDate: new Date("2026-09-01"), fiscalYear: fy, loiDeadline: new Date("2026-06-01"), proposalDeadline: new Date("2026-08-01") },
     { id: id(), name: "Wildberry Family – Seed Fund Renewal", subtype: "ongoing_rolling" as const, donorType: "family_foundation" as const, fundingEntityId: fe2.id, ownerUserId: u2.id, fund: "seed_fund" as const, amountExpected: "35000", probability: 90, probabilityOverridden: true, stage: "committed" as const, expectedCloseDate: new Date("2026-07-01"), fiscalYear: fy },
-    { id: id(), name: "James Whitfield – General Operating Discovery", subtype: "ongoing_rolling" as const, donorType: "individual" as const, individualId: ind4.id, ownerUserId: u2.id, fund: "general_operating" as const, amountExpected: "50000", probability: 30, stage: "conversation" as const, expectedCloseDate: new Date("2026-08-30"), fiscalYear: fy },
+    { id: id(), name: "James Whitfield – General Operating Discovery", subtype: "ongoing_rolling" as const, donorType: "individual" as const, individualId: ind4.id, ownerUserId: u2.id, fund: "general_operating" as const, amountExpected: "50000", probability: 30, stage: "conversation" as const, expectedCloseDate: new Date("2026-08-30"), fiscalYear: fy, campaignId: camp1.id },
     { id: id(), name: "Dept of Ed – Early Learning Innovation RFP", subtype: "rfp_proposal" as const, donorType: "government_rfp" as const, fundingEntityId: fe3.id, ownerUserId: u1.id, fund: "general_operating" as const, amountExpected: "500000", probability: 20, probabilityOverridden: true, stage: "pre_conversation" as const, governmentStage: "application_in_progress" as const, expectedCloseDate: new Date("2026-12-15"), fiscalYear: fy, proposalDeadline: new Date("2026-10-15"), loiDeadline: new Date("2026-08-30"), notes: "Multi-year potential." },
   ]).returning();
 
@@ -123,11 +170,18 @@ async function main() {
   ]);
 
   const [g1, g2, g3, g4] = await db.insert(gifts).values([
-    { id: id(), fund: "seed_fund" as const, individualId: ind1.id, householdId: hh1.id, pledgeId: pledge1.id, amount: "75000", cashReceivedDate: new Date("2025-06-20"), paymentMethod: "wire" as const, reconciled: true, fiscalYear: "FY2025" },
-    { id: id(), fund: "black_wildflowers" as const, individualId: ind3.id, householdId: hh2.id, amount: "25000", cashReceivedDate: new Date("2025-11-01"), paymentMethod: "check" as const, reconciled: true, fiscalYear: "FY2026" },
-    { id: id(), fund: "seed_fund" as const, fundingEntityId: fe2.id, amount: "35000", cashReceivedDate: new Date("2025-09-15"), paymentMethod: "ach" as const, reconciled: true, fiscalYear: "FY2026" },
-    { id: id(), fund: "general_operating" as const, individualId: ind5.id, amount: "10000", cashReceivedDate: new Date("2025-06-15"), paymentMethod: "check" as const, reconciled: false, fiscalYear: "FY2025" },
+    { id: id(), individualId: ind1.id, householdId: hh1.id, pledgeId: pledge1.id, amount: "75000", currency: "USD", cashReceivedDate: new Date("2025-06-20"), paymentMethod: "wire" as const, reconciled: true },
+    { id: id(), individualId: ind3.id, householdId: hh2.id, amount: "25000", currency: "USD", cashReceivedDate: new Date("2025-11-01"), paymentMethod: "check" as const, reconciled: true, campaignId: camp2.id },
+    { id: id(), fundingEntityId: fe2.id, amount: "35000", currency: "USD", cashReceivedDate: new Date("2025-09-15"), paymentMethod: "ach" as const, reconciled: true },
+    { id: id(), individualId: ind5.id, amount: "10000", currency: "USD", cashReceivedDate: new Date("2025-06-15"), paymentMethod: "check" as const, reconciled: false, campaignId: camp1.id },
   ]).returning();
+
+  await db.insert(giftAllocations).values([
+    { id: id(), giftId: g1.id, fund: "seed_fund" as const, amount: "75000", fiscalYear: "FY2025" },
+    { id: id(), giftId: g2.id, fund: "black_wildflowers" as const, amount: "25000", fiscalYear: "FY2026" },
+    { id: id(), giftId: g3.id, fund: "seed_fund" as const, amount: "35000", fiscalYear: "FY2026" },
+    { id: id(), giftId: g4.id, fund: "general_operating" as const, amount: "10000", fiscalYear: "FY2025" },
+  ]);
 
   await db.insert(giftSoftCredits).values([
     { id: id(), giftId: g1.id, individualId: ind2.id, creditType: "spouse" as const, percentage: "50.00", notes: "Joint household gift" },

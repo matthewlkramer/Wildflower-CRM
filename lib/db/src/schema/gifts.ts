@@ -6,12 +6,12 @@ import {
   boolean,
   pgEnum,
 } from "drizzle-orm/pg-core";
-import { fundEnum } from "./users";
 import { individuals } from "./individuals";
 import { households } from "./households";
 import { fundingEntities } from "./fundingEntities";
 import { organizations } from "./organizations";
 import { pledges } from "./pledges";
+import { campaigns } from "./campaigns";
 
 export const paymentMethodEnum = pgEnum("payment_method", [
   "check",
@@ -26,7 +26,6 @@ export const paymentMethodEnum = pgEnum("payment_method", [
 
 export const gifts = pgTable("gifts", {
   id: text("id").primaryKey(),
-  fund: fundEnum("fund").notNull(),
   individualId: text("individual_id").references(() => individuals.id, {
     onDelete: "set null",
   }),
@@ -40,7 +39,11 @@ export const gifts = pgTable("gifts", {
   pledgeId: text("pledge_id").references(() => pledges.id, {
     onDelete: "set null",
   }),
+  campaignId: text("campaign_id").references(() => campaigns.id, {
+    onDelete: "set null",
+  }),
   amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+  currency: text("currency").default("USD").notNull(),
   cashReceivedDate: timestamp("cash_received_date").notNull(),
   paymentMethod: paymentMethodEnum("payment_method"),
   checkNumber: text("check_number"),
@@ -48,15 +51,12 @@ export const gifts = pgTable("gifts", {
   directToSchoolPassthrough: boolean("direct_to_school_passthrough").default(
     false,
   ),
-  fiscalSponsorFundingEntityId: text("fiscal_sponsor_funding_entity_id").references(
-    () => fundingEntities.id,
-    { onDelete: "set null" },
-  ),
-  fiscalSponsorOrganizationId: text("fiscal_sponsor_organization_id").references(
-    () => organizations.id,
-    { onDelete: "set null" },
-  ),
-  fiscalYear: text("fiscal_year"),
+  fiscalSponsorFundingEntityId: text(
+    "fiscal_sponsor_funding_entity_id",
+  ).references(() => fundingEntities.id, { onDelete: "set null" }),
+  fiscalSponsorOrganizationId: text(
+    "fiscal_sponsor_organization_id",
+  ).references(() => organizations.id, { onDelete: "set null" }),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

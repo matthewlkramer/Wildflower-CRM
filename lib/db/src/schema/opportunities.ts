@@ -13,6 +13,8 @@ import { individuals } from "./individuals";
 import { households } from "./households";
 import { fundingEntities } from "./fundingEntities";
 import { organizations } from "./organizations";
+import { campaigns } from "./campaigns";
+
 export const opportunitySubtypeEnum = pgEnum("opportunity_subtype", [
   "ongoing_rolling",
   "targeted_deadline",
@@ -96,6 +98,9 @@ export const opportunities = pgTable("opportunities", {
     () => organizations.id,
     { onDelete: "set null" },
   ),
+  campaignId: text("campaign_id").references(() => campaigns.id, {
+    onDelete: "set null",
+  }),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

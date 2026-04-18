@@ -67,9 +67,6 @@ paths:
         - name: fund
           in: query
           schema: { $ref: "#/components/schemas/Fund" }
-        - name: metroArea
-          in: query
-          schema: { type: string }
         - name: capacityRating
           in: query
           schema: { type: string }
@@ -1301,6 +1298,259 @@ paths:
               schema:
                 $ref: "#/components/schemas/User"
 
+  # ─── Contact Emails / Phones / Addresses (polymorphic) ─────────────────────
+  /contacts/emails:
+    get:
+      operationId: listContactEmails
+      tags: [contacts]
+      summary: List contact emails (filter by owner)
+      parameters:
+        - name: ownerType
+          in: query
+          schema: { $ref: "#/components/schemas/ContactOwnerType" }
+        - name: ownerId
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: List
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ContactEmail" }
+    post:
+      operationId: createContactEmail
+      tags: [contacts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateContactEmailBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContactEmail" }
+  /contacts/emails/{id}:
+    patch:
+      operationId: updateContactEmail
+      tags: [contacts]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateContactEmailBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContactEmail" }
+    delete:
+      operationId: deleteContactEmail
+      tags: [contacts]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+
+  /contacts/phones:
+    get:
+      operationId: listContactPhones
+      tags: [contacts]
+      parameters:
+        - name: ownerType
+          in: query
+          schema: { $ref: "#/components/schemas/ContactOwnerType" }
+        - name: ownerId
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: List
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ContactPhone" }
+    post:
+      operationId: createContactPhone
+      tags: [contacts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateContactPhoneBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContactPhone" }
+  /contacts/phones/{id}:
+    patch:
+      operationId: updateContactPhone
+      tags: [contacts]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateContactPhoneBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContactPhone" }
+    delete:
+      operationId: deleteContactPhone
+      tags: [contacts]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+
+  /contacts/addresses:
+    get:
+      operationId: listContactAddresses
+      tags: [contacts]
+      parameters:
+        - name: ownerType
+          in: query
+          schema: { $ref: "#/components/schemas/ContactOwnerType" }
+        - name: ownerId
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: List
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ContactAddress" }
+    post:
+      operationId: createContactAddress
+      tags: [contacts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateContactAddressBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContactAddress" }
+  /contacts/addresses/{id}:
+    patch:
+      operationId: updateContactAddress
+      tags: [contacts]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateContactAddressBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContactAddress" }
+    delete:
+      operationId: deleteContactAddress
+      tags: [contacts]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+
+  # ─── Campaigns ─────────────────────────────────────────────────────────────
+  /campaigns:
+    get:
+      operationId: listCampaigns
+      tags: [campaigns]
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: fund, in: query, schema: { $ref: "#/components/schemas/Fund" } }
+        - { name: isActive, in: query, schema: { type: boolean } }
+        - { name: fiscalYear, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        "200":
+          description: List of campaigns
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Campaign" }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                required: [data, total, page, limit]
+    post:
+      operationId: createCampaign
+      tags: [campaigns]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCampaignBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Campaign" }
+  /campaigns/{id}:
+    get:
+      operationId: getCampaign
+      tags: [campaigns]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Campaign
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Campaign" }
+    patch:
+      operationId: updateCampaign
+      tags: [campaigns]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCampaignBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Campaign" }
+    delete:
+      operationId: deleteCampaign
+      tags: [campaigns]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+
 components:
   schemas:
     # ─── Enums ──────────────────────────────────────────────────────────────────
@@ -1444,15 +1694,6 @@ components:
         pronouns:
           type: string
           nullable: true
-        primaryEmail:
-          type: string
-          nullable: true
-        primaryPhone:
-          type: string
-          nullable: true
-        metroArea:
-          type: string
-          nullable: true
         relationshipOwnerUserId:
           type: string
           nullable: true
@@ -1488,10 +1729,18 @@ components:
         totalGiving:
           type: number
           nullable: true
-        doNotContact:
+        emailOptOut:
           type: boolean
-        isDeceased:
+        callOptOut:
           type: boolean
+        mailOptOut:
+          type: boolean
+        textOptOut:
+          type: boolean
+        deceasedDate:
+          type: string
+          format: date
+          nullable: true
         isWildflowerStaff:
           type: boolean
         createdAt:
@@ -1500,28 +1749,25 @@ components:
         updatedAt:
           type: string
           format: date-time
-      required: [id, firstName, lastName, donorCultivationStage, institutionalContactStage, enthusiasm, doNotContact, isDeceased, isWildflowerStaff, createdAt, updatedAt]
+      required: [id, firstName, lastName, donorCultivationStage, institutionalContactStage, enthusiasm, emailOptOut, callOptOut, mailOptOut, textOptOut, isWildflowerStaff, createdAt, updatedAt]
 
     IndividualDetail:
       allOf:
         - $ref: "#/components/schemas/Individual"
         - type: object
           properties:
-            secondaryEmails:
+            emails:
               type: array
               items:
-                type: string
+                $ref: "#/components/schemas/ContactEmail"
             phones:
               type: array
               items:
-                type: object
-                properties:
-                  number: { type: string }
-                  label: { type: string }
-                required: [number]
-            mailingAddress:
-              type: string
-              nullable: true
+                $ref: "#/components/schemas/ContactPhone"
+            addresses:
+              type: array
+              items:
+                $ref: "#/components/schemas/ContactAddress"
             spouseId:
               type: string
               nullable: true
@@ -1613,12 +1859,6 @@ components:
           type: string
         pronouns:
           type: string
-        primaryEmail:
-          type: string
-        primaryPhone:
-          type: string
-        metroArea:
-          type: string
         relationshipOwnerUserId:
           type: string
         strategyUserId:
@@ -1651,14 +1891,6 @@ components:
           type: string
         pronouns:
           type: string
-        primaryEmail:
-          type: string
-        primaryPhone:
-          type: string
-        mailingAddress:
-          type: string
-        metroArea:
-          type: string
         relationshipOwnerUserId:
           type: string
         strategyUserId:
@@ -1683,9 +1915,13 @@ components:
           type: string
         givingPhilosophyNotes:
           type: string
-        doNotContact:
+        emailOptOut:
           type: boolean
-        isDeceased:
+        callOptOut:
+          type: boolean
+        mailOptOut:
+          type: boolean
+        textOptOut:
           type: boolean
         deceasedDate:
           type: string
@@ -2206,6 +2442,9 @@ components:
           nullable: true
         fund:
           $ref: "#/components/schemas/Fund"
+        campaignId:
+          type: string
+          nullable: true
         region:
           type: string
           nullable: true
@@ -2377,6 +2616,8 @@ components:
           type: string
         fund:
           $ref: "#/components/schemas/Fund"
+        campaignId:
+          type: string
         region:
           type: string
         amountRequested:
@@ -2431,6 +2672,9 @@ components:
           type: string
         fund:
           $ref: "#/components/schemas/Fund"
+        campaignId:
+          type: string
+          nullable: true
         region:
           type: string
         amountRequested:
@@ -2713,10 +2957,14 @@ components:
           type: string
         donorName:
           type: string
-        fund:
-          $ref: "#/components/schemas/Fund"
         amount:
           type: number
+        currency:
+          type: string
+          default: USD
+        campaignId:
+          type: string
+          nullable: true
         cashReceivedDate:
           type: string
           format: date
@@ -2789,21 +3037,29 @@ components:
         updatedAt:
           type: string
           format: date-time
-      required: [id, donorType, donorId, donorName, fund, amount, cashReceivedDate, reconciled, acknowledgementSent, directToSchoolPassthrough, createdAt, updatedAt]
+      required: [id, donorType, donorId, donorName, amount, currency, cashReceivedDate, reconciled, acknowledgementSent, directToSchoolPassthrough, createdAt, updatedAt]
 
     CreateGiftBody:
       type: object
-      required: [donorType, donorId, fund, amount, cashReceivedDate]
+      required: [donorType, donorId, amount, cashReceivedDate, allocations]
       properties:
         donorType:
           type: string
           enum: [individual, funding_entity]
         donorId:
           type: string
-        fund:
-          $ref: "#/components/schemas/Fund"
         amount:
           type: number
+        currency:
+          type: string
+          default: USD
+        campaignId:
+          type: string
+        allocations:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CreateGiftAllocationBody"
         cashReceivedDate:
           type: string
           format: date
@@ -2844,6 +3100,19 @@ components:
     UpdateGiftBody:
       type: object
       properties:
+        amount:
+          type: number
+        currency:
+          type: string
+        campaignId:
+          type: string
+          nullable: true
+        allocations:
+          type: array
+          minItems: 1
+          description: When provided, replaces all allocations. Sum must equal amount.
+          items:
+            $ref: "#/components/schemas/CreateGiftAllocationBody"
         reconciled:
           type: boolean
         reconciliationDate:
@@ -3256,3 +3525,191 @@ components:
           type: integer
           nullable: true
       required: [opportunityId, donorName, fund, loiSubmitted, proposalSubmitted]
+
+    # ─── Contact (polymorphic email/phone/address) ───────────────────────────────
+    ContactOwnerType:
+      type: string
+      enum: [individual, household, funding_entity, organization]
+
+    ContactEmail:
+      type: object
+      properties:
+        id: { type: string }
+        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
+        ownerId: { type: string }
+        email: { type: string }
+        label: { type: string, nullable: true }
+        isPrimary: { type: boolean }
+        verified: { type: boolean }
+        bouncedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, ownerType, ownerId, email, isPrimary, verified, createdAt, updatedAt]
+
+    CreateContactEmailBody:
+      type: object
+      required: [ownerType, ownerId, email]
+      properties:
+        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
+        ownerId: { type: string }
+        email: { type: string }
+        label: { type: string }
+        isPrimary: { type: boolean }
+        verified: { type: boolean }
+
+    UpdateContactEmailBody:
+      type: object
+      properties:
+        email: { type: string }
+        label: { type: string, nullable: true }
+        isPrimary: { type: boolean }
+        verified: { type: boolean }
+        bouncedAt: { type: string, format: date-time, nullable: true }
+
+    ContactPhone:
+      type: object
+      properties:
+        id: { type: string }
+        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
+        ownerId: { type: string }
+        phone: { type: string }
+        label: { type: string, nullable: true }
+        isPrimary: { type: boolean }
+        smsCapable: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, ownerType, ownerId, phone, isPrimary, smsCapable, createdAt, updatedAt]
+
+    CreateContactPhoneBody:
+      type: object
+      required: [ownerType, ownerId, phone]
+      properties:
+        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
+        ownerId: { type: string }
+        phone: { type: string }
+        label: { type: string }
+        isPrimary: { type: boolean }
+        smsCapable: { type: boolean }
+
+    UpdateContactPhoneBody:
+      type: object
+      properties:
+        phone: { type: string }
+        label: { type: string, nullable: true }
+        isPrimary: { type: boolean }
+        smsCapable: { type: boolean }
+
+    ContactAddress:
+      type: object
+      properties:
+        id: { type: string }
+        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
+        ownerId: { type: string }
+        label: { type: string, nullable: true }
+        line1: { type: string, nullable: true }
+        line2: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        state: { type: string, nullable: true }
+        postalCode: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        metroArea: { type: string, nullable: true }
+        isPrimary: { type: boolean }
+        isMailingPreferred: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, ownerType, ownerId, isPrimary, isMailingPreferred, createdAt, updatedAt]
+
+    CreateContactAddressBody:
+      type: object
+      required: [ownerType, ownerId]
+      properties:
+        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
+        ownerId: { type: string }
+        label: { type: string }
+        line1: { type: string }
+        line2: { type: string }
+        city: { type: string }
+        state: { type: string }
+        postalCode: { type: string }
+        country: { type: string }
+        metroArea: { type: string }
+        isPrimary: { type: boolean }
+        isMailingPreferred: { type: boolean }
+
+    UpdateContactAddressBody:
+      type: object
+      properties:
+        label: { type: string, nullable: true }
+        line1: { type: string, nullable: true }
+        line2: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        state: { type: string, nullable: true }
+        postalCode: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        metroArea: { type: string, nullable: true }
+        isPrimary: { type: boolean }
+        isMailingPreferred: { type: boolean }
+
+    # ─── Campaign ────────────────────────────────────────────────────────────────
+    Campaign:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        fund: { $ref: "#/components/schemas/Fund" }
+        description: { type: string, nullable: true }
+        startDate: { type: string, format: date, nullable: true }
+        endDate: { type: string, format: date, nullable: true }
+        fiscalYear: { type: string, nullable: true }
+        goalAmount: { type: number, nullable: true }
+        isActive: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, fund, isActive, createdAt, updatedAt]
+
+    CreateCampaignBody:
+      type: object
+      required: [name, fund]
+      properties:
+        name: { type: string }
+        fund: { $ref: "#/components/schemas/Fund" }
+        description: { type: string }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        fiscalYear: { type: string }
+        goalAmount: { type: number }
+        isActive: { type: boolean }
+
+    UpdateCampaignBody:
+      type: object
+      properties:
+        name: { type: string }
+        fund: { $ref: "#/components/schemas/Fund" }
+        description: { type: string, nullable: true }
+        startDate: { type: string, format: date, nullable: true }
+        endDate: { type: string, format: date, nullable: true }
+        fiscalYear: { type: string, nullable: true }
+        goalAmount: { type: number, nullable: true }
+        isActive: { type: boolean }
+
+    # ─── GiftAllocation ──────────────────────────────────────────────────────────
+    GiftAllocation:
+      type: object
+      properties:
+        id: { type: string }
+        giftId: { type: string }
+        fund: { $ref: "#/components/schemas/Fund" }
+        amount: { type: number }
+        fiscalYear: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+      required: [id, giftId, fund, amount, createdAt]
+
+    CreateGiftAllocationBody:
+      type: object
+      required: [fund, amount]
+      properties:
+        fund: { $ref: "#/components/schemas/Fund" }
+        amount: { type: number }
+        fiscalYear: { type: string }
+        notes: { type: string }

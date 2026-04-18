@@ -4,6 +4,7 @@ import {
   timestamp,
   boolean,
   numeric,
+  date,
   pgEnum,
 } from "drizzle-orm/pg-core";
 import { users } from "./users";
@@ -52,11 +53,7 @@ export const individuals = pgTable("individuals", {
   lastName: text("last_name").notNull(),
   preferredName: text("preferred_name"),
   pronouns: text("pronouns"),
-  primaryEmail: text("primary_email"),
-  primaryPhone: text("primary_phone"),
-  secondaryEmail: text("secondary_email"),
   linkedinUrl: text("linkedin_url"),
-  metroArea: text("metro_area"),
   relationshipOwnerUserId: text("relationship_owner_user_id").references(
     () => users.id,
     { onDelete: "set null" },
@@ -78,8 +75,11 @@ export const individuals = pgTable("individuals", {
   totalGiving: numeric("total_giving", { precision: 15, scale: 2 }).default(
     "0",
   ),
-  doNotContact: boolean("do_not_contact").default(false),
-  isDeceased: boolean("is_deceased").default(false),
+  deceasedDate: date("deceased_date"),
+  emailOptOut: boolean("email_opt_out").default(false).notNull(),
+  callOptOut: boolean("call_opt_out").default(false).notNull(),
+  mailOptOut: boolean("mail_opt_out").default(false).notNull(),
+  textOptOut: boolean("text_opt_out").default(false).notNull(),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

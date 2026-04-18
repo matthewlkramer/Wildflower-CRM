@@ -11,6 +11,8 @@ import dashboardRouter from "./dashboard";
 import projectionsRouter from "./projections";
 import grantsCalendarRouter from "./grantsCalendar";
 import usersRouter from "./usersRoute";
+import contactsRouter from "./contacts";
+import campaignsRouter from "./campaigns";
 
 const router: IRouter = Router();
 
@@ -26,5 +28,7 @@ router.use("/dashboard", dashboardRouter);
 router.use("/projections", projectionsRouter);
 router.use("/grants-calendar", grantsCalendarRouter);
 router.use("/users", usersRouter);
+router.use("/contacts", contactsRouter);
+router.use("/campaigns", campaignsRouter);
 
 export default router;

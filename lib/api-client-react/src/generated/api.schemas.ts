@@ -231,9 +231,6 @@ export interface Individual {
   lastName: string;
   preferredName?: string | null;
   pronouns?: string | null;
-  primaryEmail?: string | null;
-  primaryPhone?: string | null;
-  metroArea?: string | null;
   relationshipOwnerUserId?: string | null;
   relationshipOwnerName?: string | null;
   strategyUserId?: string | null;
@@ -246,17 +243,15 @@ export interface Individual {
   lastGiftDate?: string | null;
   lastGiftAmount?: number | null;
   totalGiving?: number | null;
-  doNotContact: boolean;
-  isDeceased: boolean;
+  emailOptOut: boolean;
+  callOptOut: boolean;
+  mailOptOut: boolean;
+  textOptOut: boolean;
+  deceasedDate?: string | null;
   isWildflowerStaff: boolean;
   createdAt: string;
   updatedAt: string;
 }
-
-export type IndividualDetailPhonesItem = {
-  number: string;
-  label?: string;
-};
 
 export type IndividualDetailInterests = {
   thematic?: string[];
@@ -269,6 +264,59 @@ export type IndividualDetailDemographics = {
   raceEthnicity?: string[];
   raceEthnicityOther?: string | null;
 };
+
+export type ContactOwnerType =
+  (typeof ContactOwnerType)[keyof typeof ContactOwnerType];
+
+export const ContactOwnerType = {
+  individual: "individual",
+  household: "household",
+  funding_entity: "funding_entity",
+  organization: "organization",
+} as const;
+
+export interface ContactEmail {
+  id: string;
+  ownerType: ContactOwnerType;
+  ownerId: string;
+  email: string;
+  label?: string | null;
+  isPrimary: boolean;
+  verified: boolean;
+  bouncedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContactPhone {
+  id: string;
+  ownerType: ContactOwnerType;
+  ownerId: string;
+  phone: string;
+  label?: string | null;
+  isPrimary: boolean;
+  smsCapable: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContactAddress {
+  id: string;
+  ownerType: ContactOwnerType;
+  ownerId: string;
+  label?: string | null;
+  line1?: string | null;
+  line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  metroArea?: string | null;
+  isPrimary: boolean;
+  isMailingPreferred: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface Affiliation {
   id: string;
@@ -360,6 +408,7 @@ export interface Opportunity {
   ownerUserId?: string | null;
   ownerName?: string | null;
   fund: Fund;
+  campaignId?: string | null;
   region?: string | null;
   amountRequested?: number | null;
   amountExpected?: number | null;
@@ -408,9 +457,9 @@ export interface Household {
 }
 
 export type IndividualDetail = Individual & {
-  secondaryEmails?: string[];
-  phones?: IndividualDetailPhonesItem[];
-  mailingAddress?: string | null;
+  emails?: ContactEmail[];
+  phones?: ContactPhone[];
+  addresses?: ContactAddress[];
   spouseId?: string | null;
   spouseName?: string | null;
   assistantId?: string | null;
@@ -437,9 +486,6 @@ export interface CreateIndividualBody {
   lastName: string;
   preferredName?: string;
   pronouns?: string;
-  primaryEmail?: string;
-  primaryPhone?: string;
-  metroArea?: string;
   relationshipOwnerUserId?: string;
   strategyUserId?: string;
   donorCultivationStage?: CultivationStage;
@@ -469,10 +515,6 @@ export interface UpdateIndividualBody {
   lastName?: string;
   preferredName?: string;
   pronouns?: string;
-  primaryEmail?: string;
-  primaryPhone?: string;
-  mailingAddress?: string;
-  metroArea?: string;
   relationshipOwnerUserId?: string;
   strategyUserId?: string;
   spouseId?: string;
@@ -485,8 +527,10 @@ export interface UpdateIndividualBody {
   capacityRatingSource?: string;
   biography?: string;
   givingPhilosophyNotes?: string;
-  doNotContact?: boolean;
-  isDeceased?: boolean;
+  emailOptOut?: boolean;
+  callOptOut?: boolean;
+  mailOptOut?: boolean;
+  textOptOut?: boolean;
   deceasedDate?: string;
   isWildflowerStaff?: boolean;
   childrenAtWildflower?: string;
@@ -552,8 +596,9 @@ export interface Gift {
   donorType: GiftDonorType;
   donorId: string;
   donorName: string;
-  fund: Fund;
   amount: number;
+  currency: string;
+  campaignId?: string | null;
   cashReceivedDate: string;
   reconciled: boolean;
   reconciliationDate?: string | null;
@@ -800,6 +845,7 @@ export interface CreateOpportunityBody {
   donorId: string;
   ownerUserId?: string;
   fund: Fund;
+  campaignId?: string;
   region?: string;
   amountRequested?: number;
   amountExpected?: number;
@@ -834,6 +880,7 @@ export interface UpdateOpportunityBody {
   governmentStage?: GovernmentOpportunityStage;
   ownerUserId?: string;
   fund?: Fund;
+  campaignId?: string | null;
   region?: string;
   amountRequested?: number;
   amountExpected?: number;
@@ -967,11 +1014,21 @@ export const CreateGiftBodyRestrictionFormality = {
   conversational: "conversational",
 } as const;
 
+export interface CreateGiftAllocationBody {
+  fund: Fund;
+  amount: number;
+  fiscalYear?: string;
+  notes?: string;
+}
+
 export interface CreateGiftBody {
   donorType: CreateGiftBodyDonorType;
   donorId: string;
-  fund: Fund;
   amount: number;
+  currency?: string;
+  campaignId?: string;
+  /** @minItems 1 */
+  allocations: CreateGiftAllocationBody[];
   cashReceivedDate: string;
   paymentMethod?: string;
   paymentReference?: string;
@@ -992,6 +1049,14 @@ export interface CreateGiftBody {
 }
 
 export interface UpdateGiftBody {
+  amount?: number;
+  currency?: string;
+  campaignId?: string | null;
+  /**
+   * When provided, replaces all allocations. Sum must equal amount.
+   * @minItems 1
+   */
+  allocations?: CreateGiftAllocationBody[];
   reconciled?: boolean;
   reconciliationDate?: string;
   quickbooksReference?: string;
@@ -1199,12 +1264,118 @@ export interface GrantsCalendarEntry {
   daysUntilNextDeadline?: number | null;
 }
 
+export interface CreateContactEmailBody {
+  ownerType: ContactOwnerType;
+  ownerId: string;
+  email: string;
+  label?: string;
+  isPrimary?: boolean;
+  verified?: boolean;
+}
+
+export interface UpdateContactEmailBody {
+  email?: string;
+  label?: string | null;
+  isPrimary?: boolean;
+  verified?: boolean;
+  bouncedAt?: string | null;
+}
+
+export interface CreateContactPhoneBody {
+  ownerType: ContactOwnerType;
+  ownerId: string;
+  phone: string;
+  label?: string;
+  isPrimary?: boolean;
+  smsCapable?: boolean;
+}
+
+export interface UpdateContactPhoneBody {
+  phone?: string;
+  label?: string | null;
+  isPrimary?: boolean;
+  smsCapable?: boolean;
+}
+
+export interface CreateContactAddressBody {
+  ownerType: ContactOwnerType;
+  ownerId: string;
+  label?: string;
+  line1?: string;
+  line2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  metroArea?: string;
+  isPrimary?: boolean;
+  isMailingPreferred?: boolean;
+}
+
+export interface UpdateContactAddressBody {
+  label?: string | null;
+  line1?: string | null;
+  line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  metroArea?: string | null;
+  isPrimary?: boolean;
+  isMailingPreferred?: boolean;
+}
+
+export interface Campaign {
+  id: string;
+  name: string;
+  fund: Fund;
+  description?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  fiscalYear?: string | null;
+  goalAmount?: number | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCampaignBody {
+  name: string;
+  fund: Fund;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+  fiscalYear?: string;
+  goalAmount?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateCampaignBody {
+  name?: string;
+  fund?: Fund;
+  description?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  fiscalYear?: string | null;
+  goalAmount?: number | null;
+  isActive?: boolean;
+}
+
+export interface GiftAllocation {
+  id: string;
+  giftId: string;
+  fund: Fund;
+  amount: number;
+  fiscalYear?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
 export type ListIndividualsParams = {
   search?: string;
   owner?: string;
   cultivationStage?: string;
   fund?: Fund;
-  metroArea?: string;
   capacityRating?: string;
   enthusiasm?: string;
   /**
@@ -1409,4 +1580,35 @@ export type GetGrantsCalendarParams = {
   fund?: Fund;
   owner?: string;
   daysAhead?: number;
+};
+
+export type ListContactEmailsParams = {
+  ownerType?: ContactOwnerType;
+  ownerId?: string;
+};
+
+export type ListContactPhonesParams = {
+  ownerType?: ContactOwnerType;
+  ownerId?: string;
+};
+
+export type ListContactAddressesParams = {
+  ownerType?: ContactOwnerType;
+  ownerId?: string;
+};
+
+export type ListCampaignsParams = {
+  search?: string;
+  fund?: Fund;
+  isActive?: boolean;
+  fiscalYear?: string;
+  page?: number;
+  limit?: number;
+};
+
+export type ListCampaigns200 = {
+  data: Campaign[];
+  total: number;
+  page: number;
+  limit: number;
 };

@@ -27,7 +27,6 @@ export const ListIndividualsQueryParams = zod.object({
   fund: zod
     .enum(["general_operating", "seed_fund", "black_wildflowers", "sunlight"])
     .optional(),
-  metroArea: zod.coerce.string().optional(),
   capacityRating: zod.coerce.string().optional(),
   enthusiasm: zod.coerce.string().optional(),
   lastMoveRecency: zod.coerce
@@ -46,9 +45,6 @@ export const ListIndividualsResponse = zod.object({
       lastName: zod.string(),
       preferredName: zod.string().nullish(),
       pronouns: zod.string().nullish(),
-      primaryEmail: zod.string().nullish(),
-      primaryPhone: zod.string().nullish(),
-      metroArea: zod.string().nullish(),
       relationshipOwnerUserId: zod.string().nullish(),
       relationshipOwnerName: zod.string().nullish(),
       strategyUserId: zod.string().nullish(),
@@ -91,8 +87,11 @@ export const ListIndividualsResponse = zod.object({
       lastGiftDate: zod.coerce.date().nullish(),
       lastGiftAmount: zod.number().nullish(),
       totalGiving: zod.number().nullish(),
-      doNotContact: zod.boolean(),
-      isDeceased: zod.boolean(),
+      emailOptOut: zod.boolean(),
+      callOptOut: zod.boolean(),
+      mailOptOut: zod.boolean(),
+      textOptOut: zod.boolean(),
+      deceasedDate: zod.coerce.date().nullish(),
       isWildflowerStaff: zod.boolean(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
@@ -111,9 +110,6 @@ export const CreateIndividualBody = zod.object({
   lastName: zod.string(),
   preferredName: zod.string().optional(),
   pronouns: zod.string().optional(),
-  primaryEmail: zod.string().optional(),
-  primaryPhone: zod.string().optional(),
-  metroArea: zod.string().optional(),
   relationshipOwnerUserId: zod.string().optional(),
   strategyUserId: zod.string().optional(),
   donorCultivationStage: zod
@@ -176,9 +172,6 @@ export const GetIndividualResponse = zod
     lastName: zod.string(),
     preferredName: zod.string().nullish(),
     pronouns: zod.string().nullish(),
-    primaryEmail: zod.string().nullish(),
-    primaryPhone: zod.string().nullish(),
-    metroArea: zod.string().nullish(),
     relationshipOwnerUserId: zod.string().nullish(),
     relationshipOwnerName: zod.string().nullish(),
     strategyUserId: zod.string().nullish(),
@@ -221,24 +214,84 @@ export const GetIndividualResponse = zod
     lastGiftDate: zod.coerce.date().nullish(),
     lastGiftAmount: zod.number().nullish(),
     totalGiving: zod.number().nullish(),
-    doNotContact: zod.boolean(),
-    isDeceased: zod.boolean(),
+    emailOptOut: zod.boolean(),
+    callOptOut: zod.boolean(),
+    mailOptOut: zod.boolean(),
+    textOptOut: zod.boolean(),
+    deceasedDate: zod.coerce.date().nullish(),
     isWildflowerStaff: zod.boolean(),
     createdAt: zod.coerce.date(),
     updatedAt: zod.coerce.date(),
   })
   .and(
     zod.object({
-      secondaryEmails: zod.array(zod.string()).optional(),
-      phones: zod
+      emails: zod
         .array(
           zod.object({
-            number: zod.string(),
-            label: zod.string().optional(),
+            id: zod.string(),
+            ownerType: zod.enum([
+              "individual",
+              "household",
+              "funding_entity",
+              "organization",
+            ]),
+            ownerId: zod.string(),
+            email: zod.string(),
+            label: zod.string().nullish(),
+            isPrimary: zod.boolean(),
+            verified: zod.boolean(),
+            bouncedAt: zod.coerce.date().nullish(),
+            createdAt: zod.coerce.date(),
+            updatedAt: zod.coerce.date(),
           }),
         )
         .optional(),
-      mailingAddress: zod.string().nullish(),
+      phones: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            ownerType: zod.enum([
+              "individual",
+              "household",
+              "funding_entity",
+              "organization",
+            ]),
+            ownerId: zod.string(),
+            phone: zod.string(),
+            label: zod.string().nullish(),
+            isPrimary: zod.boolean(),
+            smsCapable: zod.boolean(),
+            createdAt: zod.coerce.date(),
+            updatedAt: zod.coerce.date(),
+          }),
+        )
+        .optional(),
+      addresses: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            ownerType: zod.enum([
+              "individual",
+              "household",
+              "funding_entity",
+              "organization",
+            ]),
+            ownerId: zod.string(),
+            label: zod.string().nullish(),
+            line1: zod.string().nullish(),
+            line2: zod.string().nullish(),
+            city: zod.string().nullish(),
+            state: zod.string().nullish(),
+            postalCode: zod.string().nullish(),
+            country: zod.string().nullish(),
+            metroArea: zod.string().nullish(),
+            isPrimary: zod.boolean(),
+            isMailingPreferred: zod.boolean(),
+            createdAt: zod.coerce.date(),
+            updatedAt: zod.coerce.date(),
+          }),
+        )
+        .optional(),
       spouseId: zod.string().nullish(),
       spouseName: zod.string().nullish(),
       assistantId: zod.string().nullish(),
@@ -364,6 +417,7 @@ export const GetIndividualResponse = zod
               "black_wildflowers",
               "sunlight",
             ]),
+            campaignId: zod.string().nullish(),
             region: zod.string().nullish(),
             amountRequested: zod.number().nullish(),
             amountExpected: zod.number().nullish(),
@@ -452,10 +506,6 @@ export const UpdateIndividualBody = zod.object({
   lastName: zod.string().optional(),
   preferredName: zod.string().optional(),
   pronouns: zod.string().optional(),
-  primaryEmail: zod.string().optional(),
-  primaryPhone: zod.string().optional(),
-  mailingAddress: zod.string().optional(),
-  metroArea: zod.string().optional(),
   relationshipOwnerUserId: zod.string().optional(),
   strategyUserId: zod.string().optional(),
   spouseId: zod.string().optional(),
@@ -504,8 +554,10 @@ export const UpdateIndividualBody = zod.object({
   capacityRatingSource: zod.string().optional(),
   biography: zod.string().optional(),
   givingPhilosophyNotes: zod.string().optional(),
-  doNotContact: zod.boolean().optional(),
-  isDeceased: zod.boolean().optional(),
+  emailOptOut: zod.boolean().optional(),
+  callOptOut: zod.boolean().optional(),
+  mailOptOut: zod.boolean().optional(),
+  textOptOut: zod.boolean().optional(),
   deceasedDate: zod.coerce.date().optional(),
   isWildflowerStaff: zod.boolean().optional(),
   childrenAtWildflower: zod.string().optional(),
@@ -532,9 +584,6 @@ export const UpdateIndividualResponse = zod.object({
   lastName: zod.string(),
   preferredName: zod.string().nullish(),
   pronouns: zod.string().nullish(),
-  primaryEmail: zod.string().nullish(),
-  primaryPhone: zod.string().nullish(),
-  metroArea: zod.string().nullish(),
   relationshipOwnerUserId: zod.string().nullish(),
   relationshipOwnerName: zod.string().nullish(),
   strategyUserId: zod.string().nullish(),
@@ -577,8 +626,11 @@ export const UpdateIndividualResponse = zod.object({
   lastGiftDate: zod.coerce.date().nullish(),
   lastGiftAmount: zod.number().nullish(),
   totalGiving: zod.number().nullish(),
-  doNotContact: zod.boolean(),
-  isDeceased: zod.boolean(),
+  emailOptOut: zod.boolean(),
+  callOptOut: zod.boolean(),
+  mailOptOut: zod.boolean(),
+  textOptOut: zod.boolean(),
+  deceasedDate: zod.coerce.date().nullish(),
   isWildflowerStaff: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -676,6 +728,8 @@ export const CreateHouseholdBody = zod.object({
 export const GetHouseholdParams = zod.object({
   id: zod.coerce.string(),
 });
+
+export const getHouseholdResponseTwoGivingHistoryItemCurrencyDefault = `USD`;
 
 export const GetHouseholdResponse = zod
   .object({
@@ -799,6 +853,7 @@ export const GetHouseholdResponse = zod
               "black_wildflowers",
               "sunlight",
             ]),
+            campaignId: zod.string().nullish(),
             region: zod.string().nullish(),
             amountRequested: zod.number().nullish(),
             amountExpected: zod.number().nullish(),
@@ -850,13 +905,11 @@ export const GetHouseholdResponse = zod
             donorType: zod.enum(["individual", "funding_entity"]),
             donorId: zod.string(),
             donorName: zod.string(),
-            fund: zod.enum([
-              "general_operating",
-              "seed_fund",
-              "black_wildflowers",
-              "sunlight",
-            ]),
             amount: zod.number(),
+            currency: zod
+              .string()
+              .default(getHouseholdResponseTwoGivingHistoryItemCurrencyDefault),
+            campaignId: zod.string().nullish(),
             cashReceivedDate: zod.coerce.date(),
             reconciled: zod.boolean(),
             reconciliationDate: zod.coerce.date().nullish(),
@@ -1145,6 +1198,8 @@ export const GetFundingEntityParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const getFundingEntityResponseTwoGivingHistoryItemCurrencyDefault = `USD`;
+
 export const GetFundingEntityResponse = zod
   .object({
     id: zod.string(),
@@ -1259,6 +1314,7 @@ export const GetFundingEntityResponse = zod
               "black_wildflowers",
               "sunlight",
             ]),
+            campaignId: zod.string().nullish(),
             region: zod.string().nullish(),
             amountRequested: zod.number().nullish(),
             amountExpected: zod.number().nullish(),
@@ -1310,13 +1366,13 @@ export const GetFundingEntityResponse = zod
             donorType: zod.enum(["individual", "funding_entity"]),
             donorId: zod.string(),
             donorName: zod.string(),
-            fund: zod.enum([
-              "general_operating",
-              "seed_fund",
-              "black_wildflowers",
-              "sunlight",
-            ]),
             amount: zod.number(),
+            currency: zod
+              .string()
+              .default(
+                getFundingEntityResponseTwoGivingHistoryItemCurrencyDefault,
+              ),
+            campaignId: zod.string().nullish(),
             cashReceivedDate: zod.coerce.date(),
             reconciled: zod.boolean(),
             reconciliationDate: zod.coerce.date().nullish(),
@@ -1598,6 +1654,7 @@ export const ListOpportunitiesResponse = zod.object({
         "black_wildflowers",
         "sunlight",
       ]),
+      campaignId: zod.string().nullish(),
       region: zod.string().nullish(),
       amountRequested: zod.number().nullish(),
       amountExpected: zod.number().nullish(),
@@ -1661,6 +1718,7 @@ export const CreateOpportunityBody = zod.object({
     "black_wildflowers",
     "sunlight",
   ]),
+  campaignId: zod.string().optional(),
   region: zod.string().optional(),
   amountRequested: zod.number().optional(),
   amountExpected: zod.number().optional(),
@@ -1727,6 +1785,7 @@ export const GetOpportunityResponse = zod
       "black_wildflowers",
       "sunlight",
     ]),
+    campaignId: zod.string().nullish(),
     region: zod.string().nullish(),
     amountRequested: zod.number().nullish(),
     amountExpected: zod.number().nullish(),
@@ -1928,6 +1987,7 @@ export const UpdateOpportunityBody = zod.object({
   fund: zod
     .enum(["general_operating", "seed_fund", "black_wildflowers", "sunlight"])
     .optional(),
+  campaignId: zod.string().nullish(),
   region: zod.string().optional(),
   amountRequested: zod.number().optional(),
   amountExpected: zod.number().optional(),
@@ -1975,6 +2035,7 @@ export const UpdateOpportunityResponse = zod.object({
     "black_wildflowers",
     "sunlight",
   ]),
+  campaignId: zod.string().nullish(),
   region: zod.string().nullish(),
   amountRequested: zod.number().nullish(),
   amountExpected: zod.number().nullish(),
@@ -2068,6 +2129,7 @@ export const GetOpportunityPipelineResponse = zod.object({
             "black_wildflowers",
             "sunlight",
           ]),
+          campaignId: zod.string().nullish(),
           region: zod.string().nullish(),
           amountRequested: zod.number().nullish(),
           amountExpected: zod.number().nullish(),
@@ -2385,6 +2447,8 @@ export const ListGiftsQueryParams = zod.object({
   limit: zod.coerce.number().default(listGiftsQueryLimitDefault),
 });
 
+export const listGiftsResponseDataItemCurrencyDefault = `USD`;
+
 export const ListGiftsResponse = zod.object({
   data: zod.array(
     zod.object({
@@ -2392,13 +2456,9 @@ export const ListGiftsResponse = zod.object({
       donorType: zod.enum(["individual", "funding_entity"]),
       donorId: zod.string(),
       donorName: zod.string(),
-      fund: zod.enum([
-        "general_operating",
-        "seed_fund",
-        "black_wildflowers",
-        "sunlight",
-      ]),
       amount: zod.number(),
+      currency: zod.string().default(listGiftsResponseDataItemCurrencyDefault),
+      campaignId: zod.string().nullish(),
       cashReceivedDate: zod.coerce.date(),
       reconciled: zod.boolean(),
       reconciliationDate: zod.coerce.date().nullish(),
@@ -2433,16 +2493,29 @@ export const ListGiftsResponse = zod.object({
 /**
  * @summary Record a new gift
  */
+export const createGiftBodyCurrencyDefault = `USD`;
+
 export const CreateGiftBody = zod.object({
   donorType: zod.enum(["individual", "funding_entity"]),
   donorId: zod.string(),
-  fund: zod.enum([
-    "general_operating",
-    "seed_fund",
-    "black_wildflowers",
-    "sunlight",
-  ]),
   amount: zod.number(),
+  currency: zod.string().default(createGiftBodyCurrencyDefault),
+  campaignId: zod.string().optional(),
+  allocations: zod
+    .array(
+      zod.object({
+        fund: zod.enum([
+          "general_operating",
+          "seed_fund",
+          "black_wildflowers",
+          "sunlight",
+        ]),
+        amount: zod.number(),
+        fiscalYear: zod.string().optional(),
+        notes: zod.string().optional(),
+      }),
+    )
+    .min(1),
   cashReceivedDate: zod.coerce.date(),
   paymentMethod: zod.string().optional(),
   paymentReference: zod.string().optional(),
@@ -2469,18 +2542,16 @@ export const GetGiftParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const getGiftResponseCurrencyDefault = `USD`;
+
 export const GetGiftResponse = zod.object({
   id: zod.string(),
   donorType: zod.enum(["individual", "funding_entity"]),
   donorId: zod.string(),
   donorName: zod.string(),
-  fund: zod.enum([
-    "general_operating",
-    "seed_fund",
-    "black_wildflowers",
-    "sunlight",
-  ]),
   amount: zod.number(),
+  currency: zod.string().default(getGiftResponseCurrencyDefault),
+  campaignId: zod.string().nullish(),
   cashReceivedDate: zod.coerce.date(),
   reconciled: zod.boolean(),
   reconciliationDate: zod.coerce.date().nullish(),
@@ -2515,6 +2586,28 @@ export const UpdateGiftParams = zod.object({
 });
 
 export const UpdateGiftBody = zod.object({
+  amount: zod.number().optional(),
+  currency: zod.string().optional(),
+  campaignId: zod.string().nullish(),
+  allocations: zod
+    .array(
+      zod.object({
+        fund: zod.enum([
+          "general_operating",
+          "seed_fund",
+          "black_wildflowers",
+          "sunlight",
+        ]),
+        amount: zod.number(),
+        fiscalYear: zod.string().optional(),
+        notes: zod.string().optional(),
+      }),
+    )
+    .min(1)
+    .optional()
+    .describe(
+      "When provided, replaces all allocations. Sum must equal amount.",
+    ),
   reconciled: zod.boolean().optional(),
   reconciliationDate: zod.coerce.date().optional(),
   quickbooksReference: zod.string().optional(),
@@ -2525,18 +2618,16 @@ export const UpdateGiftBody = zod.object({
   paymentReference: zod.string().optional(),
 });
 
+export const updateGiftResponseCurrencyDefault = `USD`;
+
 export const UpdateGiftResponse = zod.object({
   id: zod.string(),
   donorType: zod.enum(["individual", "funding_entity"]),
   donorId: zod.string(),
   donorName: zod.string(),
-  fund: zod.enum([
-    "general_operating",
-    "seed_fund",
-    "black_wildflowers",
-    "sunlight",
-  ]),
   amount: zod.number(),
+  currency: zod.string().default(updateGiftResponseCurrencyDefault),
+  campaignId: zod.string().nullish(),
   cashReceivedDate: zod.coerce.date(),
   reconciled: zod.boolean(),
   reconciliationDate: zod.coerce.date().nullish(),
@@ -3164,4 +3255,372 @@ export const UpdateCurrentUserResponse = zod.object({
   avatarUrl: zod.string().nullish(),
   isWildflowerStaff: zod.boolean(),
   createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary List contact emails (filter by owner)
+ */
+export const ListContactEmailsQueryParams = zod.object({
+  ownerType: zod
+    .enum(["individual", "household", "funding_entity", "organization"])
+    .optional(),
+  ownerId: zod.coerce.string().optional(),
+});
+
+export const ListContactEmailsResponseItem = zod.object({
+  id: zod.string(),
+  ownerType: zod.enum([
+    "individual",
+    "household",
+    "funding_entity",
+    "organization",
+  ]),
+  ownerId: zod.string(),
+  email: zod.string(),
+  label: zod.string().nullish(),
+  isPrimary: zod.boolean(),
+  verified: zod.boolean(),
+  bouncedAt: zod.coerce.date().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListContactEmailsResponse = zod.array(
+  ListContactEmailsResponseItem,
+);
+
+export const CreateContactEmailBody = zod.object({
+  ownerType: zod.enum([
+    "individual",
+    "household",
+    "funding_entity",
+    "organization",
+  ]),
+  ownerId: zod.string(),
+  email: zod.string(),
+  label: zod.string().optional(),
+  isPrimary: zod.boolean().optional(),
+  verified: zod.boolean().optional(),
+});
+
+export const UpdateContactEmailParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateContactEmailBody = zod.object({
+  email: zod.string().optional(),
+  label: zod.string().nullish(),
+  isPrimary: zod.boolean().optional(),
+  verified: zod.boolean().optional(),
+  bouncedAt: zod.coerce.date().nullish(),
+});
+
+export const UpdateContactEmailResponse = zod.object({
+  id: zod.string(),
+  ownerType: zod.enum([
+    "individual",
+    "household",
+    "funding_entity",
+    "organization",
+  ]),
+  ownerId: zod.string(),
+  email: zod.string(),
+  label: zod.string().nullish(),
+  isPrimary: zod.boolean(),
+  verified: zod.boolean(),
+  bouncedAt: zod.coerce.date().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+export const DeleteContactEmailParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ListContactPhonesQueryParams = zod.object({
+  ownerType: zod
+    .enum(["individual", "household", "funding_entity", "organization"])
+    .optional(),
+  ownerId: zod.coerce.string().optional(),
+});
+
+export const ListContactPhonesResponseItem = zod.object({
+  id: zod.string(),
+  ownerType: zod.enum([
+    "individual",
+    "household",
+    "funding_entity",
+    "organization",
+  ]),
+  ownerId: zod.string(),
+  phone: zod.string(),
+  label: zod.string().nullish(),
+  isPrimary: zod.boolean(),
+  smsCapable: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListContactPhonesResponse = zod.array(
+  ListContactPhonesResponseItem,
+);
+
+export const CreateContactPhoneBody = zod.object({
+  ownerType: zod.enum([
+    "individual",
+    "household",
+    "funding_entity",
+    "organization",
+  ]),
+  ownerId: zod.string(),
+  phone: zod.string(),
+  label: zod.string().optional(),
+  isPrimary: zod.boolean().optional(),
+  smsCapable: zod.boolean().optional(),
+});
+
+export const UpdateContactPhoneParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateContactPhoneBody = zod.object({
+  phone: zod.string().optional(),
+  label: zod.string().nullish(),
+  isPrimary: zod.boolean().optional(),
+  smsCapable: zod.boolean().optional(),
+});
+
+export const UpdateContactPhoneResponse = zod.object({
+  id: zod.string(),
+  ownerType: zod.enum([
+    "individual",
+    "household",
+    "funding_entity",
+    "organization",
+  ]),
+  ownerId: zod.string(),
+  phone: zod.string(),
+  label: zod.string().nullish(),
+  isPrimary: zod.boolean(),
+  smsCapable: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+export const DeleteContactPhoneParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ListContactAddressesQueryParams = zod.object({
+  ownerType: zod
+    .enum(["individual", "household", "funding_entity", "organization"])
+    .optional(),
+  ownerId: zod.coerce.string().optional(),
+});
+
+export const ListContactAddressesResponseItem = zod.object({
+  id: zod.string(),
+  ownerType: zod.enum([
+    "individual",
+    "household",
+    "funding_entity",
+    "organization",
+  ]),
+  ownerId: zod.string(),
+  label: zod.string().nullish(),
+  line1: zod.string().nullish(),
+  line2: zod.string().nullish(),
+  city: zod.string().nullish(),
+  state: zod.string().nullish(),
+  postalCode: zod.string().nullish(),
+  country: zod.string().nullish(),
+  metroArea: zod.string().nullish(),
+  isPrimary: zod.boolean(),
+  isMailingPreferred: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListContactAddressesResponse = zod.array(
+  ListContactAddressesResponseItem,
+);
+
+export const CreateContactAddressBody = zod.object({
+  ownerType: zod.enum([
+    "individual",
+    "household",
+    "funding_entity",
+    "organization",
+  ]),
+  ownerId: zod.string(),
+  label: zod.string().optional(),
+  line1: zod.string().optional(),
+  line2: zod.string().optional(),
+  city: zod.string().optional(),
+  state: zod.string().optional(),
+  postalCode: zod.string().optional(),
+  country: zod.string().optional(),
+  metroArea: zod.string().optional(),
+  isPrimary: zod.boolean().optional(),
+  isMailingPreferred: zod.boolean().optional(),
+});
+
+export const UpdateContactAddressParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateContactAddressBody = zod.object({
+  label: zod.string().nullish(),
+  line1: zod.string().nullish(),
+  line2: zod.string().nullish(),
+  city: zod.string().nullish(),
+  state: zod.string().nullish(),
+  postalCode: zod.string().nullish(),
+  country: zod.string().nullish(),
+  metroArea: zod.string().nullish(),
+  isPrimary: zod.boolean().optional(),
+  isMailingPreferred: zod.boolean().optional(),
+});
+
+export const UpdateContactAddressResponse = zod.object({
+  id: zod.string(),
+  ownerType: zod.enum([
+    "individual",
+    "household",
+    "funding_entity",
+    "organization",
+  ]),
+  ownerId: zod.string(),
+  label: zod.string().nullish(),
+  line1: zod.string().nullish(),
+  line2: zod.string().nullish(),
+  city: zod.string().nullish(),
+  state: zod.string().nullish(),
+  postalCode: zod.string().nullish(),
+  country: zod.string().nullish(),
+  metroArea: zod.string().nullish(),
+  isPrimary: zod.boolean(),
+  isMailingPreferred: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+export const DeleteContactAddressParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const listCampaignsQueryPageDefault = 1;
+export const listCampaignsQueryLimitDefault = 50;
+
+export const ListCampaignsQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  fund: zod
+    .enum(["general_operating", "seed_fund", "black_wildflowers", "sunlight"])
+    .optional(),
+  isActive: zod.coerce.boolean().optional(),
+  fiscalYear: zod.coerce.string().optional(),
+  page: zod.coerce.number().default(listCampaignsQueryPageDefault),
+  limit: zod.coerce.number().default(listCampaignsQueryLimitDefault),
+});
+
+export const ListCampaignsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      fund: zod.enum([
+        "general_operating",
+        "seed_fund",
+        "black_wildflowers",
+        "sunlight",
+      ]),
+      description: zod.string().nullish(),
+      startDate: zod.coerce.date().nullish(),
+      endDate: zod.coerce.date().nullish(),
+      fiscalYear: zod.string().nullish(),
+      goalAmount: zod.number().nullish(),
+      isActive: zod.boolean(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  limit: zod.number(),
+});
+
+export const CreateCampaignBody = zod.object({
+  name: zod.string(),
+  fund: zod.enum([
+    "general_operating",
+    "seed_fund",
+    "black_wildflowers",
+    "sunlight",
+  ]),
+  description: zod.string().optional(),
+  startDate: zod.coerce.date().optional(),
+  endDate: zod.coerce.date().optional(),
+  fiscalYear: zod.string().optional(),
+  goalAmount: zod.number().optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const GetCampaignParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetCampaignResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  fund: zod.enum([
+    "general_operating",
+    "seed_fund",
+    "black_wildflowers",
+    "sunlight",
+  ]),
+  description: zod.string().nullish(),
+  startDate: zod.coerce.date().nullish(),
+  endDate: zod.coerce.date().nullish(),
+  fiscalYear: zod.string().nullish(),
+  goalAmount: zod.number().nullish(),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+export const UpdateCampaignParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateCampaignBody = zod.object({
+  name: zod.string().optional(),
+  fund: zod
+    .enum(["general_operating", "seed_fund", "black_wildflowers", "sunlight"])
+    .optional(),
+  description: zod.string().nullish(),
+  startDate: zod.coerce.date().nullish(),
+  endDate: zod.coerce.date().nullish(),
+  fiscalYear: zod.string().nullish(),
+  goalAmount: zod.number().nullish(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateCampaignResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  fund: zod.enum([
+    "general_operating",
+    "seed_fund",
+    "black_wildflowers",
+    "sunlight",
+  ]),
+  description: zod.string().nullish(),
+  startDate: zod.coerce.date().nullish(),
+  endDate: zod.coerce.date().nullish(),
+  fiscalYear: zod.string().nullish(),
+  goalAmount: zod.number().nullish(),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+export const DeleteCampaignParams = zod.object({
+  id: zod.coerce.string(),
 });

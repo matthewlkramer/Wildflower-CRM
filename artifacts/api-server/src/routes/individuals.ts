@@ -27,8 +27,17 @@ router.get("/", async (req, res, next) => {
 
     const conditions: any[] = [];
     if (search) {
+      const term = "%" + search + "%";
       conditions.push(
-        sql`(${individuals.firstName} || ' ' || ${individuals.lastName} ilike ${"%" + search + "%"} OR ${individuals.primaryEmail} ilike ${"%" + search + "%"})`,
+        sql`(
+          ${individuals.firstName} || ' ' || ${individuals.lastName} ilike ${term}
+          OR EXISTS (
+            SELECT 1 FROM contact_emails ce
+            WHERE ce.owner_type = 'individual'
+              AND ce.owner_id = ${individuals.id}
+              AND ce.email ilike ${term}
+          )
+        )`,
       );
     }
     if (stage) conditions.push(eq(individuals.donorCultivationStage, stage as any));
