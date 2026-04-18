@@ -52,7 +52,7 @@ export default function FundingEntityDetail() {
             </p>
           )}
         </div>
-        <EditDialog<Pick<UpdateFundingEntityBody, "status" | "parentFundingEntityId" | "notes" | "customFields">>
+        <EditDialog
           trigger={<Button variant="outline" size="sm">Edit</Button>}
           title="Edit funding entity"
           isPending={updateMutation.isPending}

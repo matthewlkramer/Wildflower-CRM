@@ -49,7 +49,7 @@ export default function IndividualDetail() {
             )}
           </div>
         </div>
-        <EditDialog<Pick<UpdateIndividualBody, "birthday" | "customFields">>
+        <EditDialog
           trigger={<Button variant="outline" size="sm">Edit</Button>}
           title="Edit individual"
           isPending={updateMutation.isPending}

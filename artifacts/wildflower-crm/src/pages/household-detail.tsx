@@ -46,7 +46,7 @@ export default function HouseholdDetail() {
             )}
           </div>
         </div>
-        <EditDialog<Pick<UpdateHouseholdBody, "status" | "notes" | "customFields">>
+        <EditDialog
           trigger={<Button variant="outline" size="sm">Edit</Button>}
           title="Edit household"
           isPending={updateMutation.isPending}

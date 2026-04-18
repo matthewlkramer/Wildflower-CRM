@@ -73,7 +73,7 @@ export default function GiftDetail() {
             )}
           </div>
         </div>
-        <EditDialog<Pick<UpdateGiftBody, "reconciled" | "taxReceiptSent" | "acknowledgmentSentDate" | "notes">>
+        <EditDialog
           trigger={<Button variant="outline" size="sm">Edit</Button>}
           title="Edit gift"
           isPending={updateMutation.isPending}
