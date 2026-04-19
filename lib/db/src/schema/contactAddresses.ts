@@ -1,5 +1,5 @@
 import { pgTable, text, timestamp, boolean, pgEnum } from "drizzle-orm/pg-core";
-import { contactOwnerTypeEnum } from "./contactEmails";
+import { contactOwnerTypeEnum, contactStatusEnum } from "./contactEmails";
 
 export const addressLabelEnum = pgEnum("address_label", [
   "home",
@@ -23,6 +23,8 @@ export const contactAddresses = pgTable("contact_addresses", {
   label: addressLabelEnum("label").default("home"),
   isPrimary: boolean("is_primary").default(false).notNull(),
   mailOptedOut: boolean("mail_opted_out").default(false).notNull(),
+  status: contactStatusEnum("status").default("current").notNull(),
+  endedAt: timestamp("ended_at"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

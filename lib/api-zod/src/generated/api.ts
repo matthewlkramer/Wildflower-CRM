@@ -249,6 +249,8 @@ export const GetIndividualResponse = zod
             isPrimary: zod.boolean(),
             verified: zod.boolean(),
             bouncedAt: zod.coerce.date().nullish(),
+            status: zod.enum(["current", "former", "unknown"]),
+            endedAt: zod.coerce.date().nullish(),
             createdAt: zod.coerce.date(),
             updatedAt: zod.coerce.date(),
           }),
@@ -269,6 +271,8 @@ export const GetIndividualResponse = zod
             label: zod.string().nullish(),
             isPrimary: zod.boolean(),
             smsCapable: zod.boolean(),
+            status: zod.enum(["current", "former", "unknown"]),
+            endedAt: zod.coerce.date().nullish(),
             createdAt: zod.coerce.date(),
             updatedAt: zod.coerce.date(),
           }),
@@ -295,6 +299,8 @@ export const GetIndividualResponse = zod
             metroArea: zod.string().nullish(),
             isPrimary: zod.boolean(),
             isMailingPreferred: zod.boolean(),
+            status: zod.enum(["current", "former", "unknown"]),
+            endedAt: zod.coerce.date().nullish(),
             createdAt: zod.coerce.date(),
             updatedAt: zod.coerce.date(),
           }),
@@ -3884,6 +3890,8 @@ export const ListContactEmailsResponseItem = zod.object({
   isPrimary: zod.boolean(),
   verified: zod.boolean(),
   bouncedAt: zod.coerce.date().nullish(),
+  status: zod.enum(["current", "former", "unknown"]),
+  endedAt: zod.coerce.date().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -3903,6 +3911,8 @@ export const CreateContactEmailBody = zod.object({
   label: zod.string().optional(),
   isPrimary: zod.boolean().optional(),
   verified: zod.boolean().optional(),
+  status: zod.enum(["current", "former", "unknown"]).optional(),
+  endedAt: zod.coerce.date().optional(),
 });
 
 export const UpdateContactEmailParams = zod.object({
@@ -3915,6 +3925,8 @@ export const UpdateContactEmailBody = zod.object({
   isPrimary: zod.boolean().optional(),
   verified: zod.boolean().optional(),
   bouncedAt: zod.coerce.date().nullish(),
+  status: zod.enum(["current", "former", "unknown"]).optional(),
+  endedAt: zod.coerce.date().nullish(),
 });
 
 export const UpdateContactEmailResponse = zod.object({
@@ -3931,6 +3943,8 @@ export const UpdateContactEmailResponse = zod.object({
   isPrimary: zod.boolean(),
   verified: zod.boolean(),
   bouncedAt: zod.coerce.date().nullish(),
+  status: zod.enum(["current", "former", "unknown"]),
+  endedAt: zod.coerce.date().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -3959,6 +3973,8 @@ export const ListContactPhonesResponseItem = zod.object({
   label: zod.string().nullish(),
   isPrimary: zod.boolean(),
   smsCapable: zod.boolean(),
+  status: zod.enum(["current", "former", "unknown"]),
+  endedAt: zod.coerce.date().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -3978,6 +3994,8 @@ export const CreateContactPhoneBody = zod.object({
   label: zod.string().optional(),
   isPrimary: zod.boolean().optional(),
   smsCapable: zod.boolean().optional(),
+  status: zod.enum(["current", "former", "unknown"]).optional(),
+  endedAt: zod.coerce.date().optional(),
 });
 
 export const UpdateContactPhoneParams = zod.object({
@@ -3989,6 +4007,8 @@ export const UpdateContactPhoneBody = zod.object({
   label: zod.string().nullish(),
   isPrimary: zod.boolean().optional(),
   smsCapable: zod.boolean().optional(),
+  status: zod.enum(["current", "former", "unknown"]).optional(),
+  endedAt: zod.coerce.date().nullish(),
 });
 
 export const UpdateContactPhoneResponse = zod.object({
@@ -4004,6 +4024,8 @@ export const UpdateContactPhoneResponse = zod.object({
   label: zod.string().nullish(),
   isPrimary: zod.boolean(),
   smsCapable: zod.boolean(),
+  status: zod.enum(["current", "former", "unknown"]),
+  endedAt: zod.coerce.date().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -4038,6 +4060,8 @@ export const ListContactAddressesResponseItem = zod.object({
   metroArea: zod.string().nullish(),
   isPrimary: zod.boolean(),
   isMailingPreferred: zod.boolean(),
+  status: zod.enum(["current", "former", "unknown"]),
+  endedAt: zod.coerce.date().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -4063,6 +4087,8 @@ export const CreateContactAddressBody = zod.object({
   metroArea: zod.string().optional(),
   isPrimary: zod.boolean().optional(),
   isMailingPreferred: zod.boolean().optional(),
+  status: zod.enum(["current", "former", "unknown"]).optional(),
+  endedAt: zod.coerce.date().optional(),
 });
 
 export const UpdateContactAddressParams = zod.object({
@@ -4080,6 +4106,8 @@ export const UpdateContactAddressBody = zod.object({
   metroArea: zod.string().nullish(),
   isPrimary: zod.boolean().optional(),
   isMailingPreferred: zod.boolean().optional(),
+  status: zod.enum(["current", "former", "unknown"]).optional(),
+  endedAt: zod.coerce.date().nullish(),
 });
 
 export const UpdateContactAddressResponse = zod.object({
@@ -4101,6 +4129,8 @@ export const UpdateContactAddressResponse = zod.object({
   metroArea: zod.string().nullish(),
   isPrimary: zod.boolean(),
   isMailingPreferred: zod.boolean(),
+  status: zod.enum(["current", "former", "unknown"]),
+  endedAt: zod.coerce.date().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

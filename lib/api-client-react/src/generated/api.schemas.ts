@@ -360,6 +360,14 @@ export const ContactOwnerType = {
   organization: "organization",
 } as const;
 
+export type ContactStatus = (typeof ContactStatus)[keyof typeof ContactStatus];
+
+export const ContactStatus = {
+  current: "current",
+  former: "former",
+  unknown: "unknown",
+} as const;
+
 export interface ContactEmail {
   id: string;
   ownerType: ContactOwnerType;
@@ -369,6 +377,8 @@ export interface ContactEmail {
   isPrimary: boolean;
   verified: boolean;
   bouncedAt?: string | null;
+  status: ContactStatus;
+  endedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -381,6 +391,8 @@ export interface ContactPhone {
   label?: string | null;
   isPrimary: boolean;
   smsCapable: boolean;
+  status: ContactStatus;
+  endedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -399,6 +411,8 @@ export interface ContactAddress {
   metroArea?: string | null;
   isPrimary: boolean;
   isMailingPreferred: boolean;
+  status: ContactStatus;
+  endedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1505,6 +1519,8 @@ export interface CreateContactEmailBody {
   label?: string;
   isPrimary?: boolean;
   verified?: boolean;
+  status?: ContactStatus;
+  endedAt?: string;
 }
 
 export interface UpdateContactEmailBody {
@@ -1513,6 +1529,8 @@ export interface UpdateContactEmailBody {
   isPrimary?: boolean;
   verified?: boolean;
   bouncedAt?: string | null;
+  status?: ContactStatus;
+  endedAt?: string | null;
 }
 
 export interface CreateContactPhoneBody {
@@ -1522,6 +1540,8 @@ export interface CreateContactPhoneBody {
   label?: string;
   isPrimary?: boolean;
   smsCapable?: boolean;
+  status?: ContactStatus;
+  endedAt?: string;
 }
 
 export interface UpdateContactPhoneBody {
@@ -1529,6 +1549,8 @@ export interface UpdateContactPhoneBody {
   label?: string | null;
   isPrimary?: boolean;
   smsCapable?: boolean;
+  status?: ContactStatus;
+  endedAt?: string | null;
 }
 
 export interface CreateContactAddressBody {
@@ -1544,6 +1566,8 @@ export interface CreateContactAddressBody {
   metroArea?: string;
   isPrimary?: boolean;
   isMailingPreferred?: boolean;
+  status?: ContactStatus;
+  endedAt?: string;
 }
 
 export interface UpdateContactAddressBody {
@@ -1557,6 +1581,8 @@ export interface UpdateContactAddressBody {
   metroArea?: string | null;
   isPrimary?: boolean;
   isMailingPreferred?: boolean;
+  status?: ContactStatus;
+  endedAt?: string | null;
 }
 
 export type CampaignFiscalYear =

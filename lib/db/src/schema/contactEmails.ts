@@ -14,6 +14,12 @@ export const emailLabelEnum = pgEnum("email_label", [
   "other",
 ]);
 
+export const contactStatusEnum = pgEnum("contact_status", [
+  "current",
+  "former",
+  "unknown",
+]);
+
 export const contactEmails = pgTable("contact_emails", {
   id: text("id").primaryKey(),
   ownerType: contactOwnerTypeEnum("owner_type").notNull(),
@@ -23,6 +29,8 @@ export const contactEmails = pgTable("contact_emails", {
   isPrimary: boolean("is_primary").default(false).notNull(),
   isBounced: boolean("is_bounced").default(false).notNull(),
   optedOut: boolean("opted_out").default(false).notNull(),
+  status: contactStatusEnum("status").default("current").notNull(),
+  endedAt: timestamp("ended_at"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

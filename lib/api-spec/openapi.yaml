@@ -3796,6 +3796,10 @@ components:
       type: string
       enum: [individual, household, funding_entity, organization]
 
+    ContactStatus:
+      type: string
+      enum: [current, former, unknown]
+
     ContactEmail:
       type: object
       properties:
@@ -3807,9 +3811,11 @@ components:
         isPrimary: { type: boolean }
         verified: { type: boolean }
         bouncedAt: { type: string, format: date-time, nullable: true }
+        status: { $ref: "#/components/schemas/ContactStatus" }
+        endedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, ownerType, ownerId, email, isPrimary, verified, createdAt, updatedAt]
+      required: [id, ownerType, ownerId, email, isPrimary, verified, status, createdAt, updatedAt]
 
     CreateContactEmailBody:
       type: object
@@ -3821,6 +3827,8 @@ components:
         label: { type: string }
         isPrimary: { type: boolean }
         verified: { type: boolean }
+        status: { $ref: "#/components/schemas/ContactStatus" }
+        endedAt: { type: string, format: date-time }
 
     UpdateContactEmailBody:
       type: object
@@ -3830,6 +3838,8 @@ components:
         isPrimary: { type: boolean }
         verified: { type: boolean }
         bouncedAt: { type: string, format: date-time, nullable: true }
+        status: { $ref: "#/components/schemas/ContactStatus" }
+        endedAt: { type: string, format: date-time, nullable: true }
 
     ContactPhone:
       type: object
@@ -3841,9 +3851,11 @@ components:
         label: { type: string, nullable: true }
         isPrimary: { type: boolean }
         smsCapable: { type: boolean }
+        status: { $ref: "#/components/schemas/ContactStatus" }
+        endedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, ownerType, ownerId, phone, isPrimary, smsCapable, createdAt, updatedAt]
+      required: [id, ownerType, ownerId, phone, isPrimary, smsCapable, status, createdAt, updatedAt]
 
     CreateContactPhoneBody:
       type: object
@@ -3855,6 +3867,8 @@ components:
         label: { type: string }
         isPrimary: { type: boolean }
         smsCapable: { type: boolean }
+        status: { $ref: "#/components/schemas/ContactStatus" }
+        endedAt: { type: string, format: date-time }
 
     UpdateContactPhoneBody:
       type: object
@@ -3863,6 +3877,8 @@ components:
         label: { type: string, nullable: true }
         isPrimary: { type: boolean }
         smsCapable: { type: boolean }
+        status: { $ref: "#/components/schemas/ContactStatus" }
+        endedAt: { type: string, format: date-time, nullable: true }
 
     ContactAddress:
       type: object
@@ -3880,9 +3896,11 @@ components:
         metroArea: { type: string, nullable: true }
         isPrimary: { type: boolean }
         isMailingPreferred: { type: boolean }
+        status: { $ref: "#/components/schemas/ContactStatus" }
+        endedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, ownerType, ownerId, isPrimary, isMailingPreferred, createdAt, updatedAt]
+      required: [id, ownerType, ownerId, isPrimary, isMailingPreferred, status, createdAt, updatedAt]
 
     CreateContactAddressBody:
       type: object
@@ -3900,6 +3918,8 @@ components:
         metroArea: { type: string }
         isPrimary: { type: boolean }
         isMailingPreferred: { type: boolean }
+        status: { $ref: "#/components/schemas/ContactStatus" }
+        endedAt: { type: string, format: date-time }
 
     UpdateContactAddressBody:
       type: object
@@ -3914,6 +3934,8 @@ components:
         metroArea: { type: string, nullable: true }
         isPrimary: { type: boolean }
         isMailingPreferred: { type: boolean }
+        status: { $ref: "#/components/schemas/ContactStatus" }
+        endedAt: { type: string, format: date-time, nullable: true }
 
     # ─── Campaign ────────────────────────────────────────────────────────────────
     Campaign:

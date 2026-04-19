@@ -28,9 +28,29 @@ export default function IndividualDetail() {
   if (isLoading) return <div className="p-8 text-muted-foreground animate-pulse">Loading individual...</div>;
   if (!individual) return <div className="p-8 text-destructive">Individual not found.</div>;
 
-  const primaryEmail = individual.emails?.find((e) => e.isPrimary) ?? individual.emails?.[0];
-  const primaryPhone = individual.phones?.find((p) => p.isPrimary) ?? individual.phones?.[0];
-  const primaryAddress = individual.addresses?.find((a) => a.isPrimary) ?? individual.addresses?.[0];
+  const pickContact = <T extends { isPrimary?: boolean; status?: string | null }>(
+    items: T[] | undefined | null,
+  ): T | undefined => {
+    if (!items?.length) return undefined;
+    const current = items.filter((i) => (i.status ?? "current") === "current");
+    const pool = current.length ? current : items;
+    return pool.find((i) => i.isPrimary) ?? pool[0];
+  };
+  const primaryEmail = pickContact(individual.emails);
+  const primaryPhone = pickContact(individual.phones);
+  const primaryAddress = pickContact(individual.addresses);
+
+  const renderStatus = (c?: { status?: string | null; endedAt?: string | null }) => {
+    if (!c) return null;
+    const status = c.status ?? "current";
+    if (status === "current") return null;
+    return (
+      <Badge variant="outline" className="ml-2 text-xs" data-testid={`badge-contact-status-${status}`}>
+        {status === "former" ? "Former" : "Unknown"}
+        {c.endedAt ? ` • ${formatDate(c.endedAt)}` : ""}
+      </Badge>
+    );
+  };
   const customFieldEntries = individual.customFields ? Object.entries(individual.customFields) : [];
 
   return (
@@ -70,9 +90,9 @@ export default function IndividualDetail() {
               <CardTitle className="text-lg">Contact Info</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
-              <div><span className="font-medium">Email:</span> {primaryEmail?.email || "—"}</div>
-              <div><span className="font-medium">Phone:</span> {primaryPhone?.phone || "—"}</div>
-              <div><span className="font-medium">Location:</span> {primaryAddress ? [primaryAddress.city, primaryAddress.state].filter(Boolean).join(", ") || "—" : "—"}</div>
+              <div><span className="font-medium">Email:</span> {primaryEmail?.email || "—"}{renderStatus(primaryEmail)}</div>
+              <div><span className="font-medium">Phone:</span> {primaryPhone?.phone || "—"}{renderStatus(primaryPhone)}</div>
+              <div><span className="font-medium">Location:</span> {primaryAddress ? [primaryAddress.city, primaryAddress.state].filter(Boolean).join(", ") || "—" : "—"}{renderStatus(primaryAddress)}</div>
               {individual.household && (
                 <div>
                   <span className="font-medium">Household:</span>{" "}
