@@ -55,7 +55,7 @@ export default function IndividualDetail() {
           isPending={updateMutation.isPending}
           fields={[
             { kind: "date", key: "birthday", label: "Birthday", value: individual.birthday },
-            { kind: "json", key: "customFields", label: "Custom fields (JSON)", value: individual.customFields ?? null },
+            { kind: "keyValue", key: "customFields", label: "Custom fields", value: individual.customFields ?? null, help: "Values are saved as text. Existing structured values are preserved when left unchanged." },
           ]}
           onSubmit={async (values) => {
             await updateMutation.mutateAsync({ id, data: values as Pick<UpdateIndividualBody, "birthday" | "customFields"> });

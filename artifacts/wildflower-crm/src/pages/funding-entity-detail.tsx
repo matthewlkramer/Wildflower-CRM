@@ -18,6 +18,13 @@ export default function FundingEntityDetail() {
       queryKey: getGetFundingEntityQueryKey(id)
     }
   });
+  const parentId = entity?.parentFundingEntityId ?? null;
+  const { data: parentEntity } = useGetFundingEntity(parentId ?? "", {
+    query: {
+      enabled: !!parentId,
+      queryKey: getGetFundingEntityQueryKey(parentId ?? ""),
+    },
+  });
   const updateMutation = useUpdateFundingEntity({
     mutation: {
       onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetFundingEntityQueryKey(id) }),
@@ -26,6 +33,7 @@ export default function FundingEntityDetail() {
 
   if (isLoading) return <div className="p-8 text-muted-foreground animate-pulse">Loading entity...</div>;
   if (!entity) return <div className="p-8 text-destructive">Entity not found.</div>;
+  const parentLabel = parentEntity?.displayName || parentEntity?.legalName || null;
 
   const customFieldEntries = entity.customFields ? Object.entries(entity.customFields) : [];
   const statusVariant = entity.status === "active" ? "default" : entity.status === "defunct" ? "destructive" : "outline";
@@ -47,7 +55,7 @@ export default function FundingEntityDetail() {
             <p className="text-sm text-muted-foreground mt-1">
               Parent:{" "}
               <Link href={`/funding-entities/${entity.parentFundingEntityId}`} className="text-primary hover:underline">
-                View parent entity
+                {parentLabel ?? "View parent entity"}
               </Link>
             </p>
           )}
@@ -69,13 +77,15 @@ export default function FundingEntityDetail() {
               ],
             },
             {
-              kind: "text",
+              kind: "fundingEntityPicker",
               key: "parentFundingEntityId",
-              label: "Parent funding entity ID",
+              label: "Parent funding entity",
               value: entity.parentFundingEntityId,
+              currentLabel: parentLabel,
+              excludeId: entity.id,
             },
             { kind: "textarea", key: "notes", label: "Notes", value: entity.notes ?? null },
-            { kind: "json", key: "customFields", label: "Custom fields (JSON)", value: entity.customFields ?? null },
+            { kind: "keyValue", key: "customFields", label: "Custom fields", value: entity.customFields ?? null, help: "Values are saved as text. Existing structured values are preserved when left unchanged." },
           ]}
           onSubmit={async (values) => {
             await updateMutation.mutateAsync({ id, data: values as Pick<UpdateFundingEntityBody, "status" | "parentFundingEntityId" | "notes" | "customFields"> });

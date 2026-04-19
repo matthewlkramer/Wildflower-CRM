@@ -62,7 +62,7 @@ export default function HouseholdDetail() {
               ],
             },
             { kind: "textarea", key: "notes", label: "Notes", value: household.notes ?? null },
-            { kind: "json", key: "customFields", label: "Custom fields (JSON)", value: household.customFields ?? null },
+            { kind: "keyValue", key: "customFields", label: "Custom fields", value: household.customFields ?? null, help: "Values are saved as text. Existing structured values are preserved when left unchanged." },
           ]}
           onSubmit={async (values) => {
             await updateMutation.mutateAsync({ id, data: values as Pick<UpdateHouseholdBody, "status" | "notes" | "customFields"> });
