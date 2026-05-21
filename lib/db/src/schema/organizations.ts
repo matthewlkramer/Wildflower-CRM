@@ -5,16 +5,16 @@ export const organizations = pgTable("organizations", {
   id: text("id").primaryKey(),
   airtableId: text("airtable_id").unique(),
   name: text("name").notNull(),
-  switchToFunder: boolean("switch_to_funder"),
+  switchToFunder: boolean("switch_to_funder"), // REMOVE THIS FIELD
   type: organizationTypeEnum("type"),
   emailDomain: text("email_domain"),
-  orgEmail: text("org_email"),
-  street: text("street"),
+  orgEmail: text("org_email"), // THIS SHOULD BE A LINK TO THE EMAILS TABLE
+  street: text("street"), // THE ADDRESS FIELDS SHOULD BE A LINK TO THE ADDRESSES TABLE
   cityRegionId: text("city_region_id"),
   stateRegionId: text("state_region_id"),
   postalCode: text("postal_code"),
   country: text("country"),
-  owner: text("owner"),
+  owner: text("owner"), // SHOULD BE A LINK TO USERS OR SOMETHING LIKE THAT
   tags: text("tags"),
   website: text("website"),
   activeOrDefunct: text("active_or_defunct"),
