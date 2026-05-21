@@ -1,11 +1,12 @@
 import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { organizationTypeEnum } from "./_enums";
 
 export const organizations = pgTable("organizations", {
   id: text("id").primaryKey(),
   airtableId: text("airtable_id").unique(),
   name: text("name").notNull(),
   switchToFunder: boolean("switch_to_funder"),
-  type: text("type"),
+  type: organizationTypeEnum("type"),
   emailDomain: text("email_domain"),
   orgEmail: text("org_email"),
   street: text("street"),

@@ -1,5 +1,9 @@
 import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
-import { entityRoleTypeEnum, peopleRoleCurrentEnum } from "./_enums";
+import {
+  entityRoleTypeEnum,
+  peopleRoleCurrentEnum,
+  peopleEntityRoleConnectionEnum,
+} from "./_enums";
 
 export const peopleEntityRoles = pgTable("people_entity_roles", {
   id: text("id").primaryKey(),
@@ -10,7 +14,7 @@ export const peopleEntityRoles = pgTable("people_entity_roles", {
   organizationId: text("organization_id"),
   paymentIntermediaryId: text("payment_intermediary_id"),
   householdId: text("household_id"),
-  connection: text("connection"),
+  connection: peopleEntityRoleConnectionEnum("connection"),
   notes: text("notes"),
   externalTitleOrRole: text("external_title_or_role"),
   current: peopleRoleCurrentEnum("current").default("current").notNull(),

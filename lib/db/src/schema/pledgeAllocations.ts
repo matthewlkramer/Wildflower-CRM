@@ -7,7 +7,7 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   pledgeOrOpportunityId: text("pledge_or_opportunity_id"),
   subAmount: numeric("sub_amount", { precision: 14, scale: 2 }),
   grantYear: text("grant_year").array(),
-  entity: text("entity"),
+  entityId: text("entity_id"),
   intendedUsage: text("intended_usage"),
   directToSchool: boolean("direct_to_school").default(false).notNull(),
   status: pledgeAllocationStatusEnum("status"),

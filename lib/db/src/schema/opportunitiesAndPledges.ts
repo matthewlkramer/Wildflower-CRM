@@ -1,5 +1,10 @@
 import { pgTable, text, timestamp, boolean, numeric, date } from "drizzle-orm/pg-core";
-import { opportunityStatusEnum } from "./_enums";
+import {
+  opportunityStatusEnum,
+  opportunityTypeEnum,
+  opportunityStageEnum,
+  opportunityConditionalEnum,
+} from "./_enums";
 
 export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   id: text("id").primaryKey(),
@@ -8,8 +13,8 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   funderId: text("funder_id"),
   askAmount: numeric("ask_amount", { precision: 14, scale: 2 }),
   awardedAmount: numeric("awarded_amount", { precision: 14, scale: 2 }),
-  type: text("type"),
-  conditional: text("conditional"),
+  type: opportunityTypeEnum("type"),
+  conditional: opportunityConditionalEnum("conditional"),
   conditions: text("conditions"),
   conditionsMet: boolean("conditions_met").default(false).notNull(),
   grantYears: text("grant_years").array(),
@@ -21,11 +26,12 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   projectedCloseDate: date("projected_close_date"),
   actualCompletionDate: date("actual_completion_date"),
   winProbability: numeric("win_probability", { precision: 5, scale: 4 }),
-  stage: text("stage"),
+  stage: opportunityStageEnum("stage"),
   lossReason: text("loss_reason"),
   applicationDeadline: date("application_deadline"),
   paymentDetails: text("payment_details"),
-  entity: text("entity").array(),
+  // Fund-entity attribution moved to `opportunity_entities` junction table
+  // (one opportunity can be split across multiple entities).
   intendedUsage: text("intended_usage"),
   usageNotes: text("usage_notes"),
   pledgeId: text("pledge_id"),

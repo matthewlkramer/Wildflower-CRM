@@ -1,24 +1,33 @@
 import { pgTable, text, timestamp, boolean, integer, date } from "drizzle-orm/pg-core";
+import {
+  fundingEntitySubtypeEnum,
+  numberOfEmployeesEnum,
+  capacityRatingEnum,
+  connectionStatusEnum,
+  enthusiasmEnum,
+  strategicAlignmentEnum,
+  activeStatusEnum,
+} from "./_enums";
 
-ALL THE TEXT NAMES FOR FIELDS HERE ARE IN SNAKE CASE BUT THEY SHOULD BE IN REGULAR INITIAL CAPS WITH SPACES
 export const funders = pgTable("funders", {
   id: text("id").primaryKey(),
   airtableId: text("airtable_id").unique(),
   name: text("name").notNull(),
-  fundingEntitySubtype: text("funding_entity_subtype"), ENUM
+  fundingEntitySubtype: fundingEntitySubtypeEnum("funding_entity_subtype"),
   makesPris: boolean("makes_pris"),
-  numberOfEmployees: text("number_of_employees"), ENUM
-  capacityRating: text("capacity_rating"), ENUM
+  numberOfEmployees: numberOfEmployeesEnum("number_of_employees"),
+  capacityRating: capacityRatingEnum("capacity_rating"),
   nationalPriorities: boolean("national_priorities"),
   priorityAreasNotes: text("priority_areas_notes"),
-  activeStatus: text("active_status"),ENUM
+  activeStatus: activeStatusEnum("active_status"),
   otherNames: text("other_names"),
   details: text("details"),
   emailDomain: text("email_domain"),
-  owner: text("owner"), FK TO AN OWNERS TABLE OR THE USERS TABLE
+  orgEmail: text("org_email"),
+  owner: text("owner"),
   tags: text("tags"),
-  lastContacted: date("last_contacted"),THIS SHOULD BE A SUMMARY LINK TO AN INTERACTIONS TABLE
-  interactionCount: integer("interaction_count"), THIS SHOULD ALSO BE A LINK TO AN INTERACTIONS TABLE
+  lastContacted: date("last_contacted"),
+  interactionCount: integer("interaction_count"),
   createdFromCopper: date("created_from_copper"),
   updatedFromCopper: date("updated_from_copper"),
   x: text("x"),
@@ -28,10 +37,10 @@ export const funders = pgTable("funders", {
   youtube: text("youtube"),
   crunchbase: text("crunchbase"),
   website: text("website"),
-  connectionStatus: text("connection_status"), ENUM
-  enthusiasm: text("enthusiasm"), ENUM
-  strategicAlignment: text("strategic_alignment"), ENUM
-  interestsThematic: text("interests_thematic").array(), ENUM THAT WORKS ACROSS TABLES
+  connectionStatus: connectionStatusEnum("connection_status"),
+  enthusiasm: enthusiasmEnum("enthusiasm"),
+  strategicAlignment: strategicAlignmentEnum("strategic_alignment"),
+  interestsThematic: text("interests_thematic").array(),
   interestsAges: text("interests_ages").array(),
   interestsGovModels: text("interests_gov_models").array(),
   parentFunderId: text("parent_funder_id"),

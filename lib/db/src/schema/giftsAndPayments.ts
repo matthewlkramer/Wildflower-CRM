@@ -1,4 +1,9 @@
 import { pgTable, text, timestamp, boolean, numeric, date } from "drizzle-orm/pg-core";
+import {
+  giftTypeEnum,
+  giftPaymentMethodEnum,
+  giftAllocationTypeEnum,
+} from "./_enums";
 
 export const giftsAndPayments = pgTable("gifts_and_payments", {
   id: text("id").primaryKey(),
@@ -7,11 +12,11 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   name: text("name"),
   details: text("details"),
   dateReceived: date("date_received"),
-  paymentMethod: text("payment_method"),
+  paymentMethod: giftPaymentMethodEnum("payment_method"),
   amount: numeric("amount", { precision: 14, scale: 2 }),
   funderId: text("funder_id"),
   individualGiverPersonId: text("individual_giver_person_id"),
-  type: text("type"),
+  type: giftTypeEnum("type"),
   paymentOnPledgeId: text("payment_on_pledge_id"),
   advisorPersonId: text("advisor_person_id"),
   grantYear: text("grant_year"),
@@ -21,8 +26,8 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   owner: text("owner"),
   closeDate: date("close_date"),
   completedDate: date("completed_date"),
-  allocationType: text("allocation_type"),
-  entity: text("entity"),
+  allocationType: giftAllocationTypeEnum("allocation_type"),
+  entityId: text("entity_id"),
   intendedUsage: text("intended_usage"),
   designatedToSchool: boolean("designated_to_school").default(false).notNull(),
   schoolRecipientId: text("school_recipient_id"),
