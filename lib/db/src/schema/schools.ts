@@ -1,6 +1,6 @@
 import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
-export const households = pgTable("households", {
+export const schools = pgTable("schools", {
   id: text("id").primaryKey(),
   airtableId: text("airtable_id").unique(),
   name: text("name").notNull(),
@@ -8,5 +8,5 @@ export const households = pgTable("households", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export type Household = typeof households.$inferSelect;
-export type NewHousehold = typeof households.$inferInsert;
+export type School = typeof schools.$inferSelect;
+export type NewSchool = typeof schools.$inferInsert;

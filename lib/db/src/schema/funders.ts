@@ -1,0 +1,42 @@
+import { pgTable, text, timestamp, boolean, integer, date } from "drizzle-orm/pg-core";
+
+export const funders = pgTable("funders", {
+  id: text("id").primaryKey(),
+  airtableId: text("airtable_id").unique(),
+  name: text("name").notNull(),
+  fundingEntitySubtype: text("funding_entity_subtype"),
+  makesPris: boolean("makes_pris"),
+  numberOfEmployees: text("number_of_employees"),
+  capacityRating: text("capacity_rating"),
+  nationalPriorities: boolean("national_priorities"),
+  priorityAreasNotes: text("priority_areas_notes"),
+  activeStatus: text("active_status"),
+  otherNames: text("other_names"),
+  details: text("details"),
+  emailDomain: text("email_domain"),
+  owner: text("owner"),
+  tags: text("tags"),
+  lastContacted: date("last_contacted"),
+  interactionCount: integer("interaction_count"),
+  createdFromCopper: date("created_from_copper"),
+  updatedFromCopper: date("updated_from_copper"),
+  x: text("x"),
+  linkedin: text("linkedin"),
+  facebook: text("facebook"),
+  instagram: text("instagram"),
+  youtube: text("youtube"),
+  crunchbase: text("crunchbase"),
+  website: text("website"),
+  connectionStatus: text("connection_status"),
+  enthusiasm: text("enthusiasm"),
+  strategicAlignment: text("strategic_alignment"),
+  interestsThematic: text("interests_thematic").array(),
+  interestsAges: text("interests_ages").array(),
+  interestsGovModels: text("interests_gov_models").array(),
+  parentFunderId: text("parent_funder_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type Funder = typeof funders.$inferSelect;
+export type NewFunder = typeof funders.$inferInsert;

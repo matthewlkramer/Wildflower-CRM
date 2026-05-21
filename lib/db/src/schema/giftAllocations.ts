@@ -1,17 +1,19 @@
-import { pgTable, text, timestamp, numeric } from "drizzle-orm/pg-core";
-import { fundEnum } from "./users";
-import { fiscalYearEnum } from "./_enums";
-import { gifts } from "./gifts";
+import { pgTable, text, timestamp, boolean, numeric, date } from "drizzle-orm/pg-core";
 
 export const giftAllocations = pgTable("gift_allocations", {
   id: text("id").primaryKey(),
-  giftId: text("gift_id")
-    .notNull()
-    .references(() => gifts.id, { onDelete: "cascade" }),
-  fund: fundEnum("fund").notNull(),
-  amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
-  fiscalYear: fiscalYearEnum("fiscal_year"),
-  notes: text("notes"),
+  airtableId: text("airtable_id").unique(),
+  giftId: text("gift_id"),
+  subAmount: numeric("sub_amount", { precision: 14, scale: 2 }),
+  grantYearToBookTo: text("grant_year_to_book_to"),
+  recipient: text("recipient"),
+  formalRegionalRestriction: boolean("formal_regional_restriction").default(false).notNull(),
+  intendedUsage: text("intended_usage"),
+  projectName: text("project_name"),
+  formalFundUseRestriction: boolean("formal_fund_use_restriction").default(false).notNull(),
+  schoolRecipientId: text("school_recipient_id"),
+  spendingStart: date("spending_start"),
+  spendingEnd: date("spending_end"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
