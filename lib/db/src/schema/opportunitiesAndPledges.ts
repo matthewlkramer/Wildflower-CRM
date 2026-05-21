@@ -54,7 +54,7 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   usageNotes: text("usage_notes"),
   // Legacy integer pledge ID inherited from Copper. Not a FK; preserved for
   // cross-reference back to the prior CRM.
-  legacyPledgeIdFromCopper: text("legacy_pledge_id_from_copper"),
+  copperPledgeId: text("copper_pledge_id"),
   primaryContactPersonId: text("primary_contact_person_id"),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),

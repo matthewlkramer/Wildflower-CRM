@@ -1,20 +1,25 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { organizationTypeEnum } from "./_enums";
 
+// Non-funder external organizations (advisors, intermediaries, etc.).
+//
+// Contact info lives in normalized tables:
+//   - email      → `emails` (FK `organization_id`)
+//   - phone      → `phone_numbers` (FK `organization_id`)
+//   - address    → `addresses` (FK `organization_id`)
+// Region attribution moves with the address.
 export const organizations = pgTable("organizations", {
   id: text("id").primaryKey(),
   airtableId: text("airtable_id").unique(),
   name: text("name").notNull(),
-  switchToFunder: boolean("switch_to_funder"), // REMOVE THIS FIELD
   type: organizationTypeEnum("type"),
   emailDomain: text("email_domain"),
-  orgEmail: text("org_email"), // THIS SHOULD BE A LINK TO THE EMAILS TABLE
-  street: text("street"), // THE ADDRESS FIELDS SHOULD BE A LINK TO THE ADDRESSES TABLE
-  cityRegionId: text("city_region_id"),
-  stateRegionId: text("state_region_id"),
-  postalCode: text("postal_code"),
-  country: text("country"),
-  owner: text("owner"), // SHOULD BE A LINK TO USERS OR SOMETHING LIKE THAT
+  // Legacy free-text owner name from Airtable/Copper; kept for display until
+  // we can map names → Clerk users.
+  owner: text("owner"),
+  // FK to users.id — the team member who owns this organization. Nullable
+  // until backfilled from `owner` text.
+  ownerUserId: text("owner_user_id"),
   tags: text("tags"),
   website: text("website"),
   activeOrDefunct: text("active_or_defunct"),
