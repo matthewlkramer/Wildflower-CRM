@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, boolean, numeric, date } from "drizzle-orm/pg-core";
+import { intendedUsageEnum } from "./_enums";
 
 export const giftAllocations = pgTable("gift_allocations", {
   id: text("id").primaryKey(),
@@ -8,7 +9,9 @@ export const giftAllocations = pgTable("gift_allocations", {
   grantYearToBookTo: text("grant_year_to_book_to"),
   recipient: text("recipient"),
   formalRegionalRestriction: boolean("formal_regional_restriction").default(false).notNull(),
-  intendedUsage: text("intended_usage"),
+  intendedUsage: intendedUsageEnum("intended_usage"),
+  // FK to fundable_projects; populated when intendedUsage = 'project'.
+  fundableProjectId: text("fundable_project_id"),
   projectName: text("project_name"),
   formalFundUseRestriction: boolean("formal_fund_use_restriction").default(false).notNull(),
   schoolRecipientId: text("school_recipient_id"),

@@ -1,5 +1,5 @@
 import { pgTable, text, timestamp, boolean, numeric } from "drizzle-orm/pg-core";
-import { pledgeAllocationStatusEnum } from "./_enums";
+import { pledgeAllocationStatusEnum, intendedUsageEnum } from "./_enums";
 
 export const pledgeAllocations = pgTable("pledge_allocations", {
   id: text("id").primaryKey(),
@@ -8,7 +8,9 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   subAmount: numeric("sub_amount", { precision: 14, scale: 2 }),
   grantYear: text("grant_year").array(),
   entityId: text("entity_id"),
-  intendedUsage: text("intended_usage"),
+  intendedUsage: intendedUsageEnum("intended_usage"),
+  // FK to fundable_projects; populated when intendedUsage = 'project'.
+  fundableProjectId: text("fundable_project_id"),
   directToSchool: boolean("direct_to_school").default(false).notNull(),
   status: pledgeAllocationStatusEnum("status"),
   conditions: text("conditions"),

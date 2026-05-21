@@ -3,6 +3,7 @@ import {
   giftTypeEnum,
   giftPaymentMethodEnum,
   giftAllocationTypeEnum,
+  intendedUsageEnum,
 } from "./_enums";
 
 export const giftsAndPayments = pgTable("gifts_and_payments", {
@@ -28,7 +29,9 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   completedDate: date("completed_date"),
   allocationType: giftAllocationTypeEnum("allocation_type"),
   entityId: text("entity_id"),
-  intendedUsage: text("intended_usage"),
+  intendedUsage: intendedUsageEnum("intended_usage"),
+  // FK to fundable_projects; populated when intendedUsage = 'project'.
+  fundableProjectId: text("fundable_project_id"),
   designatedToSchool: boolean("designated_to_school").default(false).notNull(),
   schoolRecipientId: text("school_recipient_id"),
   spendingStartDate: date("spending_start_date"),

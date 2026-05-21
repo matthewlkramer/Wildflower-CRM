@@ -4,6 +4,7 @@ import {
   opportunityTypeEnum,
   opportunityStageEnum,
   opportunityConditionalEnum,
+  intendedUsageEnum,
 } from "./_enums";
 
 export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
@@ -32,7 +33,9 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   paymentDetails: text("payment_details"),
   // Fund-entity attribution moved to `opportunity_entities` junction table
   // (one opportunity can be split across multiple entities).
-  intendedUsage: text("intended_usage"),
+  intendedUsage: intendedUsageEnum("intended_usage"),
+  // FK to fundable_projects; populated when intendedUsage = 'project'.
+  fundableProjectId: text("fundable_project_id"),
   usageNotes: text("usage_notes"),
   pledgeId: text("pledge_id"),
   primaryContactPersonId: text("primary_contact_person_id"),

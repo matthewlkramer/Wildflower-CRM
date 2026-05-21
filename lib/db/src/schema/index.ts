@@ -16,4 +16,5 @@ export * from "./pledgeAllocations";
 export * from "./giftsAndPayments";
 export * from "./giftAllocations";
 export * from "./entities";
+export * from "./fundableProjects";
 export * from "./regionalDesignations";

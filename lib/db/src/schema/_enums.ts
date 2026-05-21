@@ -205,6 +205,17 @@ export const giftAllocationTypeEnum = pgEnum("gift_allocation_type", [
   "sub_allocations",
 ]);
 
+// What a contribution is intended to fund. When the value is "project",
+// the fundable_project_id column on the same row links to the specific
+// project (see fundable_projects table).
+export const intendedUsageEnum = pgEnum("intended_usage", [
+  "gen_ops",
+  "growth",
+  "school_startup",
+  "teacher_training",
+  "project",
+]);
+
 // ---- People-entity-role enums ----
 export const peopleEntityRoleConnectionEnum = pgEnum(
   "people_entity_role_connection",
