@@ -6,7 +6,8 @@ export const households = pgTable("households", {
   name: text("name").notNull(), 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  ADD A FIELD FOR CURRENT SO THAT WE CAN MARK HOUSEHOLDS THAT ARE DISSOLVED BY DEATH OR DIVORCE
+  // TODO: add a "current" / active field so we can mark households that
+  // have been dissolved by death or divorce.
 });
 
 export type Household = typeof households.$inferSelect;
