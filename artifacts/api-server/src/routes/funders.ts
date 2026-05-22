@@ -55,7 +55,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateFunderBody, req.body, res);
     if (!body) return;
-    const [row] = await db.insert(funders).values({ id: newId(), ...body } as any).returning();
+    const [row] = await db.insert(funders).values({ id: newId(), ...body }).returning();
     res.status(201).json(row);
   }),
 );
@@ -67,7 +67,7 @@ router.patch(
     if (!body) return;
     const [row] = await db
       .update(funders)
-      .set({ ...body, updatedAt: new Date() } as any)
+      .set({ ...body, updatedAt: new Date() })
       .where(eq(funders.id, paramId(req)))
       .returning();
     if (!row) return notFound(res, "funder");

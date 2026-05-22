@@ -60,11 +60,10 @@ export default defineConfig({
           coerce: {
             query: ['boolean', 'number', 'string'],
             param: ['boolean', 'number', 'string'],
-            body: ['bigint', 'date'],
-            response: ['bigint', 'date'],
+            body: ['bigint'],
+            response: ['bigint'],
           },
         },
-        useDates: true,
         useBigInt: true,
       },
     },

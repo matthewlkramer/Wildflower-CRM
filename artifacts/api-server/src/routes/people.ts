@@ -61,7 +61,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreatePersonBody, req.body, res);
     if (!body) return;
-    const [row] = await db.insert(people).values({ id: newId(), ...body } as any).returning();
+    const [row] = await db.insert(people).values({ id: newId(), ...body }).returning();
     res.status(201).json(row);
   }),
 );
@@ -73,7 +73,7 @@ router.patch(
     if (!body) return;
     const [row] = await db
       .update(people)
-      .set({ ...body, updatedAt: new Date() } as any)
+      .set({ ...body, updatedAt: new Date() })
       .where(eq(people.id, paramId(req)))
       .returning();
     if (!row) return notFound(res, "person");

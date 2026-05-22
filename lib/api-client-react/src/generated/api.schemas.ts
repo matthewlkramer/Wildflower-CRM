@@ -548,11 +548,44 @@ export interface CreateFunderBody {
   interestsAges?: string[];
   interestsGovModels?: string[];
   parentFunderId?: string;
+  x?: string;
+  linkedin?: string;
+  facebook?: string;
+  instagram?: string;
+  youtube?: string;
+  crunchbase?: string;
 }
 
-export type UpdateFunderBody = CreateFunderBody & {
+export interface UpdateFunderBody {
   name?: string;
-};
+  fundingEntitySubtype?: FundingEntitySubtype | null;
+  makesPris?: boolean | null;
+  numberOfEmployees?: NumberOfEmployees | null;
+  capacityRating?: CapacityRating | null;
+  nationalPriorities?: boolean | null;
+  priorityAreasNotes?: string | null;
+  activeStatus?: ActiveStatus | null;
+  otherNames?: string | null;
+  details?: string | null;
+  emailDomain?: string | null;
+  orgEmail?: string | null;
+  owner?: string | null;
+  tags?: string | null;
+  website?: string | null;
+  connectionStatus?: ConnectionStatus | null;
+  enthusiasm?: Enthusiasm | null;
+  strategicAlignment?: StrategicAlignment | null;
+  interestsThematic?: string[] | null;
+  interestsAges?: string[] | null;
+  interestsGovModels?: string[] | null;
+  parentFunderId?: string | null;
+  x?: string | null;
+  linkedin?: string | null;
+  facebook?: string | null;
+  instagram?: string | null;
+  youtube?: string | null;
+  crunchbase?: string | null;
+}
 
 export interface Organization {
   id: string;
@@ -595,9 +628,18 @@ export interface CreateOrganizationBody {
   parentOrgId?: string;
 }
 
-export type UpdateOrganizationBody = CreateOrganizationBody & {
+export interface UpdateOrganizationBody {
   name?: string;
-};
+  type?: OrganizationType | null;
+  emailDomain?: string | null;
+  owner?: string | null;
+  ownerUserId?: string | null;
+  tags?: string | null;
+  website?: string | null;
+  activeOrDefunct?: string | null;
+  otherNames?: string | null;
+  parentOrgId?: string | null;
+}
 
 export interface PaymentIntermediary {
   id: string;
@@ -626,7 +668,7 @@ export interface CreatePaymentIntermediaryBody {
 
 export interface UpdatePaymentIntermediaryBody {
   name?: string;
-  type?: PaymentIntermediaryType;
+  type?: PaymentIntermediaryType | null;
 }
 
 export interface Household {
@@ -754,7 +796,38 @@ export interface CreatePersonBody {
   assistantPersonId?: string;
 }
 
-export type UpdatePersonBody = CreatePersonBody;
+export interface UpdatePersonBody {
+  prefix?: string | null;
+  firstName?: string | null;
+  nickname?: string | null;
+  middleName?: string | null;
+  lastName?: string | null;
+  suffix?: string | null;
+  fullName?: string | null;
+  pronouns?: Pronouns | null;
+  deceased?: boolean;
+  householdName?: string | null;
+  currentHomeRegionId?: string | null;
+  details?: string | null;
+  owner?: string | null;
+  tags?: string | null;
+  lastContacted?: string | null;
+  linkedin?: string | null;
+  x?: string | null;
+  facebook?: string | null;
+  instagram?: string | null;
+  aboutMe?: string | null;
+  youtube?: string | null;
+  website?: string | null;
+  interestsThematic?: string[] | null;
+  interestsAges?: string[] | null;
+  interestsGovModels?: string[] | null;
+  newsletter?: boolean;
+  unsubscribedToNewsletter?: boolean;
+  childrenAtWf?: string | null;
+  meetingLink?: string | null;
+  assistantPersonId?: string | null;
+}
 
 export interface PeopleEntityRoleList {
   data: PeopleEntityRole[];
@@ -780,7 +853,7 @@ export interface UpdatePeopleEntityRoleBody {
   organizationId?: string | null;
   paymentIntermediaryId?: string | null;
   householdId?: string | null;
-  connection?: PeopleEntityRoleConnection;
+  connection?: PeopleEntityRoleConnection | null;
   notes?: string | null;
   externalTitleOrRole?: string | null;
   current?: PeopleRoleCurrent;
@@ -806,7 +879,7 @@ export interface CreateEmailBody {
 
 export interface UpdateEmailBody {
   email?: string;
-  type?: EmailType;
+  type?: EmailType | null;
   validity?: ContactValidity;
   isPreferred?: boolean;
 }
@@ -826,7 +899,7 @@ export interface CreatePhoneNumberBody {
 
 export interface UpdatePhoneNumberBody {
   phoneNumber?: string;
-  type?: PhoneType;
+  type?: PhoneType | null;
   validity?: ContactValidity;
   isPreferred?: boolean;
 }
@@ -851,7 +924,20 @@ export interface CreateAddressBody {
   householdId?: string;
 }
 
-export type UpdateAddressBody = CreateAddressBody;
+export interface UpdateAddressBody {
+  street?: string | null;
+  cityRegionId?: string | null;
+  cityName?: string | null;
+  stateRegionId?: string | null;
+  stateCode?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  personId?: string | null;
+  funderId?: string | null;
+  organizationId?: string | null;
+  paymentIntermediaryId?: string | null;
+  householdId?: string | null;
+}
 
 export interface OpportunityOrPledge {
   id: string;
@@ -980,7 +1066,36 @@ export interface CreateOpportunityOrPledgeBody {
   primaryContactPersonId?: string;
 }
 
-export type UpdateOpportunityOrPledgeBody = CreateOpportunityOrPledgeBody;
+export interface UpdateOpportunityOrPledgeBody {
+  name?: string | null;
+  funderId?: string | null;
+  askAmount?: string | null;
+  awardedAmount?: string | null;
+  type?: OpportunityType | null;
+  conditional?: OpportunityConditional | null;
+  conditions?: string | null;
+  conditionsMet?: boolean;
+  grantYears?: string[] | null;
+  individualGiverPersonId?: string | null;
+  individualAdvisorPersonId?: string | null;
+  matchId?: string | null;
+  status?: OpportunityStatus | null;
+  owner?: string | null;
+  ownerUserId?: string | null;
+  projectedCloseDate?: string | null;
+  actualCompletionDate?: string | null;
+  winProbability?: string | null;
+  stage?: OpportunityStage | null;
+  lossReason?: string | null;
+  applicationDeadline?: string | null;
+  paymentDetails?: string | null;
+  entityIds?: string[] | null;
+  intendedUsages?: IntendedUsage[] | null;
+  fundableProjectIds?: string[] | null;
+  usageNotes?: string | null;
+  copperPledgeId?: string | null;
+  primaryContactPersonId?: string | null;
+}
 
 export interface PledgeAllocationList {
   data: PledgeAllocation[];
@@ -1000,7 +1115,18 @@ export interface CreatePledgeAllocationBody {
   notes?: string;
 }
 
-export type UpdatePledgeAllocationBody = CreatePledgeAllocationBody;
+export interface UpdatePledgeAllocationBody {
+  pledgeOrOpportunityId?: string | null;
+  subAmount?: string | null;
+  grantYear?: string[] | null;
+  entityId?: string | null;
+  intendedUsage?: IntendedUsage | null;
+  fundableProjectId?: string | null;
+  directToSchool?: boolean;
+  status?: PledgeAllocationStatus | null;
+  conditions?: string | null;
+  notes?: string | null;
+}
 
 export interface GiftAllocation {
   id: string;
@@ -1059,7 +1185,35 @@ export interface CreateGiftOrPaymentBody {
   tags?: string;
 }
 
-export type UpdateGiftOrPaymentBody = CreateGiftOrPaymentBody;
+export interface UpdateGiftOrPaymentBody {
+  legacyGiftId?: string | null;
+  name?: string | null;
+  details?: string | null;
+  dateReceived?: string | null;
+  paymentMethod?: GiftPaymentMethod | null;
+  amount?: string | null;
+  funderId?: string | null;
+  individualGiverPersonId?: string | null;
+  type?: GiftType | null;
+  paymentOnPledgeId?: string | null;
+  advisorPersonId?: string | null;
+  grantYear?: string | null;
+  giftBeingMatchedId?: string | null;
+  primaryContactPersonId?: string | null;
+  paymentIntermediaryId?: string | null;
+  owner?: string | null;
+  closeDate?: string | null;
+  completedDate?: string | null;
+  allocationType?: GiftAllocationType | null;
+  entityId?: string | null;
+  intendedUsage?: IntendedUsage | null;
+  fundableProjectId?: string | null;
+  designatedToSchool?: boolean;
+  schoolRecipientId?: string | null;
+  spendingStartDate?: string | null;
+  spendingEndDate?: string | null;
+  tags?: string | null;
+}
 
 export interface GiftAllocationList {
   data: GiftAllocation[];
@@ -1080,7 +1234,19 @@ export interface CreateGiftAllocationBody {
   spendingEnd?: string;
 }
 
-export type UpdateGiftAllocationBody = CreateGiftAllocationBody;
+export interface UpdateGiftAllocationBody {
+  giftId?: string | null;
+  subAmount?: string | null;
+  grantYearToBookTo?: string | null;
+  entityId?: string | null;
+  formalRegionalRestriction?: boolean;
+  intendedUsage?: IntendedUsage | null;
+  fundableProjectId?: string | null;
+  formalFundUseRestriction?: boolean;
+  schoolRecipientId?: string | null;
+  spendingStart?: string | null;
+  spendingEnd?: string | null;
+}
 
 /**
  * Not found

@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { setAppUser } from "../lib/appRequest";
 
 export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
@@ -33,7 +34,11 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
         .then((rows) => rows[0]);
     }
 
-    (req as any).appUser = user;
+    if (!user) {
+      res.status(500).json({ error: "user_provision_failed" });
+      return;
+    }
+    setAppUser(req, user);
     next();
   } catch (err) {
     next(err);

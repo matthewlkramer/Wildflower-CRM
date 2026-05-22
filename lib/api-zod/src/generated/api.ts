@@ -23,8 +23,8 @@ export const ListUsersResponseItem = zod.object({
   displayName: zod.string().nullish(),
   role: zod.enum(["admin", "team_member", "finance", "read_only"]),
   defaultFund: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 export const ListUsersResponse = zod.array(ListUsersResponseItem);
 
@@ -37,8 +37,8 @@ export const GetCurrentUserResponse = zod.object({
   displayName: zod.string().nullish(),
   role: zod.enum(["admin", "team_member", "finance", "read_only"]),
   defaultFund: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const listRegionsQueryLimitDefault = 50;
@@ -88,8 +88,8 @@ export const ListRegionsResponse = zod.object({
         ])
         .nullish(),
       parentRegionId: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -121,8 +121,8 @@ export const GetRegionResponse = zod.object({
     ])
     .nullish(),
   parentRegionId: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const listSchoolsQueryLimitDefault = 50;
@@ -197,8 +197,8 @@ export const ListSchoolsResponse = zod.object({
       stageStatus: zod.string().nullish(),
       currentMailingAddress: zod.string().nullish(),
       currentPhysicalAddress: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -245,16 +245,16 @@ export const GetSchoolResponse = zod.object({
   stageStatus: zod.string().nullish(),
   currentMailingAddress: zod.string().nullish(),
   currentPhysicalAddress: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const ListEntitiesResponseItem = zod.object({
   id: zod.string(),
   name: zod.string(),
   active: zod.boolean(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 export const ListEntitiesResponse = zod.array(ListEntitiesResponseItem);
 
@@ -266,8 +266,8 @@ export const GetEntityResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
   active: zod.boolean(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const ListFundableProjectsResponseItem = zod.object({
@@ -275,8 +275,8 @@ export const ListFundableProjectsResponseItem = zod.object({
   name: zod.string(),
   description: zod.string().nullish(),
   active: zod.boolean(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 export const ListFundableProjectsResponse = zod.array(
   ListFundableProjectsResponseItem,
@@ -285,10 +285,10 @@ export const ListFundableProjectsResponse = zod.array(
 export const ListFiscalYearsResponseItem = zod.object({
   id: zod.string(),
   label: zod.string(),
-  startDate: zod.coerce.date().nullish(),
-  endDate: zod.coerce.date().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  startDate: zod.string().date().nullish(),
+  endDate: zod.string().date().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 export const ListFiscalYearsResponse = zod.array(ListFiscalYearsResponseItem);
 
@@ -409,8 +409,8 @@ export const ListFundersResponse = zod.object({
       instagram: zod.string().nullish(),
       youtube: zod.string().nullish(),
       crunchbase: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -480,6 +480,12 @@ export const CreateFunderBody = zod.object({
   interestsAges: zod.array(zod.string()).optional(),
   interestsGovModels: zod.array(zod.string()).optional(),
   parentFunderId: zod.string().optional(),
+  x: zod.string().optional(),
+  linkedin: zod.string().optional(),
+  facebook: zod.string().optional(),
+  instagram: zod.string().optional(),
+  youtube: zod.string().optional(),
+  crunchbase: zod.string().optional(),
 });
 
 export const GetFunderParams = zod.object({
@@ -555,8 +561,8 @@ export const GetFunderResponse = zod
     instagram: zod.string().nullish(),
     youtube: zod.string().nullish(),
     crunchbase: zod.string().nullish(),
-    createdAt: zod.coerce.date(),
-    updatedAt: zod.coerce.date(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
   })
   .and(
     zod.object({
@@ -591,8 +597,8 @@ export const GetFunderResponse = zod
             externalTitleOrRole: zod.string().nullish(),
             current: zod.enum(["current", "past"]),
             primaryContact: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -610,8 +616,8 @@ export const GetFunderResponse = zod
             householdId: zod.string().nullish(),
             validity: zod.enum(["valid", "invalid", "unknown"]),
             isPreferred: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -632,8 +638,8 @@ export const GetFunderResponse = zod
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -644,73 +650,73 @@ export const UpdateFunderParams = zod.object({
   id: zod.coerce.string(),
 });
 
-export const UpdateFunderBody = zod
-  .object({
-    name: zod.string(),
-    fundingEntitySubtype: zod
-      .enum([
-        "family_foundation",
-        "institutional_foundation",
-        "corporate_foundation",
-        "community_foundation",
-        "bank_foundation",
-        "family_office_trust",
-        "intermediary",
-        "government",
-        "nonprofit",
-        "corporation",
-        "capital_provider",
-        "philanthropic_advisor",
-        "cdfi",
-        "education_forprofit",
-        "competition",
-        "public_private",
-        "daf_platform",
-        "platform",
-      ])
-      .optional(),
-    makesPris: zod.boolean().optional(),
-    numberOfEmployees: zod
-      .enum([
-        "e_1",
-        "e_2_10",
-        "e_11_50",
-        "e_51_250",
-        "e_251_1000",
-        "e_1001_10000",
-        "e_10000_plus",
-      ])
-      .optional(),
-    capacityRating: zod
-      .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
-      .optional(),
-    nationalPriorities: zod.boolean().optional(),
-    priorityAreasNotes: zod.string().optional(),
-    activeStatus: zod.enum(["active", "defunct", "spenddown"]).optional(),
-    otherNames: zod.string().optional(),
-    details: zod.string().optional(),
-    emailDomain: zod.string().optional(),
-    orgEmail: zod.string().optional(),
-    owner: zod.string().optional(),
-    tags: zod.string().optional(),
-    website: zod.string().optional(),
-    connectionStatus: zod
-      .enum(["connected", "have_a_connector", "no_connection"])
-      .optional(),
-    enthusiasm: zod
-      .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
-      .optional(),
-    strategicAlignment: zod.enum(["high", "medium", "low"]).optional(),
-    interestsThematic: zod.array(zod.string()).optional(),
-    interestsAges: zod.array(zod.string()).optional(),
-    interestsGovModels: zod.array(zod.string()).optional(),
-    parentFunderId: zod.string().optional(),
-  })
-  .and(
-    zod.object({
-      name: zod.string().optional(),
-    }),
-  );
+export const UpdateFunderBody = zod.object({
+  name: zod.string().optional(),
+  fundingEntitySubtype: zod
+    .enum([
+      "family_foundation",
+      "institutional_foundation",
+      "corporate_foundation",
+      "community_foundation",
+      "bank_foundation",
+      "family_office_trust",
+      "intermediary",
+      "government",
+      "nonprofit",
+      "corporation",
+      "capital_provider",
+      "philanthropic_advisor",
+      "cdfi",
+      "education_forprofit",
+      "competition",
+      "public_private",
+      "daf_platform",
+      "platform",
+    ])
+    .nullish(),
+  makesPris: zod.boolean().nullish(),
+  numberOfEmployees: zod
+    .enum([
+      "e_1",
+      "e_2_10",
+      "e_11_50",
+      "e_51_250",
+      "e_251_1000",
+      "e_1001_10000",
+      "e_10000_plus",
+    ])
+    .nullish(),
+  capacityRating: zod
+    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .nullish(),
+  nationalPriorities: zod.boolean().nullish(),
+  priorityAreasNotes: zod.string().nullish(),
+  activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
+  otherNames: zod.string().nullish(),
+  details: zod.string().nullish(),
+  emailDomain: zod.string().nullish(),
+  orgEmail: zod.string().nullish(),
+  owner: zod.string().nullish(),
+  tags: zod.string().nullish(),
+  website: zod.string().nullish(),
+  connectionStatus: zod
+    .enum(["connected", "have_a_connector", "no_connection"])
+    .nullish(),
+  enthusiasm: zod
+    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+    .nullish(),
+  strategicAlignment: zod.enum(["high", "medium", "low"]).nullish(),
+  interestsThematic: zod.array(zod.string()).nullish(),
+  interestsAges: zod.array(zod.string()).nullish(),
+  interestsGovModels: zod.array(zod.string()).nullish(),
+  parentFunderId: zod.string().nullish(),
+  x: zod.string().nullish(),
+  linkedin: zod.string().nullish(),
+  facebook: zod.string().nullish(),
+  instagram: zod.string().nullish(),
+  youtube: zod.string().nullish(),
+  crunchbase: zod.string().nullish(),
+});
 
 export const UpdateFunderResponse = zod.object({
   id: zod.string(),
@@ -780,8 +786,8 @@ export const UpdateFunderResponse = zod.object({
   instagram: zod.string().nullish(),
   youtube: zod.string().nullish(),
   crunchbase: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeleteFunderParams = zod.object({
@@ -865,8 +871,8 @@ export const ListOrganizationsResponse = zod.object({
       activeOrDefunct: zod.string().nullish(),
       otherNames: zod.string().nullish(),
       parentOrgId: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -953,8 +959,8 @@ export const GetOrganizationResponse = zod
     activeOrDefunct: zod.string().nullish(),
     otherNames: zod.string().nullish(),
     parentOrgId: zod.string().nullish(),
-    createdAt: zod.coerce.date(),
-    updatedAt: zod.coerce.date(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
   })
   .and(
     zod.object({
@@ -989,8 +995,8 @@ export const GetOrganizationResponse = zod
             externalTitleOrRole: zod.string().nullish(),
             current: zod.enum(["current", "past"]),
             primaryContact: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1008,8 +1014,8 @@ export const GetOrganizationResponse = zod
             householdId: zod.string().nullish(),
             validity: zod.enum(["valid", "invalid", "unknown"]),
             isPreferred: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1030,8 +1036,8 @@ export const GetOrganizationResponse = zod
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1042,47 +1048,41 @@ export const UpdateOrganizationParams = zod.object({
   id: zod.coerce.string(),
 });
 
-export const UpdateOrganizationBody = zod
-  .object({
-    name: zod.string(),
-    type: zod
-      .enum([
-        "advocacy_membership_lobbyist",
-        "authorizer",
-        "cmo",
-        "capital_provider",
-        "government",
-        "corporation",
-        "education_vendor",
-        "elected_official",
-        "higher_ed",
-        "investor",
-        "law_firm",
-        "media",
-        "nonprofit",
-        "philanthropic_advisor",
-        "real_estate",
-        "school",
-        "school_district",
-        "school_network",
-        "small_business_consulting",
-        "tribal",
-      ])
-      .optional(),
-    emailDomain: zod.string().optional(),
-    owner: zod.string().optional(),
-    ownerUserId: zod.string().optional(),
-    tags: zod.string().optional(),
-    website: zod.string().optional(),
-    activeOrDefunct: zod.string().optional(),
-    otherNames: zod.string().optional(),
-    parentOrgId: zod.string().optional(),
-  })
-  .and(
-    zod.object({
-      name: zod.string().optional(),
-    }),
-  );
+export const UpdateOrganizationBody = zod.object({
+  name: zod.string().optional(),
+  type: zod
+    .enum([
+      "advocacy_membership_lobbyist",
+      "authorizer",
+      "cmo",
+      "capital_provider",
+      "government",
+      "corporation",
+      "education_vendor",
+      "elected_official",
+      "higher_ed",
+      "investor",
+      "law_firm",
+      "media",
+      "nonprofit",
+      "philanthropic_advisor",
+      "real_estate",
+      "school",
+      "school_district",
+      "school_network",
+      "small_business_consulting",
+      "tribal",
+    ])
+    .nullish(),
+  emailDomain: zod.string().nullish(),
+  owner: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  tags: zod.string().nullish(),
+  website: zod.string().nullish(),
+  activeOrDefunct: zod.string().nullish(),
+  otherNames: zod.string().nullish(),
+  parentOrgId: zod.string().nullish(),
+});
 
 export const UpdateOrganizationResponse = zod.object({
   id: zod.string(),
@@ -1120,8 +1120,8 @@ export const UpdateOrganizationResponse = zod.object({
   activeOrDefunct: zod.string().nullish(),
   otherNames: zod.string().nullish(),
   parentOrgId: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeleteOrganizationParams = zod.object({
@@ -1154,8 +1154,8 @@ export const ListPaymentIntermediariesResponse = zod.object({
       airtableId: zod.string().nullish(),
       name: zod.string(),
       type: zod.enum(["daf", "giving_platform"]).nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -1180,8 +1180,8 @@ export const GetPaymentIntermediaryResponse = zod
     airtableId: zod.string().nullish(),
     name: zod.string(),
     type: zod.enum(["daf", "giving_platform"]).nullish(),
-    createdAt: zod.coerce.date(),
-    updatedAt: zod.coerce.date(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
   })
   .and(
     zod.object({
@@ -1216,8 +1216,8 @@ export const GetPaymentIntermediaryResponse = zod
             externalTitleOrRole: zod.string().nullish(),
             current: zod.enum(["current", "past"]),
             primaryContact: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1235,8 +1235,8 @@ export const GetPaymentIntermediaryResponse = zod
             householdId: zod.string().nullish(),
             validity: zod.enum(["valid", "invalid", "unknown"]),
             isPreferred: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1257,8 +1257,8 @@ export const GetPaymentIntermediaryResponse = zod
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1271,7 +1271,7 @@ export const UpdatePaymentIntermediaryParams = zod.object({
 
 export const UpdatePaymentIntermediaryBody = zod.object({
   name: zod.string().optional(),
-  type: zod.enum(["daf", "giving_platform"]).optional(),
+  type: zod.enum(["daf", "giving_platform"]).nullish(),
 });
 
 export const UpdatePaymentIntermediaryResponse = zod.object({
@@ -1279,8 +1279,8 @@ export const UpdatePaymentIntermediaryResponse = zod.object({
   airtableId: zod.string().nullish(),
   name: zod.string(),
   type: zod.enum(["daf", "giving_platform"]).nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeletePaymentIntermediaryParams = zod.object({
@@ -1310,8 +1310,8 @@ export const ListHouseholdsResponse = zod.object({
       airtableId: zod.string().nullish(),
       name: zod.string(),
       active: zod.boolean(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -1336,8 +1336,8 @@ export const GetHouseholdResponse = zod
     airtableId: zod.string().nullish(),
     name: zod.string(),
     active: zod.boolean(),
-    createdAt: zod.coerce.date(),
-    updatedAt: zod.coerce.date(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
   })
   .and(
     zod.object({
@@ -1372,8 +1372,8 @@ export const GetHouseholdResponse = zod
             externalTitleOrRole: zod.string().nullish(),
             current: zod.enum(["current", "past"]),
             primaryContact: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1391,8 +1391,8 @@ export const GetHouseholdResponse = zod
             householdId: zod.string().nullish(),
             validity: zod.enum(["valid", "invalid", "unknown"]),
             isPreferred: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1413,8 +1413,8 @@ export const GetHouseholdResponse = zod
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1435,8 +1435,8 @@ export const UpdateHouseholdResponse = zod.object({
   airtableId: zod.string().nullish(),
   name: zod.string(),
   active: zod.boolean(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeleteHouseholdParams = zod.object({
@@ -1481,7 +1481,7 @@ export const ListPeopleResponse = zod.object({
       details: zod.string().nullish(),
       owner: zod.string().nullish(),
       tags: zod.string().nullish(),
-      lastContacted: zod.coerce.date().nullish(),
+      lastContacted: zod.string().date().nullish(),
       interactionCount: zod.number().nullish(),
       linkedin: zod.string().nullish(),
       x: zod.string().nullish(),
@@ -1498,8 +1498,8 @@ export const ListPeopleResponse = zod.object({
       childrenAtWf: zod.string().nullish(),
       meetingLink: zod.string().nullish(),
       assistantPersonId: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -1526,7 +1526,7 @@ export const CreatePersonBody = zod.object({
   details: zod.string().optional(),
   owner: zod.string().optional(),
   tags: zod.string().optional(),
-  lastContacted: zod.coerce.date().optional(),
+  lastContacted: zod.string().date().optional(),
   linkedin: zod.string().optional(),
   x: zod.string().optional(),
   facebook: zod.string().optional(),
@@ -1568,7 +1568,7 @@ export const GetPersonResponse = zod
     details: zod.string().nullish(),
     owner: zod.string().nullish(),
     tags: zod.string().nullish(),
-    lastContacted: zod.coerce.date().nullish(),
+    lastContacted: zod.string().date().nullish(),
     interactionCount: zod.number().nullish(),
     linkedin: zod.string().nullish(),
     x: zod.string().nullish(),
@@ -1585,8 +1585,8 @@ export const GetPersonResponse = zod
     childrenAtWf: zod.string().nullish(),
     meetingLink: zod.string().nullish(),
     assistantPersonId: zod.string().nullish(),
-    createdAt: zod.coerce.date(),
-    updatedAt: zod.coerce.date(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
   })
   .and(
     zod.object({
@@ -1621,8 +1621,8 @@ export const GetPersonResponse = zod
             externalTitleOrRole: zod.string().nullish(),
             current: zod.enum(["current", "past"]),
             primaryContact: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1640,8 +1640,8 @@ export const GetPersonResponse = zod
             householdId: zod.string().nullish(),
             validity: zod.enum(["valid", "invalid", "unknown"]),
             isPreferred: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1655,8 +1655,8 @@ export const GetPersonResponse = zod
             personId: zod.string().nullish(),
             validity: zod.enum(["valid", "invalid", "unknown"]),
             isPreferred: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1677,8 +1677,8 @@ export const GetPersonResponse = zod
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -1690,38 +1690,38 @@ export const UpdatePersonParams = zod.object({
 });
 
 export const UpdatePersonBody = zod.object({
-  prefix: zod.string().optional(),
-  firstName: zod.string().optional(),
-  nickname: zod.string().optional(),
-  middleName: zod.string().optional(),
-  lastName: zod.string().optional(),
-  suffix: zod.string().optional(),
-  fullName: zod.string().optional(),
+  prefix: zod.string().nullish(),
+  firstName: zod.string().nullish(),
+  nickname: zod.string().nullish(),
+  middleName: zod.string().nullish(),
+  lastName: zod.string().nullish(),
+  suffix: zod.string().nullish(),
+  fullName: zod.string().nullish(),
   pronouns: zod
     .enum(["he_him_his", "she_her_hers", "they_them_theirs", "other"])
-    .optional(),
+    .nullish(),
   deceased: zod.boolean().optional(),
-  householdName: zod.string().optional(),
-  currentHomeRegionId: zod.string().optional(),
-  details: zod.string().optional(),
-  owner: zod.string().optional(),
-  tags: zod.string().optional(),
-  lastContacted: zod.coerce.date().optional(),
-  linkedin: zod.string().optional(),
-  x: zod.string().optional(),
-  facebook: zod.string().optional(),
-  instagram: zod.string().optional(),
-  aboutMe: zod.string().optional(),
-  youtube: zod.string().optional(),
-  website: zod.string().optional(),
-  interestsThematic: zod.array(zod.string()).optional(),
-  interestsAges: zod.array(zod.string()).optional(),
-  interestsGovModels: zod.array(zod.string()).optional(),
+  householdName: zod.string().nullish(),
+  currentHomeRegionId: zod.string().nullish(),
+  details: zod.string().nullish(),
+  owner: zod.string().nullish(),
+  tags: zod.string().nullish(),
+  lastContacted: zod.string().date().nullish(),
+  linkedin: zod.string().nullish(),
+  x: zod.string().nullish(),
+  facebook: zod.string().nullish(),
+  instagram: zod.string().nullish(),
+  aboutMe: zod.string().nullish(),
+  youtube: zod.string().nullish(),
+  website: zod.string().nullish(),
+  interestsThematic: zod.array(zod.string()).nullish(),
+  interestsAges: zod.array(zod.string()).nullish(),
+  interestsGovModels: zod.array(zod.string()).nullish(),
   newsletter: zod.boolean().optional(),
   unsubscribedToNewsletter: zod.boolean().optional(),
-  childrenAtWf: zod.string().optional(),
-  meetingLink: zod.string().optional(),
-  assistantPersonId: zod.string().optional(),
+  childrenAtWf: zod.string().nullish(),
+  meetingLink: zod.string().nullish(),
+  assistantPersonId: zod.string().nullish(),
 });
 
 export const UpdatePersonResponse = zod.object({
@@ -1743,7 +1743,7 @@ export const UpdatePersonResponse = zod.object({
   details: zod.string().nullish(),
   owner: zod.string().nullish(),
   tags: zod.string().nullish(),
-  lastContacted: zod.coerce.date().nullish(),
+  lastContacted: zod.string().date().nullish(),
   interactionCount: zod.number().nullish(),
   linkedin: zod.string().nullish(),
   x: zod.string().nullish(),
@@ -1760,8 +1760,8 @@ export const UpdatePersonResponse = zod.object({
   childrenAtWf: zod.string().nullish(),
   meetingLink: zod.string().nullish(),
   assistantPersonId: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeletePersonParams = zod.object({
@@ -1821,8 +1821,8 @@ export const ListPeopleEntityRolesResponse = zod.object({
       externalTitleOrRole: zod.string().nullish(),
       current: zod.enum(["current", "past"]),
       primaryContact: zod.boolean(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -1880,7 +1880,7 @@ export const UpdatePeopleEntityRoleBody = zod.object({
       "donor_advisor",
       "elected_official",
     ])
-    .optional(),
+    .nullish(),
   notes: zod.string().nullish(),
   externalTitleOrRole: zod.string().nullish(),
   current: zod.enum(["current", "past"]).optional(),
@@ -1916,8 +1916,8 @@ export const UpdatePeopleEntityRoleResponse = zod.object({
   externalTitleOrRole: zod.string().nullish(),
   current: zod.enum(["current", "past"]),
   primaryContact: zod.boolean(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeletePeopleEntityRoleParams = zod.object({
@@ -1957,8 +1957,8 @@ export const ListEmailsResponse = zod.object({
       householdId: zod.string().nullish(),
       validity: zod.enum(["valid", "invalid", "unknown"]),
       isPreferred: zod.boolean(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -1986,7 +1986,7 @@ export const UpdateEmailParams = zod.object({
 
 export const UpdateEmailBody = zod.object({
   email: zod.string().optional(),
-  type: zod.enum(["work", "personal", "other"]).optional(),
+  type: zod.enum(["work", "personal", "other"]).nullish(),
   validity: zod.enum(["valid", "invalid", "unknown"]).optional(),
   isPreferred: zod.boolean().optional(),
 });
@@ -2003,8 +2003,8 @@ export const UpdateEmailResponse = zod.object({
   householdId: zod.string().nullish(),
   validity: zod.enum(["valid", "invalid", "unknown"]),
   isPreferred: zod.boolean(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeleteEmailParams = zod.object({
@@ -2036,8 +2036,8 @@ export const ListPhoneNumbersResponse = zod.object({
       personId: zod.string().nullish(),
       validity: zod.enum(["valid", "invalid", "unknown"]),
       isPreferred: zod.boolean(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -2061,7 +2061,7 @@ export const UpdatePhoneNumberParams = zod.object({
 
 export const UpdatePhoneNumberBody = zod.object({
   phoneNumber: zod.string().optional(),
-  type: zod.enum(["work", "mobile", "home", "other"]).optional(),
+  type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
   validity: zod.enum(["valid", "invalid", "unknown"]).optional(),
   isPreferred: zod.boolean().optional(),
 });
@@ -2074,8 +2074,8 @@ export const UpdatePhoneNumberResponse = zod.object({
   personId: zod.string().nullish(),
   validity: zod.enum(["valid", "invalid", "unknown"]),
   isPreferred: zod.boolean(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeletePhoneNumberParams = zod.object({
@@ -2118,8 +2118,8 @@ export const ListAddressesResponse = zod.object({
       organizationId: zod.string().nullish(),
       paymentIntermediaryId: zod.string().nullish(),
       householdId: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -2149,18 +2149,18 @@ export const UpdateAddressParams = zod.object({
 });
 
 export const UpdateAddressBody = zod.object({
-  street: zod.string().optional(),
-  cityRegionId: zod.string().optional(),
-  cityName: zod.string().optional(),
-  stateRegionId: zod.string().optional(),
-  stateCode: zod.string().optional(),
-  postalCode: zod.string().optional(),
-  country: zod.string().optional(),
-  personId: zod.string().optional(),
-  funderId: zod.string().optional(),
-  organizationId: zod.string().optional(),
-  paymentIntermediaryId: zod.string().optional(),
-  householdId: zod.string().optional(),
+  street: zod.string().nullish(),
+  cityRegionId: zod.string().nullish(),
+  cityName: zod.string().nullish(),
+  stateRegionId: zod.string().nullish(),
+  stateCode: zod.string().nullish(),
+  postalCode: zod.string().nullish(),
+  country: zod.string().nullish(),
+  personId: zod.string().nullish(),
+  funderId: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
+  paymentIntermediaryId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
 });
 
 export const UpdateAddressResponse = zod.object({
@@ -2178,8 +2178,8 @@ export const UpdateAddressResponse = zod.object({
   organizationId: zod.string().nullish(),
   paymentIntermediaryId: zod.string().nullish(),
   householdId: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeleteAddressParams = zod.object({
@@ -2249,8 +2249,8 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       status: zod.enum(["open", "won", "dormant", "lost"]).nullish(),
       owner: zod.string().nullish(),
       ownerUserId: zod.string().nullish(),
-      projectedCloseDate: zod.coerce.date().nullish(),
-      actualCompletionDate: zod.coerce.date().nullish(),
+      projectedCloseDate: zod.string().date().nullish(),
+      actualCompletionDate: zod.string().date().nullish(),
       winProbability: zod.string().nullish(),
       stage: zod
         .enum([
@@ -2266,7 +2266,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
         ])
         .nullish(),
       lossReason: zod.string().nullish(),
-      applicationDeadline: zod.coerce.date().nullish(),
+      applicationDeadline: zod.string().date().nullish(),
       paymentDetails: zod.string().nullish(),
       entityIds: zod.array(zod.string()).nullish(),
       intendedUsages: zod
@@ -2284,8 +2284,8 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       usageNotes: zod.string().nullish(),
       copperPledgeId: zod.string().nullish(),
       primaryContactPersonId: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -2318,8 +2318,8 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   status: zod.enum(["open", "won", "dormant", "lost"]).optional(),
   owner: zod.string().optional(),
   ownerUserId: zod.string().optional(),
-  projectedCloseDate: zod.coerce.date().optional(),
-  actualCompletionDate: zod.coerce.date().optional(),
+  projectedCloseDate: zod.string().date().optional(),
+  actualCompletionDate: zod.string().date().optional(),
   winProbability: zod.string().optional(),
   stage: zod
     .enum([
@@ -2335,7 +2335,7 @@ export const CreateOpportunityOrPledgeBody = zod.object({
     ])
     .optional(),
   lossReason: zod.string().optional(),
-  applicationDeadline: zod.coerce.date().optional(),
+  applicationDeadline: zod.string().date().optional(),
   paymentDetails: zod.string().optional(),
   entityIds: zod.array(zod.string()).optional(),
   intendedUsages: zod
@@ -2385,8 +2385,8 @@ export const GetOpportunityOrPledgeResponse = zod
     status: zod.enum(["open", "won", "dormant", "lost"]).nullish(),
     owner: zod.string().nullish(),
     ownerUserId: zod.string().nullish(),
-    projectedCloseDate: zod.coerce.date().nullish(),
-    actualCompletionDate: zod.coerce.date().nullish(),
+    projectedCloseDate: zod.string().date().nullish(),
+    actualCompletionDate: zod.string().date().nullish(),
     winProbability: zod.string().nullish(),
     stage: zod
       .enum([
@@ -2402,7 +2402,7 @@ export const GetOpportunityOrPledgeResponse = zod
       ])
       .nullish(),
     lossReason: zod.string().nullish(),
-    applicationDeadline: zod.coerce.date().nullish(),
+    applicationDeadline: zod.string().date().nullish(),
     paymentDetails: zod.string().nullish(),
     entityIds: zod.array(zod.string()).nullish(),
     intendedUsages: zod
@@ -2420,8 +2420,8 @@ export const GetOpportunityOrPledgeResponse = zod
     usageNotes: zod.string().nullish(),
     copperPledgeId: zod.string().nullish(),
     primaryContactPersonId: zod.string().nullish(),
-    createdAt: zod.coerce.date(),
-    updatedAt: zod.coerce.date(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
   })
   .and(
     zod.object({
@@ -2455,8 +2455,8 @@ export const GetOpportunityOrPledgeResponse = zod
               .nullish(),
             conditions: zod.string().nullish(),
             notes: zod.string().nullish(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -2468,7 +2468,7 @@ export const GetOpportunityOrPledgeResponse = zod
             legacyGiftId: zod.string().nullish(),
             name: zod.string().nullish(),
             details: zod.string().nullish(),
-            dateReceived: zod.coerce.date().nullish(),
+            dateReceived: zod.string().date().nullish(),
             paymentMethod: zod
               .enum([
                 "ach",
@@ -2500,8 +2500,8 @@ export const GetOpportunityOrPledgeResponse = zod
             primaryContactPersonId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             owner: zod.string().nullish(),
-            closeDate: zod.coerce.date().nullish(),
-            completedDate: zod.coerce.date().nullish(),
+            closeDate: zod.string().date().nullish(),
+            completedDate: zod.string().date().nullish(),
             allocationType: zod
               .enum(["simple_allocation", "sub_allocations"])
               .nullish(),
@@ -2518,11 +2518,11 @@ export const GetOpportunityOrPledgeResponse = zod
             fundableProjectId: zod.string().nullish(),
             designatedToSchool: zod.boolean(),
             schoolRecipientId: zod.string().nullish(),
-            spendingStartDate: zod.coerce.date().nullish(),
-            spendingEndDate: zod.coerce.date().nullish(),
+            spendingStartDate: zod.string().date().nullish(),
+            spendingEndDate: zod.string().date().nullish(),
             tags: zod.string().nullish(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -2534,11 +2534,11 @@ export const UpdateOpportunityOrPledgeParams = zod.object({
 });
 
 export const UpdateOpportunityOrPledgeBody = zod.object({
-  name: zod.string().optional(),
-  funderId: zod.string().optional(),
-  askAmount: zod.string().optional(),
-  awardedAmount: zod.string().optional(),
-  type: zod.enum(["solicitation", "renewal", "open_application"]).optional(),
+  name: zod.string().nullish(),
+  funderId: zod.string().nullish(),
+  askAmount: zod.string().nullish(),
+  awardedAmount: zod.string().nullish(),
+  type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
   conditional: zod
     .enum([
       "unconditional",
@@ -2546,19 +2546,19 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
       "conditional_on_funder_determination",
       "conditional_on_target",
     ])
-    .optional(),
-  conditions: zod.string().optional(),
+    .nullish(),
+  conditions: zod.string().nullish(),
   conditionsMet: zod.boolean().optional(),
-  grantYears: zod.array(zod.string()).optional(),
-  individualGiverPersonId: zod.string().optional(),
-  individualAdvisorPersonId: zod.string().optional(),
-  matchId: zod.string().optional(),
-  status: zod.enum(["open", "won", "dormant", "lost"]).optional(),
-  owner: zod.string().optional(),
-  ownerUserId: zod.string().optional(),
-  projectedCloseDate: zod.coerce.date().optional(),
-  actualCompletionDate: zod.coerce.date().optional(),
-  winProbability: zod.string().optional(),
+  grantYears: zod.array(zod.string()).nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  individualAdvisorPersonId: zod.string().nullish(),
+  matchId: zod.string().nullish(),
+  status: zod.enum(["open", "won", "dormant", "lost"]).nullish(),
+  owner: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  projectedCloseDate: zod.string().date().nullish(),
+  actualCompletionDate: zod.string().date().nullish(),
+  winProbability: zod.string().nullish(),
   stage: zod
     .enum([
       "cold_lead",
@@ -2571,11 +2571,11 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
       "written_commitment",
       "cash_in",
     ])
-    .optional(),
-  lossReason: zod.string().optional(),
-  applicationDeadline: zod.coerce.date().optional(),
-  paymentDetails: zod.string().optional(),
-  entityIds: zod.array(zod.string()).optional(),
+    .nullish(),
+  lossReason: zod.string().nullish(),
+  applicationDeadline: zod.string().date().nullish(),
+  paymentDetails: zod.string().nullish(),
+  entityIds: zod.array(zod.string()).nullish(),
   intendedUsages: zod
     .array(
       zod.enum([
@@ -2586,11 +2586,11 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
         "project",
       ]),
     )
-    .optional(),
-  fundableProjectIds: zod.array(zod.string()).optional(),
-  usageNotes: zod.string().optional(),
-  copperPledgeId: zod.string().optional(),
-  primaryContactPersonId: zod.string().optional(),
+    .nullish(),
+  fundableProjectIds: zod.array(zod.string()).nullish(),
+  usageNotes: zod.string().nullish(),
+  copperPledgeId: zod.string().nullish(),
+  primaryContactPersonId: zod.string().nullish(),
 });
 
 export const UpdateOpportunityOrPledgeResponse = zod.object({
@@ -2618,8 +2618,8 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   status: zod.enum(["open", "won", "dormant", "lost"]).nullish(),
   owner: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
-  projectedCloseDate: zod.coerce.date().nullish(),
-  actualCompletionDate: zod.coerce.date().nullish(),
+  projectedCloseDate: zod.string().date().nullish(),
+  actualCompletionDate: zod.string().date().nullish(),
   winProbability: zod.string().nullish(),
   stage: zod
     .enum([
@@ -2635,7 +2635,7 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
     ])
     .nullish(),
   lossReason: zod.string().nullish(),
-  applicationDeadline: zod.coerce.date().nullish(),
+  applicationDeadline: zod.string().date().nullish(),
   paymentDetails: zod.string().nullish(),
   entityIds: zod.array(zod.string()).nullish(),
   intendedUsages: zod
@@ -2653,8 +2653,8 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
   primaryContactPersonId: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeleteOpportunityOrPledgeParams = zod.object({
@@ -2709,8 +2709,8 @@ export const ListPledgeAllocationsResponse = zod.object({
         .nullish(),
       conditions: zod.string().nullish(),
       notes: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -2748,10 +2748,10 @@ export const UpdatePledgeAllocationParams = zod.object({
 });
 
 export const UpdatePledgeAllocationBody = zod.object({
-  pledgeOrOpportunityId: zod.string().optional(),
-  subAmount: zod.string().optional(),
-  grantYear: zod.array(zod.string()).optional(),
-  entityId: zod.string().optional(),
+  pledgeOrOpportunityId: zod.string().nullish(),
+  subAmount: zod.string().nullish(),
+  grantYear: zod.array(zod.string()).nullish(),
+  entityId: zod.string().nullish(),
   intendedUsage: zod
     .enum([
       "gen_ops",
@@ -2760,14 +2760,14 @@ export const UpdatePledgeAllocationBody = zod.object({
       "teacher_training",
       "project",
     ])
-    .optional(),
-  fundableProjectId: zod.string().optional(),
+    .nullish(),
+  fundableProjectId: zod.string().nullish(),
   directToSchool: zod.boolean().optional(),
   status: zod
     .enum(["working", "committed", "superseded", "committed_with_conditions"])
-    .optional(),
-  conditions: zod.string().optional(),
-  notes: zod.string().optional(),
+    .nullish(),
+  conditions: zod.string().nullish(),
+  notes: zod.string().nullish(),
 });
 
 export const UpdatePledgeAllocationResponse = zod.object({
@@ -2793,8 +2793,8 @@ export const UpdatePledgeAllocationResponse = zod.object({
     .nullish(),
   conditions: zod.string().nullish(),
   notes: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeletePledgeAllocationParams = zod.object({
@@ -2851,7 +2851,7 @@ export const ListGiftsAndPaymentsResponse = zod.object({
       legacyGiftId: zod.string().nullish(),
       name: zod.string().nullish(),
       details: zod.string().nullish(),
-      dateReceived: zod.coerce.date().nullish(),
+      dateReceived: zod.string().date().nullish(),
       paymentMethod: zod
         .enum([
           "ach",
@@ -2883,8 +2883,8 @@ export const ListGiftsAndPaymentsResponse = zod.object({
       primaryContactPersonId: zod.string().nullish(),
       paymentIntermediaryId: zod.string().nullish(),
       owner: zod.string().nullish(),
-      closeDate: zod.coerce.date().nullish(),
-      completedDate: zod.coerce.date().nullish(),
+      closeDate: zod.string().date().nullish(),
+      completedDate: zod.string().date().nullish(),
       allocationType: zod
         .enum(["simple_allocation", "sub_allocations"])
         .nullish(),
@@ -2901,11 +2901,11 @@ export const ListGiftsAndPaymentsResponse = zod.object({
       fundableProjectId: zod.string().nullish(),
       designatedToSchool: zod.boolean(),
       schoolRecipientId: zod.string().nullish(),
-      spendingStartDate: zod.coerce.date().nullish(),
-      spendingEndDate: zod.coerce.date().nullish(),
+      spendingStartDate: zod.string().date().nullish(),
+      spendingEndDate: zod.string().date().nullish(),
       tags: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -2919,7 +2919,7 @@ export const CreateGiftOrPaymentBody = zod.object({
   legacyGiftId: zod.string().optional(),
   name: zod.string().optional(),
   details: zod.string().optional(),
-  dateReceived: zod.coerce.date().optional(),
+  dateReceived: zod.string().date().optional(),
   paymentMethod: zod
     .enum([
       "ach",
@@ -2951,8 +2951,8 @@ export const CreateGiftOrPaymentBody = zod.object({
   primaryContactPersonId: zod.string().optional(),
   paymentIntermediaryId: zod.string().optional(),
   owner: zod.string().optional(),
-  closeDate: zod.coerce.date().optional(),
-  completedDate: zod.coerce.date().optional(),
+  closeDate: zod.string().date().optional(),
+  completedDate: zod.string().date().optional(),
   allocationType: zod.enum(["simple_allocation", "sub_allocations"]).optional(),
   entityId: zod.string().optional(),
   intendedUsage: zod
@@ -2967,8 +2967,8 @@ export const CreateGiftOrPaymentBody = zod.object({
   fundableProjectId: zod.string().optional(),
   designatedToSchool: zod.boolean().optional(),
   schoolRecipientId: zod.string().optional(),
-  spendingStartDate: zod.coerce.date().optional(),
-  spendingEndDate: zod.coerce.date().optional(),
+  spendingStartDate: zod.string().date().optional(),
+  spendingEndDate: zod.string().date().optional(),
   tags: zod.string().optional(),
 });
 
@@ -2983,7 +2983,7 @@ export const GetGiftOrPaymentResponse = zod
     legacyGiftId: zod.string().nullish(),
     name: zod.string().nullish(),
     details: zod.string().nullish(),
-    dateReceived: zod.coerce.date().nullish(),
+    dateReceived: zod.string().date().nullish(),
     paymentMethod: zod
       .enum([
         "ach",
@@ -3015,8 +3015,8 @@ export const GetGiftOrPaymentResponse = zod
     primaryContactPersonId: zod.string().nullish(),
     paymentIntermediaryId: zod.string().nullish(),
     owner: zod.string().nullish(),
-    closeDate: zod.coerce.date().nullish(),
-    completedDate: zod.coerce.date().nullish(),
+    closeDate: zod.string().date().nullish(),
+    completedDate: zod.string().date().nullish(),
     allocationType: zod
       .enum(["simple_allocation", "sub_allocations"])
       .nullish(),
@@ -3033,11 +3033,11 @@ export const GetGiftOrPaymentResponse = zod
     fundableProjectId: zod.string().nullish(),
     designatedToSchool: zod.boolean(),
     schoolRecipientId: zod.string().nullish(),
-    spendingStartDate: zod.coerce.date().nullish(),
-    spendingEndDate: zod.coerce.date().nullish(),
+    spendingStartDate: zod.string().date().nullish(),
+    spendingEndDate: zod.string().date().nullish(),
     tags: zod.string().nullish(),
-    createdAt: zod.coerce.date(),
-    updatedAt: zod.coerce.date(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
   })
   .and(
     zod.object({
@@ -3063,10 +3063,10 @@ export const GetGiftOrPaymentResponse = zod
             fundableProjectId: zod.string().nullish(),
             formalFundUseRestriction: zod.boolean(),
             schoolRecipientId: zod.string().nullish(),
-            spendingStart: zod.coerce.date().nullish(),
-            spendingEnd: zod.coerce.date().nullish(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            spendingStart: zod.string().date().nullish(),
+            spendingEnd: zod.string().date().nullish(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
           }),
         )
         .optional(),
@@ -3078,69 +3078,10 @@ export const UpdateGiftOrPaymentParams = zod.object({
 });
 
 export const UpdateGiftOrPaymentBody = zod.object({
-  legacyGiftId: zod.string().optional(),
-  name: zod.string().optional(),
-  details: zod.string().optional(),
-  dateReceived: zod.coerce.date().optional(),
-  paymentMethod: zod
-    .enum([
-      "ach",
-      "check",
-      "wire",
-      "stock",
-      "donor_box",
-      "daf_ach",
-      "daf_check",
-      "daf_bill_com",
-    ])
-    .optional(),
-  amount: zod.string().optional(),
-  funderId: zod.string().optional(),
-  individualGiverPersonId: zod.string().optional(),
-  type: zod
-    .enum([
-      "standard_gift",
-      "pledge_payment",
-      "directed_gift",
-      "loan_fund_investment",
-      "matching_gift",
-    ])
-    .optional(),
-  paymentOnPledgeId: zod.string().optional(),
-  advisorPersonId: zod.string().optional(),
-  grantYear: zod.string().optional(),
-  giftBeingMatchedId: zod.string().optional(),
-  primaryContactPersonId: zod.string().optional(),
-  paymentIntermediaryId: zod.string().optional(),
-  owner: zod.string().optional(),
-  closeDate: zod.coerce.date().optional(),
-  completedDate: zod.coerce.date().optional(),
-  allocationType: zod.enum(["simple_allocation", "sub_allocations"]).optional(),
-  entityId: zod.string().optional(),
-  intendedUsage: zod
-    .enum([
-      "gen_ops",
-      "growth",
-      "school_startup",
-      "teacher_training",
-      "project",
-    ])
-    .optional(),
-  fundableProjectId: zod.string().optional(),
-  designatedToSchool: zod.boolean().optional(),
-  schoolRecipientId: zod.string().optional(),
-  spendingStartDate: zod.coerce.date().optional(),
-  spendingEndDate: zod.coerce.date().optional(),
-  tags: zod.string().optional(),
-});
-
-export const UpdateGiftOrPaymentResponse = zod.object({
-  id: zod.string(),
-  airtableId: zod.string().nullish(),
   legacyGiftId: zod.string().nullish(),
   name: zod.string().nullish(),
   details: zod.string().nullish(),
-  dateReceived: zod.coerce.date().nullish(),
+  dateReceived: zod.string().date().nullish(),
   paymentMethod: zod
     .enum([
       "ach",
@@ -3172,8 +3113,67 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   primaryContactPersonId: zod.string().nullish(),
   paymentIntermediaryId: zod.string().nullish(),
   owner: zod.string().nullish(),
-  closeDate: zod.coerce.date().nullish(),
-  completedDate: zod.coerce.date().nullish(),
+  closeDate: zod.string().date().nullish(),
+  completedDate: zod.string().date().nullish(),
+  allocationType: zod.enum(["simple_allocation", "sub_allocations"]).nullish(),
+  entityId: zod.string().nullish(),
+  intendedUsage: zod
+    .enum([
+      "gen_ops",
+      "growth",
+      "school_startup",
+      "teacher_training",
+      "project",
+    ])
+    .nullish(),
+  fundableProjectId: zod.string().nullish(),
+  designatedToSchool: zod.boolean().optional(),
+  schoolRecipientId: zod.string().nullish(),
+  spendingStartDate: zod.string().date().nullish(),
+  spendingEndDate: zod.string().date().nullish(),
+  tags: zod.string().nullish(),
+});
+
+export const UpdateGiftOrPaymentResponse = zod.object({
+  id: zod.string(),
+  airtableId: zod.string().nullish(),
+  legacyGiftId: zod.string().nullish(),
+  name: zod.string().nullish(),
+  details: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  paymentMethod: zod
+    .enum([
+      "ach",
+      "check",
+      "wire",
+      "stock",
+      "donor_box",
+      "daf_ach",
+      "daf_check",
+      "daf_bill_com",
+    ])
+    .nullish(),
+  amount: zod.string().nullish(),
+  funderId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  type: zod
+    .enum([
+      "standard_gift",
+      "pledge_payment",
+      "directed_gift",
+      "loan_fund_investment",
+      "matching_gift",
+    ])
+    .nullish(),
+  paymentOnPledgeId: zod.string().nullish(),
+  advisorPersonId: zod.string().nullish(),
+  grantYear: zod.string().nullish(),
+  giftBeingMatchedId: zod.string().nullish(),
+  primaryContactPersonId: zod.string().nullish(),
+  paymentIntermediaryId: zod.string().nullish(),
+  owner: zod.string().nullish(),
+  closeDate: zod.string().date().nullish(),
+  completedDate: zod.string().date().nullish(),
   allocationType: zod.enum(["simple_allocation", "sub_allocations"]).nullish(),
   entityId: zod.string().nullish(),
   intendedUsage: zod
@@ -3188,11 +3188,11 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   fundableProjectId: zod.string().nullish(),
   designatedToSchool: zod.boolean(),
   schoolRecipientId: zod.string().nullish(),
-  spendingStartDate: zod.coerce.date().nullish(),
-  spendingEndDate: zod.coerce.date().nullish(),
+  spendingStartDate: zod.string().date().nullish(),
+  spendingEndDate: zod.string().date().nullish(),
   tags: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeleteGiftOrPaymentParams = zod.object({
@@ -3236,10 +3236,10 @@ export const ListGiftAllocationsResponse = zod.object({
       fundableProjectId: zod.string().nullish(),
       formalFundUseRestriction: zod.boolean(),
       schoolRecipientId: zod.string().nullish(),
-      spendingStart: zod.coerce.date().nullish(),
-      spendingEnd: zod.coerce.date().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      spendingStart: zod.string().date().nullish(),
+      spendingEnd: zod.string().date().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod.object({
@@ -3267,8 +3267,8 @@ export const CreateGiftAllocationBody = zod.object({
   fundableProjectId: zod.string().optional(),
   formalFundUseRestriction: zod.boolean().optional(),
   schoolRecipientId: zod.string().optional(),
-  spendingStart: zod.coerce.date().optional(),
-  spendingEnd: zod.coerce.date().optional(),
+  spendingStart: zod.string().date().optional(),
+  spendingEnd: zod.string().date().optional(),
 });
 
 export const UpdateGiftAllocationParams = zod.object({
@@ -3276,10 +3276,10 @@ export const UpdateGiftAllocationParams = zod.object({
 });
 
 export const UpdateGiftAllocationBody = zod.object({
-  giftId: zod.string().optional(),
-  subAmount: zod.string().optional(),
-  grantYearToBookTo: zod.string().optional(),
-  entityId: zod.string().optional(),
+  giftId: zod.string().nullish(),
+  subAmount: zod.string().nullish(),
+  grantYearToBookTo: zod.string().nullish(),
+  entityId: zod.string().nullish(),
   formalRegionalRestriction: zod.boolean().optional(),
   intendedUsage: zod
     .enum([
@@ -3289,12 +3289,12 @@ export const UpdateGiftAllocationBody = zod.object({
       "teacher_training",
       "project",
     ])
-    .optional(),
-  fundableProjectId: zod.string().optional(),
+    .nullish(),
+  fundableProjectId: zod.string().nullish(),
   formalFundUseRestriction: zod.boolean().optional(),
-  schoolRecipientId: zod.string().optional(),
-  spendingStart: zod.coerce.date().optional(),
-  spendingEnd: zod.coerce.date().optional(),
+  schoolRecipientId: zod.string().nullish(),
+  spendingStart: zod.string().date().nullish(),
+  spendingEnd: zod.string().date().nullish(),
 });
 
 export const UpdateGiftAllocationResponse = zod.object({
@@ -3317,10 +3317,10 @@ export const UpdateGiftAllocationResponse = zod.object({
   fundableProjectId: zod.string().nullish(),
   formalFundUseRestriction: zod.boolean(),
   schoolRecipientId: zod.string().nullish(),
-  spendingStart: zod.coerce.date().nullish(),
-  spendingEnd: zod.coerce.date().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+  spendingStart: zod.string().date().nullish(),
+  spendingEnd: zod.string().date().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 export const DeleteGiftAllocationParams = zod.object({

@@ -4,6 +4,7 @@ import { users } from "@workspace/db/schema";
 import { asc } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler } from "../lib/helpers";
+import { getAppUser } from "../lib/appRequest";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -19,7 +20,7 @@ router.get(
 router.get(
   "/users/me",
   asyncHandler(async (req, res) => {
-    res.json((req as any).appUser);
+    res.json(getAppUser(req));
   }),
 );
 

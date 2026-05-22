@@ -39,7 +39,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateEmailBody, req.body, res);
     if (!body) return;
-    const [row] = await db.insert(emails).values({ id: newId(), ...body } as any).returning();
+    const [row] = await db.insert(emails).values({ id: newId(), ...body }).returning();
     res.status(201).json(row);
   }),
 );
@@ -51,7 +51,7 @@ router.patch(
     if (!body) return;
     const [row] = await db
       .update(emails)
-      .set({ ...body, updatedAt: new Date() } as any)
+      .set({ ...body, updatedAt: new Date() })
       .where(eq(emails.id, paramId(req)))
       .returning();
     if (!row) return notFound(res, "email");

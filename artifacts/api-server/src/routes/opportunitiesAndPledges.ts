@@ -55,7 +55,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateOpportunityOrPledgeBody, req.body, res);
     if (!body) return;
-    const [row] = await db.insert(opportunitiesAndPledges).values({ id: newId(), ...body } as any).returning();
+    const [row] = await db.insert(opportunitiesAndPledges).values({ id: newId(), ...body }).returning();
     res.status(201).json(row);
   }),
 );
@@ -67,7 +67,7 @@ router.patch(
     if (!body) return;
     const [row] = await db
       .update(opportunitiesAndPledges)
-      .set({ ...body, updatedAt: new Date() } as any)
+      .set({ ...body, updatedAt: new Date() })
       .where(eq(opportunitiesAndPledges.id, paramId(req)))
       .returning();
     if (!row) return notFound(res, "opportunity");

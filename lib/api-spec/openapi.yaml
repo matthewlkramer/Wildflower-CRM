@@ -890,12 +890,43 @@ components:
         interestsAges:         { type: array, items: { type: string } }
         interestsGovModels:    { type: array, items: { type: string } }
         parentFunderId:        { type: string }
+        x:                     { type: string }
+        linkedin:              { type: string }
+        facebook:              { type: string }
+        instagram:             { type: string }
+        youtube:               { type: string }
+        crunchbase:            { type: string }
     UpdateFunderBody:
-      allOf:
-        - { $ref: "#/components/schemas/CreateFunderBody" }
-        - type: object
-          properties:
-            name: { type: string }
+      type: object
+      properties:
+        name:                  { type: string }
+        fundingEntitySubtype:  { allOf: [ { $ref: "#/components/schemas/FundingEntitySubtype" } ], nullable: true }
+        makesPris:             { type: boolean, nullable: true }
+        numberOfEmployees:     { allOf: [ { $ref: "#/components/schemas/NumberOfEmployees" } ], nullable: true }
+        capacityRating:        { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
+        nationalPriorities:    { type: boolean, nullable: true }
+        priorityAreasNotes:    { type: string, nullable: true }
+        activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
+        otherNames:            { type: string, nullable: true }
+        details:               { type: string, nullable: true }
+        emailDomain:           { type: string, nullable: true }
+        orgEmail:              { type: string, nullable: true }
+        owner:                 { type: string, nullable: true }
+        tags:                  { type: string, nullable: true }
+        website:               { type: string, nullable: true }
+        connectionStatus:      { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
+        enthusiasm:            { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
+        strategicAlignment:    { allOf: [ { $ref: "#/components/schemas/StrategicAlignment" } ], nullable: true }
+        interestsThematic:     { type: array, items: { type: string }, nullable: true }
+        interestsAges:         { type: array, items: { type: string }, nullable: true }
+        interestsGovModels:    { type: array, items: { type: string }, nullable: true }
+        parentFunderId:        { type: string, nullable: true }
+        x:                     { type: string, nullable: true }
+        linkedin:              { type: string, nullable: true }
+        facebook:              { type: string, nullable: true }
+        instagram:             { type: string, nullable: true }
+        youtube:               { type: string, nullable: true }
+        crunchbase:            { type: string, nullable: true }
 
     # ─── Organizations ─────────────────────────────────────────────────────────
     Organization:
@@ -945,11 +976,18 @@ components:
         otherNames:      { type: string }
         parentOrgId:     { type: string }
     UpdateOrganizationBody:
-      allOf:
-        - { $ref: "#/components/schemas/CreateOrganizationBody" }
-        - type: object
-          properties:
-            name: { type: string }
+      type: object
+      properties:
+        name:            { type: string }
+        type:            { allOf: [ { $ref: "#/components/schemas/OrganizationType" } ], nullable: true }
+        emailDomain:     { type: string, nullable: true }
+        owner:           { type: string, nullable: true }
+        ownerUserId:     { type: string, nullable: true }
+        tags:            { type: string, nullable: true }
+        website:         { type: string, nullable: true }
+        activeOrDefunct: { type: string, nullable: true }
+        otherNames:      { type: string, nullable: true }
+        parentOrgId:     { type: string, nullable: true }
 
     # ─── Payment intermediaries ────────────────────────────────────────────────
     PaymentIntermediary:
@@ -986,7 +1024,7 @@ components:
       type: object
       properties:
         name: { type: string }
-        type: { $ref: "#/components/schemas/PaymentIntermediaryType" }
+        type: { allOf: [ { $ref: "#/components/schemas/PaymentIntermediaryType" } ], nullable: true }
 
     # ─── Households ────────────────────────────────────────────────────────────
     Household:
@@ -1114,7 +1152,38 @@ components:
         meetingLink:              { type: string }
         assistantPersonId:        { type: string }
     UpdatePersonBody:
-      allOf: [ { $ref: "#/components/schemas/CreatePersonBody" } ]
+      type: object
+      properties:
+        prefix:                   { type: string, nullable: true }
+        firstName:                { type: string, nullable: true }
+        nickname:                 { type: string, nullable: true }
+        middleName:               { type: string, nullable: true }
+        lastName:                 { type: string, nullable: true }
+        suffix:                   { type: string, nullable: true }
+        fullName:                 { type: string, nullable: true }
+        pronouns:                 { allOf: [ { $ref: "#/components/schemas/Pronouns" } ], nullable: true }
+        deceased:                 { type: boolean }
+        householdName:            { type: string, nullable: true }
+        currentHomeRegionId:      { type: string, nullable: true }
+        details:                  { type: string, nullable: true }
+        owner:                    { type: string, nullable: true }
+        tags:                     { type: string, nullable: true }
+        lastContacted:            { type: string, format: date, nullable: true }
+        linkedin:                 { type: string, nullable: true }
+        x:                        { type: string, nullable: true }
+        facebook:                 { type: string, nullable: true }
+        instagram:                { type: string, nullable: true }
+        aboutMe:                  { type: string, nullable: true }
+        youtube:                  { type: string, nullable: true }
+        website:                  { type: string, nullable: true }
+        interestsThematic:        { type: array, items: { type: string }, nullable: true }
+        interestsAges:            { type: array, items: { type: string }, nullable: true }
+        interestsGovModels:       { type: array, items: { type: string }, nullable: true }
+        newsletter:               { type: boolean }
+        unsubscribedToNewsletter: { type: boolean }
+        childrenAtWf:             { type: string, nullable: true }
+        meetingLink:              { type: string, nullable: true }
+        assistantPersonId:        { type: string, nullable: true }
 
     # ─── People-entity-roles ───────────────────────────────────────────────────
     PeopleEntityRole:
@@ -1164,7 +1233,7 @@ components:
         organizationId:        { type: string, nullable: true }
         paymentIntermediaryId: { type: string, nullable: true }
         householdId:           { type: string, nullable: true }
-        connection:            { $ref: "#/components/schemas/PeopleEntityRoleConnection" }
+        connection:            { allOf: [ { $ref: "#/components/schemas/PeopleEntityRoleConnection" } ], nullable: true }
         notes:                 { type: string, nullable: true }
         externalTitleOrRole:   { type: string, nullable: true }
         current:               { $ref: "#/components/schemas/PeopleRoleCurrent" }
@@ -1211,7 +1280,7 @@ components:
       type: object
       properties:
         email:       { type: string }
-        type:        { $ref: "#/components/schemas/EmailType" }
+        type:        { allOf: [ { $ref: "#/components/schemas/EmailType" } ], nullable: true }
         validity:    { $ref: "#/components/schemas/ContactValidity" }
         isPreferred: { type: boolean }
 
@@ -1247,7 +1316,7 @@ components:
       type: object
       properties:
         phoneNumber: { type: string }
-        type:        { $ref: "#/components/schemas/PhoneType" }
+        type:        { allOf: [ { $ref: "#/components/schemas/PhoneType" } ], nullable: true }
         validity:    { $ref: "#/components/schemas/ContactValidity" }
         isPreferred: { type: boolean }
 
@@ -1293,7 +1362,20 @@ components:
         paymentIntermediaryId: { type: string }
         householdId:           { type: string }
     UpdateAddressBody:
-      allOf: [ { $ref: "#/components/schemas/CreateAddressBody" } ]
+      type: object
+      properties:
+        street:                { type: string, nullable: true }
+        cityRegionId:          { type: string, nullable: true }
+        cityName:              { type: string, nullable: true }
+        stateRegionId:         { type: string, nullable: true }
+        stateCode:             { type: string, nullable: true }
+        postalCode:            { type: string, nullable: true }
+        country:               { type: string, nullable: true }
+        personId:              { type: string, nullable: true }
+        funderId:              { type: string, nullable: true }
+        organizationId:        { type: string, nullable: true }
+        paymentIntermediaryId: { type: string, nullable: true }
+        householdId:           { type: string, nullable: true }
 
     # ─── Opportunities & pledges ───────────────────────────────────────────────
     OpportunityOrPledge:
@@ -1377,7 +1459,36 @@ components:
         copperPledgeId:             { type: string }
         primaryContactPersonId:     { type: string }
     UpdateOpportunityOrPledgeBody:
-      allOf: [ { $ref: "#/components/schemas/CreateOpportunityOrPledgeBody" } ]
+      type: object
+      properties:
+        name:                       { type: string, nullable: true }
+        funderId:                   { type: string, nullable: true }
+        askAmount:                  { type: string, nullable: true }
+        awardedAmount:              { type: string, nullable: true }
+        type:                       { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
+        conditional:                { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true }
+        conditions:                 { type: string, nullable: true }
+        conditionsMet:              { type: boolean }
+        grantYears:                 { type: array, items: { type: string }, nullable: true }
+        individualGiverPersonId:    { type: string, nullable: true }
+        individualAdvisorPersonId:  { type: string, nullable: true }
+        matchId:                    { type: string, nullable: true }
+        status:                     { allOf: [ { $ref: "#/components/schemas/OpportunityStatus" } ], nullable: true }
+        owner:                      { type: string, nullable: true }
+        ownerUserId:                { type: string, nullable: true }
+        projectedCloseDate:         { type: string, format: date, nullable: true }
+        actualCompletionDate:       { type: string, format: date, nullable: true }
+        winProbability:             { type: string, nullable: true }
+        stage:                      { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true }
+        lossReason:                 { type: string, nullable: true }
+        applicationDeadline:        { type: string, format: date, nullable: true }
+        paymentDetails:             { type: string, nullable: true }
+        entityIds:                  { type: array, items: { type: string }, nullable: true }
+        intendedUsages:             { type: array, items: { $ref: "#/components/schemas/IntendedUsage" }, nullable: true }
+        fundableProjectIds:         { type: array, items: { type: string }, nullable: true }
+        usageNotes:                 { type: string, nullable: true }
+        copperPledgeId:             { type: string, nullable: true }
+        primaryContactPersonId:     { type: string, nullable: true }
 
     # ─── Pledge allocations ────────────────────────────────────────────────────
     PledgeAllocation:
@@ -1418,7 +1529,18 @@ components:
         conditions:            { type: string }
         notes:                 { type: string }
     UpdatePledgeAllocationBody:
-      allOf: [ { $ref: "#/components/schemas/CreatePledgeAllocationBody" } ]
+      type: object
+      properties:
+        pledgeOrOpportunityId: { type: string, nullable: true }
+        subAmount:             { type: string, nullable: true }
+        grantYear:             { type: array, items: { type: string }, nullable: true }
+        entityId:              { type: string, nullable: true }
+        intendedUsage:         { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
+        fundableProjectId:     { type: string, nullable: true }
+        directToSchool:        { type: boolean }
+        status:                { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
+        conditions:            { type: string, nullable: true }
+        notes:                 { type: string, nullable: true }
 
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
@@ -1499,7 +1621,35 @@ components:
         spendingEndDate:            { type: string, format: date }
         tags:                       { type: string }
     UpdateGiftOrPaymentBody:
-      allOf: [ { $ref: "#/components/schemas/CreateGiftOrPaymentBody" } ]
+      type: object
+      properties:
+        legacyGiftId:               { type: string, nullable: true }
+        name:                       { type: string, nullable: true }
+        details:                    { type: string, nullable: true }
+        dateReceived:               { type: string, format: date, nullable: true }
+        paymentMethod:              { allOf: [ { $ref: "#/components/schemas/GiftPaymentMethod" } ], nullable: true }
+        amount:                     { type: string, nullable: true }
+        funderId:                   { type: string, nullable: true }
+        individualGiverPersonId:    { type: string, nullable: true }
+        type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
+        paymentOnPledgeId:          { type: string, nullable: true }
+        advisorPersonId:            { type: string, nullable: true }
+        grantYear:                  { type: string, nullable: true }
+        giftBeingMatchedId:         { type: string, nullable: true }
+        primaryContactPersonId:     { type: string, nullable: true }
+        paymentIntermediaryId:      { type: string, nullable: true }
+        owner:                      { type: string, nullable: true }
+        closeDate:                  { type: string, format: date, nullable: true }
+        completedDate:              { type: string, format: date, nullable: true }
+        allocationType:             { allOf: [ { $ref: "#/components/schemas/GiftAllocationType" } ], nullable: true }
+        entityId:                   { type: string, nullable: true }
+        intendedUsage:              { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
+        fundableProjectId:          { type: string, nullable: true }
+        designatedToSchool:         { type: boolean }
+        schoolRecipientId:          { type: string, nullable: true }
+        spendingStartDate:          { type: string, format: date, nullable: true }
+        spendingEndDate:            { type: string, format: date, nullable: true }
+        tags:                       { type: string, nullable: true }
 
     # ─── Gift allocations ──────────────────────────────────────────────────────
     GiftAllocation:
@@ -1542,4 +1692,16 @@ components:
         spendingStart:               { type: string, format: date }
         spendingEnd:                 { type: string, format: date }
     UpdateGiftAllocationBody:
-      allOf: [ { $ref: "#/components/schemas/CreateGiftAllocationBody" } ]
+      type: object
+      properties:
+        giftId:                      { type: string, nullable: true }
+        subAmount:                   { type: string, nullable: true }
+        grantYearToBookTo:           { type: string, nullable: true }
+        entityId:                    { type: string, nullable: true }
+        formalRegionalRestriction:   { type: boolean }
+        intendedUsage:               { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
+        fundableProjectId:           { type: string, nullable: true }
+        formalFundUseRestriction:    { type: boolean }
+        schoolRecipientId:           { type: string, nullable: true }
+        spendingStart:               { type: string, format: date, nullable: true }
+        spendingEnd:                 { type: string, format: date, nullable: true }
