@@ -50,7 +50,7 @@ The schema in `lib/db/src/schema/` mirrors the Airtable "crm files" base. Every 
 
 **Core entities**:
 - `regions` — geographic regions, self-referencing `parent_region_id`. Enum `region_type`: state, metro_area, city, neighborhood, region_within_state, multi_state_region, country, continent.
-- `schools` — name-only lookup.
+- `schools` — mirrored one-way from the dedicated Wildflower **Schools** Airtable base (`appJBT9a4f3b7hWQ2`), specifically the "Data for CRM in Replit" view. Re-sync with `AIRTABLE_TOKEN=... node lib/db/src/sync-schools-from-airtable.mjs` (the script wipes and reloads the table; uses Airtable record IDs as PKs). Columns mirrored: `name`, `long_name`, `short_name`, `status` (enum `school_status`: `emerging` / `open` / `paused` / `closing` / `permanently_closed` / `disaffiliating` / `disaffiliated` / `placeholder` / `abandoned`), `governance_model` (enum: `independent` / `district` / `charter` / `exploring_charter` / `community_partnership`), `ages_planes` (text[] of Airtable record IDs from the linked Ages-Planes table — not imported as its own table yet), `logo_main_square_url`, `stage_status` (Airtable formula; denormalized for convenience), `current_mailing_address` and `current_physical_address` (denormalized lookups from the Locations table, joined with `\n\n` when multi-valued). The schools base lives in a different Airtable base than the "crm files" base used by the other importer, so the dedicated-base record IDs replace the old crm-files-base IDs — no other tables currently FK to schools.
 - `households` — name + `active` boolean (defaults true; set false when a household is dissolved by death or divorce).
 - `funders` — institutional + family funders. Self-referencing `parent_funder_id`. Array columns for `interests_thematic`, `interests_ages`, `interests_gov_models`. Includes optional `org_email`. Enum columns: `funding_entity_subtype` (18 values like `family_foundation`, `corporate_foundation`, `government`, etc.), `number_of_employees` (size buckets `e_1` / `e_2_10` / `e_11_50` / `e_51_250` / `e_251_1000` / `e_1001_10000` / `e_10000_plus`), `capacity_rating` (`tier_10k_50k` … `tier_1m_plus`), `connection_status` (`connected` / `have_a_connector` / `no_connection`), `enthusiasm` (`advocate` / `supportive` / `warm` / `neutral` / `unsupportive`), `strategic_alignment` (`high` / `medium` / `low`), `active_status` (`active` / `defunct` / `spenddown`).
 - `organizations` — non-funder orgs (advisors, intermediaries, etc.). All address fields live in the `addresses` table (FK `organization_id`); the importer creates a synthetic `org-addr-<orgId>` address row per org with any address data. `owner` is legacy Copper text; `owner_user_id` is the FK to `users` that supersedes it. `type` is an enum with 20 values (`advocacy_membership_lobbyist`, `authorizer`, `cmo`, `capital_provider`, `government`, `corporation`, `education_vendor`, `elected_official`, `higher_ed`, `investor`, `law_firm`, `media`, `nonprofit`, `philanthropic_advisor`, `real_estate`, `school`, `school_district`, `school_network`, `small_business_consulting`, `tribal`).
@@ -84,7 +84,7 @@ The schema in `lib/db/src/schema/` mirrors the Airtable "crm files" base. Every 
 | Table | Rows |
 |---|---|
 | regions | 569 |
-| schools | 117 |
+| schools | 131 (synced from dedicated Schools base) |
 | funders | 728 |
 | organizations | 792 |
 | payment_intermediaries | 35 |

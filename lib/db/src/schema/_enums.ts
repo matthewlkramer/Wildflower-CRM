@@ -216,6 +216,27 @@ export const intendedUsageEnum = pgEnum("intended_usage", [
   "project",
 ]);
 
+// ---- Schools enums (mirrored from Airtable "Schools" base) ----
+export const schoolStatusEnum = pgEnum("school_status", [
+  "emerging",
+  "open",
+  "paused",
+  "closing",
+  "permanently_closed",
+  "disaffiliating",
+  "disaffiliated",
+  "placeholder",
+  "abandoned",
+]);
+
+export const governanceModelEnum = pgEnum("governance_model", [
+  "independent",
+  "district",
+  "charter",
+  "exploring_charter",
+  "community_partnership",
+]);
+
 export const pronounsEnum = pgEnum("pronouns", [
   "he_him_his",
   "she_her_hers",
