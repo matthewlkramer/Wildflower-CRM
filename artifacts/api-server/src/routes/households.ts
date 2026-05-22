@@ -1,129 +1,82 @@
-import { Router } from "express";
+import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { households, householdMembers, individuals, gifts } from "@workspace/db/schema";
-import { eq, and, desc, sql, count } from "drizzle-orm";
+import { households, peopleEntityRoles, emails, addresses } from "@workspace/db/schema";
+import { and, asc, count, eq, ilike, type SQL } from "drizzle-orm";
+import {
+  ListHouseholdsQueryParams,
+  CreateHouseholdBody,
+  UpdateHouseholdBody,
+} from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { newId } from "../lib/helpers";
-import { fetchGiftsWith } from "../lib/giftQueries";
+import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 
-const router = Router();
-
+const router: IRouter = Router();
 router.use(requireAuth);
 
-router.get("/", async (req, res, next) => {
-  try {
-    const { search, limit: limitStr = "50", page: pageStr = "1" } = req.query as Record<string, string>;
-    const limit = Number(limitStr);
-    const page = Number(pageStr);
-    const offset = (page - 1) * limit;
-
-    const where = search ? sql`${households.name} ilike ${"%" + search + "%"}` : undefined;
-
-    const [totalResult, rows] = await Promise.all([
-      db.select({ count: count() }).from(households).where(where),
-      db.select().from(households).where(where).orderBy(desc(households.updatedAt)).limit(limit).offset(offset),
+router.get(
+  "/households",
+  asyncHandler(async (req, res) => {
+    const q = parseOrBadRequest(ListHouseholdsQueryParams, req.query, res);
+    if (!q) return;
+    const { limit, page, offset } = parsePagination(q);
+    const filters: SQL[] = [];
+    if (q.search) filters.push(ilike(households.name, `%${q.search}%`));
+    if (q.active !== undefined) filters.push(eq(households.active, q.active));
+    const where = filters.length ? and(...filters) : undefined;
+    const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
+      db.select().from(households).where(where).orderBy(asc(households.name)).limit(limit).offset(offset),
+      db.select({ value: count() }).from(households).where(where),
     ]);
+    res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
+  }),
+);
 
-    res.json({ data: rows, total: totalResult[0].count, page, limit });
-  } catch (err) {
-    next(err);
-  }
-});
+router.get(
+  "/households/:id",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const row = await db.select().from(households).where(eq(households.id, id)).then((r) => r[0]);
+    if (!row) return notFound(res, "household");
+    const [people, emailRows, addressRows] = await Promise.all([
+      db.select().from(peopleEntityRoles).where(eq(peopleEntityRoles.householdId, id)),
+      db.select().from(emails).where(eq(emails.householdId, id)),
+      db.select().from(addresses).where(eq(addresses.householdId, id)),
+    ]);
+    res.json({ ...row, people, emails: emailRows, addresses: addressRows });
+  }),
+);
 
-router.post("/", async (req, res, next) => {
-  try {
-    const [created] = await db.insert(households).values({ id: newId(), ...req.body }).returning();
-    res.status(201).json(created);
-  } catch (err) {
-    next(err);
-  }
-});
+router.post(
+  "/households",
+  asyncHandler(async (req, res) => {
+    const body = parseOrBadRequest(CreateHouseholdBody, req.body, res);
+    if (!body) return;
+    const [row] = await db.insert(households).values({ id: newId(), ...body } as any).returning();
+    res.status(201).json(row);
+  }),
+);
 
-router.get("/:id", async (req, res, next) => {
-  try {
-    const [row] = await db.select().from(households).where(eq(households.id, req.params.id));
-    if (!row) { res.status(404).json({ error: "Not found" }); return; }
-    const givingHistory = await fetchGiftsWith(eq(gifts.householdId, row.id));
-    res.json({ ...row, givingHistory });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.patch("/:id", async (req, res, next) => {
-  try {
-    const [updated] = await db
+router.patch(
+  "/households/:id",
+  asyncHandler(async (req, res) => {
+    const body = parseOrBadRequest(UpdateHouseholdBody, req.body, res);
+    if (!body) return;
+    const [row] = await db
       .update(households)
-      .set({ ...req.body, updatedAt: new Date() })
-      .where(eq(households.id, req.params.id))
+      .set({ ...body, updatedAt: new Date() } as any)
+      .where(eq(households.id, paramId(req)))
       .returning();
-    if (!updated) { res.status(404).json({ error: "Not found" }); return; }
-    res.json(updated);
-  } catch (err) {
-    next(err);
-  }
-});
+    if (!row) return notFound(res, "household");
+    res.json(row);
+  }),
+);
 
-router.delete("/:id", async (req, res, next) => {
-  try {
-    await db.delete(households).where(eq(households.id, req.params.id));
+router.delete(
+  "/households/:id",
+  asyncHandler(async (req, res) => {
+    await db.delete(households).where(eq(households.id, paramId(req)));
     res.status(204).end();
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.get("/:id/members", async (req, res, next) => {
-  try {
-    const rows = await db
-      .select({
-        member: householdMembers,
-        individual: individuals,
-      })
-      .from(householdMembers)
-      .innerJoin(individuals, eq(householdMembers.individualId, individuals.id))
-      .where(and(eq(householdMembers.householdId, req.params.id), eq(householdMembers.isCurrent, true)));
-    res.json(rows.map((r) => ({ ...r.individual, membershipRole: r.member.role, membershipStartDate: r.member.startDate })));
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.post("/:id/members", async (req, res, next) => {
-  try {
-    const { individualId, role, startDate } = req.body;
-    if (!individualId) { res.status(400).json({ error: "individualId required" }); return; }
-    const [created] = await db
-      .insert(householdMembers)
-      .values({
-        id: newId(),
-        householdId: req.params.id,
-        individualId,
-        role: (role as any) ?? "other",
-        startDate: startDate ?? null,
-        isCurrent: true,
-      })
-      .returning();
-    res.status(201).json(created);
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.delete("/:id/members/:individualId", async (req, res, next) => {
-  try {
-    await db
-      .delete(householdMembers)
-      .where(
-        and(
-          eq(householdMembers.householdId, req.params.id),
-          eq(householdMembers.individualId, req.params.individualId),
-        ),
-      );
-    res.status(204).end();
-  } catch (err) {
-    next(err);
-  }
-});
+  }),
+);
 
 export default router;

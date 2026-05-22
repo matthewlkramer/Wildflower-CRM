@@ -2,38 +2,33 @@ openapi: 3.1.0
 info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: Wildflower Fundraising CRM API
+  version: 0.2.0
+  description: Wildflower Fundraising CRM API (Airtable-aligned schema)
 servers:
   - url: /api
     description: Base API path
 tags:
-  - name: health
-    description: Health operations
-  - name: individuals
-    description: Individual donor/prospect records
-  - name: households
-    description: Household groupings
-  - name: funding-entities
-    description: Funding entities (foundations, DAFs, government agencies)
-  - name: opportunities
-    description: Fundraising opportunities
-  - name: pledges
-    description: Multi-installment pledge commitments
-  - name: gifts
-    description: Cash received records
-  - name: moves
-    description: Logged interactions/touchpoints
-  - name: relationships
-    description: Cross-entity relationship links
-  - name: dashboard
-    description: Dashboard and summary views
-  - name: projections
-    description: Revenue projection and forecast data
-  - name: grants-calendar
-    description: Grants calendar and deadline tracking
-  - name: users
-    description: Team member/user management
+  - { name: health }
+  - { name: users }
+  - { name: regions }
+  - { name: schools }
+  - { name: entities }
+  - { name: fundable-projects }
+  - { name: fiscal-years }
+  - { name: funders }
+  - { name: organizations }
+  - { name: payment-intermediaries }
+  - { name: households }
+  - { name: people }
+  - { name: people-entity-roles }
+  - { name: emails }
+  - { name: phone-numbers }
+  - { name: addresses }
+  - { name: opportunities-and-pledges }
+  - { name: pledge-allocations }
+  - { name: gifts-and-payments }
+  - { name: gift-allocations }
+
 paths:
   /healthz:
     get:
@@ -43,3989 +38,1508 @@ paths:
       responses:
         "200":
           description: Healthy
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HealthStatus"
+          content: { application/json: { schema: { $ref: "#/components/schemas/HealthStatus" } } }
 
-  # ─── Individuals ────────────────────────────────────────────────────────────
-  /individuals:
-    get:
-      operationId: listIndividuals
-      tags: [individuals]
-      summary: List individuals with filters
-      parameters:
-        - name: search
-          in: query
-          schema: { type: string }
-        - name: owner
-          in: query
-          schema: { type: string }
-        - name: cultivationStage
-          in: query
-          schema: { type: string }
-        - name: fund
-          in: query
-          schema: { $ref: "#/components/schemas/Fund" }
-        - name: capacityRating
-          in: query
-          schema: { type: string }
-        - name: enthusiasm
-          in: query
-          schema: { type: string }
-        - name: lastMoveRecency
-          in: query
-          description: "Filter by days since last move: 30, 60, 90, 180, 365"
-          schema: { type: integer }
-        - name: page
-          in: query
-          schema: { type: integer, default: 1 }
-        - name: limit
-          in: query
-          schema: { type: integer, default: 50 }
-      responses:
-        "200":
-          description: List of individuals
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Individual"
-                  total:
-                    type: integer
-                  page:
-                    type: integer
-                  limit:
-                    type: integer
-                required: [data, total, page, limit]
-    post:
-      operationId: createIndividual
-      tags: [individuals]
-      summary: Create a new individual
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateIndividualBody"
-      responses:
-        "201":
-          description: Created individual
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Individual"
-
-  /individuals/{id}:
-    get:
-      operationId: getIndividual
-      tags: [individuals]
-      summary: Get individual by ID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Individual record
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IndividualDetail"
-    patch:
-      operationId: updateIndividual
-      tags: [individuals]
-      summary: Update individual
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateIndividualBody"
-      responses:
-        "200":
-          description: Updated individual
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Individual"
-    delete:
-      operationId: deleteIndividual
-      tags: [individuals]
-      summary: Soft-delete individual
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Deleted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeleteResult"
-
-  # ─── Households ─────────────────────────────────────────────────────────────
-  /households:
-    get:
-      operationId: listHouseholds
-      tags: [households]
-      summary: List households
-      parameters:
-        - name: search
-          in: query
-          schema: { type: string }
-        - name: owner
-          in: query
-          schema: { type: string }
-        - name: fund
-          in: query
-          schema: { $ref: "#/components/schemas/Fund" }
-        - name: page
-          in: query
-          schema: { type: integer, default: 1 }
-        - name: limit
-          in: query
-          schema: { type: integer, default: 50 }
-      responses:
-        "200":
-          description: List of households
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Household"
-                  total:
-                    type: integer
-                  page:
-                    type: integer
-                  limit:
-                    type: integer
-                required: [data, total, page, limit]
-    post:
-      operationId: createHousehold
-      tags: [households]
-      summary: Create a new household
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateHouseholdBody"
-      responses:
-        "201":
-          description: Created household
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Household"
-
-  /households/{id}:
-    get:
-      operationId: getHousehold
-      tags: [households]
-      summary: Get household by ID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Household record with members and giving history
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseholdDetail"
-    patch:
-      operationId: updateHousehold
-      tags: [households]
-      summary: Update household
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateHouseholdBody"
-      responses:
-        "200":
-          description: Updated household
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Household"
-    delete:
-      operationId: deleteHousehold
-      tags: [households]
-      summary: Soft-delete household
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Deleted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeleteResult"
-
-  /households/{id}/members:
-    get:
-      operationId: getHouseholdMembers
-      tags: [households]
-      summary: Get household members
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: List of household members
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/HouseholdMember"
-    post:
-      operationId: addHouseholdMember
-      tags: [households]
-      summary: Add a member to a household
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AddHouseholdMemberBody"
-      responses:
-        "201":
-          description: Added member
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HouseholdMember"
-
-  /households/{id}/members/{individualId}:
-    delete:
-      operationId: removeHouseholdMember
-      tags: [households]
-      summary: Remove a member from a household
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-        - name: individualId
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Removed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeleteResult"
-
-  # ─── Funding Entities ────────────────────────────────────────────────────────
-  /funding-entities:
-    get:
-      operationId: listFundingEntities
-      tags: [funding-entities]
-      summary: List funding entities
-      parameters:
-        - name: search
-          in: query
-          schema: { type: string }
-        - name: subtype
-          in: query
-          schema: { $ref: "#/components/schemas/FundingEntitySubtype" }
-        - name: owner
-          in: query
-          schema: { type: string }
-        - name: fund
-          in: query
-          schema: { $ref: "#/components/schemas/Fund" }
-        - name: cultivationStage
-          in: query
-          schema: { type: string }
-        - name: page
-          in: query
-          schema: { type: integer, default: 1 }
-        - name: limit
-          in: query
-          schema: { type: integer, default: 50 }
-      responses:
-        "200":
-          description: List of funding entities
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/FundingEntity"
-                  total:
-                    type: integer
-                  page:
-                    type: integer
-                  limit:
-                    type: integer
-                required: [data, total, page, limit]
-    post:
-      operationId: createFundingEntity
-      tags: [funding-entities]
-      summary: Create a new funding entity
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateFundingEntityBody"
-      responses:
-        "201":
-          description: Created funding entity
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FundingEntity"
-
-  /funding-entities/{id}:
-    get:
-      operationId: getFundingEntity
-      tags: [funding-entities]
-      summary: Get funding entity by ID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Funding entity record
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FundingEntityDetail"
-    patch:
-      operationId: updateFundingEntity
-      tags: [funding-entities]
-      summary: Update funding entity
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateFundingEntityBody"
-      responses:
-        "200":
-          description: Updated funding entity
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FundingEntity"
-    delete:
-      operationId: deleteFundingEntity
-      tags: [funding-entities]
-      summary: Soft-delete funding entity
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Deleted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeleteResult"
-
-  /funding-entities/{id}/people:
-    get:
-      operationId: getFundingEntityPeople
-      tags: [funding-entities]
-      summary: Get people associated with a funding entity
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Associated individuals with roles
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Affiliation"
-    post:
-      operationId: addFundingEntityPerson
-      tags: [funding-entities]
-      summary: Link a person to a funding entity
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateAffiliationBody"
-      responses:
-        "201":
-          description: Person linked
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Affiliation"
-
-  /funding-entities/{id}/people/{individualId}:
-    delete:
-      operationId: removeFundingEntityPerson
-      tags: [funding-entities]
-      summary: Remove a person link from a funding entity
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-        - name: individualId
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Removed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeleteResult"
-
-  # ─── Opportunities ───────────────────────────────────────────────────────────
-  /opportunities:
-    get:
-      operationId: listOpportunities
-      tags: [opportunities]
-      summary: List opportunities
-      parameters:
-        - name: search
-          in: query
-          schema: { type: string }
-        - name: fund
-          in: query
-          schema: { $ref: "#/components/schemas/Fund" }
-        - name: owner
-          in: query
-          schema: { type: string }
-        - name: stage
-          in: query
-          schema: { type: string }
-        - name: subtype
-          in: query
-          schema: { $ref: "#/components/schemas/OpportunitySubtype" }
-        - name: region
-          in: query
-          schema: { type: string }
-        - name: donorId
-          in: query
-          schema: { type: string }
-        - name: donorType
-          in: query
-          schema: { type: string, enum: [individual, funding_entity] }
-        - name: fiscalYear
-          in: query
-          schema: { type: integer }
-        - name: rollForward
-          in: query
-          description: Filter for opportunities in roll-forward status
-          schema: { type: boolean }
-        - name: page
-          in: query
-          schema: { type: integer, default: 1 }
-        - name: limit
-          in: query
-          schema: { type: integer, default: 50 }
-      responses:
-        "200":
-          description: List of opportunities
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Opportunity"
-                  total:
-                    type: integer
-                  page:
-                    type: integer
-                  limit:
-                    type: integer
-                required: [data, total, page, limit]
-    post:
-      operationId: createOpportunity
-      tags: [opportunities]
-      summary: Create a new opportunity
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateOpportunityBody"
-      responses:
-        "201":
-          description: Created opportunity
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Opportunity"
-
-  /opportunities/{id}:
-    get:
-      operationId: getOpportunity
-      tags: [opportunities]
-      summary: Get opportunity by ID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Opportunity record
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/OpportunityDetail"
-    patch:
-      operationId: updateOpportunity
-      tags: [opportunities]
-      summary: Update opportunity
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateOpportunityBody"
-      responses:
-        "200":
-          description: Updated opportunity
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Opportunity"
-    delete:
-      operationId: deleteOpportunity
-      tags: [opportunities]
-      summary: Soft-delete opportunity
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Deleted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeleteResult"
-
-  /opportunities/pipeline:
-    get:
-      operationId: getOpportunityPipeline
-      tags: [opportunities]
-      summary: Get opportunity pipeline grouped by stage (kanban)
-      parameters:
-        - name: fund
-          in: query
-          schema: { $ref: "#/components/schemas/Fund" }
-        - name: owner
-          in: query
-          schema: { type: string }
-        - name: fiscalYear
-          in: query
-          schema: { type: integer }
-      responses:
-        "200":
-          description: Pipeline grouped by stage
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  stages:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/PipelineStage"
-                  totalValue:
-                    type: number
-                  totalCount:
-                    type: integer
-                required: [stages, totalValue, totalCount]
-
-  # ─── Pledges ─────────────────────────────────────────────────────────────────
-  /pledges:
-    get:
-      operationId: listPledges
-      tags: [pledges]
-      summary: List pledges
-      parameters:
-        - name: donorId
-          in: query
-          schema: { type: string }
-        - name: fund
-          in: query
-          schema: { $ref: "#/components/schemas/Fund" }
-        - name: status
-          in: query
-          schema: { type: string }
-        - name: upcomingInstallments
-          in: query
-          description: Filter for pledges with upcoming installments in next N days
-          schema: { type: integer }
-        - name: overdueInstallments
-          in: query
-          description: Include only pledges with overdue installments
-          schema: { type: boolean }
-        - name: page
-          in: query
-          schema: { type: integer, default: 1 }
-        - name: limit
-          in: query
-          schema: { type: integer, default: 50 }
-      responses:
-        "200":
-          description: List of pledges
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Pledge"
-                  total:
-                    type: integer
-                  page:
-                    type: integer
-                  limit:
-                    type: integer
-                required: [data, total, page, limit]
-    post:
-      operationId: createPledge
-      tags: [pledges]
-      summary: Create a new pledge
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreatePledgeBody"
-      responses:
-        "201":
-          description: Created pledge with installments
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PledgeDetail"
-
-  /pledges/{id}:
-    get:
-      operationId: getPledge
-      tags: [pledges]
-      summary: Get pledge by ID with installments
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Pledge with installments
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PledgeDetail"
-    patch:
-      operationId: updatePledge
-      tags: [pledges]
-      summary: Update pledge
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdatePledgeBody"
-      responses:
-        "200":
-          description: Updated pledge
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Pledge"
-
-  /pledges/{id}/installments/{installmentId}:
-    patch:
-      operationId: updatePledgeInstallment
-      tags: [pledges]
-      summary: Mark an installment as paid or update its details
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-        - name: installmentId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateInstallmentBody"
-      responses:
-        "200":
-          description: Updated installment
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PledgeInstallment"
-
-  # ─── Gifts ───────────────────────────────────────────────────────────────────
-  /gifts:
-    get:
-      operationId: listGifts
-      tags: [gifts]
-      summary: List gifts
-      parameters:
-        - name: donorId
-          in: query
-          schema: { type: string }
-        - name: donorType
-          in: query
-          schema: { type: string, enum: [individual, funding_entity] }
-        - name: fund
-          in: query
-          schema: { $ref: "#/components/schemas/Fund" }
-        - name: reconciled
-          in: query
-          schema: { type: boolean }
-        - name: pledgeId
-          in: query
-          schema: { type: string }
-        - name: householdId
-          in: query
-          schema: { type: string }
-        - name: fromDate
-          in: query
-          schema: { type: string, format: date }
-        - name: toDate
-          in: query
-          schema: { type: string, format: date }
-        - name: page
-          in: query
-          schema: { type: integer, default: 1 }
-        - name: limit
-          in: query
-          schema: { type: integer, default: 50 }
-      responses:
-        "200":
-          description: List of gifts
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Gift"
-                  total:
-                    type: integer
-                  page:
-                    type: integer
-                  limit:
-                    type: integer
-                required: [data, total, page, limit]
-    post:
-      operationId: createGift
-      tags: [gifts]
-      summary: Record a new gift
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateGiftBody"
-      responses:
-        "201":
-          description: Created gift
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Gift"
-
-  /gifts/{id}:
-    get:
-      operationId: getGift
-      tags: [gifts]
-      summary: Get gift by ID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Gift record
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GiftDetail"
-    patch:
-      operationId: updateGift
-      tags: [gifts]
-      summary: Update gift (e.g. mark reconciled)
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateGiftBody"
-      responses:
-        "200":
-          description: Updated gift
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Gift"
-
-  /gifts/{id}/soft-credits:
-    get:
-      operationId: listGiftSoftCredits
-      tags: [gifts]
-      summary: List soft credits for a gift
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Soft credits for the gift
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/GiftSoftCredit"
-    post:
-      operationId: createGiftSoftCredit
-      tags: [gifts]
-      summary: Add a soft credit to a gift
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateGiftSoftCreditBody"
-      responses:
-        "201":
-          description: Created soft credit
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GiftSoftCredit"
-
-  /gifts/{id}/soft-credits/{softCreditId}:
-    patch:
-      operationId: updateGiftSoftCredit
-      tags: [gifts]
-      summary: Update a soft credit
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-        - name: softCreditId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateGiftSoftCreditBody"
-      responses:
-        "200":
-          description: Updated soft credit
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GiftSoftCredit"
-    delete:
-      operationId: deleteGiftSoftCredit
-      tags: [gifts]
-      summary: Delete a soft credit
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-        - name: softCreditId
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "204":
-          description: Deleted
-
-  # ─── Moves ───────────────────────────────────────────────────────────────────
-  /moves:
-    get:
-      operationId: listMoves
-      tags: [moves]
-      summary: List moves (activity log)
-      parameters:
-        - name: search
-          in: query
-          schema: { type: string }
-        - name: donorId
-          in: query
-          schema: { type: string }
-        - name: householdId
-          in: query
-          schema: { type: string }
-        - name: fundingEntityId
-          in: query
-          schema: { type: string }
-        - name: opportunityId
-          in: query
-          schema: { type: string }
-        - name: moveType
-          in: query
-          schema: { type: string }
-        - name: participantUserId
-          in: query
-          schema: { type: string }
-        - name: fromDate
-          in: query
-          schema: { type: string, format: date }
-        - name: toDate
-          in: query
-          schema: { type: string, format: date }
-        - name: page
-          in: query
-          schema: { type: integer, default: 1 }
-        - name: limit
-          in: query
-          schema: { type: integer, default: 50 }
-      responses:
-        "200":
-          description: List of moves
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Move"
-                  total:
-                    type: integer
-                  page:
-                    type: integer
-                  limit:
-                    type: integer
-                required: [data, total, page, limit]
-    post:
-      operationId: createMove
-      tags: [moves]
-      summary: Log a new move/touchpoint
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateMoveBody"
-      responses:
-        "201":
-          description: Logged move
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Move"
-
-  /moves/{id}:
-    get:
-      operationId: getMove
-      tags: [moves]
-      summary: Get move by ID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Move record
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Move"
-    patch:
-      operationId: updateMove
-      tags: [moves]
-      summary: Update a move
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateMoveBody"
-      responses:
-        "200":
-          description: Updated move
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Move"
-    delete:
-      operationId: deleteMove
-      tags: [moves]
-      summary: Delete a move
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Deleted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeleteResult"
-
-  # ─── Dashboard ──────────────────────────────────────────────────────────────
-  /dashboard/summary:
-    get:
-      operationId: getDashboardSummary
-      tags: [dashboard]
-      summary: Get dashboard summary for the current user
-      parameters:
-        - name: userId
-          in: query
-          schema: { type: string }
-      responses:
-        "200":
-          description: Dashboard summary
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DashboardSummary"
-
-  /dashboard/activity:
-    get:
-      operationId: getRecentActivity
-      tags: [dashboard]
-      summary: Get recent activity across the team
-      parameters:
-        - name: limit
-          in: query
-          schema: { type: integer, default: 20 }
-      responses:
-        "200":
-          description: Recent activity items
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/ActivityItem"
-
-  /dashboard/overdue-next-steps:
-    get:
-      operationId: getOverdueNextSteps
-      tags: [dashboard]
-      summary: Get overdue next steps from moves
-      parameters:
-        - name: userId
-          in: query
-          schema: { type: string }
-      responses:
-        "200":
-          description: Overdue next steps
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/OverdueNextStep"
-
-  /dashboard/donors-gone-quiet:
-    get:
-      operationId: getDonorsGoneQuiet
-      tags: [dashboard]
-      summary: Get donors with no recent activity (>90 days in active cultivation)
-      parameters:
-        - name: days
-          in: query
-          schema: { type: integer, default: 90 }
-        - name: fund
-          in: query
-          schema: { $ref: "#/components/schemas/Fund" }
-        - name: owner
-          in: query
-          schema: { type: string }
-      responses:
-        "200":
-          description: Donors gone quiet
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/DonorQuietAlert"
-
-  # ─── Projections ─────────────────────────────────────────────────────────────
-  /projections/forecast:
-    get:
-      operationId: getProjectionsForecast
-      tags: [projections]
-      summary: Get 3-year fiscal year revenue forecast
-      parameters:
-        - name: fund
-          in: query
-          schema: { $ref: "#/components/schemas/Fund" }
-        - name: owner
-          in: query
-          schema: { type: string }
-        - name: region
-          in: query
-          schema: { type: string }
-        - name: opportunitySubtype
-          in: query
-          schema: { $ref: "#/components/schemas/OpportunitySubtype" }
-      responses:
-        "200":
-          description: 3-year forecast by fiscal year
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectionsForecast"
-
-  /projections/pledge-schedule:
-    get:
-      operationId: getPledgeSchedule
-      tags: [projections]
-      summary: Get pledge cash-flow schedule
-      parameters:
-        - name: fund
-          in: query
-          schema: { $ref: "#/components/schemas/Fund" }
-        - name: months
-          in: query
-          schema: { type: integer, default: 36 }
-      responses:
-        "200":
-          description: Monthly/quarterly pledge installment schedule
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  schedule:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/PledgeSchedulePeriod"
-                required: [schedule]
-
-  # ─── Grants Calendar ─────────────────────────────────────────────────────────
-  /grants-calendar:
-    get:
-      operationId: getGrantsCalendar
-      tags: [grants-calendar]
-      summary: Get RFP/proposal opportunities with upcoming deadlines
-      parameters:
-        - name: fund
-          in: query
-          schema: { $ref: "#/components/schemas/Fund" }
-        - name: owner
-          in: query
-          schema: { type: string }
-        - name: daysAhead
-          in: query
-          schema: { type: integer, default: 90 }
-      responses:
-        "200":
-          description: RFP deadlines calendar
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/GrantsCalendarEntry"
-
-  # ─── Users ────────────────────────────────────────────────────────────────────
+  # ─── Users ──────────────────────────────────────────────────────────────────
   /users:
     get:
       operationId: listUsers
       tags: [users]
-      summary: List team members
       responses:
-        "200":
-          description: List of users
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/User"
-
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/User" } } } } }
   /users/me:
     get:
       operationId: getCurrentUser
       tags: [users]
-      summary: Get current authenticated user
       responses:
-        "200":
-          description: Current user
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/User"
-    patch:
-      operationId: updateCurrentUser
-      tags: [users]
-      summary: Update current user preferences
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateUserBody"
-      responses:
-        "200":
-          description: Updated user
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/User"
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
 
-  # ─── Contact Emails / Phones / Addresses (polymorphic) ─────────────────────
-  /contacts/emails:
+  # ─── Regions ────────────────────────────────────────────────────────────────
+  /regions:
     get:
-      operationId: listContactEmails
-      tags: [contacts]
-      summary: List contact emails (filter by owner)
+      operationId: listRegions
+      tags: [regions]
       parameters:
-        - name: ownerType
-          in: query
-          schema: { $ref: "#/components/schemas/ContactOwnerType" }
-        - name: ownerId
-          in: query
-          schema: { type: string }
+        - { name: type, in: query, schema: { $ref: "#/components/schemas/RegionType" } }
+        - { name: search, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
       responses:
-        "200":
-          description: List
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/ContactEmail" }
-    post:
-      operationId: createContactEmail
-      tags: [contacts]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/CreateContactEmailBody" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RegionList" } } } }
+  /regions/{id}:
+    get:
+      operationId: getRegion
+      tags: [regions]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ContactEmail" }
-  /contacts/emails/{id}:
-    patch:
-      operationId: updateContactEmail
-      tags: [contacts]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/UpdateContactEmailBody" }
-      responses:
-        "200":
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ContactEmail" }
-    delete:
-      operationId: deleteContactEmail
-      tags: [contacts]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      responses:
-        "204": { description: Deleted }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Region" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 
-  /contacts/phones:
+  # ─── Schools (read-only; synced from Airtable) ─────────────────────────────
+  /schools:
     get:
-      operationId: listContactPhones
-      tags: [contacts]
+      operationId: listSchools
+      tags: [schools]
       parameters:
-        - name: ownerType
-          in: query
-          schema: { $ref: "#/components/schemas/ContactOwnerType" }
-        - name: ownerId
-          in: query
-          schema: { type: string }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/SchoolStatus" } }
+        - { name: governanceModel, in: query, schema: { $ref: "#/components/schemas/GovernanceModel" } }
+        - { name: search, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
       responses:
-        "200":
-          description: List
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/ContactPhone" }
-    post:
-      operationId: createContactPhone
-      tags: [contacts]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/CreateContactPhoneBody" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SchoolList" } } } }
+  /schools/{id}:
+    get:
+      operationId: getSchool
+      tags: [schools]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ContactPhone" }
-  /contacts/phones/{id}:
-    patch:
-      operationId: updateContactPhone
-      tags: [contacts]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/UpdateContactPhoneBody" }
-      responses:
-        "200":
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ContactPhone" }
-    delete:
-      operationId: deleteContactPhone
-      tags: [contacts]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      responses:
-        "204": { description: Deleted }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/School" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 
-  /contacts/addresses:
+  # ─── Entities (fund entities) ──────────────────────────────────────────────
+  /entities:
     get:
-      operationId: listContactAddresses
-      tags: [contacts]
-      parameters:
-        - name: ownerType
-          in: query
-          schema: { $ref: "#/components/schemas/ContactOwnerType" }
-        - name: ownerId
-          in: query
-          schema: { type: string }
+      operationId: listEntities
+      tags: [entities]
       responses:
-        "200":
-          description: List
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/ContactAddress" }
-    post:
-      operationId: createContactAddress
-      tags: [contacts]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/CreateContactAddressBody" }
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Entity" } } } } }
+  /entities/{id}:
+    get:
+      operationId: getEntity
+      tags: [entities]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ContactAddress" }
-  /contacts/addresses/{id}:
-    patch:
-      operationId: updateContactAddress
-      tags: [contacts]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/UpdateContactAddressBody" }
-      responses:
-        "200":
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ContactAddress" }
-    delete:
-      operationId: deleteContactAddress
-      tags: [contacts]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      responses:
-        "204": { description: Deleted }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Entity" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 
-  # ─── Campaigns ─────────────────────────────────────────────────────────────
-  /campaigns:
+  # ─── Fundable projects ─────────────────────────────────────────────────────
+  /fundable-projects:
     get:
-      operationId: listCampaigns
-      tags: [campaigns]
+      operationId: listFundableProjects
+      tags: [fundable-projects]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FundableProject" } } } } }
+
+  # ─── Fiscal years ──────────────────────────────────────────────────────────
+  /fiscal-years:
+    get:
+      operationId: listFiscalYears
+      tags: [fiscal-years]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FiscalYear" } } } } }
+
+  # ─── Funders ───────────────────────────────────────────────────────────────
+  /funders:
+    get:
+      operationId: listFunders
+      tags: [funders]
       parameters:
         - { name: search, in: query, schema: { type: string } }
-        - { name: fund, in: query, schema: { $ref: "#/components/schemas/Fund" } }
-        - { name: isActive, in: query, schema: { type: boolean } }
-        - { name: fiscalYear, in: query, schema: { type: string } }
-        - { name: page, in: query, schema: { type: integer, default: 1 } }
-        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+        - { name: subtype, in: query, schema: { $ref: "#/components/schemas/FundingEntitySubtype" } }
+        - { name: activeStatus, in: query, schema: { $ref: "#/components/schemas/ActiveStatus" } }
+        - { name: connectionStatus, in: query, schema: { $ref: "#/components/schemas/ConnectionStatus" } }
+        - { name: enthusiasm, in: query, schema: { $ref: "#/components/schemas/Enthusiasm" } }
+        - { name: capacityRating, in: query, schema: { $ref: "#/components/schemas/CapacityRating" } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
       responses:
-        "200":
-          description: List of campaigns
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items: { $ref: "#/components/schemas/Campaign" }
-                  total: { type: integer }
-                  page: { type: integer }
-                  limit: { type: integer }
-                required: [data, total, page, limit]
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FunderList" } } } }
     post:
-      operationId: createCampaign
-      tags: [campaigns]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/CreateCampaignBody" }
+      operationId: createFunder
+      tags: [funders]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateFunderBody" } } } }
       responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Campaign" }
-  /campaigns/{id}:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Funder" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /funders/{id}:
     get:
-      operationId: getCampaign
-      tags: [campaigns]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
+      operationId: getFunder
+      tags: [funders]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
-        "200":
-          description: Campaign
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Campaign" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FunderDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
     patch:
-      operationId: updateCampaign
-      tags: [campaigns]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/UpdateCampaignBody" }
+      operationId: updateFunder
+      tags: [funders]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateFunderBody" } } } }
       responses:
-        "200":
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Campaign" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Funder" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
-      operationId: deleteCampaign
-      tags: [campaigns]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      responses:
-        "204": { description: Deleted }
+      operationId: deleteFunder
+      tags: [funders]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
 
-  /cultivation-team:
+  # ─── Organizations ─────────────────────────────────────────────────────────
+  /organizations:
     get:
-      operationId: listCultivationTeamMembers
-      tags: [cultivation-team]
+      operationId: listOrganizations
+      tags: [organizations]
       parameters:
-        - { name: ownerType, in: query, required: true, schema: { $ref: "#/components/schemas/CultivationTeamOwnerType" } }
-        - { name: ownerId, in: query, required: true, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { $ref: "#/components/schemas/OrganizationType" } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/CultivationTeamMember" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OrganizationList" } } } }
     post:
-      operationId: createCultivationTeamMember
-      tags: [cultivation-team]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/CultivationTeamMemberCreate" }
+      operationId: createOrganization
+      tags: [organizations]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateOrganizationBody" } } } }
       responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/CultivationTeamMember" }
-  /cultivation-team/{id}:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Organization" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /organizations/{id}:
+    get:
+      operationId: getOrganization
+      tags: [organizations]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OrganizationDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
     patch:
-      operationId: updateCultivationTeamMember
-      tags: [cultivation-team]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/CultivationTeamMemberUpdate" }
+      operationId: updateOrganization
+      tags: [organizations]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateOrganizationBody" } } } }
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/CultivationTeamMember" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Organization" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
-      operationId: deleteCultivationTeamMember
-      tags: [cultivation-team]
+      operationId: deleteOrganization
+      tags: [organizations]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Payment intermediaries ────────────────────────────────────────────────
+  /payment-intermediaries:
+    get:
+      operationId: listPaymentIntermediaries
+      tags: [payment-intermediaries]
       parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { $ref: "#/components/schemas/PaymentIntermediaryType" } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
       responses:
-        "204": { description: Deleted }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentIntermediaryList" } } } }
+    post:
+      operationId: createPaymentIntermediary
+      tags: [payment-intermediaries]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreatePaymentIntermediaryBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentIntermediary" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /payment-intermediaries/{id}:
+    get:
+      operationId: getPaymentIntermediary
+      tags: [payment-intermediaries]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentIntermediaryDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updatePaymentIntermediary
+      tags: [payment-intermediaries]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdatePaymentIntermediaryBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentIntermediary" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deletePaymentIntermediary
+      tags: [payment-intermediaries]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Households ────────────────────────────────────────────────────────────
+  /households:
+    get:
+      operationId: listHouseholds
+      tags: [households]
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: active, in: query, schema: { type: boolean } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/HouseholdList" } } } }
+    post:
+      operationId: createHousehold
+      tags: [households]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateHouseholdBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Household" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /households/{id}:
+    get:
+      operationId: getHousehold
+      tags: [households]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/HouseholdDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateHousehold
+      tags: [households]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateHouseholdBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Household" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteHousehold
+      tags: [households]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── People ────────────────────────────────────────────────────────────────
+  /people:
+    get:
+      operationId: listPeople
+      tags: [people]
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: deceased, in: query, schema: { type: boolean } }
+        - { name: regionId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PersonList" } } } }
+    post:
+      operationId: createPerson
+      tags: [people]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreatePersonBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Person" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /people/{id}:
+    get:
+      operationId: getPerson
+      tags: [people]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PersonDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updatePerson
+      tags: [people]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdatePersonBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Person" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deletePerson
+      tags: [people]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── People-entity-roles ───────────────────────────────────────────────────
+  /people-entity-roles:
+    get:
+      operationId: listPeopleEntityRoles
+      tags: [people-entity-roles]
+      parameters:
+        - { name: personId, in: query, schema: { type: string } }
+        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
+        - { name: paymentIntermediaryId, in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PeopleEntityRoleList" } } } }
+    post:
+      operationId: createPeopleEntityRole
+      tags: [people-entity-roles]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreatePeopleEntityRoleBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/PeopleEntityRole" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /people-entity-roles/{id}:
+    patch:
+      operationId: updatePeopleEntityRole
+      tags: [people-entity-roles]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdatePeopleEntityRoleBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PeopleEntityRole" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deletePeopleEntityRole
+      tags: [people-entity-roles]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Emails ────────────────────────────────────────────────────────────────
+  /emails:
+    get:
+      operationId: listEmails
+      tags: [emails]
+      parameters:
+        - { name: personId, in: query, schema: { type: string } }
+        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
+        - { name: paymentIntermediaryId, in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailList" } } } }
+    post:
+      operationId: createEmail
+      tags: [emails]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateEmailBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Email" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /emails/{id}:
+    patch:
+      operationId: updateEmail
+      tags: [emails]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateEmailBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Email" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteEmail
+      tags: [emails]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Phone numbers ─────────────────────────────────────────────────────────
+  /phone-numbers:
+    get:
+      operationId: listPhoneNumbers
+      tags: [phone-numbers]
+      parameters:
+        - { name: personId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PhoneNumberList" } } } }
+    post:
+      operationId: createPhoneNumber
+      tags: [phone-numbers]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreatePhoneNumberBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/PhoneNumber" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /phone-numbers/{id}:
+    patch:
+      operationId: updatePhoneNumber
+      tags: [phone-numbers]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdatePhoneNumberBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PhoneNumber" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deletePhoneNumber
+      tags: [phone-numbers]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Addresses ─────────────────────────────────────────────────────────────
+  /addresses:
+    get:
+      operationId: listAddresses
+      tags: [addresses]
+      parameters:
+        - { name: personId, in: query, schema: { type: string } }
+        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
+        - { name: paymentIntermediaryId, in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AddressList" } } } }
+    post:
+      operationId: createAddress
+      tags: [addresses]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateAddressBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Address" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /addresses/{id}:
+    patch:
+      operationId: updateAddress
+      tags: [addresses]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateAddressBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Address" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteAddress
+      tags: [addresses]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Opportunities & pledges ───────────────────────────────────────────────
+  /opportunities-and-pledges:
+    get:
+      operationId: listOpportunitiesAndPledges
+      tags: [opportunities-and-pledges]
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/OpportunityStatus" } }
+        - { name: stage, in: query, schema: { $ref: "#/components/schemas/OpportunityStage" } }
+        - { name: type, in: query, schema: { $ref: "#/components/schemas/OpportunityType" } }
+        - { name: funderId, in: query, schema: { type: string } }
+        - { name: ownerUserId, in: query, schema: { type: string } }
+        - { name: entityId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledgeList" } } } }
+    post:
+      operationId: createOpportunityOrPledge
+      tags: [opportunities-and-pledges]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateOpportunityOrPledgeBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /opportunities-and-pledges/{id}:
+    get:
+      operationId: getOpportunityOrPledge
+      tags: [opportunities-and-pledges]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledgeDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateOpportunityOrPledge
+      tags: [opportunities-and-pledges]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateOpportunityOrPledgeBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteOpportunityOrPledge
+      tags: [opportunities-and-pledges]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Pledge allocations ────────────────────────────────────────────────────
+  /pledge-allocations:
+    get:
+      operationId: listPledgeAllocations
+      tags: [pledge-allocations]
+      parameters:
+        - { name: pledgeOrOpportunityId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PledgeAllocationList" } } } }
+    post:
+      operationId: createPledgeAllocation
+      tags: [pledge-allocations]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreatePledgeAllocationBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/PledgeAllocation" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /pledge-allocations/{id}:
+    patch:
+      operationId: updatePledgeAllocation
+      tags: [pledge-allocations]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdatePledgeAllocationBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PledgeAllocation" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deletePledgeAllocation
+      tags: [pledge-allocations]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Gifts & payments ──────────────────────────────────────────────────────
+  /gifts-and-payments:
+    get:
+      operationId: listGiftsAndPayments
+      tags: [gifts-and-payments]
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { $ref: "#/components/schemas/GiftType" } }
+        - { name: funderId, in: query, schema: { type: string } }
+        - { name: paymentOnPledgeId, in: query, schema: { type: string } }
+        - { name: paymentMethod, in: query, schema: { $ref: "#/components/schemas/GiftPaymentMethod" } }
+        - { name: entityId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPaymentList" } } } }
+    post:
+      operationId: createGiftOrPayment
+      tags: [gifts-and-payments]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateGiftOrPaymentBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /gifts-and-payments/{id}:
+    get:
+      operationId: getGiftOrPayment
+      tags: [gifts-and-payments]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPaymentDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateGiftOrPayment
+      tags: [gifts-and-payments]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateGiftOrPaymentBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteGiftOrPayment
+      tags: [gifts-and-payments]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Gift allocations ──────────────────────────────────────────────────────
+  /gift-allocations:
+    get:
+      operationId: listGiftAllocations
+      tags: [gift-allocations]
+      parameters:
+        - { name: giftId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftAllocationList" } } } }
+    post:
+      operationId: createGiftAllocation
+      tags: [gift-allocations]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateGiftAllocationBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/GiftAllocation" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /gift-allocations/{id}:
+    patch:
+      operationId: updateGiftAllocation
+      tags: [gift-allocations]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateGiftAllocationBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftAllocation" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteGiftAllocation
+      tags: [gift-allocations]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
 
 components:
+  parameters:
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 50 } }
+    Page:  { name: page,  in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    IdPath: { name: id, in: path, required: true, schema: { type: string } }
+
+  responses:
+    NotFound:
+      description: Not found
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    BadRequest:
+      description: Bad request (validation error)
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+
   schemas:
-    # ─── Enums ──────────────────────────────────────────────────────────────────
-    Fund:
-      type: string
-      enum: [general_operating, seed_fund, black_wildflowers, sunlight]
-
-    FiscalYear:
-      type: string
-      enum: [FY23, FY24, FY25, FY26, FY27, FY28, FY29, FY30]
-
-    CultivationTeamRole:
-      type: string
-      enum: [relationship_owner, strategy, support, primary_solicitor]
-
-    CultivationTeamOwnerType:
-      type: string
-      enum: [individual, household, funding_entity]
-
-    FundingEntitySubtype:
-      type: string
-      enum: [institutional_foundation, family_foundation, daf_account, government_agency, corporate, 501c4, personal_giving_vehicle, family_office_trust]
-
-    FundingEntityStatus:
-      type: string
-      enum: [active, defunct, merged]
-
-    GiftSoftCreditType:
-      type: string
-      enum: [spouse, advisor, introducer, event_captain, household_member, other]
-
-    GiftSoftCredit:
-      type: object
-      properties:
-        id: { type: string }
-        giftId: { type: string }
-        individualId: { type: string }
-        creditType: { $ref: "#/components/schemas/GiftSoftCreditType" }
-        percentage: { type: number, nullable: true }
-        notes: { type: string, nullable: true }
-        createdAt: { type: string, format: date-time }
-        individualFirstName: { type: string, nullable: true }
-        individualLastName: { type: string, nullable: true }
-      required: [id, giftId, individualId, creditType, createdAt]
-
-    CreateGiftSoftCreditBody:
-      type: object
-      required: [individualId, creditType]
-      properties:
-        individualId: { type: string }
-        creditType: { $ref: "#/components/schemas/GiftSoftCreditType" }
-        percentage: { type: number }
-        notes: { type: string }
-
-    UpdateGiftSoftCreditBody:
-      type: object
-      properties:
-        creditType: { $ref: "#/components/schemas/GiftSoftCreditType" }
-        percentage: { type: number, nullable: true }
-        notes: { type: string, nullable: true }
-
-    OpportunitySubtype:
-      type: string
-      enum: [ongoing_rolling, targeted_deadline, rfp_proposal]
-
-    CultivationStage:
-      type: string
-      enum: [pre_qualified, qualified, have_path_to_connect, connected, in_relationship, lapsed_relationship]
-
-    InstitutionalCultivationStage:
-      type: string
-      enum: [pre_research, researched, have_path_to_connect, connected, in_relationship, lapsed_relationship]
-
-    GovernmentCultivationStage:
-      type: string
-      enum: [never_applied, active_grantee, lapsed_grantee]
-
-    Enthusiasm:
-      type: string
-      enum: [active_opposition, unsupportive, skeptical, neutral, warm, supportive, advocate]
-
-    OpportunityStage:
-      type: string
-      enum: [pre_conversation, conversation, solicitation, negotiation, committed, funded, stewarding, declined, withdrawn]
-
-    GovernmentOpportunityStage:
-      type: string
-      enum: [opportunity_identified, eligibility_confirmed, bid_no_bid, loi_in_progress, loi_submitted, application_in_progress, application_submitted, under_review, awarded, not_awarded, in_grant_management]
-
-    HouseholdMemberRole:
-      type: string
-      enum: [primary, spouse_partner, dependent, other]
-
-    AffiliationType:
-      type: string
-      enum: [employee, board_member, trustee, advisor, founder, volunteer, other]
-
-    UserRole:
-      type: string
-      enum: [admin, team_member, finance, read_only]
-
-    PledgeStatus:
-      type: string
-      enum: [active, completed, revised, defaulted]
-
-    PledgeInstallmentSchedule:
-      type: string
-      enum: [annual, semi_annual, quarterly, custom]
-
-    MoveType:
-      type: string
-      enum: [discovery_call, cultivation_meeting_in_person, cultivation_meeting_virtual, site_visit, event_attendance, email_exchange, phone_call, proposal_sent, loi_sent, letter_sent, thank_you_sent, impact_report_sent, stewardship_touch, introduction_made, referral_received, research_note]
-
-    CapacityRating:
-      type: string
-      enum: [tier_1k_10k, tier_10k_50k, tier_50k_250k, tier_250k_1m, tier_1m_plus]
-
-    # ─── Shared/Simple ───────────────────────────────────────────────────────────
     HealthStatus:
       type: object
-      properties:
-        status:
-          type: string
       required: [status]
+      properties: { status: { type: string } }
 
-    DeleteResult:
+    ErrorResponse:
       type: object
+      required: [error]
       properties:
-        success:
-          type: boolean
-        id:
-          type: string
-      required: [success, id]
+        error:   { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
 
+    Pagination:
+      type: object
+      required: [page, limit, total]
+      properties:
+        page:  { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+
+    # ─── Enums ─────────────────────────────────────────────────────────────────
+    RegionType: { type: string, enum: [state, metro_area, city, neighborhood, region_within_state, multi_state_region, country, continent] }
+    EntityRoleType: { type: string, enum: [funder, non_funding_organization, payment_intermediary, household] }
+    ContactValidity: { type: string, enum: [valid, invalid, unknown] }
+    EmailType: { type: string, enum: [work, personal, other] }
+    PhoneType: { type: string, enum: [work, mobile, home, other] }
+    PeopleRoleCurrent: { type: string, enum: [current, past] }
+    PeopleEntityRoleConnection: { type: string, enum: [employee, principal, board_member, partner, professor, donor_advisor, elected_official] }
+    PaymentIntermediaryType: { type: string, enum: [daf, giving_platform] }
+    Pronouns: { type: string, enum: [he_him_his, she_her_hers, they_them_theirs, other] }
+    SchoolStatus: { type: string, enum: [emerging, open, paused, closing, permanently_closed, disaffiliating, disaffiliated, placeholder, abandoned] }
+    GovernanceModel: { type: string, enum: [independent, district, charter, exploring_charter, community_partnership] }
+    UserRole: { type: string, enum: [admin, team_member, finance, read_only] }
+    FundingEntitySubtype: { type: string, enum: [family_foundation, institutional_foundation, corporate_foundation, community_foundation, bank_foundation, family_office_trust, intermediary, government, nonprofit, corporation, capital_provider, philanthropic_advisor, cdfi, education_forprofit, competition, public_private, daf_platform, platform] }
+    NumberOfEmployees: { type: string, enum: [e_1, e_2_10, e_11_50, e_51_250, e_251_1000, e_1001_10000, e_10000_plus] }
+    CapacityRating: { type: string, enum: [tier_10k_50k, tier_50k_250k, tier_250k_1m, tier_1m_plus] }
+    ConnectionStatus: { type: string, enum: [connected, have_a_connector, no_connection] }
+    Enthusiasm: { type: string, enum: [advocate, supportive, warm, neutral, unsupportive] }
+    StrategicAlignment: { type: string, enum: [high, medium, low] }
+    ActiveStatus: { type: string, enum: [active, defunct, spenddown] }
+    OrganizationType: { type: string, enum: [advocacy_membership_lobbyist, authorizer, cmo, capital_provider, government, corporation, education_vendor, elected_official, higher_ed, investor, law_firm, media, nonprofit, philanthropic_advisor, real_estate, school, school_district, school_network, small_business_consulting, tribal] }
+    OpportunityStatus: { type: string, enum: [open, won, dormant, lost] }
+    OpportunityType: { type: string, enum: [solicitation, renewal, open_application] }
+    OpportunityStage: { type: string, enum: [cold_lead, warm_lead, in_conversation, convince, conditional_commitment, probable_renewal, verbal_commitment, written_commitment, cash_in] }
+    OpportunityConditional: { type: string, enum: [unconditional, reimbursable, conditional_on_funder_determination, conditional_on_target] }
+    PledgeAllocationStatus: { type: string, enum: [working, committed, superseded, committed_with_conditions] }
+    GiftType: { type: string, enum: [standard_gift, pledge_payment, directed_gift, loan_fund_investment, matching_gift] }
+    GiftPaymentMethod: { type: string, enum: [ach, check, wire, stock, donor_box, daf_ach, daf_check, daf_bill_com] }
+    GiftAllocationType: { type: string, enum: [simple_allocation, sub_allocations] }
+    IntendedUsage: { type: string, enum: [gen_ops, growth, school_startup, teacher_training, project] }
+
+    # ─── Users ─────────────────────────────────────────────────────────────────
     User:
       type: object
+      required: [id, email, role, createdAt, updatedAt]
       properties:
-        id:
-          type: string
-        clerkUserId:
-          type: string
-        email:
-          type: string
-        firstName:
-          type: string
-        lastName:
-          type: string
-        displayName:
-          type: string
-        role:
-          $ref: "#/components/schemas/UserRole"
-        defaultFund:
-          $ref: "#/components/schemas/Fund"
-        avatarUrl:
-          type: string
-          nullable: true
-        isWildflowerStaff:
-          type: boolean
-        createdAt:
-          type: string
-          format: date-time
-      required: [id, clerkUserId, email, firstName, lastName, displayName, role, isWildflowerStaff, createdAt]
+        id:           { type: string }
+        clerkId:      { type: string }
+        email:        { type: string }
+        firstName:    { type: string, nullable: true }
+        lastName:     { type: string, nullable: true }
+        displayName:  { type: string, nullable: true }
+        role:         { $ref: "#/components/schemas/UserRole" }
+        defaultFund:  { type: string, nullable: true }
+        createdAt:    { type: string, format: date-time }
+        updatedAt:    { type: string, format: date-time }
 
-    UpdateUserBody:
+    # ─── Regions ───────────────────────────────────────────────────────────────
+    Region:
       type: object
+      required: [id, name, createdAt, updatedAt]
       properties:
-        firstName:
-          type: string
-        lastName:
-          type: string
-        role:
-          $ref: "#/components/schemas/UserRole"
-        defaultFund:
-          $ref: "#/components/schemas/Fund"
-        isWildflowerStaff:
-          type: boolean
-
-    # ─── Individual ──────────────────────────────────────────────────────────────
-    Individual:
+        id:                 { type: string }
+        airtableId:         { type: string, nullable: true }
+        name:               { type: string }
+        stateAbbreviation:  { type: string, nullable: true }
+        type:               { allOf: [ { $ref: "#/components/schemas/RegionType" } ], nullable: true }
+        parentRegionId:     { type: string, nullable: true }
+        createdAt:          { type: string, format: date-time }
+        updatedAt:          { type: string, format: date-time }
+    RegionList:
       type: object
+      required: [data, pagination]
       properties:
-        id:
-          type: string
-        firstName:
-          type: string
-        lastName:
-          type: string
-        preferredName:
-          type: string
-          nullable: true
-        pronouns:
-          type: string
-          nullable: true
-        relationshipOwnerUserId:
-          type: string
-          nullable: true
-        relationshipOwnerName:
-          type: string
-          nullable: true
-        strategyUserId:
-          type: string
-          nullable: true
-        strategyUserName:
-          type: string
-          nullable: true
-        donorCultivationStage:
-          $ref: "#/components/schemas/CultivationStage"
-        institutionalContactStage:
-          $ref: "#/components/schemas/CultivationStage"
-        enthusiasm:
-          $ref: "#/components/schemas/Enthusiasm"
-        capacityRating:
-          $ref: "#/components/schemas/CapacityRating"
-          nullable: true
-        lastMoveDate:
-          type: string
-          format: date
-          nullable: true
-        birthday:
-          type: string
-          format: date
-          nullable: true
-        customFields:
-          type: object
-          additionalProperties: true
-          nullable: true
-        lastGiftDate:
-          type: string
-          format: date
-          nullable: true
-        lastGiftAmount:
-          type: number
-          nullable: true
-        totalGiving:
-          type: number
-          nullable: true
-        emailOptOut:
-          type: boolean
-        callOptOut:
-          type: boolean
-        mailOptOut:
-          type: boolean
-        textOptOut:
-          type: boolean
-        deceasedDate:
-          type: string
-          format: date
-          nullable: true
-        isWildflowerStaff:
-          type: boolean
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, firstName, lastName, donorCultivationStage, institutionalContactStage, enthusiasm, emailOptOut, callOptOut, mailOptOut, textOptOut, isWildflowerStaff, createdAt, updatedAt]
+        data:       { type: array, items: { $ref: "#/components/schemas/Region" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
 
-    IndividualDetail:
+    # ─── Schools ───────────────────────────────────────────────────────────────
+    School:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id:                       { type: string }
+        airtableId:               { type: string, nullable: true }
+        name:                     { type: string }
+        longName:                 { type: string, nullable: true }
+        shortName:                { type: string, nullable: true }
+        status:                   { allOf: [ { $ref: "#/components/schemas/SchoolStatus" } ], nullable: true }
+        governanceModel:          { allOf: [ { $ref: "#/components/schemas/GovernanceModel" } ], nullable: true }
+        agesPlanes:               { type: array, items: { type: string }, nullable: true }
+        logoMainSquareUrl:        { type: string, nullable: true }
+        stageStatus:              { type: string, nullable: true }
+        currentMailingAddress:    { type: string, nullable: true }
+        currentPhysicalAddress:   { type: string, nullable: true }
+        createdAt:                { type: string, format: date-time }
+        updatedAt:                { type: string, format: date-time }
+    SchoolList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/School" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+
+    # ─── Entities / fundable projects / fiscal years ──────────────────────────
+    Entity:
+      type: object
+      required: [id, name, active, createdAt, updatedAt]
+      properties:
+        id:        { type: string }
+        name:      { type: string }
+        active:    { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    FundableProject:
+      type: object
+      required: [id, name, active, createdAt, updatedAt]
+      properties:
+        id:          { type: string }
+        name:        { type: string }
+        description: { type: string, nullable: true }
+        active:      { type: boolean }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+    FiscalYear:
+      type: object
+      required: [id, label, createdAt, updatedAt]
+      properties:
+        id:         { type: string }
+        label:      { type: string }
+        startDate:  { type: string, format: date, nullable: true }
+        endDate:    { type: string, format: date, nullable: true }
+        createdAt:  { type: string, format: date-time }
+        updatedAt:  { type: string, format: date-time }
+
+    # ─── Funders ───────────────────────────────────────────────────────────────
+    Funder:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id:                    { type: string }
+        airtableId:            { type: string, nullable: true }
+        name:                  { type: string }
+        fundingEntitySubtype:  { allOf: [ { $ref: "#/components/schemas/FundingEntitySubtype" } ], nullable: true }
+        makesPris:             { type: boolean, nullable: true }
+        numberOfEmployees:     { allOf: [ { $ref: "#/components/schemas/NumberOfEmployees" } ], nullable: true }
+        capacityRating:        { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
+        nationalPriorities:    { type: boolean, nullable: true }
+        priorityAreasNotes:    { type: string, nullable: true }
+        activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
+        otherNames:            { type: string, nullable: true }
+        details:               { type: string, nullable: true }
+        emailDomain:           { type: string, nullable: true }
+        orgEmail:              { type: string, nullable: true }
+        owner:                 { type: string, nullable: true }
+        tags:                  { type: string, nullable: true }
+        website:               { type: string, nullable: true }
+        connectionStatus:      { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
+        enthusiasm:            { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
+        strategicAlignment:    { allOf: [ { $ref: "#/components/schemas/StrategicAlignment" } ], nullable: true }
+        interestsThematic:     { type: array, items: { type: string }, nullable: true }
+        interestsAges:         { type: array, items: { type: string }, nullable: true }
+        interestsGovModels:    { type: array, items: { type: string }, nullable: true }
+        parentFunderId:        { type: string, nullable: true }
+        x:                     { type: string, nullable: true }
+        linkedin:              { type: string, nullable: true }
+        facebook:              { type: string, nullable: true }
+        instagram:             { type: string, nullable: true }
+        youtube:               { type: string, nullable: true }
+        crunchbase:            { type: string, nullable: true }
+        createdAt:             { type: string, format: date-time }
+        updatedAt:             { type: string, format: date-time }
+    FunderDetail:
       allOf:
-        - $ref: "#/components/schemas/Individual"
+        - { $ref: "#/components/schemas/Funder" }
         - type: object
           properties:
-            emails:
-              type: array
-              items:
-                $ref: "#/components/schemas/ContactEmail"
-            phones:
-              type: array
-              items:
-                $ref: "#/components/schemas/ContactPhone"
-            addresses:
-              type: array
-              items:
-                $ref: "#/components/schemas/ContactAddress"
-            spouseId:
-              type: string
-              nullable: true
-            spouseName:
-              type: string
-              nullable: true
-            assistantId:
-              type: string
-              nullable: true
-            assistantName:
-              type: string
-              nullable: true
-            biography:
-              type: string
-              nullable: true
-            givingPhilosophyNotes:
-              type: string
-              nullable: true
-            capacityNotes:
-              type: string
-              nullable: true
-            capacityRatingSource:
-              type: string
-              nullable: true
-            interests:
-              type: object
-              properties:
-                thematic:
-                  type: array
-                  items: { type: string }
-                ageLevel:
-                  type: array
-                  items: { type: string }
-                governanceModel:
-                  type: array
-                  items: { type: string }
-                geographyOfInterest:
-                  type: array
-                  items: { type: string }
-            demographics:
-              type: object
-              properties:
-                raceEthnicity:
-                  type: array
-                  items: { type: string }
-                raceEthnicityOther:
-                  type: string
-                  nullable: true
-            childrenAtWildflower:
-              type: string
-              nullable: true
-            newsletterSubscribed:
-              type: boolean
-            deceasedDate:
-              type: string
-              format: date
-              nullable: true
-            howAcquired:
-              type: string
-              nullable: true
-            sourceDetail:
-              type: string
-              nullable: true
-            linkedFundingEntities:
-              type: array
-              items:
-                $ref: "#/components/schemas/Affiliation"
-            recentMoves:
-              type: array
-              items:
-                $ref: "#/components/schemas/Move"
-            openOpportunities:
-              type: array
-              items:
-                $ref: "#/components/schemas/Opportunity"
-            household:
-              $ref: "#/components/schemas/Household"
-              nullable: true
-            givingHistory:
-              type: array
-              items:
-                $ref: "#/components/schemas/Gift"
-
-    CreateIndividualBody:
+            people:    { type: array, items: { $ref: "#/components/schemas/PeopleEntityRole" } }
+            emails:    { type: array, items: { $ref: "#/components/schemas/Email" } }
+            addresses: { type: array, items: { $ref: "#/components/schemas/Address" } }
+    FunderList:
       type: object
-      required: [firstName, lastName]
+      required: [data, pagination]
       properties:
-        firstName:
-          type: string
-        lastName:
-          type: string
-        preferredName:
-          type: string
-        pronouns:
-          type: string
-        relationshipOwnerUserId:
-          type: string
-        strategyUserId:
-          type: string
-        donorCultivationStage:
-          $ref: "#/components/schemas/CultivationStage"
-        institutionalContactStage:
-          $ref: "#/components/schemas/CultivationStage"
-        enthusiasm:
-          $ref: "#/components/schemas/Enthusiasm"
-        capacityRating:
-          $ref: "#/components/schemas/CapacityRating"
-        capacityNotes:
-          type: string
-        biography:
-          type: string
-        howAcquired:
-          type: string
-        sourceDetail:
-          type: string
-        birthday:
-          type: string
-          format: date
-        customFields:
-          type: object
-          additionalProperties: true
+        data:       { type: array, items: { $ref: "#/components/schemas/Funder" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreateFunderBody:
+      type: object
+      required: [name]
+      properties:
+        name:                  { type: string }
+        fundingEntitySubtype:  { $ref: "#/components/schemas/FundingEntitySubtype" }
+        makesPris:             { type: boolean }
+        numberOfEmployees:     { $ref: "#/components/schemas/NumberOfEmployees" }
+        capacityRating:        { $ref: "#/components/schemas/CapacityRating" }
+        nationalPriorities:    { type: boolean }
+        priorityAreasNotes:    { type: string }
+        activeStatus:          { $ref: "#/components/schemas/ActiveStatus" }
+        otherNames:            { type: string }
+        details:               { type: string }
+        emailDomain:           { type: string }
+        orgEmail:              { type: string }
+        owner:                 { type: string }
+        tags:                  { type: string }
+        website:               { type: string }
+        connectionStatus:      { $ref: "#/components/schemas/ConnectionStatus" }
+        enthusiasm:            { $ref: "#/components/schemas/Enthusiasm" }
+        strategicAlignment:    { $ref: "#/components/schemas/StrategicAlignment" }
+        interestsThematic:     { type: array, items: { type: string } }
+        interestsAges:         { type: array, items: { type: string } }
+        interestsGovModels:    { type: array, items: { type: string } }
+        parentFunderId:        { type: string }
+    UpdateFunderBody:
+      allOf:
+        - { $ref: "#/components/schemas/CreateFunderBody" }
+        - type: object
+          properties:
+            name: { type: string }
 
-    UpdateIndividualBody:
+    # ─── Organizations ─────────────────────────────────────────────────────────
+    Organization:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id:              { type: string }
+        airtableId:      { type: string, nullable: true }
+        name:            { type: string }
+        type:            { allOf: [ { $ref: "#/components/schemas/OrganizationType" } ], nullable: true }
+        emailDomain:     { type: string, nullable: true }
+        owner:           { type: string, nullable: true }
+        ownerUserId:     { type: string, nullable: true }
+        tags:            { type: string, nullable: true }
+        website:         { type: string, nullable: true }
+        activeOrDefunct: { type: string, nullable: true }
+        otherNames:      { type: string, nullable: true }
+        parentOrgId:     { type: string, nullable: true }
+        createdAt:       { type: string, format: date-time }
+        updatedAt:       { type: string, format: date-time }
+    OrganizationDetail:
+      allOf:
+        - { $ref: "#/components/schemas/Organization" }
+        - type: object
+          properties:
+            people:    { type: array, items: { $ref: "#/components/schemas/PeopleEntityRole" } }
+            emails:    { type: array, items: { $ref: "#/components/schemas/Email" } }
+            addresses: { type: array, items: { $ref: "#/components/schemas/Address" } }
+    OrganizationList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/Organization" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreateOrganizationBody:
+      type: object
+      required: [name]
+      properties:
+        name:            { type: string }
+        type:            { $ref: "#/components/schemas/OrganizationType" }
+        emailDomain:     { type: string }
+        owner:           { type: string }
+        ownerUserId:     { type: string }
+        tags:            { type: string }
+        website:         { type: string }
+        activeOrDefunct: { type: string }
+        otherNames:      { type: string }
+        parentOrgId:     { type: string }
+    UpdateOrganizationBody:
+      allOf:
+        - { $ref: "#/components/schemas/CreateOrganizationBody" }
+        - type: object
+          properties:
+            name: { type: string }
+
+    # ─── Payment intermediaries ────────────────────────────────────────────────
+    PaymentIntermediary:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id:         { type: string }
+        airtableId: { type: string, nullable: true }
+        name:       { type: string }
+        type:       { allOf: [ { $ref: "#/components/schemas/PaymentIntermediaryType" } ], nullable: true }
+        createdAt:  { type: string, format: date-time }
+        updatedAt:  { type: string, format: date-time }
+    PaymentIntermediaryDetail:
+      allOf:
+        - { $ref: "#/components/schemas/PaymentIntermediary" }
+        - type: object
+          properties:
+            people:    { type: array, items: { $ref: "#/components/schemas/PeopleEntityRole" } }
+            emails:    { type: array, items: { $ref: "#/components/schemas/Email" } }
+            addresses: { type: array, items: { $ref: "#/components/schemas/Address" } }
+    PaymentIntermediaryList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/PaymentIntermediary" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreatePaymentIntermediaryBody:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        type: { $ref: "#/components/schemas/PaymentIntermediaryType" }
+    UpdatePaymentIntermediaryBody:
       type: object
       properties:
-        firstName:
-          type: string
-        lastName:
-          type: string
-        preferredName:
-          type: string
-        pronouns:
-          type: string
-        relationshipOwnerUserId:
-          type: string
-        strategyUserId:
-          type: string
-        spouseId:
-          type: string
-        assistantId:
-          type: string
-        donorCultivationStage:
-          $ref: "#/components/schemas/CultivationStage"
-        institutionalContactStage:
-          $ref: "#/components/schemas/CultivationStage"
-        enthusiasm:
-          $ref: "#/components/schemas/Enthusiasm"
-        capacityRating:
-          $ref: "#/components/schemas/CapacityRating"
-        capacityNotes:
-          type: string
-        capacityRatingSource:
-          type: string
-        biography:
-          type: string
-        givingPhilosophyNotes:
-          type: string
-        emailOptOut:
-          type: boolean
-        callOptOut:
-          type: boolean
-        mailOptOut:
-          type: boolean
-        textOptOut:
-          type: boolean
-        deceasedDate:
-          type: string
-          format: date
-        isWildflowerStaff:
-          type: boolean
-        childrenAtWildflower:
-          type: string
-        newsletterSubscribed:
-          type: boolean
-        interests:
-          type: object
-          properties:
-            thematic:
-              type: array
-              items: { type: string }
-            ageLevel:
-              type: array
-              items: { type: string }
-            governanceModel:
-              type: array
-              items: { type: string }
-            geographyOfInterest:
-              type: array
-              items: { type: string }
-        demographics:
-          type: object
-          properties:
-            raceEthnicity:
-              type: array
-              items: { type: string }
-            raceEthnicityOther:
-              type: string
-        birthday:
-          type: string
-          format: date
-          nullable: true
-        customFields:
-          type: object
-          additionalProperties: true
-          nullable: true
+        name: { type: string }
+        type: { $ref: "#/components/schemas/PaymentIntermediaryType" }
 
-    # ─── Household ─────────────────────────────────────────────────────────────
+    # ─── Households ────────────────────────────────────────────────────────────
     Household:
       type: object
+      required: [id, name, active, createdAt, updatedAt]
       properties:
-        id:
-          type: string
-        name:
-          type: string
-        primaryOwnerUserId:
-          type: string
-          nullable: true
-        primaryOwnerName:
-          type: string
-          nullable: true
-        strategyUserId:
-          type: string
-          nullable: true
-        strategyUserName:
-          type: string
-          nullable: true
-        primaryGivingIndividualId:
-          type: string
-          nullable: true
-        primaryGivingIndividualName:
-          type: string
-          nullable: true
-        capacityRating:
-          $ref: "#/components/schemas/CapacityRating"
-          nullable: true
-        memberCount:
-          type: integer
-        totalGiving:
-          type: number
-          nullable: true
-        customFields:
-          type: object
-          additionalProperties: true
-          nullable: true
-        lastActivityDate:
-          type: string
-          format: date
-          nullable: true
-        status:
-          type: string
-          enum: [active, dissolved]
-        formationDate:
-          type: string
-          format: date
-          nullable: true
-        dissolvedDate:
-          type: string
-          format: date
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, name, memberCount, status, createdAt, updatedAt]
-
+        id:         { type: string }
+        airtableId: { type: string, nullable: true }
+        name:       { type: string }
+        active:     { type: boolean }
+        createdAt:  { type: string, format: date-time }
+        updatedAt:  { type: string, format: date-time }
     HouseholdDetail:
       allOf:
-        - $ref: "#/components/schemas/Household"
+        - { $ref: "#/components/schemas/Household" }
         - type: object
           properties:
-            decisionMakingNotes:
-              type: string
-              nullable: true
-            familyPhilanthropyNotes:
-              type: string
-              nullable: true
-            familyOfficeNotes:
-              type: string
-              nullable: true
-            notes:
-              type: string
-              nullable: true
-            members:
-              type: array
-              items:
-                $ref: "#/components/schemas/HouseholdMember"
-            linkedFundingEntities:
-              type: array
-              items:
-                $ref: "#/components/schemas/FundingEntity"
-            openOpportunities:
-              type: array
-              items:
-                $ref: "#/components/schemas/Opportunity"
-            givingHistory:
-              type: array
-              items:
-                $ref: "#/components/schemas/Gift"
-
-    HouseholdMember:
+            people:    { type: array, items: { $ref: "#/components/schemas/PeopleEntityRole" } }
+            emails:    { type: array, items: { $ref: "#/components/schemas/Email" } }
+            addresses: { type: array, items: { $ref: "#/components/schemas/Address" } }
+    HouseholdList:
       type: object
+      required: [data, pagination]
       properties:
-        id:
-          type: string
-        householdId:
-          type: string
-        individualId:
-          type: string
-        individualName:
-          type: string
-        role:
-          $ref: "#/components/schemas/HouseholdMemberRole"
-        startDate:
-          type: string
-          format: date
-          nullable: true
-        endDate:
-          type: string
-          format: date
-          nullable: true
-        isCurrent:
-          type: boolean
-      required: [id, householdId, individualId, individualName, role, isCurrent]
-
+        data:       { type: array, items: { $ref: "#/components/schemas/Household" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
     CreateHouseholdBody:
       type: object
       required: [name]
       properties:
-        name:
-          type: string
-        primaryOwnerUserId:
-          type: string
-        strategyUserId:
-          type: string
-        primaryGivingIndividualId:
-          type: string
-        capacityRating:
-          $ref: "#/components/schemas/CapacityRating"
-        decisionMakingNotes:
-          type: string
-        familyPhilanthropyNotes:
-          type: string
-        notes:
-          type: string
-        formationDate:
-          type: string
-          format: date
-        customFields:
-          type: object
-          additionalProperties: true
-
+        name:   { type: string }
+        active: { type: boolean }
     UpdateHouseholdBody:
       type: object
       properties:
-        name:
-          type: string
-        primaryOwnerUserId:
-          type: string
-        strategyUserId:
-          type: string
-        primaryGivingIndividualId:
-          type: string
-        capacityRating:
-          $ref: "#/components/schemas/CapacityRating"
-        decisionMakingNotes:
-          type: string
-        familyPhilanthropyNotes:
-          type: string
-        familyOfficeNotes:
-          type: string
-        notes:
-          type: string
-        status:
-          type: string
-          enum: [active, dissolved]
-        formationDate:
-          type: string
-          format: date
-        dissolvedDate:
-          type: string
-          format: date
-        customFields:
-          type: object
-          additionalProperties: true
-          nullable: true
+        name:   { type: string }
+        active: { type: boolean }
 
-    AddHouseholdMemberBody:
+    # ─── People ────────────────────────────────────────────────────────────────
+    Person:
       type: object
-      required: [individualId, role]
+      required: [id, deceased, newsletter, unsubscribedToNewsletter, createdAt, updatedAt]
       properties:
-        individualId:
-          type: string
-        role:
-          $ref: "#/components/schemas/HouseholdMemberRole"
-        startDate:
-          type: string
-          format: date
-        endDate:
-          type: string
-          format: date
-
-    # ─── Funding Entity ──────────────────────────────────────────────────────────
-    FundingEntity:
-      type: object
-      properties:
-        id:
-          type: string
-        legalName:
-          type: string
-        displayName:
-          type: string
-          nullable: true
-        subtype:
-          $ref: "#/components/schemas/FundingEntitySubtype"
-        ein:
-          type: string
-          nullable: true
-        website:
-          type: string
-          nullable: true
-        relationshipOwnerUserId:
-          type: string
-          nullable: true
-        relationshipOwnerName:
-          type: string
-          nullable: true
-        strategyUserId:
-          type: string
-          nullable: true
-        strategyUserName:
-          type: string
-          nullable: true
-        institutionalCultivationStage:
-          $ref: "#/components/schemas/InstitutionalCultivationStage"
-          nullable: true
-        governmentCultivationStage:
-          $ref: "#/components/schemas/GovernmentCultivationStage"
-          nullable: true
-        enthusiasm:
-          $ref: "#/components/schemas/Enthusiasm"
-        status:
-          $ref: "#/components/schemas/FundingEntityStatus"
-        parentFundingEntityId:
-          type: string
-          nullable: true
-        customFields:
-          type: object
-          additionalProperties: true
-          nullable: true
-        primaryContactId:
-          type: string
-          nullable: true
-        primaryContactName:
-          type: string
-          nullable: true
-        metroArea:
-          type: string
-          nullable: true
-        typicalGrantSizeMin:
-          type: number
-          nullable: true
-        typicalGrantSizeMax:
-          type: number
-          nullable: true
-        totalGiving:
-          type: number
-          nullable: true
-        lastGiftDate:
-          type: string
-          format: date
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, legalName, subtype, enthusiasm, createdAt, updatedAt]
-
-    FundingEntityDetail:
+        id:                       { type: string }
+        airtableId:               { type: string, nullable: true }
+        prefix:                   { type: string, nullable: true }
+        firstName:                { type: string, nullable: true }
+        nickname:                 { type: string, nullable: true }
+        middleName:               { type: string, nullable: true }
+        lastName:                 { type: string, nullable: true }
+        suffix:                   { type: string, nullable: true }
+        fullName:                 { type: string, nullable: true }
+        pronouns:                 { allOf: [ { $ref: "#/components/schemas/Pronouns" } ], nullable: true }
+        deceased:                 { type: boolean }
+        householdName:            { type: string, nullable: true }
+        currentHomeRegionId:      { type: string, nullable: true }
+        details:                  { type: string, nullable: true }
+        owner:                    { type: string, nullable: true }
+        tags:                     { type: string, nullable: true }
+        lastContacted:            { type: string, format: date, nullable: true }
+        interactionCount:         { type: integer, nullable: true }
+        linkedin:                 { type: string, nullable: true }
+        x:                        { type: string, nullable: true }
+        facebook:                 { type: string, nullable: true }
+        instagram:                { type: string, nullable: true }
+        aboutMe:                  { type: string, nullable: true }
+        youtube:                  { type: string, nullable: true }
+        website:                  { type: string, nullable: true }
+        interestsThematic:        { type: array, items: { type: string }, nullable: true }
+        interestsAges:            { type: array, items: { type: string }, nullable: true }
+        interestsGovModels:       { type: array, items: { type: string }, nullable: true }
+        newsletter:               { type: boolean }
+        unsubscribedToNewsletter: { type: boolean }
+        childrenAtWf:             { type: string, nullable: true }
+        meetingLink:              { type: string, nullable: true }
+        assistantPersonId:        { type: string, nullable: true }
+        createdAt:                { type: string, format: date-time }
+        updatedAt:                { type: string, format: date-time }
+    PersonDetail:
       allOf:
-        - $ref: "#/components/schemas/FundingEntity"
+        - { $ref: "#/components/schemas/Person" }
         - type: object
           properties:
-            address:
-              type: string
-              nullable: true
-            sponsoringInstitution:
-              type: string
-              nullable: true
-            annualGivingProgram:
-              type: boolean
-              nullable: true
-            fundingCycleNotes:
-              type: string
-              nullable: true
-            applicationRequirementsNotes:
-              type: string
-              nullable: true
-            givingFocus:
-              type: object
-              properties:
-                thematic:
-                  type: array
-                  items: { type: string }
-                ageLevel:
-                  type: array
-                  items: { type: string }
-                governanceModel:
-                  type: array
-                  items: { type: string }
-                geography:
-                  type: array
-                  items: { type: string }
-            notes:
-              type: string
-              nullable: true
-            people:
-              type: array
-              items:
-                $ref: "#/components/schemas/Affiliation"
-            openOpportunities:
-              type: array
-              items:
-                $ref: "#/components/schemas/Opportunity"
-            givingHistory:
-              type: array
-              items:
-                $ref: "#/components/schemas/Gift"
-
-    Affiliation:
+            roles:        { type: array, items: { $ref: "#/components/schemas/PeopleEntityRole" } }
+            emails:       { type: array, items: { $ref: "#/components/schemas/Email" } }
+            phoneNumbers: { type: array, items: { $ref: "#/components/schemas/PhoneNumber" } }
+            addresses:    { type: array, items: { $ref: "#/components/schemas/Address" } }
+    PersonList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/Person" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreatePersonBody:
       type: object
       properties:
-        id:
-          type: string
-        fundingEntityId:
-          type: string
-          nullable: true
-        organizationId:
-          type: string
-          nullable: true
-        individualId:
-          type: string
-        individualName:
-          type: string
-        affiliationType:
-          $ref: "#/components/schemas/AffiliationType"
-        role:
-          type: string
-          nullable: true
-        startDate:
-          type: string
-          format: date
-          nullable: true
-        endDate:
-          type: string
-          format: date
-          nullable: true
-        isCurrent:
-          type: boolean
-        notes:
-          type: string
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, individualId, individualName, affiliationType, isCurrent, createdAt, updatedAt]
+        prefix:                   { type: string }
+        firstName:                { type: string }
+        nickname:                 { type: string }
+        middleName:               { type: string }
+        lastName:                 { type: string }
+        suffix:                   { type: string }
+        fullName:                 { type: string }
+        pronouns:                 { $ref: "#/components/schemas/Pronouns" }
+        deceased:                 { type: boolean }
+        householdName:            { type: string }
+        currentHomeRegionId:      { type: string }
+        details:                  { type: string }
+        owner:                    { type: string }
+        tags:                     { type: string }
+        lastContacted:            { type: string, format: date }
+        linkedin:                 { type: string }
+        x:                        { type: string }
+        facebook:                 { type: string }
+        instagram:                { type: string }
+        aboutMe:                  { type: string }
+        youtube:                  { type: string }
+        website:                  { type: string }
+        interestsThematic:        { type: array, items: { type: string } }
+        interestsAges:            { type: array, items: { type: string } }
+        interestsGovModels:       { type: array, items: { type: string } }
+        newsletter:               { type: boolean }
+        unsubscribedToNewsletter: { type: boolean }
+        childrenAtWf:             { type: string }
+        meetingLink:              { type: string }
+        assistantPersonId:        { type: string }
+    UpdatePersonBody:
+      allOf: [ { $ref: "#/components/schemas/CreatePersonBody" } ]
 
-    CreateFundingEntityBody:
+    # ─── People-entity-roles ───────────────────────────────────────────────────
+    PeopleEntityRole:
       type: object
-      required: [legalName, subtype]
+      required: [id, personId, entityType, current, primaryContact, createdAt, updatedAt]
       properties:
-        legalName:
-          type: string
-        displayName:
-          type: string
-        subtype:
-          $ref: "#/components/schemas/FundingEntitySubtype"
-        ein:
-          type: string
-        website:
-          type: string
-        address:
-          type: string
-        metroArea:
-          type: string
-        primaryContactId:
-          type: string
-        relationshipOwnerUserId:
-          type: string
-        strategyUserId:
-          type: string
-        institutionalCultivationStage:
-          $ref: "#/components/schemas/InstitutionalCultivationStage"
-        governmentCultivationStage:
-          $ref: "#/components/schemas/GovernmentCultivationStage"
-        enthusiasm:
-          $ref: "#/components/schemas/Enthusiasm"
-        sponsoringInstitution:
-          type: string
-        notes:
-          type: string
-        status:
-          $ref: "#/components/schemas/FundingEntityStatus"
-        parentFundingEntityId:
-          type: string
-        customFields:
-          type: object
-          additionalProperties: true
-
-    UpdateFundingEntityBody:
+        id:                    { type: string }
+        airtableId:            { type: string, nullable: true }
+        personId:              { type: string }
+        entityType:            { $ref: "#/components/schemas/EntityRoleType" }
+        funderId:              { type: string, nullable: true }
+        organizationId:        { type: string, nullable: true }
+        paymentIntermediaryId: { type: string, nullable: true }
+        householdId:           { type: string, nullable: true }
+        connection:            { allOf: [ { $ref: "#/components/schemas/PeopleEntityRoleConnection" } ], nullable: true }
+        notes:                 { type: string, nullable: true }
+        externalTitleOrRole:   { type: string, nullable: true }
+        current:               { $ref: "#/components/schemas/PeopleRoleCurrent" }
+        primaryContact:        { type: boolean }
+        createdAt:             { type: string, format: date-time }
+        updatedAt:             { type: string, format: date-time }
+    PeopleEntityRoleList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/PeopleEntityRole" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreatePeopleEntityRoleBody:
+      type: object
+      required: [personId, entityType]
+      properties:
+        personId:              { type: string }
+        entityType:            { $ref: "#/components/schemas/EntityRoleType" }
+        funderId:              { type: string }
+        organizationId:        { type: string }
+        paymentIntermediaryId: { type: string }
+        householdId:           { type: string }
+        connection:            { $ref: "#/components/schemas/PeopleEntityRoleConnection" }
+        notes:                 { type: string }
+        externalTitleOrRole:   { type: string }
+        current:               { $ref: "#/components/schemas/PeopleRoleCurrent" }
+        primaryContact:        { type: boolean }
+    UpdatePeopleEntityRoleBody:
       type: object
       properties:
-        legalName:
-          type: string
-        displayName:
-          type: string
-        subtype:
-          $ref: "#/components/schemas/FundingEntitySubtype"
-        ein:
-          type: string
-        website:
-          type: string
-        address:
-          type: string
-        metroArea:
-          type: string
-        primaryContactId:
-          type: string
-        relationshipOwnerUserId:
-          type: string
-        strategyUserId:
-          type: string
-        institutionalCultivationStage:
-          $ref: "#/components/schemas/InstitutionalCultivationStage"
-        governmentCultivationStage:
-          $ref: "#/components/schemas/GovernmentCultivationStage"
-        enthusiasm:
-          $ref: "#/components/schemas/Enthusiasm"
-        annualGivingProgram:
-          type: boolean
-        typicalGrantSizeMin:
-          type: number
-        typicalGrantSizeMax:
-          type: number
-        fundingCycleNotes:
-          type: string
-        applicationRequirementsNotes:
-          type: string
-        sponsoringInstitution:
-          type: string
-        notes:
-          type: string
-        givingFocus:
-          type: object
-          properties:
-            thematic:
-              type: array
-              items: { type: string }
-            ageLevel:
-              type: array
-              items: { type: string }
-            governanceModel:
-              type: array
-              items: { type: string }
-            geography:
-              type: array
-              items: { type: string }
-        status:
-          $ref: "#/components/schemas/FundingEntityStatus"
-        parentFundingEntityId:
-          type: string
-          nullable: true
-        customFields:
-          type: object
-          additionalProperties: true
-          nullable: true
+        funderId:              { type: string, nullable: true }
+        organizationId:        { type: string, nullable: true }
+        paymentIntermediaryId: { type: string, nullable: true }
+        householdId:           { type: string, nullable: true }
+        connection:            { $ref: "#/components/schemas/PeopleEntityRoleConnection" }
+        notes:                 { type: string, nullable: true }
+        externalTitleOrRole:   { type: string, nullable: true }
+        current:               { $ref: "#/components/schemas/PeopleRoleCurrent" }
+        primaryContact:        { type: boolean }
 
-    CreateAffiliationBody:
+    # ─── Emails / phones / addresses ───────────────────────────────────────────
+    Email:
       type: object
-      required: [individualId, affiliationType]
+      required: [id, email, validity, isPreferred, createdAt, updatedAt]
       properties:
-        individualId:
-          type: string
-        affiliationType:
-          $ref: "#/components/schemas/AffiliationType"
-        role:
-          type: string
-        startDate:
-          type: string
-          format: date
-        endDate:
-          type: string
-          format: date
-        notes:
-          type: string
-
-    # ─── Opportunity ─────────────────────────────────────────────────────────────
-    Opportunity:
+        id:                    { type: string }
+        airtableId:            { type: string, nullable: true }
+        email:                 { type: string }
+        type:                  { allOf: [ { $ref: "#/components/schemas/EmailType" } ], nullable: true }
+        personId:              { type: string, nullable: true }
+        funderId:              { type: string, nullable: true }
+        organizationId:        { type: string, nullable: true }
+        paymentIntermediaryId: { type: string, nullable: true }
+        householdId:           { type: string, nullable: true }
+        validity:              { $ref: "#/components/schemas/ContactValidity" }
+        isPreferred:           { type: boolean }
+        createdAt:             { type: string, format: date-time }
+        updatedAt:             { type: string, format: date-time }
+    EmailList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/Email" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreateEmailBody:
+      type: object
+      required: [email]
+      properties:
+        email:                 { type: string }
+        type:                  { $ref: "#/components/schemas/EmailType" }
+        personId:              { type: string }
+        funderId:              { type: string }
+        organizationId:        { type: string }
+        paymentIntermediaryId: { type: string }
+        householdId:           { type: string }
+        validity:              { $ref: "#/components/schemas/ContactValidity" }
+        isPreferred:           { type: boolean }
+    UpdateEmailBody:
       type: object
       properties:
-        id:
-          type: string
-        name:
-          type: string
-          nullable: true
-        subtype:
-          $ref: "#/components/schemas/OpportunitySubtype"
-        donorType:
-          type: string
-          enum: [individual, funding_entity]
-        donorId:
-          type: string
-        donorName:
-          type: string
-        ownerUserId:
-          type: string
-          nullable: true
-        ownerName:
-          type: string
-          nullable: true
-        fund:
-          $ref: "#/components/schemas/Fund"
-        campaignId:
-          type: string
-          nullable: true
-        region:
-          type: string
-          nullable: true
-        amountRequested:
-          type: number
-          nullable: true
-        amountExpected:
-          type: number
-          nullable: true
-        probability:
-          type: number
-          nullable: true
-        probabilityOverridden:
-          type: boolean
-        stage:
-          $ref: "#/components/schemas/OpportunityStage"
-        governmentStage:
-          $ref: "#/components/schemas/GovernmentOpportunityStage"
-          nullable: true
-        expectedCloseDate:
-          type: string
-          format: date
-          nullable: true
-        expectedFirstPaymentDate:
-          type: string
-          format: date
-          nullable: true
-        rollForwardCount:
-          type: integer
-        fiscalYear:
-          type: string
-          enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30]
-          nullable: true
-        priority:
-          type: string
-          enum: [high, medium, low]
-          nullable: true
-        description:
-          type: string
-          nullable: true
-        fiscalSponsorFundingEntityId:
-          type: string
-          nullable: true
-        fiscalSponsorOrganizationId:
-          type: string
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, subtype, donorType, donorId, donorName, fund, stage, rollForwardCount, probabilityOverridden, createdAt, updatedAt]
+        email:       { type: string }
+        type:        { $ref: "#/components/schemas/EmailType" }
+        validity:    { $ref: "#/components/schemas/ContactValidity" }
+        isPreferred: { type: boolean }
 
-    OpportunityDetail:
+    PhoneNumber:
+      type: object
+      required: [id, phoneNumber, validity, isPreferred, createdAt, updatedAt]
+      properties:
+        id:          { type: string }
+        airtableId:  { type: string, nullable: true }
+        phoneNumber: { type: string }
+        type:        { allOf: [ { $ref: "#/components/schemas/PhoneType" } ], nullable: true }
+        personId:    { type: string, nullable: true }
+        validity:    { $ref: "#/components/schemas/ContactValidity" }
+        isPreferred: { type: boolean }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+    PhoneNumberList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/PhoneNumber" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreatePhoneNumberBody:
+      type: object
+      required: [phoneNumber]
+      properties:
+        phoneNumber: { type: string }
+        type:        { $ref: "#/components/schemas/PhoneType" }
+        personId:    { type: string }
+        validity:    { $ref: "#/components/schemas/ContactValidity" }
+        isPreferred: { type: boolean }
+    UpdatePhoneNumberBody:
+      type: object
+      properties:
+        phoneNumber: { type: string }
+        type:        { $ref: "#/components/schemas/PhoneType" }
+        validity:    { $ref: "#/components/schemas/ContactValidity" }
+        isPreferred: { type: boolean }
+
+    Address:
+      type: object
+      required: [id, createdAt, updatedAt]
+      properties:
+        id:                    { type: string }
+        airtableId:            { type: string, nullable: true }
+        street:                { type: string, nullable: true }
+        cityRegionId:          { type: string, nullable: true }
+        cityName:              { type: string, nullable: true }
+        stateRegionId:         { type: string, nullable: true }
+        stateCode:             { type: string, nullable: true }
+        postalCode:            { type: string, nullable: true }
+        country:               { type: string, nullable: true }
+        personId:              { type: string, nullable: true }
+        funderId:              { type: string, nullable: true }
+        organizationId:        { type: string, nullable: true }
+        paymentIntermediaryId: { type: string, nullable: true }
+        householdId:           { type: string, nullable: true }
+        createdAt:             { type: string, format: date-time }
+        updatedAt:             { type: string, format: date-time }
+    AddressList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/Address" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreateAddressBody:
+      type: object
+      properties:
+        street:                { type: string }
+        cityRegionId:          { type: string }
+        cityName:              { type: string }
+        stateRegionId:         { type: string }
+        stateCode:             { type: string }
+        postalCode:            { type: string }
+        country:               { type: string }
+        personId:              { type: string }
+        funderId:              { type: string }
+        organizationId:        { type: string }
+        paymentIntermediaryId: { type: string }
+        householdId:           { type: string }
+    UpdateAddressBody:
+      allOf: [ { $ref: "#/components/schemas/CreateAddressBody" } ]
+
+    # ─── Opportunities & pledges ───────────────────────────────────────────────
+    OpportunityOrPledge:
+      type: object
+      required: [id, conditionsMet, createdAt, updatedAt]
+      properties:
+        id:                         { type: string }
+        airtableId:                 { type: string, nullable: true }
+        name:                       { type: string, nullable: true }
+        funderId:                   { type: string, nullable: true }
+        askAmount:                  { type: string, nullable: true }
+        awardedAmount:              { type: string, nullable: true }
+        type:                       { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
+        conditional:                { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true }
+        conditions:                 { type: string, nullable: true }
+        conditionsMet:              { type: boolean }
+        grantYears:                 { type: array, items: { type: string }, nullable: true }
+        individualGiverPersonId:    { type: string, nullable: true }
+        individualAdvisorPersonId:  { type: string, nullable: true }
+        matchId:                    { type: string, nullable: true }
+        status:                     { allOf: [ { $ref: "#/components/schemas/OpportunityStatus" } ], nullable: true }
+        owner:                      { type: string, nullable: true }
+        ownerUserId:                { type: string, nullable: true }
+        projectedCloseDate:         { type: string, format: date, nullable: true }
+        actualCompletionDate:       { type: string, format: date, nullable: true }
+        winProbability:             { type: string, nullable: true }
+        stage:                      { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true }
+        lossReason:                 { type: string, nullable: true }
+        applicationDeadline:        { type: string, format: date, nullable: true }
+        paymentDetails:             { type: string, nullable: true }
+        entityIds:                  { type: array, items: { type: string }, nullable: true }
+        intendedUsages:             { type: array, items: { $ref: "#/components/schemas/IntendedUsage" }, nullable: true }
+        fundableProjectIds:         { type: array, items: { type: string }, nullable: true }
+        usageNotes:                 { type: string, nullable: true }
+        copperPledgeId:             { type: string, nullable: true }
+        primaryContactPersonId:     { type: string, nullable: true }
+        createdAt:                  { type: string, format: date-time }
+        updatedAt:                  { type: string, format: date-time }
+    OpportunityOrPledgeDetail:
       allOf:
-        - $ref: "#/components/schemas/Opportunity"
+        - { $ref: "#/components/schemas/OpportunityOrPledge" }
         - type: object
           properties:
-            tags:
-              type: array
-              items: { type: string }
-            # Ongoing rolling fields
-            lastGiftDate:
-              type: string
-              format: date
-              nullable: true
-            lastGiftAmount:
-              type: number
-              nullable: true
-            nextExpectedAskDate:
-              type: string
-              format: date
-              nullable: true
-            askCadence:
-              type: string
-              nullable: true
-            autoRollForward:
-              type: boolean
-              nullable: true
-            # Targeted deadline fields
-            targetAskAmount:
-              type: number
-              nullable: true
-            askRationale:
-              type: string
-              nullable: true
-            plannedAskDate:
-              type: string
-              format: date
-              nullable: true
-            askMaterialsStatus:
-              type: string
-              nullable: true
-            decisionMakers:
-              type: string
-              nullable: true
-            keyBlockers:
-              type: string
-              nullable: true
-            # RFP fields
-            nofoNumber:
-              type: string
-              nullable: true
-            issuingAgency:
-              type: string
-              nullable: true
-            loiDeadline:
-              type: string
-              format: date-time
-              nullable: true
-            loiSubmittedDate:
-              type: string
-              format: date
-              nullable: true
-            proposalDeadline:
-              type: string
-              format: date-time
-              nullable: true
-            proposalSubmittedDate:
-              type: string
-              format: date
-              nullable: true
-            budgetCeiling:
-              type: number
-              nullable: true
-            performancePeriodStart:
-              type: string
-              format: date
-              nullable: true
-            performancePeriodEnd:
-              type: string
-              format: date
-              nullable: true
-            decisionExpectedDate:
-              type: string
-              format: date
-              nullable: true
-            submissionConfirmationNumber:
-              type: string
-              nullable: true
-            programOfficerContactId:
-              type: string
-              nullable: true
-            programOfficerContactName:
-              type: string
-              nullable: true
-            moves:
-              type: array
-              items:
-                $ref: "#/components/schemas/Move"
-            linkedPledge:
-              $ref: "#/components/schemas/Pledge"
-              nullable: true
-
-    CreateOpportunityBody:
+            allocations: { type: array, items: { $ref: "#/components/schemas/PledgeAllocation" } }
+            payments:    { type: array, items: { $ref: "#/components/schemas/GiftOrPayment" } }
+    OpportunityOrPledgeList:
       type: object
-      required: [subtype, donorType, donorId, fund, stage]
+      required: [data, pagination]
       properties:
-        name:
-          type: string
-        subtype:
-          $ref: "#/components/schemas/OpportunitySubtype"
-        donorType:
-          type: string
-          enum: [individual, funding_entity]
-        donorId:
-          type: string
-        ownerUserId:
-          type: string
-        fund:
-          $ref: "#/components/schemas/Fund"
-        campaignId:
-          type: string
-        region:
-          type: string
-        amountRequested:
-          type: number
-        amountExpected:
-          type: number
-        probability:
-          type: number
-        stage:
-          $ref: "#/components/schemas/OpportunityStage"
-        governmentStage:
-          $ref: "#/components/schemas/GovernmentOpportunityStage"
-        expectedCloseDate:
-          type: string
-          format: date
-        expectedFirstPaymentDate:
-          type: string
-          format: date
-        fiscalYear:
-          type: string
-          enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30]
-        priority:
-          type: string
-          enum: [high, medium, low]
-        description:
-          type: string
-        fiscalSponsorFundingEntityId:
-          type: string
-        fiscalSponsorOrganizationId:
-          type: string
-        # RFP fields
-        nofoNumber:
-          type: string
-        loiDeadline:
-          type: string
-          format: date-time
-        proposalDeadline:
-          type: string
-          format: date-time
-        budgetCeiling:
-          type: number
-
-    UpdateOpportunityBody:
+        data:       { type: array, items: { $ref: "#/components/schemas/OpportunityOrPledge" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreateOpportunityOrPledgeBody:
       type: object
       properties:
-        name:
-          type: string
-        stage:
-          $ref: "#/components/schemas/OpportunityStage"
-        governmentStage:
-          $ref: "#/components/schemas/GovernmentOpportunityStage"
-        ownerUserId:
-          type: string
-        fund:
-          $ref: "#/components/schemas/Fund"
-        campaignId:
-          type: string
-          nullable: true
-        region:
-          type: string
-        amountRequested:
-          type: number
-        amountExpected:
-          type: number
-        probability:
-          type: number
-        probabilityOverridden:
-          type: boolean
-        expectedCloseDate:
-          type: string
-          format: date
-        expectedFirstPaymentDate:
-          type: string
-          format: date
-        fiscalYear:
-          type: string
-          enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30]
-        priority:
-          type: string
-          enum: [high, medium, low]
-        description:
-          type: string
-        fiscalSponsorFundingEntityId:
-          type: string
-        fiscalSponsorOrganizationId:
-          type: string
-        tags:
-          type: array
-          items: { type: string }
-        # Ongoing
-        nextExpectedAskDate:
-          type: string
-          format: date
-        askCadence:
-          type: string
-        autoRollForward:
-          type: boolean
-        # Targeted
-        targetAskAmount:
-          type: number
-        askRationale:
-          type: string
-        plannedAskDate:
-          type: string
-          format: date
-        askMaterialsStatus:
-          type: string
-        decisionMakers:
-          type: string
-        keyBlockers:
-          type: string
-        # RFP
-        nofoNumber:
-          type: string
-        loiDeadline:
-          type: string
-          format: date-time
-        loiSubmittedDate:
-          type: string
-          format: date
-        proposalDeadline:
-          type: string
-          format: date-time
-        proposalSubmittedDate:
-          type: string
-          format: date
-        budgetCeiling:
-          type: number
-        decisionExpectedDate:
-          type: string
-          format: date
-        submissionConfirmationNumber:
-          type: string
+        name:                       { type: string }
+        funderId:                   { type: string }
+        askAmount:                  { type: string }
+        awardedAmount:              { type: string }
+        type:                       { $ref: "#/components/schemas/OpportunityType" }
+        conditional:                { $ref: "#/components/schemas/OpportunityConditional" }
+        conditions:                 { type: string }
+        conditionsMet:              { type: boolean }
+        grantYears:                 { type: array, items: { type: string } }
+        individualGiverPersonId:    { type: string }
+        individualAdvisorPersonId:  { type: string }
+        matchId:                    { type: string }
+        status:                     { $ref: "#/components/schemas/OpportunityStatus" }
+        owner:                      { type: string }
+        ownerUserId:                { type: string }
+        projectedCloseDate:         { type: string, format: date }
+        actualCompletionDate:       { type: string, format: date }
+        winProbability:             { type: string }
+        stage:                      { $ref: "#/components/schemas/OpportunityStage" }
+        lossReason:                 { type: string }
+        applicationDeadline:        { type: string, format: date }
+        paymentDetails:             { type: string }
+        entityIds:                  { type: array, items: { type: string } }
+        intendedUsages:             { type: array, items: { $ref: "#/components/schemas/IntendedUsage" } }
+        fundableProjectIds:         { type: array, items: { type: string } }
+        usageNotes:                 { type: string }
+        copperPledgeId:             { type: string }
+        primaryContactPersonId:     { type: string }
+    UpdateOpportunityOrPledgeBody:
+      allOf: [ { $ref: "#/components/schemas/CreateOpportunityOrPledgeBody" } ]
 
-    PipelineStage:
+    # ─── Pledge allocations ────────────────────────────────────────────────────
+    PledgeAllocation:
+      type: object
+      required: [id, directToSchool, createdAt, updatedAt]
+      properties:
+        id:                     { type: string }
+        airtableId:             { type: string, nullable: true }
+        pledgeOrOpportunityId:  { type: string, nullable: true }
+        subAmount:              { type: string, nullable: true }
+        grantYear:              { type: array, items: { type: string }, nullable: true }
+        entityId:               { type: string, nullable: true }
+        intendedUsage:          { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
+        fundableProjectId:      { type: string, nullable: true }
+        directToSchool:         { type: boolean }
+        status:                 { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
+        conditions:             { type: string, nullable: true }
+        notes:                  { type: string, nullable: true }
+        createdAt:              { type: string, format: date-time }
+        updatedAt:              { type: string, format: date-time }
+    PledgeAllocationList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/PledgeAllocation" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreatePledgeAllocationBody:
       type: object
       properties:
-        stage:
-          type: string
-        count:
-          type: integer
-        totalValue:
-          type: number
-        weightedValue:
-          type: number
-        opportunities:
-          type: array
-          items:
-            $ref: "#/components/schemas/Opportunity"
-      required: [stage, count, totalValue, weightedValue, opportunities]
+        pledgeOrOpportunityId: { type: string }
+        subAmount:             { type: string }
+        grantYear:             { type: array, items: { type: string } }
+        entityId:              { type: string }
+        intendedUsage:         { $ref: "#/components/schemas/IntendedUsage" }
+        fundableProjectId:     { type: string }
+        directToSchool:        { type: boolean }
+        status:                { $ref: "#/components/schemas/PledgeAllocationStatus" }
+        conditions:            { type: string }
+        notes:                 { type: string }
+    UpdatePledgeAllocationBody:
+      allOf: [ { $ref: "#/components/schemas/CreatePledgeAllocationBody" } ]
 
-    # ─── Pledge ───────────────────────────────────────────────────────────────────
-    Pledge:
+    # ─── Gifts & payments ──────────────────────────────────────────────────────
+    GiftOrPayment:
       type: object
+      required: [id, designatedToSchool, createdAt, updatedAt]
       properties:
-        id:
-          type: string
-        name:
-          type: string
-          nullable: true
-        donorType:
-          type: string
-          enum: [individual, funding_entity]
-        donorId:
-          type: string
-        donorName:
-          type: string
-        opportunityId:
-          type: string
-          nullable: true
-        fund:
-          $ref: "#/components/schemas/Fund"
-        totalCommittedAmount:
-          type: number
-        currency:
-          type: string
-        pledgeDate:
-          type: string
-          format: date
-        startDate:
-          type: string
-          format: date
-          nullable: true
-        endDate:
-          type: string
-          format: date
-          nullable: true
-        installmentSchedule:
-          $ref: "#/components/schemas/PledgeInstallmentSchedule"
-        numberOfInstallments:
-          type: integer
-        status:
-          $ref: "#/components/schemas/PledgeStatus"
-        paymentMethodExpectation:
-          type: string
-          nullable: true
-        legalDocumentOnFile:
-          type: boolean
-        recognitionLanguage:
-          type: string
-          nullable: true
-        amountReceived:
-          type: number
-        remainingAmount:
-          type: number
-        nextInstallmentDate:
-          type: string
-          format: date
-          nullable: true
-        nextInstallmentAmount:
-          type: number
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, donorType, donorId, donorName, fund, totalCommittedAmount, currency, pledgeDate, installmentSchedule, numberOfInstallments, status, legalDocumentOnFile, amountReceived, remainingAmount, createdAt, updatedAt]
-
-    PledgeDetail:
+        id:                         { type: string }
+        airtableId:                 { type: string, nullable: true }
+        legacyGiftId:               { type: string, nullable: true }
+        name:                       { type: string, nullable: true }
+        details:                    { type: string, nullable: true }
+        dateReceived:               { type: string, format: date, nullable: true }
+        paymentMethod:              { allOf: [ { $ref: "#/components/schemas/GiftPaymentMethod" } ], nullable: true }
+        amount:                     { type: string, nullable: true }
+        funderId:                   { type: string, nullable: true }
+        individualGiverPersonId:    { type: string, nullable: true }
+        type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
+        paymentOnPledgeId:          { type: string, nullable: true }
+        advisorPersonId:            { type: string, nullable: true }
+        grantYear:                  { type: string, nullable: true }
+        giftBeingMatchedId:         { type: string, nullable: true }
+        primaryContactPersonId:     { type: string, nullable: true }
+        paymentIntermediaryId:      { type: string, nullable: true }
+        owner:                      { type: string, nullable: true }
+        closeDate:                  { type: string, format: date, nullable: true }
+        completedDate:              { type: string, format: date, nullable: true }
+        allocationType:             { allOf: [ { $ref: "#/components/schemas/GiftAllocationType" } ], nullable: true }
+        entityId:                   { type: string, nullable: true }
+        intendedUsage:              { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
+        fundableProjectId:          { type: string, nullable: true }
+        designatedToSchool:         { type: boolean }
+        schoolRecipientId:          { type: string, nullable: true }
+        spendingStartDate:          { type: string, format: date, nullable: true }
+        spendingEndDate:            { type: string, format: date, nullable: true }
+        tags:                       { type: string, nullable: true }
+        createdAt:                  { type: string, format: date-time }
+        updatedAt:                  { type: string, format: date-time }
+    GiftOrPaymentDetail:
       allOf:
-        - $ref: "#/components/schemas/Pledge"
+        - { $ref: "#/components/schemas/GiftOrPayment" }
         - type: object
           properties:
-            installments:
-              type: array
-              items:
-                $ref: "#/components/schemas/PledgeInstallment"
-
-    PledgeInstallment:
+            allocations: { type: array, items: { $ref: "#/components/schemas/GiftAllocation" } }
+    GiftOrPaymentList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/GiftOrPayment" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreateGiftOrPaymentBody:
       type: object
       properties:
-        id:
-          type: string
-        pledgeId:
-          type: string
-        installmentNumber:
-          type: integer
-        expectedDate:
-          type: string
-          format: date
-        expectedAmount:
-          type: number
-        status:
-          type: string
-          enum: [expected, paid, overdue, waived]
-        paidDate:
-          type: string
-          format: date
-          nullable: true
-        paidAmount:
-          type: number
-          nullable: true
-        giftId:
-          type: string
-          nullable: true
-      required: [id, pledgeId, installmentNumber, expectedDate, expectedAmount, status]
+        legacyGiftId:               { type: string }
+        name:                       { type: string }
+        details:                    { type: string }
+        dateReceived:               { type: string, format: date }
+        paymentMethod:              { $ref: "#/components/schemas/GiftPaymentMethod" }
+        amount:                     { type: string }
+        funderId:                   { type: string }
+        individualGiverPersonId:    { type: string }
+        type:                       { $ref: "#/components/schemas/GiftType" }
+        paymentOnPledgeId:          { type: string }
+        advisorPersonId:            { type: string }
+        grantYear:                  { type: string }
+        giftBeingMatchedId:         { type: string }
+        primaryContactPersonId:     { type: string }
+        paymentIntermediaryId:      { type: string }
+        owner:                      { type: string }
+        closeDate:                  { type: string, format: date }
+        completedDate:              { type: string, format: date }
+        allocationType:             { $ref: "#/components/schemas/GiftAllocationType" }
+        entityId:                   { type: string }
+        intendedUsage:              { $ref: "#/components/schemas/IntendedUsage" }
+        fundableProjectId:          { type: string }
+        designatedToSchool:         { type: boolean }
+        schoolRecipientId:          { type: string }
+        spendingStartDate:          { type: string, format: date }
+        spendingEndDate:            { type: string, format: date }
+        tags:                       { type: string }
+    UpdateGiftOrPaymentBody:
+      allOf: [ { $ref: "#/components/schemas/CreateGiftOrPaymentBody" } ]
 
-    CreatePledgeBody:
-      type: object
-      required: [donorType, donorId, fund, totalCommittedAmount, pledgeDate, installmentSchedule, numberOfInstallments]
-      properties:
-        name:
-          type: string
-        donorType:
-          type: string
-          enum: [individual, funding_entity]
-        donorId:
-          type: string
-        opportunityId:
-          type: string
-        fund:
-          $ref: "#/components/schemas/Fund"
-        totalCommittedAmount:
-          type: number
-        currency:
-          type: string
-          default: USD
-        pledgeDate:
-          type: string
-          format: date
-        startDate:
-          type: string
-          format: date
-        endDate:
-          type: string
-          format: date
-        installmentSchedule:
-          $ref: "#/components/schemas/PledgeInstallmentSchedule"
-        numberOfInstallments:
-          type: integer
-        paymentMethodExpectation:
-          type: string
-        legalDocumentOnFile:
-          type: boolean
-          default: false
-        recognitionLanguage:
-          type: string
-
-    UpdatePledgeBody:
-      type: object
-      properties:
-        name:
-          type: string
-        status:
-          $ref: "#/components/schemas/PledgeStatus"
-        paymentMethodExpectation:
-          type: string
-        legalDocumentOnFile:
-          type: boolean
-        recognitionLanguage:
-          type: string
-
-    UpdateInstallmentBody:
-      type: object
-      properties:
-        status:
-          type: string
-          enum: [expected, paid, overdue, waived]
-        paidDate:
-          type: string
-          format: date
-        paidAmount:
-          type: number
-        giftId:
-          type: string
-
-    # ─── Gift ────────────────────────────────────────────────────────────────────
-    Gift:
-      type: object
-      properties:
-        id:
-          type: string
-        individualId:
-          type: string
-          nullable: true
-        householdId:
-          type: string
-          nullable: true
-        fundingEntityId:
-          type: string
-          nullable: true
-        donorName:
-          type: string
-          nullable: true
-          description: Computed display name of the donor (individual, household, or funding entity).
-        payerName:
-          type: string
-          nullable: true
-          description: Computed display name of the payer (funding entity or organization paying on behalf of the donor), when distinct from the donor.
-        fiscalSponsorName:
-          type: string
-          nullable: true
-          description: Computed display name of the fiscal sponsor (funding entity or organization), when applicable.
-        pledgeId:
-          type: string
-          nullable: true
-        campaignId:
-          type: string
-          nullable: true
-        amount:
-          type: number
-        currency:
-          type: string
-          default: USD
-        cashReceivedDate:
-          type: string
-          format: date
-        paymentMethod:
-          type: string
-          enum: [check, wire, ach, credit_card, stock, daf_grant, in_kind, other]
-          nullable: true
-        checkNumber:
-          type: string
-          nullable: true
-        reconciled:
-          type: boolean
-        directToSchoolPassthrough:
-          type: boolean
-        fiscalSponsorFundingEntityId:
-          type: string
-          nullable: true
-        fiscalSponsorOrganizationId:
-          type: string
-          nullable: true
-        payerFundingEntityId:
-          type: string
-          nullable: true
-        payerOrganizationId:
-          type: string
-          nullable: true
-        acknowledgmentSentDate:
-          type: string
-          format: date
-          nullable: true
-        taxReceiptSent:
-          type: boolean
-        notes:
-          type: string
-          nullable: true
-        allocations:
-          type: array
-          items:
-            $ref: "#/components/schemas/GiftAllocation"
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, amount, currency, cashReceivedDate, reconciled, directToSchoolPassthrough, taxReceiptSent, allocations, createdAt, updatedAt]
-
-    GiftDetail:
-      allOf:
-        - $ref: "#/components/schemas/Gift"
-        - type: object
-          properties:
-            softCredits:
-              type: array
-              items:
-                $ref: "#/components/schemas/GiftSoftCredit"
-          required: [softCredits]
-
-    CreateGiftBody:
-      type: object
-      required: [amount, cashReceivedDate, allocations]
-      description: Exactly one of individualId, householdId, or fundingEntityId must be set.
-      properties:
-        individualId:
-          type: string
-        householdId:
-          type: string
-        fundingEntityId:
-          type: string
-        amount:
-          type: number
-        currency:
-          type: string
-          default: USD
-        campaignId:
-          type: string
-        allocations:
-          type: array
-          minItems: 1
-          items:
-            $ref: "#/components/schemas/CreateGiftAllocationBody"
-        cashReceivedDate:
-          type: string
-          format: date
-        paymentMethod:
-          type: string
-          enum: [check, wire, ach, credit_card, stock, daf_grant, in_kind, other]
-        checkNumber:
-          type: string
-        pledgeId:
-          type: string
-        acknowledgmentSentDate:
-          type: string
-          format: date
-        taxReceiptSent:
-          type: boolean
-        payerFundingEntityId:
-          type: string
-        payerOrganizationId:
-          type: string
-        directToSchoolPassthrough:
-          type: boolean
-        fiscalSponsorFundingEntityId:
-          type: string
-        fiscalSponsorOrganizationId:
-          type: string
-        notes:
-          type: string
-
-    UpdateGiftBody:
-      type: object
-      properties:
-        amount:
-          type: number
-        currency:
-          type: string
-        campaignId:
-          type: string
-          nullable: true
-        allocations:
-          type: array
-          minItems: 1
-          description: When provided, replaces all allocations. Sum must equal amount.
-          items:
-            $ref: "#/components/schemas/CreateGiftAllocationBody"
-        reconciled:
-          type: boolean
-        acknowledgmentSentDate:
-          type: string
-          format: date
-          nullable: true
-        taxReceiptSent:
-          type: boolean
-        payerFundingEntityId:
-          type: string
-          nullable: true
-        payerOrganizationId:
-          type: string
-          nullable: true
-        notes:
-          type: string
-          nullable: true
-        paymentMethod:
-          type: string
-          enum: [check, wire, ach, credit_card, stock, daf_grant, in_kind, other]
-        checkNumber:
-          type: string
-        directToSchoolPassthrough:
-          type: boolean
-        fiscalSponsorFundingEntityId:
-          type: string
-          nullable: true
-        fiscalSponsorOrganizationId:
-          type: string
-          nullable: true
-        pledgeId:
-          type: string
-          nullable: true
-
-    # ─── Move ────────────────────────────────────────────────────────────────────
-    Move:
-      type: object
-      properties:
-        id:
-          type: string
-        subject:
-          type: string
-        moveType:
-          $ref: "#/components/schemas/MoveType"
-        date:
-          type: string
-          format: date
-        level:
-          type: string
-          enum: [household, funding_entity, individual]
-        individualId:
-          type: string
-          nullable: true
-        individualName:
-          type: string
-          nullable: true
-        householdId:
-          type: string
-          nullable: true
-        householdName:
-          type: string
-          nullable: true
-        fundingEntityId:
-          type: string
-          nullable: true
-        fundingEntityName:
-          type: string
-          nullable: true
-        opportunityId:
-          type: string
-          nullable: true
-        opportunityName:
-          type: string
-          nullable: true
-        participantUserIds:
-          type: array
-          items: { type: string }
-        participantUserNames:
-          type: array
-          items: { type: string }
-        summary:
-          type: string
-          nullable: true
-        outcome:
-          type: string
-          nullable: true
-        nextStep:
-          type: string
-          nullable: true
-        nextStepOwnerUserId:
-          type: string
-          nullable: true
-        nextStepOwnerName:
-          type: string
-          nullable: true
-        nextStepDueDate:
-          type: string
-          format: date
-          nullable: true
-        isDraft:
-          type: boolean
-        source:
-          type: string
-          enum: [manual, gmail, calendar]
-        createdByUserId:
-          type: string
-        createdByName:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, subject, moveType, date, level, participantUserIds, participantUserNames, isDraft, source, createdByUserId, createdByName, createdAt, updatedAt]
-
-    CreateMoveBody:
-      type: object
-      required: [subject, moveType, date, level]
-      properties:
-        subject:
-          type: string
-        moveType:
-          $ref: "#/components/schemas/MoveType"
-        date:
-          type: string
-          format: date
-        level:
-          type: string
-          enum: [household, funding_entity, individual]
-        individualId:
-          type: string
-        householdId:
-          type: string
-        fundingEntityId:
-          type: string
-        opportunityId:
-          type: string
-        participantUserIds:
-          type: array
-          items: { type: string }
-        summary:
-          type: string
-        outcome:
-          type: string
-        nextStep:
-          type: string
-        nextStepOwnerUserId:
-          type: string
-        nextStepDueDate:
-          type: string
-          format: date
-        isDraft:
-          type: boolean
-          default: false
-
-    UpdateMoveBody:
-      type: object
-      properties:
-        subject:
-          type: string
-        moveType:
-          $ref: "#/components/schemas/MoveType"
-        date:
-          type: string
-          format: date
-        summary:
-          type: string
-        outcome:
-          type: string
-        nextStep:
-          type: string
-        nextStepOwnerUserId:
-          type: string
-        nextStepDueDate:
-          type: string
-          format: date
-        isDraft:
-          type: boolean
-        participantUserIds:
-          type: array
-          items: { type: string }
-
-    # ─── Dashboard ──────────────────────────────────────────────────────────────
-    DashboardSummary:
-      type: object
-      properties:
-        openOpportunitiesCount:
-          type: integer
-        openOpportunitiesValue:
-          type: number
-        overdueNextStepsCount:
-          type: integer
-        donorsGoneQuietCount:
-          type: integer
-        upcomingDeadlinesCount:
-          type: integer
-        pledgeInstallmentsDueCount:
-          type: integer
-        totalGivingCurrentFY:
-          type: number
-        totalGivingLastFY:
-          type: number
-        opportunitiesByFund:
-          type: array
-          items:
-            type: object
-            properties:
-              fund:
-                $ref: "#/components/schemas/Fund"
-              count:
-                type: integer
-              value:
-                type: number
-            required: [fund, count, value]
-        recentActivity:
-          type: array
-          items:
-            $ref: "#/components/schemas/ActivityItem"
-      required: [openOpportunitiesCount, openOpportunitiesValue, overdueNextStepsCount, donorsGoneQuietCount, upcomingDeadlinesCount, pledgeInstallmentsDueCount, totalGivingCurrentFY, totalGivingLastFY, opportunitiesByFund, recentActivity]
-
-    ActivityItem:
-      type: object
-      properties:
-        id:
-          type: string
-        type:
-          type: string
-          enum: [move, gift, opportunity_created, opportunity_stage_change, pledge_created, individual_created]
-        entityType:
-          type: string
-          enum: [individual, household, funding_entity, opportunity, gift, pledge, move]
-        entityId:
-          type: string
-        entityName:
-          type: string
-        description:
-          type: string
-        userId:
-          type: string
-        userName:
-          type: string
-        timestamp:
-          type: string
-          format: date-time
-      required: [id, type, entityType, entityId, entityName, description, userId, userName, timestamp]
-
-    OverdueNextStep:
-      type: object
-      properties:
-        moveId:
-          type: string
-        entityType:
-          type: string
-          enum: [individual, household, funding_entity]
-        entityId:
-          type: string
-        entityName:
-          type: string
-        nextStep:
-          type: string
-        dueDate:
-          type: string
-          format: date
-        daysOverdue:
-          type: integer
-        ownerName:
-          type: string
-      required: [moveId, entityType, entityId, entityName, nextStep, dueDate, daysOverdue, ownerName]
-
-    DonorQuietAlert:
-      type: object
-      properties:
-        entityType:
-          type: string
-          enum: [individual, household, funding_entity]
-        entityId:
-          type: string
-        entityName:
-          type: string
-        lastMoveDate:
-          type: string
-          format: date
-          nullable: true
-        daysSinceLastMove:
-          type: integer
-        cultivationStage:
-          type: string
-        ownerName:
-          type: string
-          nullable: true
-        openOpportunitiesCount:
-          type: integer
-      required: [entityType, entityId, entityName, daysSinceLastMove, cultivationStage, openOpportunitiesCount]
-
-    # ─── Projections ─────────────────────────────────────────────────────────────
-    ProjectionsForecast:
-      type: object
-      properties:
-        fiscalYears:
-          type: array
-          items:
-            $ref: "#/components/schemas/FiscalYearForecast"
-        totalConfirmed:
-          type: number
-        totalWeightedPipeline:
-          type: number
-        totalForecast:
-          type: number
-      required: [fiscalYears, totalConfirmed, totalWeightedPipeline, totalForecast]
-
-    FiscalYearForecast:
-      type: object
-      properties:
-        fiscalYear:
-          type: string
-          enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30]
-        label:
-          type: string
-        confirmed:
-          type: number
-        verballyCommitted:
-          type: number
-        weightedPipeline:
-          type: number
-        stretch:
-          type: number
-        totalForecast:
-          type: number
-        target:
-          type: number
-          nullable: true
-        gap:
-          type: number
-          nullable: true
-        byFund:
-          type: array
-          items:
-            type: object
-            properties:
-              fund:
-                $ref: "#/components/schemas/Fund"
-              confirmed:
-                type: number
-              weightedPipeline:
-                type: number
-              totalForecast:
-                type: number
-            required: [fund, confirmed, weightedPipeline, totalForecast]
-      required: [fiscalYear, label, confirmed, verballyCommitted, weightedPipeline, stretch, totalForecast, byFund]
-
-    PledgeSchedulePeriod:
-      type: object
-      properties:
-        period:
-          type: string
-        year:
-          type: integer
-        month:
-          type: integer
-        expectedAmount:
-          type: number
-        installments:
-          type: array
-          items:
-            type: object
-            properties:
-              pledgeId:
-                type: string
-              donorName:
-                type: string
-              amount:
-                type: number
-              fund:
-                $ref: "#/components/schemas/Fund"
-              status:
-                type: string
-            required: [pledgeId, donorName, amount, fund, status]
-      required: [period, year, month, expectedAmount, installments]
-
-    # ─── Grants Calendar ─────────────────────────────────────────────────────────
-    GrantsCalendarEntry:
-      type: object
-      properties:
-        opportunityId:
-          type: string
-        opportunityName:
-          type: string
-          nullable: true
-        donorName:
-          type: string
-        fund:
-          $ref: "#/components/schemas/Fund"
-        ownerName:
-          type: string
-          nullable: true
-        stage:
-          type: string
-        governmentStage:
-          type: string
-          nullable: true
-        loiDeadline:
-          type: string
-          format: date-time
-          nullable: true
-        loiSubmitted:
-          type: boolean
-        proposalDeadline:
-          type: string
-          format: date-time
-          nullable: true
-        proposalSubmitted:
-          type: boolean
-        decisionExpectedDate:
-          type: string
-          format: date
-          nullable: true
-        amountRequested:
-          type: number
-          nullable: true
-        nextDeadline:
-          type: string
-          format: date-time
-          nullable: true
-        daysUntilNextDeadline:
-          type: integer
-          nullable: true
-      required: [opportunityId, donorName, fund, loiSubmitted, proposalSubmitted]
-
-    # ─── Contact (polymorphic email/phone/address) ───────────────────────────────
-    ContactOwnerType:
-      type: string
-      enum: [individual, household, funding_entity, organization]
-
-    ContactStatus:
-      type: string
-      enum: [current, former, unknown]
-
-    ContactEmail:
-      type: object
-      properties:
-        id: { type: string }
-        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
-        ownerId: { type: string }
-        email: { type: string }
-        label: { type: string, nullable: true }
-        isPrimary: { type: boolean }
-        verified: { type: boolean }
-        bouncedAt: { type: string, format: date-time, nullable: true }
-        status: { $ref: "#/components/schemas/ContactStatus" }
-        endedAt: { type: string, format: date-time, nullable: true }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-      required: [id, ownerType, ownerId, email, isPrimary, verified, status, createdAt, updatedAt]
-
-    CreateContactEmailBody:
-      type: object
-      required: [ownerType, ownerId, email]
-      properties:
-        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
-        ownerId: { type: string }
-        email: { type: string }
-        label: { type: string }
-        isPrimary: { type: boolean }
-        verified: { type: boolean }
-        status: { $ref: "#/components/schemas/ContactStatus" }
-        endedAt: { type: string, format: date-time }
-
-    UpdateContactEmailBody:
-      type: object
-      properties:
-        email: { type: string }
-        label: { type: string, nullable: true }
-        isPrimary: { type: boolean }
-        verified: { type: boolean }
-        bouncedAt: { type: string, format: date-time, nullable: true }
-        status: { $ref: "#/components/schemas/ContactStatus" }
-        endedAt: { type: string, format: date-time, nullable: true }
-
-    ContactPhone:
-      type: object
-      properties:
-        id: { type: string }
-        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
-        ownerId: { type: string }
-        phone: { type: string }
-        label: { type: string, nullable: true }
-        isPrimary: { type: boolean }
-        smsCapable: { type: boolean }
-        status: { $ref: "#/components/schemas/ContactStatus" }
-        endedAt: { type: string, format: date-time, nullable: true }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-      required: [id, ownerType, ownerId, phone, isPrimary, smsCapable, status, createdAt, updatedAt]
-
-    CreateContactPhoneBody:
-      type: object
-      required: [ownerType, ownerId, phone]
-      properties:
-        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
-        ownerId: { type: string }
-        phone: { type: string }
-        label: { type: string }
-        isPrimary: { type: boolean }
-        smsCapable: { type: boolean }
-        status: { $ref: "#/components/schemas/ContactStatus" }
-        endedAt: { type: string, format: date-time }
-
-    UpdateContactPhoneBody:
-      type: object
-      properties:
-        phone: { type: string }
-        label: { type: string, nullable: true }
-        isPrimary: { type: boolean }
-        smsCapable: { type: boolean }
-        status: { $ref: "#/components/schemas/ContactStatus" }
-        endedAt: { type: string, format: date-time, nullable: true }
-
-    ContactAddress:
-      type: object
-      properties:
-        id: { type: string }
-        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
-        ownerId: { type: string }
-        label: { type: string, nullable: true }
-        line1: { type: string, nullable: true }
-        line2: { type: string, nullable: true }
-        city: { type: string, nullable: true }
-        state: { type: string, nullable: true }
-        postalCode: { type: string, nullable: true }
-        country: { type: string, nullable: true }
-        metroArea: { type: string, nullable: true }
-        isPrimary: { type: boolean }
-        isMailingPreferred: { type: boolean }
-        status: { $ref: "#/components/schemas/ContactStatus" }
-        endedAt: { type: string, format: date-time, nullable: true }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-      required: [id, ownerType, ownerId, isPrimary, isMailingPreferred, status, createdAt, updatedAt]
-
-    CreateContactAddressBody:
-      type: object
-      required: [ownerType, ownerId]
-      properties:
-        ownerType: { $ref: "#/components/schemas/ContactOwnerType" }
-        ownerId: { type: string }
-        label: { type: string }
-        line1: { type: string }
-        line2: { type: string }
-        city: { type: string }
-        state: { type: string }
-        postalCode: { type: string }
-        country: { type: string }
-        metroArea: { type: string }
-        isPrimary: { type: boolean }
-        isMailingPreferred: { type: boolean }
-        status: { $ref: "#/components/schemas/ContactStatus" }
-        endedAt: { type: string, format: date-time }
-
-    UpdateContactAddressBody:
-      type: object
-      properties:
-        label: { type: string, nullable: true }
-        line1: { type: string, nullable: true }
-        line2: { type: string, nullable: true }
-        city: { type: string, nullable: true }
-        state: { type: string, nullable: true }
-        postalCode: { type: string, nullable: true }
-        country: { type: string, nullable: true }
-        metroArea: { type: string, nullable: true }
-        isPrimary: { type: boolean }
-        isMailingPreferred: { type: boolean }
-        status: { $ref: "#/components/schemas/ContactStatus" }
-        endedAt: { type: string, format: date-time, nullable: true }
-
-    # ─── Campaign ────────────────────────────────────────────────────────────────
-    Campaign:
-      type: object
-      properties:
-        id: { type: string }
-        name: { type: string }
-        fund: { $ref: "#/components/schemas/Fund" }
-        description: { type: string, nullable: true }
-        startDate: { type: string, format: date, nullable: true }
-        endDate: { type: string, format: date, nullable: true }
-        fiscalYear: { type: string, enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30], nullable: true }
-        goalAmount: { type: number, nullable: true }
-        isActive: { type: boolean }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-      required: [id, name, fund, isActive, createdAt, updatedAt]
-
-    CreateCampaignBody:
-      type: object
-      required: [name, fund]
-      properties:
-        name: { type: string }
-        fund: { $ref: "#/components/schemas/Fund" }
-        description: { type: string }
-        startDate: { type: string, format: date }
-        endDate: { type: string, format: date }
-        fiscalYear: { type: string, enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30] }
-        goalAmount: { type: number }
-        isActive: { type: boolean }
-
-    UpdateCampaignBody:
-      type: object
-      properties:
-        name: { type: string }
-        fund: { $ref: "#/components/schemas/Fund" }
-        description: { type: string, nullable: true }
-        startDate: { type: string, format: date, nullable: true }
-        endDate: { type: string, format: date, nullable: true }
-        fiscalYear: { type: string, enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30], nullable: true }
-        goalAmount: { type: number, nullable: true }
-        isActive: { type: boolean }
-
-    # ─── GiftAllocation ──────────────────────────────────────────────────────────
+    # ─── Gift allocations ──────────────────────────────────────────────────────
     GiftAllocation:
       type: object
+      required: [id, formalRegionalRestriction, formalFundUseRestriction, createdAt, updatedAt]
       properties:
-        id: { type: string }
-        giftId: { type: string }
-        fund: { $ref: "#/components/schemas/Fund" }
-        amount: { type: number }
-        fiscalYear: { type: string, enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30], nullable: true }
-        notes: { type: string, nullable: true }
-        createdAt: { type: string, format: date-time }
-      required: [id, giftId, fund, amount, createdAt]
-
+        id:                          { type: string }
+        airtableId:                  { type: string, nullable: true }
+        giftId:                      { type: string, nullable: true }
+        subAmount:                   { type: string, nullable: true }
+        grantYearToBookTo:           { type: string, nullable: true }
+        entityId:                    { type: string, nullable: true }
+        formalRegionalRestriction:   { type: boolean }
+        intendedUsage:               { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
+        fundableProjectId:           { type: string, nullable: true }
+        formalFundUseRestriction:    { type: boolean }
+        schoolRecipientId:           { type: string, nullable: true }
+        spendingStart:               { type: string, format: date, nullable: true }
+        spendingEnd:                 { type: string, format: date, nullable: true }
+        createdAt:                   { type: string, format: date-time }
+        updatedAt:                   { type: string, format: date-time }
+    GiftAllocationList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/GiftAllocation" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
     CreateGiftAllocationBody:
       type: object
-      required: [fund, amount]
       properties:
-        fund: { $ref: "#/components/schemas/Fund" }
-        amount: { type: number }
-        fiscalYear: { type: string, enum: [FY23,FY24,FY25,FY26,FY27,FY28,FY29,FY30] }
-        notes: { type: string }
-
-    CultivationTeamMember:
-      type: object
-      properties:
-        id: { type: string }
-        ownerType: { $ref: "#/components/schemas/CultivationTeamOwnerType" }
-        ownerId: { type: string }
-        userId: { type: string }
-        role: { $ref: "#/components/schemas/CultivationTeamRole" }
-        notes: { type: string, nullable: true }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-      required: [id, ownerType, ownerId, userId, role, createdAt, updatedAt]
-
-    CultivationTeamMemberCreate:
-      type: object
-      required: [ownerType, ownerId, userId, role]
-      properties:
-        ownerType: { $ref: "#/components/schemas/CultivationTeamOwnerType" }
-        ownerId: { type: string }
-        userId: { type: string }
-        role: { $ref: "#/components/schemas/CultivationTeamRole" }
-        notes: { type: string }
-
-    CultivationTeamMemberUpdate:
-      type: object
-      properties:
-        role: { $ref: "#/components/schemas/CultivationTeamRole" }
-        notes: { type: string, nullable: true }
+        giftId:                      { type: string }
+        subAmount:                   { type: string }
+        grantYearToBookTo:           { type: string }
+        entityId:                    { type: string }
+        formalRegionalRestriction:   { type: boolean }
+        intendedUsage:               { $ref: "#/components/schemas/IntendedUsage" }
+        fundableProjectId:           { type: string }
+        formalFundUseRestriction:    { type: boolean }
+        schoolRecipientId:           { type: string }
+        spendingStart:               { type: string, format: date }
+        spendingEnd:                 { type: string, format: date }
+    UpdateGiftAllocationBody:
+      allOf: [ { $ref: "#/components/schemas/CreateGiftAllocationBody" } ]

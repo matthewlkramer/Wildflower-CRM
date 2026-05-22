@@ -1,16 +1,42 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import usersRouter from "./users";
+import regionsRouter from "./regions";
+import schoolsRouter from "./schools";
+import lookupsRouter from "./lookups";
+import householdsRouter from "./households";
+import paymentIntermediariesRouter from "./paymentIntermediaries";
+import fundersRouter from "./funders";
+import organizationsRouter from "./organizations";
+import peopleRouter from "./people";
+import peopleEntityRolesRouter from "./peopleEntityRoles";
+import emailsRouter from "./emails";
+import phoneNumbersRouter from "./phoneNumbers";
+import addressesRouter from "./addresses";
+import opportunitiesRouter from "./opportunitiesAndPledges";
+import pledgeAllocationsRouter from "./pledgeAllocations";
+import giftsRouter from "./giftsAndPayments";
+import giftAllocationsRouter from "./giftAllocations";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
-
-router.all("/{*splat}", (_req: Request, res: Response) => {
-  res.status(503).json({
-    error: "rebuilding",
-    message:
-      "The CRM API is being rebuilt to match the new Airtable-aligned data model. Endpoints will return after Stage 2 (API rewrite).",
-  });
-});
+router.use(usersRouter);
+router.use(regionsRouter);
+router.use(schoolsRouter);
+router.use(lookupsRouter);
+router.use(householdsRouter);
+router.use(paymentIntermediariesRouter);
+router.use(fundersRouter);
+router.use(organizationsRouter);
+router.use(peopleRouter);
+router.use(peopleEntityRolesRouter);
+router.use(emailsRouter);
+router.use(phoneNumbersRouter);
+router.use(addressesRouter);
+router.use(opportunitiesRouter);
+router.use(pledgeAllocationsRouter);
+router.use(giftsRouter);
+router.use(giftAllocationsRouter);
 
 export default router;

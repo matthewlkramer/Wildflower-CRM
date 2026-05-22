@@ -38,15 +38,29 @@ app.use(clerkMiddleware());
 
 app.use("/api", router);
 
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "not_found", message: "Route not found" });
+});
+
 app.use(
   (
     err: unknown,
-    _req: express.Request,
+    req: express.Request,
     res: express.Response,
     next: express.NextFunction,
   ) => {
     if (res.headersSent) return next(err);
-    next(err);
+    const anyErr = err as { status?: number; statusCode?: number; message?: string } | undefined;
+    const status = anyErr?.status ?? anyErr?.statusCode ?? 500;
+    (req as unknown as { log?: { error: (...a: unknown[]) => void } }).log?.error(
+      { err },
+      "Unhandled API error",
+    );
+    res.status(status).json({
+      error: status >= 500 ? "internal_error" : "request_error",
+      message:
+        status >= 500 ? "Internal server error" : (anyErr?.message ?? "Request failed"),
+    });
   },
 );
 
