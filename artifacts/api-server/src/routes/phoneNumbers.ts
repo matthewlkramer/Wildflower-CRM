@@ -35,7 +35,17 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreatePhoneNumberBody, req.body, res);
     if (!body) return;
-    const [row] = await db.insert(phoneNumbers).values({ id: newId(), ...body }).returning();
+    // personId is NOT NULL at the DB level (see lib/db/src/schema/phoneNumbers.ts).
+    // The generated zod body type still marks it optional because the OpenAPI
+    // spec rewrite is part of pending Stage 2; guard at runtime until then.
+    if (!body.personId) {
+      res.status(400).json({ error: "personId is required" });
+      return;
+    }
+    const [row] = await db
+      .insert(phoneNumbers)
+      .values({ id: newId(), ...body, personId: body.personId })
+      .returning();
     res.status(201).json(row);
   }),
 );

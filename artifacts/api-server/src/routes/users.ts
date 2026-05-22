@@ -1,18 +1,27 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
-import { asc } from "drizzle-orm";
+import { asc, eq, isNull } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler } from "../lib/helpers";
+import { asyncHandler, notFound, paramId } from "../lib/helpers";
 import { getAppUser } from "../lib/appRequest";
 
 const router: IRouter = Router();
 router.use(requireAuth);
 
+// Active users by default. Pass ?includeArchived=true to see archived users
+// too (e.g. for an admin archive-management screen). User pickers anywhere
+// in the app should use the default so archived team members don't show up
+// as assignable owners.
 router.get(
   "/users",
-  asyncHandler(async (_req, res) => {
-    const rows = await db.select().from(users).orderBy(asc(users.email));
+  asyncHandler(async (req, res) => {
+    const includeArchived = req.query.includeArchived === "true";
+    const rows = await db
+      .select()
+      .from(users)
+      .where(includeArchived ? undefined : isNull(users.archivedAt))
+      .orderBy(asc(users.email));
     res.json(rows);
   }),
 );
@@ -21,6 +30,54 @@ router.get(
   "/users/me",
   asyncHandler(async (req, res) => {
     res.json(getAppUser(req));
+  }),
+);
+
+// Admin-only archive/unarchive. Hard delete is intentionally not exposed —
+// every owner_user_id FK in the schema is ON DELETE RESTRICT, so a hard
+// delete would either fail or require manually re-owning every record the
+// archived user touched. Archive preserves history while immediately
+// revoking the user's access (see requireAuth).
+function requireAdmin(req: import("express").Request, res: import("express").Response): boolean {
+  const me = getAppUser(req);
+  if (!me || me.role !== "admin") {
+    res.status(403).json({ error: "admin_required" });
+    return false;
+  }
+  return true;
+}
+
+router.post(
+  "/users/:id/archive",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const me = getAppUser(req)!;
+    const targetId = paramId(req);
+    if (me.id === targetId) {
+      res.status(400).json({ error: "cannot_archive_self" });
+      return;
+    }
+    const [row] = await db
+      .update(users)
+      .set({ archivedAt: new Date(), updatedAt: new Date() })
+      .where(eq(users.id, targetId))
+      .returning();
+    if (!row) return notFound(res, "user");
+    res.json(row);
+  }),
+);
+
+router.post(
+  "/users/:id/unarchive",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const [row] = await db
+      .update(users)
+      .set({ archivedAt: null, updatedAt: new Date() })
+      .where(eq(users.id, paramId(req)))
+      .returning();
+    if (!row) return notFound(res, "user");
+    res.json(row);
   }),
 );
 

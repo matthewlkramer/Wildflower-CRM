@@ -1,4 +1,12 @@
-import { pgTable, text, timestamp, boolean, numeric, date } from "drizzle-orm/pg-core";
+import {
+  type AnyPgColumn,
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  numeric,
+  date,
+} from "drizzle-orm/pg-core";
 import {
   opportunityStatusEnum,
   opportunityTypeEnum,
@@ -6,11 +14,18 @@ import {
   opportunityConditionalEnum,
   intendedUsageEnum,
 } from "./_enums";
+import { funders } from "./funders";
+import { people } from "./people";
+import { users } from "./users";
 
 export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   id: text("id").primaryKey(),
   name: text("name"),
-  funderId: text("funder_id"),
+  // RESTRICT: the funder is the giver of record on this opportunity/pledge.
+  // Deleting them must explicitly clean up dependent rows first.
+  funderId: text("funder_id").references(() => funders.id, {
+    onDelete: "restrict",
+  }),
   askAmount: numeric("ask_amount", { precision: 14, scale: 2 }),
   awardedAmount: numeric("awarded_amount", { precision: 14, scale: 2 }),
   type: opportunityTypeEnum("type"),
@@ -20,15 +35,29 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // Array of fiscal_years.id slugs (e.g. {fy2024,fy2025}). Multi-year grants
   // book a sub_amount to each year via pledge_allocations.
   grantYears: text("grant_years").array(),
-  individualGiverPersonId: text("individual_giver_person_id"),
-  individualAdvisorPersonId: text("individual_advisor_person_id"),
+  // RESTRICT: the individual giver is part of the money-trail record.
+  individualGiverPersonId: text("individual_giver_person_id").references(
+    () => people.id,
+    { onDelete: "restrict" },
+  ),
+  // SET NULL: an advisor is a soft relationship; if the person record is
+  // removed, the opportunity survives without an advisor pointer.
+  individualAdvisorPersonId: text("individual_advisor_person_id").references(
+    () => people.id,
+    { onDelete: "set null" },
+  ),
   // Self-referential FK to the *original* opportunity that this row matches.
   // Convention: the matching gift's match_id points at the original gift's id.
-  // (i.e. populated only on the matching-gift row, never on the original.)
-  matchId: text("match_id"),
+  // SET NULL: removing the original shouldn't cascade-delete the match record.
+  matchId: text("match_id").references(
+    (): AnyPgColumn => opportunitiesAndPledges.id,
+    { onDelete: "set null" },
+  ),
   status: opportunityStatusEnum("status"),
-  // FK to users.id — team member who owns this opportunity.
-  ownerUserId: text("owner_user_id"),
+  // RESTRICT + archive workflow on users (see users.archivedAt).
+  ownerUserId: text("owner_user_id").references(() => users.id, {
+    onDelete: "restrict",
+  }),
   projectedCloseDate: date("projected_close_date"),
   actualCompletionDate: date("actual_completion_date"),
   winProbability: numeric("win_probability", { precision: 5, scale: 4 }),
@@ -46,14 +75,18 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // Array of fundable_projects.id slugs corresponding to the 'project'
   // entries in intendedUsages.
   fundableProjectIds: text("fundable_project_ids").array(),
-  // Array of regions.id values the opportunity is focused on (was the
-  // opportunity_regional_focus junction table).
+  // Array of regions.id values. Array columns can't carry native FK
+  // constraints; the API layer is responsible for validating writes.
   regionIds: text("region_ids").array(),
   usageNotes: text("usage_notes"),
   // Legacy integer pledge ID inherited from Copper. Not a FK; preserved for
   // cross-reference back to the prior CRM.
   copperPledgeId: text("copper_pledge_id"),
-  primaryContactPersonId: text("primary_contact_person_id"),
+  // SET NULL: primary contact is a soft pointer.
+  primaryContactPersonId: text("primary_contact_person_id").references(
+    () => people.id,
+    { onDelete: "set null" },
+  ),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -61,4 +94,5 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
 });
 
 export type OpportunityOrPledge = typeof opportunitiesAndPledges.$inferSelect;
-export type NewOpportunityOrPledge = typeof opportunitiesAndPledges.$inferInsert;
+export type NewOpportunityOrPledge =
+  typeof opportunitiesAndPledges.$inferInsert;

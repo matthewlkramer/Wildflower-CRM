@@ -1,4 +1,12 @@
-import { pgTable, text, timestamp, boolean, integer, date } from "drizzle-orm/pg-core";
+import {
+  type AnyPgColumn,
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  integer,
+  date,
+} from "drizzle-orm/pg-core";
 import {
   fundingEntitySubtypeEnum,
   numberOfEmployeesEnum,
@@ -8,6 +16,7 @@ import {
   strategicAlignmentEnum,
   activeStatusEnum,
 } from "./_enums";
+import { users } from "./users";
 
 export const funders = pgTable("funders", {
   id: text("id").primaryKey(),
@@ -23,8 +32,11 @@ export const funders = pgTable("funders", {
   details: text("details"),
   emailDomain: text("email_domain"),
   orgEmail: text("org_email"),
-  // FK to users.id — team member who owns this funder.
-  ownerUserId: text("owner_user_id"),
+  // Team member who owns this funder. RESTRICT keeps history intact when a
+  // team member archives.
+  ownerUserId: text("owner_user_id").references(() => users.id, {
+    onDelete: "restrict",
+  }),
   tags: text("tags"),
   lastContacted: date("last_contacted"),
   interactionCount: integer("interaction_count"),
@@ -43,10 +55,16 @@ export const funders = pgTable("funders", {
   interestsThematic: text("interests_thematic").array(),
   interestsAges: text("interests_ages").array(),
   interestsGovModels: text("interests_gov_models").array(),
-  // Array of regions.id values the funder prioritizes (was the
-  // funder_regional_priorities junction table).
+  // Array of regions.id values the funder prioritizes. NB: array columns
+  // cannot carry native PG FK constraints; integrity is enforced at write
+  // time by the API layer.
   regionIds: text("region_ids").array(),
-  parentFunderId: text("parent_funder_id"),
+  // Self-ref. SET NULL: removing a parent funder leaves children intact
+  // (they just lose the parent pointer).
+  parentFunderId: text("parent_funder_id").references(
+    (): AnyPgColumn => funders.id,
+    { onDelete: "set null" },
+  ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

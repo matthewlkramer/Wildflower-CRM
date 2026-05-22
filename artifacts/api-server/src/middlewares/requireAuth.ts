@@ -27,6 +27,11 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
       // email (typical for placeholder rows backfilled from legacy `owner`
       // text columns), claim it by updating its clerkId rather than
       // inserting a duplicate.
+      //
+      // BUT: do not silently resurrect an archived user. If an admin
+      // archived someone, signing back in should be denied (403) so the
+      // operator has to explicitly unarchive — otherwise archive is
+      // meaningless as access control.
       if (email) {
         const existing = await db
           .select()
@@ -34,6 +39,10 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
           .where(eq(users.email, email))
           .then((rows) => rows[0]);
         if (existing) {
+          if (existing.archivedAt) {
+            res.status(403).json({ error: "user_archived" });
+            return;
+          }
           user = await db
             .update(users)
             .set({ clerkId: auth.userId, updatedAt: new Date() })
@@ -59,6 +68,16 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 
     if (!user) {
       res.status(500).json({ error: "user_provision_failed" });
+      return;
+    }
+    // Deny archived users at the auth boundary. The Google SSO restriction
+    // to @wildflowerschools.org is the primary access gate, but archive is
+    // defense-in-depth: an admin can immediately revoke a team member's
+    // access without waiting on Google Workspace propagation, and it also
+    // blocks any pre-seeded placeholder rows that were archived before
+    // ever being claimed.
+    if (user.archivedAt) {
+      res.status(403).json({ error: "user_archived" });
       return;
     }
     setAppUser(req, user);

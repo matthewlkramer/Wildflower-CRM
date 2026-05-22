@@ -1,10 +1,26 @@
-import { pgTable, text, timestamp, boolean, numeric, date } from "drizzle-orm/pg-core";
+import {
+  type AnyPgColumn,
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  numeric,
+  date,
+} from "drizzle-orm/pg-core";
 import {
   giftTypeEnum,
   giftPaymentMethodEnum,
   giftAllocationTypeEnum,
   intendedUsageEnum,
 } from "./_enums";
+import { funders } from "./funders";
+import { people } from "./people";
+import { opportunitiesAndPledges } from "./opportunitiesAndPledges";
+import { paymentIntermediaries } from "./paymentIntermediaries";
+import { users } from "./users";
+import { entities } from "./entities";
+import { fundableProjects } from "./fundableProjects";
+import { schools } from "./schools";
 
 export const giftsAndPayments = pgTable("gifts_and_payments", {
   id: text("id").primaryKey(),
@@ -14,30 +30,73 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   dateReceived: date("date_received"),
   paymentMethod: giftPaymentMethodEnum("payment_method"),
   amount: numeric("amount", { precision: 14, scale: 2 }),
-  funderId: text("funder_id"),
-  individualGiverPersonId: text("individual_giver_person_id"),
+  // RESTRICT: the funder is the giver of record.
+  funderId: text("funder_id").references(() => funders.id, {
+    onDelete: "restrict",
+  }),
+  // RESTRICT: the individual giver is part of the money-trail record.
+  individualGiverPersonId: text("individual_giver_person_id").references(
+    () => people.id,
+    { onDelete: "restrict" },
+  ),
   type: giftTypeEnum("type"),
-  paymentOnPledgeId: text("payment_on_pledge_id"),
-  advisorPersonId: text("advisor_person_id"),
+  // RESTRICT: a payment must keep its link to the pledge it pays.
+  paymentOnPledgeId: text("payment_on_pledge_id").references(
+    () => opportunitiesAndPledges.id,
+    { onDelete: "restrict" },
+  ),
+  // SET NULL: advisor is a soft pointer.
+  advisorPersonId: text("advisor_person_id").references(() => people.id, {
+    onDelete: "set null",
+  }),
   grantYear: text("grant_year"),
-  giftBeingMatchedId: text("gift_being_matched_id"),
-  primaryContactPersonId: text("primary_contact_person_id"),
-  paymentIntermediaryId: text("payment_intermediary_id"),
-  // FK to users.id — team member who owns this gift/payment.
-  ownerUserId: text("owner_user_id"),
-  closeDate: date("close_date"), // RENAME THIS TO BE PROJECTED CLOSE DATE AND THE NEXT FIELD TO ACTUAL COMPLETION DATE
+  // Self-ref to the gift this one matches. SET NULL: deleting the original
+  // shouldn't cascade-delete the matching gift; just clear the pointer.
+  giftBeingMatchedId: text("gift_being_matched_id").references(
+    (): AnyPgColumn => giftsAndPayments.id,
+    { onDelete: "set null" },
+  ),
+  // SET NULL: primary contact is a soft pointer.
+  primaryContactPersonId: text("primary_contact_person_id").references(
+    () => people.id,
+    { onDelete: "set null" },
+  ),
+  // RESTRICT: the intermediary (DAF/giving platform) is part of the
+  // financial record.
+  paymentIntermediaryId: text("payment_intermediary_id").references(
+    () => paymentIntermediaries.id,
+    { onDelete: "restrict" },
+  ),
+  // RESTRICT + archive workflow on users.
+  ownerUserId: text("owner_user_id").references(() => users.id, {
+    onDelete: "restrict",
+  }),
+  // TODO (#4 in data-structures review): rename close_date →
+  // projected_close_date and completed_date → actual_completion_date for
+  // consistency with opportunities_and_pledges.
+  closeDate: date("close_date"),
   completedDate: date("completed_date"),
   allocationType: giftAllocationTypeEnum("allocation_type"),
-  entityId: text("entity_id"),
+  entityId: text("entity_id").references(() => entities.id, {
+    onDelete: "restrict",
+  }),
   intendedUsage: intendedUsageEnum("intended_usage"),
-  // FK to fundable_projects; populated when intendedUsage = 'project'.
-  fundableProjectId: text("fundable_project_id"),
+  fundableProjectId: text("fundable_project_id").references(
+    () => fundableProjects.id,
+    { onDelete: "restrict" },
+  ),
   designatedToSchool: boolean("designated_to_school").default(false).notNull(),
-  schoolRecipientId: text("school_recipient_id"),
+  // RESTRICT: schools are synced from Airtable; the sync now upserts
+  // (never deletes), so this only fires if someone manually deletes a
+  // school that has gift refs — which should require explicit cleanup
+  // first.
+  schoolRecipientId: text("school_recipient_id").references(() => schools.id, {
+    onDelete: "restrict",
+  }),
   spendingStartDate: date("spending_start_date"),
   spendingEndDate: date("spending_end_date"),
-  // Array of regions.id values the gift is designated to (was the
-  // gift_regional_designation junction table).
+  // Array of regions.id values. Array columns can't carry native FK
+  // constraints; API layer enforces.
   regionIds: text("region_ids").array(),
   tags: text("tags"),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),

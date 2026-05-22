@@ -23,6 +23,12 @@ export const users = pgTable("users", {
   displayName: text("display_name"),
   role: userRoleEnum("role").notNull().default("team_member"),
   defaultFund: fundEnum("default_fund"),
+  // Soft-delete marker. Non-null = archived. Archived users are filtered
+  // out of user pickers but remain resolvable so historical owner_user_id
+  // refs still render a real name. Every owner_user_id FK is RESTRICT, so
+  // archive is the only safe way to retire a team member without orphaning
+  // records they owned.
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
