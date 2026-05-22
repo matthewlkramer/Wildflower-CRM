@@ -33,6 +33,9 @@ export const people = pgTable("people", {
   interestsThematic: text("interests_thematic").array(),
   interestsAges: text("interests_ages").array(),
   interestsGovModels: text("interests_gov_models").array(),
+  // Array of regions.id values the person prioritizes (was the
+  // person_regional_priorities junction table).
+  regionIds: text("region_ids").array(),
   newsletter: boolean("newsletter").default(false).notNull(),
   unsubscribedToNewsletter: boolean("unsubscribed_to_newsletter").default(false).notNull(),
   childrenAtWf: text("children_at_wf"),

@@ -37,6 +37,9 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   schoolRecipientId: text("school_recipient_id"),
   spendingStartDate: date("spending_start_date"),
   spendingEndDate: date("spending_end_date"),
+  // Array of regions.id values the gift is designated to (was the
+  // gift_regional_designation junction table).
+  regionIds: text("region_ids").array(),
   tags: text("tags"),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),

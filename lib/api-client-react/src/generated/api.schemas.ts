@@ -450,6 +450,7 @@ export interface Funder {
   interestsThematic?: string[] | null;
   interestsAges?: string[] | null;
   interestsGovModels?: string[] | null;
+  regionIds?: string[] | null;
   parentFunderId?: string | null;
   x?: string | null;
   linkedin?: string | null;
@@ -547,6 +548,7 @@ export interface CreateFunderBody {
   interestsThematic?: string[];
   interestsAges?: string[];
   interestsGovModels?: string[];
+  regionIds?: string[];
   parentFunderId?: string;
   x?: string;
   linkedin?: string;
@@ -578,6 +580,7 @@ export interface UpdateFunderBody {
   interestsThematic?: string[] | null;
   interestsAges?: string[] | null;
   interestsGovModels?: string[] | null;
+  regionIds?: string[] | null;
   parentFunderId?: string | null;
   x?: string | null;
   linkedin?: string | null;
@@ -724,6 +727,7 @@ export interface Person {
   interestsThematic?: string[] | null;
   interestsAges?: string[] | null;
   interestsGovModels?: string[] | null;
+  regionIds?: string[] | null;
   newsletter: boolean;
   unsubscribedToNewsletter: boolean;
   childrenAtWf?: string | null;
@@ -783,6 +787,7 @@ export interface CreatePersonBody {
   interestsThematic?: string[];
   interestsAges?: string[];
   interestsGovModels?: string[];
+  regionIds?: string[];
   newsletter?: boolean;
   unsubscribedToNewsletter?: boolean;
   childrenAtWf?: string;
@@ -816,6 +821,7 @@ export interface UpdatePersonBody {
   interestsThematic?: string[] | null;
   interestsAges?: string[] | null;
   interestsGovModels?: string[] | null;
+  regionIds?: string[] | null;
   newsletter?: boolean;
   unsubscribedToNewsletter?: boolean;
   childrenAtWf?: string | null;
@@ -959,6 +965,7 @@ export interface OpportunityOrPledge {
   entityIds?: string[] | null;
   intendedUsages?: IntendedUsage[] | null;
   fundableProjectIds?: string[] | null;
+  regionIds?: string[] | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
   primaryContactPersonId?: string | null;
@@ -979,6 +986,7 @@ export interface PledgeAllocation {
   status?: PledgeAllocationStatus | null;
   conditions?: string | null;
   notes?: string | null;
+  regionIds?: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1012,6 +1020,7 @@ export interface GiftOrPayment {
   schoolRecipientId?: string | null;
   spendingStartDate?: string | null;
   spendingEndDate?: string | null;
+  regionIds?: string[] | null;
   tags?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -1051,6 +1060,7 @@ export interface CreateOpportunityOrPledgeBody {
   entityIds?: string[];
   intendedUsages?: IntendedUsage[];
   fundableProjectIds?: string[];
+  regionIds?: string[];
   usageNotes?: string;
   copperPledgeId?: string;
   primaryContactPersonId?: string;
@@ -1080,6 +1090,7 @@ export interface UpdateOpportunityOrPledgeBody {
   entityIds?: string[] | null;
   intendedUsages?: IntendedUsage[] | null;
   fundableProjectIds?: string[] | null;
+  regionIds?: string[] | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
   primaryContactPersonId?: string | null;
@@ -1101,6 +1112,7 @@ export interface CreatePledgeAllocationBody {
   status?: PledgeAllocationStatus;
   conditions?: string;
   notes?: string;
+  regionIds?: string[];
 }
 
 export interface UpdatePledgeAllocationBody {
@@ -1114,6 +1126,7 @@ export interface UpdatePledgeAllocationBody {
   status?: PledgeAllocationStatus | null;
   conditions?: string | null;
   notes?: string | null;
+  regionIds?: string[] | null;
 }
 
 export interface GiftAllocation {
@@ -1130,6 +1143,7 @@ export interface GiftAllocation {
   schoolRecipientId?: string | null;
   spendingStart?: string | null;
   spendingEnd?: string | null;
+  regionIds?: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1170,6 +1184,7 @@ export interface CreateGiftOrPaymentBody {
   schoolRecipientId?: string;
   spendingStartDate?: string;
   spendingEndDate?: string;
+  regionIds?: string[];
   tags?: string;
 }
 
@@ -1200,6 +1215,7 @@ export interface UpdateGiftOrPaymentBody {
   schoolRecipientId?: string | null;
   spendingStartDate?: string | null;
   spendingEndDate?: string | null;
+  regionIds?: string[] | null;
   tags?: string | null;
 }
 
@@ -1220,6 +1236,7 @@ export interface CreateGiftAllocationBody {
   schoolRecipientId?: string;
   spendingStart?: string;
   spendingEnd?: string;
+  regionIds?: string[];
 }
 
 export interface UpdateGiftAllocationBody {
@@ -1234,6 +1251,7 @@ export interface UpdateGiftAllocationBody {
   schoolRecipientId?: string | null;
   spendingStart?: string | null;
   spendingEnd?: string | null;
+  regionIds?: string[] | null;
 }
 
 /**

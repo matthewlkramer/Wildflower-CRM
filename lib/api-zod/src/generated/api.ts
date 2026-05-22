@@ -402,6 +402,7 @@ export const ListFundersResponse = zod.object({
       interestsThematic: zod.array(zod.string()).nullish(),
       interestsAges: zod.array(zod.string()).nullish(),
       interestsGovModels: zod.array(zod.string()).nullish(),
+      regionIds: zod.array(zod.string()).nullish(),
       parentFunderId: zod.string().nullish(),
       x: zod.string().nullish(),
       linkedin: zod.string().nullish(),
@@ -479,6 +480,7 @@ export const CreateFunderBody = zod.object({
   interestsThematic: zod.array(zod.string()).optional(),
   interestsAges: zod.array(zod.string()).optional(),
   interestsGovModels: zod.array(zod.string()).optional(),
+  regionIds: zod.array(zod.string()).optional(),
   parentFunderId: zod.string().optional(),
   x: zod.string().optional(),
   linkedin: zod.string().optional(),
@@ -554,6 +556,7 @@ export const GetFunderResponse = zod
     interestsThematic: zod.array(zod.string()).nullish(),
     interestsAges: zod.array(zod.string()).nullish(),
     interestsGovModels: zod.array(zod.string()).nullish(),
+    regionIds: zod.array(zod.string()).nullish(),
     parentFunderId: zod.string().nullish(),
     x: zod.string().nullish(),
     linkedin: zod.string().nullish(),
@@ -709,6 +712,7 @@ export const UpdateFunderBody = zod.object({
   interestsThematic: zod.array(zod.string()).nullish(),
   interestsAges: zod.array(zod.string()).nullish(),
   interestsGovModels: zod.array(zod.string()).nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
   parentFunderId: zod.string().nullish(),
   x: zod.string().nullish(),
   linkedin: zod.string().nullish(),
@@ -779,6 +783,7 @@ export const UpdateFunderResponse = zod.object({
   interestsThematic: zod.array(zod.string()).nullish(),
   interestsAges: zod.array(zod.string()).nullish(),
   interestsGovModels: zod.array(zod.string()).nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
   parentFunderId: zod.string().nullish(),
   x: zod.string().nullish(),
   linkedin: zod.string().nullish(),
@@ -1483,6 +1488,7 @@ export const ListPeopleResponse = zod.object({
       interestsThematic: zod.array(zod.string()).nullish(),
       interestsAges: zod.array(zod.string()).nullish(),
       interestsGovModels: zod.array(zod.string()).nullish(),
+      regionIds: zod.array(zod.string()).nullish(),
       newsletter: zod.boolean(),
       unsubscribedToNewsletter: zod.boolean(),
       childrenAtWf: zod.string().nullish(),
@@ -1527,6 +1533,7 @@ export const CreatePersonBody = zod.object({
   interestsThematic: zod.array(zod.string()).optional(),
   interestsAges: zod.array(zod.string()).optional(),
   interestsGovModels: zod.array(zod.string()).optional(),
+  regionIds: zod.array(zod.string()).optional(),
   newsletter: zod.boolean().optional(),
   unsubscribedToNewsletter: zod.boolean().optional(),
   childrenAtWf: zod.string().optional(),
@@ -1570,6 +1577,7 @@ export const GetPersonResponse = zod
     interestsThematic: zod.array(zod.string()).nullish(),
     interestsAges: zod.array(zod.string()).nullish(),
     interestsGovModels: zod.array(zod.string()).nullish(),
+    regionIds: zod.array(zod.string()).nullish(),
     newsletter: zod.boolean(),
     unsubscribedToNewsletter: zod.boolean(),
     childrenAtWf: zod.string().nullish(),
@@ -1707,6 +1715,7 @@ export const UpdatePersonBody = zod.object({
   interestsThematic: zod.array(zod.string()).nullish(),
   interestsAges: zod.array(zod.string()).nullish(),
   interestsGovModels: zod.array(zod.string()).nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
   newsletter: zod.boolean().optional(),
   unsubscribedToNewsletter: zod.boolean().optional(),
   childrenAtWf: zod.string().nullish(),
@@ -1745,6 +1754,7 @@ export const UpdatePersonResponse = zod.object({
   interestsThematic: zod.array(zod.string()).nullish(),
   interestsAges: zod.array(zod.string()).nullish(),
   interestsGovModels: zod.array(zod.string()).nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
   newsletter: zod.boolean(),
   unsubscribedToNewsletter: zod.boolean(),
   childrenAtWf: zod.string().nullish(),
@@ -2269,6 +2279,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
         )
         .nullish(),
       fundableProjectIds: zod.array(zod.string()).nullish(),
+      regionIds: zod.array(zod.string()).nullish(),
       usageNotes: zod.string().nullish(),
       copperPledgeId: zod.string().nullish(),
       primaryContactPersonId: zod.string().nullish(),
@@ -2336,6 +2347,7 @@ export const CreateOpportunityOrPledgeBody = zod.object({
     )
     .optional(),
   fundableProjectIds: zod.array(zod.string()).optional(),
+  regionIds: zod.array(zod.string()).optional(),
   usageNotes: zod.string().optional(),
   copperPledgeId: zod.string().optional(),
   primaryContactPersonId: zod.string().optional(),
@@ -2401,6 +2413,7 @@ export const GetOpportunityOrPledgeResponse = zod
       )
       .nullish(),
     fundableProjectIds: zod.array(zod.string()).nullish(),
+    regionIds: zod.array(zod.string()).nullish(),
     usageNotes: zod.string().nullish(),
     copperPledgeId: zod.string().nullish(),
     primaryContactPersonId: zod.string().nullish(),
@@ -2439,6 +2452,7 @@ export const GetOpportunityOrPledgeResponse = zod
               .nullish(),
             conditions: zod.string().nullish(),
             notes: zod.string().nullish(),
+            regionIds: zod.array(zod.string()).nullish(),
             createdAt: zod.string().datetime({}),
             updatedAt: zod.string().datetime({}),
           }),
@@ -2504,6 +2518,7 @@ export const GetOpportunityOrPledgeResponse = zod
             schoolRecipientId: zod.string().nullish(),
             spendingStartDate: zod.string().date().nullish(),
             spendingEndDate: zod.string().date().nullish(),
+            regionIds: zod.array(zod.string()).nullish(),
             tags: zod.string().nullish(),
             createdAt: zod.string().datetime({}),
             updatedAt: zod.string().datetime({}),
@@ -2570,6 +2585,7 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
     )
     .nullish(),
   fundableProjectIds: zod.array(zod.string()).nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
   primaryContactPersonId: zod.string().nullish(),
@@ -2630,6 +2646,7 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
     )
     .nullish(),
   fundableProjectIds: zod.array(zod.string()).nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
   primaryContactPersonId: zod.string().nullish(),
@@ -2689,6 +2706,7 @@ export const ListPledgeAllocationsResponse = zod.object({
         .nullish(),
       conditions: zod.string().nullish(),
       notes: zod.string().nullish(),
+      regionIds: zod.array(zod.string()).nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -2721,6 +2739,7 @@ export const CreatePledgeAllocationBody = zod.object({
     .optional(),
   conditions: zod.string().optional(),
   notes: zod.string().optional(),
+  regionIds: zod.array(zod.string()).optional(),
 });
 
 export const UpdatePledgeAllocationParams = zod.object({
@@ -2748,6 +2767,7 @@ export const UpdatePledgeAllocationBody = zod.object({
     .nullish(),
   conditions: zod.string().nullish(),
   notes: zod.string().nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
 });
 
 export const UpdatePledgeAllocationResponse = zod.object({
@@ -2773,6 +2793,7 @@ export const UpdatePledgeAllocationResponse = zod.object({
     .nullish(),
   conditions: zod.string().nullish(),
   notes: zod.string().nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -2883,6 +2904,7 @@ export const ListGiftsAndPaymentsResponse = zod.object({
       schoolRecipientId: zod.string().nullish(),
       spendingStartDate: zod.string().date().nullish(),
       spendingEndDate: zod.string().date().nullish(),
+      regionIds: zod.array(zod.string()).nullish(),
       tags: zod.string().nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -2949,6 +2971,7 @@ export const CreateGiftOrPaymentBody = zod.object({
   schoolRecipientId: zod.string().optional(),
   spendingStartDate: zod.string().date().optional(),
   spendingEndDate: zod.string().date().optional(),
+  regionIds: zod.array(zod.string()).optional(),
   tags: zod.string().optional(),
 });
 
@@ -3015,6 +3038,7 @@ export const GetGiftOrPaymentResponse = zod
     schoolRecipientId: zod.string().nullish(),
     spendingStartDate: zod.string().date().nullish(),
     spendingEndDate: zod.string().date().nullish(),
+    regionIds: zod.array(zod.string()).nullish(),
     tags: zod.string().nullish(),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
@@ -3045,6 +3069,7 @@ export const GetGiftOrPaymentResponse = zod
             schoolRecipientId: zod.string().nullish(),
             spendingStart: zod.string().date().nullish(),
             spendingEnd: zod.string().date().nullish(),
+            regionIds: zod.array(zod.string()).nullish(),
             createdAt: zod.string().datetime({}),
             updatedAt: zod.string().datetime({}),
           }),
@@ -3111,6 +3136,7 @@ export const UpdateGiftOrPaymentBody = zod.object({
   schoolRecipientId: zod.string().nullish(),
   spendingStartDate: zod.string().date().nullish(),
   spendingEndDate: zod.string().date().nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
   tags: zod.string().nullish(),
 });
 
@@ -3170,6 +3196,7 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   schoolRecipientId: zod.string().nullish(),
   spendingStartDate: zod.string().date().nullish(),
   spendingEndDate: zod.string().date().nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
   tags: zod.string().nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -3218,6 +3245,7 @@ export const ListGiftAllocationsResponse = zod.object({
       schoolRecipientId: zod.string().nullish(),
       spendingStart: zod.string().date().nullish(),
       spendingEnd: zod.string().date().nullish(),
+      regionIds: zod.array(zod.string()).nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -3249,6 +3277,7 @@ export const CreateGiftAllocationBody = zod.object({
   schoolRecipientId: zod.string().optional(),
   spendingStart: zod.string().date().optional(),
   spendingEnd: zod.string().date().optional(),
+  regionIds: zod.array(zod.string()).optional(),
 });
 
 export const UpdateGiftAllocationParams = zod.object({
@@ -3275,6 +3304,7 @@ export const UpdateGiftAllocationBody = zod.object({
   schoolRecipientId: zod.string().nullish(),
   spendingStart: zod.string().date().nullish(),
   spendingEnd: zod.string().date().nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
 });
 
 export const UpdateGiftAllocationResponse = zod.object({
@@ -3299,6 +3329,7 @@ export const UpdateGiftAllocationResponse = zod.object({
   schoolRecipientId: zod.string().nullish(),
   spendingStart: zod.string().date().nullish(),
   spendingEnd: zod.string().date().nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });

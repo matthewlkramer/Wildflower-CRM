@@ -841,6 +841,7 @@ components:
         interestsThematic:     { type: array, items: { type: string }, nullable: true }
         interestsAges:         { type: array, items: { type: string }, nullable: true }
         interestsGovModels:    { type: array, items: { type: string }, nullable: true }
+        regionIds:             { type: array, items: { type: string }, nullable: true }
         parentFunderId:        { type: string, nullable: true }
         x:                     { type: string, nullable: true }
         linkedin:              { type: string, nullable: true }
@@ -889,6 +890,7 @@ components:
         interestsThematic:     { type: array, items: { type: string } }
         interestsAges:         { type: array, items: { type: string } }
         interestsGovModels:    { type: array, items: { type: string } }
+        regionIds:             { type: array, items: { type: string } }
         parentFunderId:        { type: string }
         x:                     { type: string }
         linkedin:              { type: string }
@@ -920,6 +922,7 @@ components:
         interestsThematic:     { type: array, items: { type: string }, nullable: true }
         interestsAges:         { type: array, items: { type: string }, nullable: true }
         interestsGovModels:    { type: array, items: { type: string }, nullable: true }
+        regionIds:             { type: array, items: { type: string }, nullable: true }
         parentFunderId:        { type: string, nullable: true }
         x:                     { type: string, nullable: true }
         linkedin:              { type: string, nullable: true }
@@ -1090,6 +1093,7 @@ components:
         interestsThematic:        { type: array, items: { type: string }, nullable: true }
         interestsAges:            { type: array, items: { type: string }, nullable: true }
         interestsGovModels:       { type: array, items: { type: string }, nullable: true }
+        regionIds:                { type: array, items: { type: string }, nullable: true }
         newsletter:               { type: boolean }
         unsubscribedToNewsletter: { type: boolean }
         childrenAtWf:             { type: string, nullable: true }
@@ -1140,6 +1144,7 @@ components:
         interestsThematic:        { type: array, items: { type: string } }
         interestsAges:            { type: array, items: { type: string } }
         interestsGovModels:       { type: array, items: { type: string } }
+        regionIds:                { type: array, items: { type: string } }
         newsletter:               { type: boolean }
         unsubscribedToNewsletter: { type: boolean }
         childrenAtWf:             { type: string }
@@ -1173,6 +1178,7 @@ components:
         interestsThematic:        { type: array, items: { type: string }, nullable: true }
         interestsAges:            { type: array, items: { type: string }, nullable: true }
         interestsGovModels:       { type: array, items: { type: string }, nullable: true }
+        regionIds:                { type: array, items: { type: string }, nullable: true }
         newsletter:               { type: boolean }
         unsubscribedToNewsletter: { type: boolean }
         childrenAtWf:             { type: string, nullable: true }
@@ -1401,6 +1407,7 @@ components:
         entityIds:                  { type: array, items: { type: string }, nullable: true }
         intendedUsages:             { type: array, items: { $ref: "#/components/schemas/IntendedUsage" }, nullable: true }
         fundableProjectIds:         { type: array, items: { type: string }, nullable: true }
+        regionIds:                  { type: array, items: { type: string }, nullable: true }
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
         primaryContactPersonId:     { type: string, nullable: true }
@@ -1445,6 +1452,7 @@ components:
         entityIds:                  { type: array, items: { type: string } }
         intendedUsages:             { type: array, items: { $ref: "#/components/schemas/IntendedUsage" } }
         fundableProjectIds:         { type: array, items: { type: string } }
+        regionIds:                  { type: array, items: { type: string } }
         usageNotes:                 { type: string }
         copperPledgeId:             { type: string }
         primaryContactPersonId:     { type: string }
@@ -1474,6 +1482,7 @@ components:
         entityIds:                  { type: array, items: { type: string }, nullable: true }
         intendedUsages:             { type: array, items: { $ref: "#/components/schemas/IntendedUsage" }, nullable: true }
         fundableProjectIds:         { type: array, items: { type: string }, nullable: true }
+        regionIds:                  { type: array, items: { type: string }, nullable: true }
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
         primaryContactPersonId:     { type: string, nullable: true }
@@ -1495,6 +1504,7 @@ components:
         status:                 { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         conditions:             { type: string, nullable: true }
         notes:                  { type: string, nullable: true }
+        regionIds:              { type: array, items: { type: string }, nullable: true }
         createdAt:              { type: string, format: date-time }
         updatedAt:              { type: string, format: date-time }
     PledgeAllocationList:
@@ -1516,6 +1526,7 @@ components:
         status:                { $ref: "#/components/schemas/PledgeAllocationStatus" }
         conditions:            { type: string }
         notes:                 { type: string }
+        regionIds:             { type: array, items: { type: string } }
     UpdatePledgeAllocationBody:
       type: object
       properties:
@@ -1529,6 +1540,7 @@ components:
         status:                { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         conditions:            { type: string, nullable: true }
         notes:                 { type: string, nullable: true }
+        regionIds:             { type: array, items: { type: string }, nullable: true }
 
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
@@ -1563,6 +1575,7 @@ components:
         schoolRecipientId:          { type: string, nullable: true }
         spendingStartDate:          { type: string, format: date, nullable: true }
         spendingEndDate:            { type: string, format: date, nullable: true }
+        regionIds:                  { type: array, items: { type: string }, nullable: true }
         tags:                       { type: string, nullable: true }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
@@ -1607,6 +1620,7 @@ components:
         schoolRecipientId:          { type: string }
         spendingStartDate:          { type: string, format: date }
         spendingEndDate:            { type: string, format: date }
+        regionIds:                  { type: array, items: { type: string } }
         tags:                       { type: string }
     UpdateGiftOrPaymentBody:
       type: object
@@ -1637,6 +1651,7 @@ components:
         schoolRecipientId:          { type: string, nullable: true }
         spendingStartDate:          { type: string, format: date, nullable: true }
         spendingEndDate:            { type: string, format: date, nullable: true }
+        regionIds:                  { type: array, items: { type: string }, nullable: true }
         tags:                       { type: string, nullable: true }
 
     # ─── Gift allocations ──────────────────────────────────────────────────────
@@ -1657,6 +1672,7 @@ components:
         schoolRecipientId:           { type: string, nullable: true }
         spendingStart:               { type: string, format: date, nullable: true }
         spendingEnd:                 { type: string, format: date, nullable: true }
+        regionIds:                   { type: array, items: { type: string }, nullable: true }
         createdAt:                   { type: string, format: date-time }
         updatedAt:                   { type: string, format: date-time }
     GiftAllocationList:
@@ -1679,6 +1695,7 @@ components:
         schoolRecipientId:           { type: string }
         spendingStart:               { type: string, format: date }
         spendingEnd:                 { type: string, format: date }
+        regionIds:                   { type: array, items: { type: string } }
     UpdateGiftAllocationBody:
       type: object
       properties:
@@ -1693,3 +1710,4 @@ components:
         schoolRecipientId:           { type: string, nullable: true }
         spendingStart:               { type: string, format: date, nullable: true }
         spendingEnd:                 { type: string, format: date, nullable: true }
+        regionIds:                   { type: array, items: { type: string }, nullable: true }

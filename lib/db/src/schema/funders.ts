@@ -44,6 +44,9 @@ export const funders = pgTable("funders", {
   interestsThematic: text("interests_thematic").array(),
   interestsAges: text("interests_ages").array(),
   interestsGovModels: text("interests_gov_models").array(),
+  // Array of regions.id values the funder prioritizes (was the
+  // funder_regional_priorities junction table).
+  regionIds: text("region_ids").array(),
   parentFunderId: text("parent_funder_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

@@ -24,6 +24,9 @@ export const giftAllocations = pgTable("gift_allocations", {
   schoolRecipientId: text("school_recipient_id"),
   spendingStart: date("spending_start"),
   spendingEnd: date("spending_end"),
+  // Array of regions.id values this allocation is designated to (was the
+  // gift_allocation_regional_designation junction table).
+  regionIds: text("region_ids").array(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

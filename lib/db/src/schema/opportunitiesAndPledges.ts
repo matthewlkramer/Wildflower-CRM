@@ -47,6 +47,9 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // Array of fundable_projects.id slugs corresponding to the 'project'
   // entries in intendedUsages.
   fundableProjectIds: text("fundable_project_ids").array(),
+  // Array of regions.id values the opportunity is focused on (was the
+  // opportunity_regional_focus junction table).
+  regionIds: text("region_ids").array(),
   usageNotes: text("usage_notes"),
   // Legacy integer pledge ID inherited from Copper. Not a FK; preserved for
   // cross-reference back to the prior CRM.

@@ -15,6 +15,9 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   status: pledgeAllocationStatusEnum("status"),
   conditions: text("conditions"),
   notes: text("notes"),
+  // Array of regions.id values this allocation is designated to (was the
+  // pledge_allocation_regional_designation junction table).
+  regionIds: text("region_ids").array(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
