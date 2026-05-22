@@ -216,6 +216,13 @@ export const intendedUsageEnum = pgEnum("intended_usage", [
   "project",
 ]);
 
+export const pronounsEnum = pgEnum("pronouns", [
+  "he_him_his",
+  "she_her_hers",
+  "they_them_theirs",
+  "other",
+]);
+
 // ---- People-entity-role enums ----
 export const peopleEntityRoleConnectionEnum = pgEnum(
   "people_entity_role_connection",

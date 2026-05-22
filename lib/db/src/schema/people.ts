@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, boolean, integer, date } from "drizzle-orm/pg-core";
+import { pronounsEnum } from "./_enums";
 
 export const people = pgTable("people", {
   id: text("id").primaryKey(),
@@ -10,7 +11,7 @@ export const people = pgTable("people", {
   lastName: text("last_name"),
   suffix: text("suffix"),
   fullName: text("full_name"),
-  pronouns: text("pronouns"),
+  pronouns: pronounsEnum("pronouns"),
   deceased: boolean("deceased").default(false).notNull(),
   householdName: text("household_name"),
   currentHomeRegionId: text("current_home_region_id"),
