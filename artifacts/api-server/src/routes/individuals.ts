@@ -5,6 +5,7 @@ import { eq, and, desc, sql, count } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { newId } from "../lib/helpers";
 import { fetchGiftsWith } from "../lib/giftQueries";
+import { CreateIndividualBody, UpdateIndividualBody } from "@workspace/api-zod";
 
 const router = Router();
 
@@ -79,9 +80,14 @@ router.get("/", async (req, res, next) => {
 
 router.post("/", async (req, res, next) => {
   try {
+    const parsed = CreateIndividualBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid request body", details: parsed.error.flatten() });
+      return;
+    }
     const [created] = await db
       .insert(individuals)
-      .values({ id: newId(), ...req.body })
+      .values({ id: newId(), ...parsed.data })
       .returning();
     res.status(201).json(created);
   } catch (err) {
@@ -110,9 +116,14 @@ router.get("/:id", async (req, res, next) => {
 
 router.patch("/:id", async (req, res, next) => {
   try {
+    const parsed = UpdateIndividualBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid request body", details: parsed.error.flatten() });
+      return;
+    }
     const [updated] = await db
       .update(individuals)
-      .set({ ...req.body, updatedAt: new Date() })
+      .set({ ...parsed.data, updatedAt: new Date() })
       .where(eq(individuals.id, req.params.id))
       .returning();
     if (!updated) { res.status(404).json({ error: "Not found" }); return; }
