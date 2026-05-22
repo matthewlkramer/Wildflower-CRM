@@ -24,7 +24,8 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   giftBeingMatchedId: text("gift_being_matched_id"),
   primaryContactPersonId: text("primary_contact_person_id"),
   paymentIntermediaryId: text("payment_intermediary_id"),
-  owner: text("owner"),
+  // FK to users.id — team member who owns this gift/payment.
+  ownerUserId: text("owner_user_id"),
   closeDate: date("close_date"), // RENAME THIS TO BE PROJECTED CLOSE DATE AND THE NEXT FIELD TO ACTUAL COMPLETION DATE
   completedDate: date("completed_date"),
   allocationType: giftAllocationTypeEnum("allocation_type"),

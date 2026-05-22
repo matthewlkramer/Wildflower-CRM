@@ -22,16 +22,39 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 
     if (!user) {
       const email = auth.sessionClaims?.email as string | undefined;
-      user = await db
-        .insert(users)
-        .values({
-          id: nanoid(),
-          clerkId: auth.userId,
-          email: email ?? `${auth.userId}@unknown.com`,
-          role: "team_member",
-        })
-        .returning()
-        .then((rows) => rows[0]);
+
+      // First-login adoption: if a pre-seeded user row exists with the same
+      // email (typical for placeholder rows backfilled from legacy `owner`
+      // text columns), claim it by updating its clerkId rather than
+      // inserting a duplicate.
+      if (email) {
+        const existing = await db
+          .select()
+          .from(users)
+          .where(eq(users.email, email))
+          .then((rows) => rows[0]);
+        if (existing) {
+          user = await db
+            .update(users)
+            .set({ clerkId: auth.userId, updatedAt: new Date() })
+            .where(eq(users.id, existing.id))
+            .returning()
+            .then((rows) => rows[0]);
+        }
+      }
+
+      if (!user) {
+        user = await db
+          .insert(users)
+          .values({
+            id: nanoid(),
+            clerkId: auth.userId,
+            email: email ?? `${auth.userId}@unknown.com`,
+            role: "team_member",
+          })
+          .returning()
+          .then((rows) => rows[0]);
+      }
     }
 
     if (!user) {

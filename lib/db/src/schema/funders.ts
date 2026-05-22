@@ -24,7 +24,8 @@ export const funders = pgTable("funders", {
   details: text("details"),
   emailDomain: text("email_domain"),
   orgEmail: text("org_email"),
-  owner: text("owner"),
+  // FK to users.id — team member who owns this funder.
+  ownerUserId: text("owner_user_id"),
   tags: text("tags"),
   lastContacted: date("last_contacted"),
   interactionCount: integer("interaction_count"),

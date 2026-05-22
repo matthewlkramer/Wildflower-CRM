@@ -441,7 +441,7 @@ export interface Funder {
   details?: string | null;
   emailDomain?: string | null;
   orgEmail?: string | null;
-  owner?: string | null;
+  ownerUserId?: string | null;
   tags?: string | null;
   website?: string | null;
   connectionStatus?: ConnectionStatus | null;
@@ -538,7 +538,7 @@ export interface CreateFunderBody {
   details?: string;
   emailDomain?: string;
   orgEmail?: string;
-  owner?: string;
+  ownerUserId?: string;
   tags?: string;
   website?: string;
   connectionStatus?: ConnectionStatus;
@@ -569,7 +569,7 @@ export interface UpdateFunderBody {
   details?: string | null;
   emailDomain?: string | null;
   orgEmail?: string | null;
-  owner?: string | null;
+  ownerUserId?: string | null;
   tags?: string | null;
   website?: string | null;
   connectionStatus?: ConnectionStatus | null;
@@ -593,8 +593,6 @@ export interface Organization {
   name: string;
   type?: OrganizationType | null;
   emailDomain?: string | null;
-  owner?: string | null;
-  ownerUserId?: string | null;
   tags?: string | null;
   website?: string | null;
   activeOrDefunct?: string | null;
@@ -619,8 +617,6 @@ export interface CreateOrganizationBody {
   name: string;
   type?: OrganizationType;
   emailDomain?: string;
-  owner?: string;
-  ownerUserId?: string;
   tags?: string;
   website?: string;
   activeOrDefunct?: string;
@@ -632,8 +628,6 @@ export interface UpdateOrganizationBody {
   name?: string;
   type?: OrganizationType | null;
   emailDomain?: string | null;
-  owner?: string | null;
-  ownerUserId?: string | null;
   tags?: string | null;
   website?: string | null;
   activeOrDefunct?: string | null;
@@ -716,7 +710,7 @@ export interface Person {
   householdName?: string | null;
   currentHomeRegionId?: string | null;
   details?: string | null;
-  owner?: string | null;
+  ownerUserId?: string | null;
   tags?: string | null;
   lastContacted?: string | null;
   interactionCount?: number | null;
@@ -776,7 +770,7 @@ export interface CreatePersonBody {
   householdName?: string;
   currentHomeRegionId?: string;
   details?: string;
-  owner?: string;
+  ownerUserId?: string;
   tags?: string;
   lastContacted?: string;
   linkedin?: string;
@@ -809,7 +803,7 @@ export interface UpdatePersonBody {
   householdName?: string | null;
   currentHomeRegionId?: string | null;
   details?: string | null;
-  owner?: string | null;
+  ownerUserId?: string | null;
   tags?: string | null;
   lastContacted?: string | null;
   linkedin?: string | null;
@@ -955,8 +949,6 @@ export interface OpportunityOrPledge {
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;
   status?: OpportunityStatus | null;
-  owner?: string | null;
-  ownerUserId?: string | null;
   projectedCloseDate?: string | null;
   actualCompletionDate?: string | null;
   winProbability?: string | null;
@@ -1009,7 +1001,7 @@ export interface GiftOrPayment {
   giftBeingMatchedId?: string | null;
   primaryContactPersonId?: string | null;
   paymentIntermediaryId?: string | null;
-  owner?: string | null;
+  ownerUserId?: string | null;
   closeDate?: string | null;
   completedDate?: string | null;
   allocationType?: GiftAllocationType | null;
@@ -1049,8 +1041,6 @@ export interface CreateOpportunityOrPledgeBody {
   individualAdvisorPersonId?: string;
   matchId?: string;
   status?: OpportunityStatus;
-  owner?: string;
-  ownerUserId?: string;
   projectedCloseDate?: string;
   actualCompletionDate?: string;
   winProbability?: string;
@@ -1080,8 +1070,6 @@ export interface UpdateOpportunityOrPledgeBody {
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;
   status?: OpportunityStatus | null;
-  owner?: string | null;
-  ownerUserId?: string | null;
   projectedCloseDate?: string | null;
   actualCompletionDate?: string | null;
   winProbability?: string | null;
@@ -1171,7 +1159,7 @@ export interface CreateGiftOrPaymentBody {
   giftBeingMatchedId?: string;
   primaryContactPersonId?: string;
   paymentIntermediaryId?: string;
-  owner?: string;
+  ownerUserId?: string;
   closeDate?: string;
   completedDate?: string;
   allocationType?: GiftAllocationType;
@@ -1201,7 +1189,7 @@ export interface UpdateGiftOrPaymentBody {
   giftBeingMatchedId?: string | null;
   primaryContactPersonId?: string | null;
   paymentIntermediaryId?: string | null;
-  owner?: string | null;
+  ownerUserId?: string | null;
   closeDate?: string | null;
   completedDate?: string | null;
   allocationType?: GiftAllocationType | null;

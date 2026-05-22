@@ -16,7 +16,8 @@ export const people = pgTable("people", {
   householdName: text("household_name"),
   currentHomeRegionId: text("current_home_region_id"),
   details: text("details"),
-  owner: text("owner"),
+  // FK to users.id — team member who owns this person.
+  ownerUserId: text("owner_user_id"),
   tags: text("tags"),
   lastContacted: date("last_contacted"),
   interactionCount: integer("interaction_count"),

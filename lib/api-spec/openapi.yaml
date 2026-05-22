@@ -832,7 +832,7 @@ components:
         details:               { type: string, nullable: true }
         emailDomain:           { type: string, nullable: true }
         orgEmail:              { type: string, nullable: true }
-        owner:                 { type: string, nullable: true }
+        ownerUserId:                 { type: string, nullable: true }
         tags:                  { type: string, nullable: true }
         website:               { type: string, nullable: true }
         connectionStatus:      { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
@@ -880,7 +880,7 @@ components:
         details:               { type: string }
         emailDomain:           { type: string }
         orgEmail:              { type: string }
-        owner:                 { type: string }
+        ownerUserId:                 { type: string }
         tags:                  { type: string }
         website:               { type: string }
         connectionStatus:      { $ref: "#/components/schemas/ConnectionStatus" }
@@ -911,7 +911,7 @@ components:
         details:               { type: string, nullable: true }
         emailDomain:           { type: string, nullable: true }
         orgEmail:              { type: string, nullable: true }
-        owner:                 { type: string, nullable: true }
+        ownerUserId:                 { type: string, nullable: true }
         tags:                  { type: string, nullable: true }
         website:               { type: string, nullable: true }
         connectionStatus:      { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
@@ -938,8 +938,6 @@ components:
         name:            { type: string }
         type:            { allOf: [ { $ref: "#/components/schemas/OrganizationType" } ], nullable: true }
         emailDomain:     { type: string, nullable: true }
-        owner:           { type: string, nullable: true }
-        ownerUserId:     { type: string, nullable: true }
         tags:            { type: string, nullable: true }
         website:         { type: string, nullable: true }
         activeOrDefunct: { type: string, nullable: true }
@@ -968,8 +966,6 @@ components:
         name:            { type: string }
         type:            { $ref: "#/components/schemas/OrganizationType" }
         emailDomain:     { type: string }
-        owner:           { type: string }
-        ownerUserId:     { type: string }
         tags:            { type: string }
         website:         { type: string }
         activeOrDefunct: { type: string }
@@ -981,8 +977,6 @@ components:
         name:            { type: string }
         type:            { allOf: [ { $ref: "#/components/schemas/OrganizationType" } ], nullable: true }
         emailDomain:     { type: string, nullable: true }
-        owner:           { type: string, nullable: true }
-        ownerUserId:     { type: string, nullable: true }
         tags:            { type: string, nullable: true }
         website:         { type: string, nullable: true }
         activeOrDefunct: { type: string, nullable: true }
@@ -1082,7 +1076,7 @@ components:
         householdName:            { type: string, nullable: true }
         currentHomeRegionId:      { type: string, nullable: true }
         details:                  { type: string, nullable: true }
-        owner:                    { type: string, nullable: true }
+        ownerUserId:                    { type: string, nullable: true }
         tags:                     { type: string, nullable: true }
         lastContacted:            { type: string, format: date, nullable: true }
         interactionCount:         { type: integer, nullable: true }
@@ -1133,7 +1127,7 @@ components:
         householdName:            { type: string }
         currentHomeRegionId:      { type: string }
         details:                  { type: string }
-        owner:                    { type: string }
+        ownerUserId:                    { type: string }
         tags:                     { type: string }
         lastContacted:            { type: string, format: date }
         linkedin:                 { type: string }
@@ -1166,7 +1160,7 @@ components:
         householdName:            { type: string, nullable: true }
         currentHomeRegionId:      { type: string, nullable: true }
         details:                  { type: string, nullable: true }
-        owner:                    { type: string, nullable: true }
+        ownerUserId:                    { type: string, nullable: true }
         tags:                     { type: string, nullable: true }
         lastContacted:            { type: string, format: date, nullable: true }
         linkedin:                 { type: string, nullable: true }
@@ -1397,8 +1391,6 @@ components:
         individualAdvisorPersonId:  { type: string, nullable: true }
         matchId:                    { type: string, nullable: true }
         status:                     { allOf: [ { $ref: "#/components/schemas/OpportunityStatus" } ], nullable: true }
-        owner:                      { type: string, nullable: true }
-        ownerUserId:                { type: string, nullable: true }
         projectedCloseDate:         { type: string, format: date, nullable: true }
         actualCompletionDate:       { type: string, format: date, nullable: true }
         winProbability:             { type: string, nullable: true }
@@ -1443,8 +1435,6 @@ components:
         individualAdvisorPersonId:  { type: string }
         matchId:                    { type: string }
         status:                     { $ref: "#/components/schemas/OpportunityStatus" }
-        owner:                      { type: string }
-        ownerUserId:                { type: string }
         projectedCloseDate:         { type: string, format: date }
         actualCompletionDate:       { type: string, format: date }
         winProbability:             { type: string }
@@ -1474,8 +1464,6 @@ components:
         individualAdvisorPersonId:  { type: string, nullable: true }
         matchId:                    { type: string, nullable: true }
         status:                     { allOf: [ { $ref: "#/components/schemas/OpportunityStatus" } ], nullable: true }
-        owner:                      { type: string, nullable: true }
-        ownerUserId:                { type: string, nullable: true }
         projectedCloseDate:         { type: string, format: date, nullable: true }
         actualCompletionDate:       { type: string, format: date, nullable: true }
         winProbability:             { type: string, nullable: true }
@@ -1564,7 +1552,7 @@ components:
         giftBeingMatchedId:         { type: string, nullable: true }
         primaryContactPersonId:     { type: string, nullable: true }
         paymentIntermediaryId:      { type: string, nullable: true }
-        owner:                      { type: string, nullable: true }
+        ownerUserId:                      { type: string, nullable: true }
         closeDate:                  { type: string, format: date, nullable: true }
         completedDate:              { type: string, format: date, nullable: true }
         allocationType:             { allOf: [ { $ref: "#/components/schemas/GiftAllocationType" } ], nullable: true }
@@ -1608,7 +1596,7 @@ components:
         giftBeingMatchedId:         { type: string }
         primaryContactPersonId:     { type: string }
         paymentIntermediaryId:      { type: string }
-        owner:                      { type: string }
+        ownerUserId:                      { type: string }
         closeDate:                  { type: string, format: date }
         completedDate:              { type: string, format: date }
         allocationType:             { $ref: "#/components/schemas/GiftAllocationType" }
@@ -1638,7 +1626,7 @@ components:
         giftBeingMatchedId:         { type: string, nullable: true }
         primaryContactPersonId:     { type: string, nullable: true }
         paymentIntermediaryId:      { type: string, nullable: true }
-        owner:                      { type: string, nullable: true }
+        ownerUserId:                      { type: string, nullable: true }
         closeDate:                  { type: string, format: date, nullable: true }
         completedDate:              { type: string, format: date, nullable: true }
         allocationType:             { allOf: [ { $ref: "#/components/schemas/GiftAllocationType" } ], nullable: true }

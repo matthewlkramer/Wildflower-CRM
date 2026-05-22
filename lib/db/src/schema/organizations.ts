@@ -14,11 +14,7 @@ export const organizations = pgTable("organizations", {
   name: text("name").notNull(),
   type: organizationTypeEnum("type"),
   emailDomain: text("email_domain"),
-  // Legacy free-text owner name from Airtable/Copper; kept for display until
-  // we can map names → Clerk users.
-  owner: text("owner"),
-  // FK to users.id — the team member who owns this organization. Nullable
-  // until backfilled from `owner` text.
+  // FK to users.id — team member who owns this organization.
   ownerUserId: text("owner_user_id"),
   tags: text("tags"),
   website: text("website"),

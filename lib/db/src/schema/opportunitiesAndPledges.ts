@@ -28,11 +28,7 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // (i.e. populated only on the matching-gift row, never on the original.)
   matchId: text("match_id"),
   status: opportunityStatusEnum("status"),
-  // Legacy free-text owner name from Airtable/Copper; kept for display until
-  // we can map names → Clerk users.
-  owner: text("owner"),
-  // FK to users.id — the team member who owns this opportunity. Nullable
-  // until backfilled from `owner` text.
+  // FK to users.id — team member who owns this opportunity.
   ownerUserId: text("owner_user_id"),
   projectedCloseDate: date("projected_close_date"),
   actualCompletionDate: date("actual_completion_date"),
