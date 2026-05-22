@@ -5,7 +5,6 @@ import { paymentIntermediaryTypeEnum } from "./_enums";
 // rather than on the row itself.
 export const paymentIntermediaries = pgTable("payment_intermediaries", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   name: text("name").notNull(),
   type: paymentIntermediaryTypeEnum("type"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

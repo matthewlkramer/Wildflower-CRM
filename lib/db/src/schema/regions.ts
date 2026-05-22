@@ -3,8 +3,8 @@ import { regionTypeEnum } from "./_enums";
 
 export const regions = pgTable("regions", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   name: text("name").notNull(),
+  displayPath: text("display_path").notNull(),
   stateAbbreviation: text("state_abbreviation"),
   type: regionTypeEnum("type"),
   parentRegionId: text("parent_region_id"),

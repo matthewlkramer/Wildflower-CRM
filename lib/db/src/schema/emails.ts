@@ -3,7 +3,6 @@ import { contactValidityEnum, emailTypeEnum } from "./_enums";
 
 export const emails = pgTable("emails", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   email: text("email").notNull(),
   type: emailTypeEnum("type"),
   // An email may belong to a person, a funder, an organization, a payment

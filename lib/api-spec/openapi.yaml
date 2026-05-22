@@ -739,11 +739,11 @@ components:
     # ─── Regions ───────────────────────────────────────────────────────────────
     Region:
       type: object
-      required: [id, name, createdAt, updatedAt]
+      required: [id, name, displayPath, createdAt, updatedAt]
       properties:
-        id:                 { type: string }
-        airtableId:         { type: string, nullable: true }
+        id:                 { type: string, description: "Human-readable slug PK, e.g. `united_states__minnesota__saint_paul`. Built from the region's name plus its included-type ancestors (continent / country / state / city / neighborhood); intermediate aggregation layers (multi_state_region, region_within_state, metro_area) are skipped." }
         name:               { type: string }
+        displayPath:        { type: string, description: "Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display." }
         stateAbbreviation:  { type: string, nullable: true }
         type:               { allOf: [ { $ref: "#/components/schemas/RegionType" } ], nullable: true }
         parentRegionId:     { type: string, nullable: true }
@@ -762,7 +762,6 @@ components:
       required: [id, name, createdAt, updatedAt]
       properties:
         id:                       { type: string }
-        airtableId:               { type: string, nullable: true }
         name:                     { type: string }
         longName:                 { type: string, nullable: true }
         shortName:                { type: string, nullable: true }
@@ -819,7 +818,6 @@ components:
       required: [id, name, createdAt, updatedAt]
       properties:
         id:                    { type: string }
-        airtableId:            { type: string, nullable: true }
         name:                  { type: string }
         fundingEntitySubtype:  { allOf: [ { $ref: "#/components/schemas/FundingEntitySubtype" } ], nullable: true }
         makesPris:             { type: boolean, nullable: true }
@@ -937,7 +935,6 @@ components:
       required: [id, name, createdAt, updatedAt]
       properties:
         id:              { type: string }
-        airtableId:      { type: string, nullable: true }
         name:            { type: string }
         type:            { allOf: [ { $ref: "#/components/schemas/OrganizationType" } ], nullable: true }
         emailDomain:     { type: string, nullable: true }
@@ -992,7 +989,6 @@ components:
       required: [id, name, createdAt, updatedAt]
       properties:
         id:         { type: string }
-        airtableId: { type: string, nullable: true }
         name:       { type: string }
         type:       { allOf: [ { $ref: "#/components/schemas/PaymentIntermediaryType" } ], nullable: true }
         createdAt:  { type: string, format: date-time }
@@ -1029,7 +1025,6 @@ components:
       required: [id, name, active, createdAt, updatedAt]
       properties:
         id:         { type: string }
-        airtableId: { type: string, nullable: true }
         name:       { type: string }
         active:     { type: boolean }
         createdAt:  { type: string, format: date-time }
@@ -1066,7 +1061,6 @@ components:
       required: [id, deceased, newsletter, unsubscribedToNewsletter, createdAt, updatedAt]
       properties:
         id:                       { type: string }
-        airtableId:               { type: string, nullable: true }
         prefix:                   { type: string, nullable: true }
         firstName:                { type: string, nullable: true }
         nickname:                 { type: string, nullable: true }
@@ -1191,7 +1185,6 @@ components:
       required: [id, personId, entityType, current, primaryContact, createdAt, updatedAt]
       properties:
         id:                    { type: string }
-        airtableId:            { type: string, nullable: true }
         personId:              { type: string }
         entityType:            { $ref: "#/components/schemas/EntityRoleType" }
         funderId:              { type: string, nullable: true }
@@ -1245,7 +1238,6 @@ components:
       required: [id, email, validity, isPreferred, createdAt, updatedAt]
       properties:
         id:                    { type: string }
-        airtableId:            { type: string, nullable: true }
         email:                 { type: string }
         type:                  { allOf: [ { $ref: "#/components/schemas/EmailType" } ], nullable: true }
         personId:              { type: string, nullable: true }
@@ -1289,7 +1281,6 @@ components:
       required: [id, phoneNumber, validity, isPreferred, createdAt, updatedAt]
       properties:
         id:          { type: string }
-        airtableId:  { type: string, nullable: true }
         phoneNumber: { type: string }
         type:        { allOf: [ { $ref: "#/components/schemas/PhoneType" } ], nullable: true }
         personId:    { type: string, nullable: true }
@@ -1325,7 +1316,6 @@ components:
       required: [id, createdAt, updatedAt]
       properties:
         id:                    { type: string }
-        airtableId:            { type: string, nullable: true }
         street:                { type: string, nullable: true }
         cityRegionId:          { type: string, nullable: true }
         cityName:              { type: string, nullable: true }
@@ -1383,7 +1373,6 @@ components:
       required: [id, conditionsMet, createdAt, updatedAt]
       properties:
         id:                         { type: string }
-        airtableId:                 { type: string, nullable: true }
         name:                       { type: string, nullable: true }
         funderId:                   { type: string, nullable: true }
         askAmount:                  { type: string, nullable: true }
@@ -1493,7 +1482,6 @@ components:
       required: [id, directToSchool, createdAt, updatedAt]
       properties:
         id:                     { type: string }
-        airtableId:             { type: string, nullable: true }
         pledgeOrOpportunityId:  { type: string, nullable: true }
         subAmount:              { type: string, nullable: true }
         grantYear:              { type: array, items: { type: string }, nullable: true }
@@ -1548,7 +1536,6 @@ components:
       required: [id, designatedToSchool, createdAt, updatedAt]
       properties:
         id:                         { type: string }
-        airtableId:                 { type: string, nullable: true }
         legacyGiftId:               { type: string, nullable: true }
         name:                       { type: string, nullable: true }
         details:                    { type: string, nullable: true }
@@ -1660,7 +1647,6 @@ components:
       required: [id, formalRegionalRestriction, formalFundUseRestriction, createdAt, updatedAt]
       properties:
         id:                          { type: string }
-        airtableId:                  { type: string, nullable: true }
         giftId:                      { type: string, nullable: true }
         subAmount:                   { type: string, nullable: true }
         grantYearToBookTo:           { type: string, nullable: true }

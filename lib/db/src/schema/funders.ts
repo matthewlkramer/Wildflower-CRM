@@ -11,7 +11,6 @@ import {
 
 export const funders = pgTable("funders", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   name: text("name").notNull(),
   fundingEntitySubtype: fundingEntitySubtypeEnum("funding_entity_subtype"),
   makesPris: boolean("makes_pris"),

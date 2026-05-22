@@ -3,7 +3,6 @@ import { contactValidityEnum, phoneTypeEnum } from "./_enums";
 
 export const phoneNumbers = pgTable("phone_numbers", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   phoneNumber: text("phone_number").notNull(),
   type: phoneTypeEnum("type"),
   personId: text("person_id"),

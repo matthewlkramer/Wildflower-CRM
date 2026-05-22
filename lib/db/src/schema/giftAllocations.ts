@@ -3,7 +3,6 @@ import { intendedUsageEnum } from "./_enums";
 
 export const giftAllocations = pgTable("gift_allocations", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   // FK to gifts_and_payments.id (the parent gift this allocation belongs to).
   giftId: text("gift_id"),
   subAmount: numeric("sub_amount", { precision: 14, scale: 2 }),

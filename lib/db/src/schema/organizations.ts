@@ -10,7 +10,6 @@ import { organizationTypeEnum } from "./_enums";
 // Region attribution moves with the address.
 export const organizations = pgTable("organizations", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   name: text("name").notNull(),
   type: organizationTypeEnum("type"),
   emailDomain: text("email_domain"),

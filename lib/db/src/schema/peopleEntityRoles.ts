@@ -7,7 +7,6 @@ import {
 
 export const peopleEntityRoles = pgTable("people_entity_roles", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   personId: text("person_id").notNull(),
   entityType: entityRoleTypeEnum("entity_type").notNull(),
   funderId: text("funder_id"),

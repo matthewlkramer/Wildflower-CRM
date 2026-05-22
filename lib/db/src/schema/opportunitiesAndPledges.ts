@@ -9,7 +9,6 @@ import {
 
 export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   name: text("name"),
   funderId: text("funder_id"),
   askAmount: numeric("ask_amount", { precision: 14, scale: 2 }),

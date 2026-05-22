@@ -2,7 +2,6 @@ import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const addresses = pgTable("addresses", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   street: text("street"),
   cityRegionId: text("city_region_id"),
   // Denormalized convenience copies, populated by the importer via lookup

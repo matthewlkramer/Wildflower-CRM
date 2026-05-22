@@ -3,7 +3,6 @@ import { schoolStatusEnum, governanceModelEnum } from "./_enums";
 
 export const schools = pgTable("schools", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   name: text("name").notNull(),
   longName: text("long_name"),
   shortName: text("short_name"),

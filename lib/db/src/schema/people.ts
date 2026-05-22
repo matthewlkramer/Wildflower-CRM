@@ -3,7 +3,6 @@ import { pronounsEnum } from "./_enums";
 
 export const people = pgTable("people", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   prefix: text("prefix"),
   firstName: text("first_name"),
   nickname: text("nickname"),

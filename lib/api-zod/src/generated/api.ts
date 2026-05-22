@@ -71,9 +71,17 @@ export const ListRegionsQueryParams = zod.object({
 export const ListRegionsResponse = zod.object({
   data: zod.array(
     zod.object({
-      id: zod.string(),
-      airtableId: zod.string().nullish(),
+      id: zod
+        .string()
+        .describe(
+          "Human-readable slug PK, e.g. `united_states__minnesota__saint_paul`. Built from the region's name plus its included-type ancestors (continent \/ country \/ state \/ city \/ neighborhood); intermediate aggregation layers (multi_state_region, region_within_state, metro_area) are skipped.",
+        ),
       name: zod.string(),
+      displayPath: zod
+        .string()
+        .describe(
+          "Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display.",
+        ),
       stateAbbreviation: zod.string().nullish(),
       type: zod
         .enum([
@@ -104,9 +112,17 @@ export const GetRegionParams = zod.object({
 });
 
 export const GetRegionResponse = zod.object({
-  id: zod.string(),
-  airtableId: zod.string().nullish(),
+  id: zod
+    .string()
+    .describe(
+      "Human-readable slug PK, e.g. `united_states__minnesota__saint_paul`. Built from the region's name plus its included-type ancestors (continent \/ country \/ state \/ city \/ neighborhood); intermediate aggregation layers (multi_state_region, region_within_state, metro_area) are skipped.",
+    ),
   name: zod.string(),
+  displayPath: zod
+    .string()
+    .describe(
+      "Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display.",
+    ),
   stateAbbreviation: zod.string().nullish(),
   type: zod
     .enum([
@@ -166,7 +182,6 @@ export const ListSchoolsResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       name: zod.string(),
       longName: zod.string().nullish(),
       shortName: zod.string().nullish(),
@@ -214,7 +229,6 @@ export const GetSchoolParams = zod.object({
 
 export const GetSchoolResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   name: zod.string(),
   longName: zod.string().nullish(),
   shortName: zod.string().nullish(),
@@ -343,7 +357,6 @@ export const ListFundersResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       name: zod.string(),
       fundingEntitySubtype: zod
         .enum([
@@ -497,7 +510,6 @@ export const GetFunderParams = zod.object({
 export const GetFunderResponse = zod
   .object({
     id: zod.string(),
-    airtableId: zod.string().nullish(),
     name: zod.string(),
     fundingEntitySubtype: zod
       .enum([
@@ -573,7 +585,6 @@ export const GetFunderResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             personId: zod.string(),
             entityType: zod.enum([
               "funder",
@@ -609,7 +620,6 @@ export const GetFunderResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             email: zod.string(),
             type: zod.enum(["work", "personal", "other"]).nullish(),
             personId: zod.string().nullish(),
@@ -628,7 +638,6 @@ export const GetFunderResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             street: zod.string().nullish(),
             cityRegionId: zod.string().nullish(),
             cityName: zod.string().nullish(),
@@ -724,7 +733,6 @@ export const UpdateFunderBody = zod.object({
 
 export const UpdateFunderResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   name: zod.string(),
   fundingEntitySubtype: zod
     .enum([
@@ -842,7 +850,6 @@ export const ListOrganizationsResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       name: zod.string(),
       type: zod
         .enum([
@@ -926,7 +933,6 @@ export const GetOrganizationParams = zod.object({
 export const GetOrganizationResponse = zod
   .object({
     id: zod.string(),
-    airtableId: zod.string().nullish(),
     name: zod.string(),
     type: zod
       .enum([
@@ -967,7 +973,6 @@ export const GetOrganizationResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             personId: zod.string(),
             entityType: zod.enum([
               "funder",
@@ -1003,7 +1008,6 @@ export const GetOrganizationResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             email: zod.string(),
             type: zod.enum(["work", "personal", "other"]).nullish(),
             personId: zod.string().nullish(),
@@ -1022,7 +1026,6 @@ export const GetOrganizationResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             street: zod.string().nullish(),
             cityRegionId: zod.string().nullish(),
             cityName: zod.string().nullish(),
@@ -1083,7 +1086,6 @@ export const UpdateOrganizationBody = zod.object({
 
 export const UpdateOrganizationResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   name: zod.string(),
   type: zod
     .enum([
@@ -1146,7 +1148,6 @@ export const ListPaymentIntermediariesResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       name: zod.string(),
       type: zod.enum(["daf", "giving_platform"]).nullish(),
       createdAt: zod.string().datetime({}),
@@ -1172,7 +1173,6 @@ export const GetPaymentIntermediaryParams = zod.object({
 export const GetPaymentIntermediaryResponse = zod
   .object({
     id: zod.string(),
-    airtableId: zod.string().nullish(),
     name: zod.string(),
     type: zod.enum(["daf", "giving_platform"]).nullish(),
     createdAt: zod.string().datetime({}),
@@ -1184,7 +1184,6 @@ export const GetPaymentIntermediaryResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             personId: zod.string(),
             entityType: zod.enum([
               "funder",
@@ -1220,7 +1219,6 @@ export const GetPaymentIntermediaryResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             email: zod.string(),
             type: zod.enum(["work", "personal", "other"]).nullish(),
             personId: zod.string().nullish(),
@@ -1239,7 +1237,6 @@ export const GetPaymentIntermediaryResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             street: zod.string().nullish(),
             cityRegionId: zod.string().nullish(),
             cityName: zod.string().nullish(),
@@ -1271,7 +1268,6 @@ export const UpdatePaymentIntermediaryBody = zod.object({
 
 export const UpdatePaymentIntermediaryResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   name: zod.string(),
   type: zod.enum(["daf", "giving_platform"]).nullish(),
   createdAt: zod.string().datetime({}),
@@ -1302,7 +1298,6 @@ export const ListHouseholdsResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       name: zod.string(),
       active: zod.boolean(),
       createdAt: zod.string().datetime({}),
@@ -1328,7 +1323,6 @@ export const GetHouseholdParams = zod.object({
 export const GetHouseholdResponse = zod
   .object({
     id: zod.string(),
-    airtableId: zod.string().nullish(),
     name: zod.string(),
     active: zod.boolean(),
     createdAt: zod.string().datetime({}),
@@ -1340,7 +1334,6 @@ export const GetHouseholdResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             personId: zod.string(),
             entityType: zod.enum([
               "funder",
@@ -1376,7 +1369,6 @@ export const GetHouseholdResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             email: zod.string(),
             type: zod.enum(["work", "personal", "other"]).nullish(),
             personId: zod.string().nullish(),
@@ -1395,7 +1387,6 @@ export const GetHouseholdResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             street: zod.string().nullish(),
             cityRegionId: zod.string().nullish(),
             cityName: zod.string().nullish(),
@@ -1427,7 +1418,6 @@ export const UpdateHouseholdBody = zod.object({
 
 export const UpdateHouseholdResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   name: zod.string(),
   active: zod.boolean(),
   createdAt: zod.string().datetime({}),
@@ -1459,7 +1449,6 @@ export const ListPeopleResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       prefix: zod.string().nullish(),
       firstName: zod.string().nullish(),
       nickname: zod.string().nullish(),
@@ -1548,7 +1537,6 @@ export const GetPersonParams = zod.object({
 export const GetPersonResponse = zod
   .object({
     id: zod.string(),
-    airtableId: zod.string().nullish(),
     prefix: zod.string().nullish(),
     firstName: zod.string().nullish(),
     nickname: zod.string().nullish(),
@@ -1592,7 +1580,6 @@ export const GetPersonResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             personId: zod.string(),
             entityType: zod.enum([
               "funder",
@@ -1628,7 +1615,6 @@ export const GetPersonResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             email: zod.string(),
             type: zod.enum(["work", "personal", "other"]).nullish(),
             personId: zod.string().nullish(),
@@ -1647,7 +1633,6 @@ export const GetPersonResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             phoneNumber: zod.string(),
             type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
             personId: zod.string().nullish(),
@@ -1662,7 +1647,6 @@ export const GetPersonResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             street: zod.string().nullish(),
             cityRegionId: zod.string().nullish(),
             cityName: zod.string().nullish(),
@@ -1725,7 +1709,6 @@ export const UpdatePersonBody = zod.object({
 
 export const UpdatePersonResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   prefix: zod.string().nullish(),
   firstName: zod.string().nullish(),
   nickname: zod.string().nullish(),
@@ -1794,7 +1777,6 @@ export const ListPeopleEntityRolesResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       personId: zod.string(),
       entityType: zod.enum([
         "funder",
@@ -1889,7 +1871,6 @@ export const UpdatePeopleEntityRoleBody = zod.object({
 
 export const UpdatePeopleEntityRoleResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   personId: zod.string(),
   entityType: zod.enum([
     "funder",
@@ -1947,7 +1928,6 @@ export const ListEmailsResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       email: zod.string(),
       type: zod.enum(["work", "personal", "other"]).nullish(),
       personId: zod.string().nullish(),
@@ -1993,7 +1973,6 @@ export const UpdateEmailBody = zod.object({
 
 export const UpdateEmailResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   email: zod.string(),
   type: zod.enum(["work", "personal", "other"]).nullish(),
   personId: zod.string().nullish(),
@@ -2030,7 +2009,6 @@ export const ListPhoneNumbersResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       phoneNumber: zod.string(),
       type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
       personId: zod.string().nullish(),
@@ -2068,7 +2046,6 @@ export const UpdatePhoneNumberBody = zod.object({
 
 export const UpdatePhoneNumberResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   phoneNumber: zod.string(),
   type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
   personId: zod.string().nullish(),
@@ -2105,7 +2082,6 @@ export const ListAddressesResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       street: zod.string().nullish(),
       cityRegionId: zod.string().nullish(),
       cityName: zod.string().nullish(),
@@ -2165,7 +2141,6 @@ export const UpdateAddressBody = zod.object({
 
 export const UpdateAddressResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   street: zod.string().nullish(),
   cityRegionId: zod.string().nullish(),
   cityName: zod.string().nullish(),
@@ -2226,7 +2201,6 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       name: zod.string().nullish(),
       funderId: zod.string().nullish(),
       askAmount: zod.string().nullish(),
@@ -2360,7 +2334,6 @@ export const GetOpportunityOrPledgeParams = zod.object({
 export const GetOpportunityOrPledgeResponse = zod
   .object({
     id: zod.string(),
-    airtableId: zod.string().nullish(),
     name: zod.string().nullish(),
     funderId: zod.string().nullish(),
     askAmount: zod.string().nullish(),
@@ -2426,7 +2399,6 @@ export const GetOpportunityOrPledgeResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             pledgeOrOpportunityId: zod.string().nullish(),
             subAmount: zod.string().nullish(),
             grantYear: zod.array(zod.string()).nullish(),
@@ -2462,7 +2434,6 @@ export const GetOpportunityOrPledgeResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             legacyGiftId: zod.string().nullish(),
             name: zod.string().nullish(),
             details: zod.string().nullish(),
@@ -2593,7 +2564,6 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
 
 export const UpdateOpportunityOrPledgeResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   name: zod.string().nullish(),
   funderId: zod.string().nullish(),
   askAmount: zod.string().nullish(),
@@ -2680,7 +2650,6 @@ export const ListPledgeAllocationsResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       pledgeOrOpportunityId: zod.string().nullish(),
       subAmount: zod.string().nullish(),
       grantYear: zod.array(zod.string()).nullish(),
@@ -2772,7 +2741,6 @@ export const UpdatePledgeAllocationBody = zod.object({
 
 export const UpdatePledgeAllocationResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   pledgeOrOpportunityId: zod.string().nullish(),
   subAmount: zod.string().nullish(),
   grantYear: zod.array(zod.string()).nullish(),
@@ -2848,7 +2816,6 @@ export const ListGiftsAndPaymentsResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       legacyGiftId: zod.string().nullish(),
       name: zod.string().nullish(),
       details: zod.string().nullish(),
@@ -2982,7 +2949,6 @@ export const GetGiftOrPaymentParams = zod.object({
 export const GetGiftOrPaymentResponse = zod
   .object({
     id: zod.string(),
-    airtableId: zod.string().nullish(),
     legacyGiftId: zod.string().nullish(),
     name: zod.string().nullish(),
     details: zod.string().nullish(),
@@ -3049,7 +3015,6 @@ export const GetGiftOrPaymentResponse = zod
         .array(
           zod.object({
             id: zod.string(),
-            airtableId: zod.string().nullish(),
             giftId: zod.string().nullish(),
             subAmount: zod.string().nullish(),
             grantYearToBookTo: zod.string().nullish(),
@@ -3142,7 +3107,6 @@ export const UpdateGiftOrPaymentBody = zod.object({
 
 export const UpdateGiftOrPaymentResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   legacyGiftId: zod.string().nullish(),
   name: zod.string().nullish(),
   details: zod.string().nullish(),
@@ -3225,7 +3189,6 @@ export const ListGiftAllocationsResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
-      airtableId: zod.string().nullish(),
       giftId: zod.string().nullish(),
       subAmount: zod.string().nullish(),
       grantYearToBookTo: zod.string().nullish(),
@@ -3309,7 +3272,6 @@ export const UpdateGiftAllocationBody = zod.object({
 
 export const UpdateGiftAllocationResponse = zod.object({
   id: zod.string(),
-  airtableId: zod.string().nullish(),
   giftId: zod.string().nullish(),
   subAmount: zod.string().nullish(),
   grantYearToBookTo: zod.string().nullish(),

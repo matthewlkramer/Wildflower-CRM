@@ -8,7 +8,6 @@ import {
 
 export const giftsAndPayments = pgTable("gifts_and_payments", {
   id: text("id").primaryKey(),
-  airtableId: text("airtable_id").unique(),
   legacyGiftId: text("legacy_gift_id"),
   name: text("name"),
   details: text("details"),

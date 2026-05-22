@@ -363,9 +363,11 @@ export interface User {
 }
 
 export interface Region {
+  /** Human-readable slug PK, e.g. `united_states__minnesota__saint_paul`. Built from the region's name plus its included-type ancestors (continent / country / state / city / neighborhood); intermediate aggregation layers (multi_state_region, region_within_state, metro_area) are skipped. */
   id: string;
-  airtableId?: string | null;
   name: string;
+  /** Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display. */
+  displayPath: string;
   stateAbbreviation?: string | null;
   type?: RegionType | null;
   parentRegionId?: string | null;
@@ -380,7 +382,6 @@ export interface RegionList {
 
 export interface School {
   id: string;
-  airtableId?: string | null;
   name: string;
   longName?: string | null;
   shortName?: string | null;
@@ -428,7 +429,6 @@ export interface FiscalYear {
 
 export interface Funder {
   id: string;
-  airtableId?: string | null;
   name: string;
   fundingEntitySubtype?: FundingEntitySubtype | null;
   makesPris?: boolean | null;
@@ -464,7 +464,6 @@ export interface Funder {
 
 export interface PeopleEntityRole {
   id: string;
-  airtableId?: string | null;
   personId: string;
   entityType: EntityRoleType;
   funderId?: string | null;
@@ -482,7 +481,6 @@ export interface PeopleEntityRole {
 
 export interface Email {
   id: string;
-  airtableId?: string | null;
   email: string;
   type?: EmailType | null;
   personId?: string | null;
@@ -498,7 +496,6 @@ export interface Email {
 
 export interface Address {
   id: string;
-  airtableId?: string | null;
   street?: string | null;
   cityRegionId?: string | null;
   cityName?: string | null;
@@ -592,7 +589,6 @@ export interface UpdateFunderBody {
 
 export interface Organization {
   id: string;
-  airtableId?: string | null;
   name: string;
   type?: OrganizationType | null;
   emailDomain?: string | null;
@@ -640,7 +636,6 @@ export interface UpdateOrganizationBody {
 
 export interface PaymentIntermediary {
   id: string;
-  airtableId?: string | null;
   name: string;
   type?: PaymentIntermediaryType | null;
   createdAt: string;
@@ -670,7 +665,6 @@ export interface UpdatePaymentIntermediaryBody {
 
 export interface Household {
   id: string;
-  airtableId?: string | null;
   name: string;
   active: boolean;
   createdAt: string;
@@ -700,7 +694,6 @@ export interface UpdateHouseholdBody {
 
 export interface Person {
   id: string;
-  airtableId?: string | null;
   prefix?: string | null;
   firstName?: string | null;
   nickname?: string | null;
@@ -739,7 +732,6 @@ export interface Person {
 
 export interface PhoneNumber {
   id: string;
-  airtableId?: string | null;
   phoneNumber: string;
   type?: PhoneType | null;
   personId?: string | null;
@@ -941,7 +933,6 @@ export interface UpdateAddressBody {
 
 export interface OpportunityOrPledge {
   id: string;
-  airtableId?: string | null;
   name?: string | null;
   funderId?: string | null;
   askAmount?: string | null;
@@ -975,7 +966,6 @@ export interface OpportunityOrPledge {
 
 export interface PledgeAllocation {
   id: string;
-  airtableId?: string | null;
   pledgeOrOpportunityId?: string | null;
   subAmount?: string | null;
   grantYear?: string[] | null;
@@ -993,7 +983,6 @@ export interface PledgeAllocation {
 
 export interface GiftOrPayment {
   id: string;
-  airtableId?: string | null;
   legacyGiftId?: string | null;
   name?: string | null;
   details?: string | null;
@@ -1131,7 +1120,6 @@ export interface UpdatePledgeAllocationBody {
 
 export interface GiftAllocation {
   id: string;
-  airtableId?: string | null;
   giftId?: string | null;
   subAmount?: string | null;
   grantYearToBookTo?: string | null;
