@@ -1,23 +1,176 @@
-import { useListFundingEntities, getListFundingEntitiesQueryKey } from "@workspace/api-client-react";
+import { useState } from "react";
 import { Link } from "wouter";
-import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  useListFunders,
+  getListFundersQueryKey,
+  type ListFundersParams,
+  type FundingEntitySubtype,
+  type ConnectionStatus,
+  type ActiveStatus,
+} from "@workspace/api-client-react";
+import { formatEnum } from "@/lib/format";
+import { useDebounce } from "@/hooks/use-debounce";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+
+const SUBTYPES: FundingEntitySubtype[] = [
+  "family_foundation",
+  "institutional_foundation",
+  "corporate_foundation",
+  "community_foundation",
+  "bank_foundation",
+  "family_office_trust",
+  "intermediary",
+  "government",
+  "nonprofit",
+  "corporation",
+  "capital_provider",
+  "philanthropic_advisor",
+  "cdfi",
+  "education_forprofit",
+  "competition",
+  "public_private",
+  "daf_platform",
+  "platform",
+];
+
+const ACTIVE_STATUSES: ActiveStatus[] = ["active", "defunct", "spenddown"];
+const CONNECTION_STATUSES: ConnectionStatus[] = [
+  "connected",
+  "have_a_connector",
+  "no_connection",
+];
+
+const PAGE_SIZE = 50;
+const ANY = "_any";
 
 export default function FundingEntities() {
-  const { data, isLoading } = useListFundingEntities(undefined, {
-    query: {
-      queryKey: getListFundingEntitiesQueryKey()
-    }
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 250);
+  const [subtype, setSubtype] = useState<string>(ANY);
+  const [activeStatus, setActiveStatus] = useState<string>(ANY);
+  const [connectionStatus, setConnectionStatus] = useState<string>(ANY);
+  const [page, setPage] = useState(1);
+
+  const params: ListFundersParams = {
+    limit: PAGE_SIZE,
+    page,
+    ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+    ...(subtype !== ANY ? { subtype: subtype as FundingEntitySubtype } : {}),
+    ...(activeStatus !== ANY
+      ? { activeStatus: activeStatus as ActiveStatus }
+      : {}),
+    ...(connectionStatus !== ANY
+      ? { connectionStatus: connectionStatus as ConnectionStatus }
+      : {}),
+  };
+
+  const { data, isLoading, isError, error } = useListFunders(params, {
+    query: { queryKey: getListFundersQueryKey(params) },
   });
+
+  const rows = data?.data ?? [];
+  const total = data?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  function resetToFirstPage<T>(setter: (v: T) => void) {
+    return (v: T) => {
+      setter(v);
+      setPage(1);
+    };
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-serif font-bold text-foreground">Funding Entities</h1>
-        <Link href="/funding-entities/new" className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90">
-          Add Entity
-        </Link>
+        <div>
+          <h1 className="text-3xl font-serif font-bold text-foreground">
+            Funders
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="grow min-w-[200px]">
+          <Input
+            placeholder="Search by name…"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Search funders by name"
+            data-testid="input-search-funders"
+          />
+        </div>
+
+        <FilterSelect
+          label="Subtype"
+          value={subtype}
+          onChange={resetToFirstPage(setSubtype)}
+          options={SUBTYPES}
+          testId="select-subtype"
+        />
+        <FilterSelect
+          label="Active status"
+          value={activeStatus}
+          onChange={resetToFirstPage(setActiveStatus)}
+          options={ACTIVE_STATUSES}
+          testId="select-active-status"
+        />
+        <FilterSelect
+          label="Connection"
+          value={connectionStatus}
+          onChange={resetToFirstPage(setConnectionStatus)}
+          options={CONNECTION_STATUSES}
+          testId="select-connection-status"
+        />
+
+        {(search ||
+          subtype !== ANY ||
+          activeStatus !== ANY ||
+          connectionStatus !== ANY) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setSearch("");
+              setSubtype(ANY);
+              setActiveStatus(ANY);
+              setConnectionStatus(ANY);
+              setPage(1);
+            }}
+          >
+            Clear
+          </Button>
+        )}
       </div>
 
       <div className="rounded-md border bg-card overflow-hidden">
@@ -25,41 +178,157 @@ export default function FundingEntities() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Stage</TableHead>
-              <TableHead>Last Gift Date</TableHead>
-              <TableHead className="text-right">Total Giving</TableHead>
+              <TableHead>Subtype</TableHead>
+              <TableHead>Active</TableHead>
+              <TableHead>Connection</TableHead>
+              <TableHead>Enthusiasm</TableHead>
+              <TableHead>Capacity</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">Loading...</TableCell>
+                <TableCell
+                  colSpan={6}
+                  className="text-center h-24 text-muted-foreground"
+                >
+                  Loading…
+                </TableCell>
               </TableRow>
-            ) : data?.data.length === 0 ? (
+            ) : isError ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">No entities found.</TableCell>
+                <TableCell
+                  colSpan={6}
+                  className="text-center h-24 text-destructive"
+                >
+                  {error instanceof Error
+                    ? error.message
+                    : "Failed to load funders."}
+                </TableCell>
+              </TableRow>
+            ) : rows.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="text-center h-24 text-muted-foreground"
+                >
+                  No funders match these filters.
+                </TableCell>
               </TableRow>
             ) : (
-              data?.data.map((entity) => (
-                <TableRow key={entity.id} className="cursor-pointer hover:bg-muted/50 transition-colors">
+              rows.map((f) => (
+                <TableRow
+                  key={f.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  data-testid={`row-funder-${f.id}`}
+                >
                   <TableCell className="font-medium">
-                    <Link href={`/funding-entities/${entity.id}`} className="block w-full">
-                      {entity.legalName}
+                    <Link
+                      href={`/funding-entities/${f.id}`}
+                      className="block w-full"
+                    >
+                      {f.name}
                     </Link>
                   </TableCell>
-                  <TableCell>{formatEnum(entity.subtype)}</TableCell>
+                  <TableCell>{formatEnum(f.fundingEntitySubtype)}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{formatEnum(entity.institutionalCultivationStage || entity.governmentCultivationStage)}</Badge>
+                    {f.activeStatus ? (
+                      <Badge
+                        variant={
+                          f.activeStatus === "active" ? "default" : "outline"
+                        }
+                      >
+                        {formatEnum(f.activeStatus)}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
-                  <TableCell>{formatDate(entity.lastGiftDate)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(entity.totalGiving)}</TableCell>
+                  <TableCell>{formatEnum(f.connectionStatus)}</TableCell>
+                  <TableCell>{formatEnum(f.enthusiasm)}</TableCell>
+                  <TableCell>{formatEnum(f.capacityRating)}</TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
       </div>
+
+      {totalPages > 1 && (
+        <Pagination>
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setPage((p) => Math.max(1, p - 1));
+                }}
+                aria-disabled={page <= 1}
+                className={
+                  page <= 1 ? "pointer-events-none opacity-50" : undefined
+                }
+              />
+            </PaginationItem>
+            <PaginationItem>
+              <PaginationLink href="#" isActive>
+                {page} / {totalPages}
+              </PaginationLink>
+            </PaginationItem>
+            <PaginationItem>
+              <PaginationNext
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setPage((p) => Math.min(totalPages, p + 1));
+                }}
+                aria-disabled={page >= totalPages}
+                className={
+                  page >= totalPages
+                    ? "pointer-events-none opacity-50"
+                    : undefined
+                }
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      )}
+    </div>
+  );
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+  testId,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: readonly string[];
+  testId: string;
+}) {
+  const inputId = `filter-${testId}`;
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground">
+        {label}
+      </label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger id={inputId} className="w-[180px]" aria-label={label} data-testid={testId}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ANY}>Any</SelectItem>
+          {options.map((o) => (
+            <SelectItem key={o} value={o}>
+              {formatEnum(o)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
