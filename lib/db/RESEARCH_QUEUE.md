@@ -56,19 +56,27 @@ this single payment.
 
 ---
 
-## R3a — 4 won opps missing `actual_completion_date`
+## R3a — 4 won opps missing `actual_completion_date` (RESOLVED with 1 follow-up)
 
-These opps are marked `status='won'` but have no completion date recorded.
-Per SCHEMA.md, every won opp should carry the date the grant was finalized.
-Look up the actual award/agreement dates from funder correspondence or
-internal records and populate `actual_completion_date`.
+All 4 won opps that lacked `actual_completion_date` were backfilled from
+`MAX(date_received)` of their gifts (see fixup #15 in
+`post-import-fixups.sql`) so the new
+`opportunities_and_pledges_won_requires_completion_date` CHECK constraint
+could be added cleanly.
 
-| opp id | funder | name | awarded |
-|---|---|---|---|
-| `recEDlbIedGzGfGxq` | Imaginable Futures | Imaginable Futures FY24-26 BWF | $900,000 |
-| `recohEH4lZm5yixFm` | Spring Point Partners | SpringPoint PRI - Emerging Hub Revolving Loan Fund | $500,000 |
-| `recshOnvUb0A390qj` | Bainum Family Foundation | FY26 Bainum Grant | $200,000 |
-| `rec3MTMlSE06qaL2L` | Gates Family Foundation | Gates Family Foundation | $85,000 |
+| opp id | funder | name | awarded | backfilled date | basis |
+|---|---|---|---|---|---|
+| `recEDlbIedGzGfGxq` | Imaginable Futures | Imaginable Futures FY24-26 BWF | $900,000 | 2024-10-30 | full $900K landed in 3 installments — last on this date |
+| `recohEH4lZm5yixFm` | Spring Point Partners | SpringPoint PRI - Emerging Hub Revolving Loan Fund | $500,000 | 2019-09-04 | full $500K in one payment |
+| `recshOnvUb0A390qj` | Bainum Family Foundation | FY26 Bainum Grant | $200,000 | 2025-09-17 | full $200K in one payment |
+| `rec3MTMlSE06qaL2L` | Gates Family Foundation | Gates Family Foundation | $85,000 | 2020-02-07 | **only $40K of $85K landed** — see follow-up below |
+
+**Follow-up — Gates Family Foundation `rec3MTMlSE06qaL2L`:** awarded
+$85,000 but only one payment of $40,000 arrived (2020-02-07). The CHECK
+is satisfied (completion = the only payment date) but the awarded /
+received gap is real and unresolved. Reconcile with finance: was the
+award reduced post-grant, did a second payment go missing, or should
+the opp be reclassified (e.g. partial-win)?
 
 ---
 

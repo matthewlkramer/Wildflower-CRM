@@ -990,3 +990,40 @@ VALUES
   ('synth-per-kelley-knox-james', 'recRv6W1QWc4anly1', 'household',
    'recS326xolQJljQte', 'donor_advisor', 'current', false)
 ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
+-- #15 — Backfill actual_completion_date for 4 won opps missing it
+-- ============================================================================
+-- The schema's `opportunities_and_pledges_won_requires_completion_date` CHECK
+-- requires every status='won' row to carry an `actual_completion_date`. Four
+-- rows from the initial import violated this; we backfill each from the
+-- MAX(date_received) of the gifts tied to that opp via payment_on_pledge_id,
+-- which is a defensible "the money landed by this date" stand-in.
+--
+--   recEDlbIedGzGfGxq — Imaginable Futures FY24-26 BWF — full $900K paid in
+--                       3 installments; completion = last payment 2024-10-30.
+--   recohEH4lZm5yixFm — SpringPoint PRI Revolving Loan Fund — full $500K
+--                       paid 2019-09-04.
+--   recshOnvUb0A390qj — FY26 Bainum Grant — full $200K paid 2025-09-17.
+--   rec3MTMlSE06qaL2L — Gates Family Foundation — opp awarded $85K but only
+--                       $40K (single payment 2020-02-07) actually arrived.
+--                       Using 2020-02-07 to satisfy the CHECK; the awarded
+--                       vs received gap stays flagged in R3a for human
+--                       reconciliation (was awarded reduced? more coming?).
+--
+-- Idempotent: each UPDATE no-ops once the date is in place.
+UPDATE opportunities_and_pledges o
+   SET actual_completion_date = sub.max_date, updated_at = NOW()
+  FROM (
+    SELECT payment_on_pledge_id AS opp_id, MAX(date_received) AS max_date
+      FROM gifts_and_payments
+     WHERE payment_on_pledge_id IN (
+             'recEDlbIedGzGfGxq','recohEH4lZm5yixFm',
+             'recshOnvUb0A390qj','rec3MTMlSE06qaL2L'
+           )
+       AND date_received IS NOT NULL
+     GROUP BY payment_on_pledge_id
+  ) sub
+ WHERE o.id = sub.opp_id
+   AND o.status = 'won'
+   AND o.actual_completion_date IS NULL;

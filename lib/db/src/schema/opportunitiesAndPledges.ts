@@ -152,6 +152,17 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
     "opportunities_and_pledges_donor_xor",
     sql`num_nonnulls(${t.funderId}, ${t.individualGiverPersonId}, ${t.householdId}) = 1`,
   ),
+  // status='won' or 'lost' implies the opp's lifecycle is closed; the
+  // completion date is the system-of-record for "when did this pledge
+  // land" (won) or "when was this declined / withdrawn" (lost). Per the
+  // column-validity matrix above, open and dormant rows leave it null.
+  // The four won opps that originally lacked a date were backfilled in
+  // post-import-fixups.sql from MAX(date_received) of their gifts; all
+  // lost opps already carried the decline date out of Airtable.
+  check(
+    "opportunities_and_pledges_closed_requires_completion_date",
+    sql`${t.status} NOT IN ('won', 'lost') OR ${t.actualCompletionDate} IS NOT NULL`,
+  ),
 ]);
 
 export type OpportunityOrPledge = typeof opportunitiesAndPledges.$inferSelect;

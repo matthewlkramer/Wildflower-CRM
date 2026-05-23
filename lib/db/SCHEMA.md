@@ -82,7 +82,7 @@ Many-to-many links (a funder having multiple regional priorities, an allocation 
 | emails | 3,094 |
 | phone_numbers | 1,199 |
 | addresses | 1,676 |
-| opportunities_and_pledges | 601 (16 since reclassified to household-as-donor) |
+| opportunities_and_pledges | 601 (16 since reclassified to household-as-donor; 4 won opps had `actual_completion_date` backfilled from gift `MAX(date_received)` to satisfy the won-requires-completion-date CHECK) |
 | pledge_allocations | 611 (68 imported + 362 synthesized as `working` for open opps + 181 backfilled from the Copper opps export for lost/dormant opps via `post-import-fixups.sql`) |
 | gifts_and_payments | 691 (47 since reclassified to household-as-donor) |
 | gift_allocations | 793 (141 imported + 652 synthesized from header-only gifts) |
