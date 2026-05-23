@@ -913,18 +913,45 @@ UPDATE people_entity_roles SET primary_contact=true, updated_at=now()
 COMMIT;
 
 -- ============================================================================
--- #13 — Same-name people: investigation outcome
+-- #13 — Same-name people: 2 merges + 4 confirmed-different
 -- ============================================================================
--- 6 name pairs flagged. Discriminator audit (employer + email + location) shows
--- 4 pairs are different people who happen to share a common name (no fix):
---   Beth Anderson    — Hill Center NC vs MA Public Charter Assoc
---   David McKnight   — Power of Zero PR vs Nat'l Assoc Manufacturers
---   Josh Engel       — personal MN vs EdSurge
---   Scott Burns      — Walton Family Foundation vs Gov Delivery
--- 2 pairs are ambiguous and parked in RESEARCH_QUEUE.md (R6):
---   Dominque Burgess — Wildflower Foundation vs burbrellaeducation.com
---   Ted Quinn        — Wildflower Foundation vs tcquinn.org
--- No DB changes required.
+-- 6 name pairs flagged by audit. Cross-referenced employer (PERs), email
+-- domain, address, and online research:
+--   Beth Anderson    — Hill Center NC vs MA Public Charter Assoc           (different)
+--   David McKnight   — Power of Zero author vs NAM Mfg Institute VP        (different)
+--   Josh Engel       — Border States MN vs EdSurge/ISTE Sr Director        (different)
+--   Scott Burns      — Walton Family Foundation vs GovDelivery CEO MN      (different)
+--   Dominque Burgess — Wildflower Foundation vs burbrellaeducation.com     (SAME, merge)
+--   Ted Quinn        — Wildflower Foundation vs tcquinn.org personal site  (SAME, merge)
+-- See RESEARCH_QUEUE.md R6 (resolved) for the merge rationale.
+
+DO $$
+DECLARE
+  pair record;
+BEGIN
+  FOR pair IN
+    SELECT * FROM (VALUES
+      ('reciB5Lfg6MgJb84q', 'rec5dkuXrNWQyDk5P'),  -- Dominque Burgess: loser → Wildflower-Foundation winner
+      ('recxOIfD5BCEYw7hi', 'rec5rOo1sEIAUBLd3')   -- Ted Quinn:        loser → Wildflower-Foundation winner
+    ) AS t(loser, winner)
+  LOOP
+    -- Reassign every column in the schema that references people.id, then
+    -- delete the loser. Idempotent: after first run the loser no longer
+    -- exists so all UPDATEs hit 0 rows and the DELETE is a no-op.
+    UPDATE people_entity_roles       SET person_id=pair.winner                     WHERE person_id=pair.loser;
+    UPDATE emails                    SET person_id=pair.winner                     WHERE person_id=pair.loser;
+    UPDATE phone_numbers             SET person_id=pair.winner                     WHERE person_id=pair.loser;
+    UPDATE addresses                 SET person_id=pair.winner                     WHERE person_id=pair.loser;
+    UPDATE gifts_and_payments        SET individual_giver_person_id=pair.winner    WHERE individual_giver_person_id=pair.loser;
+    UPDATE gifts_and_payments        SET primary_contact_person_id=pair.winner     WHERE primary_contact_person_id=pair.loser;
+    UPDATE gifts_and_payments        SET advisor_person_id=pair.winner             WHERE advisor_person_id=pair.loser;
+    UPDATE opportunities_and_pledges SET individual_giver_person_id=pair.winner    WHERE individual_giver_person_id=pair.loser;
+    UPDATE opportunities_and_pledges SET primary_contact_person_id=pair.winner     WHERE primary_contact_person_id=pair.loser;
+    UPDATE opportunities_and_pledges SET individual_advisor_person_id=pair.winner  WHERE individual_advisor_person_id=pair.loser;
+    UPDATE people                    SET assistant_person_id=pair.winner           WHERE assistant_person_id=pair.loser AND id <> pair.winner;
+    DELETE FROM people               WHERE id=pair.loser;
+  END LOOP;
+END $$;
 
 -- ============================================================================
 -- #14 — Delete 6 empty households (no PERs, gifts, opps, addresses, emails)

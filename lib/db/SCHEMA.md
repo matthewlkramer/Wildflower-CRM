@@ -77,7 +77,7 @@ Many-to-many links (a funder having multiple regional priorities, an allocation 
 | organizations | 792 |
 | payment_intermediaries | 35 |
 | households | 69 |
-| people | 3,201 |
+| people | 3,199 |
 | people_entity_roles | 2,456 (2,331 imported + 125 synth-per-* recovered from dropped FKs) |
 | emails | 3,094 |
 | phone_numbers | 1,203 |

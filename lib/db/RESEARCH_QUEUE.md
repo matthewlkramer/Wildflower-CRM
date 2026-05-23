@@ -238,29 +238,21 @@ Pick one (set `primary_contact=false` on the other).
 
 ---
 
-## R6 — Ambiguous same-name people pairs
+## R6 — Same-name people pairs (RESOLVED)
 
-Audit #13 flagged 6 pairs of `people` rows sharing a normalized full name. Four
-were confirmed to be **different people** by employer/email/location (Beth
-Anderson, David McKnight, Josh Engel, Scott Burns — no action needed). The two
-below are genuinely ambiguous and need a human to confirm same-vs-different
-before any merge:
+Audit #13 flagged 6 pairs of `people` rows sharing a normalized full name.
+Resolution (applied in `post-import-fixups.sql`):
 
-### R6a — Dominque Burgess
-- `rec5dkuXrNWQyDk5P` — Wildflower Foundation, `dominque.burgess@wildflowerschools.org`
-- `reciB5Lfg6MgJb84q` — no employer, `dburgess@burbrellaeducation.com`
+| pair | conclusion | basis |
+|---|---|---|
+| Beth Anderson | different people | Hill Center NC vs MA Public Charter Assoc — distinct employers + cities |
+| David McKnight | different people | `powerofzero.com` author vs NAM Manufacturing Institute VP |
+| Josh Engel | different people | Border States branch manager (MN) vs EdSurge/ISTE Sr Director |
+| Scott Burns | different people | Walton Family Foundation vs GovDelivery CEO (MN) |
+| Dominque Burgess | **merged** | `reciB5Lfg6MgJb84q` → `rec5dkuXrNWQyDk5P` (Wildflower Foundation; personal email preserved) |
+| Ted Quinn | **merged** | `recxOIfD5BCEYw7hi` → `rec5rOo1sEIAUBLd3` (Wildflower Foundation; personal email + NYC address preserved) |
 
-Unusual spelling ("Dominque" without the second "i") matches in both. Could be
-the same person with a personal/prior email, or a coincidence. If same person:
-merge `reciB5Lfg6MgJb84q` → `rec5dkuXrNWQyDk5P` and move the second email over.
-
-### R6b — Ted Quinn
-- `rec5rOo1sEIAUBLd3` — Wildflower Foundation, `ted.quinn@wildflowerschools.org`, Newark NJ
-- `recxOIfD5BCEYw7hi` — no employer, `tcquinn@tcquinn.org`, NYC
-
-Both NJ/NYC area; `tcquinn.org` looks like a personal site. If same person:
-merge `recxOIfD5BCEYw7hi` → `rec5rOo1sEIAUBLd3` and move the second email +
-address over.
+No further action.
 
 ---
 
