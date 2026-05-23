@@ -954,14 +954,39 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- #14 — 6 empty households: investigation outcome (KEPT as stubs)
+-- #14 — 6 "empty" households: investigation + Kelley/Knox fixup
 -- ============================================================================
 -- Audit flagged 6 households with no people, gifts, opps, addresses, or
 -- emails (Crown, Deedie and Rusty Rose, James Kelley & Amie Knox, Mortenson,
 -- Nina & Caper de Clercq, Walton Family). An initial fixup deleted them, but
--- a deeper Airtable audit (people / PER / gifts / opps tables, plus the
--- Copper companies export) confirmed they are TRULY orphaned in the source
--- data — no record anywhere references them. They are well-known donor
--- families that the team will populate manually; we keep them as
--- placeholders rather than delete and lose the seed. No SQL fixup needed
--- here; they import correctly from Airtable on every re-run.
+-- cross-checking against BOTH the live Airtable base AND the original Copper
+-- opportunities export turned up exactly one mis-attribution:
+--
+--   "Kelley/Knox Flame Lily startup grant" ($1,500, 2021-03-05,
+--   gift recVOXYPVNXKUwv06) — in Copper the Company on this opp was
+--   "James Kelley & Amie Knox" (a joint household account); the Airtable
+--   migration landed it on `individual_giver_person_id = Amie Knox`
+--   instead of `household_id = James Kelley & Amie Knox`. Re-attribute
+--   the gift to the household, and seat both spouses into the household
+--   via PER so it stops looking structurally empty.
+--
+-- The other 5 households (Crown, Deedie and Rusty Rose, Mortenson, Nina &
+-- Caper de Clercq, Walton Family) have ZERO matches in BOTH systems
+-- (Copper "Mortenson" / "Walton" hits all resolve to their separate
+-- foundations, already in `funders`). They remain as stubs for the team
+-- to populate manually.
+UPDATE gifts_and_payments
+   SET household_id = 'recS326xolQJljQte',
+       individual_giver_person_id = NULL,
+       updated_at = NOW()
+ WHERE id = 'recVOXYPVNXKUwv06'
+   AND (household_id IS NULL OR household_id <> 'recS326xolQJljQte');
+
+INSERT INTO people_entity_roles
+  (id, person_id, entity_type, household_id, connection, current, primary_contact)
+VALUES
+  ('synth-per-kelley-knox-amie',  'recHP5QezkklYmjbP', 'household',
+   'recS326xolQJljQte', 'donor_advisor', 'current', true),
+  ('synth-per-kelley-knox-james', 'recRv6W1QWc4anly1', 'household',
+   'recS326xolQJljQte', 'donor_advisor', 'current', false)
+ON CONFLICT (id) DO NOTHING;
