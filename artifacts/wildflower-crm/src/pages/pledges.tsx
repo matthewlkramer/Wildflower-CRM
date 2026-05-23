@@ -1,5 +1,11 @@
-import PlaceholderPage from "@/components/placeholder-page";
+import Opportunities from "./opportunities";
 
 export default function Pledges() {
-  return <PlaceholderPage title="Pledges" />;
+  return (
+    <Opportunities
+      title="Pledges"
+      lockedStatus="won"
+      basePath="/pledges"
+    />
+  );
 }

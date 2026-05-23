@@ -1,5 +1,379 @@
-import PlaceholderPage from "@/components/placeholder-page";
+import { useState } from "react";
+import { Link, useRoute } from "wouter";
+import {
+  useGetPerson,
+  useUpdatePerson,
+  getGetPersonQueryKey,
+  getListPeopleQueryKey,
+  type PersonDetail,
+  type UpdatePersonBody,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { formatDate, formatEnum } from "@/lib/format";
+import { useToast } from "@/hooks/use-toast";
+import { personDisplayName } from "@/lib/person";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 
 export default function IndividualDetail() {
-  return <PlaceholderPage title="Individual" />;
+  const [, params] = useRoute("/individuals/:id");
+  const id = params?.id ?? "";
+
+  const { data, isLoading, isError, error } = useGetPerson(id, {
+    query: { queryKey: getGetPersonQueryKey(id), enabled: !!id },
+  });
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading person…</div>;
+  }
+  if (isError || !data) {
+    return (
+      <div className="space-y-4">
+        <Link href="/individuals" className="text-sm text-primary hover:underline">
+          ← Back to individuals
+        </Link>
+        <div className="text-sm text-destructive">
+          {error instanceof Error ? error.message : "Person not found."}
+        </div>
+      </div>
+    );
+  }
+
+  return <PersonView person={data} />;
+}
+
+function PersonView({ person }: { person: PersonDetail }) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <Link href="/individuals" className="text-sm text-primary hover:underline">
+          ← Back to individuals
+        </Link>
+      </div>
+
+      <NameHeader person={person} />
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Basics</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <Row label="Prefix">{person.prefix ?? "—"}</Row>
+            <Row label="First">{person.firstName ?? "—"}</Row>
+            <Row label="Middle">{person.middleName ?? "—"}</Row>
+            <Row label="Last">{person.lastName ?? "—"}</Row>
+            <Row label="Suffix">{person.suffix ?? "—"}</Row>
+            <Row label="Nickname">{person.nickname ?? "—"}</Row>
+            <Row label="Pronouns">{formatEnum(person.pronouns)}</Row>
+            <Row label="Status">
+              {person.deceased ? <Badge variant="outline">Deceased</Badge> : "Living"}
+            </Row>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Engagement</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <Row label="Last contacted">{formatDate(person.lastContacted)}</Row>
+            <Row label="Interactions">{person.interactionCount ?? "—"}</Row>
+            <Row label="Owner">{person.ownerUserId ?? "—"}</Row>
+            <Row label="Region">{person.currentHomeRegionId ?? "—"}</Row>
+            <Row label="Children at WF">{person.childrenAtWf ?? "—"}</Row>
+            <Row label="Newsletter">
+              {person.unsubscribedToNewsletter
+                ? "Unsubscribed"
+                : person.newsletter
+                  ? "Subscribed"
+                  : "—"}
+            </Row>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Web</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <Row label="Website">
+              {person.website ? (
+                <a
+                  href={person.website}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary hover:underline break-all"
+                >
+                  {person.website}
+                </a>
+              ) : (
+                "—"
+              )}
+            </Row>
+            <Row label="LinkedIn">{person.linkedin ?? "—"}</Row>
+            <Row label="X">{person.x ?? "—"}</Row>
+            <Row label="Meeting link">{person.meetingLink ?? "—"}</Row>
+          </CardContent>
+        </Card>
+      </div>
+
+      {(person.interestsThematic?.length ||
+        person.interestsAges?.length ||
+        person.interestsGovModels?.length ||
+        person.regionIds?.length) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Interests</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <TagRow label="Thematic" values={person.interestsThematic} />
+            <TagRow label="Ages" values={person.interestsAges} />
+            <TagRow label="Gov models" values={person.interestsGovModels} />
+            <TagRow label="Regions" values={person.regionIds} />
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Affiliations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {person.roles && person.roles.length > 0 ? (
+              <ul className="space-y-2 text-sm">
+                {person.roles.map((r) => (
+                  <li
+                    key={r.id}
+                    className="flex items-center justify-between gap-2"
+                    data-testid={`row-person-role-${r.id}`}
+                  >
+                    <span className="truncate">
+                      {r.externalTitleOrRole ?? formatEnum(r.entityType)}
+                      {r.funderId
+                        ? ` @ ${r.funderId}`
+                        : r.organizationId
+                          ? ` @ ${r.organizationId}`
+                          : r.householdId
+                            ? ` @ ${r.householdId}`
+                            : r.paymentIntermediaryId
+                              ? ` @ ${r.paymentIntermediaryId}`
+                              : ""}
+                    </span>
+                    <span className="text-muted-foreground text-xs whitespace-nowrap">
+                      {formatEnum(r.connection)}
+                      {r.current && r.current !== "current"
+                        ? ` (${formatEnum(r.current)})`
+                        : ""}
+                      {r.primaryContact ? " • primary" : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No affiliations.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Contact info</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">Emails</div>
+              {person.emails && person.emails.length > 0 ? (
+                <ul className="space-y-1 text-sm">
+                  {person.emails.map((e) => (
+                    <li key={e.id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{e.email}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {e.isPreferred ? "preferred • " : ""}
+                        {formatEnum(e.validity)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">No emails.</p>
+              )}
+            </div>
+            <Separator />
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">Phone numbers</div>
+              {person.phoneNumbers && person.phoneNumbers.length > 0 ? (
+                <ul className="space-y-1 text-sm">
+                  {person.phoneNumbers.map((p) => (
+                    <li key={p.id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{p.phoneNumber}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {p.isPreferred ? "preferred • " : ""}
+                        {formatEnum(p.validity)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">No phone numbers.</p>
+              )}
+            </div>
+            <Separator />
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">Addresses</div>
+              {person.addresses && person.addresses.length > 0 ? (
+                <ul className="space-y-2 text-sm">
+                  {person.addresses.map((a) => (
+                    <li key={a.id}>
+                      {[a.street, a.cityName, a.stateCode, a.postalCode]
+                        .filter(Boolean)
+                        .join(", ") || "—"}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">No addresses.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {(person.aboutMe || person.details || person.tags) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Notes</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {person.tags && <Row label="Tags">{person.tags}</Row>}
+            {person.aboutMe && (
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">About</div>
+                <p className="whitespace-pre-wrap">{person.aboutMe}</p>
+              </div>
+            )}
+            {person.details && (
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
+                <p className="whitespace-pre-wrap">{person.details}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="text-xs text-muted-foreground">
+        Created {formatDate(person.createdAt)} • Updated {formatDate(person.updatedAt)}
+      </div>
+    </div>
+  );
+}
+
+function NameHeader({ person }: { person: PersonDetail }) {
+  const [editing, setEditing] = useState(false);
+  const initial = person.fullName ?? "";
+  const [value, setValue] = useState(initial);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const update = useUpdatePerson({
+    mutation: {
+      onSuccess: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getGetPersonQueryKey(person.id) }),
+          queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() }),
+        ]);
+        setEditing(false);
+        toast({ title: "Person updated" });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  if (editing) {
+    const trimmed = value.trim();
+    const dirty = trimmed !== (person.fullName ?? "");
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="text-2xl font-serif font-bold h-12 max-w-xl"
+          aria-label="Full name"
+          data-testid="input-person-name"
+          autoFocus
+        />
+        <Button
+          onClick={() => {
+            const body: UpdatePersonBody = { fullName: trimmed || null };
+            update.mutate({ id: person.id, data: body });
+          }}
+          disabled={!dirty || update.isPending}
+          data-testid="button-save-person-name"
+        >
+          {update.isPending ? "Saving…" : "Save"}
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setValue(initial);
+            setEditing(false);
+          }}
+          disabled={update.isPending}
+        >
+          Cancel
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <h1 className="text-3xl font-serif font-bold text-foreground">
+        {personDisplayName(person)}
+      </h1>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setEditing(true)}
+        data-testid="button-edit-person-name"
+      >
+        Edit name
+      </Button>
+    </div>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="text-right">{children}</span>
+    </div>
+  );
+}
+
+function TagRow({ label, values }: { label: string; values?: string[] | null }) {
+  if (!values || values.length === 0) return null;
+  return (
+    <div>
+      <div className="text-xs font-medium text-muted-foreground mb-1">{label}</div>
+      <div className="flex flex-wrap gap-1">
+        {values.map((v) => (
+          <Badge key={v} variant="secondary">
+            {formatEnum(v)}
+          </Badge>
+        ))}
+      </div>
+    </div>
+  );
 }
