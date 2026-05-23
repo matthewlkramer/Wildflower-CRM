@@ -56,6 +56,60 @@ this single payment.
 
 ---
 
+## R3a — 4 won opps missing `actual_completion_date`
+
+These opps are marked `status='won'` but have no completion date recorded.
+Per SCHEMA.md, every won opp should carry the date the grant was finalized.
+Look up the actual award/agreement dates from funder correspondence or
+internal records and populate `actual_completion_date`.
+
+| opp id | funder | name | awarded |
+|---|---|---|---|
+| `recEDlbIedGzGfGxq` | Imaginable Futures | Imaginable Futures FY24-26 BWF | $900,000 |
+| `recohEH4lZm5yixFm` | Spring Point Partners | SpringPoint PRI - Emerging Hub Revolving Loan Fund | $500,000 |
+| `recshOnvUb0A390qj` | Bainum Family Foundation | FY26 Bainum Grant | $200,000 |
+| `rec3MTMlSE06qaL2L` | Gates Family Foundation | Gates Family Foundation | $85,000 |
+
+---
+
+## R4 — 7 lost/dormant opps not found in Copper export
+
+The Copper opps export (`attached_assets/opportunities_*.xlsx`) gave us
+preliminary scope for 181 of the 188 lost+dormant opps that came in from
+Airtable without `pledge_allocations` (backfilled in `post-import-fixups.sql`).
+These 7 had no matching Copper row and remain without any allocation data:
+
+| db opp id | status | funder | name | amt |
+|---|---|---|---|---|
+| `reckrY6qgOYBhZYks` | dormant | Morningside Group | Gerald Chan Grant | $1,000,000 |
+| `recssTBtZ9k74zQCI` | dormant | Chan Zuckerberg Initiative | Observant Ed funding - early stage lead FY24 | $1,000,000 |
+| `recHpvemLnwZ1WDFz` | dormant | Chan Zuckerberg Initiative | CZI--DEI Funding | $600,000 |
+| `receBhBgkDR5VfYoP` | dormant | Chan Zuckerberg Initiative | CZI | $500,000 |
+| `rec2E64MafoE8l4Wn` | dormant | Hastings Fund | Hastings Fund Grant | $250,000 |
+| `recjTWxb1Ft7oSQhu` | dormant | Ecolab Foundation | Ecolab Foundation | $25,000 |
+| `recScY6tRHfXmVRD2` | dormant | 3M Foundation | Jon Banovetz | $5,000 |
+
+(Re-derive the IDs anytime with:
+`SELECT o.id, o.status, f.name AS funder, o.name, o.ask_amount
+ FROM opportunities_and_pledges o JOIN funders f ON f.id=o.funder_id
+ WHERE o.status IN ('lost','dormant')
+   AND NOT EXISTS (SELECT 1 FROM pledge_allocations WHERE pledge_or_opportunity_id=o.id);`)
+
+**To research:** find the original solicitation notes (Airtable history, email
+threads, or Copper directly if the records still exist by a different name)
+and decide grant_year + region/intended_usage. The CZI rows in particular
+look like they may post-date the Copper export (Observant Ed / DEI funding
+are recent themes), so they may genuinely have no Copper provenance.
+
+**Ambiguity notes (informational, no action needed):** during matching, two
+funder/name pairs had multiple Copper candidates: `New Profit / New Profit`
+(5 DB rows ↔ 4 Copper rows) and `Ciresi Walburn / Ciresi Walburn Foundation`
+(2 ↔ 2). In both cases all Copper rows in the cluster shared identical scope
+data (same grant_year, same hub), so picking any match yielded the same
+allocation — no disambiguation needed.
+
+---
+
 ## R3 — Sep Kamvar & Angie Schiavoni $225,336 stock gift (`recPunRkZWh2pKVnr`)
 
 **Donor:** Sep Kamvar and Angie Schiavoni (household). $225,336 stock gift,
