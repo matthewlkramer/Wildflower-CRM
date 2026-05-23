@@ -911,3 +911,31 @@ UPDATE people_entity_roles SET primary_contact=true, updated_at=now()
  WHERE id='recEyXcKglqaJNPWV' AND primary_contact=false;
 
 COMMIT;
+
+-- ============================================================================
+-- #13 — Same-name people: investigation outcome
+-- ============================================================================
+-- 6 name pairs flagged. Discriminator audit (employer + email + location) shows
+-- 4 pairs are different people who happen to share a common name (no fix):
+--   Beth Anderson    — Hill Center NC vs MA Public Charter Assoc
+--   David McKnight   — Power of Zero PR vs Nat'l Assoc Manufacturers
+--   Josh Engel       — personal MN vs EdSurge
+--   Scott Burns      — Walton Family Foundation vs Gov Delivery
+-- 2 pairs are ambiguous and parked in RESEARCH_QUEUE.md (R6):
+--   Dominque Burgess — Wildflower Foundation vs burbrellaeducation.com
+--   Ted Quinn        — Wildflower Foundation vs tcquinn.org
+-- No DB changes required.
+
+-- ============================================================================
+-- #14 — Delete 6 empty households (no PERs, gifts, opps, addresses, emails)
+-- ============================================================================
+-- Idempotent: any household with no current relationships and no historical
+-- artifacts is an orphan and can be safely removed.
+DELETE FROM households h
+ WHERE NOT EXISTS (SELECT 1 FROM people_entity_roles      WHERE household_id=h.id)
+   AND NOT EXISTS (SELECT 1 FROM gifts_and_payments       WHERE household_id=h.id)
+   AND NOT EXISTS (SELECT 1 FROM opportunities_and_pledges WHERE household_id=h.id)
+   AND NOT EXISTS (SELECT 1 FROM addresses                WHERE household_id=h.id)
+   AND NOT EXISTS (SELECT 1 FROM emails                   WHERE household_id=h.id);
+-- Removed on first run: Crown, Deedie and Rusty Rose, James Kelley & Amie Knox,
+-- Mortenson, Nina & Caper de Clercq, Walton Family.

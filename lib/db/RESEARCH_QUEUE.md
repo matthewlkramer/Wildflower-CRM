@@ -238,6 +238,32 @@ Pick one (set `primary_contact=false` on the other).
 
 ---
 
+## R6 — Ambiguous same-name people pairs
+
+Audit #13 flagged 6 pairs of `people` rows sharing a normalized full name. Four
+were confirmed to be **different people** by employer/email/location (Beth
+Anderson, David McKnight, Josh Engel, Scott Burns — no action needed). The two
+below are genuinely ambiguous and need a human to confirm same-vs-different
+before any merge:
+
+### R6a — Dominque Burgess
+- `rec5dkuXrNWQyDk5P` — Wildflower Foundation, `dominque.burgess@wildflowerschools.org`
+- `reciB5Lfg6MgJb84q` — no employer, `dburgess@burbrellaeducation.com`
+
+Unusual spelling ("Dominque" without the second "i") matches in both. Could be
+the same person with a personal/prior email, or a coincidence. If same person:
+merge `reciB5Lfg6MgJb84q` → `rec5dkuXrNWQyDk5P` and move the second email over.
+
+### R6b — Ted Quinn
+- `rec5rOo1sEIAUBLd3` — Wildflower Foundation, `ted.quinn@wildflowerschools.org`, Newark NJ
+- `recxOIfD5BCEYw7hi` — no employer, `tcquinn@tcquinn.org`, NYC
+
+Both NJ/NYC area; `tcquinn.org` looks like a personal site. If same person:
+merge `recxOIfD5BCEYw7hi` → `rec5rOo1sEIAUBLd3` and move the second email +
+address over.
+
+---
+
 ## R3 — Sep Kamvar & Angie Schiavoni $225,336 stock gift (`recPunRkZWh2pKVnr`)
 
 **Donor:** Sep Kamvar and Angie Schiavoni (household). $225,336 stock gift,
