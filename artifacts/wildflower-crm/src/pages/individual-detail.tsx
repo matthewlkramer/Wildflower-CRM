@@ -12,6 +12,7 @@ import {
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import {
+  InlineEditBoolean,
   InlineEditSelect,
   InlineEditText,
   type InlineSelectOption,
@@ -140,7 +141,22 @@ function PersonView({ person }: { person: PersonDetail }) {
                 onSave={(next) => patch({ pronouns: next })} />
             </Row>
             <Row label="Status">
-              {person.deceased ? <Badge variant="outline">Deceased</Badge> : "Living"}
+              <InlineEditBoolean
+                label="Deceased"
+                testIdBase="person-deceased"
+                value={person.deceased ?? null}
+                trueLabel="Deceased"
+                falseLabel="Living"
+                allowNull={false}
+                display={
+                  person.deceased == null
+                    ? "—"
+                    : person.deceased
+                      ? <Badge variant="outline">Deceased</Badge>
+                      : "Living"
+                }
+                onSave={(next) => patch({ deceased: next ?? false })}
+              />
             </Row>
           </CardContent>
         </Card>
@@ -164,11 +180,40 @@ function PersonView({ person }: { person: PersonDetail }) {
             </Row>
             <Row label="Children at WF">{person.childrenAtWf ?? "—"}</Row>
             <Row label="Newsletter">
-              {person.unsubscribedToNewsletter
-                ? "Unsubscribed"
-                : person.newsletter
-                  ? "Subscribed"
-                  : "—"}
+              <InlineEditBoolean
+                label="Newsletter subscribed"
+                testIdBase="person-newsletter"
+                value={person.newsletter ?? null}
+                trueLabel="Subscribed"
+                falseLabel="Not subscribed"
+                allowNull={false}
+                display={
+                  person.unsubscribedToNewsletter
+                    ? "Unsubscribed"
+                    : person.newsletter == null
+                      ? "—"
+                      : person.newsletter
+                        ? "Subscribed"
+                        : "Not subscribed"
+                }
+                onSave={(next) => patch({ newsletter: next ?? false })}
+              />
+            </Row>
+            <Row label="Unsubscribed">
+              <InlineEditBoolean
+                label="Unsubscribed to newsletter"
+                testIdBase="person-unsubscribed"
+                value={person.unsubscribedToNewsletter ?? null}
+                allowNull={false}
+                display={
+                  person.unsubscribedToNewsletter == null
+                    ? "—"
+                    : person.unsubscribedToNewsletter
+                      ? "Yes"
+                      : "No"
+                }
+                onSave={(next) => patch({ unsubscribedToNewsletter: next ?? false })}
+              />
             </Row>
           </CardContent>
         </Card>

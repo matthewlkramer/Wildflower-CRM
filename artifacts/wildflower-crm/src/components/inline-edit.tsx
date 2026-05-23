@@ -338,6 +338,113 @@ export function InlineEditDate({
   );
 }
 
+// ---------- BOOLEAN ----------
+
+export function InlineEditBoolean({
+  label,
+  display,
+  value,
+  onSave,
+  testIdBase,
+  trueLabel = "Yes",
+  falseLabel = "No",
+  nullLabel = "— None —",
+  allowNull = true,
+}: BaseProps & {
+  value: boolean | null;
+  onSave: (next: boolean | null) => SaveResult;
+  trueLabel?: string;
+  falseLabel?: string;
+  nullLabel?: string;
+  allowNull?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const { busy, run } = useSaveRunner();
+  const TRUE = "true";
+  const FALSE = "false";
+  const NULL_TOKEN = "__null__";
+  const toToken = (v: boolean | null): string =>
+    v === null ? (allowNull ? NULL_TOKEN : FALSE) : v ? TRUE : FALSE;
+  const initialDraft = toToken(value);
+  const [draft, setDraft] = useState<string>(initialDraft);
+  const initialRef = useRef<string>(initialDraft);
+
+  useEffect(() => {
+    if (editing) {
+      const t = toToken(value);
+      setDraft(t);
+      initialRef.current = t;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, value, allowNull]);
+
+  if (!editing) {
+    return (
+      <EditTriggerRow
+        display={display}
+        onEdit={() => setEditing(true)}
+        testIdBase={testIdBase}
+        ariaLabel={`Edit ${label}`}
+      />
+    );
+  }
+
+  const next: boolean | null =
+    draft === NULL_TOKEN ? null : draft === TRUE ? true : false;
+  // Compare against the initial draft, not against `value`, so that
+  // when allowNull={false} and value is null, the synthetic `false`
+  // default draft does NOT count as dirty until the user picks something.
+  const dirty = draft !== initialRef.current;
+  const trySave = () => {
+    if (!dirty || busy) return;
+    run(() => onSave(next), () => setEditing(false));
+  };
+
+  return (
+    <div className="flex items-center gap-1 min-w-0">
+      <Select value={draft} onValueChange={setDraft} disabled={busy}>
+        <SelectTrigger
+          className="h-8"
+          aria-label={label}
+          data-testid={testIdBase ? `select-${testIdBase}` : undefined}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {allowNull ? (
+            <SelectItem
+              value={NULL_TOKEN}
+              data-testid={testIdBase ? `option-${testIdBase}-null` : undefined}
+            >
+              {nullLabel}
+            </SelectItem>
+          ) : null}
+          <SelectItem
+            value={TRUE}
+            data-testid={testIdBase ? `option-${testIdBase}-true` : undefined}
+          >
+            {trueLabel}
+          </SelectItem>
+          <SelectItem
+            value={FALSE}
+            data-testid={testIdBase ? `option-${testIdBase}-false` : undefined}
+          >
+            {falseLabel}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      <ActionButtons
+        busy={busy}
+        canSave={dirty}
+        onSave={trySave}
+        onCancel={() => setEditing(false)}
+        testIdBase={testIdBase}
+        label={label}
+      />
+    </div>
+  );
+}
+
 // ---------- SELECT ----------
 
 export type InlineSelectOption<T extends string> = { value: T; label: string };

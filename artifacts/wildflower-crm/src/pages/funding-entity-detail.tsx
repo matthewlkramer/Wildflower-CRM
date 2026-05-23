@@ -18,6 +18,7 @@ import {
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import {
+  InlineEditBoolean,
   InlineEditSelect,
   InlineEditText,
   type InlineSelectOption,
@@ -222,11 +223,19 @@ function FunderView({ funder }: { funder: FunderDetail }) {
               />
             </Row>
             <Row label="National priorities">
-              {funder.nationalPriorities == null
-                ? "—"
-                : funder.nationalPriorities
-                  ? "Yes"
-                  : "No"}
+              <InlineEditBoolean
+                label="National priorities"
+                testIdBase="funder-national-priorities"
+                value={funder.nationalPriorities ?? null}
+                display={
+                  funder.nationalPriorities == null
+                    ? "—"
+                    : funder.nationalPriorities
+                      ? "Yes"
+                      : "No"
+                }
+                onSave={(next) => patch({ nationalPriorities: next })}
+              />
             </Row>
           </CardContent>
         </Card>
@@ -267,11 +276,19 @@ function FunderView({ funder }: { funder: FunderDetail }) {
               />
             </Row>
             <Row label="Makes PRIs">
-              {funder.makesPris == null
-                ? "—"
-                : funder.makesPris
-                  ? "Yes"
-                  : "No"}
+              <InlineEditBoolean
+                label="Makes PRIs"
+                testIdBase="funder-makes-pris"
+                value={funder.makesPris ?? null}
+                display={
+                  funder.makesPris == null
+                    ? "—"
+                    : funder.makesPris
+                      ? "Yes"
+                      : "No"
+                }
+                onSave={(next) => patch({ makesPris: next })}
+              />
             </Row>
             <Row label="Owner">
               <InlineEditText
