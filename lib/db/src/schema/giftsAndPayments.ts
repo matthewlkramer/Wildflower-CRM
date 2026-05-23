@@ -79,14 +79,6 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   ownerUserId: text("owner_user_id").references(() => users.id, {
     onDelete: "restrict",
   }),
-  // Legacy Copper-era date fields with haphazard usage and unclear
-  // semantics. Populated on ~688/691 rows but their precise meaning was
-  // never disambiguated (sometimes "deal closed", sometimes "funds
-  // cleared"). Prefer `date_received` for new writes. These columns are
-  // preserved as-is for historical reference; a future cleanup may
-  // back-fill date_received and drop them.
-  closeDate: date("close_date"),
-  completedDate: date("completed_date"),
   designatedToSchool: boolean("designated_to_school").default(false).notNull(),
   tags: text("tags"),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),

@@ -986,8 +986,6 @@ export interface GiftOrPayment {
   primaryContactPersonId?: string | null;
   paymentIntermediaryId?: string | null;
   ownerUserId?: string | null;
-  closeDate?: string | null;
-  completedDate?: string | null;
   designatedToSchool: boolean;
   tags?: string | null;
   createdAt: string;
@@ -1131,8 +1129,6 @@ export interface CreateGiftOrPaymentBody {
   primaryContactPersonId?: string;
   paymentIntermediaryId?: string;
   ownerUserId?: string;
-  closeDate?: string;
-  completedDate?: string;
   designatedToSchool?: boolean;
   tags?: string;
 }
@@ -1154,8 +1150,6 @@ export interface UpdateGiftOrPaymentBody {
   primaryContactPersonId?: string | null;
   paymentIntermediaryId?: string | null;
   ownerUserId?: string | null;
-  closeDate?: string | null;
-  completedDate?: string | null;
   designatedToSchool?: boolean;
   tags?: string | null;
 }

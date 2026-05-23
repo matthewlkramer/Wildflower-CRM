@@ -1531,8 +1531,6 @@ components:
         primaryContactPersonId:     { type: string, nullable: true }
         paymentIntermediaryId:      { type: string, nullable: true }
         ownerUserId:                      { type: string, nullable: true }
-        closeDate:                  { type: string, format: date, nullable: true }
-        completedDate:              { type: string, format: date, nullable: true }
         designatedToSchool:         { type: boolean }
         tags:                       { type: string, nullable: true }
         createdAt:                  { type: string, format: date-time }
@@ -1568,8 +1566,6 @@ components:
         primaryContactPersonId:     { type: string }
         paymentIntermediaryId:      { type: string }
         ownerUserId:                      { type: string }
-        closeDate:                  { type: string, format: date }
-        completedDate:              { type: string, format: date }
         designatedToSchool:         { type: boolean }
         tags:                       { type: string }
     UpdateGiftOrPaymentBody:
@@ -1591,8 +1587,6 @@ components:
         primaryContactPersonId:     { type: string, nullable: true }
         paymentIntermediaryId:      { type: string, nullable: true }
         ownerUserId:                      { type: string, nullable: true }
-        closeDate:                  { type: string, format: date, nullable: true }
-        completedDate:              { type: string, format: date, nullable: true }
         designatedToSchool:         { type: boolean }
         tags:                       { type: string, nullable: true }
 
