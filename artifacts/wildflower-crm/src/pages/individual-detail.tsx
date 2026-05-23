@@ -8,10 +8,23 @@ import {
   getListPeopleQueryKey,
   type PersonDetail,
   type UpdatePersonBody,
+  type Pronouns,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import {
+  InlineEditSelect,
+  InlineEditText,
+  type InlineSelectOption,
+} from "@/components/inline-edit";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum } from "@/lib/format";
+
+const PRONOUNS_OPTIONS = [
+  { value: "he_him_his", label: "he / him / his" },
+  { value: "she_her_hers", label: "she / her / hers" },
+  { value: "they_them_theirs", label: "they / them / theirs" },
+  { value: "other", label: "Other" },
+] as const satisfies ReadonlyArray<InlineSelectOption<Pronouns>>;
 import { useToast } from "@/hooks/use-toast";
 import { personDisplayName } from "@/lib/person";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,6 +61,32 @@ export default function IndividualDetail() {
 }
 
 function PersonView({ person }: { person: PersonDetail }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const update = useUpdatePerson({
+    mutation: {
+      onSuccess: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getGetPersonQueryKey(person.id) }),
+          queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() }),
+        ]);
+        toast({ title: "Person updated" });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  function patch(body: UpdatePersonBody) {
+    return update.mutateAsync({ id: person.id, data: body });
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -64,13 +103,42 @@ function PersonView({ person }: { person: PersonDetail }) {
             <CardTitle className="text-lg">Basics</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row label="Prefix">{person.prefix ?? "—"}</Row>
-            <Row label="First">{person.firstName ?? "—"}</Row>
-            <Row label="Middle">{person.middleName ?? "—"}</Row>
-            <Row label="Last">{person.lastName ?? "—"}</Row>
-            <Row label="Suffix">{person.suffix ?? "—"}</Row>
-            <Row label="Nickname">{person.nickname ?? "—"}</Row>
-            <Row label="Pronouns">{formatEnum(person.pronouns)}</Row>
+            <Row label="Prefix">
+              <InlineEditText label="Prefix" testIdBase="person-prefix"
+                value={person.prefix ?? null} display={person.prefix ?? "—"}
+                onSave={(next) => patch({ prefix: next })} />
+            </Row>
+            <Row label="First">
+              <InlineEditText label="First name" testIdBase="person-first"
+                value={person.firstName ?? null} display={person.firstName ?? "—"}
+                onSave={(next) => patch({ firstName: next })} />
+            </Row>
+            <Row label="Middle">
+              <InlineEditText label="Middle name" testIdBase="person-middle"
+                value={person.middleName ?? null} display={person.middleName ?? "—"}
+                onSave={(next) => patch({ middleName: next })} />
+            </Row>
+            <Row label="Last">
+              <InlineEditText label="Last name" testIdBase="person-last"
+                value={person.lastName ?? null} display={person.lastName ?? "—"}
+                onSave={(next) => patch({ lastName: next })} />
+            </Row>
+            <Row label="Suffix">
+              <InlineEditText label="Suffix" testIdBase="person-suffix"
+                value={person.suffix ?? null} display={person.suffix ?? "—"}
+                onSave={(next) => patch({ suffix: next })} />
+            </Row>
+            <Row label="Nickname">
+              <InlineEditText label="Nickname" testIdBase="person-nickname"
+                value={person.nickname ?? null} display={person.nickname ?? "—"}
+                onSave={(next) => patch({ nickname: next })} />
+            </Row>
+            <Row label="Pronouns">
+              <InlineEditSelect label="Pronouns" testIdBase="person-pronouns"
+                value={person.pronouns ?? null} options={PRONOUNS_OPTIONS}
+                display={formatEnum(person.pronouns)}
+                onSave={(next) => patch({ pronouns: next })} />
+            </Row>
             <Row label="Status">
               {person.deceased ? <Badge variant="outline">Deceased</Badge> : "Living"}
             </Row>
@@ -84,8 +152,16 @@ function PersonView({ person }: { person: PersonDetail }) {
           <CardContent className="space-y-2 text-sm">
             <Row label="Last contacted">{formatDate(person.lastContacted)}</Row>
             <Row label="Interactions">{person.interactionCount ?? "—"}</Row>
-            <Row label="Owner">{person.ownerUserId ?? "—"}</Row>
-            <Row label="Region">{person.currentHomeRegionId ?? "—"}</Row>
+            <Row label="Owner">
+              <InlineEditText label="Owner" testIdBase="person-owner"
+                value={person.ownerUserId ?? null} display={person.ownerUserId ?? "—"}
+                onSave={(next) => patch({ ownerUserId: next })} />
+            </Row>
+            <Row label="Region">
+              <InlineEditText label="Region" testIdBase="person-region"
+                value={person.currentHomeRegionId ?? null} display={person.currentHomeRegionId ?? "—"}
+                onSave={(next) => patch({ currentHomeRegionId: next })} />
+            </Row>
             <Row label="Children at WF">{person.childrenAtWf ?? "—"}</Row>
             <Row label="Newsletter">
               {person.unsubscribedToNewsletter
@@ -103,22 +179,33 @@ function PersonView({ person }: { person: PersonDetail }) {
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <Row label="Website">
-              {person.website ? (
-                <a
-                  href={person.website}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-primary hover:underline break-all"
-                >
-                  {person.website}
-                </a>
-              ) : (
-                "—"
-              )}
+              <InlineEditText label="Website" testIdBase="person-website"
+                value={person.website ?? null} placeholder="https://…"
+                display={
+                  person.website ? (
+                    <a href={person.website} target="_blank" rel="noreferrer"
+                      className="text-primary hover:underline break-all">
+                      {person.website}
+                    </a>
+                  ) : "—"
+                }
+                onSave={(next) => patch({ website: next })} />
             </Row>
-            <Row label="LinkedIn">{person.linkedin ?? "—"}</Row>
-            <Row label="X">{person.x ?? "—"}</Row>
-            <Row label="Meeting link">{person.meetingLink ?? "—"}</Row>
+            <Row label="LinkedIn">
+              <InlineEditText label="LinkedIn" testIdBase="person-linkedin"
+                value={person.linkedin ?? null} display={person.linkedin ?? "—"}
+                onSave={(next) => patch({ linkedin: next })} />
+            </Row>
+            <Row label="X">
+              <InlineEditText label="X" testIdBase="person-x"
+                value={person.x ?? null} display={person.x ?? "—"}
+                onSave={(next) => patch({ x: next })} />
+            </Row>
+            <Row label="Meeting link">
+              <InlineEditText label="Meeting link" testIdBase="person-meeting-link"
+                value={person.meetingLink ?? null} display={person.meetingLink ?? "—"}
+                onSave={(next) => patch({ meetingLink: next })} />
+            </Row>
           </CardContent>
         </Card>
       </div>

@@ -8,10 +8,86 @@ import {
   getListFundersQueryKey,
   type FunderDetail,
   type UpdateFunderBody,
+  type ActiveStatus,
+  type ConnectionStatus,
+  type Enthusiasm,
+  type StrategicAlignment,
+  type FundingEntitySubtype,
+  type NumberOfEmployees,
+  type CapacityRating,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import {
+  InlineEditSelect,
+  InlineEditText,
+  type InlineSelectOption,
+} from "@/components/inline-edit";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum, formatCapacity } from "@/lib/format";
+
+const ACTIVE_STATUS_OPTIONS = [
+  { value: "active", label: "Active" },
+  { value: "defunct", label: "Defunct" },
+  { value: "spenddown", label: "Spend-down" },
+] as const satisfies ReadonlyArray<InlineSelectOption<ActiveStatus>>;
+
+const CONNECTION_STATUS_OPTIONS = [
+  { value: "connected", label: "Connected" },
+  { value: "have_a_connector", label: "Have a connector" },
+  { value: "no_connection", label: "No connection" },
+] as const satisfies ReadonlyArray<InlineSelectOption<ConnectionStatus>>;
+
+const ENTHUSIASM_OPTIONS = [
+  { value: "advocate", label: "Advocate" },
+  { value: "supportive", label: "Supportive" },
+  { value: "warm", label: "Warm" },
+  { value: "neutral", label: "Neutral" },
+  { value: "unsupportive", label: "Unsupportive" },
+] as const satisfies ReadonlyArray<InlineSelectOption<Enthusiasm>>;
+
+const ALIGNMENT_OPTIONS = [
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+] as const satisfies ReadonlyArray<InlineSelectOption<StrategicAlignment>>;
+
+const SUBTYPE_OPTIONS = [
+  { value: "family_foundation", label: "Family foundation" },
+  { value: "institutional_foundation", label: "Institutional foundation" },
+  { value: "corporate_foundation", label: "Corporate foundation" },
+  { value: "community_foundation", label: "Community foundation" },
+  { value: "bank_foundation", label: "Bank foundation" },
+  { value: "family_office_trust", label: "Family office / trust" },
+  { value: "intermediary", label: "Intermediary" },
+  { value: "government", label: "Government" },
+  { value: "nonprofit", label: "Nonprofit" },
+  { value: "corporation", label: "Corporation" },
+  { value: "capital_provider", label: "Capital provider" },
+  { value: "philanthropic_advisor", label: "Philanthropic advisor" },
+  { value: "cdfi", label: "CDFI" },
+  { value: "education_forprofit", label: "Education for-profit" },
+  { value: "competition", label: "Competition" },
+  { value: "public_private", label: "Public–private" },
+  { value: "daf_platform", label: "DAF platform" },
+  { value: "platform", label: "Platform" },
+] as const satisfies ReadonlyArray<InlineSelectOption<FundingEntitySubtype>>;
+
+const EMPLOYEES_OPTIONS = [
+  { value: "e_1", label: "1" },
+  { value: "e_2_10", label: "2–10" },
+  { value: "e_11_50", label: "11–50" },
+  { value: "e_51_250", label: "51–250" },
+  { value: "e_251_1000", label: "251–1,000" },
+  { value: "e_1001_10000", label: "1,001–10,000" },
+  { value: "e_10000_plus", label: "10,000+" },
+] as const satisfies ReadonlyArray<InlineSelectOption<NumberOfEmployees>>;
+
+const CAPACITY_OPTIONS = [
+  { value: "tier_10k_50k", label: "$10k–$50k" },
+  { value: "tier_50k_250k", label: "$50k–$250k" },
+  { value: "tier_250k_1m", label: "$250k–$1M" },
+  { value: "tier_1m_plus", label: "$1M+" },
+] as const satisfies ReadonlyArray<InlineSelectOption<CapacityRating>>;
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +128,32 @@ export default function FundingEntityDetail() {
 }
 
 function FunderView({ funder }: { funder: FunderDetail }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const update = useUpdateFunder({
+    mutation: {
+      onSuccess: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getGetFunderQueryKey(funder.id) }),
+          queryClient.invalidateQueries({ queryKey: getListFundersQueryKey() }),
+        ]);
+        toast({ title: "Funder updated" });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  function patch(body: UpdateFunderBody) {
+    return update.mutateAsync({ id: funder.id, data: body });
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -72,22 +174,52 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <Row label="Active">
-              {funder.activeStatus ? (
-                <Badge
-                  variant={
-                    funder.activeStatus === "active" ? "default" : "outline"
-                  }
-                >
-                  {formatEnum(funder.activeStatus)}
-                </Badge>
-              ) : (
-                "—"
-              )}
+              <InlineEditSelect
+                label="Active status"
+                testIdBase="funder-active-status"
+                value={funder.activeStatus ?? null}
+                options={ACTIVE_STATUS_OPTIONS}
+                display={
+                  funder.activeStatus ? (
+                    <Badge variant={funder.activeStatus === "active" ? "default" : "outline"}>
+                      {formatEnum(funder.activeStatus)}
+                    </Badge>
+                  ) : (
+                    "—"
+                  )
+                }
+                onSave={(next) => patch({ activeStatus: next })}
+              />
             </Row>
-            <Row label="Connection">{formatEnum(funder.connectionStatus)}</Row>
-            <Row label="Enthusiasm">{formatEnum(funder.enthusiasm)}</Row>
+            <Row label="Connection">
+              <InlineEditSelect
+                label="Connection status"
+                testIdBase="funder-connection"
+                value={funder.connectionStatus ?? null}
+                options={CONNECTION_STATUS_OPTIONS}
+                display={formatEnum(funder.connectionStatus)}
+                onSave={(next) => patch({ connectionStatus: next })}
+              />
+            </Row>
+            <Row label="Enthusiasm">
+              <InlineEditSelect
+                label="Enthusiasm"
+                testIdBase="funder-enthusiasm"
+                value={funder.enthusiasm ?? null}
+                options={ENTHUSIASM_OPTIONS}
+                display={formatEnum(funder.enthusiasm)}
+                onSave={(next) => patch({ enthusiasm: next })}
+              />
+            </Row>
             <Row label="Strategic alignment">
-              {formatEnum(funder.strategicAlignment)}
+              <InlineEditSelect
+                label="Strategic alignment"
+                testIdBase="funder-alignment"
+                value={funder.strategicAlignment ?? null}
+                options={ALIGNMENT_OPTIONS}
+                display={formatEnum(funder.strategicAlignment)}
+                onSave={(next) => patch({ strategicAlignment: next })}
+              />
             </Row>
             <Row label="National priorities">
               {funder.nationalPriorities == null
@@ -104,11 +236,36 @@ function FunderView({ funder }: { funder: FunderDetail }) {
             <CardTitle className="text-lg">Organization</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row label="Subtype">{formatEnum(funder.fundingEntitySubtype)}</Row>
-            <Row label="Employees">
-              {formatEnum(funder.numberOfEmployees)}
+            <Row label="Subtype">
+              <InlineEditSelect
+                label="Subtype"
+                testIdBase="funder-subtype"
+                value={funder.fundingEntitySubtype ?? null}
+                options={SUBTYPE_OPTIONS}
+                display={formatEnum(funder.fundingEntitySubtype)}
+                onSave={(next) => patch({ fundingEntitySubtype: next })}
+              />
             </Row>
-            <Row label="Capacity">{formatCapacity(funder.capacityRating)}</Row>
+            <Row label="Employees">
+              <InlineEditSelect
+                label="Number of employees"
+                testIdBase="funder-employees"
+                value={funder.numberOfEmployees ?? null}
+                options={EMPLOYEES_OPTIONS}
+                display={formatEnum(funder.numberOfEmployees)}
+                onSave={(next) => patch({ numberOfEmployees: next })}
+              />
+            </Row>
+            <Row label="Capacity">
+              <InlineEditSelect
+                label="Capacity rating"
+                testIdBase="funder-capacity"
+                value={funder.capacityRating ?? null}
+                options={CAPACITY_OPTIONS}
+                display={formatCapacity(funder.capacityRating)}
+                onSave={(next) => patch({ capacityRating: next })}
+              />
+            </Row>
             <Row label="Makes PRIs">
               {funder.makesPris == null
                 ? "—"
@@ -116,7 +273,15 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                   ? "Yes"
                   : "No"}
             </Row>
-            <Row label="Owner">{funder.ownerUserId ?? "—"}</Row>
+            <Row label="Owner">
+              <InlineEditText
+                label="Owner"
+                testIdBase="funder-owner"
+                value={funder.ownerUserId ?? null}
+                display={funder.ownerUserId ?? "—"}
+                onSave={(next) => patch({ ownerUserId: next })}
+              />
+            </Row>
           </CardContent>
         </Card>
 
@@ -126,23 +291,56 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <Row label="Website">
-              {funder.website ? (
-                <a
-                  href={funder.website}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-primary hover:underline break-all"
-                >
-                  {funder.website}
-                </a>
-              ) : (
-                "—"
-              )}
+              <InlineEditText
+                label="Website"
+                testIdBase="funder-website"
+                value={funder.website ?? null}
+                placeholder="https://…"
+                display={
+                  funder.website ? (
+                    <a
+                      href={funder.website}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline break-all"
+                    >
+                      {funder.website}
+                    </a>
+                  ) : (
+                    "—"
+                  )
+                }
+                onSave={(next) => patch({ website: next })}
+              />
             </Row>
-            <Row label="Email">{funder.orgEmail ?? "—"}</Row>
+            <Row label="Email">
+              <InlineEditText
+                label="Email"
+                testIdBase="funder-email"
+                value={funder.orgEmail ?? null}
+                display={funder.orgEmail ?? "—"}
+                onSave={(next) => patch({ orgEmail: next })}
+              />
+            </Row>
             <Row label="Domain">{funder.emailDomain ?? "—"}</Row>
-            <Row label="LinkedIn">{funder.linkedin ?? "—"}</Row>
-            <Row label="Crunchbase">{funder.crunchbase ?? "—"}</Row>
+            <Row label="LinkedIn">
+              <InlineEditText
+                label="LinkedIn"
+                testIdBase="funder-linkedin"
+                value={funder.linkedin ?? null}
+                display={funder.linkedin ?? "—"}
+                onSave={(next) => patch({ linkedin: next })}
+              />
+            </Row>
+            <Row label="Crunchbase">
+              <InlineEditText
+                label="Crunchbase"
+                testIdBase="funder-crunchbase"
+                value={funder.crunchbase ?? null}
+                display={funder.crunchbase ?? "—"}
+                onSave={(next) => patch({ crunchbase: next })}
+              />
+            </Row>
           </CardContent>
         </Card>
       </div>
