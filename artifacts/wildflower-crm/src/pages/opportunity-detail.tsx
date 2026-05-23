@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { Link, useRoute } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetOpportunityOrPledge,
   useUpdateOpportunityOrPledge,
+  useDeleteOpportunityOrPledge,
   getGetOpportunityOrPledgeQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
   type OpportunityOrPledgeDetail,
   type UpdateOpportunityOrPledgeBody,
 } from "@workspace/api-client-react";
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -58,7 +60,7 @@ function OppView({
         <Link href={backHref} className="text-sm text-primary hover:underline">{backLabel}</Link>
       </div>
 
-      <NameHeader opp={opp} entityLabel={entityLabel} />
+      <NameHeader opp={opp} entityLabel={entityLabel} backHref={backHref} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
@@ -185,12 +187,37 @@ function OppView({
   );
 }
 
-function NameHeader({ opp, entityLabel }: { opp: OpportunityOrPledgeDetail; entityLabel: string }) {
+function NameHeader({
+  opp,
+  entityLabel,
+  backHref,
+}: {
+  opp: OpportunityOrPledgeDetail;
+  entityLabel: string;
+  backHref: string;
+}) {
   const [editing, setEditing] = useState(false);
   const initial = opp.name ?? "";
   const [value, setValue] = useState(initial);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
+  const del = useDeleteOpportunityOrPledge({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() });
+        toast({ title: `${entityLabel} deleted` });
+        navigate(backHref);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Delete failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
   const update = useUpdateOpportunityOrPledge({
     mutation: {
       onSuccess: async () => {
@@ -244,9 +271,19 @@ function NameHeader({ opp, entityLabel }: { opp: OpportunityOrPledgeDetail; enti
   return (
     <div className="flex items-start justify-between gap-4">
       <h1 className="text-3xl font-serif font-bold text-foreground">{opp.name ?? `Untitled ${opp.id}`}</h1>
-      <Button variant="outline" size="sm" onClick={() => setEditing(true)} data-testid="button-edit-opp-name">
-        Edit name
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)} data-testid="button-edit-opp-name">
+          Edit name
+        </Button>
+        <ConfirmDeleteDialog
+          title={`Delete this ${entityLabel.toLowerCase()}?`}
+          description={`This ${entityLabel.toLowerCase()} record, along with its pledge and gift allocations, will be removed.`}
+          onConfirm={() => del.mutateAsync({ id: opp.id })}
+          disabled={del.isPending}
+          triggerTestId="button-delete-opp"
+          confirmTestId="button-confirm-delete-opp"
+        />
+      </div>
     </div>
   );
 }

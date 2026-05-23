@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { CreateHouseholdDialog } from "@/components/create-household-dialog";
 import {
   Pagination,
   PaginationContent,
@@ -59,11 +60,14 @@ export default function Households() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-serif font-bold text-foreground">Households</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
-        </p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-serif font-bold text-foreground">Households</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
+          </p>
+        </div>
+        <CreateHouseholdDialog />
       </div>
 
       <div className="flex flex-wrap items-end gap-3">

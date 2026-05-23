@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { Link, useRoute } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetHousehold,
   useUpdateHousehold,
+  useDeleteHousehold,
   getGetHouseholdQueryKey,
   getListHouseholdsQueryKey,
   type HouseholdDetail,
   type UpdateHouseholdBody,
 } from "@workspace/api-client-react";
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -128,6 +130,23 @@ function NameHeader({ household }: { household: HouseholdDetail }) {
   const [value, setValue] = useState(household.name);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
+  const del = useDeleteHousehold({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: getListHouseholdsQueryKey() });
+        toast({ title: "Household deleted" });
+        navigate("/households");
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Delete failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
   const update = useUpdateHousehold({
     mutation: {
       onSuccess: async () => {
@@ -213,6 +232,14 @@ function NameHeader({ household }: { household: HouseholdDetail }) {
         >
           Edit name
         </Button>
+        <ConfirmDeleteDialog
+          title={`Delete ${household.name}?`}
+          description="This household record will be removed. Member links from people and references from opportunities or gifts may need to be reassigned."
+          onConfirm={() => del.mutateAsync({ id: household.id })}
+          disabled={del.isPending}
+          triggerTestId="button-delete-household"
+          confirmTestId="button-confirm-delete-household"
+        />
       </div>
     </div>
   );

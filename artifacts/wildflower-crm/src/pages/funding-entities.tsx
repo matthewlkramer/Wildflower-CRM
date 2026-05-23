@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { CreateFunderDialog } from "@/components/create-funder-dialog";
 import {
   Pagination,
   PaginationContent,
@@ -106,7 +107,7 @@ export default function FundingEntities() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">
             Funders
@@ -115,6 +116,7 @@ export default function FundingEntities() {
             {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
           </p>
         </div>
+        <CreateFunderDialog />
       </div>
 
       <div className="flex flex-wrap items-end gap-3">

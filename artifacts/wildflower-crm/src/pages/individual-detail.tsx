@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { Link, useRoute } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetPerson,
   useUpdatePerson,
+  useDeletePerson,
   getGetPersonQueryKey,
   getListPeopleQueryKey,
   type PersonDetail,
   type UpdatePersonBody,
 } from "@workspace/api-client-react";
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -279,6 +281,23 @@ function NameHeader({ person }: { person: PersonDetail }) {
   const [value, setValue] = useState(initial);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
+  const del = useDeletePerson({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() });
+        toast({ title: "Person deleted" });
+        navigate("/individuals");
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Delete failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
   const update = useUpdatePerson({
     mutation: {
       onSuccess: async () => {
@@ -341,14 +360,24 @@ function NameHeader({ person }: { person: PersonDetail }) {
       <h1 className="text-3xl font-serif font-bold text-foreground">
         {personDisplayName(person)}
       </h1>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setEditing(true)}
-        data-testid="button-edit-person-name"
-      >
-        Edit name
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setEditing(true)}
+          data-testid="button-edit-person-name"
+        >
+          Edit name
+        </Button>
+        <ConfirmDeleteDialog
+          title={`Delete ${personDisplayName(person)}?`}
+          description="This person record will be removed. Household memberships and links from opportunities or gifts may need to be cleaned up separately."
+          onConfirm={() => del.mutateAsync({ id: person.id })}
+          disabled={del.isPending}
+          triggerTestId="button-delete-person"
+          confirmTestId="button-confirm-delete-person"
+        />
+      </div>
     </div>
   );
 }

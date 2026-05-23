@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { Link, useRoute } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetFunder,
   useUpdateFunder,
+  useDeleteFunder,
   getGetFunderQueryKey,
   getListFundersQueryKey,
   type FunderDetail,
   type UpdateFunderBody,
 } from "@workspace/api-client-react";
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum, formatCapacity } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -297,6 +299,23 @@ function NameHeader({ funder }: { funder: FunderDetail }) {
   const [value, setValue] = useState(funder.name);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
+  const del = useDeleteFunder({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: getListFundersQueryKey() });
+        toast({ title: "Funder deleted" });
+        navigate("/funding-entities");
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Delete failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
   const update = useUpdateFunder({
     mutation: {
       onSuccess: async () => {
@@ -363,14 +382,24 @@ function NameHeader({ funder }: { funder: FunderDetail }) {
       <h1 className="text-3xl font-serif font-bold text-foreground">
         {funder.name}
       </h1>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setEditing(true)}
-        data-testid="button-edit-funder-name"
-      >
-        Edit name
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setEditing(true)}
+          data-testid="button-edit-funder-name"
+        >
+          Edit name
+        </Button>
+        <ConfirmDeleteDialog
+          title={`Delete ${funder.name}?`}
+          description="This funder and any direct references to it will be removed. Linked opportunities and gifts may need to be reassigned."
+          onConfirm={() => del.mutateAsync({ id: funder.id })}
+          disabled={del.isPending}
+          triggerTestId="button-delete-funder"
+          confirmTestId="button-confirm-delete-funder"
+        />
+      </div>
     </div>
   );
 }

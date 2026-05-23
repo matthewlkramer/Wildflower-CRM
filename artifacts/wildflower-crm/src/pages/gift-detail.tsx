@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { Link, useRoute } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetGiftOrPayment,
   useUpdateGiftOrPayment,
+  useDeleteGiftOrPayment,
   getGetGiftOrPaymentQueryKey,
   getListGiftsAndPaymentsQueryKey,
   type GiftOrPaymentDetail,
   type UpdateGiftOrPaymentBody,
 } from "@workspace/api-client-react";
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -164,6 +166,23 @@ function NameHeader({ gift }: { gift: GiftOrPaymentDetail }) {
   const [value, setValue] = useState(initial);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
+  const del = useDeleteGiftOrPayment({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: getListGiftsAndPaymentsQueryKey() });
+        toast({ title: "Gift deleted" });
+        navigate("/gifts");
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Delete failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
   const update = useUpdateGiftOrPayment({
     mutation: {
       onSuccess: async () => {
@@ -217,9 +236,19 @@ function NameHeader({ gift }: { gift: GiftOrPaymentDetail }) {
   return (
     <div className="flex items-start justify-between gap-4">
       <h1 className="text-3xl font-serif font-bold text-foreground">{gift.name ?? `Gift ${gift.id}`}</h1>
-      <Button variant="outline" size="sm" onClick={() => setEditing(true)} data-testid="button-edit-gift-name">
-        Edit name
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)} data-testid="button-edit-gift-name">
+          Edit name
+        </Button>
+        <ConfirmDeleteDialog
+          title="Delete this gift?"
+          description="This gift or payment record and its allocations will be removed."
+          onConfirm={() => del.mutateAsync({ id: gift.id })}
+          disabled={del.isPending}
+          triggerTestId="button-delete-gift"
+          confirmTestId="button-confirm-delete-gift"
+        />
+      </div>
     </div>
   );
 }
