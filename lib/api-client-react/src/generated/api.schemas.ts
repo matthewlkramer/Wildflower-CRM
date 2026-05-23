@@ -968,7 +968,7 @@ export interface PledgeAllocation {
   id: string;
   pledgeOrOpportunityId?: string | null;
   subAmount?: string | null;
-  grantYear?: string[] | null;
+  grantYear?: string | null;
   entityId?: string | null;
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
@@ -1007,8 +1007,8 @@ export interface GiftOrPayment {
   fundableProjectId?: string | null;
   designatedToSchool: boolean;
   schoolRecipientId?: string | null;
-  spendingStartDate?: string | null;
-  spendingEndDate?: string | null;
+  spendingStart?: string | null;
+  spendingEnd?: string | null;
   regionIds?: string[] | null;
   tags?: string | null;
   createdAt: string;
@@ -1093,7 +1093,7 @@ export interface PledgeAllocationList {
 export interface CreatePledgeAllocationBody {
   pledgeOrOpportunityId?: string;
   subAmount?: string;
-  grantYear?: string[];
+  grantYear?: string;
   entityId?: string;
   intendedUsage?: IntendedUsage;
   fundableProjectId?: string;
@@ -1107,7 +1107,7 @@ export interface CreatePledgeAllocationBody {
 export interface UpdatePledgeAllocationBody {
   pledgeOrOpportunityId?: string | null;
   subAmount?: string | null;
-  grantYear?: string[] | null;
+  grantYear?: string | null;
   entityId?: string | null;
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
@@ -1122,7 +1122,7 @@ export interface GiftAllocation {
   id: string;
   giftId?: string | null;
   subAmount?: string | null;
-  grantYearToBookTo?: string | null;
+  grantYear?: string | null;
   entityId?: string | null;
   formalRegionalRestriction: boolean;
   intendedUsage?: IntendedUsage | null;
@@ -1170,8 +1170,8 @@ export interface CreateGiftOrPaymentBody {
   fundableProjectId?: string;
   designatedToSchool?: boolean;
   schoolRecipientId?: string;
-  spendingStartDate?: string;
-  spendingEndDate?: string;
+  spendingStart?: string;
+  spendingEnd?: string;
   regionIds?: string[];
   tags?: string;
 }
@@ -1201,8 +1201,8 @@ export interface UpdateGiftOrPaymentBody {
   fundableProjectId?: string | null;
   designatedToSchool?: boolean;
   schoolRecipientId?: string | null;
-  spendingStartDate?: string | null;
-  spendingEndDate?: string | null;
+  spendingStart?: string | null;
+  spendingEnd?: string | null;
   regionIds?: string[] | null;
   tags?: string | null;
 }
@@ -1215,7 +1215,7 @@ export interface GiftAllocationList {
 export interface CreateGiftAllocationBody {
   giftId?: string;
   subAmount?: string;
-  grantYearToBookTo?: string;
+  grantYear?: string;
   entityId?: string;
   formalRegionalRestriction?: boolean;
   intendedUsage?: IntendedUsage;
@@ -1230,7 +1230,7 @@ export interface CreateGiftAllocationBody {
 export interface UpdateGiftAllocationBody {
   giftId?: string | null;
   subAmount?: string | null;
-  grantYearToBookTo?: string | null;
+  grantYear?: string | null;
   entityId?: string | null;
   formalRegionalRestriction?: boolean;
   intendedUsage?: IntendedUsage | null;

@@ -10,6 +10,7 @@ import { pledgeAllocationStatusEnum, intendedUsageEnum } from "./_enums";
 import { opportunitiesAndPledges } from "./opportunitiesAndPledges";
 import { entities } from "./entities";
 import { fundableProjects } from "./fundableProjects";
+import { fiscalYears } from "./fiscalYears";
 
 export const pledgeAllocations = pgTable("pledge_allocations", {
   id: text("id").primaryKey(),
@@ -20,10 +21,14 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
     { onDelete: "restrict" },
   ),
   subAmount: numeric("sub_amount", { precision: 14, scale: 2 }),
-  // NB: array column despite the singular column name. Worth renaming to
-  // grant_years for consistency with opportunities_and_pledges.grant_years
-  // (see #5 in the data-structures review).
-  grantYear: text("grant_year").array(),
+  // FK to fiscal_years.id (slug, e.g. 'fy2024'). Single fiscal year per
+  // allocation; multi-year grants get one allocation row per year. The
+  // parent opportunity may still carry a multi-value grant_years array
+  // representing the rough span; the allocations are the canonical per-year
+  // bookings.
+  grantYear: text("grant_year").references(() => fiscalYears.id, {
+    onDelete: "restrict",
+  }),
   entityId: text("entity_id").references(() => entities.id, {
     onDelete: "restrict",
   }),
@@ -47,7 +52,7 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   index("pledge_allocations_entity_id_idx").on(t.entityId),
   index("pledge_allocations_fundable_project_id_idx").on(t.fundableProjectId),
   index("pledge_allocations_region_ids_gin_idx").using("gin", t.regionIds),
-  index("pledge_allocations_grant_year_gin_idx").using("gin", t.grantYear),
+  index("pledge_allocations_grant_year_idx").on(t.grantYear),
 ]);
 
 export type PledgeAllocation = typeof pledgeAllocations.$inferSelect;

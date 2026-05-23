@@ -12,6 +12,7 @@ import { giftsAndPayments } from "./giftsAndPayments";
 import { entities } from "./entities";
 import { fundableProjects } from "./fundableProjects";
 import { schools } from "./schools";
+import { fiscalYears } from "./fiscalYears";
 
 export const giftAllocations = pgTable("gift_allocations", {
   id: text("id").primaryKey(),
@@ -21,7 +22,11 @@ export const giftAllocations = pgTable("gift_allocations", {
     onDelete: "restrict",
   }),
   subAmount: numeric("sub_amount", { precision: 14, scale: 2 }),
-  grantYearToBookTo: text("grant_year_to_book_to"),
+  // FK to fiscal_years.id (slug, e.g. 'fy2024'). The fiscal year this
+  // portion of the gift gets booked to.
+  grantYear: text("grant_year").references(() => fiscalYears.id, {
+    onDelete: "restrict",
+  }),
   // FK to entities.id — the fund entity this allocation lands in.
   entityId: text("entity_id").references(() => entities.id, {
     onDelete: "restrict",
@@ -60,6 +65,7 @@ export const giftAllocations = pgTable("gift_allocations", {
   index("gift_allocations_fundable_project_id_idx").on(t.fundableProjectId),
   index("gift_allocations_school_recipient_id_idx").on(t.schoolRecipientId),
   index("gift_allocations_region_ids_gin_idx").using("gin", t.regionIds),
+  index("gift_allocations_grant_year_idx").on(t.grantYear),
 ]);
 
 export type GiftAllocation = typeof giftAllocations.$inferSelect;

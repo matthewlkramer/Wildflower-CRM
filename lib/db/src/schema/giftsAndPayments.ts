@@ -22,6 +22,7 @@ import { users } from "./users";
 import { entities } from "./entities";
 import { fundableProjects } from "./fundableProjects";
 import { schools } from "./schools";
+import { fiscalYears } from "./fiscalYears";
 
 export const giftsAndPayments = pgTable("gifts_and_payments", {
   id: text("id").primaryKey(),
@@ -50,7 +51,12 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   advisorPersonId: text("advisor_person_id").references(() => people.id, {
     onDelete: "set null",
   }),
-  grantYear: text("grant_year"),
+  // FK to fiscal_years.id (slug, e.g. 'fy2024'). Single fiscal year per
+  // gift/payment; if a single funder check legitimately covers multiple FY
+  // bookings, split it across multiple gift_allocations rows.
+  grantYear: text("grant_year").references(() => fiscalYears.id, {
+    onDelete: "restrict",
+  }),
   // Self-ref to the gift this one matches. SET NULL: deleting the original
   // shouldn't cascade-delete the matching gift; just clear the pointer.
   giftBeingMatchedId: text("gift_being_matched_id").references(
@@ -72,9 +78,12 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   ownerUserId: text("owner_user_id").references(() => users.id, {
     onDelete: "restrict",
   }),
-  // TODO (#4 in data-structures review): rename close_date →
-  // projected_close_date and completed_date → actual_completion_date for
-  // consistency with opportunities_and_pledges.
+  // Legacy Copper-era date fields with haphazard usage and unclear
+  // semantics. Populated on ~688/691 rows but their precise meaning was
+  // never disambiguated (sometimes "deal closed", sometimes "funds
+  // cleared"). Prefer `date_received` for new writes. These columns are
+  // preserved as-is for historical reference; a future cleanup may
+  // back-fill date_received and drop them.
   closeDate: date("close_date"),
   completedDate: date("completed_date"),
   allocationType: giftAllocationTypeEnum("allocation_type"),
@@ -94,8 +103,8 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   schoolRecipientId: text("school_recipient_id").references(() => schools.id, {
     onDelete: "restrict",
   }),
-  spendingStartDate: date("spending_start_date"),
-  spendingEndDate: date("spending_end_date"),
+  spendingStart: date("spending_start"),
+  spendingEnd: date("spending_end"),
   // Array of regions.id values. Array columns can't carry native FK
   // constraints; API layer enforces.
   regionIds: text("region_ids").array(),
@@ -116,6 +125,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_entity_id_idx").on(t.entityId),
   index("gifts_and_payments_fundable_project_id_idx").on(t.fundableProjectId),
   index("gifts_and_payments_school_recipient_id_idx").on(t.schoolRecipientId),
+  index("gifts_and_payments_grant_year_idx").on(t.grantYear),
   index("gifts_and_payments_region_ids_gin_idx").using("gin", t.regionIds),
 ]);
 
