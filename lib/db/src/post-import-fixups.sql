@@ -135,4 +135,47 @@ UPDATE payment_intermediaries
 -- pass (one real PER + one synth-per-* row). Drop the synth dup.
 DELETE FROM people_entity_roles WHERE id = 'synth-per-013-cynthia-guill';
 
+-- ============================================================================
+-- 2026-05  Nash pledge-payment donor reconciliation
+-- ============================================================================
+-- Companion to the earlier Nash opps fix: pledge recSmHuyBYL310qux ("Avi Nash
+-- Seed Challenge Grant") is funded by Indira Foundation (recR28K8Twq5uV8Q0),
+-- but the $100k payment gift recn6Gg4K1G31LnH5 still carried household_id=Nash
+-- from the household pass. Flip the gift to match the pledge.
+UPDATE gifts_and_payments
+   SET household_id = NULL,
+       funder_id    = 'recR28K8Twq5uV8Q0'
+ WHERE id = 'recn6Gg4K1G31LnH5'
+   AND (household_id = 'rec673AHumJJiIPSy'
+        OR funder_id IS DISTINCT FROM 'recR28K8Twq5uV8Q0');
+
+-- ============================================================================
+-- 2026-05  Merge duplicate funder "Building Impact Partners"
+-- ============================================================================
+-- Two BIP funder rows existed: synth-funder-building-impact-partners (carried
+-- 3 PERs + historical_names) and the real Airtable id recqGVa2GN2SfHKoW (no
+-- attachments, correct funding_entity_subtype). Move PERs + historical_names
+-- onto the real id and drop the synth.
+UPDATE funders
+   SET historical_names = ARRAY['Impact for Education','Leveraged Impact']::text[]
+ WHERE id = 'recqGVa2GN2SfHKoW'
+   AND (historical_names IS NULL OR historical_names = '{}');
+
+UPDATE people_entity_roles
+   SET funder_id = 'recqGVa2GN2SfHKoW'
+ WHERE funder_id = 'synth-funder-building-impact-partners';
+
+DELETE FROM funders WHERE id = 'synth-funder-building-impact-partners';
+
+-- ============================================================================
+-- 2026-05  Merge duplicate organization "Minnesota Chamber of Commerce"
+-- ============================================================================
+-- Two identical org rows. Keep recRisXQ8CI4UYHBK (3 PERs, 2 addresses).
+-- Re-point the 1 address attached to recPix5M7st5QS0fB, then delete it.
+UPDATE addresses
+   SET organization_id = 'recRisXQ8CI4UYHBK'
+ WHERE organization_id = 'recPix5M7st5QS0fB';
+
+DELETE FROM organizations WHERE id = 'recPix5M7st5QS0fB';
+
 COMMIT;
