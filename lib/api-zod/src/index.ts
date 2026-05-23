@@ -1,1 +1,113 @@
 export * from "./generated/api";
+
+import { z } from "zod";
+import {
+  CreateOpportunityOrPledgeBody,
+  CreateGiftOrPaymentBody,
+} from "./generated/api";
+
+/**
+ * Shared invariant validators for opportunities/pledges and gifts/payments.
+ *
+ * These mirror DB CHECK constraints so the API can return 400 instead of 500:
+ *   - donor_xor: exactly one of funderId / individualGiverPersonId / householdId
+ *   - closed_requires_completion_date (opps only):
+ *     status in ('won','lost') => actualCompletionDate set
+ *
+ * For PATCH routes, callers must validate the MERGED post-update state
+ * (`{ ...existingRow, ...body }`), not the body alone — a partial PATCH can
+ * pass body-only validation and still violate the merged invariant.
+ */
+
+export const DONOR_XOR_MESSAGE =
+  "Exactly one of funderId, individualGiverPersonId, or householdId must be set (donor XOR).";
+export const CLOSED_REQUIRES_DATE_MESSAGE =
+  "actualCompletionDate is required when status is 'won' or 'lost'.";
+
+export interface DonorState {
+  funderId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+}
+
+export interface OppCloseState {
+  status?: string | null;
+  actualCompletionDate?: string | Date | null;
+}
+
+export interface InvariantIssue {
+  path: string;
+  message: string;
+}
+
+// Match Postgres `num_nonnulls(...)` semantics used by the donor_xor CHECK
+// constraints: count any value that is neither null nor undefined, including
+// empty strings. Truthiness would let `{ funderId: "" }` slip through the API
+// check and trip the DB constraint as a 500.
+function donorCount(s: DonorState): number {
+  return (
+    (s.funderId != null ? 1 : 0) +
+    (s.individualGiverPersonId != null ? 1 : 0) +
+    (s.householdId != null ? 1 : 0)
+  );
+}
+
+export function validateOppInvariants(
+  state: DonorState & OppCloseState,
+): InvariantIssue[] {
+  const issues: InvariantIssue[] = [];
+  if (donorCount(state) !== 1) {
+    issues.push({ path: "funderId", message: DONOR_XOR_MESSAGE });
+  }
+  if (
+    (state.status === "won" || state.status === "lost") &&
+    !state.actualCompletionDate
+  ) {
+    issues.push({
+      path: "actualCompletionDate",
+      message: CLOSED_REQUIRES_DATE_MESSAGE,
+    });
+  }
+  return issues;
+}
+
+export function validateGiftInvariants(state: DonorState): InvariantIssue[] {
+  const issues: InvariantIssue[] = [];
+  if (donorCount(state) !== 1) {
+    issues.push({ path: "funderId", message: DONOR_XOR_MESSAGE });
+  }
+  return issues;
+}
+
+function issuesToZodCtx(issues: InvariantIssue[], ctx: z.RefinementCtx): void {
+  for (const i of issues) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: i.message,
+      path: [i.path],
+    });
+  }
+}
+
+/**
+ * CREATE refines: body IS the full state, so the body-level refine is sound.
+ *
+ * UPDATE bodies are intentionally NOT refined here — PATCH validation must
+ * happen at the route handler against merged state. Use the un-refined
+ * Update*Body schemas (re-exported from "./generated/api") for body parsing,
+ * then call `validateOppInvariants` / `validateGiftInvariants` on the merged
+ * row.
+ */
+export const CreateOpportunityOrPledgeBodyRefined =
+  CreateOpportunityOrPledgeBody.superRefine(
+    (b: z.infer<typeof CreateOpportunityOrPledgeBody>, ctx) => {
+      issuesToZodCtx(validateOppInvariants(b), ctx);
+    },
+  );
+
+export const CreateGiftOrPaymentBodyRefined =
+  CreateGiftOrPaymentBody.superRefine(
+    (b: z.infer<typeof CreateGiftOrPaymentBody>, ctx) => {
+      issuesToZodCtx(validateGiftInvariants(b), ctx);
+    },
+  );

@@ -503,6 +503,8 @@ paths:
         - { name: stage, in: query, schema: { $ref: "#/components/schemas/OpportunityStage" } }
         - { name: type, in: query, schema: { $ref: "#/components/schemas/OpportunityType" } }
         - { name: funderId, in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+        - { name: individualGiverPersonId, in: query, schema: { type: string } }
         - { name: ownerUserId, in: query, schema: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
@@ -581,6 +583,8 @@ paths:
         - { name: search, in: query, schema: { type: string } }
         - { name: type, in: query, schema: { $ref: "#/components/schemas/GiftType" } }
         - { name: funderId, in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+        - { name: individualGiverPersonId, in: query, schema: { type: string } }
         - { name: paymentOnPledgeId, in: query, schema: { type: string } }
         - { name: paymentMethod, in: query, schema: { $ref: "#/components/schemas/GiftPaymentMethod" } }
         - { $ref: "#/components/parameters/Limit" }
@@ -695,7 +699,7 @@ components:
     PhoneType: { type: string, enum: [work, mobile, home, other] }
     PeopleRoleCurrent: { type: string, enum: [current, past] }
     PeopleEntityRoleConnection: { type: string, enum: [employee, principal, board_member, partner, professor, donor_advisor, elected_official] }
-    PaymentIntermediaryType: { type: string, enum: [daf, giving_platform] }
+    PaymentIntermediaryType: { type: string, enum: [daf, giving_platform, private_wealth_manager] }
     Pronouns: { type: string, enum: [he_him_his, she_her_hers, they_them_theirs, other] }
     SchoolStatus: { type: string, enum: [emerging, open, paused, closing, permanently_closed, disaffiliating, disaffiliated, placeholder, abandoned] }
     GovernanceModel: { type: string, enum: [independent, district, charter, exploring_charter, community_partnership] }
@@ -824,6 +828,7 @@ components:
         priorityAreasNotes:    { type: string, nullable: true }
         activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
         otherNames:            { type: string, nullable: true }
+        historicalNames:       { type: array, items: { type: string }, nullable: true }
         details:               { type: string, nullable: true }
         emailDomain:           { type: string, nullable: true }
         orgEmail:              { type: string, nullable: true }
@@ -873,6 +878,7 @@ components:
         priorityAreasNotes:    { type: string }
         activeStatus:          { $ref: "#/components/schemas/ActiveStatus" }
         otherNames:            { type: string }
+        historicalNames:       { type: array, items: { type: string } }
         details:               { type: string }
         emailDomain:           { type: string }
         orgEmail:              { type: string }
@@ -905,6 +911,7 @@ components:
         priorityAreasNotes:    { type: string, nullable: true }
         activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
         otherNames:            { type: string, nullable: true }
+        historicalNames:       { type: array, items: { type: string }, nullable: true }
         details:               { type: string, nullable: true }
         emailDomain:           { type: string, nullable: true }
         orgEmail:              { type: string, nullable: true }
@@ -939,6 +946,7 @@ components:
         website:         { type: string, nullable: true }
         activeOrDefunct: { type: string, nullable: true }
         otherNames:      { type: string, nullable: true }
+        historicalNames: { type: array, items: { type: string }, nullable: true }
         parentOrgId:     { type: string, nullable: true }
         createdAt:       { type: string, format: date-time }
         updatedAt:       { type: string, format: date-time }
@@ -967,6 +975,7 @@ components:
         website:         { type: string }
         activeOrDefunct: { type: string }
         otherNames:      { type: string }
+        historicalNames: { type: array, items: { type: string } }
         parentOrgId:     { type: string }
     UpdateOrganizationBody:
       type: object
@@ -978,6 +987,7 @@ components:
         website:         { type: string, nullable: true }
         activeOrDefunct: { type: string, nullable: true }
         otherNames:      { type: string, nullable: true }
+        historicalNames: { type: array, items: { type: string }, nullable: true }
         parentOrgId:     { type: string, nullable: true }
 
     # ─── Payment intermediaries ────────────────────────────────────────────────
@@ -1369,6 +1379,7 @@ components:
         id:                         { type: string }
         name:                       { type: string, nullable: true }
         funderId:                   { type: string, nullable: true }
+        householdId:                { type: string, nullable: true }
         askAmount:                  { type: string, nullable: true }
         awardedAmount:              { type: string, nullable: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
@@ -1409,6 +1420,7 @@ components:
       properties:
         name:                       { type: string }
         funderId:                   { type: string }
+        householdId:                { type: string }
         askAmount:                  { type: string }
         awardedAmount:              { type: string }
         type:                       { $ref: "#/components/schemas/OpportunityType" }
@@ -1434,6 +1446,7 @@ components:
       properties:
         name:                       { type: string, nullable: true }
         funderId:                   { type: string, nullable: true }
+        householdId:                { type: string, nullable: true }
         askAmount:                  { type: string, nullable: true }
         awardedAmount:              { type: string, nullable: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
@@ -1523,6 +1536,7 @@ components:
         amount:                     { type: string, nullable: true }
         funderId:                   { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
+        householdId:                { type: string, nullable: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
         paymentOnPledgeId:          { type: string, nullable: true }
         advisorPersonId:            { type: string, nullable: true }
@@ -1558,6 +1572,7 @@ components:
         amount:                     { type: string }
         funderId:                   { type: string }
         individualGiverPersonId:    { type: string }
+        householdId:                { type: string }
         type:                       { $ref: "#/components/schemas/GiftType" }
         paymentOnPledgeId:          { type: string }
         advisorPersonId:            { type: string }
@@ -1579,6 +1594,7 @@ components:
         amount:                     { type: string, nullable: true }
         funderId:                   { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
+        householdId:                { type: string, nullable: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
         paymentOnPledgeId:          { type: string, nullable: true }
         advisorPersonId:            { type: string, nullable: true }

@@ -99,6 +99,7 @@ export type PaymentIntermediaryType =
 export const PaymentIntermediaryType = {
   daf: "daf",
   giving_platform: "giving_platform",
+  private_wealth_manager: "private_wealth_manager",
 } as const;
 
 export type Pronouns = (typeof Pronouns)[keyof typeof Pronouns];
@@ -433,6 +434,7 @@ export interface Funder {
   priorityAreasNotes?: string | null;
   activeStatus?: ActiveStatus | null;
   otherNames?: string | null;
+  historicalNames?: string[] | null;
   details?: string | null;
   emailDomain?: string | null;
   orgEmail?: string | null;
@@ -528,6 +530,7 @@ export interface CreateFunderBody {
   priorityAreasNotes?: string;
   activeStatus?: ActiveStatus;
   otherNames?: string;
+  historicalNames?: string[];
   details?: string;
   emailDomain?: string;
   orgEmail?: string;
@@ -560,6 +563,7 @@ export interface UpdateFunderBody {
   priorityAreasNotes?: string | null;
   activeStatus?: ActiveStatus | null;
   otherNames?: string | null;
+  historicalNames?: string[] | null;
   details?: string | null;
   emailDomain?: string | null;
   orgEmail?: string | null;
@@ -591,6 +595,7 @@ export interface Organization {
   website?: string | null;
   activeOrDefunct?: string | null;
   otherNames?: string | null;
+  historicalNames?: string[] | null;
   parentOrgId?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -615,6 +620,7 @@ export interface CreateOrganizationBody {
   website?: string;
   activeOrDefunct?: string;
   otherNames?: string;
+  historicalNames?: string[];
   parentOrgId?: string;
 }
 
@@ -626,6 +632,7 @@ export interface UpdateOrganizationBody {
   website?: string | null;
   activeOrDefunct?: string | null;
   otherNames?: string | null;
+  historicalNames?: string[] | null;
   parentOrgId?: string | null;
 }
 
@@ -927,6 +934,7 @@ export interface OpportunityOrPledge {
   id: string;
   name?: string | null;
   funderId?: string | null;
+  householdId?: string | null;
   askAmount?: string | null;
   awardedAmount?: string | null;
   type?: OpportunityType | null;
@@ -978,6 +986,7 @@ export interface GiftOrPayment {
   amount?: string | null;
   funderId?: string | null;
   individualGiverPersonId?: string | null;
+  householdId?: string | null;
   type?: GiftType | null;
   paymentOnPledgeId?: string | null;
   advisorPersonId?: string | null;
@@ -1005,6 +1014,7 @@ export interface OpportunityOrPledgeList {
 export interface CreateOpportunityOrPledgeBody {
   name?: string;
   funderId?: string;
+  householdId?: string;
   askAmount?: string;
   awardedAmount?: string;
   type?: OpportunityType;
@@ -1030,6 +1040,7 @@ export interface CreateOpportunityOrPledgeBody {
 export interface UpdateOpportunityOrPledgeBody {
   name?: string | null;
   funderId?: string | null;
+  householdId?: string | null;
   askAmount?: string | null;
   awardedAmount?: string | null;
   type?: OpportunityType | null;
@@ -1121,6 +1132,7 @@ export interface CreateGiftOrPaymentBody {
   amount?: string;
   funderId?: string;
   individualGiverPersonId?: string;
+  householdId?: string;
   type?: GiftType;
   paymentOnPledgeId?: string;
   advisorPersonId?: string;
@@ -1142,6 +1154,7 @@ export interface UpdateGiftOrPaymentBody {
   amount?: string | null;
   funderId?: string | null;
   individualGiverPersonId?: string | null;
+  householdId?: string | null;
   type?: GiftType | null;
   paymentOnPledgeId?: string | null;
   advisorPersonId?: string | null;
@@ -1377,6 +1390,8 @@ export type ListOpportunitiesAndPledgesParams = {
   stage?: OpportunityStage;
   type?: OpportunityType;
   funderId?: string;
+  householdId?: string;
+  individualGiverPersonId?: string;
   ownerUserId?: string;
   /**
    * @minimum 1
@@ -1406,6 +1421,8 @@ export type ListGiftsAndPaymentsParams = {
   search?: string;
   type?: GiftType;
   funderId?: string;
+  householdId?: string;
+  individualGiverPersonId?: string;
   paymentOnPledgeId?: string;
   paymentMethod?: GiftPaymentMethod;
   /**

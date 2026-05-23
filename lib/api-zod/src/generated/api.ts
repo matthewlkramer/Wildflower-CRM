@@ -399,6 +399,7 @@ export const ListFundersResponse = zod.object({
       priorityAreasNotes: zod.string().nullish(),
       activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
       otherNames: zod.string().nullish(),
+      historicalNames: zod.array(zod.string()).nullish(),
       details: zod.string().nullish(),
       emailDomain: zod.string().nullish(),
       orgEmail: zod.string().nullish(),
@@ -477,6 +478,7 @@ export const CreateFunderBody = zod.object({
   priorityAreasNotes: zod.string().optional(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).optional(),
   otherNames: zod.string().optional(),
+  historicalNames: zod.array(zod.string()).optional(),
   details: zod.string().optional(),
   emailDomain: zod.string().optional(),
   orgEmail: zod.string().optional(),
@@ -552,6 +554,7 @@ export const GetFunderResponse = zod
     priorityAreasNotes: zod.string().nullish(),
     activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
     otherNames: zod.string().nullish(),
+    historicalNames: zod.array(zod.string()).nullish(),
     details: zod.string().nullish(),
     emailDomain: zod.string().nullish(),
     orgEmail: zod.string().nullish(),
@@ -705,6 +708,7 @@ export const UpdateFunderBody = zod.object({
   priorityAreasNotes: zod.string().nullish(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
   otherNames: zod.string().nullish(),
+  historicalNames: zod.array(zod.string()).nullish(),
   details: zod.string().nullish(),
   emailDomain: zod.string().nullish(),
   orgEmail: zod.string().nullish(),
@@ -775,6 +779,7 @@ export const UpdateFunderResponse = zod.object({
   priorityAreasNotes: zod.string().nullish(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
   otherNames: zod.string().nullish(),
+  historicalNames: zod.array(zod.string()).nullish(),
   details: zod.string().nullish(),
   emailDomain: zod.string().nullish(),
   orgEmail: zod.string().nullish(),
@@ -880,6 +885,7 @@ export const ListOrganizationsResponse = zod.object({
       website: zod.string().nullish(),
       activeOrDefunct: zod.string().nullish(),
       otherNames: zod.string().nullish(),
+      historicalNames: zod.array(zod.string()).nullish(),
       parentOrgId: zod.string().nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -923,6 +929,7 @@ export const CreateOrganizationBody = zod.object({
   website: zod.string().optional(),
   activeOrDefunct: zod.string().optional(),
   otherNames: zod.string().optional(),
+  historicalNames: zod.array(zod.string()).optional(),
   parentOrgId: zod.string().optional(),
 });
 
@@ -963,6 +970,7 @@ export const GetOrganizationResponse = zod
     website: zod.string().nullish(),
     activeOrDefunct: zod.string().nullish(),
     otherNames: zod.string().nullish(),
+    historicalNames: zod.array(zod.string()).nullish(),
     parentOrgId: zod.string().nullish(),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
@@ -1081,6 +1089,7 @@ export const UpdateOrganizationBody = zod.object({
   website: zod.string().nullish(),
   activeOrDefunct: zod.string().nullish(),
   otherNames: zod.string().nullish(),
+  historicalNames: zod.array(zod.string()).nullish(),
   parentOrgId: zod.string().nullish(),
 });
 
@@ -1116,6 +1125,7 @@ export const UpdateOrganizationResponse = zod.object({
   website: zod.string().nullish(),
   activeOrDefunct: zod.string().nullish(),
   otherNames: zod.string().nullish(),
+  historicalNames: zod.array(zod.string()).nullish(),
   parentOrgId: zod.string().nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -1132,7 +1142,9 @@ export const listPaymentIntermediariesQueryPageDefault = 1;
 
 export const ListPaymentIntermediariesQueryParams = zod.object({
   search: zod.coerce.string().optional(),
-  type: zod.enum(["daf", "giving_platform"]).optional(),
+  type: zod
+    .enum(["daf", "giving_platform", "private_wealth_manager"])
+    .optional(),
   limit: zod.coerce
     .number()
     .min(1)
@@ -1149,7 +1161,9 @@ export const ListPaymentIntermediariesResponse = zod.object({
     zod.object({
       id: zod.string(),
       name: zod.string(),
-      type: zod.enum(["daf", "giving_platform"]).nullish(),
+      type: zod
+        .enum(["daf", "giving_platform", "private_wealth_manager"])
+        .nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -1163,7 +1177,9 @@ export const ListPaymentIntermediariesResponse = zod.object({
 
 export const CreatePaymentIntermediaryBody = zod.object({
   name: zod.string(),
-  type: zod.enum(["daf", "giving_platform"]).optional(),
+  type: zod
+    .enum(["daf", "giving_platform", "private_wealth_manager"])
+    .optional(),
 });
 
 export const GetPaymentIntermediaryParams = zod.object({
@@ -1174,7 +1190,9 @@ export const GetPaymentIntermediaryResponse = zod
   .object({
     id: zod.string(),
     name: zod.string(),
-    type: zod.enum(["daf", "giving_platform"]).nullish(),
+    type: zod
+      .enum(["daf", "giving_platform", "private_wealth_manager"])
+      .nullish(),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   })
@@ -1263,13 +1281,17 @@ export const UpdatePaymentIntermediaryParams = zod.object({
 
 export const UpdatePaymentIntermediaryBody = zod.object({
   name: zod.string().optional(),
-  type: zod.enum(["daf", "giving_platform"]).nullish(),
+  type: zod
+    .enum(["daf", "giving_platform", "private_wealth_manager"])
+    .nullish(),
 });
 
 export const UpdatePaymentIntermediaryResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
-  type: zod.enum(["daf", "giving_platform"]).nullish(),
+  type: zod
+    .enum(["daf", "giving_platform", "private_wealth_manager"])
+    .nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -2179,6 +2201,8 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
     .optional(),
   type: zod.enum(["solicitation", "renewal", "open_application"]).optional(),
   funderId: zod.coerce.string().optional(),
+  householdId: zod.coerce.string().optional(),
+  individualGiverPersonId: zod.coerce.string().optional(),
   ownerUserId: zod.coerce.string().optional(),
   limit: zod.coerce
     .number()
@@ -2197,6 +2221,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       id: zod.string(),
       name: zod.string().nullish(),
       funderId: zod.string().nullish(),
+      householdId: zod.string().nullish(),
       askAmount: zod.string().nullish(),
       awardedAmount: zod.string().nullish(),
       type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
@@ -2250,6 +2275,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
 export const CreateOpportunityOrPledgeBody = zod.object({
   name: zod.string().optional(),
   funderId: zod.string().optional(),
+  householdId: zod.string().optional(),
   askAmount: zod.string().optional(),
   awardedAmount: zod.string().optional(),
   type: zod.enum(["solicitation", "renewal", "open_application"]).optional(),
@@ -2300,6 +2326,7 @@ export const GetOpportunityOrPledgeResponse = zod
     id: zod.string(),
     name: zod.string().nullish(),
     funderId: zod.string().nullish(),
+    householdId: zod.string().nullish(),
     askAmount: zod.string().nullish(),
     awardedAmount: zod.string().nullish(),
     type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
@@ -2405,6 +2432,7 @@ export const GetOpportunityOrPledgeResponse = zod
             amount: zod.string().nullish(),
             funderId: zod.string().nullish(),
             individualGiverPersonId: zod.string().nullish(),
+            householdId: zod.string().nullish(),
             type: zod
               .enum([
                 "standard_gift",
@@ -2438,6 +2466,7 @@ export const UpdateOpportunityOrPledgeParams = zod.object({
 export const UpdateOpportunityOrPledgeBody = zod.object({
   name: zod.string().nullish(),
   funderId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
   type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
@@ -2483,6 +2512,7 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   id: zod.string(),
   name: zod.string().nullish(),
   funderId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
   type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
@@ -2716,6 +2746,8 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
     ])
     .optional(),
   funderId: zod.coerce.string().optional(),
+  householdId: zod.coerce.string().optional(),
+  individualGiverPersonId: zod.coerce.string().optional(),
   paymentOnPledgeId: zod.coerce.string().optional(),
   paymentMethod: zod
     .enum([
@@ -2763,6 +2795,7 @@ export const ListGiftsAndPaymentsResponse = zod.object({
       amount: zod.string().nullish(),
       funderId: zod.string().nullish(),
       individualGiverPersonId: zod.string().nullish(),
+      householdId: zod.string().nullish(),
       type: zod
         .enum([
           "standard_gift",
@@ -2812,6 +2845,7 @@ export const CreateGiftOrPaymentBody = zod.object({
   amount: zod.string().optional(),
   funderId: zod.string().optional(),
   individualGiverPersonId: zod.string().optional(),
+  householdId: zod.string().optional(),
   type: zod
     .enum([
       "standard_gift",
@@ -2858,6 +2892,7 @@ export const GetGiftOrPaymentResponse = zod
     amount: zod.string().nullish(),
     funderId: zod.string().nullish(),
     individualGiverPersonId: zod.string().nullish(),
+    householdId: zod.string().nullish(),
     type: zod
       .enum([
         "standard_gift",
@@ -2937,6 +2972,7 @@ export const UpdateGiftOrPaymentBody = zod.object({
   amount: zod.string().nullish(),
   funderId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
   type: zod
     .enum([
       "standard_gift",
@@ -2978,6 +3014,7 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   amount: zod.string().nullish(),
   funderId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
   type: zod
     .enum([
       "standard_gift",
