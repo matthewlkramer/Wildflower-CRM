@@ -178,4 +178,35 @@ UPDATE addresses
 
 DELETE FROM organizations WHERE id = 'recPix5M7st5QS0fB';
 
+-- ============================================================================
+-- 2026-05  Won-opp allocation drift fixes (Copper-export adjudication)
+-- ============================================================================
+-- Two won opps had pledge_allocations sub_amount totals diverging from
+-- awarded_amount. Reconciled against the Copper opps export.
+
+-- Wend FY21-23 (recNS30L7jeRdzHFb): PR FY22 alloc reccV4rFVmfSloY3D was $450k
+-- but Copper Won PR FY22 = $200k + $200k = $400k. Reduce to $400k so the
+-- region/FY breakdown matches actual receipts ($4.5M total).
+UPDATE pledge_allocations
+   SET sub_amount = 400000.00
+ WHERE id = 'reccV4rFVmfSloY3D'
+   AND sub_amount = 450000.00;
+
+-- CityBridge "FY19 and FY20" (rec5RteGKx2FkTinx): FY19 alloc was missing the
+-- 7/27/2018 "First D.C. payment" of $10k. Bump $60k → $70k. Also restore the
+-- $0.14 cents on the FY20 row + awarded_amount so totals reconcile with
+-- payments ($215,015.14).
+UPDATE pledge_allocations
+   SET sub_amount = 70000.00
+ WHERE id = 'recEZOGCINYEvl65q'
+   AND sub_amount = 60000.00;
+UPDATE pledge_allocations
+   SET sub_amount = 145015.14
+ WHERE id = 'rechwpjAb3iaG9WIX'
+   AND sub_amount = 145015.00;
+UPDATE opportunities_and_pledges
+   SET awarded_amount = 215015.14
+ WHERE id = 'rec5RteGKx2FkTinx'
+   AND awarded_amount = 215015.00;
+
 COMMIT;
