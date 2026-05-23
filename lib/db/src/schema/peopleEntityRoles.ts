@@ -41,6 +41,13 @@ export const peopleEntityRoles = pgTable(
     notes: text("notes"),
     externalTitleOrRole: text("external_title_or_role"),
     current: peopleRoleCurrentEnum("current").default("current").notNull(),
+    // True iff this person is the *present-tense* primary contact for the
+    // entity (funder / org / DAF / household). Use this to answer "who
+    // should I email about funder X right now?". For historical attribution
+    // ("who did we work with on this specific opp or gift?") read the opp's
+    // or gift's own primary_contact_person_id instead — that column is
+    // frozen per-row and survives funder staff turnover. See replit.md
+    // "Primary contact — historical attribution rule".
     primaryContact: boolean("primary_contact").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
