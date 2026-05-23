@@ -1221,7 +1221,7 @@ export type ListRegionsParams = {
   search?: string;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1236,7 +1236,7 @@ export type ListSchoolsParams = {
   search?: string;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1254,7 +1254,7 @@ export type ListFundersParams = {
   capacityRating?: CapacityRating;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1268,7 +1268,7 @@ export type ListOrganizationsParams = {
   type?: OrganizationType;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1282,7 +1282,7 @@ export type ListPaymentIntermediariesParams = {
   type?: PaymentIntermediaryType;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1296,7 +1296,7 @@ export type ListHouseholdsParams = {
   active?: boolean;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1311,7 +1311,7 @@ export type ListPeopleParams = {
   regionId?: string;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1328,7 +1328,7 @@ export type ListPeopleEntityRolesParams = {
   householdId?: string;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1345,7 +1345,7 @@ export type ListEmailsParams = {
   householdId?: string;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1358,7 +1358,7 @@ export type ListPhoneNumbersParams = {
   personId?: string;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1375,7 +1375,7 @@ export type ListAddressesParams = {
   householdId?: string;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1395,7 +1395,7 @@ export type ListOpportunitiesAndPledgesParams = {
   ownerUserId?: string;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1408,7 +1408,7 @@ export type ListPledgeAllocationsParams = {
   pledgeOrOpportunityId?: string;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1427,7 +1427,7 @@ export type ListGiftsAndPaymentsParams = {
   paymentMethod?: GiftPaymentMethod;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**
@@ -1440,7 +1440,7 @@ export type ListGiftAllocationsParams = {
   giftId?: string;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 1000
    */
   limit?: LimitParameter;
   /**

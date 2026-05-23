@@ -42,7 +42,7 @@ export const GetCurrentUserResponse = zod.object({
 });
 
 export const listRegionsQueryLimitDefault = 50;
-export const listRegionsQueryLimitMax = 500;
+export const listRegionsQueryLimitMax = 1000;
 
 export const listRegionsQueryPageDefault = 1;
 
@@ -142,7 +142,7 @@ export const GetRegionResponse = zod.object({
 });
 
 export const listSchoolsQueryLimitDefault = 50;
-export const listSchoolsQueryLimitMax = 500;
+export const listSchoolsQueryLimitMax = 1000;
 
 export const listSchoolsQueryPageDefault = 1;
 
@@ -307,7 +307,7 @@ export const ListFiscalYearsResponseItem = zod.object({
 export const ListFiscalYearsResponse = zod.array(ListFiscalYearsResponseItem);
 
 export const listFundersQueryLimitDefault = 50;
-export const listFundersQueryLimitMax = 500;
+export const listFundersQueryLimitMax = 1000;
 
 export const listFundersQueryPageDefault = 1;
 
@@ -813,7 +813,7 @@ export const DeleteFunderParams = zod.object({
 });
 
 export const listOrganizationsQueryLimitDefault = 50;
-export const listOrganizationsQueryLimitMax = 500;
+export const listOrganizationsQueryLimitMax = 1000;
 
 export const listOrganizationsQueryPageDefault = 1;
 
@@ -1136,7 +1136,7 @@ export const DeleteOrganizationParams = zod.object({
 });
 
 export const listPaymentIntermediariesQueryLimitDefault = 50;
-export const listPaymentIntermediariesQueryLimitMax = 500;
+export const listPaymentIntermediariesQueryLimitMax = 1000;
 
 export const listPaymentIntermediariesQueryPageDefault = 1;
 
@@ -1301,7 +1301,7 @@ export const DeletePaymentIntermediaryParams = zod.object({
 });
 
 export const listHouseholdsQueryLimitDefault = 50;
-export const listHouseholdsQueryLimitMax = 500;
+export const listHouseholdsQueryLimitMax = 1000;
 
 export const listHouseholdsQueryPageDefault = 1;
 
@@ -1451,7 +1451,7 @@ export const DeleteHouseholdParams = zod.object({
 });
 
 export const listPeopleQueryLimitDefault = 50;
-export const listPeopleQueryLimitMax = 500;
+export const listPeopleQueryLimitMax = 1000;
 
 export const listPeopleQueryPageDefault = 1;
 
@@ -1769,7 +1769,7 @@ export const DeletePersonParams = zod.object({
 });
 
 export const listPeopleEntityRolesQueryLimitDefault = 50;
-export const listPeopleEntityRolesQueryLimitMax = 500;
+export const listPeopleEntityRolesQueryLimitMax = 1000;
 
 export const listPeopleEntityRolesQueryPageDefault = 1;
 
@@ -1923,7 +1923,7 @@ export const DeletePeopleEntityRoleParams = zod.object({
 });
 
 export const listEmailsQueryLimitDefault = 50;
-export const listEmailsQueryLimitMax = 500;
+export const listEmailsQueryLimitMax = 1000;
 
 export const listEmailsQueryPageDefault = 1;
 
@@ -2008,7 +2008,7 @@ export const DeleteEmailParams = zod.object({
 });
 
 export const listPhoneNumbersQueryLimitDefault = 50;
-export const listPhoneNumbersQueryLimitMax = 500;
+export const listPhoneNumbersQueryLimitMax = 1000;
 
 export const listPhoneNumbersQueryPageDefault = 1;
 
@@ -2077,7 +2077,7 @@ export const DeletePhoneNumberParams = zod.object({
 });
 
 export const listAddressesQueryLimitDefault = 50;
-export const listAddressesQueryLimitMax = 500;
+export const listAddressesQueryLimitMax = 1000;
 
 export const listAddressesQueryPageDefault = 1;
 
@@ -2179,7 +2179,7 @@ export const DeleteAddressParams = zod.object({
 });
 
 export const listOpportunitiesAndPledgesQueryLimitDefault = 50;
-export const listOpportunitiesAndPledgesQueryLimitMax = 500;
+export const listOpportunitiesAndPledgesQueryLimitMax = 1000;
 
 export const listOpportunitiesAndPledgesQueryPageDefault = 1;
 
@@ -2561,7 +2561,7 @@ export const DeleteOpportunityOrPledgeParams = zod.object({
 });
 
 export const listPledgeAllocationsQueryLimitDefault = 50;
-export const listPledgeAllocationsQueryLimitMax = 500;
+export const listPledgeAllocationsQueryLimitMax = 1000;
 
 export const listPledgeAllocationsQueryPageDefault = 1;
 
@@ -2730,7 +2730,7 @@ export const DeletePledgeAllocationParams = zod.object({
 });
 
 export const listGiftsAndPaymentsQueryLimitDefault = 50;
-export const listGiftsAndPaymentsQueryLimitMax = 500;
+export const listGiftsAndPaymentsQueryLimitMax = 1000;
 
 export const listGiftsAndPaymentsQueryPageDefault = 1;
 
@@ -3042,7 +3042,7 @@ export const DeleteGiftOrPaymentParams = zod.object({
 });
 
 export const listGiftAllocationsQueryLimitDefault = 50;
-export const listGiftAllocationsQueryLimitMax = 500;
+export const listGiftAllocationsQueryLimitMax = 1000;
 
 export const listGiftAllocationsQueryPageDefault = 1;
 

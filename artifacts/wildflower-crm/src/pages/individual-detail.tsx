@@ -18,6 +18,7 @@ import {
   type InlineSelectOption,
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
+import { InlineEditRegionPicker, useRegionNameMap } from "@/components/region-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum } from "@/lib/format";
 
@@ -68,6 +69,10 @@ function PersonView({ person }: { person: PersonDetail }) {
   const userNames = useUserNameMap();
   const ownerDisplay = person.ownerUserId
     ? (userNames.get(person.ownerUserId) ?? person.ownerUserId)
+    : "—";
+  const regionNames = useRegionNameMap();
+  const regionDisplay = person.currentHomeRegionId
+    ? (regionNames.get(person.currentHomeRegionId) ?? person.currentHomeRegionId)
     : "—";
 
   const update = useUpdatePerson({
@@ -180,8 +185,9 @@ function PersonView({ person }: { person: PersonDetail }) {
                 onSave={(next) => patch({ ownerUserId: next })} />
             </Row>
             <Row label="Region">
-              <InlineEditText label="Region" testIdBase="person-region"
-                value={person.currentHomeRegionId ?? null} display={person.currentHomeRegionId ?? "—"}
+              <InlineEditRegionPicker testIdBase="person-region"
+                value={person.currentHomeRegionId ?? null}
+                display={regionDisplay}
                 onSave={(next) => patch({ currentHomeRegionId: next })} />
             </Row>
             <Row label="Children at WF">{person.childrenAtWf ?? "—"}</Row>
