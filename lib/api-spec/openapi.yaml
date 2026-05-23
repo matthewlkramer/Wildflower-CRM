@@ -1067,7 +1067,6 @@ components:
         fullName:                 { type: string, nullable: true }
         pronouns:                 { allOf: [ { $ref: "#/components/schemas/Pronouns" } ], nullable: true }
         deceased:                 { type: boolean }
-        householdName:            { type: string, nullable: true }
         currentHomeRegionId:      { type: string, nullable: true }
         details:                  { type: string, nullable: true }
         ownerUserId:                    { type: string, nullable: true }
@@ -1119,7 +1118,6 @@ components:
         fullName:                 { type: string }
         pronouns:                 { $ref: "#/components/schemas/Pronouns" }
         deceased:                 { type: boolean }
-        householdName:            { type: string }
         currentHomeRegionId:      { type: string }
         details:                  { type: string }
         ownerUserId:                    { type: string }
@@ -1153,7 +1151,6 @@ components:
         fullName:                 { type: string, nullable: true }
         pronouns:                 { allOf: [ { $ref: "#/components/schemas/Pronouns" } ], nullable: true }
         deceased:                 { type: boolean }
-        householdName:            { type: string, nullable: true }
         currentHomeRegionId:      { type: string, nullable: true }
         details:                  { type: string, nullable: true }
         ownerUserId:                    { type: string, nullable: true }

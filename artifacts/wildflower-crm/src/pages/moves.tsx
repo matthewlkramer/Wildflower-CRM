@@ -42,7 +42,7 @@ export default function Moves() {
                   <TableCell>{formatDate(move.date)}</TableCell>
                   <TableCell className="font-medium">{move.subject}</TableCell>
                   <TableCell><Badge variant="secondary">{formatEnum(move.moveType)}</Badge></TableCell>
-                  <TableCell>{move.individualName || move.householdName || move.fundingEntityName}</TableCell>
+                  <TableCell>{move.individualName || move.fundingEntityName}</TableCell>
                   <TableCell>{move.participantUserNames.join(", ")}</TableCell>
                 </TableRow>
               ))

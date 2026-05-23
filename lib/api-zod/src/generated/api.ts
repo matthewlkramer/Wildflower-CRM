@@ -1460,7 +1460,6 @@ export const ListPeopleResponse = zod.object({
         .enum(["he_him_his", "she_her_hers", "they_them_theirs", "other"])
         .nullish(),
       deceased: zod.boolean(),
-      householdName: zod.string().nullish(),
       currentHomeRegionId: zod.string().nullish(),
       details: zod.string().nullish(),
       ownerUserId: zod.string().nullish(),
@@ -1506,7 +1505,6 @@ export const CreatePersonBody = zod.object({
     .enum(["he_him_his", "she_her_hers", "they_them_theirs", "other"])
     .optional(),
   deceased: zod.boolean().optional(),
-  householdName: zod.string().optional(),
   currentHomeRegionId: zod.string().optional(),
   details: zod.string().optional(),
   ownerUserId: zod.string().optional(),
@@ -1548,7 +1546,6 @@ export const GetPersonResponse = zod
       .enum(["he_him_his", "she_her_hers", "they_them_theirs", "other"])
       .nullish(),
     deceased: zod.boolean(),
-    householdName: zod.string().nullish(),
     currentHomeRegionId: zod.string().nullish(),
     details: zod.string().nullish(),
     ownerUserId: zod.string().nullish(),
@@ -1683,7 +1680,6 @@ export const UpdatePersonBody = zod.object({
     .enum(["he_him_his", "she_her_hers", "they_them_theirs", "other"])
     .nullish(),
   deceased: zod.boolean().optional(),
-  householdName: zod.string().nullish(),
   currentHomeRegionId: zod.string().nullish(),
   details: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
@@ -1720,7 +1716,6 @@ export const UpdatePersonResponse = zod.object({
     .enum(["he_him_his", "she_her_hers", "they_them_theirs", "other"])
     .nullish(),
   deceased: zod.boolean(),
-  householdName: zod.string().nullish(),
   currentHomeRegionId: zod.string().nullish(),
   details: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),

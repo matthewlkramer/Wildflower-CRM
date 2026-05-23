@@ -23,7 +23,6 @@ export const people = pgTable("people", {
   fullName: text("full_name"),
   pronouns: pronounsEnum("pronouns"),
   deceased: boolean("deceased").default(false).notNull(),
-  householdName: text("household_name"),
   // Free-text region link; SET NULL so a region delete doesn't cascade to people.
   currentHomeRegionId: text("current_home_region_id").references(
     () => regions.id,

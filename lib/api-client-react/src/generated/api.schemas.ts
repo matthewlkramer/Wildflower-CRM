@@ -698,7 +698,6 @@ export interface Person {
   fullName?: string | null;
   pronouns?: Pronouns | null;
   deceased: boolean;
-  householdName?: string | null;
   currentHomeRegionId?: string | null;
   details?: string | null;
   ownerUserId?: string | null;
@@ -758,7 +757,6 @@ export interface CreatePersonBody {
   fullName?: string;
   pronouns?: Pronouns;
   deceased?: boolean;
-  householdName?: string;
   currentHomeRegionId?: string;
   details?: string;
   ownerUserId?: string;
@@ -792,7 +790,6 @@ export interface UpdatePersonBody {
   fullName?: string | null;
   pronouns?: Pronouns | null;
   deceased?: boolean;
-  householdName?: string | null;
   currentHomeRegionId?: string | null;
   details?: string | null;
   ownerUserId?: string | null;
