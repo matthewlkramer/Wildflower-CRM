@@ -40,10 +40,12 @@ The schema in `lib/db/src/schema/` mirrors the Wildflower "crm files" Airtable b
 
 ## Donor on opps + gifts — three mutually-exclusive options
 
-Both `opportunities_and_pledges` and `gifts_and_payments` carry three nullable donor FKs. **Convention: exactly one of them is set per row** (not DB-enforced):
+Both `opportunities_and_pledges` and `gifts_and_payments` carry three nullable donor FKs. **At most one is set per row**, enforced by a `donor_xor` CHECK constraint (`num_nonnulls(...) <= 1`). Currently lenient (`<= 1`, not `= 1`) because ~12 legacy rows with no donor linked are awaiting triage; tighten to `= 1` once those are resolved.
 - `funder_id` → `funders` — organizational donor (foundation, corp, govt, etc.)
 - `individual_giver_person_id` → `people` — single-person donor (their own account)
 - `household_id` → `households` — joint-account donor (couples on joint checking / joint card / joint DAF). Lead person for the gift is captured via `primary_contact_person_id`.
+
+Manual data corrections that aren't recreated by the Airtable importer live in [`lib/db/src/post-import-fixups.sql`](src/post-import-fixups.sql) — idempotent SQL to run after a fresh reimport.
 
 ## Primary contact rules
 

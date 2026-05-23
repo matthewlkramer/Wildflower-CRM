@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  check,
   index,
   pgTable,
   text,
@@ -146,6 +147,13 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   index("opportunities_and_pledges_won_completed_idx")
     .on(t.actualCompletionDate)
     .where(sql`${t.status} = 'won'`),
+  // Donor exclusivity: at most one of funder / individual-giver / household.
+  // Lenient (<=1, not =1) because 1 legacy cold-lead row has no donor linked
+  // yet; tighten to =1 once that is triaged.
+  check(
+    "opportunities_and_pledges_donor_xor",
+    sql`num_nonnulls(${t.funderId}, ${t.individualGiverPersonId}, ${t.householdId}) <= 1`,
+  ),
 ]);
 
 export type OpportunityOrPledge = typeof opportunitiesAndPledges.$inferSelect;
