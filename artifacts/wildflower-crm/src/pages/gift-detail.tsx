@@ -8,14 +8,42 @@ import {
   getListGiftsAndPaymentsQueryKey,
   type GiftOrPaymentDetail,
   type UpdateGiftOrPaymentBody,
+  type GiftType,
+  type GiftPaymentMethod,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import {
+  InlineEditCurrency,
+  InlineEditDate,
+  InlineEditSelect,
+  InlineEditText,
+  type InlineSelectOption,
+} from "@/components/inline-edit";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+
+const GIFT_TYPE_OPTIONS = [
+  { value: "standard_gift", label: "Standard gift" },
+  { value: "pledge_payment", label: "Pledge payment" },
+  { value: "directed_gift", label: "Directed gift" },
+  { value: "loan_fund_investment", label: "Loan fund investment" },
+  { value: "matching_gift", label: "Matching gift" },
+] as const satisfies ReadonlyArray<InlineSelectOption<GiftType>>;
+
+const PAYMENT_METHOD_OPTIONS = [
+  { value: "ach", label: "ACH" },
+  { value: "check", label: "Check" },
+  { value: "wire", label: "Wire" },
+  { value: "stock", label: "Stock" },
+  { value: "donor_box", label: "Donor box" },
+  { value: "daf_ach", label: "DAF — ACH" },
+  { value: "daf_check", label: "DAF — Check" },
+  { value: "daf_bill_com", label: "DAF — Bill.com" },
+] as const satisfies ReadonlyArray<InlineSelectOption<GiftPaymentMethod>>;
 
 export default function GiftDetail() {
   const [, params] = useRoute<{ id: string }>("/gifts/:id");
@@ -39,6 +67,32 @@ export default function GiftDetail() {
 }
 
 function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const update = useUpdateGiftOrPayment({
+    mutation: {
+      onSuccess: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getGetGiftOrPaymentQueryKey(gift.id) }),
+          queryClient.invalidateQueries({ queryKey: getListGiftsAndPaymentsQueryKey() }),
+        ]);
+        toast({ title: "Gift updated" });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  function patch(body: UpdateGiftOrPaymentBody) {
+    return update.mutateAsync({ id: gift.id, data: body });
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -50,20 +104,71 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
           <CardHeader><CardTitle className="text-lg">Amount</CardTitle></CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-primary">{formatCurrency(gift.amount)}</p>
-            <p className="text-sm text-muted-foreground mt-1">Received {formatDate(gift.dateReceived)}</p>
+          <CardContent className="space-y-2 text-sm">
+            <Row label="Amount">
+              <InlineEditCurrency
+                label="Amount"
+                testIdBase="gift-amount"
+                value={gift.amount ?? null}
+                display={<span className="text-xl font-bold text-primary">{formatCurrency(gift.amount)}</span>}
+                onSave={(next) => patch({ amount: next })}
+              />
+            </Row>
+            <Row label="Received">
+              <InlineEditDate
+                label="Date received"
+                testIdBase="gift-date-received"
+                value={gift.dateReceived ?? null}
+                display={formatDate(gift.dateReceived)}
+                onSave={(next) => patch({ dateReceived: next })}
+              />
+            </Row>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader><CardTitle className="text-lg">Classification</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row label="Type">{formatEnum(gift.type)}</Row>
-            <Row label="Method">{formatEnum(gift.paymentMethod)}</Row>
-            <Row label="Grant year">{gift.grantYear ?? "—"}</Row>
+            <Row label="Type">
+              <InlineEditSelect
+                label="Type"
+                testIdBase="gift-type"
+                value={gift.type ?? null}
+                options={GIFT_TYPE_OPTIONS}
+                display={formatEnum(gift.type) || "—"}
+                onSave={(next) => patch({ type: next })}
+              />
+            </Row>
+            <Row label="Method">
+              <InlineEditSelect
+                label="Payment method"
+                testIdBase="gift-method"
+                value={gift.paymentMethod ?? null}
+                options={PAYMENT_METHOD_OPTIONS}
+                display={formatEnum(gift.paymentMethod) || "—"}
+                onSave={(next) => patch({ paymentMethod: next })}
+              />
+            </Row>
+            <Row label="Grant year">
+              <InlineEditText
+                label="Grant year"
+                testIdBase="gift-grant-year"
+                value={gift.grantYear ?? null}
+                placeholder="e.g. 2025"
+                display={gift.grantYear ?? "—"}
+                onSave={(next) => patch({ grantYear: next })}
+              />
+            </Row>
             <Row label="Designated to school">{gift.designatedToSchool ? "Yes" : "No"}</Row>
-            <Row label="Owner">{gift.ownerUserId ?? "—"}</Row>
+            <Row label="Owner">
+              <InlineEditText
+                label="Owner"
+                testIdBase="gift-owner"
+                value={gift.ownerUserId ?? null}
+                display={gift.ownerUserId ?? "—"}
+                onSave={(next) => patch({ ownerUserId: next })}
+              />
+            </Row>
           </CardContent>
         </Card>
 

@@ -8,12 +8,47 @@ import {
   getListOpportunitiesAndPledgesQueryKey,
   type OpportunityOrPledgeDetail,
   type UpdateOpportunityOrPledgeBody,
+  type OpportunityStage,
+  type OpportunityStatus,
+  type OpportunityType,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import {
+  InlineEditCurrency,
+  InlineEditDate,
+  InlineEditSelect,
+  InlineEditText,
+  type InlineSelectOption,
+} from "@/components/inline-edit";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+const STAGE_OPTIONS = [
+  { value: "cold_lead", label: "Cold lead" },
+  { value: "warm_lead", label: "Warm lead" },
+  { value: "in_conversation", label: "In conversation" },
+  { value: "convince", label: "Convince" },
+  { value: "conditional_commitment", label: "Conditional commitment" },
+  { value: "probable_renewal", label: "Probable renewal" },
+  { value: "verbal_commitment", label: "Verbal commitment" },
+  { value: "written_commitment", label: "Written commitment" },
+  { value: "cash_in", label: "Cash in" },
+] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityStage>>;
+
+const STATUS_OPTIONS = [
+  { value: "open", label: "Open" },
+  { value: "won", label: "Won" },
+  { value: "dormant", label: "Dormant" },
+  { value: "lost", label: "Lost" },
+] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityStatus>>;
+
+const TYPE_OPTIONS = [
+  { value: "solicitation", label: "Solicitation" },
+  { value: "renewal", label: "Renewal" },
+  { value: "open_application", label: "Open application" },
+] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityType>>;
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +89,33 @@ export default function OpportunityDetail({
 function OppView({
   opp, backHref, backLabel, entityLabel,
 }: { opp: OpportunityOrPledgeDetail; backHref: string; backLabel: string; entityLabel: string }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const isPledge = entityLabel === "Pledge";
+
+  const update = useUpdateOpportunityOrPledge({
+    mutation: {
+      onSuccess: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getGetOpportunityOrPledgeQueryKey(opp.id) }),
+          queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() }),
+        ]);
+        toast({ title: `${entityLabel} updated` });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  function patch(body: UpdateOpportunityOrPledgeBody) {
+    return update.mutateAsync({ id: opp.id, data: body });
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -66,12 +128,58 @@ function OppView({
         <Card>
           <CardHeader><CardTitle className="text-lg">Pipeline</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row label="Stage">{formatEnum(opp.stage)}</Row>
-            <Row label="Status">
-              {opp.status ? <Badge variant={opp.status === "won" ? "default" : "outline"}>{formatEnum(opp.status)}</Badge> : "—"}
+            <Row label="Stage">
+              <InlineEditSelect
+                label="Stage"
+                testIdBase="opp-stage"
+                value={opp.stage ?? null}
+                options={STAGE_OPTIONS}
+                display={formatEnum(opp.stage) || "—"}
+                onSave={(next) => patch({ stage: next })}
+              />
             </Row>
-            <Row label="Type">{formatEnum(opp.type)}</Row>
-            <Row label="Win probability">{opp.winProbability ?? "—"}</Row>
+            <Row label="Status">
+              {isPledge ? (
+                <Badge variant="default">{formatEnum(opp.status) || "Won"}</Badge>
+              ) : (
+                <InlineEditSelect
+                  label="Status"
+                  testIdBase="opp-status"
+                  value={opp.status ?? null}
+                  options={STATUS_OPTIONS}
+                  display={
+                    opp.status ? (
+                      <Badge variant={opp.status === "won" ? "default" : "outline"}>
+                        {formatEnum(opp.status)}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ status: next })}
+                />
+              )}
+            </Row>
+            <Row label="Type">
+              <InlineEditSelect
+                label="Type"
+                testIdBase="opp-type"
+                value={opp.type ?? null}
+                options={TYPE_OPTIONS}
+                display={formatEnum(opp.type) || "—"}
+                onSave={(next) => patch({ type: next })}
+              />
+            </Row>
+            <Row label="Win probability">
+              <InlineEditText
+                label="Win probability"
+                testIdBase="opp-winprob"
+                value={opp.winProbability ?? null}
+                placeholder="e.g. 75% or 0.75"
+                display={opp.winProbability ?? "—"}
+                onSave={(next) => patch({ winProbability: next })}
+              />
+            </Row>
             <Row label="Conditional">{formatEnum(opp.conditional)}</Row>
             <Row label="Conditions met">{opp.conditionsMet ? "Yes" : "No"}</Row>
           </CardContent>
@@ -80,17 +188,57 @@ function OppView({
         <Card>
           <CardHeader><CardTitle className="text-lg">Amounts</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row label="Ask">{formatCurrency(opp.askAmount)}</Row>
-            <Row label="Awarded">{formatCurrency(opp.awardedAmount)}</Row>
+            <Row label="Ask">
+              <InlineEditCurrency
+                label="Ask amount"
+                testIdBase="opp-ask"
+                value={opp.askAmount ?? null}
+                display={formatCurrency(opp.askAmount)}
+                onSave={(next) => patch({ askAmount: next })}
+              />
+            </Row>
+            <Row label="Awarded">
+              <InlineEditCurrency
+                label="Awarded amount"
+                testIdBase="opp-awarded"
+                value={opp.awardedAmount ?? null}
+                display={formatCurrency(opp.awardedAmount)}
+                onSave={(next) => patch({ awardedAmount: next })}
+              />
+            </Row>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader><CardTitle className="text-lg">Dates</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row label="Projected close">{formatDate(opp.projectedCloseDate)}</Row>
-            <Row label="Actual completion">{formatDate(opp.actualCompletionDate)}</Row>
-            <Row label="Application deadline">{formatDate(opp.applicationDeadline)}</Row>
+            <Row label="Projected close">
+              <InlineEditDate
+                label="Projected close date"
+                testIdBase="opp-projected-close"
+                value={opp.projectedCloseDate ?? null}
+                display={formatDate(opp.projectedCloseDate)}
+                onSave={(next) => patch({ projectedCloseDate: next })}
+              />
+            </Row>
+            <Row label="Actual completion">
+              <InlineEditDate
+                label="Actual completion date"
+                testIdBase="opp-actual-completion"
+                value={opp.actualCompletionDate ?? null}
+                display={formatDate(opp.actualCompletionDate)}
+                onSave={(next) => patch({ actualCompletionDate: next })}
+              />
+            </Row>
+            <Row label="Application deadline">
+              <InlineEditDate
+                label="Application deadline"
+                testIdBase="opp-app-deadline"
+                value={opp.applicationDeadline ?? null}
+                display={formatDate(opp.applicationDeadline)}
+                onSave={(next) => patch({ applicationDeadline: next })}
+              />
+            </Row>
           </CardContent>
         </Card>
       </div>
