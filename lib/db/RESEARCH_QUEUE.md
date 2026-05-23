@@ -285,22 +285,24 @@ actual gift amount. Suspicious arithmetic: $320,336 = $225,336 + $95,000.
 - Check Airtable history if reachable (base is archived but possibly
   still readable) for the original `gift_id` on these allocation rows.
 
-## R4 — Three nameless people remaining after fixup #16
+## R4 — Three nameless people remaining after fixup #16 — RESOLVED
 
 After fixup #16 backfilled 7 of the 10 nameless `people` rows (Homer Allen,
 Jingyi Kerry Wang, John Kirtley, Mark Medema, Mark Suster, Amanda
-Schaumburg, Neil Gulyako), three rows are still missing both first_name
-and last_name. Source Airtable also has them blank; only an email gives
-any identity hint. None of the three is referenced by any gift,
-opportunity, or PER — they're pure orphan contact cards from the Copper
-import. Either identify and backfill, or delete if confirmed junk.
+Schaumburg, Neil Gulyako), three rows remained with no recoverable
+identity. None was referenced by any gift, opportunity, or PER; each
+carried only a single orphan email.
 
-| `people.id`         | Email                                | Hint            |
-|---------------------|--------------------------------------|-----------------|
-| `recL6FIc0OGEklzcU` | `nortiz19@gmail.com`                 | "N. Ortiz"      |
-| `recLM2ZFmxtXI6sMZ` | `dr@elephantenergy.com`              | initials only — Elephant Energy |
-| `recWxIpa4mpC5bn83` | `jmammadova@strategicpolicy.nyc.gov` | "J. Mammadova" at NYC Mayor's Office of Strategic Policy |
+**Resolution (per Wildflower direction 2026-05-23):** deleted in fixup
+#17. The 3 emails cascade-deleted via the `emails.person_id ON DELETE
+CASCADE` FK. The 3 dropped rows were:
 
-Caprock Strategies (Amanda's old employer) and Upfront Ventures (Mark
-Suster's firm) also have no org row yet — add if Wildflower wants those
-as formal orgs.
+  - `recL6FIc0OGEklzcU` (`nortiz19@gmail.com`)
+  - `recLM2ZFmxtXI6sMZ` (`dr@elephantenergy.com`)
+  - `recWxIpa4mpC5bn83` (`jmammadova@strategicpolicy.nyc.gov`)
+
+### Follow-up
+
+Caprock Strategies (Amanda Schaumburg's old employer) and Upfront
+Ventures (Mark Suster's firm) still have no org row. Add if Wildflower
+wants those as formal orgs.

@@ -1095,3 +1095,24 @@ ON CONFLICT (id) DO NOTHING;
 UPDATE emails SET validity='invalid', updated_at=NOW()
  WHERE email IN ('mark@eqfund.org','mandy@caprockstrategies.com')
    AND validity <> 'invalid';
+
+-- ============================================================================
+-- #17 — Delete 3 unresolvable nameless people
+-- ============================================================================
+-- After fixup #16 backfilled 7 of the 10 nameless `people` rows, three
+-- remained with no name in either the Airtable source or any practically
+-- recoverable hint. All three have zero references in
+-- people_entity_roles, gifts_and_payments, opportunities_and_pledges, or
+-- people.assistant_person_id. Their only associated rows are 1 email each
+-- (no addresses, no phone numbers), which cascade-delete via the
+-- `emails_person_id_people_id_fk ON DELETE CASCADE` FK.
+--
+-- Per Wildflower direction (chat 2026-05-23): drop them.
+--
+--   recL6FIc0OGEklzcU  nortiz19@gmail.com                  ("N. Ortiz")
+--   recLM2ZFmxtXI6sMZ  dr@elephantenergy.com               (initials only)
+--   recWxIpa4mpC5bn83  jmammadova@strategicpolicy.nyc.gov  ("J. Mammadova")
+--
+-- Idempotent: the second run finds nothing to delete and no-ops.
+DELETE FROM people
+ WHERE id IN ('recL6FIc0OGEklzcU','recLM2ZFmxtXI6sMZ','recWxIpa4mpC5bn83');
