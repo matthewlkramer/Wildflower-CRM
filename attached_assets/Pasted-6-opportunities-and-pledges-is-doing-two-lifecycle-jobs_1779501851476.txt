@@ -1,0 +1,27 @@
+6. opportunities_and_pledges is doing two lifecycle jobs in one table with no discriminator. winProbability/stage/projectedCloseDate are opportunity-phase fields; awardedAmount/actualCompletionDate/conditionsMet are pledge-phase. You infer which phase from status. That's defensible because an opportunity becomes a pledge — one row, one identity is nice — but I'd at least (a) document column-validity-by-status in the schema, and (b) consider partial indexes (e.g. WHERE status = 'open') for the "active opportunities" dashboard query, which will be by far the hottest read.
+
+7. Two sources of truth for "who is the primary contact."
+
+opportunities_and_pledges.primaryContactPersonId (single FK)
+people_entity_roles.primaryContact: boolean (per person+entity)
+They can disagree. If the role table's primaryContact is meant to apply at the funder level, then the opportunity-level one is fine as an override; worth documenting. If they're meant to be the same thing, drop one.
+
+8. households overlap with people.householdName: text. You have both a households table and a free-text householdName column on people. Pick one — probably the table, with people.householdId as the link — otherwise they'll drift.
+
+9. Denormalized addresses.cityName / stateCode will go stale. The importer fills them by joining to regions, but an API write won't. Either (a) generated columns / trigger that re-derives from cityRegionId / stateRegionId, or (b) just drop them and pay the join cost on read (it's cheap with an index).
+
+10. Legacy IDs scattered across tables. copperPledgeId, legacyGiftId, createdFromCopper, updatedFromCopper, createdAtFromAirtable, updatedAtFromAirtable — useful during migration, but they're permanently sitting on the hot tables. A side table legacy_external_refs(record_table, record_id, source, external_id, source_created_at, source_updated_at) would let you retire them cleanly once you trust the new system and never look at Copper again.
+
+11. Smaller stuff:
+
+organizations.activeOrDefunct: text — should be the same enum as funders.activeStatus.
+people.fullName: text — make it a Postgres generated column from prefix/first/middle/last/suffix so it can't drift.
+No deletedAt / soft-delete convention anywhere. Combined with #1, hard deletes are dangerous; soft delete would be safer until you add real FKs.
+On the API surface (openapi.yaml) specifically:
+
+Pagination is Limit/Page on everything, including /regions (569 rows) and /entities (~10). Either drop pagination for the reference tables, or commit to it everywhere — but right now small reference reads will look paginated to the client for no reason.
+There's no ?expand= / inclusion mechanism. A funder detail page is going to need funder + addresses + emails + phones + roles + recent opportunities + recent gifts. Without expansion, the frontend will make 6–7 requests per page open. Worth deciding now whether to support ?expand=addresses,emails,roles or to expose composite endpoints like /funders/{id}/full.
+The search query params (on /regions, /schools, presumably others) aren't specified — substring? prefix? case-sensitive? Lock down the semantics so the React Query cache keys behave predictably.
+My top three if you only want to act on a few: add real FK constraints (#1), add indexes on at least the foreign-key and array columns (#2), and split the parallel intendedUsages / fundableProjectIds arrays into a child table (#3). Those three give you the biggest correctness + performance wins before Stage 2 starts writing through the API.
+
+Want me to turn any of these into actual changes?
