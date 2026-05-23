@@ -19,6 +19,7 @@ import {
   InlineEditText,
   type InlineSelectOption,
 } from "@/components/inline-edit";
+import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -69,6 +70,10 @@ export default function GiftDetail() {
 function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const userNames = useUserNameMap();
+  const ownerDisplay = gift.ownerUserId
+    ? (userNames.get(gift.ownerUserId) ?? gift.ownerUserId)
+    : "—";
 
   const update = useUpdateGiftOrPayment({
     mutation: {
@@ -161,11 +166,10 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
             </Row>
             <Row label="Designated to school">{gift.designatedToSchool ? "Yes" : "No"}</Row>
             <Row label="Owner">
-              <InlineEditText
-                label="Owner"
+              <InlineEditUserPicker
                 testIdBase="gift-owner"
                 value={gift.ownerUserId ?? null}
-                display={gift.ownerUserId ?? "—"}
+                display={ownerDisplay}
                 onSave={(next) => patch({ ownerUserId: next })}
               />
             </Row>

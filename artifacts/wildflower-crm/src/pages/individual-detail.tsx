@@ -17,6 +17,7 @@ import {
   InlineEditText,
   type InlineSelectOption,
 } from "@/components/inline-edit";
+import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum } from "@/lib/format";
 
@@ -64,6 +65,10 @@ export default function IndividualDetail() {
 function PersonView({ person }: { person: PersonDetail }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const userNames = useUserNameMap();
+  const ownerDisplay = person.ownerUserId
+    ? (userNames.get(person.ownerUserId) ?? person.ownerUserId)
+    : "—";
 
   const update = useUpdatePerson({
     mutation: {
@@ -169,8 +174,9 @@ function PersonView({ person }: { person: PersonDetail }) {
             <Row label="Last contacted">{formatDate(person.lastContacted)}</Row>
             <Row label="Interactions">{person.interactionCount ?? "—"}</Row>
             <Row label="Owner">
-              <InlineEditText label="Owner" testIdBase="person-owner"
-                value={person.ownerUserId ?? null} display={person.ownerUserId ?? "—"}
+              <InlineEditUserPicker testIdBase="person-owner"
+                value={person.ownerUserId ?? null}
+                display={ownerDisplay}
                 onSave={(next) => patch({ ownerUserId: next })} />
             </Row>
             <Row label="Region">

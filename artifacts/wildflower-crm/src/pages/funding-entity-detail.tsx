@@ -23,6 +23,7 @@ import {
   InlineEditText,
   type InlineSelectOption,
 } from "@/components/inline-edit";
+import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum, formatCapacity } from "@/lib/format";
 
@@ -131,6 +132,10 @@ export default function FundingEntityDetail() {
 function FunderView({ funder }: { funder: FunderDetail }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const userNames = useUserNameMap();
+  const ownerDisplay = funder.ownerUserId
+    ? (userNames.get(funder.ownerUserId) ?? funder.ownerUserId)
+    : "—";
 
   const update = useUpdateFunder({
     mutation: {
@@ -291,11 +296,10 @@ function FunderView({ funder }: { funder: FunderDetail }) {
               />
             </Row>
             <Row label="Owner">
-              <InlineEditText
-                label="Owner"
+              <InlineEditUserPicker
                 testIdBase="funder-owner"
                 value={funder.ownerUserId ?? null}
-                display={funder.ownerUserId ?? "—"}
+                display={ownerDisplay}
                 onSave={(next) => patch({ ownerUserId: next })}
               />
             </Row>
