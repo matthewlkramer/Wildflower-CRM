@@ -1116,3 +1116,24 @@ UPDATE emails SET validity='invalid', updated_at=NOW()
 -- Idempotent: the second run finds nothing to delete and no-ops.
 DELETE FROM people
  WHERE id IN ('recL6FIc0OGEklzcU','recLM2ZFmxtXI6sMZ','recWxIpa4mpC5bn83');
+
+-- ============================================================================
+-- #18 — Add Caprock Strategies + Upfront Ventures orgs + PER links
+-- ============================================================================
+-- Resolves the R4 follow-up: Amanda Schaumburg's old employer (Caprock
+-- Strategies, education-policy consulting) and Mark Suster's firm
+-- (Upfront Ventures, VC) had no organization rows yet. Adding both,
+-- PER-linking Amanda as `past` (she's now at Penn Hill, per fixup #16)
+-- and Mark as `current`. All idempotent.
+INSERT INTO organizations (id, name, type, active_or_defunct, website)
+VALUES
+  ('synth-org-caprock-strategies', 'Caprock Strategies', 'small_business_consulting', 'active', 'https://caprockstrategies.com'),
+  ('synth-org-upfront-ventures',   'Upfront Ventures',   'investor',                  'active', 'https://upfront.com')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO people_entity_roles
+  (id, person_id, entity_type, organization_id, connection, current, primary_contact)
+VALUES
+  ('synth-per-schaumburg-caprock-past', 'recuX2m7BYuAgSCnk', 'non_funding_organization', 'synth-org-caprock-strategies', 'employee', 'past',    false),
+  ('synth-per-suster-upfront',          'recJtdFNzsOfhl3xQ', 'non_funding_organization', 'synth-org-upfront-ventures',   'employee', 'current', false)
+ON CONFLICT (id) DO NOTHING;

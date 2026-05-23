@@ -301,8 +301,9 @@ CASCADE` FK. The 3 dropped rows were:
   - `recLM2ZFmxtXI6sMZ` (`dr@elephantenergy.com`)
   - `recWxIpa4mpC5bn83` (`jmammadova@strategicpolicy.nyc.gov`)
 
-### Follow-up
+### Follow-up — RESOLVED
 
-Caprock Strategies (Amanda Schaumburg's old employer) and Upfront
-Ventures (Mark Suster's firm) still have no org row. Add if Wildflower
-wants those as formal orgs.
+Caprock Strategies and Upfront Ventures both added as `organizations`
+in fixup #18 (`small_business_consulting` and `investor` respectively).
+Amanda Schaumburg now has a `past` PER to Caprock alongside her
+`current` one at Penn Hill; Mark Suster has a `current` PER to Upfront.
