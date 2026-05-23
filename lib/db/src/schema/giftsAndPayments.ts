@@ -18,6 +18,7 @@ import { opportunitiesAndPledges } from "./opportunitiesAndPledges";
 import { paymentIntermediaries } from "./paymentIntermediaries";
 import { users } from "./users";
 import { fiscalYears } from "./fiscalYears";
+import { households } from "./households";
 
 // Header-only row for an actual gift / payment. Like opportunities, all
 // scope (which fund entity, which fiscal year, which regions, which
@@ -42,6 +43,12 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
     () => people.id,
     { onDelete: "restrict" },
   ),
+  // RESTRICT: a household giver (joint checking / joint card) is part of the
+  // money-trail record. Convention: exactly one of {funderId,
+  // individualGiverPersonId, householdId} is set per row.
+  householdId: text("household_id").references(() => households.id, {
+    onDelete: "restrict",
+  }),
   type: giftTypeEnum("type"),
   // RESTRICT: a payment must keep its link to the pledge it pays.
   paymentOnPledgeId: text("payment_on_pledge_id").references(
@@ -88,6 +95,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
 }, (t) => [
   index("gifts_and_payments_funder_id_idx").on(t.funderId),
   index("gifts_and_payments_individual_giver_person_id_idx").on(t.individualGiverPersonId),
+  index("gifts_and_payments_household_id_idx").on(t.householdId),
   index("gifts_and_payments_payment_on_pledge_id_idx").on(t.paymentOnPledgeId),
   index("gifts_and_payments_advisor_person_id_idx").on(t.advisorPersonId),
   index("gifts_and_payments_gift_being_matched_id_idx").on(t.giftBeingMatchedId),

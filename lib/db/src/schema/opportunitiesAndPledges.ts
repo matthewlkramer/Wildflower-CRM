@@ -18,6 +18,7 @@ import {
 import { funders } from "./funders";
 import { people } from "./people";
 import { users } from "./users";
+import { households } from "./households";
 
 // Header-only row for an opportunity / pledge. All scope (which fund
 // entities, which fiscal years, which regions, which intended usages /
@@ -85,6 +86,12 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
     () => people.id,
     { onDelete: "restrict" },
   ),
+  // RESTRICT: a household giver (joint checking / joint card) is part of the
+  // money-trail record. Convention: exactly one of {funderId,
+  // individualGiverPersonId, householdId} is set per row.
+  householdId: text("household_id").references(() => households.id, {
+    onDelete: "restrict",
+  }),
   // SET NULL: an advisor is a soft relationship; if the person record is
   // removed, the opportunity survives without an advisor pointer.
   individualAdvisorPersonId: text("individual_advisor_person_id").references(
@@ -126,6 +133,7 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
 }, (t) => [
   index("opportunities_and_pledges_funder_id_idx").on(t.funderId),
   index("opportunities_and_pledges_individual_giver_person_id_idx").on(t.individualGiverPersonId),
+  index("opportunities_and_pledges_household_id_idx").on(t.householdId),
   index("opportunities_and_pledges_individual_advisor_person_id_idx").on(t.individualAdvisorPersonId),
   index("opportunities_and_pledges_match_id_idx").on(t.matchId),
   index("opportunities_and_pledges_owner_user_id_idx").on(t.ownerUserId),
