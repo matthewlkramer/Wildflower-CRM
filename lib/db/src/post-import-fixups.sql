@@ -1027,3 +1027,71 @@ UPDATE opportunities_and_pledges o
  WHERE o.id = sub.opp_id
    AND o.status = 'won'
    AND o.actual_completion_date IS NULL;
+
+-- ============================================================================
+-- #16 — Backfill 7 nameless people, add Wilson Sonsini org, PER links + stale email flags
+-- ============================================================================
+-- Out of the 10 `people` rows where both first_name and last_name were blank
+-- after import (Airtable source itself carried no name on these), 7 were
+-- identified by the project owner from email + LinkedIn context:
+--
+--   recRDBjLIRu34wjju — Homer Allen          (homerallen@gmail.com, LinkedIn homer-allen-067016b)
+--   rechJceS3RY8Q8PVC — Jingyi Kerry Wang    (kerry@gsv.com, LinkedIn jingyikerrywang) — GSV Advisors
+--   recTVkyUE8neidhRT — John Kirtley         (jfk@jfkintampa.com, Tampa FL) — Step Up for Students founder
+--   recIG4ZKXa6LZsLMF — Mark Medema          (mark@eqfund.org STALE) — past EFF, now Nat Alliance Public Charter Schools
+--   recJtdFNzsOfhl3xQ — Mark Suster          (mss@upfront.com) — Upfront Ventures (org not in DB)
+--   recuX2m7BYuAgSCnk — Amanda Schaumburg    (mandy@caprockstrategies.com STALE) — now Penn Hill Group
+--   rec4vYTdDerQQzMWL — Neil Gulyako         (ngulyako@wsgr.com) — Wilson Sonsini Goodrich & Rosati
+--
+-- The remaining 3 (jmammadova@strategicpolicy.nyc.gov, nortiz19@gmail.com,
+-- dr@elephantenergy.com) are documented in lib/db/RESEARCH_QUEUE.md.
+--
+-- Idempotent: each UPDATE only fires when the target column is still null;
+-- INSERTs use ON CONFLICT (id) DO NOTHING; email-validity flips are guarded
+-- by `validity <> 'invalid'`.
+
+-- 16a — Add Wilson Sonsini Goodrich & Rosati as a law-firm org so Neil can link.
+INSERT INTO organizations (id, name, type, active_or_defunct, website)
+VALUES (
+  'synth-org-wilson-sonsini-goodrich-rosati',
+  'Wilson Sonsini Goodrich & Rosati',
+  'law_firm', 'active', 'https://www.wsgr.com'
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- 16b — Backfill names. Guarded so re-runs (or any post-fixup human edits)
+-- don't get clobbered.
+UPDATE people SET first_name='Homer',  last_name='Allen',      full_name='Homer Allen',
+                  updated_at=NOW() WHERE id='recRDBjLIRu34wjju' AND first_name IS NULL AND last_name IS NULL;
+UPDATE people SET first_name='Jingyi', last_name='Wang', nickname='Kerry', full_name='Jingyi Kerry Wang',
+                  updated_at=NOW() WHERE id='rechJceS3RY8Q8PVC' AND first_name IS NULL AND last_name IS NULL;
+UPDATE people SET first_name='John',   last_name='Kirtley',    full_name='John Kirtley',
+                  updated_at=NOW() WHERE id='recTVkyUE8neidhRT' AND first_name IS NULL AND last_name IS NULL;
+UPDATE people SET first_name='Mark',   last_name='Medema',     full_name='Mark Medema',
+                  updated_at=NOW() WHERE id='recIG4ZKXa6LZsLMF' AND first_name IS NULL AND last_name IS NULL;
+UPDATE people SET first_name='Mark',   last_name='Suster',     full_name='Mark Suster',
+                  updated_at=NOW() WHERE id='recJtdFNzsOfhl3xQ' AND first_name IS NULL AND last_name IS NULL;
+UPDATE people SET first_name='Amanda', last_name='Schaumburg', nickname='Mandy', full_name='Amanda Schaumburg',
+                  updated_at=NOW() WHERE id='recuX2m7BYuAgSCnk' AND first_name IS NULL AND last_name IS NULL;
+UPDATE people SET first_name='Neil',   last_name='Gulyako',    full_name='Neil Gulyako',
+                  updated_at=NOW() WHERE id='rec4vYTdDerQQzMWL' AND first_name IS NULL AND last_name IS NULL;
+
+-- 16c — PER links. `connection='employee'` matches what other EFF/funder
+-- staff carry in the imported data. Mark Medema gets two rows: past EFF
+-- plus current NAPCS. Same for Amanda (her Caprock employer isn't in DB
+-- so we only record the current Penn Hill role).
+INSERT INTO people_entity_roles
+  (id, person_id, entity_type, funder_id, organization_id, connection, current, primary_contact)
+VALUES
+  ('synth-per-kirtley-step-up',         'recTVkyUE8neidhRT', 'non_funding_organization', NULL,                'rec8JcLoUiF5v8CFG',                       'employee', 'current', false),
+  ('synth-per-medema-eff-past',         'recIG4ZKXa6LZsLMF', 'funder',                   'recah5fobTiMkenyC', NULL,                                      'employee', 'past',    false),
+  ('synth-per-medema-napcs',            'recIG4ZKXa6LZsLMF', 'non_funding_organization', NULL,                'recP2gUo5hdx2NJ5R',                       'employee', 'current', false),
+  ('synth-per-schaumburg-penn-hill',    'recuX2m7BYuAgSCnk', 'non_funding_organization', NULL,                'recqH6s7Be1oeswaT',                       'employee', 'current', false),
+  ('synth-per-wang-gsv-advisors',       'rechJceS3RY8Q8PVC', 'non_funding_organization', NULL,                'recapJcHApthG22yW',                       'employee', 'current', false),
+  ('synth-per-gulyako-wsgr',            'rec4vYTdDerQQzMWL', 'non_funding_organization', NULL,                'synth-org-wilson-sonsini-goodrich-rosati','employee', 'current', false)
+ON CONFLICT (id) DO NOTHING;
+
+-- 16d — Flag the two stale employer emails as invalid (people moved on).
+UPDATE emails SET validity='invalid', updated_at=NOW()
+ WHERE email IN ('mark@eqfund.org','mandy@caprockstrategies.com')
+   AND validity <> 'invalid';
