@@ -14,7 +14,7 @@ The schema in `lib/db/src/schema/` mirrors the Wildflower "crm files" Airtable b
 
 - `organizations` — non-funder orgs (advisors, intermediaries, etc.). Also carries `historical_names text[]`. All address fields live in the `addresses` table (FK `organization_id`); the importer creates a synthetic `org-addr-<orgId>` address row per org with any address data. `owner_user_id` is the FK to the team member who owns the org (replaces a legacy Copper free-text `owner` column that has since been dropped). `type` is an enum with 20 values (`advocacy_membership_lobbyist`, `authorizer`, `cmo`, `capital_provider`, `government`, `corporation`, `education_vendor`, `elected_official`, `higher_ed`, `investor`, `law_firm`, `media`, `nonprofit`, `philanthropic_advisor`, `real_estate`, `school`, `school_district`, `school_network`, `small_business_consulting`, `tribal`).
 
-- `payment_intermediaries` — DAFs, giving platforms. Enum `payment_intermediary_type`: daf, giving_platform.
+- `payment_intermediaries` — DAFs, giving platforms, private wealth managers. Enum `payment_intermediary_type`: `daf` / `giving_platform` / `private_wealth_manager`.
 
 - `people` — individuals (donors, advisors, staff contacts). Joined to entities via `people_entity_roles`.
 
