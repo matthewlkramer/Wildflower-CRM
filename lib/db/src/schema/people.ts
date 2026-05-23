@@ -72,6 +72,10 @@ export const people = pgTable("people", {
   index("people_current_home_region_id_idx").on(t.currentHomeRegionId),
   index("people_owner_user_id_idx").on(t.ownerUserId),
   index("people_assistant_person_id_idx").on(t.assistantPersonId),
+  index("people_region_ids_gin_idx").using("gin", t.regionIds),
+  index("people_interests_thematic_gin_idx").using("gin", t.interestsThematic),
+  index("people_interests_ages_gin_idx").using("gin", t.interestsAges),
+  index("people_interests_gov_models_gin_idx").using("gin", t.interestsGovModels),
 ]);
 
 export type Person = typeof people.$inferSelect;

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { schoolStatusEnum, governanceModelEnum } from "./_enums";
 
 export const schools = pgTable("schools", {
@@ -15,7 +15,9 @@ export const schools = pgTable("schools", {
   currentPhysicalAddress: text("current_physical_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("schools_ages_planes_gin_idx").using("gin", t.agesPlanes),
+]);
 
 export type School = typeof schools.$inferSelect;
 export type NewSchool = typeof schools.$inferInsert;

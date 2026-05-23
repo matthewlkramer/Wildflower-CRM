@@ -71,6 +71,10 @@ export const funders = pgTable("funders", {
 }, (t) => [
   index("funders_owner_user_id_idx").on(t.ownerUserId),
   index("funders_parent_funder_id_idx").on(t.parentFunderId),
+  index("funders_region_ids_gin_idx").using("gin", t.regionIds),
+  index("funders_interests_thematic_gin_idx").using("gin", t.interestsThematic),
+  index("funders_interests_ages_gin_idx").using("gin", t.interestsAges),
+  index("funders_interests_gov_models_gin_idx").using("gin", t.interestsGovModels),
 ]);
 
 export type Funder = typeof funders.$inferSelect;

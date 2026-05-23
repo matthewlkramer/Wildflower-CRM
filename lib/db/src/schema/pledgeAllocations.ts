@@ -46,6 +46,8 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   index("pledge_allocations_pledge_or_opportunity_id_idx").on(t.pledgeOrOpportunityId),
   index("pledge_allocations_entity_id_idx").on(t.entityId),
   index("pledge_allocations_fundable_project_id_idx").on(t.fundableProjectId),
+  index("pledge_allocations_region_ids_gin_idx").using("gin", t.regionIds),
+  index("pledge_allocations_grant_year_gin_idx").using("gin", t.grantYear),
 ]);
 
 export type PledgeAllocation = typeof pledgeAllocations.$inferSelect;

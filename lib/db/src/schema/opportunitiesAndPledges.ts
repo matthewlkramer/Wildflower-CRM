@@ -99,6 +99,11 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   index("opportunities_and_pledges_match_id_idx").on(t.matchId),
   index("opportunities_and_pledges_owner_user_id_idx").on(t.ownerUserId),
   index("opportunities_and_pledges_primary_contact_person_id_idx").on(t.primaryContactPersonId),
+  index("opportunities_and_pledges_region_ids_gin_idx").using("gin", t.regionIds),
+  index("opportunities_and_pledges_entity_ids_gin_idx").using("gin", t.entityIds),
+  index("opportunities_and_pledges_fundable_project_ids_gin_idx").using("gin", t.fundableProjectIds),
+  index("opportunities_and_pledges_intended_usages_gin_idx").using("gin", t.intendedUsages),
+  index("opportunities_and_pledges_grant_years_gin_idx").using("gin", t.grantYears),
 ]);
 
 export type OpportunityOrPledge = typeof opportunitiesAndPledges.$inferSelect;

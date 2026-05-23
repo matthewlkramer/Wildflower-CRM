@@ -59,6 +59,7 @@ export const giftAllocations = pgTable("gift_allocations", {
   index("gift_allocations_entity_id_idx").on(t.entityId),
   index("gift_allocations_fundable_project_id_idx").on(t.fundableProjectId),
   index("gift_allocations_school_recipient_id_idx").on(t.schoolRecipientId),
+  index("gift_allocations_region_ids_gin_idx").using("gin", t.regionIds),
 ]);
 
 export type GiftAllocation = typeof giftAllocations.$inferSelect;

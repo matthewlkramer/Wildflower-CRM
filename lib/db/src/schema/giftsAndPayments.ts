@@ -116,6 +116,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_entity_id_idx").on(t.entityId),
   index("gifts_and_payments_fundable_project_id_idx").on(t.fundableProjectId),
   index("gifts_and_payments_school_recipient_id_idx").on(t.schoolRecipientId),
+  index("gifts_and_payments_region_ids_gin_idx").using("gin", t.regionIds),
 ]);
 
 export type GiftOrPayment = typeof giftsAndPayments.$inferSelect;
