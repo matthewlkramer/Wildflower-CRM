@@ -1,4 +1,4 @@
-import { type AnyPgColumn, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { organizationTypeEnum } from "./_enums";
 import { users } from "./users";
 
@@ -30,7 +30,10 @@ export const organizations = pgTable("organizations", {
   ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("organizations_owner_user_id_idx").on(t.ownerUserId),
+  index("organizations_parent_org_id_idx").on(t.parentOrgId),
+]);
 
 export type Organization = typeof organizations.$inferSelect;
 export type NewOrganization = typeof organizations.$inferInsert;

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
 import { contactValidityEnum, phoneTypeEnum } from "./_enums";
 import { people } from "./people";
 
@@ -18,7 +18,9 @@ export const phoneNumbers = pgTable("phone_numbers", {
   isPreferred: boolean("is_preferred").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("phone_numbers_person_id_idx").on(t.personId),
+]);
 
 export type PhoneNumber = typeof phoneNumbers.$inferSelect;
 export type NewPhoneNumber = typeof phoneNumbers.$inferInsert;

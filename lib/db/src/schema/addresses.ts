@@ -1,4 +1,4 @@
-import { check, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { check, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { regions } from "./regions";
 import { people } from "./people";
@@ -49,6 +49,13 @@ export const addresses = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
+    index("addresses_city_region_id_idx").on(t.cityRegionId),
+    index("addresses_state_region_id_idx").on(t.stateRegionId),
+    index("addresses_person_id_idx").on(t.personId),
+    index("addresses_funder_id_idx").on(t.funderId),
+    index("addresses_organization_id_idx").on(t.organizationId),
+    index("addresses_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
+    index("addresses_household_id_idx").on(t.householdId),
     check(
       "addresses_exactly_one_owner",
       sql`num_nonnulls(${t.personId}, ${t.funderId}, ${t.organizationId}, ${t.paymentIntermediaryId}, ${t.householdId}) = 1`,

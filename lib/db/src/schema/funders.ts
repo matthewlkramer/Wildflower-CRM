@@ -1,5 +1,6 @@
 import {
   type AnyPgColumn,
+  index,
   pgTable,
   text,
   timestamp,
@@ -67,7 +68,10 @@ export const funders = pgTable("funders", {
   ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("funders_owner_user_id_idx").on(t.ownerUserId),
+  index("funders_parent_funder_id_idx").on(t.parentFunderId),
+]);
 
 export type Funder = typeof funders.$inferSelect;
 export type NewFunder = typeof funders.$inferInsert;

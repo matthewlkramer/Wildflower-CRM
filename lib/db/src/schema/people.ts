@@ -1,5 +1,6 @@
 import {
   type AnyPgColumn,
+  index,
   pgTable,
   text,
   timestamp,
@@ -67,7 +68,11 @@ export const people = pgTable("people", {
   ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("people_current_home_region_id_idx").on(t.currentHomeRegionId),
+  index("people_owner_user_id_idx").on(t.ownerUserId),
+  index("people_assistant_person_id_idx").on(t.assistantPersonId),
+]);
 
 export type Person = typeof people.$inferSelect;
 export type NewPerson = typeof people.$inferInsert;

@@ -1,5 +1,6 @@
 import {
   type AnyPgColumn,
+  index,
   pgTable,
   text,
   timestamp,
@@ -103,7 +104,19 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("gifts_and_payments_funder_id_idx").on(t.funderId),
+  index("gifts_and_payments_individual_giver_person_id_idx").on(t.individualGiverPersonId),
+  index("gifts_and_payments_payment_on_pledge_id_idx").on(t.paymentOnPledgeId),
+  index("gifts_and_payments_advisor_person_id_idx").on(t.advisorPersonId),
+  index("gifts_and_payments_gift_being_matched_id_idx").on(t.giftBeingMatchedId),
+  index("gifts_and_payments_primary_contact_person_id_idx").on(t.primaryContactPersonId),
+  index("gifts_and_payments_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
+  index("gifts_and_payments_owner_user_id_idx").on(t.ownerUserId),
+  index("gifts_and_payments_entity_id_idx").on(t.entityId),
+  index("gifts_and_payments_fundable_project_id_idx").on(t.fundableProjectId),
+  index("gifts_and_payments_school_recipient_id_idx").on(t.schoolRecipientId),
+]);
 
 export type GiftOrPayment = typeof giftsAndPayments.$inferSelect;
 export type NewGiftOrPayment = typeof giftsAndPayments.$inferInsert;

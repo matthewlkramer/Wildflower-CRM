@@ -1,5 +1,6 @@
 import {
   type AnyPgColumn,
+  index,
   pgTable,
   text,
   timestamp,
@@ -91,7 +92,14 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("opportunities_and_pledges_funder_id_idx").on(t.funderId),
+  index("opportunities_and_pledges_individual_giver_person_id_idx").on(t.individualGiverPersonId),
+  index("opportunities_and_pledges_individual_advisor_person_id_idx").on(t.individualAdvisorPersonId),
+  index("opportunities_and_pledges_match_id_idx").on(t.matchId),
+  index("opportunities_and_pledges_owner_user_id_idx").on(t.ownerUserId),
+  index("opportunities_and_pledges_primary_contact_person_id_idx").on(t.primaryContactPersonId),
+]);
 
 export type OpportunityOrPledge = typeof opportunitiesAndPledges.$inferSelect;
 export type NewOpportunityOrPledge =

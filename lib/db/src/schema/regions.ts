@@ -1,4 +1,4 @@
-import { type AnyPgColumn, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { regionTypeEnum } from "./_enums";
 
 export const regions = pgTable("regions", {
@@ -15,7 +15,9 @@ export const regions = pgTable("regions", {
   ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("regions_parent_region_id_idx").on(t.parentRegionId),
+]);
 
 export type Region = typeof regions.$inferSelect;
 export type NewRegion = typeof regions.$inferInsert;

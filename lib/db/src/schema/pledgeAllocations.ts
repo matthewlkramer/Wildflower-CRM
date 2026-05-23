@@ -1,4 +1,5 @@
 import {
+  index,
   pgTable,
   text,
   timestamp,
@@ -41,7 +42,11 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   regionIds: text("region_ids").array(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("pledge_allocations_pledge_or_opportunity_id_idx").on(t.pledgeOrOpportunityId),
+  index("pledge_allocations_entity_id_idx").on(t.entityId),
+  index("pledge_allocations_fundable_project_id_idx").on(t.fundableProjectId),
+]);
 
 export type PledgeAllocation = typeof pledgeAllocations.$inferSelect;
 export type NewPledgeAllocation = typeof pledgeAllocations.$inferInsert;

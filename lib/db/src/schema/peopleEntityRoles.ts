@@ -1,4 +1,4 @@
-import { check, pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { check, index, pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
   entityRoleTypeEnum,
@@ -46,6 +46,11 @@ export const peopleEntityRoles = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
+    index("people_entity_roles_person_id_idx").on(t.personId),
+    index("people_entity_roles_funder_id_idx").on(t.funderId),
+    index("people_entity_roles_organization_id_idx").on(t.organizationId),
+    index("people_entity_roles_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
+    index("people_entity_roles_household_id_idx").on(t.householdId),
     // Discriminator alignment: entity_type names which of the 4 entity FKs
     // must be populated; the other three must be NULL. Prevents the role
     // row from claiming to be a "funder role" while actually pointing at an
