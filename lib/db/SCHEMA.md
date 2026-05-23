@@ -76,11 +76,11 @@ Many-to-many links (a funder having multiple regional priorities, an allocation 
 | funders | 728 |
 | organizations | 792 |
 | payment_intermediaries | 35 |
-| households | 69 |
+| households | 75 |
 | people | 3,199 |
 | people_entity_roles | 2,456 (2,331 imported + 125 synth-per-* recovered from dropped FKs) |
 | emails | 3,094 |
-| phone_numbers | 1,203 |
+| phone_numbers | 1,199 |
 | addresses | 1,676 |
 | opportunities_and_pledges | 601 (16 since reclassified to household-as-donor) |
 | pledge_allocations | 611 (68 imported + 362 synthesized as `working` for open opps + 181 backfilled from the Copper opps export for lost/dormant opps via `post-import-fixups.sql`) |

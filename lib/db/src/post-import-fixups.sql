@@ -954,15 +954,14 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- #14 — Delete 6 empty households (no PERs, gifts, opps, addresses, emails)
+-- #14 — 6 empty households: investigation outcome (KEPT as stubs)
 -- ============================================================================
--- Idempotent: any household with no current relationships and no historical
--- artifacts is an orphan and can be safely removed.
-DELETE FROM households h
- WHERE NOT EXISTS (SELECT 1 FROM people_entity_roles      WHERE household_id=h.id)
-   AND NOT EXISTS (SELECT 1 FROM gifts_and_payments       WHERE household_id=h.id)
-   AND NOT EXISTS (SELECT 1 FROM opportunities_and_pledges WHERE household_id=h.id)
-   AND NOT EXISTS (SELECT 1 FROM addresses                WHERE household_id=h.id)
-   AND NOT EXISTS (SELECT 1 FROM emails                   WHERE household_id=h.id);
--- Removed on first run: Crown, Deedie and Rusty Rose, James Kelley & Amie Knox,
--- Mortenson, Nina & Caper de Clercq, Walton Family.
+-- Audit flagged 6 households with no people, gifts, opps, addresses, or
+-- emails (Crown, Deedie and Rusty Rose, James Kelley & Amie Knox, Mortenson,
+-- Nina & Caper de Clercq, Walton Family). An initial fixup deleted them, but
+-- a deeper Airtable audit (people / PER / gifts / opps tables, plus the
+-- Copper companies export) confirmed they are TRULY orphaned in the source
+-- data — no record anywhere references them. They are well-known donor
+-- families that the team will populate manually; we keep them as
+-- placeholders rather than delete and lose the seed. No SQL fixup needed
+-- here; they import correctly from Airtable on every re-run.
