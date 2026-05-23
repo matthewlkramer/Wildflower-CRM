@@ -1137,3 +1137,66 @@ VALUES
   ('synth-per-schaumburg-caprock-past', 'recuX2m7BYuAgSCnk', 'non_funding_organization', 'synth-org-caprock-strategies', 'employee', 'past',    false),
   ('synth-per-suster-upfront',          'recJtdFNzsOfhl3xQ', 'non_funding_organization', 'synth-org-upfront-ventures',   'employee', 'current', false)
 ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
+-- #19 — Backfill Kamvar/Schiavoni $195K cash gift + rebalance stock sibling
+-- ============================================================================
+-- Resolves the R3 "Outstanding follow-up" in RESEARCH_QUEUE.md. Per the
+-- `details` field on Airtable gift recPunRkZWh2pKVnr (verbatim):
+--
+--   "Sep gave $195,000 in cash on 12/27 and gave 123 shares of Amazon stock
+--    on 12/30 which I liquidated the same day for $225,336. The stock gift
+--    came from the Scout and Jem Finch Charitable Trust. The grand total is
+--    ~$420k. The intended use for the gifts is for Rising Tide and New
+--    Jersey Hub work."
+--
+-- The household made TWO sibling gifts totaling ~$420,336:
+--   * $195,000 cash on 2019-12-27 — orphan row recs30mG9xDAg81iz already
+--     exists in both DB and Airtable with amount + payment_method=check
+--     set, but missing name / date / type / grant_year / allocation detail.
+--   * $225,336 stock on 2019-12-30 — recPunRkZWh2pKVnr (fully populated).
+--
+-- The two gift_allocations ($320,336 Rising Tide + $100,000 WF gen_ops =
+-- $420,336) were sized for the combined total but both hung off the stock
+-- gift, leaving stock over-allocated by $195K and the cash gift's
+-- allocation a $195K stub with no entity/year.
+--
+-- After this fixup, per-gift allocation totals match each gift's amount:
+--   recs30mG9xDAg81iz  ($195,000 cash)   → $195,000 Rising Tide FY20
+--   recPunRkZWh2pKVnr  ($225,336 stock)  → $125,336 Rising Tide FY20
+--                                          + $100,000 WF gen_ops FY20
+-- Combined entity totals unchanged: $320,336 Rising Tide + $100,000 WF.
+--
+-- Idempotent: gift backfills use COALESCE so re-runs leave populated
+-- fields alone; allocation rebalance guards on the pre-fixup sub_amount.
+
+-- 19a — Backfill cash gift metadata. payment_method is already 'check'
+-- (from Airtable). household_id is already set (from earlier household
+-- pass). amount $195,000 is already set.
+UPDATE gifts_and_payments
+   SET name          = COALESCE(name,          'Sep Rising Tide FY20 II - cash portion'),
+       date_received = COALESCE(date_received, DATE '2019-12-27'),
+       type          = COALESCE(type,          'standard_gift'),
+       grant_year    = COALESCE(grant_year,    'fy2020'),
+       details       = COALESCE(details,       'Cash portion of the Kamvar/Schiavoni "FY20 II" gift pair; the $225,336 stock sibling is recPunRkZWh2pKVnr. Reconstructed from the donor narrative on the stock gift (see RESEARCH_QUEUE.md R3).'),
+       owner_user_id = COALESCE(owner_user_id, 'usr_matthew_kramer'),
+       updated_at    = NOW()
+ WHERE id = 'recs30mG9xDAg81iz';
+
+-- 19b — Backfill the cash gift's empty allocation. sub_amount $195,000
+-- is already correct.
+UPDATE gift_allocations
+   SET entity_id  = COALESCE(entity_id,  'rising_tide'),
+       grant_year = COALESCE(grant_year, 'fy2020'),
+       updated_at = NOW()
+ WHERE id = 'synth-ga-recs30mG9xDAg81iz';
+
+-- 19c — Reduce the stock gift's Rising Tide allocation from $320,336
+-- (which double-counted the cash portion) to $125,336 so the stock
+-- gift's allocations sum to its own amount ($125,336 + $100,000 =
+-- $225,336). Guarded on the exact pre-fixup amount for idempotency.
+UPDATE gift_allocations
+   SET sub_amount = 125336.00,
+       updated_at = NOW()
+ WHERE id = 'rec0cwaXUyDulGagw'
+   AND sub_amount = 320336.00;

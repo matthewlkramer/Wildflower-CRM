@@ -302,13 +302,34 @@ single stock-gift record because there is no cash-gift sibling to
 link the cash portion to. The arithmetic isn't broken; the source
 system is missing the $195K cash gift record.
 
-**Outstanding follow-up (fundraising-team owned, NOT a blocker):**
-Optionally backfill a sibling `gifts_and_payments` row for the
-$195,000 cash gift (donor: household `recRCXN9REdI3Wg5c`, date
-2019-12-27, type `standard_gift`, payment_method `cash`/`ach`/`check`
-TBD by fundraising) and re-split the allocations so each gift's
-allocation total matches its own amount. Needs fundraising-team
-confirmation on the cash payment_method before applying.
+**Follow-up applied 2026-05-23 (fixup #19 in `post-import-fixups.sql`):**
+On a second pass we found the $195K cash gift already existed in
+both DB and Airtable as `recs30mG9xDAg81iz` — an orphan row with
+only `amount=195000`, `payment_method=check`, and `individual_giver`
+set (later moved to `household_id=recRCXN9REdI3Wg5c` by the
+household-as-donor pass). Everything else was blank. Fixup #19:
+
+- **19a** backfilled the cash gift's metadata: `name`,
+  `date_received=2019-12-27`, `type=standard_gift`, `grant_year=fy2020`,
+  `details` (with a pointer back to the stock sibling and this
+  RESEARCH_QUEUE entry), `owner_user_id=usr_matthew_kramer`.
+- **19b** backfilled the cash gift's empty allocation
+  `synth-ga-recs30mG9xDAg81iz` with `entity_id=rising_tide` and
+  `grant_year=fy2020` (sub_amount $195,000 was already correct).
+- **19c** trimmed `rec0cwaXUyDulGagw` from $320,336 → $125,336 so
+  the stock gift's allocations sum to its own amount ($125,336 +
+  $100,000 = $225,336).
+
+Per-gift balances after the fix:
+
+| gift | amount | allocations | diff |
+|---|---|---|---|
+| `recs30mG9xDAg81iz` (cash, 12/27) | $195,000 | $195,000 Rising Tide FY20 | $0 |
+| `recPunRkZWh2pKVnr` (stock, 12/30) | $225,336 | $125,336 Rising Tide + $100,000 WF gen_ops FY20 | $0 |
+
+Combined entity totals unchanged: $320,336 Rising Tide + $100,000
+WF gen_ops = $420,336 (matches donor intent in note). Fixup is
+idempotent (COALESCE-guarded backfills + amount-guarded rebalance).
 
 ## R4 — Three nameless people remaining after fixup #16 — RESOLVED
 
