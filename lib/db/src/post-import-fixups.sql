@@ -31,6 +31,64 @@ UPDATE opportunities_and_pledges
    AND household_id IS NOT NULL;
 
 -- ============================================================================
+-- 2026-05  Zero-donor gift/opp triage (12 rows, all resolved via Copper opps
+--          export + user direction; enables strict donor_xor = 1)
+-- ============================================================================
+-- Create synthetic person for Nathan Azevedo ($50 gift 2020-04-12; appears in
+-- Copper opps with no linked person record).
+INSERT INTO people (id, first_name, last_name, full_name)
+VALUES ('synth-person-nathan-azevedo', 'Nathan', 'Azevedo', 'Nathan Azevedo')
+ON CONFLICT (id) DO NOTHING;
+
+-- recWL2I8BGNuJ3Tpj  $100k  2019-10-14 — Copper "Anonymous Donor - Elderberry
+--   Gift" via Southwest Community Foundation DAF, advised by Meyer Bodoff.
+UPDATE gifts_and_payments
+   SET individual_giver_person_id = 'recxdjr7Q1BtvB89l',  -- Anonymous Donor
+       advisor_person_id          = 'recNOGL88IjlmNc5O',  -- Meyer Bodoff
+       primary_contact_person_id  = 'recNOGL88IjlmNc5O'
+ WHERE id = 'recWL2I8BGNuJ3Tpj'
+   AND (individual_giver_person_id IS DISTINCT FROM 'recxdjr7Q1BtvB89l'
+        OR advisor_person_id        IS DISTINCT FROM 'recNOGL88IjlmNc5O');
+
+-- rec9wS6zIZrIsxIqI  $70k   2021-01-12 — Copper "Transformative Black-Led
+--   Movement Fund" (BLMF lives at Borealis Philanthropy).
+UPDATE gifts_and_payments
+   SET funder_id                  = 'rec3RspE0Ns70ouVE',  -- Borealis Philanthropy
+       individual_giver_person_id = NULL
+ WHERE id = 'rec9wS6zIZrIsxIqI'
+   AND funder_id IS DISTINCT FROM 'rec3RspE0Ns70ouVE';
+
+-- rec6B0yqPIR47JbIa  $7k    2021-04-16 (fy21 grant tag) — Nash family fund.
+UPDATE gifts_and_payments
+   SET funder_id = 'recR28K8Twq5uV8Q0'  -- Indira Foundation
+ WHERE id = 'rec6B0yqPIR47JbIa'
+   AND funder_id IS DISTINCT FROM 'recR28K8Twq5uV8Q0';
+
+-- rechYr7WQGtI8vpqU  $50    2020-04-12 — Copper "Nathan Azevedo" (exact date).
+UPDATE gifts_and_payments
+   SET individual_giver_person_id = 'synth-person-nathan-azevedo'
+ WHERE id = 'rechYr7WQGtI8vpqU'
+   AND individual_giver_person_id IS DISTINCT FROM 'synth-person-nathan-azevedo';
+
+-- 5 Donorbox campaign gifts + 2 other small no-context gifts → Anonymous Donor
+-- catch-all. Copper had multiple identical-amount candidates per date for the
+-- Donorbox ones, so specific attribution is unrecoverable.
+UPDATE gifts_and_payments
+   SET individual_giver_person_id = 'recxdjr7Q1BtvB89l'  -- Anonymous Donor
+ WHERE id IN (
+   'recHjYSw2kLKdLUos','recDESZVLWQcN7yUJ',
+   'recS5h9aXr4VcvYCJ','recOnrXi2JCpc6cux','recYHLtt4GT65pOQT',
+   'recU7CNSsks7xIPTk','recTLppW88mNdQUTK'
+ ) AND individual_giver_person_id IS NULL;
+
+-- recFjazmLRFI5DUA9  $15k cold-lead opp — usage_notes reference March
+--   Foundation (funder exists in DB).
+UPDATE opportunities_and_pledges
+   SET funder_id = 'recgZp7jPII4953K0'  -- March Foundation
+ WHERE id = 'recFjazmLRFI5DUA9'
+   AND funder_id IS NULL;
+
+-- ============================================================================
 -- 2026-05  Individual-giver → individual-advisor corrections
 -- ============================================================================
 -- Two opps had both funder_id and individual_giver_person_id set. The intent

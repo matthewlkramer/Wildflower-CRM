@@ -105,12 +105,10 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
   index("gifts_and_payments_owner_user_id_idx").on(t.ownerUserId),
   index("gifts_and_payments_grant_year_idx").on(t.grantYear),
-  // Donor exclusivity: at most one of funder / individual-giver / household.
-  // Lenient (<=1, not =1) because ~11 legacy donorbox / DAF rows have no
-  // donor linked yet; tighten to =1 once those are triaged.
+  // Donor exclusivity: exactly one of funder / individual-giver / household.
   check(
     "gifts_and_payments_donor_xor",
-    sql`num_nonnulls(${t.funderId}, ${t.individualGiverPersonId}, ${t.householdId}) <= 1`,
+    sql`num_nonnulls(${t.funderId}, ${t.individualGiverPersonId}, ${t.householdId}) = 1`,
   ),
 ]);
 
