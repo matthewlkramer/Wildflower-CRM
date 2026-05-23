@@ -110,6 +110,134 @@ allocation — no disambiguation needed.
 
 ---
 
+## R5 — Primary contact backfill: unresolved cases
+
+`post-import-fixups.sql` set `primary_contact=true` on the sole current PER for
+**637 single-PER entities** (Phase 1: 72 funders + 524 orgs + 38 households + 3
+payment intermediaries) and disambiguated **147 multi-PER entities** (Phase 2:
+18 funders + 129 orgs) using Copper's "Primary Contact" column from
+`attached_assets/companies_*.xlsx`. The cases below still need a human to pick.
+
+### R5a — Multi-PER entities whose Copper company has no Primary Contact set (24 entities)
+
+| type | name | # current PERs |
+|---|---|---|
+| funder | Reinvestment Fund | 6 |
+| funder | 22 Beacon | 2 |
+| funder | City of Ponce | 2 |
+| funder | U.S. House Ways and Means Committee | 3 |
+| funder | NYC Mayor's Office of Contract Services (MOCS) | 2 |
+| funder | Bridgespan Group | 9 |
+| funder | New York City Mayor's Office | 2 |
+| funder | Meta | 2 |
+| funder | Eastern Bank / Eastern Bank Foundation | 3 |
+| funder | 1954 Project | 2 |
+| funder | NewSchools | 11 |
+| funder | Building Impact Partners | 3 |
+| funder | Old National Bank / Foundation | 2 |
+| org | Kohlberg Kravis & Roberts (KKR) | 2 |
+| org | Manny Cantor Center | 2 |
+| org | Durst Organization Inc | 2 |
+| org | Pahara Institute | 3 |
+| org | Murmuration | 2 |
+| org | Dorsey LLP | 2 |
+| org | Naz | 2 |
+| org | Costanoa Ventures | 2 |
+| org | Biden Administration | 2 |
+| org | All our Kin | 3 |
+| org | Instituto Nueva Escuala | 2 |
+
+### R5b — Multi-PER entities where Copper's named Primary Contact isn't in our DB (25 entities)
+
+For each row, pick one of the listed PER candidates as primary, or add the Copper-named
+person to `people` first (many of these Copper primaries are senior leaders who were
+likely never loaded).
+
+| type | name | copper primary contact (name only) | DB candidates |
+|---|---|---|---|
+| funder | MA Department Of Elementary and Secondary Education | Cliff Chuang | Alison Bagg, Alyssa K. Hopkins, Christina Grant, Heather Peske, Marty West |
+| funder | Pivotal Ventures | TBD Pivotal Ventures | Jennifer Stybel, Matt Parodi, Melinda French, John K. Sage |
+| funder | Fidelity Foundations | Caroline Nolan | Angela Bacon, Emily O'Donnell, Alice Bennett, Barbara Sullivan, Emma Pengelly |
+| funder | Transcend Education | Jeff Wetzler | Arielle Kinder, Aylon Samouha, Cynthia Robinson-Rivers, David Nitkin, Deborah Gist, Divya Mani, Jenee Henry, Jennifer Charlot, Molly Martineau |
+| funder | Drexel Fund | John Eriksen | Naomi DeVeaux, Eric Oglesbee, Darren R. Jackson, Mark Gleason, Nick Howley |
+| funder | Stranahan Foundation | Pam - DO NOT CONTACT Howell-Beach | Abby Stranahan, Bonnie O'Keefe, Patrick Stranahan, Sara Mead, Hillary Beuschel |
+| funder | Louis Calder Foundation | Holly Nuechterlein | Barbara Atkeson, Alexander Calder |
+| funder | Bezos Academy / Day 1 Academies Fund | Mike George | Caroline Hult, Michael Abello, Sabrina Watkins, Joel Mendes, Jeff Bezos, Miguel Roque, Will Nash |
+| funder | Propel Nonprofits | Kate Barr | Andrea Snow, Andrea Sanow, L Hang |
+| funder | Stupski Foundation | Joyce Stupski, Deceased | Jennifer Nguyen, Glen Galaich |
+| funder | Schmidt Futures | Kumar Garg | Robyn Watkis, Eric Schmidt, Ulrich Boser |
+| funder | Ballmer Group | Jeff Edmondson | Loren Harris, Raychael Jensen, Steve Ballmer, Terri Ludwig |
+| funder | Frey Foundation | Carol Frey Wolfe | Jim Frey, Flor Treviño Frey |
+| funder | Promise Venture Studio | Michael Dougherty | Buckley Bloom, Gabe Hakim, Matt Glickman, Melissa Field, Karen Lien, Demetra Brown |
+| funder | Valhalla Foundation | Amy Rodde | Laura Brookhiser, Nancy Poon Lue, Sara Allan |
+| funder | Commonwealth Of Massachusetts | Jim Peyser | Anita Moeller, Ola J. Friday, Stacey (CTF) Nee |
+| funder | Teach For America | Paul Keys | Ben Lindy, Josh Bell, Fatimah Burnam Watkins, Erin Renz, Rhonda D. Ford, WaziHanska Cook, Holly Trifiro, Heather Tow-Yick, Vanessa Nicholson, Claiborne Taylor, Ronald Nurnberg, CJ Crowder, Sunanna Chand, Mary Koslig, Daniel Riley, Caitlin Wood Sklar, Lakeisha Wells-Palmer, Jemina Bernard, Hope Lesane, Tiffany Cuellar Needham, Whitney Petersmeyer, Molly Ellenberg Friedland, Ada Tadmor, Jennifer Early, Sondra Ranum, Michelle Culver, Tracy-Elizabeth Clay, Elijah Heckstall, Amy Jacobs, Heather Ryan, Charissa Fernandez |
+| funder | one8 Foundation | Vanessa Lipschitz | Stephanie Loder, Joanna Jacobson, Crisandra Gray |
+| org | Wildflower Foundation | Paul DeCoursey | Matthew Kramer, Juan Goytia, Brandon Royce-Diop, Maggie Paulin, Hannah Ewert-Krocker, Jenny Tak, Dominque Burgess, Kameeka Shirley, Maya Warsame, Cameron Leonard, Keith Waxelman, Christine Grodek, Li Ouyang, Jennifer Houghton, Erin Quigley, Isabelle Bibbler, Pooja Pandit |
+| org | Stanford University | John Hennessy | Isabelle Hau, Philip Fisher |
+| org | Powderhouse Studios | Alec Resnick | Molly Josephs, Shaunalynn Duffy |
+| org | McKinsey & Company | Asheet Mehta | Kurt Strovink, Emmilie Berkner, Sarrah Weston, Deniz Cultu, Jake Bryant, Emily Cline, Kweilin Moore Ellingrud, Nancy Killefer |
+| org | Denver's Early Childhood Council | Nicole Riehl | Dora Esparza MNM MAPY, Jill Rocha |
+| org | American Montessori Society | Sara Wilson | Brittany Emilio, Carla Hofland, Cara Paige, Munir Shivji, Scott Davidson, Maria Meyerovitch, Luisana Kinaj |
+| org | University of Minnesota | Eric Kaler | Christine Cheng, Matt Kramer, David Duxbury, Chad Ostlund |
+
+### R5c — Multi-PER households missing primary (31 households)
+
+No Copper-equivalent record carries a primary-contact hint for households. Team
+should pick one spouse/partner as the canonical contact per joint account.
+
+| household id | name | # current PERs |
+|---|---|---|
+| `recbVW1CwSP4v78bG` | Aaron Augusten and Kristen Tronsky | 2 |
+| `recxjRp97W3KHFpNp` | Adam and Sylvia Spector | 2 |
+| `recJ4eyPXrTKhHDj9` | Andrew & Bonnie Weiss | 2 |
+| `recMkHxaaTaolTF6l` | Ann & Andy Mathieson | 2 |
+| `rec5E2eXW8QMeZS38` | Arthur & Lindsay Reimers | 2 |
+| `recCId8A3HdF6xlq2` | Arthur Rock & Toni Rembe Rock | 2 |
+| `rec673AHumJJiIPSy` | Avi and Sandra Nash | 2 |
+| `rec96vrK8fDmvfgwp` | Catherine and John Debs -- | 2 |
+| `recxHxEnzPvVstIRp` | Chad and Eleanor Laurans | 2 |
+| `recvPJlmXOysmDrsW` | Charlie and Rebecca Ledley | 2 |
+| `rec9hw0umkRamBYKC` | Cynthia and Ben Guill | 2 |
+| `recO0gGVztHFSGuWA` | Denniz and Margarita Cultu | 2 |
+| `recrZKr5BGbiWzm6S` | Diana Nelson and John Atwater | 2 |
+| `recqpZiFsFYheC8Ot` | Dustin Moskovitz and Cari Tuna | 2 |
+| `recWXnuj302xEr4ic` | Janine and Jeff Yass | 2 |
+| `recHQOSmTjs5AmsDF` | Jen Moses and Ron Beller | 2 |
+| `recR3ZeWKkG28DUpW` | Katie and Nick Piehl | 2 |
+| `recKYqy4Ex554BliC` | Lars and Becky Klevan | 2 |
+| `recIvICY2Ohv9PHyo` | Manju and Bud Basu | 2 |
+| `recaOqvRvJjGFyq66` | Mark and Jill Blank | 2 |
+| `reclqsSU7dOnEmcuG` | Matt and Katie Kramer | 2 |
+| `recdz3InaVKbqVhv5` | Matt and Lindsay Haldeman | 2 |
+| `recRP8inTd32w6t0J` | Matthew and Hannah Granade | 2 |
+| `recIJTPGCH2DtgplA` | Nancy Peretsman and Bob Scully | 2 |
+| `recnMl6h76JEYbjQz` | Nick Nash and Phalgun Raju | 2 |
+| `recx9Hb1wblVizln5` | Scott Berney and Sara Hennessey Berney | 2 |
+| `recRCXN9REdI3Wg5c` | Sep Kamvar and Angie Schiavoni | 2 |
+| `reccGUFMuwcb1GWkk` | Susan and Thomas Dunn | 2 |
+| `reculUSRsNoFe2GPs` | TC & Joe Scornavacchi | 2 |
+| `recLF6jNpB9Lgemp5` | Tim and Liz Welsh | 2 |
+| `recP1ebGhDzgyCDd1` | Vladimir and Chia Rodeski | 2 |
+
+### R5d — Multi-PER payment intermediaries missing primary (2 entities)
+
+| id | name | # current PERs |
+|---|---|---|
+| `recJTl13VH5S3qn4x` | Fidelity Charitable | 2 |
+| `recrmhNVw0DVQfuwZ` | Vanguard Charitable | 2 |
+
+### R5e — Funders with MORE than one current primary contact (2 data error)
+
+Pick one (set `primary_contact=false` on the other).
+
+| funder id | name | # flagged primary |
+|---|---|---|
+| `recQT9iS65T6KfW6a` | George W. Brackenridge Foundation | 2 |
+| `recRM4wcdvoEJ5yqG` | U.S. Bank / U.S. Bank Foundation | 2 |
+
+---
+
 ## R3 — Sep Kamvar & Angie Schiavoni $225,336 stock gift (`recPunRkZWh2pKVnr`)
 
 **Donor:** Sep Kamvar and Angie Schiavoni (household). $225,336 stock gift,
