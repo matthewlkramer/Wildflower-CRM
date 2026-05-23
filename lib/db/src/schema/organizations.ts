@@ -23,6 +23,9 @@ export const organizations = pgTable("organizations", {
   website: text("website"),
   activeOrDefunct: text("active_or_defunct"),
   otherNames: text("other_names"),
+  // Prior names the org has been known by (e.g. rebrands, mergers).
+  // Distinct from `otherNames` which holds current aliases / DBAs.
+  historicalNames: text("historical_names").array(),
   // Self-ref. SET NULL: removing a parent org leaves children intact.
   parentOrgId: text("parent_org_id").references(
     (): AnyPgColumn => organizations.id,

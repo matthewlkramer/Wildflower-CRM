@@ -60,6 +60,9 @@ export const funders = pgTable("funders", {
   // cannot carry native PG FK constraints; integrity is enforced at write
   // time by the API layer.
   regionIds: text("region_ids").array(),
+  // Prior names the funder has been known by (e.g. rebrands, mergers).
+  // Surface in search/UI so legacy references resolve.
+  historicalNames: text("historical_names").array(),
   // Self-ref. SET NULL: removing a parent funder leaves children intact
   // (they just lose the parent pointer).
   parentFunderId: text("parent_funder_id").references(
