@@ -71,12 +71,16 @@ could be added cleanly.
 | `recshOnvUb0A390qj` | Bainum Family Foundation | FY26 Bainum Grant | $200,000 | 2025-09-17 | full $200K in one payment |
 | `rec3MTMlSE06qaL2L` | Gates Family Foundation | Gates Family Foundation | $85,000 | 2020-02-07 | **only $40K of $85K landed** — see follow-up below |
 
-**Follow-up — Gates Family Foundation `rec3MTMlSE06qaL2L`:** awarded
-$85,000 but only one payment of $40,000 arrived (2020-02-07). The CHECK
-is satisfied (completion = the only payment date) but the awarded /
-received gap is real and unresolved. Reconcile with finance: was the
-award reduced post-grant, did a second payment go missing, or should
-the opp be reclassified (e.g. partial-win)?
+**Follow-up — Gates Family Foundation `rec3MTMlSE06qaL2L` — RESOLVED 2026-05-23 (data state confirmed at source):**
+Verified directly against live Airtable (`app8KUcmaHZ0AtcJZ`,
+`tblWjfKjK0j6FbNCZ`). The opp stores `awarded_amount: 85000`,
+`total_payments: 40000`, `outstanding_amount: 45000`, status `Won`,
+stage `Written commitment - 100%`, `win_probability: 1`. So Airtable
+itself records the $45K as outstanding on a fully-committed grant —
+the importer mirrored that faithfully and there is no missing payment
+record in the source. Whether the second payment is late, was waived,
+or needs chasing is a fundraising-team / Gates relationship question,
+not a CRM data bug. No DB action; flagged for fundraising team.
 
 ---
 
@@ -264,26 +268,47 @@ No further action.
 
 ---
 
-## R3 — Sep Kamvar & Angie Schiavoni $225,336 stock gift (`recPunRkZWh2pKVnr`)
+## R3 — Sep Kamvar & Angie Schiavoni $225,336 stock gift (`recPunRkZWh2pKVnr`) — RESOLVED 2026-05-23
 
 **Donor:** Sep Kamvar and Angie Schiavoni (household). $225,336 stock gift,
 received 2019-12-27. Not tied to a pledge.
 
-**Issue:** Two `gift_allocations` rows: $320,336 (FY20, no intended_usage)
-+ $100,000 (FY20, `gen_ops`) = **$420,336**, which is $195,000 over the
-actual gift amount. Suspicious arithmetic: $320,336 = $225,336 + $95,000.
+**Original issue:** Two `gift_allocations` rows: $320,336 (FY20, no
+intended_usage, Rising Tide) + $100,000 (FY20, `gen_ops`, Wildflower
+Foundation) = **$420,336**, which is $195,000 over the recorded gift
+amount.
 
-**Hypotheses to test:**
-- The $320,336 row conflates the stock FMV with a match/companion gift.
-- The $100,000 row belongs on a different gift entirely (mis-linked
-  `gift_id` in Airtable).
-- One or both rows belong on a separate pledge.
+**Resolution (from live Airtable `app8KUcmaHZ0AtcJZ`,
+`tblr3ewPT3e6FWKPx`, record `recPunRkZWh2pKVnr`, `details` field — verbatim):**
 
-**To research:**
-- Cross-reference Copper opps export for Kamvar/Schiavoni gifts in late
-  2019 / early 2020.
-- Check Airtable history if reachable (base is archived but possibly
-  still readable) for the original `gift_id` on these allocation rows.
+> "Sep gave $195,000 in cash on 12/27 and gave 123 shares of Amazon
+> stock on 12/30 which I liquidated the same day for $225,336. The
+> stock gift came from the Scout and Jem Finch Charitable Trust. The
+> grand total is ~$420k. The intended use for the gifts is for Rising
+> Tide and New Jersey Hub work. But I think for official purposes we
+> can consider it unrestricted $$$, which we'll then choose to use for
+> these two hubs."
+
+So there are really **two gifts** totaling ~$420,336:
+
+- $195,000 cash on 2019-12-27 — **not recorded as its own
+  `gifts_and_payments` row in Airtable**
+- $225,336 stock on 2019-12-30 (liquidated same day; FMV-as-cash) —
+  this is `recPunRkZWh2pKVnr`
+
+Both allocations ($320,336 Rising Tide + $100,000 WF gen-ops =
+$420,336) were sized for the combined total and both hang off the
+single stock-gift record because there is no cash-gift sibling to
+link the cash portion to. The arithmetic isn't broken; the source
+system is missing the $195K cash gift record.
+
+**Outstanding follow-up (fundraising-team owned, NOT a blocker):**
+Optionally backfill a sibling `gifts_and_payments` row for the
+$195,000 cash gift (donor: household `recRCXN9REdI3Wg5c`, date
+2019-12-27, type `standard_gift`, payment_method `cash`/`ach`/`check`
+TBD by fundraising) and re-split the allocations so each gift's
+allocation total matches its own amount. Needs fundraising-team
+confirmation on the cash payment_method before applying.
 
 ## R4 — Three nameless people remaining after fixup #16 — RESOLVED
 
