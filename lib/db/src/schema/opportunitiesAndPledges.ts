@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   index,
@@ -30,6 +31,41 @@ import { users } from "./users";
 // become the canonical record. This keeps a single shape across the
 // opportunity → pledge → payment lifecycle instead of duplicating scope
 // fields at every level.
+//
+// ─── Column validity by status ────────────────────────────────────────
+// The same row is used across two lifecycle phases (opportunity, then
+// pledge), and `status` is the discriminator. Different columns are
+// expected to be populated in each phase; the table does NOT enforce
+// this — it's a convention, documented here and in replit.md, that
+// the UI and API are expected to honor.
+//
+//   status='open'  (live opportunity — fundraising conversation in flight)
+//     EXPECTED: ask_amount, type, stage, win_probability,
+//               projected_close_date, application_deadline, owner_user_id,
+//               primary_contact_person_id, conditional, conditions
+//     IGNORED : awarded_amount, actual_completion_date, conditions_met,
+//               loss_reason
+//
+//   status='won'   (pledge — funder committed; money may or may not be in)
+//     EXPECTED: awarded_amount, conditional, conditions, conditions_met,
+//               actual_completion_date (once money has fully arrived),
+//               payment_details
+//     IGNORED : win_probability, stage, projected_close_date,
+//               application_deadline, loss_reason
+//
+//   status='lost'  (declined / withdrawn)
+//     EXPECTED: loss_reason, actual_completion_date (date of decline)
+//     IGNORED : awarded_amount, conditions_met, win_probability, stage
+//
+//   status='dormant' (paused — neither actively worked nor formally lost)
+//     EXPECTED: whatever was captured before it went quiet (treat as a
+//               frozen snapshot of the opportunity-phase fields)
+//     IGNORED : awarded_amount, actual_completion_date, conditions_met
+//
+// Partial indexes below match the two hot read paths: "open pipeline"
+// (filter by status='open', sorted by projected_close_date, often
+// scoped by funder) and "won grants in a given period" (filter by
+// status='won', sorted by actual_completion_date).
 export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   id: text("id").primaryKey(),
   name: text("name"),
@@ -94,6 +130,14 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   index("opportunities_and_pledges_match_id_idx").on(t.matchId),
   index("opportunities_and_pledges_owner_user_id_idx").on(t.ownerUserId),
   index("opportunities_and_pledges_primary_contact_person_id_idx").on(t.primaryContactPersonId),
+  // Partial indexes for the two phase-specific hot paths. See
+  // "Column validity by status" comment above.
+  index("opportunities_and_pledges_open_pipeline_idx")
+    .on(t.funderId, t.projectedCloseDate)
+    .where(sql`${t.status} = 'open'`),
+  index("opportunities_and_pledges_won_completed_idx")
+    .on(t.actualCompletionDate)
+    .where(sql`${t.status} = 'won'`),
 ]);
 
 export type OpportunityOrPledge = typeof opportunitiesAndPledges.$inferSelect;
