@@ -305,6 +305,9 @@ export const PledgeAllocationStatus = {
   committed: "committed",
   superseded: "superseded",
   committed_with_conditions: "committed_with_conditions",
+  superseded_by_pledge: "superseded_by_pledge",
+  superseded_by_gift: "superseded_by_gift",
+  abandoned: "abandoned",
 } as const;
 
 export type GiftType = (typeof GiftType)[keyof typeof GiftType];
@@ -329,14 +332,6 @@ export const GiftPaymentMethod = {
   daf_ach: "daf_ach",
   daf_check: "daf_check",
   daf_bill_com: "daf_bill_com",
-} as const;
-
-export type GiftAllocationType =
-  (typeof GiftAllocationType)[keyof typeof GiftAllocationType];
-
-export const GiftAllocationType = {
-  simple_allocation: "simple_allocation",
-  sub_allocations: "sub_allocations",
 } as const;
 
 export type IntendedUsage = (typeof IntendedUsage)[keyof typeof IntendedUsage];
@@ -941,7 +936,6 @@ export interface OpportunityOrPledge {
   conditional?: OpportunityConditional | null;
   conditions?: string | null;
   conditionsMet: boolean;
-  grantYears?: string[] | null;
   individualGiverPersonId?: string | null;
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;
@@ -953,10 +947,6 @@ export interface OpportunityOrPledge {
   lossReason?: string | null;
   applicationDeadline?: string | null;
   paymentDetails?: string | null;
-  entityIds?: string[] | null;
-  intendedUsages?: IntendedUsage[] | null;
-  fundableProjectIds?: string[] | null;
-  regionIds?: string[] | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
   primaryContactPersonId?: string | null;
@@ -1001,15 +991,7 @@ export interface GiftOrPayment {
   ownerUserId?: string | null;
   closeDate?: string | null;
   completedDate?: string | null;
-  allocationType?: GiftAllocationType | null;
-  entityId?: string | null;
-  intendedUsage?: IntendedUsage | null;
-  fundableProjectId?: string | null;
   designatedToSchool: boolean;
-  schoolRecipientId?: string | null;
-  spendingStart?: string | null;
-  spendingEnd?: string | null;
-  regionIds?: string[] | null;
   tags?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -1034,7 +1016,6 @@ export interface CreateOpportunityOrPledgeBody {
   conditional?: OpportunityConditional;
   conditions?: string;
   conditionsMet?: boolean;
-  grantYears?: string[];
   individualGiverPersonId?: string;
   individualAdvisorPersonId?: string;
   matchId?: string;
@@ -1046,10 +1027,6 @@ export interface CreateOpportunityOrPledgeBody {
   lossReason?: string;
   applicationDeadline?: string;
   paymentDetails?: string;
-  entityIds?: string[];
-  intendedUsages?: IntendedUsage[];
-  fundableProjectIds?: string[];
-  regionIds?: string[];
   usageNotes?: string;
   copperPledgeId?: string;
   primaryContactPersonId?: string;
@@ -1064,7 +1041,6 @@ export interface UpdateOpportunityOrPledgeBody {
   conditional?: OpportunityConditional | null;
   conditions?: string | null;
   conditionsMet?: boolean;
-  grantYears?: string[] | null;
   individualGiverPersonId?: string | null;
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;
@@ -1076,10 +1052,6 @@ export interface UpdateOpportunityOrPledgeBody {
   lossReason?: string | null;
   applicationDeadline?: string | null;
   paymentDetails?: string | null;
-  entityIds?: string[] | null;
-  intendedUsages?: IntendedUsage[] | null;
-  fundableProjectIds?: string[] | null;
-  regionIds?: string[] | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
   primaryContactPersonId?: string | null;
@@ -1164,15 +1136,7 @@ export interface CreateGiftOrPaymentBody {
   ownerUserId?: string;
   closeDate?: string;
   completedDate?: string;
-  allocationType?: GiftAllocationType;
-  entityId?: string;
-  intendedUsage?: IntendedUsage;
-  fundableProjectId?: string;
   designatedToSchool?: boolean;
-  schoolRecipientId?: string;
-  spendingStart?: string;
-  spendingEnd?: string;
-  regionIds?: string[];
   tags?: string;
 }
 
@@ -1195,15 +1159,7 @@ export interface UpdateGiftOrPaymentBody {
   ownerUserId?: string | null;
   closeDate?: string | null;
   completedDate?: string | null;
-  allocationType?: GiftAllocationType | null;
-  entityId?: string | null;
-  intendedUsage?: IntendedUsage | null;
-  fundableProjectId?: string | null;
   designatedToSchool?: boolean;
-  schoolRecipientId?: string | null;
-  spendingStart?: string | null;
-  spendingEnd?: string | null;
-  regionIds?: string[] | null;
   tags?: string | null;
 }
 
@@ -1431,7 +1387,6 @@ export type ListOpportunitiesAndPledgesParams = {
   type?: OpportunityType;
   funderId?: string;
   ownerUserId?: string;
-  entityId?: string;
   /**
    * @minimum 1
    * @maximum 500
@@ -1462,7 +1417,6 @@ export type ListGiftsAndPaymentsParams = {
   funderId?: string;
   paymentOnPledgeId?: string;
   paymentMethod?: GiftPaymentMethod;
-  entityId?: string;
   /**
    * @minimum 1
    * @maximum 500

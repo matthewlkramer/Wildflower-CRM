@@ -11,19 +11,20 @@ import {
 import {
   giftTypeEnum,
   giftPaymentMethodEnum,
-  giftAllocationTypeEnum,
-  intendedUsageEnum,
 } from "./_enums";
 import { funders } from "./funders";
 import { people } from "./people";
 import { opportunitiesAndPledges } from "./opportunitiesAndPledges";
 import { paymentIntermediaries } from "./paymentIntermediaries";
 import { users } from "./users";
-import { entities } from "./entities";
-import { fundableProjects } from "./fundableProjects";
-import { schools } from "./schools";
 import { fiscalYears } from "./fiscalYears";
 
+// Header-only row for an actual gift / payment. Like opportunities, all
+// scope (which fund entity, which fiscal year, which regions, which
+// intended usage / fundable project, and per-line sub-amounts) lives one
+// level down in `gift_allocations`. Every gift should have at least one
+// gift_allocations row; a one-line gift carries a single row whose
+// sub_amount equals the gift's amount.
 export const giftsAndPayments = pgTable("gifts_and_payments", {
   id: text("id").primaryKey(),
   legacyGiftId: text("legacy_gift_id"),
@@ -86,28 +87,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // back-fill date_received and drop them.
   closeDate: date("close_date"),
   completedDate: date("completed_date"),
-  allocationType: giftAllocationTypeEnum("allocation_type"),
-  entityId: text("entity_id").references(() => entities.id, {
-    onDelete: "restrict",
-  }),
-  intendedUsage: intendedUsageEnum("intended_usage"),
-  fundableProjectId: text("fundable_project_id").references(
-    () => fundableProjects.id,
-    { onDelete: "restrict" },
-  ),
   designatedToSchool: boolean("designated_to_school").default(false).notNull(),
-  // RESTRICT: schools are synced from Airtable; the sync now upserts
-  // (never deletes), so this only fires if someone manually deletes a
-  // school that has gift refs — which should require explicit cleanup
-  // first.
-  schoolRecipientId: text("school_recipient_id").references(() => schools.id, {
-    onDelete: "restrict",
-  }),
-  spendingStart: date("spending_start"),
-  spendingEnd: date("spending_end"),
-  // Array of regions.id values. Array columns can't carry native FK
-  // constraints; API layer enforces.
-  regionIds: text("region_ids").array(),
   tags: text("tags"),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
@@ -122,11 +102,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_primary_contact_person_id_idx").on(t.primaryContactPersonId),
   index("gifts_and_payments_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
   index("gifts_and_payments_owner_user_id_idx").on(t.ownerUserId),
-  index("gifts_and_payments_entity_id_idx").on(t.entityId),
-  index("gifts_and_payments_fundable_project_id_idx").on(t.fundableProjectId),
-  index("gifts_and_payments_school_recipient_id_idx").on(t.schoolRecipientId),
   index("gifts_and_payments_grant_year_idx").on(t.grantYear),
-  index("gifts_and_payments_region_ids_gin_idx").using("gin", t.regionIds),
 ]);
 
 export type GiftOrPayment = typeof giftsAndPayments.$inferSelect;

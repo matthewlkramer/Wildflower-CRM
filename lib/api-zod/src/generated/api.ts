@@ -2185,7 +2185,6 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   type: zod.enum(["solicitation", "renewal", "open_application"]).optional(),
   funderId: zod.coerce.string().optional(),
   ownerUserId: zod.coerce.string().optional(),
-  entityId: zod.coerce.string().optional(),
   limit: zod.coerce
     .number()
     .min(1)
@@ -2216,7 +2215,6 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
         .nullish(),
       conditions: zod.string().nullish(),
       conditionsMet: zod.boolean(),
-      grantYears: zod.array(zod.string()).nullish(),
       individualGiverPersonId: zod.string().nullish(),
       individualAdvisorPersonId: zod.string().nullish(),
       matchId: zod.string().nullish(),
@@ -2240,20 +2238,6 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       lossReason: zod.string().nullish(),
       applicationDeadline: zod.string().date().nullish(),
       paymentDetails: zod.string().nullish(),
-      entityIds: zod.array(zod.string()).nullish(),
-      intendedUsages: zod
-        .array(
-          zod.enum([
-            "gen_ops",
-            "growth",
-            "school_startup",
-            "teacher_training",
-            "project",
-          ]),
-        )
-        .nullish(),
-      fundableProjectIds: zod.array(zod.string()).nullish(),
-      regionIds: zod.array(zod.string()).nullish(),
       usageNotes: zod.string().nullish(),
       copperPledgeId: zod.string().nullish(),
       primaryContactPersonId: zod.string().nullish(),
@@ -2284,7 +2268,6 @@ export const CreateOpportunityOrPledgeBody = zod.object({
     .optional(),
   conditions: zod.string().optional(),
   conditionsMet: zod.boolean().optional(),
-  grantYears: zod.array(zod.string()).optional(),
   individualGiverPersonId: zod.string().optional(),
   individualAdvisorPersonId: zod.string().optional(),
   matchId: zod.string().optional(),
@@ -2308,20 +2291,6 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   lossReason: zod.string().optional(),
   applicationDeadline: zod.string().date().optional(),
   paymentDetails: zod.string().optional(),
-  entityIds: zod.array(zod.string()).optional(),
-  intendedUsages: zod
-    .array(
-      zod.enum([
-        "gen_ops",
-        "growth",
-        "school_startup",
-        "teacher_training",
-        "project",
-      ]),
-    )
-    .optional(),
-  fundableProjectIds: zod.array(zod.string()).optional(),
-  regionIds: zod.array(zod.string()).optional(),
   usageNotes: zod.string().optional(),
   copperPledgeId: zod.string().optional(),
   primaryContactPersonId: zod.string().optional(),
@@ -2349,7 +2318,6 @@ export const GetOpportunityOrPledgeResponse = zod
       .nullish(),
     conditions: zod.string().nullish(),
     conditionsMet: zod.boolean(),
-    grantYears: zod.array(zod.string()).nullish(),
     individualGiverPersonId: zod.string().nullish(),
     individualAdvisorPersonId: zod.string().nullish(),
     matchId: zod.string().nullish(),
@@ -2373,20 +2341,6 @@ export const GetOpportunityOrPledgeResponse = zod
     lossReason: zod.string().nullish(),
     applicationDeadline: zod.string().date().nullish(),
     paymentDetails: zod.string().nullish(),
-    entityIds: zod.array(zod.string()).nullish(),
-    intendedUsages: zod
-      .array(
-        zod.enum([
-          "gen_ops",
-          "growth",
-          "school_startup",
-          "teacher_training",
-          "project",
-        ]),
-      )
-      .nullish(),
-    fundableProjectIds: zod.array(zod.string()).nullish(),
-    regionIds: zod.array(zod.string()).nullish(),
     usageNotes: zod.string().nullish(),
     copperPledgeId: zod.string().nullish(),
     primaryContactPersonId: zod.string().nullish(),
@@ -2420,6 +2374,9 @@ export const GetOpportunityOrPledgeResponse = zod
                 "committed",
                 "superseded",
                 "committed_with_conditions",
+                "superseded_by_pledge",
+                "superseded_by_gift",
+                "abandoned",
               ])
               .nullish(),
             conditions: zod.string().nullish(),
@@ -2471,25 +2428,7 @@ export const GetOpportunityOrPledgeResponse = zod
             ownerUserId: zod.string().nullish(),
             closeDate: zod.string().date().nullish(),
             completedDate: zod.string().date().nullish(),
-            allocationType: zod
-              .enum(["simple_allocation", "sub_allocations"])
-              .nullish(),
-            entityId: zod.string().nullish(),
-            intendedUsage: zod
-              .enum([
-                "gen_ops",
-                "growth",
-                "school_startup",
-                "teacher_training",
-                "project",
-              ])
-              .nullish(),
-            fundableProjectId: zod.string().nullish(),
             designatedToSchool: zod.boolean(),
-            schoolRecipientId: zod.string().nullish(),
-            spendingStart: zod.string().date().nullish(),
-            spendingEnd: zod.string().date().nullish(),
-            regionIds: zod.array(zod.string()).nullish(),
             tags: zod.string().nullish(),
             createdAt: zod.string().datetime({}),
             updatedAt: zod.string().datetime({}),
@@ -2519,7 +2458,6 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
     .nullish(),
   conditions: zod.string().nullish(),
   conditionsMet: zod.boolean().optional(),
-  grantYears: zod.array(zod.string()).nullish(),
   individualGiverPersonId: zod.string().nullish(),
   individualAdvisorPersonId: zod.string().nullish(),
   matchId: zod.string().nullish(),
@@ -2543,20 +2481,6 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
   lossReason: zod.string().nullish(),
   applicationDeadline: zod.string().date().nullish(),
   paymentDetails: zod.string().nullish(),
-  entityIds: zod.array(zod.string()).nullish(),
-  intendedUsages: zod
-    .array(
-      zod.enum([
-        "gen_ops",
-        "growth",
-        "school_startup",
-        "teacher_training",
-        "project",
-      ]),
-    )
-    .nullish(),
-  fundableProjectIds: zod.array(zod.string()).nullish(),
-  regionIds: zod.array(zod.string()).nullish(),
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
   primaryContactPersonId: zod.string().nullish(),
@@ -2579,7 +2503,6 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
     .nullish(),
   conditions: zod.string().nullish(),
   conditionsMet: zod.boolean(),
-  grantYears: zod.array(zod.string()).nullish(),
   individualGiverPersonId: zod.string().nullish(),
   individualAdvisorPersonId: zod.string().nullish(),
   matchId: zod.string().nullish(),
@@ -2603,20 +2526,6 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   lossReason: zod.string().nullish(),
   applicationDeadline: zod.string().date().nullish(),
   paymentDetails: zod.string().nullish(),
-  entityIds: zod.array(zod.string()).nullish(),
-  intendedUsages: zod
-    .array(
-      zod.enum([
-        "gen_ops",
-        "growth",
-        "school_startup",
-        "teacher_training",
-        "project",
-      ]),
-    )
-    .nullish(),
-  fundableProjectIds: zod.array(zod.string()).nullish(),
-  regionIds: zod.array(zod.string()).nullish(),
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
   primaryContactPersonId: zod.string().nullish(),
@@ -2671,6 +2580,9 @@ export const ListPledgeAllocationsResponse = zod.object({
           "committed",
           "superseded",
           "committed_with_conditions",
+          "superseded_by_pledge",
+          "superseded_by_gift",
+          "abandoned",
         ])
         .nullish(),
       conditions: zod.string().nullish(),
@@ -2704,7 +2616,15 @@ export const CreatePledgeAllocationBody = zod.object({
   fundableProjectId: zod.string().optional(),
   directToSchool: zod.boolean().optional(),
   status: zod
-    .enum(["working", "committed", "superseded", "committed_with_conditions"])
+    .enum([
+      "working",
+      "committed",
+      "superseded",
+      "committed_with_conditions",
+      "superseded_by_pledge",
+      "superseded_by_gift",
+      "abandoned",
+    ])
     .optional(),
   conditions: zod.string().optional(),
   notes: zod.string().optional(),
@@ -2732,7 +2652,15 @@ export const UpdatePledgeAllocationBody = zod.object({
   fundableProjectId: zod.string().nullish(),
   directToSchool: zod.boolean().optional(),
   status: zod
-    .enum(["working", "committed", "superseded", "committed_with_conditions"])
+    .enum([
+      "working",
+      "committed",
+      "superseded",
+      "committed_with_conditions",
+      "superseded_by_pledge",
+      "superseded_by_gift",
+      "abandoned",
+    ])
     .nullish(),
   conditions: zod.string().nullish(),
   notes: zod.string().nullish(),
@@ -2757,7 +2685,15 @@ export const UpdatePledgeAllocationResponse = zod.object({
   fundableProjectId: zod.string().nullish(),
   directToSchool: zod.boolean(),
   status: zod
-    .enum(["working", "committed", "superseded", "committed_with_conditions"])
+    .enum([
+      "working",
+      "committed",
+      "superseded",
+      "committed_with_conditions",
+      "superseded_by_pledge",
+      "superseded_by_gift",
+      "abandoned",
+    ])
     .nullish(),
   conditions: zod.string().nullish(),
   notes: zod.string().nullish(),
@@ -2800,7 +2736,6 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
       "daf_bill_com",
     ])
     .optional(),
-  entityId: zod.coerce.string().optional(),
   limit: zod.coerce
     .number()
     .min(1)
@@ -2853,25 +2788,7 @@ export const ListGiftsAndPaymentsResponse = zod.object({
       ownerUserId: zod.string().nullish(),
       closeDate: zod.string().date().nullish(),
       completedDate: zod.string().date().nullish(),
-      allocationType: zod
-        .enum(["simple_allocation", "sub_allocations"])
-        .nullish(),
-      entityId: zod.string().nullish(),
-      intendedUsage: zod
-        .enum([
-          "gen_ops",
-          "growth",
-          "school_startup",
-          "teacher_training",
-          "project",
-        ])
-        .nullish(),
-      fundableProjectId: zod.string().nullish(),
       designatedToSchool: zod.boolean(),
-      schoolRecipientId: zod.string().nullish(),
-      spendingStart: zod.string().date().nullish(),
-      spendingEnd: zod.string().date().nullish(),
-      regionIds: zod.array(zod.string()).nullish(),
       tags: zod.string().nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -2922,23 +2839,7 @@ export const CreateGiftOrPaymentBody = zod.object({
   ownerUserId: zod.string().optional(),
   closeDate: zod.string().date().optional(),
   completedDate: zod.string().date().optional(),
-  allocationType: zod.enum(["simple_allocation", "sub_allocations"]).optional(),
-  entityId: zod.string().optional(),
-  intendedUsage: zod
-    .enum([
-      "gen_ops",
-      "growth",
-      "school_startup",
-      "teacher_training",
-      "project",
-    ])
-    .optional(),
-  fundableProjectId: zod.string().optional(),
   designatedToSchool: zod.boolean().optional(),
-  schoolRecipientId: zod.string().optional(),
-  spendingStart: zod.string().date().optional(),
-  spendingEnd: zod.string().date().optional(),
-  regionIds: zod.array(zod.string()).optional(),
   tags: zod.string().optional(),
 });
 
@@ -2986,25 +2887,7 @@ export const GetGiftOrPaymentResponse = zod
     ownerUserId: zod.string().nullish(),
     closeDate: zod.string().date().nullish(),
     completedDate: zod.string().date().nullish(),
-    allocationType: zod
-      .enum(["simple_allocation", "sub_allocations"])
-      .nullish(),
-    entityId: zod.string().nullish(),
-    intendedUsage: zod
-      .enum([
-        "gen_ops",
-        "growth",
-        "school_startup",
-        "teacher_training",
-        "project",
-      ])
-      .nullish(),
-    fundableProjectId: zod.string().nullish(),
     designatedToSchool: zod.boolean(),
-    schoolRecipientId: zod.string().nullish(),
-    spendingStart: zod.string().date().nullish(),
-    spendingEnd: zod.string().date().nullish(),
-    regionIds: zod.array(zod.string()).nullish(),
     tags: zod.string().nullish(),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
@@ -3085,23 +2968,7 @@ export const UpdateGiftOrPaymentBody = zod.object({
   ownerUserId: zod.string().nullish(),
   closeDate: zod.string().date().nullish(),
   completedDate: zod.string().date().nullish(),
-  allocationType: zod.enum(["simple_allocation", "sub_allocations"]).nullish(),
-  entityId: zod.string().nullish(),
-  intendedUsage: zod
-    .enum([
-      "gen_ops",
-      "growth",
-      "school_startup",
-      "teacher_training",
-      "project",
-    ])
-    .nullish(),
-  fundableProjectId: zod.string().nullish(),
   designatedToSchool: zod.boolean().optional(),
-  schoolRecipientId: zod.string().nullish(),
-  spendingStart: zod.string().date().nullish(),
-  spendingEnd: zod.string().date().nullish(),
-  regionIds: zod.array(zod.string()).nullish(),
   tags: zod.string().nullish(),
 });
 
@@ -3144,23 +3011,7 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   ownerUserId: zod.string().nullish(),
   closeDate: zod.string().date().nullish(),
   completedDate: zod.string().date().nullish(),
-  allocationType: zod.enum(["simple_allocation", "sub_allocations"]).nullish(),
-  entityId: zod.string().nullish(),
-  intendedUsage: zod
-    .enum([
-      "gen_ops",
-      "growth",
-      "school_startup",
-      "teacher_training",
-      "project",
-    ])
-    .nullish(),
-  fundableProjectId: zod.string().nullish(),
   designatedToSchool: zod.boolean(),
-  schoolRecipientId: zod.string().nullish(),
-  spendingStart: zod.string().date().nullish(),
-  spendingEnd: zod.string().date().nullish(),
-  regionIds: zod.array(zod.string()).nullish(),
   tags: zod.string().nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),

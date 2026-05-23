@@ -52,11 +52,24 @@ export const opportunityStatusEnum = pgEnum("opportunity_status", [
   "lost",
 ]);
 
+// Lifecycle of a single pledge_allocation row. `working` is a draft an
+// internal user is iterating on; `committed` / `committed_with_conditions`
+// are firm commitments from the funder; `superseded_by_pledge` means the
+// row was replaced by a later allocation (re-scoped or split differently);
+// `superseded_by_gift` means an actual gift_allocation has taken its place
+// (the money landed and the pledge row is now historical); `abandoned`
+// means the allocation was dropped without being paid (the opp may still
+// be open at a different scope, or fully lost). The legacy plain
+// `superseded` value is retained in the DB enum for safety but unused —
+// new writes should pick one of the two more specific variants.
 export const pledgeAllocationStatusEnum = pgEnum("pledge_allocation_status", [
   "working",
   "committed",
   "superseded",
   "committed_with_conditions",
+  "superseded_by_pledge",
+  "superseded_by_gift",
+  "abandoned",
 ]);
 
 export const paymentIntermediaryTypeEnum = pgEnum("payment_intermediary_type", [
@@ -198,11 +211,6 @@ export const giftPaymentMethodEnum = pgEnum("gift_payment_method", [
   "daf_ach",
   "daf_check",
   "daf_bill_com",
-]);
-
-export const giftAllocationTypeEnum = pgEnum("gift_allocation_type", [
-  "simple_allocation",
-  "sub_allocations",
 ]);
 
 // What a contribution is intended to fund. When the value is "project",

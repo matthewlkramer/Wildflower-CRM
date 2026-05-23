@@ -25,7 +25,6 @@ router.get(
     if (q.funderId) filters.push(eq(giftsAndPayments.funderId, q.funderId));
     if (q.paymentOnPledgeId) filters.push(eq(giftsAndPayments.paymentOnPledgeId, q.paymentOnPledgeId));
     if (q.paymentMethod) filters.push(eq(giftsAndPayments.paymentMethod, q.paymentMethod));
-    if (q.entityId) filters.push(eq(giftsAndPayments.entityId, q.entityId));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db.select().from(giftsAndPayments).where(where).orderBy(desc(giftsAndPayments.dateReceived)).limit(limit).offset(offset),

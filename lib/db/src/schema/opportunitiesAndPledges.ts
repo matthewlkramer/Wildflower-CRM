@@ -13,12 +13,23 @@ import {
   opportunityTypeEnum,
   opportunityStageEnum,
   opportunityConditionalEnum,
-  intendedUsageEnum,
 } from "./_enums";
 import { funders } from "./funders";
 import { people } from "./people";
 import { users } from "./users";
 
+// Header-only row for an opportunity / pledge. All scope (which fund
+// entities, which fiscal years, which regions, which intended usages /
+// fundable projects, and per-line sub-amounts) lives one level down in
+// `pledge_allocations`. Every opportunity should have at least one
+// pledge_allocations row even while the conversation is still fuzzy —
+// during early talks those rows carry status='working' and act as the
+// scratch pad; once a funder commits they flip to 'committed' /
+// 'committed_with_conditions'; once the money lands they flip to
+// 'superseded_by_gift' and the corresponding gift_allocations rows
+// become the canonical record. This keeps a single shape across the
+// opportunity → pledge → payment lifecycle instead of duplicating scope
+// fields at every level.
 export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   id: text("id").primaryKey(),
   name: text("name"),
@@ -33,9 +44,6 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   conditional: opportunityConditionalEnum("conditional"),
   conditions: text("conditions"),
   conditionsMet: boolean("conditions_met").default(false).notNull(),
-  // Array of fiscal_years.id slugs (e.g. {fy2024,fy2025}). Multi-year grants
-  // book a sub_amount to each year via pledge_allocations.
-  grantYears: text("grant_years").array(),
   // RESTRICT: the individual giver is part of the money-trail record.
   individualGiverPersonId: text("individual_giver_person_id").references(
     () => people.id,
@@ -66,19 +74,6 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   lossReason: text("loss_reason"),
   applicationDeadline: date("application_deadline"),
   paymentDetails: text("payment_details"),
-  // Array of entities.id slugs the opportunity is attributed to. Replaces the
-  // old `opportunity_entities` junction table.
-  entityIds: text("entity_ids").array(),
-  // Array of intended_usage enum values. An opportunity may target multiple
-  // usages (e.g. {gen_ops, project}); use the parallel fundable_project_ids
-  // for any 'project' entries.
-  intendedUsages: intendedUsageEnum("intended_usages").array(),
-  // Array of fundable_projects.id slugs corresponding to the 'project'
-  // entries in intendedUsages.
-  fundableProjectIds: text("fundable_project_ids").array(),
-  // Array of regions.id values. Array columns can't carry native FK
-  // constraints; the API layer is responsible for validating writes.
-  regionIds: text("region_ids").array(),
   usageNotes: text("usage_notes"),
   // Legacy integer pledge ID inherited from Copper. Not a FK; preserved for
   // cross-reference back to the prior CRM.
@@ -99,11 +94,6 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   index("opportunities_and_pledges_match_id_idx").on(t.matchId),
   index("opportunities_and_pledges_owner_user_id_idx").on(t.ownerUserId),
   index("opportunities_and_pledges_primary_contact_person_id_idx").on(t.primaryContactPersonId),
-  index("opportunities_and_pledges_region_ids_gin_idx").using("gin", t.regionIds),
-  index("opportunities_and_pledges_entity_ids_gin_idx").using("gin", t.entityIds),
-  index("opportunities_and_pledges_fundable_project_ids_gin_idx").using("gin", t.fundableProjectIds),
-  index("opportunities_and_pledges_intended_usages_gin_idx").using("gin", t.intendedUsages),
-  index("opportunities_and_pledges_grant_years_gin_idx").using("gin", t.grantYears),
 ]);
 
 export type OpportunityOrPledge = typeof opportunitiesAndPledges.$inferSelect;

@@ -504,7 +504,6 @@ paths:
         - { name: type, in: query, schema: { $ref: "#/components/schemas/OpportunityType" } }
         - { name: funderId, in: query, schema: { type: string } }
         - { name: ownerUserId, in: query, schema: { type: string } }
-        - { name: entityId, in: query, schema: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -584,7 +583,6 @@ paths:
         - { name: funderId, in: query, schema: { type: string } }
         - { name: paymentOnPledgeId, in: query, schema: { type: string } }
         - { name: paymentMethod, in: query, schema: { $ref: "#/components/schemas/GiftPaymentMethod" } }
-        - { name: entityId, in: query, schema: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -714,10 +712,9 @@ components:
     OpportunityType: { type: string, enum: [solicitation, renewal, open_application] }
     OpportunityStage: { type: string, enum: [cold_lead, warm_lead, in_conversation, convince, conditional_commitment, probable_renewal, verbal_commitment, written_commitment, cash_in] }
     OpportunityConditional: { type: string, enum: [unconditional, reimbursable, conditional_on_funder_determination, conditional_on_target] }
-    PledgeAllocationStatus: { type: string, enum: [working, committed, superseded, committed_with_conditions] }
+    PledgeAllocationStatus: { type: string, enum: [working, committed, superseded, committed_with_conditions, superseded_by_pledge, superseded_by_gift, abandoned] }
     GiftType: { type: string, enum: [standard_gift, pledge_payment, directed_gift, loan_fund_investment, matching_gift] }
     GiftPaymentMethod: { type: string, enum: [ach, check, wire, stock, donor_box, daf_ach, daf_check, daf_bill_com] }
-    GiftAllocationType: { type: string, enum: [simple_allocation, sub_allocations] }
     IntendedUsage: { type: string, enum: [gen_ops, growth, school_startup, teacher_training, project] }
 
     # ─── Users ─────────────────────────────────────────────────────────────────
@@ -1381,7 +1378,6 @@ components:
         conditional:                { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true }
         conditions:                 { type: string, nullable: true }
         conditionsMet:              { type: boolean }
-        grantYears:                 { type: array, items: { type: string }, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         individualAdvisorPersonId:  { type: string, nullable: true }
         matchId:                    { type: string, nullable: true }
@@ -1393,10 +1389,6 @@ components:
         lossReason:                 { type: string, nullable: true }
         applicationDeadline:        { type: string, format: date, nullable: true }
         paymentDetails:             { type: string, nullable: true }
-        entityIds:                  { type: array, items: { type: string }, nullable: true }
-        intendedUsages:             { type: array, items: { $ref: "#/components/schemas/IntendedUsage" }, nullable: true }
-        fundableProjectIds:         { type: array, items: { type: string }, nullable: true }
-        regionIds:                  { type: array, items: { type: string }, nullable: true }
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
         primaryContactPersonId:     { type: string, nullable: true }
@@ -1426,7 +1418,6 @@ components:
         conditional:                { $ref: "#/components/schemas/OpportunityConditional" }
         conditions:                 { type: string }
         conditionsMet:              { type: boolean }
-        grantYears:                 { type: array, items: { type: string } }
         individualGiverPersonId:    { type: string }
         individualAdvisorPersonId:  { type: string }
         matchId:                    { type: string }
@@ -1438,10 +1429,6 @@ components:
         lossReason:                 { type: string }
         applicationDeadline:        { type: string, format: date }
         paymentDetails:             { type: string }
-        entityIds:                  { type: array, items: { type: string } }
-        intendedUsages:             { type: array, items: { $ref: "#/components/schemas/IntendedUsage" } }
-        fundableProjectIds:         { type: array, items: { type: string } }
-        regionIds:                  { type: array, items: { type: string } }
         usageNotes:                 { type: string }
         copperPledgeId:             { type: string }
         primaryContactPersonId:     { type: string }
@@ -1456,7 +1443,6 @@ components:
         conditional:                { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true }
         conditions:                 { type: string, nullable: true }
         conditionsMet:              { type: boolean }
-        grantYears:                 { type: array, items: { type: string }, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         individualAdvisorPersonId:  { type: string, nullable: true }
         matchId:                    { type: string, nullable: true }
@@ -1468,10 +1454,6 @@ components:
         lossReason:                 { type: string, nullable: true }
         applicationDeadline:        { type: string, format: date, nullable: true }
         paymentDetails:             { type: string, nullable: true }
-        entityIds:                  { type: array, items: { type: string }, nullable: true }
-        intendedUsages:             { type: array, items: { $ref: "#/components/schemas/IntendedUsage" }, nullable: true }
-        fundableProjectIds:         { type: array, items: { type: string }, nullable: true }
-        regionIds:                  { type: array, items: { type: string }, nullable: true }
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
         primaryContactPersonId:     { type: string, nullable: true }
@@ -1554,15 +1536,7 @@ components:
         ownerUserId:                      { type: string, nullable: true }
         closeDate:                  { type: string, format: date, nullable: true }
         completedDate:              { type: string, format: date, nullable: true }
-        allocationType:             { allOf: [ { $ref: "#/components/schemas/GiftAllocationType" } ], nullable: true }
-        entityId:                   { type: string, nullable: true }
-        intendedUsage:              { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
-        fundableProjectId:          { type: string, nullable: true }
         designatedToSchool:         { type: boolean }
-        schoolRecipientId:          { type: string, nullable: true }
-        spendingStart:              { type: string, format: date, nullable: true }
-        spendingEnd:                { type: string, format: date, nullable: true }
-        regionIds:                  { type: array, items: { type: string }, nullable: true }
         tags:                       { type: string, nullable: true }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
@@ -1599,15 +1573,7 @@ components:
         ownerUserId:                      { type: string }
         closeDate:                  { type: string, format: date }
         completedDate:              { type: string, format: date }
-        allocationType:             { $ref: "#/components/schemas/GiftAllocationType" }
-        entityId:                   { type: string }
-        intendedUsage:              { $ref: "#/components/schemas/IntendedUsage" }
-        fundableProjectId:          { type: string }
         designatedToSchool:         { type: boolean }
-        schoolRecipientId:          { type: string }
-        spendingStart:              { type: string, format: date }
-        spendingEnd:                { type: string, format: date }
-        regionIds:                  { type: array, items: { type: string } }
         tags:                       { type: string }
     UpdateGiftOrPaymentBody:
       type: object
@@ -1630,15 +1596,7 @@ components:
         ownerUserId:                      { type: string, nullable: true }
         closeDate:                  { type: string, format: date, nullable: true }
         completedDate:              { type: string, format: date, nullable: true }
-        allocationType:             { allOf: [ { $ref: "#/components/schemas/GiftAllocationType" } ], nullable: true }
-        entityId:                   { type: string, nullable: true }
-        intendedUsage:              { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
-        fundableProjectId:          { type: string, nullable: true }
         designatedToSchool:         { type: boolean }
-        schoolRecipientId:          { type: string, nullable: true }
-        spendingStart:              { type: string, format: date, nullable: true }
-        spendingEnd:                { type: string, format: date, nullable: true }
-        regionIds:                  { type: array, items: { type: string }, nullable: true }
         tags:                       { type: string, nullable: true }
 
     # ─── Gift allocations ──────────────────────────────────────────────────────

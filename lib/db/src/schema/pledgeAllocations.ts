@@ -22,10 +22,10 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   ),
   subAmount: numeric("sub_amount", { precision: 14, scale: 2 }),
   // FK to fiscal_years.id (slug, e.g. 'fy2024'). Single fiscal year per
-  // allocation; multi-year grants get one allocation row per year. The
-  // parent opportunity may still carry a multi-value grant_years array
-  // representing the rough span; the allocations are the canonical per-year
-  // bookings.
+  // allocation; multi-year grants get one allocation row per year. All
+  // scope (entity / year / region / intended_usage / fundable_project) is
+  // carried here on the allocation rather than at the parent opportunity
+  // level — the parent is header-only.
   grantYear: text("grant_year").references(() => fiscalYears.id, {
     onDelete: "restrict",
   }),

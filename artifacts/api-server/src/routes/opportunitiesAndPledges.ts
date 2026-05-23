@@ -26,7 +26,6 @@ router.get(
     if (q.type) filters.push(eq(opportunitiesAndPledges.type, q.type));
     if (q.funderId) filters.push(eq(opportunitiesAndPledges.funderId, q.funderId));
     if (q.ownerUserId) filters.push(eq(opportunitiesAndPledges.ownerUserId, q.ownerUserId));
-    if (q.entityId) filters.push(sql`${q.entityId} = ANY(${opportunitiesAndPledges.entityIds})`);
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db.select().from(opportunitiesAndPledges).where(where).orderBy(desc(opportunitiesAndPledges.projectedCloseDate)).limit(limit).offset(offset),
