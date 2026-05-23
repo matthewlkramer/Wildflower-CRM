@@ -75,6 +75,7 @@ export const pledgeAllocationStatusEnum = pgEnum("pledge_allocation_status", [
 export const paymentIntermediaryTypeEnum = pgEnum("payment_intermediary_type", [
   "daf",
   "giving_platform",
+  "private_wealth_manager",
 ]);
 
 // ---- Funder enums ----
