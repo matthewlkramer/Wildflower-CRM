@@ -8,7 +8,7 @@ import {
   UpdateHouseholdBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { asyncHandler, newId, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -21,7 +21,9 @@ router.get(
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.search) filters.push(ilike(households.name, `%${q.search}%`));
-    if (q.active !== undefined) filters.push(eq(households.active, q.active));
+    // See parseBoolQuery — bypass the buggy generated zod boolean coercion.
+    const active = parseBoolQuery(req, "active");
+    if (active !== undefined) filters.push(eq(households.active, active));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db.select().from(households).where(where).orderBy(asc(households.name)).limit(limit).offset(offset),

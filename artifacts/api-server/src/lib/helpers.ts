@@ -52,3 +52,26 @@ export function parseOrBadRequest<T>(
 export function notFound(res: Response, resource = "resource"): void {
   res.status(404).json({ error: "not_found", message: `${resource} not found` });
 }
+
+/**
+ * Parse a boolean query-string param from req.query. Returns undefined if
+ * the param is absent or empty.
+ *
+ * Why this exists: orval emits `zod.coerce.boolean()` for boolean query
+ * params, which uses JS truthiness — so the string "false" coerces to
+ * `true` and inverts the filter. Until that's fixed upstream, route
+ * handlers should ignore the coerced value on the parsed query object and
+ * read the raw value through this helper.
+ */
+export function parseBoolQuery(
+  req: Request,
+  name: string,
+): boolean | undefined {
+  const raw = req.query[name];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  if (v === undefined || v === null || v === "") return undefined;
+  const s = String(v).trim().toLowerCase();
+  if (s === "true" || s === "1" || s === "yes") return true;
+  if (s === "false" || s === "0" || s === "no") return false;
+  return undefined;
+}

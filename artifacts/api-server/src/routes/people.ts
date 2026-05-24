@@ -8,7 +8,7 @@ import {
   UpdatePersonBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { asyncHandler, newId, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -29,7 +29,10 @@ router.get(
       );
       if (orClause) filters.push(orClause);
     }
-    if (q.deceased !== undefined) filters.push(eq(people.deceased, q.deceased));
+    // Read deceased from the raw query string — see parseBoolQuery for why
+    // we bypass the generated zod field (zod.coerce.boolean inverts "false").
+    const deceased = parseBoolQuery(req, "deceased");
+    if (deceased !== undefined) filters.push(eq(people.deceased, deceased));
     if (q.regionId) filters.push(eq(people.currentHomeRegionId, q.regionId));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
