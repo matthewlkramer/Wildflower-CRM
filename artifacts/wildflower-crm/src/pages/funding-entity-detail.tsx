@@ -24,6 +24,12 @@ import {
   type InlineSelectOption,
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
+import {
+  InlineEditInterestsThematic,
+  InlineEditInterestsAges,
+  InlineEditInterestsGovModels,
+  InlineEditMultiRegionPicker,
+} from "@/components/multi-select-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum, formatCapacity } from "@/lib/format";
 
@@ -366,31 +372,49 @@ function FunderView({ funder }: { funder: FunderDetail }) {
         </Card>
       </div>
 
-      {(funder.interestsThematic?.length ||
-        funder.interestsAges?.length ||
-        funder.interestsGovModels?.length ||
-        funder.regionIds?.length ||
-        funder.priorityAreasNotes) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Interests</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <TagRow label="Thematic" values={funder.interestsThematic} />
-            <TagRow label="Ages" values={funder.interestsAges} />
-            <TagRow label="Gov models" values={funder.interestsGovModels} />
-            <TagRow label="Regions" values={funder.regionIds} />
-            {funder.priorityAreasNotes && (
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">
-                  Priority areas notes
-                </div>
-                <p className="whitespace-pre-wrap">{funder.priorityAreasNotes}</p>
+      <Card>
+        <CardHeader>
+          <CardTitle>Interests</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <TagEditRow label="Thematic">
+            <InlineEditInterestsThematic
+              testIdBase="funder-interests-thematic"
+              value={funder.interestsThematic ?? []}
+              onSave={(next) => patch({ interestsThematic: next })}
+            />
+          </TagEditRow>
+          <TagEditRow label="Ages">
+            <InlineEditInterestsAges
+              testIdBase="funder-interests-ages"
+              value={funder.interestsAges ?? []}
+              onSave={(next) => patch({ interestsAges: next })}
+            />
+          </TagEditRow>
+          <TagEditRow label="Gov models">
+            <InlineEditInterestsGovModels
+              testIdBase="funder-interests-gov"
+              value={funder.interestsGovModels ?? []}
+              onSave={(next) => patch({ interestsGovModels: next })}
+            />
+          </TagEditRow>
+          <TagEditRow label="Regions">
+            <InlineEditMultiRegionPicker
+              testIdBase="funder-regions"
+              value={funder.regionIds ?? []}
+              onSave={(next) => patch({ regionIds: next })}
+            />
+          </TagEditRow>
+          {funder.priorityAreasNotes && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">
+                Priority areas notes
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+              <p className="whitespace-pre-wrap">{funder.priorityAreasNotes}</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
@@ -652,6 +676,23 @@ function TagRow({
           </Badge>
         ))}
       </div>
+    </div>
+  );
+}
+
+function TagEditRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-muted-foreground mb-1">
+        {label}
+      </div>
+      {children}
     </div>
   );
 }

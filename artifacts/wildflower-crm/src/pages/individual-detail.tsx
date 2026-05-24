@@ -19,6 +19,12 @@ import {
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import { InlineEditRegionPicker, useRegionNameMap } from "@/components/region-picker";
+import {
+  InlineEditInterestsThematic,
+  InlineEditInterestsAges,
+  InlineEditInterestsGovModels,
+  InlineEditMultiRegionPicker,
+} from "@/components/multi-select-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum } from "@/lib/format";
 
@@ -267,22 +273,41 @@ function PersonView({ person }: { person: PersonDetail }) {
         </Card>
       </div>
 
-      {(person.interestsThematic?.length ||
-        person.interestsAges?.length ||
-        person.interestsGovModels?.length ||
-        person.regionIds?.length) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Interests</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <TagRow label="Thematic" values={person.interestsThematic} />
-            <TagRow label="Ages" values={person.interestsAges} />
-            <TagRow label="Gov models" values={person.interestsGovModels} />
-            <TagRow label="Regions" values={person.regionIds} />
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Interests</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <TagEditRow label="Thematic">
+            <InlineEditInterestsThematic
+              testIdBase="person-interests-thematic"
+              value={person.interestsThematic ?? []}
+              onSave={(next) => patch({ interestsThematic: next })}
+            />
+          </TagEditRow>
+          <TagEditRow label="Ages">
+            <InlineEditInterestsAges
+              testIdBase="person-interests-ages"
+              value={person.interestsAges ?? []}
+              onSave={(next) => patch({ interestsAges: next })}
+            />
+          </TagEditRow>
+          <TagEditRow label="Gov models">
+            <InlineEditInterestsGovModels
+              testIdBase="person-interests-gov"
+              value={person.interestsGovModels ?? []}
+              onSave={(next) => patch({ interestsGovModels: next })}
+            />
+          </TagEditRow>
+          <TagEditRow label="Regions">
+            <InlineEditMultiRegionPicker
+              testIdBase="person-regions"
+              value={person.regionIds ?? []}
+              onSave={(next) => patch({ regionIds: next })}
+            />
+          </TagEditRow>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
@@ -547,6 +572,23 @@ function TagRow({ label, values }: { label: string; values?: string[] | null }) 
           </Badge>
         ))}
       </div>
+    </div>
+  );
+}
+
+function TagEditRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-muted-foreground mb-1">
+        {label}
+      </div>
+      {children}
     </div>
   );
 }
