@@ -18,3 +18,4 @@ export * from "./giftAllocations";
 export * from "./entities";
 export * from "./fundableProjects";
 export * from "./fiscalYears";
+export * from "./fiscalYearEntityGoals";

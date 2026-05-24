@@ -1200,3 +1200,21 @@ UPDATE gift_allocations
        updated_at = NOW()
  WHERE id = 'rec0cwaXUyDulGagw'
    AND sub_amount = 320336.00;
+
+-- ============================================================================
+-- 2026-05-24  Per-(fiscal_year, entity) fundraising goals seed
+-- ============================================================================
+-- Goals don't come from Airtable — they're set by the fundraising team. The
+-- legacy `fiscal_years.goal_amount` column held a single $4M/year number that
+-- the team confirmed is Wildflower Foundation's goal; Black Wildflowers Fund
+-- is also targeting $1M/year for FY26 and FY27. Schema-level move to the new
+-- `fiscal_year_entity_goals` table is in Drizzle (composite PK enables the
+-- ON CONFLICT below).
+INSERT INTO fiscal_year_entity_goals (fiscal_year_id, entity_id, goal_amount) VALUES
+  ('fy2026', 'wildflower_foundation',  4000000),
+  ('fy2027', 'wildflower_foundation',  4000000),
+  ('fy2026', 'black_wildflowers_fund', 1000000),
+  ('fy2027', 'black_wildflowers_fund', 1000000)
+ON CONFLICT (fiscal_year_id, entity_id) DO UPDATE
+  SET goal_amount = EXCLUDED.goal_amount,
+      updated_at  = NOW();

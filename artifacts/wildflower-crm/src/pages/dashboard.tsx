@@ -111,13 +111,14 @@ export default function Dashboard() {
   const moneyTiles: MoneyTile[] = byFy.flatMap((m) => {
     const fySlug = m.fiscalYear.id; // e.g. "fy2026"
     const fyLabel = m.fiscalYear.label;
-    // The goal_amount column is org-wide (not per-entity), so when an entity
-    // filter is active we make that explicit in the tile subtitle so users
-    // don't read it as "WF Foundation's goal" by mistake.
+    // Goal is summed from per-entity goals (fiscal_year_entity_goals) and
+    // honors the same entity filter as the other money tiles.
     const goalSub = m.goal
       ? entityFilterActive
-        ? `Org-wide fundraising goal for ${fyLabel} (not entity-filtered)`
-        : `Fundraising goal for ${fyLabel}`
+        ? selectedEntityIds.length === 1
+          ? `Fundraising goal for ${fyLabel} (${selectedEntityIds.length} entity)`
+          : `Fundraising goal for ${fyLabel} (${selectedEntityIds.length} entities)`
+        : `Total fundraising goal across all entities for ${fyLabel}`
       : `No goal set for ${fyLabel}`;
     return [
       {

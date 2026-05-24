@@ -10,6 +10,7 @@ import {
   giftsAndPayments,
   giftAllocations,
   fiscalYears,
+  fiscalYearEntityGoals,
 } from "@workspace/db/schema";
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -81,9 +82,8 @@ function computeCurrentFiscalYear(now: Date = new Date()): FyDescriptor {
 async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   // Entity scoping is applied at the allocation level (both pledge_allocations
   // and gift_allocations carry an entity_id). An empty/undefined list means
-  // "all entities" — pass-through with no filter. The goal is read straight
-  // from fiscal_years and is not entity-scoped (the goal column is a single
-  // org-wide number; entity-level goals don't exist in the schema).
+  // "all entities" — pass-through with no filter. The goal is summed from
+  // the per-entity `fiscal_year_entity_goals` table, also entity-scoped.
   const hasEntityFilter = !!entityIds && entityIds.length > 0;
   const [[openRow], [receivedRow], [goalRow]] = await Promise.all([
     db
@@ -120,10 +120,17 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
       ),
     db
       .select({
-        goal: sql<string | null>`${fiscalYears.goalAmount}::text`,
+        goal: sql<string | null>`NULLIF(SUM(${fiscalYearEntityGoals.goalAmount}), 0)::text`,
       })
-      .from(fiscalYears)
-      .where(eq(fiscalYears.id, fy.id)),
+      .from(fiscalYearEntityGoals)
+      .where(
+        and(
+          eq(fiscalYearEntityGoals.fiscalYearId, fy.id),
+          hasEntityFilter
+            ? inArray(fiscalYearEntityGoals.entityId, entityIds!)
+            : undefined,
+        ),
+      ),
   ]);
 
   return {
@@ -230,12 +237,25 @@ router.get(
         id: fiscalYears.id,
         startDate: sql<string>`${fiscalYears.startDate}::text`,
         endDate: sql<string>`${fiscalYears.endDate}::text`,
-        goal: sql<string | null>`${fiscalYears.goalAmount}::text`,
       })
       .from(fiscalYears)
       .where(eq(fiscalYears.id, fyId))
       .then((r) => r[0]);
     if (!fyRow) return notFound(res, "fiscal year");
+
+    // Goal is summed from the per-entity goals table, scoped by entity if
+    // the request narrows to one. Returns null when no goals are recorded.
+    const [goalRow] = await db
+      .select({
+        goal: sql<string | null>`NULLIF(SUM(${fiscalYearEntityGoals.goalAmount}), 0)::text`,
+      })
+      .from(fiscalYearEntityGoals)
+      .where(
+        and(
+          eq(fiscalYearEntityGoals.fiscalYearId, fyId),
+          entityIdParam ? eq(fiscalYearEntityGoals.entityId, entityIdParam) : undefined,
+        ),
+      );
 
     // FY slug format is `fy<endYear>` (see analytics.ts fyFromEndYear).
     // Label keeps that convention even when sourced from the DB row.
@@ -326,7 +346,7 @@ router.get(
 
     res.json({
       fiscalYear,
-      goal: fyRow.goal ?? null,
+      goal: goalRow?.goal ?? null,
       received: {
         total: sumStr(receivedRows),
         rows: receivedRows,
