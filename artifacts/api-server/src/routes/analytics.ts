@@ -11,9 +11,19 @@ import {
   giftAllocations,
   fiscalYears,
 } from "@workspace/db/schema";
-import { and, count, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler } from "../lib/helpers";
+import { asyncHandler, notFound } from "../lib/helpers";
+
+// Person display name matches the rest of the API: COALESCE(full_name,
+// trim(first||' '||last)). Kept inline (not extracted) because callers
+// pick different parent-table columns alongside it.
+const personDisplayNameSql = sql<string | null>`
+  COALESCE(
+    NULLIF(TRIM(${people.fullName}), ''),
+    NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
+  )
+`;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -158,6 +168,129 @@ router.get(
       },
       currentFiscalYear: currentFy,
       byFiscalYear: [currentFyMetrics, nextFyMetrics],
+    });
+  }),
+);
+
+// Per-FY drilldown for a single dashboard money tile. Returns the
+// supporting rows for "Received" (gift_allocations) and "Open asks" /
+// "Weighted asks" (pledge_allocations on open opps), plus the FY's goal.
+// Donor info is denormalized via three LEFT JOINs (mirrors the
+// donor_xor invariant — exactly one of funder/household/person is set).
+router.get(
+  "/fiscal-year-breakdown/:fyId",
+  asyncHandler(async (req, res) => {
+    // Path param matches the OpenAPI operation parameter name (`fyId`);
+    // the shared `paramId` helper only reads `req.params.id`, so we read
+    // this one directly.
+    const fyId = String(req.params.fyId ?? "");
+    if (!fyId) return notFound(res, "fiscal year");
+
+    const fyRow = await db
+      .select({
+        id: fiscalYears.id,
+        startDate: sql<string>`${fiscalYears.startDate}::text`,
+        endDate: sql<string>`${fiscalYears.endDate}::text`,
+        goal: sql<string | null>`${fiscalYears.goalAmount}::text`,
+      })
+      .from(fiscalYears)
+      .where(eq(fiscalYears.id, fyId))
+      .then((r) => r[0]);
+    if (!fyRow) return notFound(res, "fiscal year");
+
+    // FY slug format is `fy<endYear>` (see analytics.ts fyFromEndYear).
+    // Label keeps that convention even when sourced from the DB row.
+    const endYear = Number(fyId.slice(2));
+    const fiscalYear = {
+      id: fyRow.id,
+      label: `FY ${endYear}`,
+      startDate: fyRow.startDate,
+      endDate: fyRow.endDate,
+    };
+
+    const [receivedRows, openRows] = await Promise.all([
+      db
+        .select({
+          allocationId: giftAllocations.id,
+          subAmount: sql<string>`${giftAllocations.subAmount}::text`,
+          entityId: giftAllocations.entityId,
+          intendedUsage: sql<string | null>`${giftAllocations.intendedUsage}::text`,
+          fundableProjectId: giftAllocations.fundableProjectId,
+          giftId: giftAllocations.giftId,
+          giftType: sql<string | null>`${giftsAndPayments.type}::text`,
+          dateReceived: sql<string | null>`${giftsAndPayments.dateReceived}::text`,
+          giftAmount: sql<string | null>`${giftsAndPayments.amount}::text`,
+          funderId: giftsAndPayments.funderId,
+          funderName: funders.name,
+          householdId: giftsAndPayments.householdId,
+          householdName: households.name,
+          individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
+          individualGiverPersonName: personDisplayNameSql,
+        })
+        .from(giftAllocations)
+        .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
+        .leftJoin(funders, eq(funders.id, giftsAndPayments.funderId))
+        .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
+        .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
+        .where(eq(giftAllocations.grantYear, fyId))
+        .orderBy(desc(giftsAndPayments.dateReceived)),
+      db
+        .select({
+          allocationId: pledgeAllocations.id,
+          subAmount: sql<string>`${pledgeAllocations.subAmount}::text`,
+          weightedAmount: sql<string>`(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1))::text`,
+          allocationStatus: sql<string | null>`${pledgeAllocations.status}::text`,
+          entityId: pledgeAllocations.entityId,
+          intendedUsage: sql<string | null>`${pledgeAllocations.intendedUsage}::text`,
+          fundableProjectId: pledgeAllocations.fundableProjectId,
+          opportunityId: pledgeAllocations.pledgeOrOpportunityId,
+          opportunityName: opportunitiesAndPledges.name,
+          opportunityStage: sql<string | null>`${opportunitiesAndPledges.stage}::text`,
+          winProbability: sql<string | null>`${opportunitiesAndPledges.winProbability}::text`,
+          projectedCloseDate: sql<string | null>`${opportunitiesAndPledges.projectedCloseDate}::text`,
+          funderId: opportunitiesAndPledges.funderId,
+          funderName: funders.name,
+          householdId: opportunitiesAndPledges.householdId,
+          householdName: households.name,
+          individualGiverPersonId: opportunitiesAndPledges.individualGiverPersonId,
+          individualGiverPersonName: personDisplayNameSql,
+        })
+        .from(pledgeAllocations)
+        .innerJoin(
+          opportunitiesAndPledges,
+          eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
+        )
+        .leftJoin(funders, eq(funders.id, opportunitiesAndPledges.funderId))
+        .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
+        .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
+        .where(
+          and(
+            eq(opportunitiesAndPledges.status, "open"),
+            eq(pledgeAllocations.grantYear, fyId),
+          ),
+        )
+        .orderBy(desc(opportunitiesAndPledges.projectedCloseDate)),
+    ]);
+
+    // Sum at the API edge so the page header totals always agree with the
+    // visible rows (and match the Dashboard tile numbers — same SQL).
+    const sumStr = (rows: Array<{ subAmount: string | null }>, key: "subAmount" | "weightedAmount" = "subAmount") =>
+      rows
+        .reduce((acc, r) => acc + Number((r as Record<string, string | null>)[key] ?? 0), 0)
+        .toFixed(2);
+
+    res.json({
+      fiscalYear,
+      goal: fyRow.goal ?? null,
+      received: {
+        total: sumStr(receivedRows),
+        rows: receivedRows,
+      },
+      openPipeline: {
+        totalAsk: sumStr(openRows),
+        totalWeighted: sumStr(openRows as Array<{ subAmount: string; weightedAmount: string }>, "weightedAmount"),
+        rows: openRows,
+      },
     });
   }),
 );

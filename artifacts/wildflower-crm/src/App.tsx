@@ -25,6 +25,7 @@ import GiftDetail from "@/pages/gift-detail";
 import Moves from "@/pages/moves";
 import Projections from "@/pages/projections";
 import GrantsCalendar from "@/pages/grants-calendar";
+import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import Layout from "@/components/layout";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -189,6 +190,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/gifts/:id"><ProtectedRoute component={GiftDetail} /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>
           <Route path="/projections"><ProtectedRoute component={Projections} /></Route>
+          <Route path="/fiscal-year/:fyId"><ProtectedRoute component={FiscalYearDetail} /></Route>
           <Route path="/grants-calendar"><ProtectedRoute component={GrantsCalendar} /></Route>
           
           <Route component={NotFound} />

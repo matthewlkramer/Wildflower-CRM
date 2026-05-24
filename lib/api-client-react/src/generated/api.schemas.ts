@@ -485,6 +485,83 @@ export interface ProjectionsByFyEntity {
   rows: ProjectionByFyEntityRow[];
 }
 
+/**
+ * A single gift_allocation row booked to the FY's grant_year, denormalized with parent gift + donor info.
+ */
+export interface FiscalYearReceivedRow {
+  allocationId: string;
+  /** gift_allocations.sub_amount (numeric string). */
+  subAmount: string;
+  entityId?: string | null;
+  intendedUsage?: string | null;
+  fundableProjectId?: string | null;
+  giftId: string;
+  giftType?: string | null;
+  dateReceived?: string | null;
+  /** Parent gift's total amount (numeric string). */
+  giftAmount?: string | null;
+  funderId?: string | null;
+  funderName?: string | null;
+  householdId?: string | null;
+  householdName?: string | null;
+  individualGiverPersonId?: string | null;
+  individualGiverPersonName?: string | null;
+}
+
+/**
+ * A single pledge_allocation row on an open opportunity for the FY's grant_year, denormalized with parent opp + donor info.
+ */
+export interface FiscalYearOpenRow {
+  allocationId: string;
+  /** pledge_allocations.sub_amount (numeric string). */
+  subAmount: string;
+  /** sub_amount × COALESCE(parent.win_probability, 1) (numeric string). */
+  weightedAmount: string;
+  allocationStatus?: string | null;
+  entityId?: string | null;
+  intendedUsage?: string | null;
+  fundableProjectId?: string | null;
+  opportunityId: string;
+  opportunityName?: string | null;
+  opportunityStage?: string | null;
+  /** Parent opp's win_probability (0–1, numeric string). */
+  winProbability?: string | null;
+  projectedCloseDate?: string | null;
+  funderId?: string | null;
+  funderName?: string | null;
+  householdId?: string | null;
+  householdName?: string | null;
+  individualGiverPersonId?: string | null;
+  individualGiverPersonName?: string | null;
+}
+
+export type FiscalYearBreakdownReceived = {
+  /** SUM(sub_amount) across the rows (numeric string). */
+  total: string;
+  rows: FiscalYearReceivedRow[];
+};
+
+export type FiscalYearBreakdownOpenPipeline = {
+  /** SUM(sub_amount) across the rows (numeric string). */
+  totalAsk: string;
+  /** SUM(weightedAmount) across the rows (numeric string). */
+  totalWeighted: string;
+  rows: FiscalYearOpenRow[];
+};
+
+/**
+ * Supporting detail for a single FY's dashboard money tiles. `received` powers the
+"Received" tile (gift_allocations summed); `openPipeline` powers both the
+"Open asks" tile (totalAsk) and the "Weighted asks" tile (totalWeighted).
+
+ */
+export interface FiscalYearBreakdown {
+  fiscalYear: DashboardFiscalYear;
+  goal: string | null;
+  received: FiscalYearBreakdownReceived;
+  openPipeline: FiscalYearBreakdownOpenPipeline;
+}
+
 export interface Funder {
   id: string;
   name: string;

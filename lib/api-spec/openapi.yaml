@@ -914,6 +914,73 @@ components:
       properties:
         rows: { type: array, items: { $ref: "#/components/schemas/ProjectionByFyEntityRow" } }
 
+    FiscalYearReceivedRow:
+      type: object
+      required: [allocationId, subAmount, giftId]
+      description: "A single gift_allocation row booked to the FY's grant_year, denormalized with parent gift + donor info."
+      properties:
+        allocationId:               { type: string }
+        subAmount:                  { type: string, description: "gift_allocations.sub_amount (numeric string)." }
+        entityId:                   { type: string, nullable: true }
+        intendedUsage:              { type: string, nullable: true }
+        fundableProjectId:          { type: string, nullable: true }
+        giftId:                     { type: string }
+        giftType:                   { type: string, nullable: true }
+        dateReceived:               { type: string, format: date, nullable: true }
+        giftAmount:                 { type: string, nullable: true, description: "Parent gift's total amount (numeric string)." }
+        funderId:                   { type: string, nullable: true }
+        funderName:                 { type: string, nullable: true }
+        householdId:                { type: string, nullable: true }
+        householdName:              { type: string, nullable: true }
+        individualGiverPersonId:    { type: string, nullable: true }
+        individualGiverPersonName:  { type: string, nullable: true }
+    FiscalYearOpenRow:
+      type: object
+      required: [allocationId, subAmount, weightedAmount, opportunityId]
+      description: "A single pledge_allocation row on an open opportunity for the FY's grant_year, denormalized with parent opp + donor info."
+      properties:
+        allocationId:               { type: string }
+        subAmount:                  { type: string, description: "pledge_allocations.sub_amount (numeric string)." }
+        weightedAmount:             { type: string, description: "sub_amount × COALESCE(parent.win_probability, 1) (numeric string)." }
+        allocationStatus:           { type: string, nullable: true }
+        entityId:                   { type: string, nullable: true }
+        intendedUsage:              { type: string, nullable: true }
+        fundableProjectId:          { type: string, nullable: true }
+        opportunityId:              { type: string }
+        opportunityName:            { type: string, nullable: true }
+        opportunityStage:           { type: string, nullable: true }
+        winProbability:             { type: string, nullable: true, description: "Parent opp's win_probability (0–1, numeric string)." }
+        projectedCloseDate:         { type: string, format: date, nullable: true }
+        funderId:                   { type: string, nullable: true }
+        funderName:                 { type: string, nullable: true }
+        householdId:                { type: string, nullable: true }
+        householdName:              { type: string, nullable: true }
+        individualGiverPersonId:    { type: string, nullable: true }
+        individualGiverPersonName:  { type: string, nullable: true }
+    FiscalYearBreakdown:
+      type: object
+      required: [fiscalYear, goal, received, openPipeline]
+      description: |
+        Supporting detail for a single FY's dashboard money tiles. `received` powers the
+        "Received" tile (gift_allocations summed); `openPipeline` powers both the
+        "Open asks" tile (totalAsk) and the "Weighted asks" tile (totalWeighted).
+      properties:
+        fiscalYear: { $ref: "#/components/schemas/DashboardFiscalYear" }
+        goal:       { type: string, nullable: true }
+        received:
+          type: object
+          required: [total, rows]
+          properties:
+            total: { type: string, description: "SUM(sub_amount) across the rows (numeric string)." }
+            rows:  { type: array, items: { $ref: "#/components/schemas/FiscalYearReceivedRow" } }
+        openPipeline:
+          type: object
+          required: [totalAsk, totalWeighted, rows]
+          properties:
+            totalAsk:      { type: string, description: "SUM(sub_amount) across the rows (numeric string)." }
+            totalWeighted: { type: string, description: "SUM(weightedAmount) across the rows (numeric string)." }
+            rows:          { type: array, items: { $ref: "#/components/schemas/FiscalYearOpenRow" } }
+
     # ─── Funders ───────────────────────────────────────────────────────────────
     Funder:
       type: object

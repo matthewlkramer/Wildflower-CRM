@@ -26,7 +26,18 @@ export default function Dashboard() {
     { label: "Gifts & payments", value: counts?.gifts, href: "/gifts", testId: "tile-gifts" },
   ];
 
-  const moneyTiles = byFy.flatMap((m) => {
+  // Goal has no drilldown (it's a single seeded number, no rows behind it).
+  // The other three tiles all link to the same detail page, with `metric`
+  // controlling which table + total is highlighted — same destination, different
+  // filter/sum, so users learn one page that backs all the money tiles.
+  type MoneyTile = {
+    label: string;
+    value: string | undefined;
+    sub: string;
+    testId: string;
+    href?: string;
+  };
+  const moneyTiles: MoneyTile[] = byFy.flatMap((m) => {
     const fySlug = m.fiscalYear.id; // e.g. "fy2026"
     const fyLabel = m.fiscalYear.label;
     return [
@@ -41,18 +52,21 @@ export default function Dashboard() {
         value: m.received,
         sub: `Gift allocations booked to ${fyLabel}`,
         testId: `tile-received-${fySlug}`,
+        href: `/fiscal-year/${fySlug}?metric=received`,
       },
       {
         label: `Open asks ${fyLabel}`,
         value: m.openPipelineAsk,
         sub: `Open allocations booked to ${fyLabel}`,
         testId: `tile-pipeline-ask-${fySlug}`,
+        href: `/fiscal-year/${fySlug}?metric=open-asks`,
       },
       {
         label: `Weighted asks ${fyLabel}`,
         value: m.openPipelineWeighted,
         sub: `${fyLabel} open allocations × win probability`,
         testId: `tile-pipeline-weighted-${fySlug}`,
+        href: `/fiscal-year/${fySlug}?metric=weighted-asks`,
       },
     ];
   });
@@ -74,21 +88,31 @@ export default function Dashboard() {
       ) : null}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {moneyTiles.map((t) => (
-          <Card key={t.label} data-testid={t.testId}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {t.label}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-serif font-bold text-foreground">
-                {isLoading || t.value === undefined ? "…" : formatCurrency(t.value)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">{t.sub}</p>
-            </CardContent>
-          </Card>
-        ))}
+        {moneyTiles.map((t) => {
+          const card = (
+            <Card
+              data-testid={t.testId}
+              className={t.href ? "cursor-pointer hover:bg-muted/30 transition-colors h-full" : "h-full"}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  {t.label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-serif font-bold text-foreground">
+                  {isLoading || t.value === undefined ? "…" : formatCurrency(t.value)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">{t.sub}</p>
+              </CardContent>
+            </Card>
+          );
+          return t.href ? (
+            <Link key={t.label} href={t.href}>{card}</Link>
+          ) : (
+            <div key={t.label}>{card}</div>
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

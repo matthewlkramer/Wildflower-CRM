@@ -38,6 +38,7 @@ import type {
   EmailList,
   Entity,
   FiscalYear,
+  FiscalYearBreakdown,
   FundableProject,
   Funder,
   FunderDetail,
@@ -5977,6 +5978,102 @@ export function useGetProjectionsByFyEntity<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetProjectionsByFyEntityQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns the supporting detail for a single fiscal year's dashboard money tiles:
+gift allocations booked to that grant_year (the "Received" rollup) and pledge
+allocations on open opportunities for that grant_year (the "Open asks" / "Weighted asks"
+rollups), plus the FY's goal. Each row carries enough denormalized parent info
+(donor names, parent gift/opportunity IDs, win probability) to render a useful table
+without N+1 fetches.
+
+ * @summary Per-FY drilldown for a Dashboard money tile.
+ */
+export const getGetFiscalYearBreakdownUrl = (fyId: string) => {
+  return `/api/fiscal-year-breakdown/${fyId}`;
+};
+
+export const getFiscalYearBreakdown = async (
+  fyId: string,
+  options?: RequestInit,
+): Promise<FiscalYearBreakdown> => {
+  return customFetch<FiscalYearBreakdown>(getGetFiscalYearBreakdownUrl(fyId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetFiscalYearBreakdownQueryKey = (fyId: string) => {
+  return [`/api/fiscal-year-breakdown/${fyId}`] as const;
+};
+
+export const getGetFiscalYearBreakdownQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFiscalYearBreakdown>>,
+  TError = ErrorType<unknown>,
+>(
+  fyId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFiscalYearBreakdown>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetFiscalYearBreakdownQueryKey(fyId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getFiscalYearBreakdown>>
+  > = ({ signal }) =>
+    getFiscalYearBreakdown(fyId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!fyId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFiscalYearBreakdown>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFiscalYearBreakdownQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFiscalYearBreakdown>>
+>;
+export type GetFiscalYearBreakdownQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Per-FY drilldown for a Dashboard money tile.
+ */
+
+export function useGetFiscalYearBreakdown<
+  TData = Awaited<ReturnType<typeof getFiscalYearBreakdown>>,
+  TError = ErrorType<unknown>,
+>(
+  fyId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFiscalYearBreakdown>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFiscalYearBreakdownQueryOptions(fyId, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

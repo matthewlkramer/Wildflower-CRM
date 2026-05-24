@@ -3284,3 +3284,107 @@ export const GetProjectionsByFyEntityResponse = zod.object({
     }),
   ),
 });
+
+/**
+ * Returns the supporting detail for a single fiscal year's dashboard money tiles:
+gift allocations booked to that grant_year (the "Received" rollup) and pledge
+allocations on open opportunities for that grant_year (the "Open asks" / "Weighted asks"
+rollups), plus the FY's goal. Each row carries enough denormalized parent info
+(donor names, parent gift/opportunity IDs, win probability) to render a useful table
+without N+1 fetches.
+
+ * @summary Per-FY drilldown for a Dashboard money tile.
+ */
+export const GetFiscalYearBreakdownParams = zod.object({
+  fyId: zod.coerce.string().describe("fiscal_years.id (e.g. `fy2026`)."),
+});
+
+export const GetFiscalYearBreakdownResponse = zod
+  .object({
+    fiscalYear: zod.object({
+      id: zod.string().describe("fy-slug (e.g. `fy2026`)."),
+      label: zod.string().describe("Human label (e.g. `FY 2026`)."),
+      startDate: zod.string().date(),
+      endDate: zod.string().date(),
+    }),
+    goal: zod.string().nullable(),
+    received: zod.object({
+      total: zod
+        .string()
+        .describe("SUM(sub_amount) across the rows (numeric string)."),
+      rows: zod.array(
+        zod
+          .object({
+            allocationId: zod.string(),
+            subAmount: zod
+              .string()
+              .describe("gift_allocations.sub_amount (numeric string)."),
+            entityId: zod.string().nullish(),
+            intendedUsage: zod.string().nullish(),
+            fundableProjectId: zod.string().nullish(),
+            giftId: zod.string(),
+            giftType: zod.string().nullish(),
+            dateReceived: zod.string().date().nullish(),
+            giftAmount: zod
+              .string()
+              .nullish()
+              .describe("Parent gift's total amount (numeric string)."),
+            funderId: zod.string().nullish(),
+            funderName: zod.string().nullish(),
+            householdId: zod.string().nullish(),
+            householdName: zod.string().nullish(),
+            individualGiverPersonId: zod.string().nullish(),
+            individualGiverPersonName: zod.string().nullish(),
+          })
+          .describe(
+            "A single gift_allocation row booked to the FY's grant_year, denormalized with parent gift + donor info.",
+          ),
+      ),
+    }),
+    openPipeline: zod.object({
+      totalAsk: zod
+        .string()
+        .describe("SUM(sub_amount) across the rows (numeric string)."),
+      totalWeighted: zod
+        .string()
+        .describe("SUM(weightedAmount) across the rows (numeric string)."),
+      rows: zod.array(
+        zod
+          .object({
+            allocationId: zod.string(),
+            subAmount: zod
+              .string()
+              .describe("pledge_allocations.sub_amount (numeric string)."),
+            weightedAmount: zod
+              .string()
+              .describe(
+                "sub_amount × COALESCE(parent.win_probability, 1) (numeric string).",
+              ),
+            allocationStatus: zod.string().nullish(),
+            entityId: zod.string().nullish(),
+            intendedUsage: zod.string().nullish(),
+            fundableProjectId: zod.string().nullish(),
+            opportunityId: zod.string(),
+            opportunityName: zod.string().nullish(),
+            opportunityStage: zod.string().nullish(),
+            winProbability: zod
+              .string()
+              .nullish()
+              .describe("Parent opp's win_probability (0–1, numeric string)."),
+            projectedCloseDate: zod.string().date().nullish(),
+            funderId: zod.string().nullish(),
+            funderName: zod.string().nullish(),
+            householdId: zod.string().nullish(),
+            householdName: zod.string().nullish(),
+            individualGiverPersonId: zod.string().nullish(),
+            individualGiverPersonName: zod.string().nullish(),
+          })
+          .describe(
+            "A single pledge_allocation row on an open opportunity for the FY's grant_year, denormalized with parent opp + donor info.",
+          ),
+      ),
+    }),
+  })
+  .describe(
+    'Supporting detail for a single FY\'s dashboard money tiles. `received` powers the\n\"Received\" tile (gift_allocations summed); `openPipeline` powers both the\n\"Open asks\" tile (totalAsk) and the \"Weighted asks\" tile (totalWeighted).\n',
+  );
