@@ -13,6 +13,7 @@ tags:
   - { name: regions }
   - { name: schools }
   - { name: entities }
+  - { name: fiscal-year-entity-goals }
   - { name: fundable-projects }
   - { name: fiscal-years }
   - { name: funders }
@@ -105,6 +106,14 @@ paths:
       tags: [entities]
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Entity" } } } } }
+    post:
+      operationId: createEntity
+      tags: [entities]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateEntityBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Entity" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Conflict (id already exists) }
   /entities/{id}:
     get:
       operationId: getEntity
@@ -113,6 +122,46 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Entity" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateEntity
+      tags: [entities]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateEntityBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Entity" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Fiscal-year × entity goals ────────────────────────────────────────────
+  /fiscal-year-entity-goals:
+    get:
+      operationId: listFiscalYearEntityGoals
+      tags: [fiscal-year-entity-goals]
+      parameters:
+        - { name: fyId,     in: query, schema: { type: string }, description: "Filter by fiscal_year.id" }
+        - { name: entityId, in: query, schema: { type: string }, description: "Filter by entity.id" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FiscalYearEntityGoal" } } } } }
+  /fiscal-year-entity-goals/{fyId}/{entityId}:
+    put:
+      operationId: upsertFiscalYearEntityGoal
+      tags: [fiscal-year-entity-goals]
+      parameters:
+        - { name: fyId,     in: path, required: true, schema: { type: string } }
+        - { name: entityId, in: path, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpsertFiscalYearEntityGoalBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYearEntityGoal" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteFiscalYearEntityGoal
+      tags: [fiscal-year-entity-goals]
+      parameters:
+        - { name: fyId,     in: path, required: true, schema: { type: string } }
+        - { name: entityId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
 
   # ─── Fundable projects ─────────────────────────────────────────────────────
   /fundable-projects:
@@ -852,6 +901,32 @@ components:
         active:    { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    CreateEntityBody:
+      type: object
+      required: [id, name]
+      properties:
+        id:     { type: string, description: "Slug-style key, e.g. wildflower_foundation. Must be unique." }
+        name:   { type: string }
+        active: { type: boolean, description: "Defaults to true. Set false to mark retired." }
+    UpdateEntityBody:
+      type: object
+      properties:
+        name:   { type: string }
+        active: { type: boolean }
+    FiscalYearEntityGoal:
+      type: object
+      required: [fiscalYearId, entityId, goalAmount, createdAt, updatedAt]
+      properties:
+        fiscalYearId: { type: string }
+        entityId:     { type: string }
+        goalAmount:   { type: string, description: "Decimal string (numeric(14,2))." }
+        createdAt:    { type: string, format: date-time }
+        updatedAt:    { type: string, format: date-time }
+    UpsertFiscalYearEntityGoalBody:
+      type: object
+      required: [goalAmount]
+      properties:
+        goalAmount: { type: string, description: "Decimal string. Use plain digits with optional decimal, no commas." }
     FundableProject:
       type: object
       required: [id, name, active, createdAt, updatedAt]

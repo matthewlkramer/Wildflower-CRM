@@ -11,6 +11,7 @@ import {
   Activity, 
   LineChart, 
   CalendarDays,
+  Settings,
   LogOut,
   Menu
 } from "lucide-react";
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/moves", label: "Moves", icon: Activity },
   { href: "/projections", label: "Projections", icon: LineChart },
   { href: "/grants-calendar", label: "Grants Calendar", icon: CalendarDays },
+  { href: "/admin", label: "Admin", icon: Settings },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

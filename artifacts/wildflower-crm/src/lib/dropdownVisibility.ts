@@ -1,31 +1,22 @@
 // Shared visibility rules for entity + fiscal-year dropdowns.
 //
 // Entities: a small set of fund entities are no longer in use but still exist
-// in the DB (and on historical allocation rows) so we can't delete them. Hide
-// them from dropdowns by default behind a "Show retired entities" toggle.
+// in the DB (and on historical allocation rows) so we can't delete them. The
+// DB column `entities.active` is the source of truth — `active=false` means
+// retired. Hide them from dropdowns by default behind a "Show retired
+// entities" toggle. (Manage via the /admin page.)
 //
 // Fiscal years: the table is seeded fy2014..fy2050 + a "future" sentinel.
 // Default-visible window is "last 3 + current + next" (5 FYs). Everything
 // older — and the "future" sentinel — sits behind a "Show all" toggle.
 
-export const RETIRED_ENTITY_IDS: ReadonlySet<string> = new Set([
-  "embracing_equity",
-  "rising_tide",
-  "observation_support_tech",
-  "tierra_indigena",
-]);
-
-export function isRetiredEntity(id: string): boolean {
-  return RETIRED_ENTITY_IDS.has(id);
-}
-
-export function partitionEntities<T extends { id: string }>(
+export function partitionEntities<T extends { id: string; active: boolean }>(
   items: ReadonlyArray<T>,
 ): { active: T[]; retired: T[] } {
   const active: T[] = [];
   const retired: T[] = [];
   for (const it of items) {
-    (isRetiredEntity(it.id) ? retired : active).push(it);
+    (it.active ? active : retired).push(it);
   }
   return { active, retired };
 }

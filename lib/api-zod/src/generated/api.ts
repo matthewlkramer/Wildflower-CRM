@@ -272,6 +272,17 @@ export const ListEntitiesResponseItem = zod.object({
 });
 export const ListEntitiesResponse = zod.array(ListEntitiesResponseItem);
 
+export const CreateEntityBody = zod.object({
+  id: zod
+    .string()
+    .describe("Slug-style key, e.g. wildflower_foundation. Must be unique."),
+  name: zod.string(),
+  active: zod
+    .boolean()
+    .optional()
+    .describe("Defaults to true. Set false to mark retired."),
+});
+
 export const GetEntityParams = zod.object({
   id: zod.coerce.string(),
 });
@@ -282,6 +293,65 @@ export const GetEntityResponse = zod.object({
   active: zod.boolean(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
+});
+
+export const UpdateEntityParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateEntityBody = zod.object({
+  name: zod.string().optional(),
+  active: zod.boolean().optional(),
+});
+
+export const UpdateEntityResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  active: zod.boolean(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const ListFiscalYearEntityGoalsQueryParams = zod.object({
+  fyId: zod.coerce.string().optional().describe("Filter by fiscal_year.id"),
+  entityId: zod.coerce.string().optional().describe("Filter by entity.id"),
+});
+
+export const ListFiscalYearEntityGoalsResponseItem = zod.object({
+  fiscalYearId: zod.string(),
+  entityId: zod.string(),
+  goalAmount: zod.string().describe("Decimal string (numeric(14,2))."),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+export const ListFiscalYearEntityGoalsResponse = zod.array(
+  ListFiscalYearEntityGoalsResponseItem,
+);
+
+export const UpsertFiscalYearEntityGoalParams = zod.object({
+  fyId: zod.coerce.string(),
+  entityId: zod.coerce.string(),
+});
+
+export const UpsertFiscalYearEntityGoalBody = zod.object({
+  goalAmount: zod
+    .string()
+    .describe(
+      "Decimal string. Use plain digits with optional decimal, no commas.",
+    ),
+});
+
+export const UpsertFiscalYearEntityGoalResponse = zod.object({
+  fiscalYearId: zod.string(),
+  entityId: zod.string(),
+  goalAmount: zod.string().describe("Decimal string (numeric(14,2))."),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const DeleteFiscalYearEntityGoalParams = zod.object({
+  fyId: zod.coerce.string(),
+  entityId: zod.coerce.string(),
 });
 
 export const ListFundableProjectsResponseItem = zod.object({

@@ -1,28 +1,15 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { entities, fundableProjects, fiscalYears } from "@workspace/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { fundableProjects, fiscalYears } from "@workspace/db/schema";
+import { asc } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, notFound, paramId } from "../lib/helpers";
+import { asyncHandler } from "../lib/helpers";
 
+// NOTE: /entities (GET/POST/PATCH) and /fiscal-year-entity-goals routes live
+// in their own files (entities.ts, fiscalYearEntityGoals.ts). This file is now
+// just the remaining read-only lookups (fundable-projects, fiscal-years).
 const router: IRouter = Router();
 router.use(requireAuth);
-
-router.get(
-  "/entities",
-  asyncHandler(async (_req, res) => {
-    const rows = await db.select().from(entities).orderBy(asc(entities.name));
-    res.json(rows);
-  }),
-);
-router.get(
-  "/entities/:id",
-  asyncHandler(async (req, res) => {
-    const row = await db.select().from(entities).where(eq(entities.id, paramId(req))).then((r) => r[0]);
-    if (!row) return notFound(res, "entity");
-    res.json(row);
-  }),
-);
 
 router.get(
   "/fundable-projects",

@@ -1218,3 +1218,14 @@ INSERT INTO fiscal_year_entity_goals (fiscal_year_id, entity_id, goal_amount) VA
 ON CONFLICT (fiscal_year_id, entity_id) DO UPDATE
   SET goal_amount = EXCLUDED.goal_amount,
       updated_at  = NOW();
+
+-- ============================================================================
+-- 2026-05-24  Retired-entity flags (moved from hardcoded client list to DB)
+-- ============================================================================
+-- These four entities are no longer actively raising money but stay in the DB
+-- for historical attribution on existing opps/gifts/allocations. The CRM
+-- dropdowns hide retired entities (entities.active=false) behind a "Show
+-- retired" toggle. Admins can flip the flag at runtime via /admin.
+UPDATE entities SET active = false, updated_at = NOW()
+ WHERE id IN ('embracing_equity', 'rising_tide', 'observation_support_tech', 'tierra_indigena')
+   AND active = true;

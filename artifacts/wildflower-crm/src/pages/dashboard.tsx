@@ -63,7 +63,7 @@ export default function Dashboard() {
   const fy = data?.currentFiscalYear;
   const byFy = data?.byFiscalYear ?? [];
   const entityOptions = useMemo(
-    () => (entitiesQ.data ?? []).map((e) => ({ id: e.id, name: e.name })),
+    () => (entitiesQ.data ?? []).map((e) => ({ id: e.id, name: e.name, active: e.active })),
     [entitiesQ.data],
   );
 
@@ -272,7 +272,7 @@ function EntityMultiFilter({
   value,
   onChange,
 }: {
-  options: ReadonlyArray<{ id: string; name: string }>;
+  options: ReadonlyArray<{ id: string; name: string; active: boolean }>;
   value: string[];
   onChange: (next: string[]) => void;
 }) {

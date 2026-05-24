@@ -405,6 +405,33 @@ export interface Entity {
   updatedAt: string;
 }
 
+export interface CreateEntityBody {
+  /** Slug-style key, e.g. wildflower_foundation. Must be unique. */
+  id: string;
+  name: string;
+  /** Defaults to true. Set false to mark retired. */
+  active?: boolean;
+}
+
+export interface UpdateEntityBody {
+  name?: string;
+  active?: boolean;
+}
+
+export interface FiscalYearEntityGoal {
+  fiscalYearId: string;
+  entityId: string;
+  /** Decimal string (numeric(14,2)). */
+  goalAmount: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertFiscalYearEntityGoalBody {
+  /** Decimal string. Use plain digits with optional decimal, no commas. */
+  goalAmount: string;
+}
+
 export interface FundableProject {
   id: string;
   name: string;
@@ -1388,6 +1415,17 @@ export type ListSchoolsParams = {
    * @minimum 1
    */
   page?: PageParameter;
+};
+
+export type ListFiscalYearEntityGoalsParams = {
+  /**
+   * Filter by fiscal_year.id
+   */
+  fyId?: string;
+  /**
+   * Filter by entity.id
+   */
+  entityId?: string;
 };
 
 export type ListFundersParams = {

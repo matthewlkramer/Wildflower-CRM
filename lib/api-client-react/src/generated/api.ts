@@ -22,6 +22,7 @@ import type {
   BadRequestResponse,
   CreateAddressBody,
   CreateEmailBody,
+  CreateEntityBody,
   CreateFunderBody,
   CreateGiftAllocationBody,
   CreateGiftOrPaymentBody,
@@ -39,6 +40,7 @@ import type {
   Entity,
   FiscalYear,
   FiscalYearBreakdown,
+  FiscalYearEntityGoal,
   FundableProject,
   Funder,
   FunderDetail,
@@ -56,6 +58,7 @@ import type {
   HouseholdList,
   ListAddressesParams,
   ListEmailsParams,
+  ListFiscalYearEntityGoalsParams,
   ListFundersParams,
   ListGiftAllocationsParams,
   ListGiftsAndPaymentsParams,
@@ -95,6 +98,7 @@ import type {
   SchoolList,
   UpdateAddressBody,
   UpdateEmailBody,
+  UpdateEntityBody,
   UpdateFunderBody,
   UpdateGiftAllocationBody,
   UpdateGiftOrPaymentBody,
@@ -106,6 +110,7 @@ import type {
   UpdatePersonBody,
   UpdatePhoneNumberBody,
   UpdatePledgeAllocationBody,
+  UpsertFiscalYearEntityGoalBody,
   User,
 } from "./api.schemas";
 
@@ -715,6 +720,86 @@ export function useListEntities<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+export const getCreateEntityUrl = () => {
+  return `/api/entities`;
+};
+
+export const createEntity = async (
+  createEntityBody: CreateEntityBody,
+  options?: RequestInit,
+): Promise<Entity> => {
+  return customFetch<Entity>(getCreateEntityUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createEntityBody),
+  });
+};
+
+export const getCreateEntityMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEntity>>,
+    TError,
+    { data: BodyType<CreateEntityBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEntity>>,
+  TError,
+  { data: BodyType<CreateEntityBody> },
+  TContext
+> => {
+  const mutationKey = ["createEntity"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEntity>>,
+    { data: BodyType<CreateEntityBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createEntity(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateEntityMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createEntity>>
+>;
+export type CreateEntityMutationBody = BodyType<CreateEntityBody>;
+export type CreateEntityMutationError = ErrorType<BadRequestResponse | void>;
+
+export const useCreateEntity = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEntity>>,
+    TError,
+    { data: BodyType<CreateEntityBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createEntity>>,
+  TError,
+  { data: BodyType<CreateEntityBody> },
+  TContext
+> => {
+  return useMutation(getCreateEntityMutationOptions(options));
+};
+
 export const getGetEntityUrl = (id: string) => {
   return `/api/entities/${id}`;
 };
@@ -792,6 +877,384 @@ export function useGetEntity<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getUpdateEntityUrl = (id: string) => {
+  return `/api/entities/${id}`;
+};
+
+export const updateEntity = async (
+  id: string,
+  updateEntityBody: UpdateEntityBody,
+  options?: RequestInit,
+): Promise<Entity> => {
+  return customFetch<Entity>(getUpdateEntityUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEntityBody),
+  });
+};
+
+export const getUpdateEntityMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEntity>>,
+    TError,
+    { id: string; data: BodyType<UpdateEntityBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEntity>>,
+  TError,
+  { id: string; data: BodyType<UpdateEntityBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEntity"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEntity>>,
+    { id: string; data: BodyType<UpdateEntityBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateEntity(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEntityMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEntity>>
+>;
+export type UpdateEntityMutationBody = BodyType<UpdateEntityBody>;
+export type UpdateEntityMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useUpdateEntity = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEntity>>,
+    TError,
+    { id: string; data: BodyType<UpdateEntityBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEntity>>,
+  TError,
+  { id: string; data: BodyType<UpdateEntityBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEntityMutationOptions(options));
+};
+
+export const getListFiscalYearEntityGoalsUrl = (
+  params?: ListFiscalYearEntityGoalsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/fiscal-year-entity-goals?${stringifiedParams}`
+    : `/api/fiscal-year-entity-goals`;
+};
+
+export const listFiscalYearEntityGoals = async (
+  params?: ListFiscalYearEntityGoalsParams,
+  options?: RequestInit,
+): Promise<FiscalYearEntityGoal[]> => {
+  return customFetch<FiscalYearEntityGoal[]>(
+    getListFiscalYearEntityGoalsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListFiscalYearEntityGoalsQueryKey = (
+  params?: ListFiscalYearEntityGoalsParams,
+) => {
+  return [
+    `/api/fiscal-year-entity-goals`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListFiscalYearEntityGoalsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listFiscalYearEntityGoals>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListFiscalYearEntityGoalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listFiscalYearEntityGoals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListFiscalYearEntityGoalsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listFiscalYearEntityGoals>>
+  > = ({ signal }) =>
+    listFiscalYearEntityGoals(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listFiscalYearEntityGoals>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListFiscalYearEntityGoalsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listFiscalYearEntityGoals>>
+>;
+export type ListFiscalYearEntityGoalsQueryError = ErrorType<unknown>;
+
+export function useListFiscalYearEntityGoals<
+  TData = Awaited<ReturnType<typeof listFiscalYearEntityGoals>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListFiscalYearEntityGoalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listFiscalYearEntityGoals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListFiscalYearEntityGoalsQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpsertFiscalYearEntityGoalUrl = (
+  fyId: string,
+  entityId: string,
+) => {
+  return `/api/fiscal-year-entity-goals/${fyId}/${entityId}`;
+};
+
+export const upsertFiscalYearEntityGoal = async (
+  fyId: string,
+  entityId: string,
+  upsertFiscalYearEntityGoalBody: UpsertFiscalYearEntityGoalBody,
+  options?: RequestInit,
+): Promise<FiscalYearEntityGoal> => {
+  return customFetch<FiscalYearEntityGoal>(
+    getUpsertFiscalYearEntityGoalUrl(fyId, entityId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(upsertFiscalYearEntityGoalBody),
+    },
+  );
+};
+
+export const getUpsertFiscalYearEntityGoalMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertFiscalYearEntityGoal>>,
+    TError,
+    {
+      fyId: string;
+      entityId: string;
+      data: BodyType<UpsertFiscalYearEntityGoalBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof upsertFiscalYearEntityGoal>>,
+  TError,
+  {
+    fyId: string;
+    entityId: string;
+    data: BodyType<UpsertFiscalYearEntityGoalBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["upsertFiscalYearEntityGoal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof upsertFiscalYearEntityGoal>>,
+    {
+      fyId: string;
+      entityId: string;
+      data: BodyType<UpsertFiscalYearEntityGoalBody>;
+    }
+  > = (props) => {
+    const { fyId, entityId, data } = props ?? {};
+
+    return upsertFiscalYearEntityGoal(fyId, entityId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpsertFiscalYearEntityGoalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof upsertFiscalYearEntityGoal>>
+>;
+export type UpsertFiscalYearEntityGoalMutationBody =
+  BodyType<UpsertFiscalYearEntityGoalBody>;
+export type UpsertFiscalYearEntityGoalMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useUpsertFiscalYearEntityGoal = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertFiscalYearEntityGoal>>,
+    TError,
+    {
+      fyId: string;
+      entityId: string;
+      data: BodyType<UpsertFiscalYearEntityGoalBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof upsertFiscalYearEntityGoal>>,
+  TError,
+  {
+    fyId: string;
+    entityId: string;
+    data: BodyType<UpsertFiscalYearEntityGoalBody>;
+  },
+  TContext
+> => {
+  return useMutation(getUpsertFiscalYearEntityGoalMutationOptions(options));
+};
+
+export const getDeleteFiscalYearEntityGoalUrl = (
+  fyId: string,
+  entityId: string,
+) => {
+  return `/api/fiscal-year-entity-goals/${fyId}/${entityId}`;
+};
+
+export const deleteFiscalYearEntityGoal = async (
+  fyId: string,
+  entityId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteFiscalYearEntityGoalUrl(fyId, entityId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteFiscalYearEntityGoalMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>,
+    TError,
+    { fyId: string; entityId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>,
+  TError,
+  { fyId: string; entityId: string },
+  TContext
+> => {
+  const mutationKey = ["deleteFiscalYearEntityGoal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>,
+    { fyId: string; entityId: string }
+  > = (props) => {
+    const { fyId, entityId } = props ?? {};
+
+    return deleteFiscalYearEntityGoal(fyId, entityId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteFiscalYearEntityGoalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>
+>;
+
+export type DeleteFiscalYearEntityGoalMutationError = ErrorType<unknown>;
+
+export const useDeleteFiscalYearEntityGoal = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>,
+    TError,
+    { fyId: string; entityId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>,
+  TError,
+  { fyId: string; entityId: string },
+  TContext
+> => {
+  return useMutation(getDeleteFiscalYearEntityGoalMutationOptions(options));
+};
 
 export const getListFundableProjectsUrl = () => {
   return `/api/fundable-projects`;

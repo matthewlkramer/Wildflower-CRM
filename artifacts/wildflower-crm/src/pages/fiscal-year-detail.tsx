@@ -96,7 +96,7 @@ export default function FiscalYearDetail() {
     return rows;
   }, [fyListQ.data]);
   const entityOptions = useMemo(
-    () => (entitiesQ.data ?? []).map((e) => ({ id: e.id, name: e.name })),
+    () => (entitiesQ.data ?? []).map((e) => ({ id: e.id, name: e.name, active: e.active })),
     [entitiesQ.data],
   );
 
