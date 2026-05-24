@@ -31,16 +31,10 @@ export default function Dashboard() {
     const fyLabel = m.fiscalYear.label;
     return [
       {
-        label: `Open pipeline ${fyLabel}`,
-        value: m.openPipelineAsk,
-        sub: `Open allocations booked to ${fyLabel}`,
-        testId: `tile-pipeline-ask-${fySlug}`,
-      },
-      {
-        label: `Weighted pipeline ${fyLabel}`,
-        value: m.openPipelineWeighted,
-        sub: `${fyLabel} open allocations × win probability`,
-        testId: `tile-pipeline-weighted-${fySlug}`,
+        label: `Goal ${fyLabel}`,
+        value: m.goal ?? undefined,
+        sub: m.goal ? `Fundraising goal for ${fyLabel}` : `No goal set for ${fyLabel}`,
+        testId: `tile-goal-${fySlug}`,
       },
       {
         label: `Received ${fyLabel}`,
@@ -49,10 +43,16 @@ export default function Dashboard() {
         testId: `tile-received-${fySlug}`,
       },
       {
-        label: `Goal ${fyLabel}`,
-        value: m.goal ?? undefined,
-        sub: m.goal ? `Fundraising goal for ${fyLabel}` : `No goal set for ${fyLabel}`,
-        testId: `tile-goal-${fySlug}`,
+        label: `Open asks ${fyLabel}`,
+        value: m.openPipelineAsk,
+        sub: `Open allocations booked to ${fyLabel}`,
+        testId: `tile-pipeline-ask-${fySlug}`,
+      },
+      {
+        label: `Weighted asks ${fyLabel}`,
+        value: m.openPipelineWeighted,
+        sub: `${fyLabel} open allocations × win probability`,
+        testId: `tile-pipeline-weighted-${fySlug}`,
       },
     ];
   });
