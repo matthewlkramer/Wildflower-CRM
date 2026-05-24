@@ -2,13 +2,15 @@ import { useMemo } from "react";
 import { Link, useParams, useSearch, useLocation } from "wouter";
 import {
   useGetFiscalYearBreakdown,
-  useGetDashboardSummary,
+  useListFiscalYears,
+  useListEntities,
   getGetFiscalYearBreakdownQueryKey,
-  getGetDashboardSummaryQueryKey,
+  getListFiscalYearsQueryKey,
+  getListEntitiesQueryKey,
   type FiscalYearReceivedRow,
   type FiscalYearOpenRow,
 } from "@workspace/api-client-react";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatEnum } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -36,6 +38,8 @@ const METRIC_LABELS: Record<Metric, string> = {
   "weighted-asks": "Weighted asks",
 };
 
+const DEFAULT_ENTITY_ID = "wildflower_foundation";
+
 function parseMetric(s: string | null): Metric {
   if (s === "received" || s === "open-asks" || s === "weighted-asks") return s;
   return "received";
@@ -55,7 +59,6 @@ function pct(s: string | null | undefined): string {
 
 function fmtDate(s: string | null | undefined): string {
   if (!s) return "—";
-  // ISO date string from PG — keep YYYY-MM-DD as-is for stable display.
   return s.slice(0, 10);
 }
 
@@ -64,36 +67,56 @@ export default function FiscalYearDetail() {
   const fyId = params.fyId;
   const [, navigate] = useLocation();
   const search = useSearch();
-  const metric = parseMetric(new URLSearchParams(search).get("metric"));
+  const sp = new URLSearchParams(search);
+  const metric = parseMetric(sp.get("metric"));
+  // Entity defaults to Wildflower Foundation; user can override via URL or dropdown.
+  const entityId = (sp.get("entity") ?? DEFAULT_ENTITY_ID).trim() || DEFAULT_ENTITY_ID;
 
-  const breakdownQ = useGetFiscalYearBreakdown(fyId, {
-    query: { queryKey: getGetFiscalYearBreakdownQueryKey(fyId), enabled: Boolean(fyId) },
+  const breakdownParams = { entityId };
+  const breakdownQ = useGetFiscalYearBreakdown(fyId, breakdownParams, {
+    query: {
+      queryKey: getGetFiscalYearBreakdownQueryKey(fyId, breakdownParams),
+      enabled: Boolean(fyId),
+    },
   });
-  // Powers the FY selector — we use the same two FYs the dashboard shows
-  // (current + next), so users navigate between the same set they came from.
-  const summaryQ = useGetDashboardSummary({
-    query: { queryKey: getGetDashboardSummaryQueryKey() },
+  // All fiscal years so the dropdown isn't limited to just current+next.
+  const fyListQ = useListFiscalYears({
+    query: { queryKey: getListFiscalYearsQueryKey(), staleTime: 5 * 60_000 },
+  });
+  const entitiesQ = useListEntities({
+    query: { queryKey: getListEntitiesQueryKey(), staleTime: 5 * 60_000 },
   });
 
   const data = breakdownQ.data;
-  const fyOptions = useMemo(
-    () => (summaryQ.data?.byFiscalYear ?? []).map((m) => m.fiscalYear),
-    [summaryQ.data],
+  const fyOptions = useMemo(() => {
+    const rows = (fyListQ.data ?? []).map((f) => ({ id: f.id, label: f.label }));
+    // Sort newest first (FY slug is `fy<endYear>`, so reverse-sort alphabetically works).
+    rows.sort((a, b) => b.id.localeCompare(a.id));
+    return rows;
+  }, [fyListQ.data]);
+  const entityOptions = useMemo(
+    () => (entitiesQ.data ?? []).map((e) => ({ id: e.id, name: e.name })),
+    [entitiesQ.data],
   );
 
-  const setMetric = (m: Metric) => {
-    const sp = new URLSearchParams(search);
-    sp.set("metric", m);
-    navigate(`/fiscal-year/${fyId}?${sp.toString()}`, { replace: true });
+  const updateQuery = (mut: (sp: URLSearchParams) => void, opts?: { replace?: boolean }) => {
+    const next = new URLSearchParams(search);
+    mut(next);
+    navigate(`/fiscal-year/${fyId}?${next.toString()}`, { replace: opts?.replace });
   };
+  const setMetric = (m: Metric) => updateQuery((p) => p.set("metric", m), { replace: true });
+  const setEntity = (e: string) => updateQuery((p) => p.set("entity", e));
   const setFy = (newFyId: string) => {
     if (newFyId === fyId) return;
-    const sp = new URLSearchParams(search);
-    sp.set("metric", metric);
-    navigate(`/fiscal-year/${newFyId}?${sp.toString()}`);
+    const next = new URLSearchParams(search);
+    next.set("metric", metric);
+    next.set("entity", entityId);
+    navigate(`/fiscal-year/${newFyId}?${next.toString()}`);
   };
 
   const fyLabel = data?.fiscalYear.label ?? fyId;
+  const selectedEntityName =
+    entityOptions.find((e) => e.id === entityId)?.name ?? entityId;
 
   return (
     <div className="space-y-6">
@@ -107,8 +130,9 @@ export default function FiscalYearDetail() {
           {fyLabel} · {METRIC_LABELS[metric]}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Supporting detail behind the dashboard money tiles. Switch the fiscal year or
-          metric to see the rows backing each total.
+          Supporting detail behind the dashboard money tiles. Filtered to{" "}
+          <span className="font-medium">{selectedEntityName}</span>. Switch the
+          fiscal year, entity, or metric to see different rows.
         </p>
       </div>
 
@@ -122,11 +146,32 @@ export default function FiscalYearDetail() {
           </SelectTrigger>
           <SelectContent>
             {fyOptions.map((f) => (
-              <SelectItem key={f.id} value={f.id}>{f.label}</SelectItem>
+              <SelectItem key={f.id} value={f.id} data-testid={`select-fy-option-${f.id}`}>
+                {f.label}
+              </SelectItem>
             ))}
-            {/* If the loaded FY isn't in the dashboard pair, still show it. */}
+            {/* If the loaded FY isn't in the list yet (loading), still show it. */}
             {!fyOptions.find((f) => f.id === fyId) && fyId ? (
               <SelectItem value={fyId}>{fyLabel}</SelectItem>
+            ) : null}
+          </SelectContent>
+        </Select>
+
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide ml-2">
+          Entity
+        </label>
+        <Select value={entityId} onValueChange={setEntity}>
+          <SelectTrigger className="w-64" data-testid="select-entity">
+            <SelectValue placeholder={selectedEntityName} />
+          </SelectTrigger>
+          <SelectContent>
+            {entityOptions.map((e) => (
+              <SelectItem key={e.id} value={e.id} data-testid={`select-entity-option-${e.id}`}>
+                {e.name}
+              </SelectItem>
+            ))}
+            {!entityOptions.find((e) => e.id === entityId) ? (
+              <SelectItem value={entityId}>{selectedEntityName}</SelectItem>
             ) : null}
           </SelectContent>
         </Select>
@@ -199,21 +244,24 @@ function ReceivedTable({
           <TableRow>
             <TableHead>Date received</TableHead>
             <TableHead>Donor</TableHead>
-            <TableHead>Gift</TableHead>
             <TableHead>Intended usage</TableHead>
-            <TableHead className="text-right">Allocation</TableHead>
+            <TableHead className="text-right">Amount</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading ? (
-            <TableRow><TableCell colSpan={5} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+            <TableRow><TableCell colSpan={4} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
           ) : rows.length === 0 ? (
-            <TableRow><TableCell colSpan={5} className="text-center h-24 text-muted-foreground">No gift allocations booked to this fiscal year.</TableCell></TableRow>
+            <TableRow><TableCell colSpan={4} className="text-center h-24 text-muted-foreground">No gift allocations booked to this fiscal year.</TableCell></TableRow>
           ) : (
             <>
               {rows.map((r) => (
                 <TableRow key={r.allocationId} data-testid={`row-received-${r.allocationId}`}>
-                  <TableCell className="whitespace-nowrap">{fmtDate(r.dateReceived)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <Link href={`/gifts/${r.giftId}`} className="hover:underline">
+                      {fmtDate(r.dateReceived)}
+                    </Link>
+                  </TableCell>
                   <TableCell>
                     <DonorCell
                       funderId={r.funderId}
@@ -224,18 +272,12 @@ function ReceivedTable({
                       individualGiverPersonName={r.individualGiverPersonName}
                     />
                   </TableCell>
-                  <TableCell>
-                    <Link href={`/gifts/${r.giftId}`} className="hover:underline">
-                      {r.giftType ?? "Gift"}
-                      {r.giftAmount ? <span className="text-muted-foreground"> · {formatCurrency(r.giftAmount)}</span> : null}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{r.intendedUsage ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{formatEnum(r.intendedUsage)}</TableCell>
                   <TableCell className="text-right tabular-nums font-medium">{fmt(r.subAmount)}</TableCell>
                 </TableRow>
               ))}
               <TableRow className="bg-muted/30 font-medium">
-                <TableCell colSpan={4}>Total</TableCell>
+                <TableCell colSpan={3}>Total</TableCell>
                 <TableCell className="text-right tabular-nums" data-testid="row-received-total">{fmt(total)}</TableCell>
               </TableRow>
             </>
@@ -294,7 +336,7 @@ function OpenTable({
                       {r.opportunityName ?? r.opportunityId}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{r.opportunityStage ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{formatEnum(r.opportunityStage)}</TableCell>
                   <TableCell className="text-right tabular-nums">{pct(r.winProbability)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${highlight === "ask" ? "font-medium" : ""}`}>{fmt(r.subAmount)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${highlight === "weighted" ? "font-medium" : ""}`}>{fmt(r.weightedAmount)}</TableCell>

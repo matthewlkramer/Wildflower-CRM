@@ -1593,3 +1593,24 @@ export type ListGiftAllocationsParams = {
    */
   page?: PageParameter;
 };
+
+export type GetDashboardSummaryParams = {
+  /**
+ * Optional list of `entities.id` slugs. When provided, the money tiles
+(received / openPipelineAsk / openPipelineWeighted / goal) are restricted
+to allocations on those entities. Counts are unaffected. Omit or pass an
+empty list to include all entities.
+
+ */
+  entityIds?: string[];
+};
+
+export type GetFiscalYearBreakdownParams = {
+  /**
+ * Optional `entities.id` slug. When provided, both the `received` and
+`openPipeline` sections are restricted to allocations on that entity.
+Omit to include all entities.
+
+ */
+  entityId?: string;
+};

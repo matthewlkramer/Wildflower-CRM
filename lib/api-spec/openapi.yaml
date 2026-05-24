@@ -662,6 +662,18 @@ paths:
       operationId: getDashboardSummary
       tags: [analytics]
       summary: Aggregate counts + money totals for the Dashboard landing page.
+      parameters:
+        - name: entityIds
+          in: query
+          description: |
+            Optional list of `entities.id` slugs. When provided, the money tiles
+            (received / openPipelineAsk / openPipelineWeighted / goal) are restricted
+            to allocations on those entities. Counts are unaffected. Omit or pass an
+            empty list to include all entities.
+          required: false
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DashboardSummary" } } } }
 
@@ -692,6 +704,14 @@ paths:
         without N+1 fetches.
       parameters:
         - { name: fyId, in: path, required: true, schema: { type: string }, description: "fiscal_years.id (e.g. `fy2026`)." }
+        - name: entityId
+          in: query
+          required: false
+          description: |
+            Optional `entities.id` slug. When provided, both the `received` and
+            `openPipeline` sections are restricted to allocations on that entity.
+            Omit to include all entities.
+          schema: { type: string }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYearBreakdown" } } } }
 

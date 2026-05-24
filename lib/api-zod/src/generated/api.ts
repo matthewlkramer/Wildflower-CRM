@@ -3195,6 +3195,15 @@ export const DeleteGiftAllocationParams = zod.object({
 /**
  * @summary Aggregate counts + money totals for the Dashboard landing page.
  */
+export const GetDashboardSummaryQueryParams = zod.object({
+  entityIds: zod
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Optional list of `entities.id` slugs. When provided, the money tiles\n(received \/ openPipelineAsk \/ openPipelineWeighted \/ goal) are restricted\nto allocations on those entities. Counts are unaffected. Omit or pass an\nempty list to include all entities.\n",
+    ),
+});
+
 export const GetDashboardSummaryResponse = zod.object({
   counts: zod.object({
     people: zod.number(),
@@ -3297,6 +3306,15 @@ without N+1 fetches.
  */
 export const GetFiscalYearBreakdownParams = zod.object({
   fyId: zod.coerce.string().describe("fiscal_years.id (e.g. `fy2026`)."),
+});
+
+export const GetFiscalYearBreakdownQueryParams = zod.object({
+  entityId: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Optional `entities.id` slug. When provided, both the `received` and\n`openPipeline` sections are restricted to allocations on that entity.\nOmit to include all entities.\n",
+    ),
 });
 
 export const GetFiscalYearBreakdownResponse = zod

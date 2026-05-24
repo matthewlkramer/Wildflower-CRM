@@ -43,6 +43,8 @@ import type {
   Funder,
   FunderDetail,
   FunderList,
+  GetDashboardSummaryParams,
+  GetFiscalYearBreakdownParams,
   GiftAllocation,
   GiftAllocationList,
   GiftOrPayment,
@@ -5833,41 +5835,63 @@ export const useDeleteGiftAllocation = <
 /**
  * @summary Aggregate counts + money totals for the Dashboard landing page.
  */
-export const getGetDashboardSummaryUrl = () => {
-  return `/api/dashboard-summary`;
+export const getGetDashboardSummaryUrl = (
+  params?: GetDashboardSummaryParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard-summary?${stringifiedParams}`
+    : `/api/dashboard-summary`;
 };
 
 export const getDashboardSummary = async (
+  params?: GetDashboardSummaryParams,
   options?: RequestInit,
 ): Promise<DashboardSummary> => {
-  return customFetch<DashboardSummary>(getGetDashboardSummaryUrl(), {
+  return customFetch<DashboardSummary>(getGetDashboardSummaryUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetDashboardSummaryQueryKey = () => {
-  return [`/api/dashboard-summary`] as const;
+export const getGetDashboardSummaryQueryKey = (
+  params?: GetDashboardSummaryParams,
+) => {
+  return [`/api/dashboard-summary`, ...(params ? [params] : [])] as const;
 };
 
 export const getGetDashboardSummaryQueryOptions = <
   TData = Awaited<ReturnType<typeof getDashboardSummary>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getDashboardSummary>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: GetDashboardSummaryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardSummary>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetDashboardSummaryQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDashboardSummaryQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getDashboardSummary>>
-  > = ({ signal }) => getDashboardSummary({ signal, ...requestOptions });
+  > = ({ signal }) =>
+    getDashboardSummary(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getDashboardSummary>>,
@@ -5888,15 +5912,18 @@ export type GetDashboardSummaryQueryError = ErrorType<unknown>;
 export function useGetDashboardSummary<
   TData = Awaited<ReturnType<typeof getDashboardSummary>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getDashboardSummary>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetDashboardSummaryQueryOptions(options);
+>(
+  params?: GetDashboardSummaryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardSummary>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDashboardSummaryQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -5996,22 +6023,47 @@ without N+1 fetches.
 
  * @summary Per-FY drilldown for a Dashboard money tile.
  */
-export const getGetFiscalYearBreakdownUrl = (fyId: string) => {
-  return `/api/fiscal-year-breakdown/${fyId}`;
+export const getGetFiscalYearBreakdownUrl = (
+  fyId: string,
+  params?: GetFiscalYearBreakdownParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/fiscal-year-breakdown/${fyId}?${stringifiedParams}`
+    : `/api/fiscal-year-breakdown/${fyId}`;
 };
 
 export const getFiscalYearBreakdown = async (
   fyId: string,
+  params?: GetFiscalYearBreakdownParams,
   options?: RequestInit,
 ): Promise<FiscalYearBreakdown> => {
-  return customFetch<FiscalYearBreakdown>(getGetFiscalYearBreakdownUrl(fyId), {
-    ...options,
-    method: "GET",
-  });
+  return customFetch<FiscalYearBreakdown>(
+    getGetFiscalYearBreakdownUrl(fyId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
-export const getGetFiscalYearBreakdownQueryKey = (fyId: string) => {
-  return [`/api/fiscal-year-breakdown/${fyId}`] as const;
+export const getGetFiscalYearBreakdownQueryKey = (
+  fyId: string,
+  params?: GetFiscalYearBreakdownParams,
+) => {
+  return [
+    `/api/fiscal-year-breakdown/${fyId}`,
+    ...(params ? [params] : []),
+  ] as const;
 };
 
 export const getGetFiscalYearBreakdownQueryOptions = <
@@ -6019,6 +6071,7 @@ export const getGetFiscalYearBreakdownQueryOptions = <
   TError = ErrorType<unknown>,
 >(
   fyId: string,
+  params?: GetFiscalYearBreakdownParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getFiscalYearBreakdown>>,
@@ -6031,12 +6084,12 @@ export const getGetFiscalYearBreakdownQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getGetFiscalYearBreakdownQueryKey(fyId);
+    queryOptions?.queryKey ?? getGetFiscalYearBreakdownQueryKey(fyId, params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getFiscalYearBreakdown>>
   > = ({ signal }) =>
-    getFiscalYearBreakdown(fyId, { signal, ...requestOptions });
+    getFiscalYearBreakdown(fyId, params, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -6064,6 +6117,7 @@ export function useGetFiscalYearBreakdown<
   TError = ErrorType<unknown>,
 >(
   fyId: string,
+  params?: GetFiscalYearBreakdownParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getFiscalYearBreakdown>>,
@@ -6073,7 +6127,11 @@ export function useGetFiscalYearBreakdown<
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetFiscalYearBreakdownQueryOptions(fyId, options);
+  const queryOptions = getGetFiscalYearBreakdownQueryOptions(
+    fyId,
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

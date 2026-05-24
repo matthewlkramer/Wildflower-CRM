@@ -78,7 +78,13 @@ function computeCurrentFiscalYear(now: Date = new Date()): FyDescriptor {
 // gift_allocations / pledge_allocations at the line-item level rather than
 // the parent header (multi-year commitments are split across allocation
 // rows with their own grant_year slugs).
-async function fyMetricsFor(fy: FyDescriptor) {
+async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
+  // Entity scoping is applied at the allocation level (both pledge_allocations
+  // and gift_allocations carry an entity_id). An empty/undefined list means
+  // "all entities" — pass-through with no filter. The goal is read straight
+  // from fiscal_years and is not entity-scoped (the goal column is a single
+  // org-wide number; entity-level goals don't exist in the schema).
+  const hasEntityFilter = !!entityIds && entityIds.length > 0;
   const [[openRow], [receivedRow], [goalRow]] = await Promise.all([
     db
       .select({
@@ -94,6 +100,9 @@ async function fyMetricsFor(fy: FyDescriptor) {
         and(
           eq(opportunitiesAndPledges.status, "open"),
           eq(pledgeAllocations.grantYear, fy.id),
+          hasEntityFilter
+            ? inArray(pledgeAllocations.entityId, entityIds!)
+            : undefined,
         ),
       ),
     db
@@ -101,7 +110,14 @@ async function fyMetricsFor(fy: FyDescriptor) {
         v: sql<string>`COALESCE(SUM(${giftAllocations.subAmount}), 0)::text`,
       })
       .from(giftAllocations)
-      .where(eq(giftAllocations.grantYear, fy.id)),
+      .where(
+        and(
+          eq(giftAllocations.grantYear, fy.id),
+          hasEntityFilter
+            ? inArray(giftAllocations.entityId, entityIds!)
+            : undefined,
+        ),
+      ),
     db
       .select({
         goal: sql<string | null>`${fiscalYears.goalAmount}::text`,
@@ -119,9 +135,28 @@ async function fyMetricsFor(fy: FyDescriptor) {
   };
 }
 
+// Parse `entityIds` from a query string. Orval generates form/explode=false
+// arrays as comma-joined strings (`?entityIds=a,b,c`), and Express also tolerates
+// repeated keys (`?entityIds=a&entityIds=b`). Accept both, drop empties.
+function parseEntityIdsParam(raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  const parts: string[] = [];
+  const consume = (v: unknown) => {
+    if (typeof v !== "string") return;
+    for (const piece of v.split(",")) {
+      const trimmed = piece.trim();
+      if (trimmed) parts.push(trimmed);
+    }
+  };
+  if (Array.isArray(raw)) raw.forEach(consume);
+  else consume(raw);
+  return parts;
+}
+
 router.get(
   "/dashboard-summary",
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    const entityIds = parseEntityIdsParam(req.query.entityIds);
     const currentFy = computeCurrentFiscalYear();
     const nextFy = fyFromEndYear(Number(currentFy.id.slice(2)) + 1);
 
@@ -151,8 +186,8 @@ router.get(
         .from(opportunitiesAndPledges)
         .where(eq(opportunitiesAndPledges.status, "won")),
       db.select({ value: count() }).from(giftsAndPayments),
-      fyMetricsFor(currentFy),
-      fyMetricsFor(nextFy),
+      fyMetricsFor(currentFy, entityIds),
+      fyMetricsFor(nextFy, entityIds),
     ]);
 
     res.json({
@@ -185,6 +220,10 @@ router.get(
     // this one directly.
     const fyId = String(req.params.fyId ?? "");
     if (!fyId) return notFound(res, "fiscal year");
+    const entityIdParam =
+      typeof req.query.entityId === "string" && req.query.entityId.trim()
+        ? req.query.entityId.trim()
+        : null;
 
     const fyRow = await db
       .select({
@@ -232,7 +271,12 @@ router.get(
         .leftJoin(funders, eq(funders.id, giftsAndPayments.funderId))
         .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
         .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
-        .where(eq(giftAllocations.grantYear, fyId))
+        .where(
+          and(
+            eq(giftAllocations.grantYear, fyId),
+            entityIdParam ? eq(giftAllocations.entityId, entityIdParam) : undefined,
+          ),
+        )
         .orderBy(desc(giftsAndPayments.dateReceived)),
       db
         .select({
@@ -267,6 +311,7 @@ router.get(
           and(
             eq(opportunitiesAndPledges.status, "open"),
             eq(pledgeAllocations.grantYear, fyId),
+            entityIdParam ? eq(pledgeAllocations.entityId, entityIdParam) : undefined,
           ),
         )
         .orderBy(desc(opportunitiesAndPledges.projectedCloseDate)),
