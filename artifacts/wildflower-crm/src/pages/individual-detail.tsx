@@ -20,6 +20,13 @@ import {
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import { InlineEditRegionPicker, useRegionNameMap } from "@/components/region-picker";
 import {
+  useFunderName,
+  useHouseholdName,
+  useIntermediaryName,
+  useOrganizationName,
+} from "@/components/entity-picker";
+import type { PeopleEntityRole } from "@workspace/api-client-react";
+import {
   InlineEditInterestsThematic,
   InlineEditInterestsAges,
   InlineEditInterestsGovModels,
@@ -318,31 +325,7 @@ function PersonView({ person }: { person: PersonDetail }) {
             {person.roles && person.roles.length > 0 ? (
               <ul className="space-y-2 text-sm">
                 {person.roles.map((r) => (
-                  <li
-                    key={r.id}
-                    className="flex items-center justify-between gap-2"
-                    data-testid={`row-person-role-${r.id}`}
-                  >
-                    <span className="truncate">
-                      {r.externalTitleOrRole ?? formatEnum(r.entityType)}
-                      {r.funderId
-                        ? ` @ ${r.funderId}`
-                        : r.organizationId
-                          ? ` @ ${r.organizationId}`
-                          : r.householdId
-                            ? ` @ ${r.householdId}`
-                            : r.paymentIntermediaryId
-                              ? ` @ ${r.paymentIntermediaryId}`
-                              : ""}
-                    </span>
-                    <span className="text-muted-foreground text-xs whitespace-nowrap">
-                      {formatEnum(r.connection)}
-                      {r.current && r.current !== "current"
-                        ? ` (${formatEnum(r.current)})`
-                        : ""}
-                      {r.primaryContact ? " • primary" : ""}
-                    </span>
-                  </li>
+                  <RoleRow key={r.id} role={r} />
                 ))}
               </ul>
             ) : (
@@ -548,6 +531,60 @@ function NameHeader({ person }: { person: PersonDetail }) {
         />
       </div>
     </div>
+  );
+}
+
+function RoleRow({ role: r }: { role: PeopleEntityRole }) {
+  // Call all four resolvers unconditionally to keep hook order stable; only
+  // one of the four IDs is populated per role (per-entity discriminator
+  // CHECK in the DB), so only one returns a non-null name.
+  const funderName = useFunderName(r.funderId ?? null);
+  const orgName = useOrganizationName(r.organizationId ?? null);
+  const householdName = useHouseholdName(r.householdId ?? null);
+  const intermediaryName = useIntermediaryName(r.paymentIntermediaryId ?? null);
+  const entityHref = r.funderId
+    ? `/funding-entities/${r.funderId}`
+    : r.householdId
+      ? `/households/${r.householdId}`
+      : null;
+  const entityLabel =
+    funderName ??
+    orgName ??
+    householdName ??
+    intermediaryName ??
+    r.funderId ??
+    r.organizationId ??
+    r.householdId ??
+    r.paymentIntermediaryId ??
+    null;
+  return (
+    <li
+      className="flex items-center justify-between gap-2"
+      data-testid={`row-person-role-${r.id}`}
+    >
+      <span className="truncate">
+        {r.externalTitleOrRole ?? formatEnum(r.entityType)}
+        {entityLabel ? (
+          <>
+            {" @ "}
+            {entityHref ? (
+              <Link href={entityHref} className="text-primary hover:underline">
+                {entityLabel}
+              </Link>
+            ) : (
+              entityLabel
+            )}
+          </>
+        ) : null}
+      </span>
+      <span className="text-muted-foreground text-xs whitespace-nowrap">
+        {formatEnum(r.connection)}
+        {r.current && r.current !== "current"
+          ? ` (${formatEnum(r.current)})`
+          : ""}
+        {r.primaryContact ? " • primary" : ""}
+      </span>
+    </li>
   );
 }
 

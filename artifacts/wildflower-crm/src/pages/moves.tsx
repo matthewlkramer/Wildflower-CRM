@@ -3,6 +3,8 @@ import { Link } from "wouter";
 import { useListPeople } from "@workspace/api-client-react";
 import { personDisplayName } from "@/lib/person";
 import { formatDate } from "@/lib/format";
+import { useUserNameMap } from "@/components/user-picker";
+import { useRegionNameMap } from "@/components/region-picker";
 import {
   Table,
   TableBody,
@@ -31,6 +33,9 @@ export default function Moves() {
       return a.lastContacted.localeCompare(b.lastContacted);
     });
   }, [data]);
+
+  const userNames = useUserNameMap();
+  const regionNames = useRegionNameMap();
 
   return (
     <div className="space-y-6">
@@ -80,8 +85,16 @@ export default function Moves() {
                     )}
                   </TableCell>
                   <TableCell className="text-right">{p.interactionCount ?? "—"}</TableCell>
-                  <TableCell>{p.ownerUserId ?? "—"}</TableCell>
-                  <TableCell>{p.currentHomeRegionId ?? "—"}</TableCell>
+                  <TableCell>
+                    {p.ownerUserId
+                      ? (userNames.get(p.ownerUserId) ?? p.ownerUserId)
+                      : "—"}
+                  </TableCell>
+                  <TableCell>
+                    {p.currentHomeRegionId
+                      ? (regionNames.get(p.currentHomeRegionId) ?? p.currentHomeRegionId)
+                      : "—"}
+                  </TableCell>
                 </TableRow>
               ))
             )}

@@ -9,6 +9,7 @@ import {
   useGetPerson,
   useGetHousehold,
   useGetPaymentIntermediary,
+  useGetOrganization,
   getListFundersQueryKey,
   getListPeopleQueryKey,
   getListHouseholdsQueryKey,
@@ -17,10 +18,12 @@ import {
   getGetPersonQueryKey,
   getGetHouseholdQueryKey,
   getGetPaymentIntermediaryQueryKey,
+  getGetOrganizationQueryKey,
   type Funder,
   type Person,
   type Household,
   type PaymentIntermediary,
+  type Organization,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -466,6 +469,21 @@ export function useIntermediaryName(id: string | null): string | null {
     },
   });
   return id && q.data ? intermediaryDisplayName(q.data) : null;
+}
+
+export function organizationDisplayName(o: Organization): string {
+  return o.name?.trim() || o.id;
+}
+
+export function useOrganizationName(id: string | null): string | null {
+  const q = useGetOrganization(id ?? "", {
+    query: {
+      queryKey: getGetOrganizationQueryKey(id ?? ""),
+      enabled: !!id,
+      staleTime: 5 * 60_000,
+    },
+  });
+  return id && q.data ? organizationDisplayName(q.data) : null;
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */

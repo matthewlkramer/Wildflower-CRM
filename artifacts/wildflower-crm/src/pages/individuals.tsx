@@ -7,6 +7,7 @@ import {
 } from "@workspace/api-client-react";
 import { formatDate } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
+import { useRegionNameMap } from "@/components/region-picker";
 import {
   Table,
   TableBody,
@@ -59,6 +60,7 @@ export default function Individuals() {
   const rows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const regionNames = useRegionNameMap();
 
   return (
     <div className="space-y-6">
@@ -170,7 +172,11 @@ export default function Individuals() {
                   <TableCell>
                     {p.deceased ? <Badge variant="outline">Deceased</Badge> : "—"}
                   </TableCell>
-                  <TableCell>{p.currentHomeRegionId ?? "—"}</TableCell>
+                  <TableCell>
+                    {p.currentHomeRegionId
+                      ? (regionNames.get(p.currentHomeRegionId) ?? p.currentHomeRegionId)
+                      : "—"}
+                  </TableCell>
                   <TableCell>{formatDate(p.lastContacted)}</TableCell>
                   <TableCell className="text-muted-foreground text-xs">
                     {p.tags ?? "—"}
