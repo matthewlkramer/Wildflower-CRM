@@ -8,6 +8,7 @@ import {
   opportunitiesAndPledges,
   pledgeAllocations,
   giftsAndPayments,
+  giftAllocations,
 } from "@workspace/db/schema";
 import { and, between, count, eq, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -109,12 +110,20 @@ router.get(
             ),
           ),
         ),
+      // "Received for FY<n>" is grant-year-attributed at the allocation
+      // level, not by gift receipt date and not by the parent gift's
+      // grant_year either: a single check can be split across multiple
+      // fiscal years on gift_allocations.sub_amount with per-row
+      // grant_year slugs. SCHEMA.md guarantees every gift carries at
+      // least one gift_allocations row (synthesized 1:1 when no explicit
+      // allocations exist), so summing allocations is exhaustive and
+      // doesn't double-count.
       db
         .select({
-          v: sql<string>`COALESCE(SUM(${giftsAndPayments.amount}), 0)::text`,
+          v: sql<string>`COALESCE(SUM(${giftAllocations.subAmount}), 0)::text`,
         })
-        .from(giftsAndPayments)
-        .where(between(giftsAndPayments.dateReceived, fy.startDate, fy.endDate)),
+        .from(giftAllocations)
+        .where(eq(giftAllocations.grantYear, fy.id)),
     ]);
 
     res.json({

@@ -48,7 +48,7 @@ export default function Dashboard() {
     {
       label: `Received ${fy?.label ?? "this FY"}`,
       value: money?.receivedCurrentFy,
-      sub: fy ? `Gifts dated ${fy.startDate} → ${fy.endDate}` : "Gifts received this fiscal year",
+      sub: fy ? `Gift allocations booked to ${fy.label}` : "Gift allocations booked to this fiscal year",
       testId: "tile-received-fy",
     },
   ];
