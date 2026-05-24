@@ -28,6 +28,7 @@ tags:
   - { name: pledge-allocations }
   - { name: gifts-and-payments }
   - { name: gift-allocations }
+  - { name: analytics }
 
 paths:
   /healthz:
@@ -655,6 +656,28 @@ paths:
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses: { "204": { description: Deleted } }
 
+  # ─── Analytics (aggregate read-only) ───────────────────────────────────────
+  /dashboard-summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [analytics]
+      summary: Aggregate counts + money totals for the Dashboard landing page.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DashboardSummary" } } } }
+
+  /projections-by-fy-entity:
+    get:
+      operationId: getProjectionsByFyEntity
+      tags: [analytics]
+      summary: Open-pipeline pledge_allocations aggregated by (grantYear, entityId).
+      description: |
+        Joins `pledge_allocations` to its parent `opportunities_and_pledges` where status='open',
+        excludes superseded/abandoned allocation rows, and groups remaining rows by
+        (grantYear, entityId). `expected` weights `sub_amount` by the parent opp's `win_probability`
+        (defaulting to 1 when null). Both grouping keys may be null.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ProjectionsByFyEntity" } } } }
+
 components:
   parameters:
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 50 } }
@@ -812,6 +835,61 @@ components:
         endDate:    { type: string, format: date, nullable: true }
         createdAt:  { type: string, format: date-time }
         updatedAt:  { type: string, format: date-time }
+
+    # ─── Analytics (aggregate read-only response shapes) ──────────────────────
+    DashboardCounts:
+      type: object
+      required: [people, funders, households, organizations, opportunities, openOpportunities, wonPledges, gifts]
+      properties:
+        people:            { type: integer }
+        funders:           { type: integer }
+        households:        { type: integer }
+        organizations:     { type: integer }
+        opportunities:     { type: integer }
+        openOpportunities: { type: integer }
+        wonPledges:        { type: integer }
+        gifts:             { type: integer }
+    DashboardMoney:
+      type: object
+      required: [openPipelineAsk, openPipelineExpected, awardedCurrentFy, receivedCurrentFy]
+      description: |
+        All values are decimal strings (PostgreSQL numeric) to preserve precision —
+        format with `formatCurrency` on the client.
+      properties:
+        openPipelineAsk:      { type: string, description: "SUM(ask_amount) across all open opps." }
+        openPipelineExpected: { type: string, description: "SUM(ask_amount × COALESCE(win_probability, 1)) across all open opps." }
+        awardedCurrentFy:     { type: string, description: "SUM(awarded_amount) across won opps whose actual_completion_date falls inside the current fiscal year." }
+        receivedCurrentFy:    { type: string, description: "SUM(amount) across gifts whose date_received falls inside the current fiscal year." }
+    DashboardFiscalYear:
+      type: object
+      required: [id, label, startDate, endDate]
+      properties:
+        id:        { type: string, description: "fy-slug (e.g. `fy2026`)." }
+        label:     { type: string, description: "Human label (e.g. `FY 2026`)." }
+        startDate: { type: string, format: date }
+        endDate:   { type: string, format: date }
+    DashboardSummary:
+      type: object
+      required: [counts, money, currentFiscalYear]
+      properties:
+        counts:            { $ref: "#/components/schemas/DashboardCounts" }
+        money:             { $ref: "#/components/schemas/DashboardMoney" }
+        currentFiscalYear: { $ref: "#/components/schemas/DashboardFiscalYear" }
+
+    ProjectionByFyEntityRow:
+      type: object
+      required: [grantYear, entityId, allocationCount, totalSubAmount, expected]
+      properties:
+        grantYear:       { type: string, nullable: true, description: "fiscal_years.id, or null for unbucketed allocations." }
+        entityId:        { type: string, nullable: true, description: "entities.id, or null for unbucketed allocations." }
+        allocationCount: { type: integer }
+        totalSubAmount:  { type: string, description: "SUM(sub_amount) for the group, as numeric string." }
+        expected:        { type: string, description: "SUM(sub_amount × COALESCE(parent.win_probability, 1)) for the group, as numeric string." }
+    ProjectionsByFyEntity:
+      type: object
+      required: [rows]
+      properties:
+        rows: { type: array, items: { $ref: "#/components/schemas/ProjectionByFyEntityRow" } }
 
     # ─── Funders ───────────────────────────────────────────────────────────────
     Funder:

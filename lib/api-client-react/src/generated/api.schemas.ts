@@ -423,6 +423,64 @@ export interface FiscalYear {
   updatedAt: string;
 }
 
+export interface DashboardCounts {
+  people: number;
+  funders: number;
+  households: number;
+  organizations: number;
+  opportunities: number;
+  openOpportunities: number;
+  wonPledges: number;
+  gifts: number;
+}
+
+/**
+ * All values are decimal strings (PostgreSQL numeric) to preserve precision —
+format with `formatCurrency` on the client.
+
+ */
+export interface DashboardMoney {
+  /** SUM(ask_amount) across all open opps. */
+  openPipelineAsk: string;
+  /** SUM(ask_amount × COALESCE(win_probability, 1)) across all open opps. */
+  openPipelineExpected: string;
+  /** SUM(awarded_amount) across won opps whose actual_completion_date falls inside the current fiscal year. */
+  awardedCurrentFy: string;
+  /** SUM(amount) across gifts whose date_received falls inside the current fiscal year. */
+  receivedCurrentFy: string;
+}
+
+export interface DashboardFiscalYear {
+  /** fy-slug (e.g. `fy2026`). */
+  id: string;
+  /** Human label (e.g. `FY 2026`). */
+  label: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface DashboardSummary {
+  counts: DashboardCounts;
+  money: DashboardMoney;
+  currentFiscalYear: DashboardFiscalYear;
+}
+
+export interface ProjectionByFyEntityRow {
+  /** fiscal_years.id, or null for unbucketed allocations. */
+  grantYear: string | null;
+  /** entities.id, or null for unbucketed allocations. */
+  entityId: string | null;
+  allocationCount: number;
+  /** SUM(sub_amount) for the group, as numeric string. */
+  totalSubAmount: string;
+  /** SUM(sub_amount × COALESCE(parent.win_probability, 1)) for the group, as numeric string. */
+  expected: string;
+}
+
+export interface ProjectionsByFyEntity {
+  rows: ProjectionByFyEntityRow[];
+}
+
 export interface Funder {
   id: string;
   name: string;

@@ -3170,3 +3170,81 @@ export const UpdateGiftAllocationResponse = zod.object({
 export const DeleteGiftAllocationParams = zod.object({
   id: zod.coerce.string(),
 });
+
+/**
+ * @summary Aggregate counts + money totals for the Dashboard landing page.
+ */
+export const GetDashboardSummaryResponse = zod.object({
+  counts: zod.object({
+    people: zod.number(),
+    funders: zod.number(),
+    households: zod.number(),
+    organizations: zod.number(),
+    opportunities: zod.number(),
+    openOpportunities: zod.number(),
+    wonPledges: zod.number(),
+    gifts: zod.number(),
+  }),
+  money: zod
+    .object({
+      openPipelineAsk: zod
+        .string()
+        .describe("SUM(ask_amount) across all open opps."),
+      openPipelineExpected: zod
+        .string()
+        .describe(
+          "SUM(ask_amount × COALESCE(win_probability, 1)) across all open opps.",
+        ),
+      awardedCurrentFy: zod
+        .string()
+        .describe(
+          "SUM(awarded_amount) across won opps whose actual_completion_date falls inside the current fiscal year.",
+        ),
+      receivedCurrentFy: zod
+        .string()
+        .describe(
+          "SUM(amount) across gifts whose date_received falls inside the current fiscal year.",
+        ),
+    })
+    .describe(
+      "All values are decimal strings (PostgreSQL numeric) to preserve precision —\nformat with `formatCurrency` on the client.\n",
+    ),
+  currentFiscalYear: zod.object({
+    id: zod.string().describe("fy-slug (e.g. `fy2026`)."),
+    label: zod.string().describe("Human label (e.g. `FY 2026`)."),
+    startDate: zod.string().date(),
+    endDate: zod.string().date(),
+  }),
+});
+
+/**
+ * Joins `pledge_allocations` to its parent `opportunities_and_pledges` where status='open',
+excludes superseded/abandoned allocation rows, and groups remaining rows by
+(grantYear, entityId). `expected` weights `sub_amount` by the parent opp's `win_probability`
+(defaulting to 1 when null). Both grouping keys may be null.
+
+ * @summary Open-pipeline pledge_allocations aggregated by (grantYear, entityId).
+ */
+export const GetProjectionsByFyEntityResponse = zod.object({
+  rows: zod.array(
+    zod.object({
+      grantYear: zod
+        .string()
+        .nullable()
+        .describe("fiscal_years.id, or null for unbucketed allocations."),
+      entityId: zod
+        .string()
+        .nullable()
+        .describe("entities.id, or null for unbucketed allocations."),
+      allocationCount: zod.number(),
+      totalSubAmount: zod
+        .string()
+        .describe("SUM(sub_amount) for the group, as numeric string."),
+      expected: zod
+        .string()
+        .describe(
+          "SUM(sub_amount × COALESCE(parent.win_probability, 1)) for the group, as numeric string.",
+        ),
+    }),
+  ),
+});

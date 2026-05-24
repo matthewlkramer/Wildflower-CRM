@@ -33,6 +33,7 @@ import type {
   CreatePersonBody,
   CreatePhoneNumberBody,
   CreatePledgeAllocationBody,
+  DashboardSummary,
   Email,
   EmailList,
   Entity,
@@ -84,6 +85,7 @@ import type {
   PhoneNumberList,
   PledgeAllocation,
   PledgeAllocationList,
+  ProjectionsByFyEntity,
   Region,
   RegionList,
   School,
@@ -5826,3 +5828,159 @@ export const useDeleteGiftAllocation = <
 > => {
   return useMutation(getDeleteGiftAllocationMutationOptions(options));
 };
+
+/**
+ * @summary Aggregate counts + money totals for the Dashboard landing page.
+ */
+export const getGetDashboardSummaryUrl = () => {
+  return `/api/dashboard-summary`;
+};
+
+export const getDashboardSummary = async (
+  options?: RequestInit,
+): Promise<DashboardSummary> => {
+  return customFetch<DashboardSummary>(getGetDashboardSummaryUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDashboardSummaryQueryKey = () => {
+  return [`/api/dashboard-summary`] as const;
+};
+
+export const getGetDashboardSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDashboardSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDashboardSummaryQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDashboardSummary>>
+  > = ({ signal }) => getDashboardSummary({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDashboardSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDashboardSummary>>
+>;
+export type GetDashboardSummaryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Aggregate counts + money totals for the Dashboard landing page.
+ */
+
+export function useGetDashboardSummary<
+  TData = Awaited<ReturnType<typeof getDashboardSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDashboardSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Joins `pledge_allocations` to its parent `opportunities_and_pledges` where status='open',
+excludes superseded/abandoned allocation rows, and groups remaining rows by
+(grantYear, entityId). `expected` weights `sub_amount` by the parent opp's `win_probability`
+(defaulting to 1 when null). Both grouping keys may be null.
+
+ * @summary Open-pipeline pledge_allocations aggregated by (grantYear, entityId).
+ */
+export const getGetProjectionsByFyEntityUrl = () => {
+  return `/api/projections-by-fy-entity`;
+};
+
+export const getProjectionsByFyEntity = async (
+  options?: RequestInit,
+): Promise<ProjectionsByFyEntity> => {
+  return customFetch<ProjectionsByFyEntity>(getGetProjectionsByFyEntityUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectionsByFyEntityQueryKey = () => {
+  return [`/api/projections-by-fy-entity`] as const;
+};
+
+export const getGetProjectionsByFyEntityQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetProjectionsByFyEntityQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectionsByFyEntity>>
+  > = ({ signal }) => getProjectionsByFyEntity({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectionsByFyEntityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectionsByFyEntity>>
+>;
+export type GetProjectionsByFyEntityQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Open-pipeline pledge_allocations aggregated by (grantYear, entityId).
+ */
+
+export function useGetProjectionsByFyEntity<
+  TData = Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectionsByFyEntityQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

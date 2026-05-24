@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Link } from "wouter";
 import {
   useListOpportunitiesAndPledges,
+  getListOpportunitiesAndPledgesQueryKey,
   type OpportunityOrPledge,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
@@ -14,14 +15,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const FETCH_LIMIT = 200;
+const FETCH_LIMIT = 1000;
+const QUERY_PARAMS = { status: "open" as const, limit: FETCH_LIMIT, page: 1 };
 
 export default function GrantsCalendar() {
-  const { data, isLoading, isError, error } = useListOpportunitiesAndPledges({
-    status: "open",
-    limit: FETCH_LIMIT,
-    page: 1,
-  });
+  const { data, isLoading, isError, error } = useListOpportunitiesAndPledges(
+    QUERY_PARAMS,
+    { query: { queryKey: getListOpportunitiesAndPledgesQueryKey(QUERY_PARAMS) } },
+  );
 
   const upcoming = useMemo(() => {
     const rows = data?.data ?? [];
