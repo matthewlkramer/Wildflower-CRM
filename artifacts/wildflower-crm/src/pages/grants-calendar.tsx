@@ -18,6 +18,20 @@ import {
 const FETCH_LIMIT = 1000;
 const QUERY_PARAMS = { status: "open" as const, limit: FETCH_LIMIT, page: 1 };
 
+// Today's calendar date in Wildflower's booking timezone (America/Chicago),
+// formatted as YYYY-MM-DD so it sorts/compares correctly against the
+// date-only `applicationDeadline` / `projectedCloseDate` strings the API
+// returns. Computed once per render — cheap, and avoids any UTC drift
+// around midnight that would briefly hide today's deadlines.
+function todayInChicago(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 export default function GrantsCalendar() {
   const { data, isLoading, isError, error } = useListOpportunitiesAndPledges(
     QUERY_PARAMS,
@@ -26,14 +40,15 @@ export default function GrantsCalendar() {
 
   const upcoming = useMemo(() => {
     const rows = data?.data ?? [];
+    const today = todayInChicago();
     return rows
-      .filter((o) => o.applicationDeadline || o.projectedCloseDate)
-      .slice()
-      .sort((a, b) => {
-        const ad = a.applicationDeadline ?? a.projectedCloseDate ?? "";
-        const bd = b.applicationDeadline ?? b.projectedCloseDate ?? "";
-        return ad.localeCompare(bd);
-      });
+      .map((o) => ({
+        o,
+        sortDate: o.applicationDeadline ?? o.projectedCloseDate ?? "",
+      }))
+      .filter(({ sortDate }) => sortDate && sortDate >= today)
+      .sort((a, b) => a.sortDate.localeCompare(b.sortDate))
+      .map(({ o }) => o);
   }, [data]);
 
   return (
@@ -41,7 +56,7 @@ export default function GrantsCalendar() {
       <div>
         <h1 className="text-3xl font-serif font-bold text-foreground">Grants calendar</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Open opportunities sorted by upcoming deadline.
+          Open opportunities with an application deadline (or projected close) today or later, sorted soonest first.
           {data && data.pagination.total > FETCH_LIMIT ? (
             <span> Showing the first {FETCH_LIMIT} of {data.pagination.total.toLocaleString()}.</span>
           ) : null}
@@ -70,7 +85,7 @@ export default function GrantsCalendar() {
                 </TableCell>
               </TableRow>
             ) : upcoming.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">No open opportunities with deadlines.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">No open opportunities with deadlines today or later.</TableCell></TableRow>
             ) : (
               upcoming.map((o: OpportunityOrPledge) => (
                 <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-cal-${o.id}`}>
