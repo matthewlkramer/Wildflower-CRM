@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useParams, useSearch, useLocation } from "wouter";
 import {
   useGetFiscalYearBreakdown,
@@ -11,6 +11,7 @@ import {
   type FiscalYearOpenRow,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatEnum } from "@/lib/format";
+import { partitionEntities, partitionFiscalYears } from "@/lib/dropdownVisibility";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -99,6 +100,35 @@ export default function FiscalYearDetail() {
     [entitiesQ.data],
   );
 
+  // Default-visible window: recent FYs (last 3 + current + next) and
+  // non-retired entities. Older FYs / retired entities sit behind an
+  // expand toggle. Auto-expand if the current selection is in the hidden
+  // set so the user can still see / change their selection in the list.
+  const { recent: recentFyOptions, older: olderFyOptions } = useMemo(
+    () => partitionFiscalYears(fyOptions),
+    [fyOptions],
+  );
+  const { active: activeEntityOptions, retired: retiredEntityOptions } = useMemo(
+    () => partitionEntities(entityOptions),
+    [entityOptions],
+  );
+  const fyHidden = olderFyOptions.some((f) => f.id === fyId);
+  const entityHidden = retiredEntityOptions.some((e) => e.id === entityId);
+  const [showAllFy, setShowAllFy] = useState(false);
+  const [showRetiredEntities, setShowRetiredEntities] = useState(false);
+  // Force-expand whenever the current selection lives in the hidden bucket
+  // so the user can still see (and change away from) their selection in the
+  // list. Derived rather than effect-backed so it survives the initial
+  // render where async option lists haven't loaded yet — no timing race.
+  const effectiveShowAllFy = showAllFy || fyHidden;
+  const effectiveShowRetiredEntities = showRetiredEntities || entityHidden;
+  const visibleFyOptions = effectiveShowAllFy
+    ? [...recentFyOptions, ...olderFyOptions]
+    : recentFyOptions;
+  const visibleEntityOptions = effectiveShowRetiredEntities
+    ? [...activeEntityOptions, ...retiredEntityOptions]
+    : activeEntityOptions;
+
   const updateQuery = (mut: (sp: URLSearchParams) => void, opts?: { replace?: boolean }) => {
     const next = new URLSearchParams(search);
     mut(next);
@@ -140,41 +170,72 @@ export default function FiscalYearDetail() {
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Fiscal year
         </label>
-        <Select value={fyId} onValueChange={setFy}>
-          <SelectTrigger className="w-40" data-testid="select-fy">
-            <SelectValue placeholder={fyId} />
-          </SelectTrigger>
-          <SelectContent>
-            {fyOptions.map((f) => (
-              <SelectItem key={f.id} value={f.id} data-testid={`select-fy-option-${f.id}`}>
-                {f.label}
-              </SelectItem>
-            ))}
-            {/* If the loaded FY isn't in the list yet (loading), still show it. */}
-            {!fyOptions.find((f) => f.id === fyId) && fyId ? (
-              <SelectItem value={fyId}>{fyLabel}</SelectItem>
-            ) : null}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col items-start gap-0.5">
+          <Select value={fyId} onValueChange={setFy}>
+            <SelectTrigger className="w-40" data-testid="select-fy">
+              <SelectValue placeholder={fyId} />
+            </SelectTrigger>
+            <SelectContent>
+              {visibleFyOptions.map((f) => (
+                <SelectItem key={f.id} value={f.id} data-testid={`select-fy-option-${f.id}`}>
+                  {f.label}
+                </SelectItem>
+              ))}
+              {/* If the loaded FY isn't in the list yet (loading), still show it. */}
+              {!fyOptions.find((f) => f.id === fyId) && fyId ? (
+                <SelectItem value={fyId}>{fyLabel}</SelectItem>
+              ) : null}
+            </SelectContent>
+          </Select>
+          {/* Toggle lives outside <SelectContent> so the click never races
+              Radix's pointer/portal handling. Hidden when selection forces
+              the bucket open (can't usefully collapse). */}
+          {olderFyOptions.length > 0 && !fyHidden ? (
+            <button
+              type="button"
+              data-testid="select-fy-toggle"
+              onClick={() => setShowAllFy((s) => !s)}
+              className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline px-1"
+            >
+              {effectiveShowAllFy
+                ? "Show recent fiscal years only"
+                : `Show all fiscal years (+${olderFyOptions.length})`}
+            </button>
+          ) : null}
+        </div>
 
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide ml-2">
           Entity
         </label>
-        <Select value={entityId} onValueChange={setEntity}>
-          <SelectTrigger className="w-64" data-testid="select-entity">
-            <SelectValue placeholder={selectedEntityName} />
-          </SelectTrigger>
-          <SelectContent>
-            {entityOptions.map((e) => (
-              <SelectItem key={e.id} value={e.id} data-testid={`select-entity-option-${e.id}`}>
-                {e.name}
-              </SelectItem>
-            ))}
-            {!entityOptions.find((e) => e.id === entityId) ? (
-              <SelectItem value={entityId}>{selectedEntityName}</SelectItem>
-            ) : null}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col items-start gap-0.5">
+          <Select value={entityId} onValueChange={setEntity}>
+            <SelectTrigger className="w-64" data-testid="select-entity">
+              <SelectValue placeholder={selectedEntityName} />
+            </SelectTrigger>
+            <SelectContent>
+              {visibleEntityOptions.map((e) => (
+                <SelectItem key={e.id} value={e.id} data-testid={`select-entity-option-${e.id}`}>
+                  {e.name}
+                </SelectItem>
+              ))}
+              {!entityOptions.find((e) => e.id === entityId) ? (
+                <SelectItem value={entityId}>{selectedEntityName}</SelectItem>
+              ) : null}
+            </SelectContent>
+          </Select>
+          {retiredEntityOptions.length > 0 && !entityHidden ? (
+            <button
+              type="button"
+              data-testid="select-entity-toggle"
+              onClick={() => setShowRetiredEntities((s) => !s)}
+              className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline px-1"
+            >
+              {effectiveShowRetiredEntities
+                ? "Hide retired entities"
+                : `Show retired entities (+${retiredEntityOptions.length})`}
+            </button>
+          ) : null}
+        </div>
 
         <Tabs value={metric} onValueChange={(v) => setMetric(v as Metric)}>
           <TabsList>

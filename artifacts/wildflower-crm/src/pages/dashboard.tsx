@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
+import { partitionEntities } from "@/lib/dropdownVisibility";
 
 // URL key for the entity multi-filter. Comma-separated entity ids. Empty/missing
 // = all entities. Persisted in the URL so the filtered view is shareable and
@@ -285,6 +286,20 @@ function EntityMultiFilter({
         ? labelFor(value[0])
         : `${value.length} entities`;
 
+  // Retired entities are hidden behind a "Show retired" toggle. Auto-expand
+  // if the current selection already includes a retired one so it stays
+  // visible (and toggleable) in the list.
+  const { active, retired } = useMemo(() => partitionEntities(options), [options]);
+  const retiredIds = useMemo(() => new Set(retired.map((r) => r.id)), [retired]);
+  const selectionIncludesRetired = value.some((id) => retiredIds.has(id));
+  const [showRetired, setShowRetired] = useState(false);
+  // Always force-expand when the current selection lives in the retired set
+  // so the chips have a corresponding row in the list. Derived (not effect-
+  // backed) so it survives async option loads — no timing race between when
+  // options hydrate and when the toggle state would otherwise be seeded.
+  const effectiveShowRetired = showRetired || selectionIncludesRetired;
+  const visibleOptions = effectiveShowRetired ? [...active, ...retired] : active;
+
   const toggle = (id: string) => {
     onChange(
       selectedSet.has(id) ? value.filter((v) => v !== id) : [...value, id],
@@ -314,7 +329,7 @@ function EntityMultiFilter({
           <Command>
             <CommandList>
               <CommandGroup>
-                {options.map((o) => {
+                {visibleOptions.map((o) => {
                   const selected = selectedSet.has(o.id);
                   return (
                     <CommandItem
@@ -329,6 +344,20 @@ function EntityMultiFilter({
                   );
                 })}
               </CommandGroup>
+              {retired.length > 0 && !selectionIncludesRetired ? (
+                <CommandGroup>
+                  <CommandItem
+                    value="__toggle_retired__"
+                    onSelect={() => setShowRetired((s) => !s)}
+                    data-testid="filter-entities-toggle-retired"
+                    className="text-muted-foreground text-xs justify-center"
+                  >
+                    {effectiveShowRetired
+                      ? "Hide retired entities"
+                      : `Show retired entities (${retired.length})`}
+                  </CommandItem>
+                </CommandGroup>
+              ) : null}
               {value.length > 0 ? (
                 <CommandGroup>
                   <CommandItem
