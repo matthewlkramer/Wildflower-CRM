@@ -28,15 +28,15 @@ export default function Dashboard() {
 
   const moneyTiles = [
     {
-      label: "Open pipeline — ask",
+      label: `Open pipeline ${fy?.label ?? "this FY"}`,
       value: money?.openPipelineAsk,
-      sub: "SUM(ask) across open opps",
+      sub: fy ? `Open allocations booked to ${fy.label}` : "Open allocations booked to this fiscal year",
       testId: "tile-pipeline-ask",
     },
     {
-      label: "Open pipeline — expected",
+      label: `Weighted pipeline ${fy?.label ?? "this FY"}`,
       value: money?.openPipelineExpected,
-      sub: "ask × win probability",
+      sub: fy ? `${fy.label} open allocations × win probability` : "Open allocations × win probability",
       testId: "tile-pipeline-expected",
     },
     {

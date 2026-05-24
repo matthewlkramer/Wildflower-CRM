@@ -88,13 +88,27 @@ router.get(
         .from(opportunitiesAndPledges)
         .where(eq(opportunitiesAndPledges.status, "won")),
       db.select({ value: count() }).from(giftsAndPayments),
+      // Open pipeline tiles are scoped to the current fiscal year at the
+      // allocation level. An open multi-year ask is spread across N
+      // pledge_allocations rows (one per grant_year); we only want the
+      // slice landing in fy.id. Weighted pipeline = sub_amount × parent
+      // opp's win_probability (default 1 when null).
       db
         .select({
-          ask: sql<string>`COALESCE(SUM(${opportunitiesAndPledges.askAmount}), 0)::text`,
-          expected: sql<string>`COALESCE(SUM(${opportunitiesAndPledges.askAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1)), 0)::text`,
+          ask: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
+          expected: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1)), 0)::text`,
         })
-        .from(opportunitiesAndPledges)
-        .where(eq(opportunitiesAndPledges.status, "open")),
+        .from(pledgeAllocations)
+        .innerJoin(
+          opportunitiesAndPledges,
+          eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
+        )
+        .where(
+          and(
+            eq(opportunitiesAndPledges.status, "open"),
+            eq(pledgeAllocations.grantYear, fy.id),
+          ),
+        ),
       db
         .select({
           v: sql<string>`COALESCE(SUM(${opportunitiesAndPledges.awardedAmount}), 0)::text`,
