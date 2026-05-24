@@ -434,22 +434,6 @@ export interface DashboardCounts {
   gifts: number;
 }
 
-/**
- * All values are decimal strings (PostgreSQL numeric) to preserve precision —
-format with `formatCurrency` on the client.
-
- */
-export interface DashboardMoney {
-  /** SUM(ask_amount) across all open opps. */
-  openPipelineAsk: string;
-  /** SUM(ask_amount × COALESCE(win_probability, 1)) across all open opps. */
-  openPipelineExpected: string;
-  /** SUM(awarded_amount) across won opps whose actual_completion_date falls inside the current fiscal year. */
-  awardedCurrentFy: string;
-  /** SUM(amount) across gifts whose date_received falls inside the current fiscal year. */
-  receivedCurrentFy: string;
-}
-
 export interface DashboardFiscalYear {
   /** fy-slug (e.g. `fy2026`). */
   id: string;
@@ -459,10 +443,30 @@ export interface DashboardFiscalYear {
   endDate: string;
 }
 
+/**
+ * Per-fiscal-year fundraising metrics. All money values are decimal strings
+(PostgreSQL numeric) to preserve precision — format with `formatCurrency`
+on the client. `goal` is nullable because not every FY has a goal seeded
+(e.g. far-future years or the "future" sentinel).
+
+ */
+export interface FiscalYearMetrics {
+  fiscalYear: DashboardFiscalYear;
+  /** SUM(pledge_allocations.sub_amount) for status='open' opps with grant_year = this FY. */
+  openPipelineAsk: string;
+  /** SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps with grant_year = this FY. */
+  openPipelineWeighted: string;
+  /** SUM(gift_allocations.sub_amount) for allocations with grant_year = this FY. */
+  received: string;
+  /** Fundraising goal for the FY (from fiscal_years.goal_amount); null if not set. */
+  goal: string | null;
+}
+
 export interface DashboardSummary {
   counts: DashboardCounts;
-  money: DashboardMoney;
   currentFiscalYear: DashboardFiscalYear;
+  /** Per-FY metrics for the current FY and the next FY (in that order). */
+  byFiscalYear: FiscalYearMetrics[];
 }
 
 export interface ProjectionByFyEntityRow {

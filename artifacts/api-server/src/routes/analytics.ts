@@ -9,8 +9,9 @@ import {
   pledgeAllocations,
   giftsAndPayments,
   giftAllocations,
+  fiscalYears,
 } from "@workspace/db/schema";
-import { and, between, count, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler } from "../lib/helpers";
 
@@ -37,16 +38,14 @@ const FY_DATE_PARTS = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
-function computeCurrentFiscalYear(now: Date = new Date()): {
+type FyDescriptor = {
   id: string;
   label: string;
   startDate: string;
   endDate: string;
-} {
-  const parts = FY_DATE_PARTS.formatToParts(now);
-  const y = Number(parts.find((p) => p.type === "year")!.value);
-  const m = Number(parts.find((p) => p.type === "month")!.value); // 1-12
-  const fyEndYear = m >= 7 ? y + 1 : y;
+};
+
+function fyFromEndYear(fyEndYear: number): FyDescriptor {
   const fyStartYear = fyEndYear - 1;
   return {
     id: `fy${fyEndYear}`,
@@ -56,10 +55,65 @@ function computeCurrentFiscalYear(now: Date = new Date()): {
   };
 }
 
+function computeCurrentFiscalYear(now: Date = new Date()): FyDescriptor {
+  const parts = FY_DATE_PARTS.formatToParts(now);
+  const y = Number(parts.find((p) => p.type === "year")!.value);
+  const m = Number(parts.find((p) => p.type === "month")!.value); // 1-12
+  const fyEndYear = m >= 7 ? y + 1 : y;
+  return fyFromEndYear(fyEndYear);
+}
+
+// Per-FY money rollup. All amounts are decimal strings (PostgreSQL numeric)
+// to preserve precision through JSON. See SCHEMA.md for why we sum
+// gift_allocations / pledge_allocations at the line-item level rather than
+// the parent header (multi-year commitments are split across allocation
+// rows with their own grant_year slugs).
+async function fyMetricsFor(fy: FyDescriptor) {
+  const [[openRow], [receivedRow], [goalRow]] = await Promise.all([
+    db
+      .select({
+        ask: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
+        weighted: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1)), 0)::text`,
+      })
+      .from(pledgeAllocations)
+      .innerJoin(
+        opportunitiesAndPledges,
+        eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
+      )
+      .where(
+        and(
+          eq(opportunitiesAndPledges.status, "open"),
+          eq(pledgeAllocations.grantYear, fy.id),
+        ),
+      ),
+    db
+      .select({
+        v: sql<string>`COALESCE(SUM(${giftAllocations.subAmount}), 0)::text`,
+      })
+      .from(giftAllocations)
+      .where(eq(giftAllocations.grantYear, fy.id)),
+    db
+      .select({
+        goal: sql<string | null>`${fiscalYears.goalAmount}::text`,
+      })
+      .from(fiscalYears)
+      .where(eq(fiscalYears.id, fy.id)),
+  ]);
+
+  return {
+    fiscalYear: fy,
+    openPipelineAsk: openRow?.ask ?? "0",
+    openPipelineWeighted: openRow?.weighted ?? "0",
+    received: receivedRow?.v ?? "0",
+    goal: goalRow?.goal ?? null,
+  };
+}
+
 router.get(
   "/dashboard-summary",
   asyncHandler(async (_req, res) => {
-    const fy = computeCurrentFiscalYear();
+    const currentFy = computeCurrentFiscalYear();
+    const nextFy = fyFromEndYear(Number(currentFy.id.slice(2)) + 1);
 
     const [
       [{ value: peopleCt }],
@@ -70,9 +124,8 @@ router.get(
       [{ value: openCt }],
       [{ value: wonCt }],
       [{ value: giftsCt }],
-      [openMoney],
-      [awardedFyRow],
-      [receivedFyRow],
+      currentFyMetrics,
+      nextFyMetrics,
     ] = await Promise.all([
       db.select({ value: count() }).from(people),
       db.select({ value: count() }).from(funders),
@@ -88,56 +141,8 @@ router.get(
         .from(opportunitiesAndPledges)
         .where(eq(opportunitiesAndPledges.status, "won")),
       db.select({ value: count() }).from(giftsAndPayments),
-      // Open pipeline tiles are scoped to the current fiscal year at the
-      // allocation level. An open multi-year ask is spread across N
-      // pledge_allocations rows (one per grant_year); we only want the
-      // slice landing in fy.id. Weighted pipeline = sub_amount × parent
-      // opp's win_probability (default 1 when null).
-      db
-        .select({
-          ask: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
-          expected: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1)), 0)::text`,
-        })
-        .from(pledgeAllocations)
-        .innerJoin(
-          opportunitiesAndPledges,
-          eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
-        )
-        .where(
-          and(
-            eq(opportunitiesAndPledges.status, "open"),
-            eq(pledgeAllocations.grantYear, fy.id),
-          ),
-        ),
-      db
-        .select({
-          v: sql<string>`COALESCE(SUM(${opportunitiesAndPledges.awardedAmount}), 0)::text`,
-        })
-        .from(opportunitiesAndPledges)
-        .where(
-          and(
-            eq(opportunitiesAndPledges.status, "won"),
-            between(
-              opportunitiesAndPledges.actualCompletionDate,
-              fy.startDate,
-              fy.endDate,
-            ),
-          ),
-        ),
-      // "Received for FY<n>" is grant-year-attributed at the allocation
-      // level, not by gift receipt date and not by the parent gift's
-      // grant_year either: a single check can be split across multiple
-      // fiscal years on gift_allocations.sub_amount with per-row
-      // grant_year slugs. SCHEMA.md guarantees every gift carries at
-      // least one gift_allocations row (synthesized 1:1 when no explicit
-      // allocations exist), so summing allocations is exhaustive and
-      // doesn't double-count.
-      db
-        .select({
-          v: sql<string>`COALESCE(SUM(${giftAllocations.subAmount}), 0)::text`,
-        })
-        .from(giftAllocations)
-        .where(eq(giftAllocations.grantYear, fy.id)),
+      fyMetricsFor(currentFy),
+      fyMetricsFor(nextFy),
     ]);
 
     res.json({
@@ -151,13 +156,8 @@ router.get(
         wonPledges: Number(wonCt),
         gifts: Number(giftsCt),
       },
-      money: {
-        openPipelineAsk: openMoney?.ask ?? "0",
-        openPipelineExpected: openMoney?.expected ?? "0",
-        awardedCurrentFy: awardedFyRow?.v ?? "0",
-        receivedCurrentFy: receivedFyRow?.v ?? "0",
-      },
-      currentFiscalYear: fy,
+      currentFiscalYear: currentFy,
+      byFiscalYear: [currentFyMetrics, nextFyMetrics],
     });
   }),
 );

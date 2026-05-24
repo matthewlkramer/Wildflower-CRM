@@ -849,17 +849,6 @@ components:
         openOpportunities: { type: integer }
         wonPledges:        { type: integer }
         gifts:             { type: integer }
-    DashboardMoney:
-      type: object
-      required: [openPipelineAsk, openPipelineExpected, awardedCurrentFy, receivedCurrentFy]
-      description: |
-        All values are decimal strings (PostgreSQL numeric) to preserve precision —
-        format with `formatCurrency` on the client.
-      properties:
-        openPipelineAsk:      { type: string, description: "SUM(ask_amount) across all open opps." }
-        openPipelineExpected: { type: string, description: "SUM(ask_amount × COALESCE(win_probability, 1)) across all open opps." }
-        awardedCurrentFy:     { type: string, description: "SUM(awarded_amount) across won opps whose actual_completion_date falls inside the current fiscal year." }
-        receivedCurrentFy:    { type: string, description: "SUM(amount) across gifts whose date_received falls inside the current fiscal year." }
     DashboardFiscalYear:
       type: object
       required: [id, label, startDate, endDate]
@@ -868,13 +857,30 @@ components:
         label:     { type: string, description: "Human label (e.g. `FY 2026`)." }
         startDate: { type: string, format: date }
         endDate:   { type: string, format: date }
+    FiscalYearMetrics:
+      type: object
+      required: [fiscalYear, openPipelineAsk, openPipelineWeighted, received, goal]
+      description: |
+        Per-fiscal-year fundraising metrics. All money values are decimal strings
+        (PostgreSQL numeric) to preserve precision — format with `formatCurrency`
+        on the client. `goal` is nullable because not every FY has a goal seeded
+        (e.g. far-future years or the "future" sentinel).
+      properties:
+        fiscalYear:           { $ref: "#/components/schemas/DashboardFiscalYear" }
+        openPipelineAsk:      { type: string, description: "SUM(pledge_allocations.sub_amount) for status='open' opps with grant_year = this FY." }
+        openPipelineWeighted: { type: string, description: "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps with grant_year = this FY." }
+        received:             { type: string, description: "SUM(gift_allocations.sub_amount) for allocations with grant_year = this FY." }
+        goal:                 { type: string, nullable: true, description: "Fundraising goal for the FY (from fiscal_years.goal_amount); null if not set." }
     DashboardSummary:
       type: object
-      required: [counts, money, currentFiscalYear]
+      required: [counts, currentFiscalYear, byFiscalYear]
       properties:
         counts:            { $ref: "#/components/schemas/DashboardCounts" }
-        money:             { $ref: "#/components/schemas/DashboardMoney" }
         currentFiscalYear: { $ref: "#/components/schemas/DashboardFiscalYear" }
+        byFiscalYear:
+          type: array
+          description: "Per-FY metrics for the current FY and the next FY (in that order)."
+          items: { $ref: "#/components/schemas/FiscalYearMetrics" }
 
     ProjectionByFyEntityRow:
       type: object

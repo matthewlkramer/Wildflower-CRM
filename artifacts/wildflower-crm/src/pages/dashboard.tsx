@@ -12,8 +12,8 @@ export default function Dashboard() {
   });
 
   const counts = data?.counts;
-  const money = data?.money;
   const fy = data?.currentFiscalYear;
+  const byFy = data?.byFiscalYear ?? [];
 
   const countTiles = [
     { label: "People", value: counts?.people, href: "/individuals", testId: "tile-people" },
@@ -26,32 +26,36 @@ export default function Dashboard() {
     { label: "Gifts & payments", value: counts?.gifts, href: "/gifts", testId: "tile-gifts" },
   ];
 
-  const moneyTiles = [
-    {
-      label: `Open pipeline ${fy?.label ?? "this FY"}`,
-      value: money?.openPipelineAsk,
-      sub: fy ? `Open allocations booked to ${fy.label}` : "Open allocations booked to this fiscal year",
-      testId: "tile-pipeline-ask",
-    },
-    {
-      label: `Weighted pipeline ${fy?.label ?? "this FY"}`,
-      value: money?.openPipelineExpected,
-      sub: fy ? `${fy.label} open allocations × win probability` : "Open allocations × win probability",
-      testId: "tile-pipeline-expected",
-    },
-    {
-      label: `Awarded ${fy?.label ?? "this FY"}`,
-      value: money?.awardedCurrentFy,
-      sub: fy ? `Won opps closed ${fy.startDate} → ${fy.endDate}` : "Won opps closed this fiscal year",
-      testId: "tile-awarded-fy",
-    },
-    {
-      label: `Received ${fy?.label ?? "this FY"}`,
-      value: money?.receivedCurrentFy,
-      sub: fy ? `Gift allocations booked to ${fy.label}` : "Gift allocations booked to this fiscal year",
-      testId: "tile-received-fy",
-    },
-  ];
+  const moneyTiles = byFy.flatMap((m) => {
+    const fySlug = m.fiscalYear.id; // e.g. "fy2026"
+    const fyLabel = m.fiscalYear.label;
+    return [
+      {
+        label: `Open pipeline ${fyLabel}`,
+        value: m.openPipelineAsk,
+        sub: `Open allocations booked to ${fyLabel}`,
+        testId: `tile-pipeline-ask-${fySlug}`,
+      },
+      {
+        label: `Weighted pipeline ${fyLabel}`,
+        value: m.openPipelineWeighted,
+        sub: `${fyLabel} open allocations × win probability`,
+        testId: `tile-pipeline-weighted-${fySlug}`,
+      },
+      {
+        label: `Received ${fyLabel}`,
+        value: m.received,
+        sub: `Gift allocations booked to ${fyLabel}`,
+        testId: `tile-received-${fySlug}`,
+      },
+      {
+        label: `Goal ${fyLabel}`,
+        value: m.goal ?? undefined,
+        sub: m.goal ? `Fundraising goal for ${fyLabel}` : `No goal set for ${fyLabel}`,
+        testId: `tile-goal-${fySlug}`,
+      },
+    ];
+  });
 
   return (
     <div className="space-y-6">

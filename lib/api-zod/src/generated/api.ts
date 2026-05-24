@@ -3206,36 +3206,51 @@ export const GetDashboardSummaryResponse = zod.object({
     wonPledges: zod.number(),
     gifts: zod.number(),
   }),
-  money: zod
-    .object({
-      openPipelineAsk: zod
-        .string()
-        .describe("SUM(ask_amount) across all open opps."),
-      openPipelineExpected: zod
-        .string()
-        .describe(
-          "SUM(ask_amount × COALESCE(win_probability, 1)) across all open opps.",
-        ),
-      awardedCurrentFy: zod
-        .string()
-        .describe(
-          "SUM(awarded_amount) across won opps whose actual_completion_date falls inside the current fiscal year.",
-        ),
-      receivedCurrentFy: zod
-        .string()
-        .describe(
-          "SUM(amount) across gifts whose date_received falls inside the current fiscal year.",
-        ),
-    })
-    .describe(
-      "All values are decimal strings (PostgreSQL numeric) to preserve precision —\nformat with `formatCurrency` on the client.\n",
-    ),
   currentFiscalYear: zod.object({
     id: zod.string().describe("fy-slug (e.g. `fy2026`)."),
     label: zod.string().describe("Human label (e.g. `FY 2026`)."),
     startDate: zod.string().date(),
     endDate: zod.string().date(),
   }),
+  byFiscalYear: zod
+    .array(
+      zod
+        .object({
+          fiscalYear: zod.object({
+            id: zod.string().describe("fy-slug (e.g. `fy2026`)."),
+            label: zod.string().describe("Human label (e.g. `FY 2026`)."),
+            startDate: zod.string().date(),
+            endDate: zod.string().date(),
+          }),
+          openPipelineAsk: zod
+            .string()
+            .describe(
+              "SUM(pledge_allocations.sub_amount) for status='open' opps with grant_year = this FY.",
+            ),
+          openPipelineWeighted: zod
+            .string()
+            .describe(
+              "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps with grant_year = this FY.",
+            ),
+          received: zod
+            .string()
+            .describe(
+              "SUM(gift_allocations.sub_amount) for allocations with grant_year = this FY.",
+            ),
+          goal: zod
+            .string()
+            .nullable()
+            .describe(
+              "Fundraising goal for the FY (from fiscal_years.goal_amount); null if not set.",
+            ),
+        })
+        .describe(
+          'Per-fiscal-year fundraising metrics. All money values are decimal strings\n(PostgreSQL numeric) to preserve precision — format with `formatCurrency`\non the client. `goal` is nullable because not every FY has a goal seeded\n(e.g. far-future years or the \"future\" sentinel).\n',
+        ),
+    )
+    .describe(
+      "Per-FY metrics for the current FY and the next FY (in that order).",
+    ),
 });
 
 /**
