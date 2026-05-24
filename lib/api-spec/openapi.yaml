@@ -678,6 +678,23 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ProjectionsByFyEntity" } } } }
 
+  /fiscal-year-breakdown/{fyId}:
+    get:
+      operationId: getFiscalYearBreakdown
+      tags: [analytics]
+      summary: Per-FY drilldown for a Dashboard money tile.
+      description: |
+        Returns the supporting detail for a single fiscal year's dashboard money tiles:
+        gift allocations booked to that grant_year (the "Received" rollup) and pledge
+        allocations on open opportunities for that grant_year (the "Open asks" / "Weighted asks"
+        rollups), plus the FY's goal. Each row carries enough denormalized parent info
+        (donor names, parent gift/opportunity IDs, win probability) to render a useful table
+        without N+1 fetches.
+      parameters:
+        - { name: fyId, in: path, required: true, schema: { type: string }, description: "fiscal_years.id (e.g. `fy2026`)." }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYearBreakdown" } } } }
+
 components:
   parameters:
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 50 } }
