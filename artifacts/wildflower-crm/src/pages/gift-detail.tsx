@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetGiftOrPayment,
@@ -20,6 +20,16 @@ import {
   type InlineSelectOption,
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
+import {
+  InlineEditPersonPicker,
+  InlineEditIntermediaryPicker,
+  InlineEditDonor,
+  usePersonName,
+  useFunderName,
+  useHouseholdName,
+  useIntermediaryName,
+  type DonorSaveBody,
+} from "@/components/entity-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -73,6 +83,65 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const userNames = useUserNameMap();
   const ownerDisplay = gift.ownerUserId
     ? (userNames.get(gift.ownerUserId) ?? gift.ownerUserId)
+    : "—";
+  const funderName = useFunderName(gift.funderId ?? null);
+  const giverName = usePersonName(gift.individualGiverPersonId ?? null);
+  const householdName = useHouseholdName(gift.householdId ?? null);
+  const advisorName = usePersonName(gift.advisorPersonId ?? null);
+  const intermediaryName = useIntermediaryName(gift.paymentIntermediaryId ?? null);
+
+  let donorDisplay: ReactNode = (
+    <span className="text-muted-foreground">No donor linked.</span>
+  );
+  if (gift.funderId) {
+    donorDisplay = (
+      <span>
+        <span className="text-muted-foreground mr-1">Funder:</span>
+        <Link
+          href={`/funding-entities/${gift.funderId}`}
+          className="text-primary hover:underline"
+        >
+          {funderName ?? gift.funderId}
+        </Link>
+      </span>
+    );
+  } else if (gift.individualGiverPersonId) {
+    donorDisplay = (
+      <span>
+        <span className="text-muted-foreground mr-1">Individual:</span>
+        <Link
+          href={`/individuals/${gift.individualGiverPersonId}`}
+          className="text-primary hover:underline"
+        >
+          {giverName ?? gift.individualGiverPersonId}
+        </Link>
+      </span>
+    );
+  } else if (gift.householdId) {
+    donorDisplay = (
+      <span>
+        <span className="text-muted-foreground mr-1">Household:</span>
+        <Link
+          href={`/households/${gift.householdId}`}
+          className="text-primary hover:underline"
+        >
+          {householdName ?? gift.householdId}
+        </Link>
+      </span>
+    );
+  }
+  const advisorDisplay: ReactNode = gift.advisorPersonId ? (
+    <Link
+      href={`/individuals/${gift.advisorPersonId}`}
+      className="text-primary hover:underline"
+    >
+      {advisorName ?? gift.advisorPersonId}
+    </Link>
+  ) : (
+    "—"
+  );
+  const intermediaryDisplay: ReactNode = gift.paymentIntermediaryId
+    ? (intermediaryName ?? gift.paymentIntermediaryId)
     : "—";
 
   const update = useUpdateGiftOrPayment({
@@ -179,32 +248,34 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
         <Card>
           <CardHeader><CardTitle className="text-lg">Donor</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            {gift.funderId && (
-              <Row label="Funder">
-                <Link href={`/funding-entities/${gift.funderId}`} className="text-primary hover:underline">{gift.funderId}</Link>
-              </Row>
-            )}
-            {gift.individualGiverPersonId && (
-              <Row label="Individual">
-                <Link href={`/individuals/${gift.individualGiverPersonId}`} className="text-primary hover:underline">{gift.individualGiverPersonId}</Link>
-              </Row>
-            )}
-            {gift.householdId && (
-              <Row label="Household">
-                <Link href={`/households/${gift.householdId}`} className="text-primary hover:underline">{gift.householdId}</Link>
-              </Row>
-            )}
-            {!gift.funderId && !gift.individualGiverPersonId && !gift.householdId && (
-              <p className="text-muted-foreground">No donor linked.</p>
-            )}
-            {gift.advisorPersonId && (
-              <Row label="Advisor">
-                <Link href={`/individuals/${gift.advisorPersonId}`} className="text-primary hover:underline">{gift.advisorPersonId}</Link>
-              </Row>
-            )}
-            {gift.paymentIntermediaryId && (
-              <Row label="Intermediary">{gift.paymentIntermediaryId}</Row>
-            )}
+            <Row label="Donor">
+              <InlineEditDonor
+                testIdBase="gift-donor"
+                value={{
+                  funderId: gift.funderId ?? null,
+                  individualGiverPersonId: gift.individualGiverPersonId ?? null,
+                  householdId: gift.householdId ?? null,
+                }}
+                display={donorDisplay}
+                onSave={(body: DonorSaveBody) => patch(body)}
+              />
+            </Row>
+            <Row label="Advisor">
+              <InlineEditPersonPicker
+                testIdBase="gift-advisor"
+                value={gift.advisorPersonId ?? null}
+                display={advisorDisplay}
+                onSave={(next) => patch({ advisorPersonId: next })}
+              />
+            </Row>
+            <Row label="Intermediary">
+              <InlineEditIntermediaryPicker
+                testIdBase="gift-intermediary"
+                value={gift.paymentIntermediaryId ?? null}
+                display={intermediaryDisplay}
+                onSave={(next) => patch({ paymentIntermediaryId: next })}
+              />
+            </Row>
           </CardContent>
         </Card>
       </div>

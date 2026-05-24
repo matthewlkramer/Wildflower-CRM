@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetOpportunityOrPledge,
@@ -20,6 +20,14 @@ import {
   InlineEditText,
   type InlineSelectOption,
 } from "@/components/inline-edit";
+import {
+  InlineEditPersonPicker,
+  InlineEditDonor,
+  usePersonName,
+  useFunderName,
+  useHouseholdName,
+  type DonorSaveBody,
+} from "@/components/entity-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -115,6 +123,73 @@ function OppView({
   function patch(body: UpdateOpportunityOrPledgeBody) {
     return update.mutateAsync({ id: opp.id, data: body });
   }
+
+  const funderName = useFunderName(opp.funderId ?? null);
+  const giverName = usePersonName(opp.individualGiverPersonId ?? null);
+  const householdName = useHouseholdName(opp.householdId ?? null);
+  const advisorName = usePersonName(opp.individualAdvisorPersonId ?? null);
+  const primaryContactName = usePersonName(opp.primaryContactPersonId ?? null);
+
+  let donorDisplay: ReactNode = (
+    <span className="text-muted-foreground">No donor linked.</span>
+  );
+  if (opp.funderId) {
+    donorDisplay = (
+      <span>
+        <span className="text-muted-foreground mr-1">Funder:</span>
+        <Link
+          href={`/funding-entities/${opp.funderId}`}
+          className="text-primary hover:underline"
+        >
+          {funderName ?? opp.funderId}
+        </Link>
+      </span>
+    );
+  } else if (opp.individualGiverPersonId) {
+    donorDisplay = (
+      <span>
+        <span className="text-muted-foreground mr-1">Individual:</span>
+        <Link
+          href={`/individuals/${opp.individualGiverPersonId}`}
+          className="text-primary hover:underline"
+        >
+          {giverName ?? opp.individualGiverPersonId}
+        </Link>
+      </span>
+    );
+  } else if (opp.householdId) {
+    donorDisplay = (
+      <span>
+        <span className="text-muted-foreground mr-1">Household:</span>
+        <Link
+          href={`/households/${opp.householdId}`}
+          className="text-primary hover:underline"
+        >
+          {householdName ?? opp.householdId}
+        </Link>
+      </span>
+    );
+  }
+  const advisorDisplay: ReactNode = opp.individualAdvisorPersonId ? (
+    <Link
+      href={`/individuals/${opp.individualAdvisorPersonId}`}
+      className="text-primary hover:underline"
+    >
+      {advisorName ?? opp.individualAdvisorPersonId}
+    </Link>
+  ) : (
+    "—"
+  );
+  const primaryContactDisplay: ReactNode = opp.primaryContactPersonId ? (
+    <Link
+      href={`/individuals/${opp.primaryContactPersonId}`}
+      className="text-primary hover:underline"
+    >
+      {primaryContactName ?? opp.primaryContactPersonId}
+    </Link>
+  ) : (
+    "—"
+  );
 
   return (
     <div className="space-y-6">
@@ -246,34 +321,34 @@ function OppView({
       <Card>
         <CardHeader><CardTitle>Donor</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm">
-          {opp.funderId ? (
-            <Row label="Funder">
-              <Link href={`/funding-entities/${opp.funderId}`} className="text-primary hover:underline">{opp.funderId}</Link>
-            </Row>
-          ) : null}
-          {opp.individualGiverPersonId ? (
-            <Row label="Individual giver">
-              <Link href={`/individuals/${opp.individualGiverPersonId}`} className="text-primary hover:underline">{opp.individualGiverPersonId}</Link>
-            </Row>
-          ) : null}
-          {opp.householdId ? (
-            <Row label="Household">
-              <Link href={`/households/${opp.householdId}`} className="text-primary hover:underline">{opp.householdId}</Link>
-            </Row>
-          ) : null}
-          {!opp.funderId && !opp.individualGiverPersonId && !opp.householdId && (
-            <p className="text-muted-foreground">No donor linked.</p>
-          )}
-          {opp.individualAdvisorPersonId && (
-            <Row label="Advisor">
-              <Link href={`/individuals/${opp.individualAdvisorPersonId}`} className="text-primary hover:underline">{opp.individualAdvisorPersonId}</Link>
-            </Row>
-          )}
-          {opp.primaryContactPersonId && (
-            <Row label="Primary contact">
-              <Link href={`/individuals/${opp.primaryContactPersonId}`} className="text-primary hover:underline">{opp.primaryContactPersonId}</Link>
-            </Row>
-          )}
+          <Row label="Donor">
+            <InlineEditDonor
+              testIdBase="opp-donor"
+              value={{
+                funderId: opp.funderId ?? null,
+                individualGiverPersonId: opp.individualGiverPersonId ?? null,
+                householdId: opp.householdId ?? null,
+              }}
+              display={donorDisplay}
+              onSave={(body: DonorSaveBody) => patch(body)}
+            />
+          </Row>
+          <Row label="Advisor">
+            <InlineEditPersonPicker
+              testIdBase="opp-advisor"
+              value={opp.individualAdvisorPersonId ?? null}
+              display={advisorDisplay}
+              onSave={(next) => patch({ individualAdvisorPersonId: next })}
+            />
+          </Row>
+          <Row label="Primary contact">
+            <InlineEditPersonPicker
+              testIdBase="opp-primary-contact"
+              value={opp.primaryContactPersonId ?? null}
+              display={primaryContactDisplay}
+              onSave={(next) => patch({ primaryContactPersonId: next })}
+            />
+          </Row>
         </CardContent>
       </Card>
 
