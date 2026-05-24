@@ -16,16 +16,35 @@ import { asyncHandler } from "../lib/helpers";
 const router: IRouter = Router();
 router.use(requireAuth);
 
-// Wildflower fiscal year: July 1 — June 30. FY label = end-year.
-// e.g. May 24 2026 → FY 2026 (started 2025-07-01, ends 2026-06-30).
+// Wildflower fiscal year: July 1 — June 30 (Wildflower books in
+// America/Chicago). FY label = end-year. e.g. May 24 2026 → FY 2026
+// (started 2025-07-01, ends 2026-06-30).
+//
+// The boundary is a calendar date in the org's local timezone, not UTC —
+// using getUTCMonth/getUTCFullYear caused the FY to flip up to a day
+// early/late around midnight on Jun 30 / Jul 1 depending on where the
+// server was running. We resolve "now" to its Chicago calendar date via
+// Intl.DateTimeFormat (the only timezone-aware date primitive in Node
+// without a third-party dep) and pick the FY from that.
+const FY_TIMEZONE = "America/Chicago";
+
+// en-CA → "YYYY-MM-DD" parts, which we can read directly.
+const FY_DATE_PARTS = new Intl.DateTimeFormat("en-CA", {
+  timeZone: FY_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 function computeCurrentFiscalYear(now: Date = new Date()): {
   id: string;
   label: string;
   startDate: string;
   endDate: string;
 } {
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth() + 1; // 1-12
+  const parts = FY_DATE_PARTS.formatToParts(now);
+  const y = Number(parts.find((p) => p.type === "year")!.value);
+  const m = Number(parts.find((p) => p.type === "month")!.value); // 1-12
   const fyEndYear = m >= 7 ? y + 1 : y;
   const fyStartYear = fyEndYear - 1;
   return {
