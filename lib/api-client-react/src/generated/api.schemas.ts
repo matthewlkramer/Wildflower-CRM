@@ -1013,6 +1013,9 @@ export interface OpportunityOrPledge {
   usageNotes?: string | null;
   copperPledgeId?: string | null;
   primaryContactPersonId?: string | null;
+  funderName?: string | null;
+  householdName?: string | null;
+  individualGiverPersonName?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1055,6 +1058,9 @@ export interface GiftOrPayment {
   ownerUserId?: string | null;
   designatedToSchool: boolean;
   tags?: string | null;
+  funderName?: string | null;
+  householdName?: string | null;
+  individualGiverPersonName?: string | null;
   createdAt: string;
   updatedAt: string;
 }

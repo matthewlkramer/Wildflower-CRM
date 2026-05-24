@@ -36,6 +36,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { DonorCell } from "@/components/donor-cell";
 
 const STATUSES: OpportunityStatus[] = ["open", "won", "dormant", "lost"];
 const STAGES: OpportunityStage[] = [
@@ -141,6 +142,7 @@ export default function Opportunities({
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Donor</TableHead>
               <TableHead>Stage</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Ask</TableHead>
@@ -150,20 +152,30 @@ export default function Opportunities({
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center h-24 text-destructive">
+                <TableCell colSpan={7} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load opportunities."}
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
               rows.map((o) => (
                 <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-opp-${o.id}`}>
                   <TableCell className="font-medium">
                     <Link href={`${basePath}/${o.id}`} className="block w-full">{o.name ?? `Untitled ${o.id}`}</Link>
+                  </TableCell>
+                  <TableCell>
+                    <DonorCell
+                      funderId={o.funderId}
+                      funderName={o.funderName}
+                      householdId={o.householdId}
+                      householdName={o.householdName}
+                      individualGiverPersonId={o.individualGiverPersonId}
+                      individualGiverPersonName={o.individualGiverPersonName}
+                    />
                   </TableCell>
                   <TableCell>{formatEnum(o.stage)}</TableCell>
                   <TableCell>

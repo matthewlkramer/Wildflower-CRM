@@ -34,6 +34,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { DonorCell } from "@/components/donor-cell";
 
 const TYPES: GiftType[] = [
   "standard_gift",
@@ -121,6 +122,7 @@ export default function Gifts() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Donor</TableHead>
               <TableHead>Date received</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Method</TableHead>
@@ -129,20 +131,30 @@ export default function Gifts() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24 text-destructive">
+                <TableCell colSpan={6} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load gifts."}
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center h-24 text-muted-foreground">No gifts match these filters.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">No gifts match these filters.</TableCell></TableRow>
             ) : (
               rows.map((g) => (
                 <TableRow key={g.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-gift-${g.id}`}>
                   <TableCell className="font-medium">
                     <Link href={`/gifts/${g.id}`} className="block w-full">{g.name ?? `Gift ${g.id}`}</Link>
+                  </TableCell>
+                  <TableCell>
+                    <DonorCell
+                      funderId={g.funderId}
+                      funderName={g.funderName}
+                      householdId={g.householdId}
+                      householdName={g.householdName}
+                      individualGiverPersonId={g.individualGiverPersonId}
+                      individualGiverPersonName={g.individualGiverPersonName}
+                    />
                   </TableCell>
                   <TableCell>{formatDate(g.dateReceived)}</TableCell>
                   <TableCell>{formatEnum(g.type)}</TableCell>

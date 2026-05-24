@@ -1478,6 +1478,12 @@ components:
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
         primaryContactPersonId:     { type: string, nullable: true }
+        # Denormalized display names, joined server-side from funders /
+        # households / people. Present on list + detail responses so the
+        # UI doesn't have to fire one fetch per row to resolve donor IDs.
+        funderName:                 { type: string, nullable: true }
+        householdName:              { type: string, nullable: true }
+        individualGiverPersonName:  { type: string, nullable: true }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
     OpportunityOrPledgeDetail:
@@ -1625,6 +1631,11 @@ components:
         ownerUserId:                      { type: string, nullable: true }
         designatedToSchool:         { type: boolean }
         tags:                       { type: string, nullable: true }
+        # Denormalized display names, joined server-side. See
+        # OpportunityOrPledge for rationale.
+        funderName:                 { type: string, nullable: true }
+        householdName:              { type: string, nullable: true }
+        individualGiverPersonName:  { type: string, nullable: true }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
     GiftOrPaymentDetail:

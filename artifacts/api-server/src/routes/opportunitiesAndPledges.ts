@@ -1,7 +1,25 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
-import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments } from "@workspace/db/schema";
-import { and, count, desc, eq, ilike, type SQL } from "drizzle-orm";
+import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, funders, households, people } from "@workspace/db/schema";
+import { and, count, desc, eq, getTableColumns, ilike, sql, type SQL } from "drizzle-orm";
+
+// Returns all opportunity columns plus three denormalized donor display
+// names joined from funders / households / people. Keeps list + detail
+// responses self-contained so the UI doesn't fire one fetch per row to
+// resolve donor IDs. Person display name matches the client's
+// `personDisplayName`: COALESCE(full_name, trim(first||' '||last)).
+const donorJoinSelect = {
+  ...getTableColumns(opportunitiesAndPledges),
+  funderName: funders.name,
+  householdName: households.name,
+  individualGiverPersonName: sql<string | null>`
+    COALESCE(
+      NULLIF(TRIM(${people.fullName}), ''),
+      NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
+    )
+  `.as("individual_giver_person_name"),
+};
+
 import {
   ListOpportunitiesAndPledgesQueryParams,
   CreateOpportunityOrPledgeBodyRefined,
@@ -40,7 +58,16 @@ router.get(
     if (q.ownerUserId) filters.push(eq(opportunitiesAndPledges.ownerUserId, q.ownerUserId));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
-      db.select().from(opportunitiesAndPledges).where(where).orderBy(desc(opportunitiesAndPledges.projectedCloseDate)).limit(limit).offset(offset),
+      db
+        .select(donorJoinSelect)
+        .from(opportunitiesAndPledges)
+        .leftJoin(funders, eq(funders.id, opportunitiesAndPledges.funderId))
+        .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
+        .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
+        .where(where)
+        .orderBy(desc(opportunitiesAndPledges.projectedCloseDate))
+        .limit(limit)
+        .offset(offset),
       db.select({ value: count() }).from(opportunitiesAndPledges).where(where),
     ]);
     res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
@@ -51,7 +78,14 @@ router.get(
   "/opportunities-and-pledges/:id",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const row = await db.select().from(opportunitiesAndPledges).where(eq(opportunitiesAndPledges.id, id)).then((r) => r[0]);
+    const row = await db
+      .select(donorJoinSelect)
+      .from(opportunitiesAndPledges)
+      .leftJoin(funders, eq(funders.id, opportunitiesAndPledges.funderId))
+      .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
+      .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
+      .where(eq(opportunitiesAndPledges.id, id))
+      .then((r) => r[0]);
     if (!row) return notFound(res, "opportunity");
     const [allocations, payments] = await Promise.all([
       db.select().from(pledgeAllocations).where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),

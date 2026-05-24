@@ -1,7 +1,21 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
-import { giftsAndPayments, giftAllocations } from "@workspace/db/schema";
-import { and, count, desc, eq, ilike, type SQL } from "drizzle-orm";
+import { giftsAndPayments, giftAllocations, funders, households, people } from "@workspace/db/schema";
+import { and, count, desc, eq, getTableColumns, ilike, sql, type SQL } from "drizzle-orm";
+
+// See opportunitiesAndPledges.ts for rationale — same denormalized donor
+// display names joined from funders / households / people.
+const donorJoinSelect = {
+  ...getTableColumns(giftsAndPayments),
+  funderName: funders.name,
+  householdName: households.name,
+  individualGiverPersonName: sql<string | null>`
+    COALESCE(
+      NULLIF(TRIM(${people.fullName}), ''),
+      NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
+    )
+  `.as("individual_giver_person_name"),
+};
 import {
   ListGiftsAndPaymentsQueryParams,
   CreateGiftOrPaymentBodyRefined,
@@ -39,7 +53,16 @@ router.get(
     if (q.paymentMethod) filters.push(eq(giftsAndPayments.paymentMethod, q.paymentMethod));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
-      db.select().from(giftsAndPayments).where(where).orderBy(desc(giftsAndPayments.dateReceived)).limit(limit).offset(offset),
+      db
+        .select(donorJoinSelect)
+        .from(giftsAndPayments)
+        .leftJoin(funders, eq(funders.id, giftsAndPayments.funderId))
+        .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
+        .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
+        .where(where)
+        .orderBy(desc(giftsAndPayments.dateReceived))
+        .limit(limit)
+        .offset(offset),
       db.select({ value: count() }).from(giftsAndPayments).where(where),
     ]);
     res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
@@ -50,7 +73,14 @@ router.get(
   "/gifts-and-payments/:id",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const row = await db.select().from(giftsAndPayments).where(eq(giftsAndPayments.id, id)).then((r) => r[0]);
+    const row = await db
+      .select(donorJoinSelect)
+      .from(giftsAndPayments)
+      .leftJoin(funders, eq(funders.id, giftsAndPayments.funderId))
+      .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
+      .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
+      .where(eq(giftsAndPayments.id, id))
+      .then((r) => r[0]);
     if (!row) return notFound(res, "gift");
     const allocations = await db.select().from(giftAllocations).where(eq(giftAllocations.giftId, id));
     res.json({ ...row, allocations });
