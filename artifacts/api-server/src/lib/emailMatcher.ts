@@ -1,5 +1,5 @@
 import { db } from "@workspace/db";
-import { emails } from "@workspace/db/schema";
+import { emails, funders } from "@workspace/db/schema";
 import { inArray, sql } from "drizzle-orm";
 
 /**
@@ -61,32 +61,62 @@ export function normalizeForMatching(
   return [...out];
 }
 
+/**
+ * Extract the lowercase domain part from a normalized address.
+ * Returns null for malformed addresses (no `@`, empty domain).
+ */
+function domainOf(addr: string): string | null {
+  const at = addr.lastIndexOf("@");
+  if (at < 0) return null;
+  const d = addr.slice(at + 1).trim();
+  return d.length > 0 ? d : null;
+}
+
 export async function matchEmails(
   addresses: string[],
   mailboxOwnerEmail: string | null,
 ): Promise<EmailMatchResult> {
   const cleaned = normalizeForMatching(addresses, mailboxOwnerEmail);
   if (cleaned.length === 0) return EMPTY_MATCH;
+
+  // Domains we'll match against funders.email_domain so that mail
+  // to/from an unrecognized person at a known funder org (e.g. a
+  // new program officer we haven't added yet) still threads onto
+  // the funder timeline. Internal domains are already stripped by
+  // normalizeForMatching above.
+  const domains = [...new Set(cleaned.map(domainOf).filter((d): d is string => !!d))];
+
   // lower(email) IN (cleaned). We have no functional index on
   // lower(email) yet — for the read volumes this is fine (the
   // `emails` table is in the low five-figures), but worth adding
   // an expression index later if email matching ever becomes hot.
-  const rows = await db
-    .select({
-      personId: emails.personId,
-      funderId: emails.funderId,
-      householdId: emails.householdId,
-    })
-    .from(emails)
-    .where(inArray(sql`lower(${emails.email})`, cleaned));
+  const [addrRows, domainRows] = await Promise.all([
+    db
+      .select({
+        personId: emails.personId,
+        funderId: emails.funderId,
+        householdId: emails.householdId,
+      })
+      .from(emails)
+      .where(inArray(sql`lower(${emails.email})`, cleaned)),
+    domains.length === 0
+      ? Promise.resolve([] as Array<{ funderId: string }>)
+      : db
+          .select({ funderId: funders.id })
+          .from(funders)
+          .where(inArray(sql`lower(${funders.emailDomain})`, domains)),
+  ]);
 
   const personIds = new Set<string>();
   const funderIds = new Set<string>();
   const householdIds = new Set<string>();
-  for (const r of rows) {
+  for (const r of addrRows) {
     if (r.personId) personIds.add(r.personId);
     if (r.funderId) funderIds.add(r.funderId);
     if (r.householdId) householdIds.add(r.householdId);
+  }
+  for (const r of domainRows) {
+    if (r.funderId) funderIds.add(r.funderId);
   }
   return {
     personIds: [...personIds].sort(),
