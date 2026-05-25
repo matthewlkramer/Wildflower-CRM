@@ -216,3 +216,60 @@ export function abbreviateUsStates(s: string | null | undefined): string {
   for (const [re, abbr] of US_STATE_ABBR) out = out.replace(re, abbr);
   return out;
 }
+
+/**
+ * Strip a social media URL down to its handle / slug for compact
+ * display in dense detail-page rows. Stored value remains the full
+ * URL — these helpers only affect what's rendered.
+ *
+ * Best-effort: if the input isn't a recognizable URL for the
+ * platform, we return it as-is (lightly trimmed) so manually-typed
+ * handles still render. Returns "—" for empty input.
+ */
+function stripUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  // Strip protocol + leading "www." so the regex doesn't have to
+  // care; also strip any trailing slash or query/hash noise.
+  return trimmed
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .replace(/[/?#].*$/, (m) => (m.startsWith("/") ? m : ""))
+    .replace(/\/+$/, "");
+}
+
+export function formatLinkedinHandle(url: string | null | undefined): string {
+  const s = stripUrl(url);
+  if (!s) return "—";
+  // linkedin.com/in/<slug>, /company/<slug>, /school/<slug>, /pub/<slug>
+  const m = s.match(
+    /^linkedin\.com\/(?:in|company|school|pub)\/([^/]+)/i,
+  );
+  if (m) return m[1];
+  // Not a linkedin URL we recognize — fall back to the host-stripped
+  // form, or the raw handle if there was no host at all.
+  return s.replace(/^linkedin\.com\/?/i, "") || s;
+}
+
+export function formatXHandle(url: string | null | undefined): string {
+  const s = stripUrl(url);
+  if (!s) return "—";
+  // x.com/<handle> or twitter.com/<handle>
+  const m = s.match(/^(?:x|twitter)\.com\/([^/]+)/i);
+  if (m) return `@${m[1]}`;
+  // Already a bare handle (with or without leading @)
+  if (/^@?[A-Za-z0-9_]{1,15}$/.test(s)) return s.startsWith("@") ? s : `@${s}`;
+  return s;
+}
+
+export function formatCrunchbaseHandle(
+  url: string | null | undefined,
+): string {
+  const s = stripUrl(url);
+  if (!s) return "—";
+  // crunchbase.com/organization/<slug> or /person/<slug>
+  const m = s.match(/^crunchbase\.com\/(?:organization|person)\/([^/]+)/i);
+  if (m) return m[1];
+  return s.replace(/^crunchbase\.com\/?/i, "") || s;
+}

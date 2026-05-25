@@ -38,7 +38,14 @@ import {
   InlineEditMultiRegionPicker,
 } from "@/components/multi-select-picker";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatCapacity, formatDate, formatEnum, formatFunderNameShort } from "@/lib/format";
+import {
+  formatCapacity,
+  formatDate,
+  formatEnum,
+  formatFunderNameShort,
+  formatLinkedinHandle,
+  formatXHandle,
+} from "@/lib/format";
 
 const PRONOUNS_OPTIONS = [
   { value: "he_him_his", label: "he / him / his" },
@@ -287,12 +294,40 @@ function PersonView({ person }: { person: PersonDetail }) {
             </Row>
             <Row label="LinkedIn">
               <InlineEditText label="LinkedIn" testIdBase="person-linkedin"
-                value={person.linkedin ?? null} display={person.linkedin ?? "—"}
+                value={person.linkedin ?? null}
+                display={
+                  person.linkedin ? (
+                    <a
+                      href={person.linkedin}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline truncate"
+                    >
+                      {formatLinkedinHandle(person.linkedin)}
+                    </a>
+                  ) : (
+                    "—"
+                  )
+                }
                 onSave={(next) => patch({ linkedin: next })} />
             </Row>
             <Row label="X">
               <InlineEditText label="X" testIdBase="person-x"
-                value={person.x ?? null} display={person.x ?? "—"}
+                value={person.x ?? null}
+                display={
+                  person.x ? (
+                    <a
+                      href={person.x}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline truncate"
+                    >
+                      {formatXHandle(person.x)}
+                    </a>
+                  ) : (
+                    "—"
+                  )
+                }
                 onSave={(next) => patch({ x: next })} />
             </Row>
             <Row label="Meeting link">

@@ -36,7 +36,13 @@ import {
   InlineEditMultiRegionPicker,
 } from "@/components/multi-select-picker";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatDate, formatEnum, formatCapacity } from "@/lib/format";
+import {
+  formatDate,
+  formatEnum,
+  formatCapacity,
+  formatLinkedinHandle,
+  formatCrunchbaseHandle,
+} from "@/lib/format";
 
 const ACTIVE_STATUS_OPTIONS = [
   { value: "active", label: "Active" },
@@ -360,7 +366,20 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                 label="LinkedIn"
                 testIdBase="funder-linkedin"
                 value={funder.linkedin ?? null}
-                display={funder.linkedin ?? "—"}
+                display={
+                  funder.linkedin ? (
+                    <a
+                      href={funder.linkedin}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline truncate"
+                    >
+                      {formatLinkedinHandle(funder.linkedin)}
+                    </a>
+                  ) : (
+                    "—"
+                  )
+                }
                 onSave={(next) => patch({ linkedin: next })}
               />
             </Row>
@@ -369,7 +388,20 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                 label="Crunchbase"
                 testIdBase="funder-crunchbase"
                 value={funder.crunchbase ?? null}
-                display={funder.crunchbase ?? "—"}
+                display={
+                  funder.crunchbase ? (
+                    <a
+                      href={funder.crunchbase}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline truncate"
+                    >
+                      {formatCrunchbaseHandle(funder.crunchbase)}
+                    </a>
+                  ) : (
+                    "—"
+                  )
+                }
                 onSave={(next) => patch({ crunchbase: next })}
               />
             </Row>
