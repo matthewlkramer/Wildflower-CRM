@@ -70,12 +70,20 @@ export function fiscalYearFromDate(
   return `FY${String(endYear).slice(-2)}`;
 }
 
+/**
+ * Render a snake_case enum value as a human label in **sentence case**:
+ * only the first letter is capitalized, the rest stay lowercase. This
+ * matches how the inline-edit dropdown labels read ("Have a connector"
+ * rather than the older Title Case "Have A Connector").
+ *
+ * Use a dedicated formatter (`formatCapacity`, `formatFund`, …) for any
+ * enum where the natural label needs special casing — capacity tiers
+ * want "$10K–$50K", not "Tier 10k 50k".
+ */
 export function formatEnum(value: string | null | undefined): string {
   if (!value) return "—";
-  return value
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
+  const spaced = value.split("_").join(" ").toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 export const FUND_LABELS: Record<string, string> = {

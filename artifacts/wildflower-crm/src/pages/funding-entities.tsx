@@ -8,7 +8,7 @@ import {
   type ConnectionStatus,
   type ActiveStatus,
 } from "@workspace/api-client-react";
-import { formatCurrency, formatEnum, formatFunderNameShort } from "@/lib/format";
+import { formatCapacity, formatCurrency, formatEnum, formatFunderNameShort } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
   Table,
@@ -254,7 +254,7 @@ export default function FundingEntities() {
                     </TableCell>
                     <TableCell>{formatEnum(f.connectionStatus)}</TableCell>
                     <TableCell>{formatEnum(f.enthusiasm)}</TableCell>
-                    <TableCell>{formatEnum(f.capacityRating)}</TableCell>
+                    <TableCell>{formatCapacity(f.capacityRating)}</TableCell>
                     <TableCell>
                       {f.primaryContactPersonId ? (
                         <Link
