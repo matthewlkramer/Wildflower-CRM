@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { people, peopleEntityRoles, emails, phoneNumbers, addresses } from "@workspace/db/schema";
-import { and, asc, count, eq, ilike, or, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, getTableColumns, ilike, or, sql, type SQL } from "drizzle-orm";
 import {
   ListPeopleQueryParams,
   CreatePersonBody,
@@ -12,6 +12,61 @@ import { asyncHandler, newId, notFound, parseBoolQuery, parseOrBadRequest, parse
 
 const router: IRouter = Router();
 router.use(requireAuth);
+
+// Server-computed aggregates appended to every list row. Each is a
+// correlated subquery scoped to `people.id` so we get one number per
+// row without an explicit GROUP BY (and without needing CTEs that
+// would force two round-trips). Lifetime giving and most-recent gift
+// both fold in gifts to households the person is a member of — per
+// the agreed rule, members claim the full household amount with no
+// splitting. See replit.md "lifetime giving" decision.
+const peopleListSelect = {
+  ...getTableColumns(people),
+  lifetimeGiving: sql<string | null>`(
+    COALESCE(
+      (SELECT SUM(amount) FROM gifts_and_payments
+        WHERE individual_giver_person_id = ${people.id}),
+      0
+    ) + COALESCE(
+      (SELECT SUM(amount) FROM gifts_and_payments
+        WHERE household_id IN (
+          SELECT household_id FROM people_entity_roles
+          WHERE person_id = ${people.id} AND household_id IS NOT NULL
+        )),
+      0
+    )
+  )::text`.as("lifetime_giving"),
+  // Postgres GREATEST returns NULL if any arg is NULL, which is wrong
+  // here (a person with only direct gifts and no household gifts would
+  // get NULL). Take MAX over a UNION of both sources instead — MAX
+  // naturally ignores NULLs.
+  mostRecentGiftDate: sql<string | null>`(
+    SELECT MAX(d) FROM (
+      SELECT MAX(date_received) AS d FROM gifts_and_payments
+        WHERE individual_giver_person_id = ${people.id}
+      UNION ALL
+      SELECT MAX(date_received) AS d FROM gifts_and_payments
+        WHERE household_id IN (
+          SELECT household_id FROM people_entity_roles
+          WHERE person_id = ${people.id} AND household_id IS NOT NULL
+        )
+    ) AS _gift_dates
+  )`.as("most_recent_gift_date"),
+  openOpportunityCount: sql<number>`(
+    SELECT COUNT(*)::int FROM opportunities_and_pledges
+      WHERE individual_giver_person_id = ${people.id} AND status = 'open'
+  )`.as("open_opportunity_count"),
+  // DISTINCT to dedupe in case a person has multiple current role rows
+  // at the same funder (different role titles, etc.).
+  activeFunderNames: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT f.name ORDER BY f.name)
+    FROM people_entity_roles per
+    JOIN funders f ON f.id = per.funder_id
+    WHERE per.person_id = ${people.id}
+      AND per.current = 'current'
+      AND per.funder_id IS NOT NULL
+  )`.as("active_funder_names"),
+};
 
 router.get(
   "/people",
@@ -36,7 +91,13 @@ router.get(
     if (q.regionId) filters.push(eq(people.currentHomeRegionId, q.regionId));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
-      db.select().from(people).where(where).orderBy(asc(people.lastName), asc(people.firstName)).limit(limit).offset(offset),
+      db
+        .select(peopleListSelect)
+        .from(people)
+        .where(where)
+        .orderBy(asc(people.lastName), asc(people.firstName))
+        .limit(limit)
+        .offset(offset),
       db.select({ value: count() }).from(people).where(where),
     ]);
     res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
@@ -47,7 +108,7 @@ router.get(
   "/people/:id",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const row = await db.select().from(people).where(eq(people.id, id)).then((r) => r[0]);
+    const row = await db.select(peopleListSelect).from(people).where(eq(people.id, id)).then((r) => r[0]);
     if (!row) return notFound(res, "person");
     const [roles, emailRows, phoneRows, addressRows] = await Promise.all([
       db.select().from(peopleEntityRoles).where(eq(peopleEntityRoles.personId, id)),

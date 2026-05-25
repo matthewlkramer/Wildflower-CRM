@@ -9,7 +9,7 @@ import {
   type OpportunityType,
 } from "@workspace/api-client-react";
 import { useDebounce } from "@/hooks/use-debounce";
-import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
+import { formatCurrency, formatDateShort, formatEnum, fiscalYearFromDate } from "@/lib/format";
 import {
   Table,
   TableBody,
@@ -96,6 +96,11 @@ export default function Opportunities({
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // Pledges (status='won') trade the Ask column for Covered FYs, since
+  // by the time something is won the ask is historical and the
+  // grant-year coverage is what fundraising actually wants to see.
+  const isPledgeView = lockedStatus === "won";
+
   return (
     <div className="space-y-6">
       <div>
@@ -137,7 +142,7 @@ export default function Opportunities({
         )}
       </div>
 
-      <div className="rounded-md border bg-card overflow-hidden">
+      <div className="rounded-md border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -145,47 +150,68 @@ export default function Opportunities({
               <TableHead>Donor</TableHead>
               <TableHead>Stage</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ask</TableHead>
+              {isPledgeView ? (
+                <TableHead>Covered FYs</TableHead>
+              ) : (
+                <TableHead className="text-right">Ask</TableHead>
+              )}
               <TableHead className="text-right">Awarded</TableHead>
+              <TableHead>FY</TableHead>
               <TableHead>Projected close</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center h-24 text-destructive">
+                <TableCell colSpan={8} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load opportunities."}
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
-              rows.map((o) => (
-                <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-opp-${o.id}`}>
-                  <TableCell className="font-medium">
-                    <Link href={`${basePath}/${o.id}`} className="block w-full">{o.name ?? `Untitled ${o.id}`}</Link>
-                  </TableCell>
-                  <TableCell>
-                    <DonorCell
-                      funderId={o.funderId}
-                      funderName={o.funderName}
-                      householdId={o.householdId}
-                      householdName={o.householdName}
-                      individualGiverPersonId={o.individualGiverPersonId}
-                      individualGiverPersonName={o.individualGiverPersonName}
-                    />
-                  </TableCell>
-                  <TableCell>{formatEnum(o.stage)}</TableCell>
-                  <TableCell>
-                    {o.status ? <Badge variant={o.status === "won" ? "default" : "outline"}>{formatEnum(o.status)}</Badge> : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">{formatCurrency(o.askAmount)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(o.awardedAmount)}</TableCell>
-                  <TableCell>{formatDate(o.projectedCloseDate)}</TableCell>
-                </TableRow>
-              ))
+              rows.map((o) => {
+                // Server returns the FY slug — but fall back to a
+                // client-side derivation so legacy cached responses
+                // (pre-aggregate rollout) still show something useful.
+                const fy = o.fiscalYear ?? fiscalYearFromDate(o.projectedCloseDate);
+                // Allocation-derived FY coverage. Each entry is already
+                // an FY slug like "fy26"; uppercase for display.
+                const coveredFys = (o.coveredFiscalYears ?? []).map((y) => y.toUpperCase());
+                return (
+                  <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-opp-${o.id}`}>
+                    <TableCell className="font-medium">
+                      <Link href={`${basePath}/${o.id}`} className="block w-full">{o.name ?? `Untitled ${o.id}`}</Link>
+                    </TableCell>
+                    <TableCell>
+                      <DonorCell
+                        funderId={o.funderId}
+                        funderName={o.funderName}
+                        householdId={o.householdId}
+                        householdName={o.householdName}
+                        individualGiverPersonId={o.individualGiverPersonId}
+                        individualGiverPersonName={o.individualGiverPersonName}
+                      />
+                    </TableCell>
+                    <TableCell>{formatEnum(o.stage)}</TableCell>
+                    <TableCell>
+                      {o.status ? <Badge variant={o.status === "won" ? "default" : "outline"}>{formatEnum(o.status)}</Badge> : "—"}
+                    </TableCell>
+                    {isPledgeView ? (
+                      <TableCell className="text-xs text-muted-foreground">
+                        {coveredFys.length === 0 ? "—" : coveredFys.join(", ")}
+                      </TableCell>
+                    ) : (
+                      <TableCell className="text-right tabular-nums">{formatCurrency(o.askAmount)}</TableCell>
+                    )}
+                    <TableCell className="text-right tabular-nums">{formatCurrency(o.awardedAmount)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{fy ?? "—"}</TableCell>
+                    <TableCell>{formatDateShort(o.projectedCloseDate)}</TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

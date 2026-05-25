@@ -5,7 +5,7 @@ import {
   getListPeopleQueryKey,
   type ListPeopleParams,
 } from "@workspace/api-client-react";
-import { formatDate } from "@/lib/format";
+import { formatCurrency, formatDateShort, formatFunderNameShort } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useRegionNameMap } from "@/components/region-picker";
 import {
@@ -39,6 +39,7 @@ import { personDisplayName } from "@/lib/person";
 
 const PAGE_SIZE = 50;
 const ANY = "_any";
+const COL_SPAN = 8;
 
 export default function Individuals() {
   const [search, setSearch] = useState("");
@@ -127,7 +128,7 @@ export default function Individuals() {
         )}
       </div>
 
-      <div className="rounded-md border bg-card overflow-hidden">
+      <div className="rounded-md border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -135,54 +136,75 @@ export default function Individuals() {
               <TableHead>Status</TableHead>
               <TableHead>Region</TableHead>
               <TableHead>Last contacted</TableHead>
-              <TableHead>Tags</TableHead>
+              <TableHead className="text-right">Lifetime giving</TableHead>
+              <TableHead>Last gift</TableHead>
+              <TableHead className="text-right">Open asks</TableHead>
+              <TableHead>Active funders</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">
+                <TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">
                   Loading…
                 </TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24 text-destructive">
+                <TableCell colSpan={COL_SPAN} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load people."}
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">
+                <TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">
                   No people match these filters.
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((p) => (
-                <TableRow
-                  key={p.id}
-                  className="cursor-pointer hover:bg-muted/50 transition-colors"
-                  data-testid={`row-person-${p.id}`}
-                >
-                  <TableCell className="font-medium">
-                    <Link href={`/individuals/${p.id}`} className="block w-full">
-                      {personDisplayName(p)}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    {p.deceased ? <Badge variant="outline">Deceased</Badge> : "—"}
-                  </TableCell>
-                  <TableCell>
-                    {p.currentHomeRegionId
-                      ? (regionNames.get(p.currentHomeRegionId) ?? p.currentHomeRegionId)
-                      : "—"}
-                  </TableCell>
-                  <TableCell>{formatDate(p.lastContacted)}</TableCell>
-                  <TableCell className="text-muted-foreground text-xs">
-                    {p.tags ?? "—"}
-                  </TableCell>
-                </TableRow>
-              ))
+              rows.map((p) => {
+                // Aggregates are best-effort. Lifetime "0" means we got a
+                // SUM but there were no gifts; render "—" so the user
+                // doesn't have to mentally distinguish $0 from "unset".
+                const giving = p.lifetimeGiving;
+                const hasGiving = giving != null && Number(giving) > 0;
+                const openAsks = p.openOpportunityCount ?? 0;
+                const funders = p.activeFunderNames ?? [];
+                return (
+                  <TableRow
+                    key={p.id}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    data-testid={`row-person-${p.id}`}
+                  >
+                    <TableCell className="font-medium">
+                      <Link href={`/individuals/${p.id}`} className="block w-full">
+                        {personDisplayName(p)}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      {p.deceased ? <Badge variant="outline">Deceased</Badge> : "—"}
+                    </TableCell>
+                    <TableCell>
+                      {p.currentHomeRegionId
+                        ? (regionNames.get(p.currentHomeRegionId) ?? p.currentHomeRegionId)
+                        : "—"}
+                    </TableCell>
+                    <TableCell>{formatDateShort(p.lastContacted)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {hasGiving ? formatCurrency(giving) : "—"}
+                    </TableCell>
+                    <TableCell>{formatDateShort(p.mostRecentGiftDate)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {openAsks > 0 ? openAsks : "—"}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[240px]">
+                      {funders.length === 0
+                        ? "—"
+                        : funders.map(formatFunderNameShort).join(", ")}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

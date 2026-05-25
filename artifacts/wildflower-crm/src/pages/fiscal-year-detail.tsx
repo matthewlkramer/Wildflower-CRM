@@ -10,7 +10,7 @@ import {
   type FiscalYearReceivedRow,
   type FiscalYearOpenRow,
 } from "@workspace/api-client-react";
-import { formatCurrency, formatEnum, abbreviateUsStates } from "@/lib/format";
+import { formatCurrency, formatDateShort, formatEnum, abbreviateUsStates } from "@/lib/format";
 import { partitionEntities, partitionFiscalYears } from "@/lib/dropdownVisibility";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -58,9 +58,11 @@ function pct(s: string | null | undefined): string {
   return `${Math.round(n * 100)}%`;
 }
 
+// Use the shared short formatter so this matches every other list-view
+// table on the site. Note dashboard tiles still call `formatDate` for
+// long-form prose.
 function fmtDate(s: string | null | undefined): string {
-  if (!s) return "—";
-  return s.slice(0, 10);
+  return formatDateShort(s);
 }
 
 export default function FiscalYearDetail() {

@@ -623,6 +623,13 @@ export interface Funder {
   instagram?: string | null;
   youtube?: string | null;
   crunchbase?: string | null;
+  /** people_entity_roles row with primary_contact=true for this funder, if any. */
+  readonly primaryContactPersonId?: string | null;
+  readonly primaryContactPersonName?: string | null;
+  /** Sum of gifts.amount where funder_id matches. Decimal as string. */
+  readonly lifetimeGiving?: string | null;
+  /** Count of opportunities_and_pledges where funder_id matches and status='open'. */
+  readonly openOpportunityCount?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -837,6 +844,12 @@ export interface Household {
   id: string;
   name: string;
   active: boolean;
+  /** Sum of gifts to this household + gifts directly to its member individuals. Decimal as string. */
+  readonly lifetimeGiving?: string | null;
+  /** Most recent date_received across household gifts and member individual gifts. */
+  readonly mostRecentGiftDate?: string | null;
+  /** Count of opportunities_and_pledges where household_id matches and status='open'. */
+  readonly openOpportunityCount?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -895,6 +908,14 @@ export interface Person {
   childrenAtWf?: string | null;
   meetingLink?: string | null;
   assistantPersonId?: string | null;
+  /** Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string. */
+  readonly lifetimeGiving?: string | null;
+  /** Most recent date_received across direct individual gifts and gifts to households the person belongs to. */
+  readonly mostRecentGiftDate?: string | null;
+  /** Count of opportunities_and_pledges where this person is the individual giver and status='open'. */
+  readonly openOpportunityCount?: number | null;
+  /** Names of funders the person currently holds a role at (people_entity_roles.current='current'). */
+  readonly activeFunderNames?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1126,6 +1147,9 @@ export interface OpportunityOrPledge {
   funderName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
+  readonly primaryContactPersonName?: string | null;
+  readonly fiscalYear?: string | null;
+  readonly coveredFiscalYears?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1171,6 +1195,12 @@ export interface GiftOrPayment {
   funderName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
+  /** Distinct entity_id values from gift_allocations. */
+  readonly entityIds?: readonly string[] | null;
+  /** Distinct display_usage values from gift_allocations (server-computed labels). */
+  readonly displayUsages?: readonly string[] | null;
+  /** Distinct grant_year values from gift_allocations. */
+  readonly grantYears?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
 }

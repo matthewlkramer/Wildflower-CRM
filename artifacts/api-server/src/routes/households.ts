@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { households, peopleEntityRoles, emails, addresses } from "@workspace/db/schema";
-import { and, asc, count, eq, ilike, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, getTableColumns, ilike, sql, type SQL } from "drizzle-orm";
 import {
   ListHouseholdsQueryParams,
   CreateHouseholdBody,
@@ -12,6 +12,46 @@ import { asyncHandler, newId, notFound, parseBoolQuery, parseOrBadRequest, parse
 
 const router: IRouter = Router();
 router.use(requireAuth);
+
+// Same pattern as people: per-row aggregates via correlated subqueries.
+// Lifetime giving and most-recent gift fold in gifts to member
+// individuals (peopleEntityRoles where household_id matches) so the
+// view answers "what has this household given, in any form?".
+const householdsListSelect = {
+  ...getTableColumns(households),
+  lifetimeGiving: sql<string | null>`(
+    COALESCE(
+      (SELECT SUM(amount) FROM gifts_and_payments
+        WHERE household_id = ${households.id}),
+      0
+    ) + COALESCE(
+      (SELECT SUM(amount) FROM gifts_and_payments
+        WHERE individual_giver_person_id IN (
+          SELECT person_id FROM people_entity_roles
+          WHERE household_id = ${households.id}
+        )),
+      0
+    )
+  )::text`.as("lifetime_giving"),
+  // See people.ts — Postgres GREATEST is NULL-poisoning, so MAX over a
+  // UNION is what we actually want.
+  mostRecentGiftDate: sql<string | null>`(
+    SELECT MAX(d) FROM (
+      SELECT MAX(date_received) AS d FROM gifts_and_payments
+        WHERE household_id = ${households.id}
+      UNION ALL
+      SELECT MAX(date_received) AS d FROM gifts_and_payments
+        WHERE individual_giver_person_id IN (
+          SELECT person_id FROM people_entity_roles
+          WHERE household_id = ${households.id}
+        )
+    ) AS _gift_dates
+  )`.as("most_recent_gift_date"),
+  openOpportunityCount: sql<number>`(
+    SELECT COUNT(*)::int FROM opportunities_and_pledges
+      WHERE household_id = ${households.id} AND status = 'open'
+  )`.as("open_opportunity_count"),
+};
 
 router.get(
   "/households",
@@ -26,7 +66,13 @@ router.get(
     if (active !== undefined) filters.push(eq(households.active, active));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
-      db.select().from(households).where(where).orderBy(asc(households.name)).limit(limit).offset(offset),
+      db
+        .select(householdsListSelect)
+        .from(households)
+        .where(where)
+        .orderBy(asc(households.name))
+        .limit(limit)
+        .offset(offset),
       db.select({ value: count() }).from(households).where(where),
     ]);
     res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
@@ -37,7 +83,7 @@ router.get(
   "/households/:id",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const row = await db.select().from(households).where(eq(households.id, id)).then((r) => r[0]);
+    const row = await db.select(householdsListSelect).from(households).where(eq(households.id, id)).then((r) => r[0]);
     if (!row) return notFound(res, "household");
     const [people, emailRows, addressRows] = await Promise.all([
       db.select().from(peopleEntityRoles).where(eq(peopleEntityRoles.householdId, id)),

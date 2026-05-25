@@ -3,8 +3,11 @@ import { db } from "@workspace/db";
 import { giftsAndPayments, giftAllocations, funders, households, people } from "@workspace/db/schema";
 import { and, count, desc, eq, getTableColumns, ilike, sql, type SQL } from "drizzle-orm";
 
-// See opportunitiesAndPledges.ts for rationale — same denormalized donor
-// display names joined from funders / households / people.
+// See opportunitiesAndPledges.ts for rationale — same denormalized
+// donor display names joined from funders / households / people, plus
+// three de-duplicated aggregates from gift_allocations so the gifts
+// list can render Entities / Usages / Grant years inline without
+// fanning out per-row fetches.
 const donorJoinSelect = {
   ...getTableColumns(giftsAndPayments),
   funderName: funders.name,
@@ -15,6 +18,21 @@ const donorJoinSelect = {
       NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
     )
   `.as("individual_giver_person_name"),
+  entityIds: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT ga.entity_id ORDER BY ga.entity_id)
+    FROM gift_allocations ga
+    WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.entity_id IS NOT NULL
+  )`.as("entity_ids"),
+  displayUsages: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT ga.display_usage ORDER BY ga.display_usage)
+    FROM gift_allocations ga
+    WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.display_usage IS NOT NULL
+  )`.as("display_usages"),
+  grantYears: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT ga.grant_year ORDER BY ga.grant_year)
+    FROM gift_allocations ga
+    WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.grant_year IS NOT NULL
+  )`.as("grant_years"),
 };
 import {
   ListGiftsAndPaymentsQueryParams,

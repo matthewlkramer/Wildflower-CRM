@@ -5,10 +5,11 @@ import {
   getListGiftsAndPaymentsQueryKey,
   type ListGiftsAndPaymentsParams,
   type GiftType,
-  type GiftPaymentMethod,
+  useListEntities,
+  getListEntitiesQueryKey,
 } from "@workspace/api-client-react";
 import { useDebounce } from "@/hooks/use-debounce";
-import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
+import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 import {
   Table,
   TableBody,
@@ -43,25 +44,15 @@ const TYPES: GiftType[] = [
   "loan_fund_investment",
   "matching_gift",
 ];
-const METHODS: GiftPaymentMethod[] = [
-  "ach",
-  "check",
-  "wire",
-  "stock",
-  "donor_box",
-  "daf_ach",
-  "daf_check",
-  "daf_bill_com",
-];
 
 const PAGE_SIZE = 50;
 const ANY = "_any";
+const COL_SPAN = 8;
 
 export default function Gifts() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
   const [type, setType] = useState<string>(ANY);
-  const [method, setMethod] = useState<string>(ANY);
   const [page, setPage] = useState(1);
 
   const params: ListGiftsAndPaymentsParams = {
@@ -69,12 +60,20 @@ export default function Gifts() {
     page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(type !== ANY ? { type: type as GiftType } : {}),
-    ...(method !== ANY ? { paymentMethod: method as GiftPaymentMethod } : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
     query: { queryKey: getListGiftsAndPaymentsQueryKey(params) },
   });
+  // Entity slug → display name lookup for the new Entities column. Cached
+  // for 5 min — entity rows almost never change, and we don't want to
+  // refetch on every page change.
+  const entitiesQ = useListEntities({
+    query: { queryKey: getListEntitiesQueryKey(), staleTime: 5 * 60_000 },
+  });
+  const entityNameById = new Map<string, string>(
+    (entitiesQ.data ?? []).map((e) => [e.id, e.name]),
+  );
 
   const rows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
@@ -100,15 +99,13 @@ export default function Gifts() {
           />
         </div>
         <FilterSelect label="Type" value={type} onChange={(v) => { setType(v); setPage(1); }} options={TYPES} testId="select-gift-type" />
-        <FilterSelect label="Method" value={method} onChange={(v) => { setMethod(v); setPage(1); }} options={METHODS} testId="select-gift-method" />
-        {(search || type !== ANY || method !== ANY) && (
+        {(search || type !== ANY) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setSearch("");
               setType(ANY);
-              setMethod(ANY);
               setPage(1);
             }}
           >
@@ -117,7 +114,7 @@ export default function Gifts() {
         )}
       </div>
 
-      <div className="rounded-md border bg-card overflow-hidden">
+      <div className="rounded-md border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -125,43 +122,63 @@ export default function Gifts() {
               <TableHead>Donor</TableHead>
               <TableHead>Date received</TableHead>
               <TableHead>Type</TableHead>
-              <TableHead>Method</TableHead>
               <TableHead className="text-right">Amount</TableHead>
+              <TableHead>Entities</TableHead>
+              <TableHead>Usages</TableHead>
+              <TableHead>Grant years</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center h-24 text-destructive">
+                <TableCell colSpan={COL_SPAN} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load gifts."}
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">No gifts match these filters.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">No gifts match these filters.</TableCell></TableRow>
             ) : (
-              rows.map((g) => (
-                <TableRow key={g.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-gift-${g.id}`}>
-                  <TableCell className="font-medium">
-                    <Link href={`/gifts/${g.id}`} className="block w-full">{g.name ?? `Gift ${g.id}`}</Link>
-                  </TableCell>
-                  <TableCell>
-                    <DonorCell
-                      funderId={g.funderId}
-                      funderName={g.funderName}
-                      householdId={g.householdId}
-                      householdName={g.householdName}
-                      individualGiverPersonId={g.individualGiverPersonId}
-                      individualGiverPersonName={g.individualGiverPersonName}
-                    />
-                  </TableCell>
-                  <TableCell>{formatDate(g.dateReceived)}</TableCell>
-                  <TableCell>{formatEnum(g.type)}</TableCell>
-                  <TableCell>{formatEnum(g.paymentMethod)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(g.amount)}</TableCell>
-                </TableRow>
-              ))
+              rows.map((g) => {
+                // Each aggregate is already de-duplicated server-side.
+                // Map entity slugs to names; fall back to the slug if we
+                // haven't loaded the entity list yet (rare, brief).
+                const entities = (g.entityIds ?? []).map(
+                  (id) => entityNameById.get(id) ?? id,
+                );
+                const usages = g.displayUsages ?? [];
+                const grantYears = (g.grantYears ?? []).map((y) => y.toUpperCase());
+                return (
+                  <TableRow key={g.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-gift-${g.id}`}>
+                    <TableCell className="font-medium">
+                      <Link href={`/gifts/${g.id}`} className="block w-full">{g.name ?? `Gift ${g.id}`}</Link>
+                    </TableCell>
+                    <TableCell>
+                      <DonorCell
+                        funderId={g.funderId}
+                        funderName={g.funderName}
+                        householdId={g.householdId}
+                        householdName={g.householdName}
+                        individualGiverPersonId={g.individualGiverPersonId}
+                        individualGiverPersonName={g.individualGiverPersonName}
+                      />
+                    </TableCell>
+                    <TableCell>{formatDateShort(g.dateReceived)}</TableCell>
+                    <TableCell>{formatEnum(g.type)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(g.amount)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[200px]">
+                      {entities.length === 0 ? "—" : entities.join(", ")}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[240px]">
+                      {usages.length === 0 ? "—" : usages.join("; ")}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {grantYears.length === 0 ? "—" : grantYears.join(", ")}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

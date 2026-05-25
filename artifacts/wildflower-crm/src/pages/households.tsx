@@ -6,6 +6,7 @@ import {
   type ListHouseholdsParams,
 } from "@workspace/api-client-react";
 import { useDebounce } from "@/hooks/use-debounce";
+import { formatCurrency, formatDateShort } from "@/lib/format";
 import {
   Table,
   TableBody,
@@ -119,48 +120,64 @@ export default function Households() {
         )}
       </div>
 
-      <div className="rounded-md border bg-card overflow-hidden">
+      <div className="rounded-md border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="text-right">Lifetime giving</TableHead>
+              <TableHead>Last gift</TableHead>
+              <TableHead className="text-right">Open asks</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={2} className="text-center h-24 text-muted-foreground">Loading…</TableCell>
+                <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">Loading…</TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={2} className="text-center h-24 text-destructive">
+                <TableCell colSpan={5} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load households."}
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={2} className="text-center h-24 text-muted-foreground">
+                <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">
                   No households match these filters.
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((h) => (
-                <TableRow
-                  key={h.id}
-                  className="cursor-pointer hover:bg-muted/50 transition-colors"
-                  data-testid={`row-household-${h.id}`}
-                >
-                  <TableCell className="font-medium">
-                    <Link href={`/households/${h.id}`} className="block w-full">{h.name}</Link>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={h.active ? "default" : "outline"}>
-                      {h.active ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))
+              rows.map((h) => {
+                // See individuals.tsx — "0" giving renders as "—" so the
+                // user doesn't have to disambiguate $0 from "unset".
+                const hasGiving = h.lifetimeGiving != null && Number(h.lifetimeGiving) > 0;
+                const openAsks = h.openOpportunityCount ?? 0;
+                return (
+                  <TableRow
+                    key={h.id}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    data-testid={`row-household-${h.id}`}
+                  >
+                    <TableCell className="font-medium">
+                      <Link href={`/households/${h.id}`} className="block w-full">{h.name}</Link>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={h.active ? "default" : "outline"}>
+                        {h.active ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {hasGiving ? formatCurrency(h.lifetimeGiving) : "—"}
+                    </TableCell>
+                    <TableCell>{formatDateShort(h.mostRecentGiftDate)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {openAsks > 0 ? openAsks : "—"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

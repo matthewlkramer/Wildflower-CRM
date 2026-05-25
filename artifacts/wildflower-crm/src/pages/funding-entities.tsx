@@ -8,7 +8,7 @@ import {
   type ConnectionStatus,
   type ActiveStatus,
 } from "@workspace/api-client-react";
-import { formatEnum, formatFunderNameShort } from "@/lib/format";
+import { formatCurrency, formatEnum, formatFunderNameShort } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
   Table,
@@ -185,13 +185,16 @@ export default function FundingEntities() {
               <TableHead>Connection</TableHead>
               <TableHead>Enthusiasm</TableHead>
               <TableHead>Capacity</TableHead>
+              <TableHead>Primary contact</TableHead>
+              <TableHead className="text-right">Lifetime giving</TableHead>
+              <TableHead className="text-right">Open asks</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={9}
                   className="text-center h-24 text-muted-foreground"
                 >
                   Loading…
@@ -200,7 +203,7 @@ export default function FundingEntities() {
             ) : isError ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={9}
                   className="text-center h-24 text-destructive"
                 >
                   {error instanceof Error
@@ -211,46 +214,69 @@ export default function FundingEntities() {
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={9}
                   className="text-center h-24 text-muted-foreground"
                 >
                   No funders match these filters.
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((f) => (
-                <TableRow
-                  key={f.id}
-                  className="cursor-pointer hover:bg-muted/50 transition-colors"
-                  data-testid={`row-funder-${f.id}`}
-                >
-                  <TableCell className="font-medium">
-                    <Link
-                      href={`/funding-entities/${f.id}`}
-                      className="block w-full"
-                    >
-                      {formatFunderNameShort(f.name)}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{formatEnum(f.fundingEntitySubtype)}</TableCell>
-                  <TableCell>
-                    {f.activeStatus ? (
-                      <Badge
-                        variant={
-                          f.activeStatus === "active" ? "default" : "outline"
-                        }
+              rows.map((f) => {
+                const hasGiving = f.lifetimeGiving != null && Number(f.lifetimeGiving) > 0;
+                const openAsks = f.openOpportunityCount ?? 0;
+                return (
+                  <TableRow
+                    key={f.id}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    data-testid={`row-funder-${f.id}`}
+                  >
+                    <TableCell className="font-medium">
+                      <Link
+                        href={`/funding-entities/${f.id}`}
+                        className="block w-full"
                       >
-                        {formatEnum(f.activeStatus)}
-                      </Badge>
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-                  <TableCell>{formatEnum(f.connectionStatus)}</TableCell>
-                  <TableCell>{formatEnum(f.enthusiasm)}</TableCell>
-                  <TableCell>{formatEnum(f.capacityRating)}</TableCell>
-                </TableRow>
-              ))
+                        {formatFunderNameShort(f.name)}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{formatEnum(f.fundingEntitySubtype)}</TableCell>
+                    <TableCell>
+                      {f.activeStatus ? (
+                        <Badge
+                          variant={
+                            f.activeStatus === "active" ? "default" : "outline"
+                          }
+                        >
+                          {formatEnum(f.activeStatus)}
+                        </Badge>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell>{formatEnum(f.connectionStatus)}</TableCell>
+                    <TableCell>{formatEnum(f.enthusiasm)}</TableCell>
+                    <TableCell>{formatEnum(f.capacityRating)}</TableCell>
+                    <TableCell>
+                      {f.primaryContactPersonId ? (
+                        <Link
+                          href={`/individuals/${f.primaryContactPersonId}`}
+                          className="hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {f.primaryContactPersonName ?? f.primaryContactPersonId}
+                        </Link>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {hasGiving ? formatCurrency(f.lifetimeGiving) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {openAsks > 0 ? openAsks : "—"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

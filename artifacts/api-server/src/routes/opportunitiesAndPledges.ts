@@ -1,13 +1,21 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, funders, households, people } from "@workspace/db/schema";
+import { alias } from "drizzle-orm/pg-core";
 import { and, count, desc, eq, getTableColumns, ilike, sql, type SQL } from "drizzle-orm";
 
-// Returns all opportunity columns plus three denormalized donor display
-// names joined from funders / households / people. Keeps list + detail
-// responses self-contained so the UI doesn't fire one fetch per row to
-// resolve donor IDs. Person display name matches the client's
-// `personDisplayName`: COALESCE(full_name, trim(first||' '||last)).
+// Second `people` alias so we can join *both* the individual giver
+// (via individual_giver_person_id) and the primary contact (via
+// primary_contact_person_id) in the same query without collision.
+const primaryContact = alias(people, "primary_contact_person");
+
+// Returns all opportunity columns plus denormalized donor display names
+// (funder / household / individual giver), primary-contact display name,
+// the derived fiscal-year slug, and the de-duplicated set of grant
+// years from pledge_allocations. Keeps list + detail responses
+// self-contained so the UI doesn't fire one fetch per row.
+// Person display name matches the client's `personDisplayName`:
+// COALESCE(full_name, trim(first||' '||last)).
 const donorJoinSelect = {
   ...getTableColumns(opportunitiesAndPledges),
   funderName: funders.name,
@@ -18,6 +26,29 @@ const donorJoinSelect = {
       NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
     )
   `.as("individual_giver_person_name"),
+  primaryContactPersonName: sql<string | null>`
+    COALESCE(
+      NULLIF(TRIM(${primaryContact.fullName}), ''),
+      NULLIF(TRIM(CONCAT_WS(' ', ${primaryContact.firstName}, ${primaryContact.lastName})), '')
+    )
+  `.as("primary_contact_person_name"),
+  // FY ends Jun 30 in America/Chicago, so Jul-Dec roll forward. We
+  // shift the date by 6 months and read the year off — gives the same
+  // answer as a CASE on EXTRACT(MONTH) but in fewer ops. Apostrophe-
+  // free slug: "FY26". Null when projected_close_date is null.
+  fiscalYear: sql<string | null>`
+    CASE WHEN ${opportunitiesAndPledges.projectedCloseDate} IS NULL THEN NULL
+    ELSE 'FY' || RIGHT(
+      EXTRACT(YEAR FROM (${opportunitiesAndPledges.projectedCloseDate}::date + INTERVAL '6 months'))::text,
+      2
+    ) END
+  `.as("fiscal_year"),
+  coveredFiscalYears: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT pa.grant_year ORDER BY pa.grant_year)
+    FROM pledge_allocations pa
+    WHERE pa.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}
+      AND pa.grant_year IS NOT NULL
+  )`.as("covered_fiscal_years"),
 };
 
 import {
@@ -64,6 +95,7 @@ router.get(
         .leftJoin(funders, eq(funders.id, opportunitiesAndPledges.funderId))
         .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
         .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
+        .leftJoin(primaryContact, eq(primaryContact.id, opportunitiesAndPledges.primaryContactPersonId))
         .where(where)
         .orderBy(desc(opportunitiesAndPledges.projectedCloseDate))
         .limit(limit)
@@ -84,6 +116,7 @@ router.get(
       .leftJoin(funders, eq(funders.id, opportunitiesAndPledges.funderId))
       .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
       .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
+      .leftJoin(primaryContact, eq(primaryContact.id, opportunitiesAndPledges.primaryContactPersonId))
       .where(eq(opportunitiesAndPledges.id, id))
       .then((r) => r[0]);
     if (!row) return notFound(res, "opportunity");

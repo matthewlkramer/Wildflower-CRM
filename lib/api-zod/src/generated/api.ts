@@ -494,6 +494,25 @@ export const ListFundersResponse = zod.object({
       instagram: zod.string().nullish(),
       youtube: zod.string().nullish(),
       crunchbase: zod.string().nullish(),
+      primaryContactPersonId: zod
+        .string()
+        .nullish()
+        .describe(
+          "people_entity_roles row with primary_contact=true for this funder, if any.",
+        ),
+      primaryContactPersonName: zod.string().nullish(),
+      lifetimeGiving: zod
+        .string()
+        .nullish()
+        .describe(
+          "Sum of gifts.amount where funder_id matches. Decimal as string.",
+        ),
+      openOpportunityCount: zod
+        .number()
+        .nullish()
+        .describe(
+          "Count of opportunities_and_pledges where funder_id matches and status='open'.",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -649,6 +668,25 @@ export const GetFunderResponse = zod
     instagram: zod.string().nullish(),
     youtube: zod.string().nullish(),
     crunchbase: zod.string().nullish(),
+    primaryContactPersonId: zod
+      .string()
+      .nullish()
+      .describe(
+        "people_entity_roles row with primary_contact=true for this funder, if any.",
+      ),
+    primaryContactPersonName: zod.string().nullish(),
+    lifetimeGiving: zod
+      .string()
+      .nullish()
+      .describe(
+        "Sum of gifts.amount where funder_id matches. Decimal as string.",
+      ),
+    openOpportunityCount: zod
+      .number()
+      .nullish()
+      .describe(
+        "Count of opportunities_and_pledges where funder_id matches and status='open'.",
+      ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   })
@@ -874,6 +912,25 @@ export const UpdateFunderResponse = zod.object({
   instagram: zod.string().nullish(),
   youtube: zod.string().nullish(),
   crunchbase: zod.string().nullish(),
+  primaryContactPersonId: zod
+    .string()
+    .nullish()
+    .describe(
+      "people_entity_roles row with primary_contact=true for this funder, if any.",
+    ),
+  primaryContactPersonName: zod.string().nullish(),
+  lifetimeGiving: zod
+    .string()
+    .nullish()
+    .describe(
+      "Sum of gifts.amount where funder_id matches. Decimal as string.",
+    ),
+  openOpportunityCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Count of opportunities_and_pledges where funder_id matches and status='open'.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -1392,6 +1449,25 @@ export const ListHouseholdsResponse = zod.object({
       id: zod.string(),
       name: zod.string(),
       active: zod.boolean(),
+      lifetimeGiving: zod
+        .string()
+        .nullish()
+        .describe(
+          "Sum of gifts to this household + gifts directly to its member individuals. Decimal as string.",
+        ),
+      mostRecentGiftDate: zod
+        .string()
+        .date()
+        .nullish()
+        .describe(
+          "Most recent date_received across household gifts and member individual gifts.",
+        ),
+      openOpportunityCount: zod
+        .number()
+        .nullish()
+        .describe(
+          "Count of opportunities_and_pledges where household_id matches and status='open'.",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -1417,6 +1493,25 @@ export const GetHouseholdResponse = zod
     id: zod.string(),
     name: zod.string(),
     active: zod.boolean(),
+    lifetimeGiving: zod
+      .string()
+      .nullish()
+      .describe(
+        "Sum of gifts to this household + gifts directly to its member individuals. Decimal as string.",
+      ),
+    mostRecentGiftDate: zod
+      .string()
+      .date()
+      .nullish()
+      .describe(
+        "Most recent date_received across household gifts and member individual gifts.",
+      ),
+    openOpportunityCount: zod
+      .number()
+      .nullish()
+      .describe(
+        "Count of opportunities_and_pledges where household_id matches and status='open'.",
+      ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   })
@@ -1512,6 +1607,25 @@ export const UpdateHouseholdResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
   active: zod.boolean(),
+  lifetimeGiving: zod
+    .string()
+    .nullish()
+    .describe(
+      "Sum of gifts to this household + gifts directly to its member individuals. Decimal as string.",
+    ),
+  mostRecentGiftDate: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Most recent date_received across household gifts and member individual gifts.",
+    ),
+  openOpportunityCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Count of opportunities_and_pledges where household_id matches and status='open'.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -1574,6 +1688,31 @@ export const ListPeopleResponse = zod.object({
       childrenAtWf: zod.string().nullish(),
       meetingLink: zod.string().nullish(),
       assistantPersonId: zod.string().nullish(),
+      lifetimeGiving: zod
+        .string()
+        .nullish()
+        .describe(
+          "Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string.",
+        ),
+      mostRecentGiftDate: zod
+        .string()
+        .date()
+        .nullish()
+        .describe(
+          "Most recent date_received across direct individual gifts and gifts to households the person belongs to.",
+        ),
+      openOpportunityCount: zod
+        .number()
+        .nullish()
+        .describe(
+          "Count of opportunities_and_pledges where this person is the individual giver and status='open'.",
+        ),
+      activeFunderNames: zod
+        .array(zod.string())
+        .nullish()
+        .describe(
+          "Names of funders the person currently holds a role at (people_entity_roles.current='current').",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -1660,6 +1799,31 @@ export const GetPersonResponse = zod
     childrenAtWf: zod.string().nullish(),
     meetingLink: zod.string().nullish(),
     assistantPersonId: zod.string().nullish(),
+    lifetimeGiving: zod
+      .string()
+      .nullish()
+      .describe(
+        "Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string.",
+      ),
+    mostRecentGiftDate: zod
+      .string()
+      .date()
+      .nullish()
+      .describe(
+        "Most recent date_received across direct individual gifts and gifts to households the person belongs to.",
+      ),
+    openOpportunityCount: zod
+      .number()
+      .nullish()
+      .describe(
+        "Count of opportunities_and_pledges where this person is the individual giver and status='open'.",
+      ),
+    activeFunderNames: zod
+      .array(zod.string())
+      .nullish()
+      .describe(
+        "Names of funders the person currently holds a role at (people_entity_roles.current='current').",
+      ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   })
@@ -1830,6 +1994,31 @@ export const UpdatePersonResponse = zod.object({
   childrenAtWf: zod.string().nullish(),
   meetingLink: zod.string().nullish(),
   assistantPersonId: zod.string().nullish(),
+  lifetimeGiving: zod
+    .string()
+    .nullish()
+    .describe(
+      "Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string.",
+    ),
+  mostRecentGiftDate: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Most recent date_received across direct individual gifts and gifts to households the person belongs to.",
+    ),
+  openOpportunityCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Count of opportunities_and_pledges where this person is the individual giver and status='open'.",
+    ),
+  activeFunderNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of funders the person currently holds a role at (people_entity_roles.current='current').",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -2334,6 +2523,9 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       funderName: zod.string().nullish(),
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
+      primaryContactPersonName: zod.string().nullish(),
+      fiscalYear: zod.string().nullish(),
+      coveredFiscalYears: zod.array(zod.string()).nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -2442,6 +2634,9 @@ export const GetOpportunityOrPledgeResponse = zod
     funderName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
+    primaryContactPersonName: zod.string().nullish(),
+    fiscalYear: zod.string().nullish(),
+    coveredFiscalYears: zod.array(zod.string()).nullish(),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   })
@@ -2530,6 +2725,20 @@ export const GetOpportunityOrPledgeResponse = zod
             funderName: zod.string().nullish(),
             householdName: zod.string().nullish(),
             individualGiverPersonName: zod.string().nullish(),
+            entityIds: zod
+              .array(zod.string())
+              .nullish()
+              .describe("Distinct entity_id values from gift_allocations."),
+            displayUsages: zod
+              .array(zod.string())
+              .nullish()
+              .describe(
+                "Distinct display_usage values from gift_allocations (server-computed labels).",
+              ),
+            grantYears: zod
+              .array(zod.string())
+              .nullish()
+              .describe("Distinct grant_year values from gift_allocations."),
             createdAt: zod.string().datetime({}),
             updatedAt: zod.string().datetime({}),
           }),
@@ -2634,6 +2843,9 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   funderName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
+  primaryContactPersonName: zod.string().nullish(),
+  fiscalYear: zod.string().nullish(),
+  coveredFiscalYears: zod.array(zod.string()).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -2899,6 +3111,20 @@ export const ListGiftsAndPaymentsResponse = zod.object({
       funderName: zod.string().nullish(),
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
+      entityIds: zod
+        .array(zod.string())
+        .nullish()
+        .describe("Distinct entity_id values from gift_allocations."),
+      displayUsages: zod
+        .array(zod.string())
+        .nullish()
+        .describe(
+          "Distinct display_usage values from gift_allocations (server-computed labels).",
+        ),
+      grantYears: zod
+        .array(zod.string())
+        .nullish()
+        .describe("Distinct grant_year values from gift_allocations."),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -2999,6 +3225,20 @@ export const GetGiftOrPaymentResponse = zod
     funderName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
+    entityIds: zod
+      .array(zod.string())
+      .nullish()
+      .describe("Distinct entity_id values from gift_allocations."),
+    displayUsages: zod
+      .array(zod.string())
+      .nullish()
+      .describe(
+        "Distinct display_usage values from gift_allocations (server-computed labels).",
+      ),
+    grantYears: zod
+      .array(zod.string())
+      .nullish()
+      .describe("Distinct grant_year values from gift_allocations."),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   })
@@ -3130,6 +3370,20 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   funderName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
+  entityIds: zod
+    .array(zod.string())
+    .nullish()
+    .describe("Distinct entity_id values from gift_allocations."),
+  displayUsages: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Distinct display_usage values from gift_allocations (server-computed labels).",
+    ),
+  grantYears: zod
+    .array(zod.string())
+    .nullish()
+    .describe("Distinct grant_year values from gift_allocations."),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });

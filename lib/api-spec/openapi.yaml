@@ -1113,6 +1113,11 @@ components:
         instagram:             { type: string, nullable: true }
         youtube:               { type: string, nullable: true }
         crunchbase:            { type: string, nullable: true }
+        # Server-computed aggregates for the funders list view.
+        primaryContactPersonId:   { type: string, nullable: true, readOnly: true, description: "people_entity_roles row with primary_contact=true for this funder, if any." }
+        primaryContactPersonName: { type: string, nullable: true, readOnly: true }
+        lifetimeGiving:           { type: string, nullable: true, readOnly: true, description: "Sum of gifts.amount where funder_id matches. Decimal as string." }
+        openOpportunityCount:     { type: integer, nullable: true, readOnly: true, description: "Count of opportunities_and_pledges where funder_id matches and status='open'." }
         createdAt:             { type: string, format: date-time }
         updatedAt:             { type: string, format: date-time }
     FunderDetail:
@@ -1295,11 +1300,15 @@ components:
       type: object
       required: [id, name, active, createdAt, updatedAt]
       properties:
-        id:         { type: string }
-        name:       { type: string }
-        active:     { type: boolean }
-        createdAt:  { type: string, format: date-time }
-        updatedAt:  { type: string, format: date-time }
+        id:                       { type: string }
+        name:                     { type: string }
+        active:                   { type: boolean }
+        # Server-computed aggregates for the households list view.
+        lifetimeGiving:           { type: string, nullable: true, readOnly: true, description: "Sum of gifts to this household + gifts directly to its member individuals. Decimal as string." }
+        mostRecentGiftDate:       { type: string, format: date, nullable: true, readOnly: true, description: "Most recent date_received across household gifts and member individual gifts." }
+        openOpportunityCount:     { type: integer, nullable: true, readOnly: true, description: "Count of opportunities_and_pledges where household_id matches and status='open'." }
+        createdAt:                { type: string, format: date-time }
+        updatedAt:                { type: string, format: date-time }
     HouseholdDetail:
       allOf:
         - { $ref: "#/components/schemas/Household" }
@@ -1363,6 +1372,14 @@ components:
         childrenAtWf:             { type: string, nullable: true }
         meetingLink:              { type: string, nullable: true }
         assistantPersonId:        { type: string, nullable: true }
+        # Server-computed aggregates for the individuals list view. NOT
+        # writable; computed per-request by the list-people query. Per
+        # replit.md: lifetime giving is direct individual gifts + all
+        # gifts to households the person belongs to (no splitting).
+        lifetimeGiving:           { type: string, nullable: true, readOnly: true, description: "Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string." }
+        mostRecentGiftDate:       { type: string, format: date, nullable: true, readOnly: true, description: "Most recent date_received across direct individual gifts and gifts to households the person belongs to." }
+        openOpportunityCount:     { type: integer, nullable: true, readOnly: true, description: "Count of opportunities_and_pledges where this person is the individual giver and status='open'." }
+        activeFunderNames:        { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of funders the person currently holds a role at (people_entity_roles.current='current')." }
         createdAt:                { type: string, format: date-time }
         updatedAt:                { type: string, format: date-time }
     PersonDetail:
@@ -1670,6 +1687,16 @@ components:
         funderName:                 { type: string, nullable: true }
         householdName:              { type: string, nullable: true }
         individualGiverPersonName:  { type: string, nullable: true }
+        # Display name of primary_contact_person_id, joined server-side.
+        # Used by the grants calendar's contact column.
+        primaryContactPersonName:   { type: string, nullable: true, readOnly: true }
+        # Fiscal-year slug derived from projectedCloseDate (FY ends Jun 30
+        # America/Chicago). e.g. a projectedCloseDate of 2026-08-15 →
+        # "FY27". Null when projectedCloseDate is null.
+        fiscalYear:                 { type: string, nullable: true, readOnly: true }
+        # Distinct grant_year values across pledge_allocations for this
+        # opp, sorted ascending. Empty array if no allocations.
+        coveredFiscalYears:         { type: array, items: { type: string }, nullable: true, readOnly: true }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
     OpportunityOrPledgeDetail:
@@ -1822,6 +1849,11 @@ components:
         funderName:                 { type: string, nullable: true }
         householdName:              { type: string, nullable: true }
         individualGiverPersonName:  { type: string, nullable: true }
+        # Aggregates across this gift's gift_allocations rows. All three
+        # arrays are de-duplicated and may be empty.
+        entityIds:                  { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct entity_id values from gift_allocations." }
+        displayUsages:              { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct display_usage values from gift_allocations (server-computed labels)." }
+        grantYears:                 { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct grant_year values from gift_allocations." }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
     GiftOrPaymentDetail:

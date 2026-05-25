@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Link } from "wouter";
 import { useListPeople } from "@workspace/api-client-react";
 import { personDisplayName } from "@/lib/person";
-import { formatDate } from "@/lib/format";
+import { formatDateShort } from "@/lib/format";
 import { useUserNameMap } from "@/components/user-picker";
 import { useRegionNameMap } from "@/components/region-picker";
 import {
@@ -80,7 +80,7 @@ export default function Moves() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    {p.lastContacted ? formatDate(p.lastContacted) : (
+                    {p.lastContacted ? formatDateShort(p.lastContacted) : (
                       <span className="text-muted-foreground italic">never</span>
                     )}
                   </TableCell>

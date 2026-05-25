@@ -11,13 +11,63 @@ export function formatCurrency(amount: number | string | null | undefined): stri
   }).format(num);
 }
 
+/**
+ * Long-form date for prose, headings, and detail-page footers.
+ * "Jun 30, 2026" — pairs cleanly with surrounding sentences.
+ */
 export function formatDate(dateString: string | null | undefined): string {
   if (!dateString) return "—";
   try {
-    return format(parseISO(dateString), "MMM d, yy");
+    return format(parseISO(dateString), "MMM d, yyyy");
   } catch (e) {
     return dateString;
   }
+}
+
+/**
+ * Compact numeric date for **table cells only** — keeps column widths
+ * narrow on dense list views. "6/30/26".
+ */
+export function formatDateShort(dateString: string | null | undefined): string {
+  if (!dateString) return "—";
+  try {
+    return format(parseISO(dateString), "M/d/yy");
+  } catch (e) {
+    return dateString;
+  }
+}
+
+/**
+ * Render an ISO date-only string as a fiscal-year slug like "FY26".
+ * Wildflower's fiscal year ends Jun 30 in America/Chicago — months
+ * Jul–Dec belong to the next-year FY. Returns `null` for null/empty
+ * or unparseable input so callers can render their own placeholder.
+ */
+export function fiscalYearFromDate(
+  dateString: string | null | undefined,
+): string | null {
+  if (!dateString) return null;
+  // Date-only strings ("YYYY-MM-DD") — parse the components directly to
+  // sidestep any tz drift from `new Date("YYYY-MM-DD")`. Anything else
+  // falls through to parseISO + UTC accessors, which is fine for the
+  // date-time fields we never feed in here.
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateString);
+  let year: number;
+  let month: number;
+  if (m) {
+    year = Number(m[1]);
+    month = Number(m[2]);
+  } else {
+    try {
+      const d = parseISO(dateString);
+      year = d.getUTCFullYear();
+      month = d.getUTCMonth() + 1;
+    } catch {
+      return null;
+    }
+  }
+  const endYear = month >= 7 ? year + 1 : year;
+  return `FY${String(endYear).slice(-2)}`;
 }
 
 export function formatEnum(value: string | null | undefined): string {
