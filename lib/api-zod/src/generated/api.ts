@@ -3427,6 +3427,12 @@ export const GetFiscalYearBreakdownResponse = zod
               .describe("gift_allocations.sub_amount (numeric string)."),
             entityId: zod.string().nullish(),
             intendedUsage: zod.string().nullish(),
+            displayUsage: zod
+              .string()
+              .nullish()
+              .describe(
+                "Server-computed human-readable usage label from gift_allocations.display_usage.",
+              ),
             fundableProjectId: zod.string().nullish(),
             giftId: zod.string(),
             giftType: zod.string().nullish(),

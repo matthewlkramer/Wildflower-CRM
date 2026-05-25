@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { formatFunderNameShort } from "@/lib/format";
 
 type Props = {
   funderId?: string | null;
@@ -32,7 +33,7 @@ export function DonorCell({
         className="hover:underline"
         onClick={(e) => e.stopPropagation()}
       >
-        {funderName ?? funderId}
+        {funderName ? formatFunderNameShort(funderName) : funderId}
       </Link>
     );
   }

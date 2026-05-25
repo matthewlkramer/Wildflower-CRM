@@ -52,3 +52,21 @@ export function formatCapacity(capacity: string | null | undefined): string {
   if (!capacity) return "—";
   return CAPACITY_LABELS[capacity] || formatEnum(capacity);
 }
+
+/**
+ * Compact funder-name renderer for **table cells only** — never use this on
+ * detail pages where the funder is the subject of the view. Applies two
+ * word-boundary substitutions, "Family Foundation" first so "Foundation"
+ * doesn't double-replace:
+ *   "Family Foundation" → "F.F."
+ *   "Foundation"        → "Fnd"
+ * Match is case-insensitive; the abbreviated form is emitted as written.
+ */
+export function formatFunderNameShort(
+  name: string | null | undefined,
+): string {
+  if (!name) return "";
+  return name
+    .replace(/\bFamily Foundation\b/gi, "F.F.")
+    .replace(/\bFoundation\b/gi, "Fnd");
+}

@@ -1018,6 +1018,7 @@ components:
         subAmount:                  { type: string, description: "gift_allocations.sub_amount (numeric string)." }
         entityId:                   { type: string, nullable: true }
         intendedUsage:              { type: string, nullable: true }
+        displayUsage:               { type: string, nullable: true, description: "Server-computed human-readable usage label from gift_allocations.display_usage." }
         fundableProjectId:          { type: string, nullable: true }
         giftId:                     { type: string }
         giftType:                   { type: string, nullable: true }

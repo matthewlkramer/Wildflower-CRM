@@ -33,7 +33,7 @@ import {
   InlineEditMultiRegionPicker,
 } from "@/components/multi-select-picker";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatDate, formatEnum } from "@/lib/format";
+import { formatDate, formatEnum, formatFunderNameShort } from "@/lib/format";
 
 const PRONOUNS_OPTIONS = [
   { value: "he_him_his", label: "he / him / his" },
@@ -547,8 +547,11 @@ function RoleRow({ role: r }: { role: PeopleEntityRole }) {
     : r.householdId
       ? `/households/${r.householdId}`
       : null;
+  // RoleRow is a per-row list-style display (funder/org/household per role),
+  // so funder names get the compact abbreviation. Detail pages for the
+  // funder/household themselves still show the full name.
   const entityLabel =
-    funderName ??
+    (funderName ? formatFunderNameShort(funderName) : null) ??
     orgName ??
     householdName ??
     intermediaryName ??

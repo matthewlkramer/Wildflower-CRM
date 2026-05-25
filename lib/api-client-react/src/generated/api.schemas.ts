@@ -521,6 +521,8 @@ export interface FiscalYearReceivedRow {
   subAmount: string;
   entityId?: string | null;
   intendedUsage?: string | null;
+  /** Server-computed human-readable usage label from gift_allocations.display_usage. */
+  displayUsage?: string | null;
   fundableProjectId?: string | null;
   giftId: string;
   giftType?: string | null;

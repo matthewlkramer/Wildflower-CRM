@@ -8,7 +8,7 @@ import {
   type ConnectionStatus,
   type ActiveStatus,
 } from "@workspace/api-client-react";
-import { formatEnum } from "@/lib/format";
+import { formatEnum, formatFunderNameShort } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
   Table,
@@ -229,7 +229,7 @@ export default function FundingEntities() {
                       href={`/funding-entities/${f.id}`}
                       className="block w-full"
                     >
-                      {f.name}
+                      {formatFunderNameShort(f.name)}
                     </Link>
                   </TableCell>
                   <TableCell>{formatEnum(f.fundingEntitySubtype)}</TableCell>

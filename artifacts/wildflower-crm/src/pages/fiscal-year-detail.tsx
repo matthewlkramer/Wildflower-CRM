@@ -305,7 +305,7 @@ function ReceivedTable({
           <TableRow>
             <TableHead>Date received</TableHead>
             <TableHead>Donor</TableHead>
-            <TableHead>Intended usage</TableHead>
+            <TableHead>Usage</TableHead>
             <TableHead className="text-right">Amount</TableHead>
           </TableRow>
         </TableHeader>
@@ -333,7 +333,7 @@ function ReceivedTable({
                       individualGiverPersonName={r.individualGiverPersonName}
                     />
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{formatEnum(r.intendedUsage)}</TableCell>
+                  <TableCell className="text-muted-foreground">{r.displayUsage || "—"}</TableCell>
                   <TableCell className="text-right tabular-nums font-medium">{fmt(r.subAmount)}</TableCell>
                 </TableRow>
               ))}

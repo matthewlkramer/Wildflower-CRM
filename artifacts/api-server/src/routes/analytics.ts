@@ -274,6 +274,7 @@ router.get(
           subAmount: sql<string>`${giftAllocations.subAmount}::text`,
           entityId: giftAllocations.entityId,
           intendedUsage: sql<string | null>`${giftAllocations.intendedUsage}::text`,
+          displayUsage: giftAllocations.displayUsage,
           fundableProjectId: giftAllocations.fundableProjectId,
           giftId: giftAllocations.giftId,
           giftType: sql<string | null>`${giftsAndPayments.type}::text`,
