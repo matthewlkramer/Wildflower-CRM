@@ -31,6 +31,7 @@ tags:
   - { name: gift-allocations }
   - { name: analytics }
   - { name: interactions }
+  - { name: google-oauth }
 
 paths:
   /healthz:
@@ -752,6 +753,23 @@ paths:
       tags: [interactions]
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses: { "204": { description: Deleted } }
+
+  # ─── Google OAuth (per-CRM-user Gmail + Calendar grants) ──────────────────
+  # NB: /google-oauth/start and /google-oauth/callback are browser
+  # navigations (302 redirects to/from Google), not API client calls, so
+  # only the status + disconnect endpoints are documented here.
+  /google-oauth/status:
+    get:
+      operationId: getGoogleOauthStatus
+      tags: [google-oauth]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GoogleOauthStatus" } } } }
+  /google-oauth/disconnect:
+    post:
+      operationId: disconnectGoogleOauth
+      tags: [google-oauth]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, required: [ok], properties: { ok: { type: boolean } } } } } }
 
   # ─── Analytics (aggregate read-only) ───────────────────────────────────────
   /dashboard-summary:
@@ -2076,3 +2094,17 @@ components:
         personIds:        { type: array, items: { type: string }, nullable: true }
         funderIds:        { type: array, items: { type: string }, nullable: true }
         householdIds:     { type: array, items: { type: string }, nullable: true }
+
+    # ─── Google OAuth status ──────────────────────────────────────────────────
+    GoogleOauthStatus:
+      type: object
+      required: [configured, connected]
+      properties:
+        configured:   { type: boolean, description: "Server has GOOGLE_OAUTH_CLIENT_ID/SECRET set" }
+        connected:    { type: boolean, description: "Caller has an active, non-revoked grant" }
+        googleEmail:  { type: string, nullable: true }
+        scope:        { type: string, nullable: true }
+        expiresAt:    { type: string, format: date-time, nullable: true }
+        grantedAt:    { type: string, format: date-time, nullable: true }
+        revokedAt:    { type: string, format: date-time, nullable: true }
+        lastError:    { type: string, nullable: true }

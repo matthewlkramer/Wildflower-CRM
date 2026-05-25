@@ -3695,6 +3695,23 @@ export const DeleteInteractionParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const GetGoogleOauthStatusResponse = zod.object({
+  configured: zod
+    .boolean()
+    .describe("Server has GOOGLE_OAUTH_CLIENT_ID\/SECRET set"),
+  connected: zod.boolean().describe("Caller has an active, non-revoked grant"),
+  googleEmail: zod.string().nullish(),
+  scope: zod.string().nullish(),
+  expiresAt: zod.string().datetime({}).nullish(),
+  grantedAt: zod.string().datetime({}).nullish(),
+  revokedAt: zod.string().datetime({}).nullish(),
+  lastError: zod.string().nullish(),
+});
+
+export const DisconnectGoogleOauthResponse = zod.object({
+  ok: zod.boolean(),
+});
+
 /**
  * @summary Aggregate counts + money totals for the Dashboard landing page.
  */

@@ -21,6 +21,7 @@ import giftsRouter from "./giftsAndPayments";
 import giftAllocationsRouter from "./giftAllocations";
 import analyticsRouter from "./analytics";
 import interactionsRouter from "./interactions";
+import googleOauthRouter from "./googleOauth";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use(giftsRouter);
 router.use(giftAllocationsRouter);
 router.use(analyticsRouter);
 router.use(interactionsRouter);
+router.use(googleOauthRouter);
 
 export default router;

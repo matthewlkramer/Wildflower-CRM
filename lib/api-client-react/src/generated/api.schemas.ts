@@ -1469,6 +1469,19 @@ export interface UpdateInteractionBody {
   householdIds?: string[] | null;
 }
 
+export interface GoogleOauthStatus {
+  /** Server has GOOGLE_OAUTH_CLIENT_ID/SECRET set */
+  configured: boolean;
+  /** Caller has an active, non-revoked grant */
+  connected: boolean;
+  googleEmail?: string | null;
+  scope?: string | null;
+  expiresAt?: string | null;
+  grantedAt?: string | null;
+  revokedAt?: string | null;
+  lastError?: string | null;
+}
+
 /**
  * Not found
  */
@@ -1744,6 +1757,10 @@ export type ListInteractionsParams = {
    * @minimum 1
    */
   page?: PageParameter;
+};
+
+export type DisconnectGoogleOauth200 = {
+  ok: boolean;
 };
 
 export type GetDashboardSummaryParams = {
