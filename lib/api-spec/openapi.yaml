@@ -30,6 +30,7 @@ tags:
   - { name: gifts-and-payments }
   - { name: gift-allocations }
   - { name: analytics }
+  - { name: interactions }
 
 paths:
   /healthz:
@@ -703,6 +704,52 @@ paths:
     delete:
       operationId: deleteGiftAllocation
       tags: [gift-allocations]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Interactions (manual touchpoints) ────────────────────────────────────
+  /interactions:
+    get:
+      operationId: listInteractions
+      tags: [interactions]
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: personId, in: query, schema: { type: string } }
+        - { name: funderId, in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+        - { name: ownerUserId, in: query, schema: { type: string } }
+        - { name: kind, in: query, schema: { $ref: "#/components/schemas/InteractionKind" } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/InteractionList" } } } }
+    post:
+      operationId: createInteraction
+      tags: [interactions]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateInteractionBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Interaction" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /interactions/{id}:
+    get:
+      operationId: getInteraction
+      tags: [interactions]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Interaction" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateInteraction
+      tags: [interactions]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateInteractionBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Interaction" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteInteraction
+      tags: [interactions]
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses: { "204": { description: Deleted } }
 
@@ -1974,3 +2021,58 @@ components:
         spendingStart:               { type: string, format: date, nullable: true }
         spendingEnd:                 { type: string, format: date, nullable: true }
         regionIds:                   { type: array, items: { type: string }, nullable: true }
+
+    # ─── Interactions ─────────────────────────────────────────────────────────
+    InteractionKind:
+      type: string
+      enum: [meeting, phone_call, video_call, conference, other]
+    Interaction:
+      type: object
+      required: [id, kind, occurredAt, summary, createdAt, updatedAt]
+      properties:
+        id:               { type: string }
+        kind:             { $ref: "#/components/schemas/InteractionKind" }
+        occurredAt:       { type: string, format: date-time }
+        durationMinutes:  { type: integer, nullable: true }
+        location:         { type: string, nullable: true }
+        summary:          { type: string }
+        notes:            { type: string, nullable: true }
+        ownerUserId:      { type: string, nullable: true }
+        personIds:        { type: array, items: { type: string }, nullable: true }
+        funderIds:        { type: array, items: { type: string }, nullable: true }
+        householdIds:     { type: array, items: { type: string }, nullable: true }
+        createdAt:        { type: string, format: date-time }
+        updatedAt:        { type: string, format: date-time }
+    InteractionList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/Interaction" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreateInteractionBody:
+      type: object
+      required: [kind, occurredAt, summary]
+      properties:
+        kind:             { $ref: "#/components/schemas/InteractionKind" }
+        occurredAt:       { type: string, format: date-time }
+        durationMinutes:  { type: integer }
+        location:         { type: string }
+        summary:          { type: string }
+        notes:            { type: string }
+        ownerUserId:      { type: string }
+        personIds:        { type: array, items: { type: string } }
+        funderIds:        { type: array, items: { type: string } }
+        householdIds:     { type: array, items: { type: string } }
+    UpdateInteractionBody:
+      type: object
+      properties:
+        kind:             { $ref: "#/components/schemas/InteractionKind" }
+        occurredAt:       { type: string, format: date-time }
+        durationMinutes:  { type: integer, nullable: true }
+        location:         { type: string, nullable: true }
+        summary:          { type: string }
+        notes:            { type: string, nullable: true }
+        ownerUserId:      { type: string, nullable: true }
+        personIds:        { type: array, items: { type: string }, nullable: true }
+        funderIds:        { type: array, items: { type: string }, nullable: true }
+        householdIds:     { type: array, items: { type: string }, nullable: true }

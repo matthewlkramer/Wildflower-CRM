@@ -17,6 +17,7 @@ import {
   type CapacityRating,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { InteractionsPanel } from "@/components/interactions-panel";
 import {
   InlineEditBoolean,
   InlineEditSelect,
@@ -528,6 +529,8 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           </CardContent>
         </Card>
       )}
+
+      <InteractionsPanel funderId={funder.id} />
 
       <div className="text-xs text-muted-foreground">
         Created {formatDate(funder.createdAt)} • Updated{" "}

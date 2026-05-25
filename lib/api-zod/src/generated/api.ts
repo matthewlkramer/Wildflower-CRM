@@ -3552,6 +3552,149 @@ export const DeleteGiftAllocationParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const listInteractionsQueryLimitDefault = 50;
+export const listInteractionsQueryLimitMax = 1000;
+
+export const listInteractionsQueryPageDefault = 1;
+
+export const ListInteractionsQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  personId: zod.coerce.string().optional(),
+  funderId: zod.coerce.string().optional(),
+  householdId: zod.coerce.string().optional(),
+  ownerUserId: zod.coerce.string().optional(),
+  kind: zod
+    .enum(["meeting", "phone_call", "video_call", "conference", "other"])
+    .optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listInteractionsQueryLimitMax)
+    .default(listInteractionsQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listInteractionsQueryPageDefault),
+});
+
+export const ListInteractionsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      kind: zod.enum([
+        "meeting",
+        "phone_call",
+        "video_call",
+        "conference",
+        "other",
+      ]),
+      occurredAt: zod.string().datetime({}),
+      durationMinutes: zod.number().nullish(),
+      location: zod.string().nullish(),
+      summary: zod.string(),
+      notes: zod.string().nullish(),
+      ownerUserId: zod.string().nullish(),
+      personIds: zod.array(zod.string()).nullish(),
+      funderIds: zod.array(zod.string()).nullish(),
+      householdIds: zod.array(zod.string()).nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const CreateInteractionBody = zod.object({
+  kind: zod.enum([
+    "meeting",
+    "phone_call",
+    "video_call",
+    "conference",
+    "other",
+  ]),
+  occurredAt: zod.string().datetime({}),
+  durationMinutes: zod.number().optional(),
+  location: zod.string().optional(),
+  summary: zod.string(),
+  notes: zod.string().optional(),
+  ownerUserId: zod.string().optional(),
+  personIds: zod.array(zod.string()).optional(),
+  funderIds: zod.array(zod.string()).optional(),
+  householdIds: zod.array(zod.string()).optional(),
+});
+
+export const GetInteractionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetInteractionResponse = zod.object({
+  id: zod.string(),
+  kind: zod.enum([
+    "meeting",
+    "phone_call",
+    "video_call",
+    "conference",
+    "other",
+  ]),
+  occurredAt: zod.string().datetime({}),
+  durationMinutes: zod.number().nullish(),
+  location: zod.string().nullish(),
+  summary: zod.string(),
+  notes: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+  householdIds: zod.array(zod.string()).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UpdateInteractionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateInteractionBody = zod.object({
+  kind: zod
+    .enum(["meeting", "phone_call", "video_call", "conference", "other"])
+    .optional(),
+  occurredAt: zod.string().datetime({}).optional(),
+  durationMinutes: zod.number().nullish(),
+  location: zod.string().nullish(),
+  summary: zod.string().optional(),
+  notes: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+  householdIds: zod.array(zod.string()).nullish(),
+});
+
+export const UpdateInteractionResponse = zod.object({
+  id: zod.string(),
+  kind: zod.enum([
+    "meeting",
+    "phone_call",
+    "video_call",
+    "conference",
+    "other",
+  ]),
+  occurredAt: zod.string().datetime({}),
+  durationMinutes: zod.number().nullish(),
+  location: zod.string().nullish(),
+  summary: zod.string(),
+  notes: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+  householdIds: zod.array(zod.string()).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const DeleteInteractionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
 /**
  * @summary Aggregate counts + money totals for the Dashboard landing page.
  */

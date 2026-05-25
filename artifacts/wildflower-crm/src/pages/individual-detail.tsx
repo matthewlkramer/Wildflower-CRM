@@ -11,6 +11,7 @@ import {
   type Pronouns,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { InteractionsPanel } from "@/components/interactions-panel";
 import {
   InlineEditBoolean,
   InlineEditSelect,
@@ -438,6 +439,8 @@ function PersonView({ person }: { person: PersonDetail }) {
           </CardContent>
         </Card>
       )}
+
+      <InteractionsPanel personId={person.id} />
 
       <div className="text-xs text-muted-foreground">
         Created {formatDate(person.createdAt)} • Updated {formatDate(person.updatedAt)}

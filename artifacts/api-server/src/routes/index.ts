@@ -20,6 +20,7 @@ import pledgeAllocationsRouter from "./pledgeAllocations";
 import giftsRouter from "./giftsAndPayments";
 import giftAllocationsRouter from "./giftAllocations";
 import analyticsRouter from "./analytics";
+import interactionsRouter from "./interactions";
 
 const router: IRouter = Router();
 
@@ -44,5 +45,6 @@ router.use(pledgeAllocationsRouter);
 router.use(giftsRouter);
 router.use(giftAllocationsRouter);
 router.use(analyticsRouter);
+router.use(interactionsRouter);
 
 export default router;

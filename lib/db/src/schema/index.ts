@@ -19,3 +19,4 @@ export * from "./entities";
 export * from "./fundableProjects";
 export * from "./fiscalYears";
 export * from "./fiscalYearEntityGoals";
+export * from "./interactions";

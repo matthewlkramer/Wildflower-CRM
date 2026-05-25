@@ -1411,6 +1411,64 @@ export interface UpdateGiftAllocationBody {
   regionIds?: string[] | null;
 }
 
+export type InteractionKind =
+  (typeof InteractionKind)[keyof typeof InteractionKind];
+
+export const InteractionKind = {
+  meeting: "meeting",
+  phone_call: "phone_call",
+  video_call: "video_call",
+  conference: "conference",
+  other: "other",
+} as const;
+
+export interface Interaction {
+  id: string;
+  kind: InteractionKind;
+  occurredAt: string;
+  durationMinutes?: number | null;
+  location?: string | null;
+  summary: string;
+  notes?: string | null;
+  ownerUserId?: string | null;
+  personIds?: string[] | null;
+  funderIds?: string[] | null;
+  householdIds?: string[] | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InteractionList {
+  data: Interaction[];
+  pagination: Pagination;
+}
+
+export interface CreateInteractionBody {
+  kind: InteractionKind;
+  occurredAt: string;
+  durationMinutes?: number;
+  location?: string;
+  summary: string;
+  notes?: string;
+  ownerUserId?: string;
+  personIds?: string[];
+  funderIds?: string[];
+  householdIds?: string[];
+}
+
+export interface UpdateInteractionBody {
+  kind?: InteractionKind;
+  occurredAt?: string;
+  durationMinutes?: number | null;
+  location?: string | null;
+  summary?: string;
+  notes?: string | null;
+  ownerUserId?: string | null;
+  personIds?: string[] | null;
+  funderIds?: string[] | null;
+  householdIds?: string[] | null;
+}
+
 /**
  * Not found
  */
@@ -1659,6 +1717,24 @@ export type ListGiftsAndPaymentsParams = {
 
 export type ListGiftAllocationsParams = {
   giftId?: string;
+  /**
+   * @minimum 1
+   * @maximum 1000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
+
+export type ListInteractionsParams = {
+  search?: string;
+  personId?: string;
+  funderId?: string;
+  householdId?: string;
+  ownerUserId?: string;
+  kind?: InteractionKind;
   /**
    * @minimum 1
    * @maximum 1000

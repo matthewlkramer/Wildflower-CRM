@@ -253,6 +253,17 @@ export const pronounsEnum = pgEnum("pronouns", [
   "other",
 ]);
 
+// ---- Interaction enums ----
+// Kind of touch the fundraising team logged. Manual entries only —
+// Gmail / Calendar syncs land in their own tables, not here.
+export const interactionKindEnum = pgEnum("interaction_kind", [
+  "meeting",
+  "phone_call",
+  "video_call",
+  "conference",
+  "other",
+]);
+
 // ---- People-entity-role enums ----
 export const peopleEntityRoleConnectionEnum = pgEnum(
   "people_entity_role_connection",
