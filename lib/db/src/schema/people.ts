@@ -8,7 +8,7 @@ import {
   integer,
   date,
 } from "drizzle-orm/pg-core";
-import { pronounsEnum } from "./_enums";
+import { capacityRatingEnum, pronounsEnum } from "./_enums";
 import { users } from "./users";
 import { regions } from "./regions";
 
@@ -57,6 +57,10 @@ export const people = pgTable("people", {
   unsubscribedToNewsletter: boolean("unsubscribed_to_newsletter")
     .default(false)
     .notNull(),
+  // Estimated giving capacity tier. Same enum as funders.capacity_rating
+  // so we can compare and roll up individuals + orgs against the same
+  // bands. Nullable: not every contact has been rated.
+  capacityRating: capacityRatingEnum("capacity_rating"),
   childrenAtWf: text("children_at_wf"),
   meetingLink: text("meeting_link"),
   // Self-ref. SET NULL: if the assistant person is deleted, this person

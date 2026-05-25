@@ -33,7 +33,7 @@ import {
   InlineEditMultiRegionPicker,
 } from "@/components/multi-select-picker";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatDate, formatEnum, formatFunderNameShort } from "@/lib/format";
+import { formatCapacity, formatDate, formatEnum, formatFunderNameShort } from "@/lib/format";
 
 const PRONOUNS_OPTIONS = [
   { value: "he_him_his", label: "he / him / his" },
@@ -41,6 +41,15 @@ const PRONOUNS_OPTIONS = [
   { value: "they_them_theirs", label: "they / them / theirs" },
   { value: "other", label: "Other" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<Pronouns>>;
+
+// Same enum used on funders (see funding-entity-detail.tsx). Kept local
+// here to avoid a cross-page import for a 4-row constant.
+const CAPACITY_OPTIONS = [
+  { value: "tier_10k_50k", label: "$10k–$50k" },
+  { value: "tier_50k_250k", label: "$50k–$250k" },
+  { value: "tier_250k_1m", label: "$250k–$1M" },
+  { value: "tier_1m_plus", label: "$1M+" },
+] as const satisfies ReadonlyArray<InlineSelectOption<string>>;
 import { useToast } from "@/hooks/use-toast";
 import { personDisplayName } from "@/lib/person";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -179,6 +188,16 @@ function PersonView({ person }: { person: PersonDetail }) {
                       : "Living"
                 }
                 onSave={(next) => patch({ deceased: next ?? false })}
+              />
+            </Row>
+            <Row label="Capacity">
+              <InlineEditSelect
+                label="Capacity rating"
+                testIdBase="person-capacity"
+                value={person.capacityRating ?? null}
+                options={CAPACITY_OPTIONS}
+                display={formatCapacity(person.capacityRating)}
+                onSave={(next) => patch({ capacityRating: next as PersonDetail["capacityRating"] })}
               />
             </Row>
           </CardContent>

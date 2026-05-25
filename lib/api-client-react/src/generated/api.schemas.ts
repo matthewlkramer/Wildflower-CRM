@@ -908,6 +908,7 @@ export interface Person {
   childrenAtWf?: string | null;
   meetingLink?: string | null;
   assistantPersonId?: string | null;
+  capacityRating?: CapacityRating | null;
   /** Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string. */
   readonly lifetimeGiving?: string | null;
   /** Most recent date_received across direct individual gifts and gifts to households the person belongs to. */
@@ -974,6 +975,7 @@ export interface CreatePersonBody {
   childrenAtWf?: string;
   meetingLink?: string;
   assistantPersonId?: string;
+  capacityRating?: CapacityRating;
 }
 
 export interface UpdatePersonBody {
@@ -1007,6 +1009,7 @@ export interface UpdatePersonBody {
   childrenAtWf?: string | null;
   meetingLink?: string | null;
   assistantPersonId?: string | null;
+  capacityRating?: CapacityRating | null;
 }
 
 export interface PeopleEntityRoleList {
@@ -1526,6 +1529,7 @@ export type ListPeopleParams = {
   search?: string;
   deceased?: boolean;
   regionId?: string;
+  capacityRating?: CapacityRating;
   /**
    * @minimum 1
    * @maximum 1000

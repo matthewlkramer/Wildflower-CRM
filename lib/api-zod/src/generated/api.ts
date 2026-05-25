@@ -1643,6 +1643,9 @@ export const ListPeopleQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   deceased: zod.coerce.boolean().optional(),
   regionId: zod.coerce.string().optional(),
+  capacityRating: zod
+    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .optional(),
   limit: zod.coerce
     .number()
     .min(1)
@@ -1688,6 +1691,9 @@ export const ListPeopleResponse = zod.object({
       childrenAtWf: zod.string().nullish(),
       meetingLink: zod.string().nullish(),
       assistantPersonId: zod.string().nullish(),
+      capacityRating: zod
+        .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+        .nullish(),
       lifetimeGiving: zod
         .string()
         .nullish()
@@ -1757,6 +1763,9 @@ export const CreatePersonBody = zod.object({
   childrenAtWf: zod.string().optional(),
   meetingLink: zod.string().optional(),
   assistantPersonId: zod.string().optional(),
+  capacityRating: zod
+    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .optional(),
 });
 
 export const GetPersonParams = zod.object({
@@ -1799,6 +1808,9 @@ export const GetPersonResponse = zod
     childrenAtWf: zod.string().nullish(),
     meetingLink: zod.string().nullish(),
     assistantPersonId: zod.string().nullish(),
+    capacityRating: zod
+      .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+      .nullish(),
     lifetimeGiving: zod
       .string()
       .nullish()
@@ -1957,6 +1969,9 @@ export const UpdatePersonBody = zod.object({
   childrenAtWf: zod.string().nullish(),
   meetingLink: zod.string().nullish(),
   assistantPersonId: zod.string().nullish(),
+  capacityRating: zod
+    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .nullish(),
 });
 
 export const UpdatePersonResponse = zod.object({
@@ -1994,6 +2009,9 @@ export const UpdatePersonResponse = zod.object({
   childrenAtWf: zod.string().nullish(),
   meetingLink: zod.string().nullish(),
   assistantPersonId: zod.string().nullish(),
+  capacityRating: zod
+    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .nullish(),
   lifetimeGiving: zod
     .string()
     .nullish()

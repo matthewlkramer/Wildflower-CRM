@@ -4,8 +4,14 @@ import {
   useListPeople,
   getListPeopleQueryKey,
   type ListPeopleParams,
+  type CapacityRating,
 } from "@workspace/api-client-react";
-import { formatCurrency, formatDateShort, formatFunderNameShort } from "@/lib/format";
+import {
+  formatCapacity,
+  formatCurrency,
+  formatDateShort,
+  formatFunderNameShort,
+} from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useRegionNameMap } from "@/components/region-picker";
 import {
@@ -39,12 +45,21 @@ import { personDisplayName } from "@/lib/person";
 
 const PAGE_SIZE = 50;
 const ANY = "_any";
-const COL_SPAN = 8;
+// Capacity column + filter — same enum + labels we use on funders, just
+// surfaced on individuals now that the field exists on people too.
+const CAPACITY_TIERS: CapacityRating[] = [
+  "tier_10k_50k",
+  "tier_50k_250k",
+  "tier_250k_1m",
+  "tier_1m_plus",
+];
+const COL_SPAN = 9;
 
 export default function Individuals() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
   const [deceased, setDeceased] = useState<string>(ANY);
+  const [capacity, setCapacity] = useState<string>(ANY);
   const [page, setPage] = useState(1);
 
   const params: ListPeopleParams = {
@@ -52,6 +67,7 @@ export default function Individuals() {
     page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(deceased !== ANY ? { deceased: deceased === "true" } : {}),
+    ...(capacity !== ANY ? { capacityRating: capacity as CapacityRating } : {}),
   };
 
   const { data, isLoading, isError, error } = useListPeople(params, {
@@ -113,13 +129,37 @@ export default function Individuals() {
           </Select>
         </div>
 
-        {(search || deceased !== ANY) && (
+        <div className="flex flex-col gap-1">
+          <label htmlFor="filter-capacity" className="text-xs font-medium text-muted-foreground">
+            Capacity
+          </label>
+          <Select
+            value={capacity}
+            onValueChange={(v) => {
+              setCapacity(v);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger id="filter-capacity" className="w-[180px]" aria-label="Capacity" data-testid="select-capacity">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ANY}>Any</SelectItem>
+              {CAPACITY_TIERS.map((t) => (
+                <SelectItem key={t} value={t}>{formatCapacity(t)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {(search || deceased !== ANY || capacity !== ANY) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setSearch("");
               setDeceased(ANY);
+              setCapacity(ANY);
               setPage(1);
             }}
           >
@@ -135,6 +175,7 @@ export default function Individuals() {
               <TableHead>Name</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Region</TableHead>
+              <TableHead>Capacity</TableHead>
               <TableHead>Last contacted</TableHead>
               <TableHead className="text-right">Lifetime giving</TableHead>
               <TableHead>Last gift</TableHead>
@@ -189,6 +230,7 @@ export default function Individuals() {
                         ? (regionNames.get(p.currentHomeRegionId) ?? p.currentHomeRegionId)
                         : "—"}
                     </TableCell>
+                    <TableCell>{formatCapacity(p.capacityRating)}</TableCell>
                     <TableCell>{formatDateShort(p.lastContacted)}</TableCell>
                     <TableCell className="text-right tabular-nums">
                       {hasGiving ? formatCurrency(giving) : "—"}

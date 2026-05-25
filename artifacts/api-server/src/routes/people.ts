@@ -89,6 +89,7 @@ router.get(
     const deceased = parseBoolQuery(req, "deceased");
     if (deceased !== undefined) filters.push(eq(people.deceased, deceased));
     if (q.regionId) filters.push(eq(people.currentHomeRegionId, q.regionId));
+    if (q.capacityRating) filters.push(eq(people.capacityRating, q.capacityRating));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

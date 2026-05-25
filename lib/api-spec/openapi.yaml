@@ -360,6 +360,7 @@ paths:
         - { name: search, in: query, schema: { type: string } }
         - { name: deceased, in: query, schema: { type: boolean } }
         - { name: regionId, in: query, schema: { type: string } }
+        - { name: capacityRating, in: query, schema: { $ref: "#/components/schemas/CapacityRating" } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -1372,6 +1373,7 @@ components:
         childrenAtWf:             { type: string, nullable: true }
         meetingLink:              { type: string, nullable: true }
         assistantPersonId:        { type: string, nullable: true }
+        capacityRating:           { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         # Server-computed aggregates for the individuals list view. NOT
         # writable; computed per-request by the list-people query. Per
         # replit.md: lifetime giving is direct individual gifts + all
@@ -1430,6 +1432,7 @@ components:
         childrenAtWf:             { type: string }
         meetingLink:              { type: string }
         assistantPersonId:        { type: string }
+        capacityRating:           { $ref: "#/components/schemas/CapacityRating" }
     UpdatePersonBody:
       type: object
       properties:
@@ -1463,6 +1466,7 @@ components:
         childrenAtWf:             { type: string, nullable: true }
         meetingLink:              { type: string, nullable: true }
         assistantPersonId:        { type: string, nullable: true }
+        capacityRating:           { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
 
     # ─── People-entity-roles ───────────────────────────────────────────────────
     PeopleEntityRole:
