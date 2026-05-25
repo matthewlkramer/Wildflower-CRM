@@ -637,6 +637,7 @@ export interface Funder {
 export interface PeopleEntityRole {
   id: string;
   personId: string;
+  personName?: string | null;
   entityType: EntityRoleType;
   funderId?: string | null;
   organizationId?: string | null;

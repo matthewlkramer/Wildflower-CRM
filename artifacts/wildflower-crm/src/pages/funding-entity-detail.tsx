@@ -513,12 +513,19 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                     className="flex items-center justify-between gap-2"
                     data-testid={`row-funder-person-${p.id}`}
                   >
-                    <Link
-                      href={`/individuals/${p.personId}`}
-                      className="text-primary hover:underline truncate"
-                    >
-                      {p.externalTitleOrRole ?? `Person ${p.personId}`}
-                    </Link>
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/individuals/${p.personId}`}
+                        className="text-primary hover:underline truncate block"
+                      >
+                        {p.personName ?? `Person ${p.personId}`}
+                      </Link>
+                      {p.externalTitleOrRole ? (
+                        <div className="text-muted-foreground text-xs truncate">
+                          {p.externalTitleOrRole}
+                        </div>
+                      ) : null}
+                    </div>
                     <span className="text-muted-foreground text-xs whitespace-nowrap">
                       {formatEnum(p.connection)}
                       {p.current && p.current !== "current"

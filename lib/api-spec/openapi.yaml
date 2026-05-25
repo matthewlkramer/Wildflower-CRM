@@ -1665,6 +1665,7 @@ components:
       properties:
         id:                    { type: string }
         personId:              { type: string }
+        personName:            { type: string, nullable: true }
         entityType:            { $ref: "#/components/schemas/EntityRoleType" }
         funderId:              { type: string, nullable: true }
         organizationId:        { type: string, nullable: true }

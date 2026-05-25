@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -38,7 +39,7 @@ router.get(
     const row = await db.select().from(organizations).where(eq(organizations.id, id)).then((r) => r[0]);
     if (!row) return notFound(res, "organization");
     const [people, emailRows, addressRows] = await Promise.all([
-      db.select().from(peopleEntityRoles).where(eq(peopleEntityRoles.organizationId, id)),
+      peopleEntityRolesQuery().where(eq(peopleEntityRoles.organizationId, id)),
       db.select().from(emails).where(eq(emails.organizationId, id)),
       db.select().from(addresses).where(eq(addresses.organizationId, id)),
     ]);

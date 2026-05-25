@@ -697,6 +697,7 @@ export const GetFunderResponse = zod
           zod.object({
             id: zod.string(),
             personId: zod.string(),
+            personName: zod.string().nullish(),
             entityType: zod.enum([
               "funder",
               "non_funding_organization",
@@ -1109,6 +1110,7 @@ export const GetOrganizationResponse = zod
           zod.object({
             id: zod.string(),
             personId: zod.string(),
+            personName: zod.string().nullish(),
             entityType: zod.enum([
               "funder",
               "non_funding_organization",
@@ -1330,6 +1332,7 @@ export const GetPaymentIntermediaryResponse = zod
           zod.object({
             id: zod.string(),
             personId: zod.string(),
+            personName: zod.string().nullish(),
             entityType: zod.enum([
               "funder",
               "non_funding_organization",
@@ -1522,6 +1525,7 @@ export const GetHouseholdResponse = zod
           zod.object({
             id: zod.string(),
             personId: zod.string(),
+            personName: zod.string().nullish(),
             entityType: zod.enum([
               "funder",
               "non_funding_organization",
@@ -1846,6 +1850,7 @@ export const GetPersonResponse = zod
           zod.object({
             id: zod.string(),
             personId: zod.string(),
+            personName: zod.string().nullish(),
             entityType: zod.enum([
               "funder",
               "non_funding_organization",
@@ -2072,6 +2077,7 @@ export const ListPeopleEntityRolesResponse = zod.object({
     zod.object({
       id: zod.string(),
       personId: zod.string(),
+      personName: zod.string().nullish(),
       entityType: zod.enum([
         "funder",
         "non_funding_organization",
@@ -2166,6 +2172,7 @@ export const UpdatePeopleEntityRoleBody = zod.object({
 export const UpdatePeopleEntityRoleResponse = zod.object({
   id: zod.string(),
   personId: zod.string(),
+  personName: zod.string().nullish(),
   entityType: zod.enum([
     "funder",
     "non_funding_organization",
