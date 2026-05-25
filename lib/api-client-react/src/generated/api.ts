@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AcceptEmailProposalBody,
   Address,
   AddressList,
   AdminGoogleSyncList,
@@ -26,6 +27,7 @@ import type {
   CalendarEventList,
   CalendarSyncRunResponse,
   CreateAddressBody,
+  CreateCorrespondentIgnoreBody,
   CreateEmailBody,
   CreateEntityBody,
   CreateFunderBody,
@@ -47,6 +49,9 @@ import type {
   EmailMessage,
   EmailMessageDetail,
   EmailMessageList,
+  EmailProposal,
+  EmailProposalList,
+  EmailProposalSummary,
   Entity,
   FiscalYear,
   FiscalYearBreakdown,
@@ -74,6 +79,7 @@ import type {
   ListAddressesParams,
   ListCalendarEventsParams,
   ListEmailMessagesParams,
+  ListEmailProposalsParams,
   ListEmailsParams,
   ListFiscalYearEntityGoalsParams,
   ListFundersParams,
@@ -90,6 +96,7 @@ import type {
   ListPledgeAllocationsParams,
   ListRegionsParams,
   ListSchoolsParams,
+  ListUnrecognizedCorrespondentsParams,
   NotFoundResponse,
   OpportunityOrPledge,
   OpportunityOrPledgeDetail,
@@ -114,6 +121,7 @@ import type {
   RegionList,
   School,
   SchoolList,
+  UnrecognizedCorrespondentList,
   UpdateAddressBody,
   UpdateCalendarEventPrivacyBody,
   UpdateEmailBody,
@@ -143,6 +151,510 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+export const getListEmailProposalsUrl = (params?: ListEmailProposalsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/email-proposals?${stringifiedParams}`
+    : `/api/email-proposals`;
+};
+
+export const listEmailProposals = async (
+  params?: ListEmailProposalsParams,
+  options?: RequestInit,
+): Promise<EmailProposalList> => {
+  return customFetch<EmailProposalList>(getListEmailProposalsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEmailProposalsQueryKey = (
+  params?: ListEmailProposalsParams,
+) => {
+  return [`/api/email-proposals`, ...(params ? [params] : [])] as const;
+};
+
+export const getListEmailProposalsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEmailProposals>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListEmailProposalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEmailProposals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEmailProposalsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEmailProposals>>
+  > = ({ signal }) => listEmailProposals(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEmailProposals>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEmailProposalsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEmailProposals>>
+>;
+export type ListEmailProposalsQueryError = ErrorType<unknown>;
+
+export function useListEmailProposals<
+  TData = Awaited<ReturnType<typeof listEmailProposals>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListEmailProposalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEmailProposals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEmailProposalsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetEmailProposalSummaryUrl = () => {
+  return `/api/email-proposals/summary`;
+};
+
+export const getEmailProposalSummary = async (
+  options?: RequestInit,
+): Promise<EmailProposalSummary> => {
+  return customFetch<EmailProposalSummary>(getGetEmailProposalSummaryUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEmailProposalSummaryQueryKey = () => {
+  return [`/api/email-proposals/summary`] as const;
+};
+
+export const getGetEmailProposalSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEmailProposalSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEmailProposalSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEmailProposalSummaryQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEmailProposalSummary>>
+  > = ({ signal }) => getEmailProposalSummary({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEmailProposalSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEmailProposalSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEmailProposalSummary>>
+>;
+export type GetEmailProposalSummaryQueryError = ErrorType<unknown>;
+
+export function useGetEmailProposalSummary<
+  TData = Awaited<ReturnType<typeof getEmailProposalSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEmailProposalSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEmailProposalSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getAcceptEmailProposalUrl = (id: string) => {
+  return `/api/email-proposals/${id}/accept`;
+};
+
+export const acceptEmailProposal = async (
+  id: string,
+  acceptEmailProposalBody?: AcceptEmailProposalBody,
+  options?: RequestInit,
+): Promise<EmailProposal> => {
+  return customFetch<EmailProposal>(getAcceptEmailProposalUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(acceptEmailProposalBody),
+  });
+};
+
+export const getAcceptEmailProposalMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acceptEmailProposal>>,
+    TError,
+    { id: string; data: BodyType<AcceptEmailProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof acceptEmailProposal>>,
+  TError,
+  { id: string; data: BodyType<AcceptEmailProposalBody> },
+  TContext
+> => {
+  const mutationKey = ["acceptEmailProposal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof acceptEmailProposal>>,
+    { id: string; data: BodyType<AcceptEmailProposalBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return acceptEmailProposal(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AcceptEmailProposalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof acceptEmailProposal>>
+>;
+export type AcceptEmailProposalMutationBody = BodyType<AcceptEmailProposalBody>;
+export type AcceptEmailProposalMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useAcceptEmailProposal = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acceptEmailProposal>>,
+    TError,
+    { id: string; data: BodyType<AcceptEmailProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof acceptEmailProposal>>,
+  TError,
+  { id: string; data: BodyType<AcceptEmailProposalBody> },
+  TContext
+> => {
+  return useMutation(getAcceptEmailProposalMutationOptions(options));
+};
+
+export const getRejectEmailProposalUrl = (id: string) => {
+  return `/api/email-proposals/${id}/reject`;
+};
+
+export const rejectEmailProposal = async (
+  id: string,
+  options?: RequestInit,
+): Promise<EmailProposal> => {
+  return customFetch<EmailProposal>(getRejectEmailProposalUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRejectEmailProposalMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectEmailProposal>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectEmailProposal>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["rejectEmailProposal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectEmailProposal>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return rejectEmailProposal(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectEmailProposalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectEmailProposal>>
+>;
+
+export type RejectEmailProposalMutationError = ErrorType<NotFoundResponse>;
+
+export const useRejectEmailProposal = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectEmailProposal>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rejectEmailProposal>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getRejectEmailProposalMutationOptions(options));
+};
+
+export const getListUnrecognizedCorrespondentsUrl = (
+  params?: ListUnrecognizedCorrespondentsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/correspondents/unrecognized?${stringifiedParams}`
+    : `/api/correspondents/unrecognized`;
+};
+
+export const listUnrecognizedCorrespondents = async (
+  params?: ListUnrecognizedCorrespondentsParams,
+  options?: RequestInit,
+): Promise<UnrecognizedCorrespondentList> => {
+  return customFetch<UnrecognizedCorrespondentList>(
+    getListUnrecognizedCorrespondentsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListUnrecognizedCorrespondentsQueryKey = (
+  params?: ListUnrecognizedCorrespondentsParams,
+) => {
+  return [
+    `/api/correspondents/unrecognized`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListUnrecognizedCorrespondentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListUnrecognizedCorrespondentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListUnrecognizedCorrespondentsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>
+  > = ({ signal }) =>
+    listUnrecognizedCorrespondents(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListUnrecognizedCorrespondentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>
+>;
+export type ListUnrecognizedCorrespondentsQueryError = ErrorType<unknown>;
+
+export function useListUnrecognizedCorrespondents<
+  TData = Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListUnrecognizedCorrespondentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListUnrecognizedCorrespondentsQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateCorrespondentIgnoreUrl = () => {
+  return `/api/correspondent-ignore`;
+};
+
+export const createCorrespondentIgnore = async (
+  createCorrespondentIgnoreBody: CreateCorrespondentIgnoreBody,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getCreateCorrespondentIgnoreUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createCorrespondentIgnoreBody),
+  });
+};
+
+export const getCreateCorrespondentIgnoreMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCorrespondentIgnore>>,
+    TError,
+    { data: BodyType<CreateCorrespondentIgnoreBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCorrespondentIgnore>>,
+  TError,
+  { data: BodyType<CreateCorrespondentIgnoreBody> },
+  TContext
+> => {
+  const mutationKey = ["createCorrespondentIgnore"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCorrespondentIgnore>>,
+    { data: BodyType<CreateCorrespondentIgnoreBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createCorrespondentIgnore(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCorrespondentIgnoreMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCorrespondentIgnore>>
+>;
+export type CreateCorrespondentIgnoreMutationBody =
+  BodyType<CreateCorrespondentIgnoreBody>;
+export type CreateCorrespondentIgnoreMutationError =
+  ErrorType<BadRequestResponse>;
+
+export const useCreateCorrespondentIgnore = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCorrespondentIgnore>>,
+    TError,
+    { data: BodyType<CreateCorrespondentIgnoreBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCorrespondentIgnore>>,
+  TError,
+  { data: BodyType<CreateCorrespondentIgnoreBody> },
+  TContext
+> => {
+  return useMutation(getCreateCorrespondentIgnoreMutationOptions(options));
+};
 
 /**
  * @summary Health check

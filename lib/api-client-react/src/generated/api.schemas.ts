@@ -1665,6 +1665,86 @@ export interface CalendarSyncRunResponse {
   report?: CalendarSyncRunResponseReport;
 }
 
+export type EmailProposalKind =
+  (typeof EmailProposalKind)[keyof typeof EmailProposalKind];
+
+export const EmailProposalKind = {
+  linkedin_job_change: "linkedin_job_change",
+  auto_responder_move: "auto_responder_move",
+  bounce_invalid: "bounce_invalid",
+  bounce_soft: "bounce_soft",
+  signature_update: "signature_update",
+} as const;
+
+export type EmailProposalStatus =
+  (typeof EmailProposalStatus)[keyof typeof EmailProposalStatus];
+
+export const EmailProposalStatus = {
+  pending: "pending",
+  applied: "applied",
+  rejected: "rejected",
+  ignored: "ignored",
+} as const;
+
+export type EmailProposalPayload = { [key: string]: unknown };
+
+export interface EmailProposal {
+  id: string;
+  mailboxUserId: string;
+  kind: EmailProposalKind;
+  status: EmailProposalStatus;
+  sourceMessageId?: string | null;
+  targetPersonId?: string | null;
+  targetFunderId?: string | null;
+  targetEmailId?: string | null;
+  subjectEmail?: string | null;
+  subjectName?: string | null;
+  subjectDomain?: string | null;
+  payload: EmailProposalPayload;
+  dedupeKey: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string | null;
+  resolvedByUserId?: string | null;
+}
+
+export interface EmailProposalList {
+  data: EmailProposal[];
+  pagination: Pagination;
+}
+
+export interface EmailProposalSummaryEntry {
+  kind: EmailProposalKind;
+  pending: number;
+}
+
+export interface EmailProposalSummary {
+  byKind: EmailProposalSummaryEntry[];
+  totalPending: number;
+}
+
+export interface AcceptEmailProposalBody {
+  [key: string]: unknown;
+}
+
+export interface UnrecognizedCorrespondent {
+  emailAddress: string;
+  displayName?: string | null;
+  domain?: string | null;
+  threadCount: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  lastSubject?: string | null;
+}
+
+export interface UnrecognizedCorrespondentList {
+  data: UnrecognizedCorrespondent[];
+}
+
+export interface CreateCorrespondentIgnoreBody {
+  emailAddress: string;
+}
+
 /**
  * Not found
  */
@@ -1678,6 +1758,34 @@ export type BadRequestResponse = ErrorResponse;
 export type LimitParameter = number;
 
 export type PageParameter = number;
+
+export type ListEmailProposalsParams = {
+  kind?: EmailProposalKind;
+  status?: EmailProposalStatus;
+  mailboxUserId?: string;
+  /**
+   * @minimum 1
+   * @maximum 1000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
+
+export type ListUnrecognizedCorrespondentsParams = {
+  mailboxUserId?: string;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+  /**
+   * @minimum 1
+   */
+  minThreads?: number;
+};
 
 export type ListRegionsParams = {
   type?: RegionType;

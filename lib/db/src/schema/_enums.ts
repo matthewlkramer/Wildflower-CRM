@@ -273,6 +273,30 @@ export const interactionKindEnum = pgEnum("interaction_kind", [
   "other",
 ]);
 
+// ---- Email intelligence enums ----
+// Kind of actionable signal extracted from a synced email. Each row in
+// email_proposals carries exactly one kind. See emailProposals.ts for
+// the payload shape per kind.
+export const emailProposalKindEnum = pgEnum("email_proposal_kind", [
+  "linkedin_job_change",
+  "auto_responder_move",
+  "bounce_invalid",
+  "bounce_soft",
+  "signature_update",
+]);
+
+// Lifecycle of an email_proposals row. `pending` is the review queue;
+// `applied` means the accept handler successfully ran the side-effect
+// (e.g. marked email invalid, updated person record); `rejected` and
+// `ignored` are user-driven dismissals (rejected = "wrong / bad
+// signal", ignored = "right but I don't want to act on it now").
+export const emailProposalStatusEnum = pgEnum("email_proposal_status", [
+  "pending",
+  "applied",
+  "rejected",
+  "ignored",
+]);
+
 // ---- People-entity-role enums ----
 export const peopleEntityRoleConnectionEnum = pgEnum(
   "people_entity_role_connection",

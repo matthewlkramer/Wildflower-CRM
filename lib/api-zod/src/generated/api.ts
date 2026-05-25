@@ -7,6 +7,180 @@
  */
 import * as zod from "zod";
 
+export const listEmailProposalsQueryLimitDefault = 50;
+export const listEmailProposalsQueryLimitMax = 1000;
+
+export const listEmailProposalsQueryPageDefault = 1;
+
+export const ListEmailProposalsQueryParams = zod.object({
+  kind: zod
+    .enum([
+      "linkedin_job_change",
+      "auto_responder_move",
+      "bounce_invalid",
+      "bounce_soft",
+      "signature_update",
+    ])
+    .optional(),
+  status: zod.enum(["pending", "applied", "rejected", "ignored"]).optional(),
+  mailboxUserId: zod.coerce.string().optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listEmailProposalsQueryLimitMax)
+    .default(listEmailProposalsQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listEmailProposalsQueryPageDefault),
+});
+
+export const ListEmailProposalsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      mailboxUserId: zod.string(),
+      kind: zod.enum([
+        "linkedin_job_change",
+        "auto_responder_move",
+        "bounce_invalid",
+        "bounce_soft",
+        "signature_update",
+      ]),
+      status: zod.enum(["pending", "applied", "rejected", "ignored"]),
+      sourceMessageId: zod.string().nullish(),
+      targetPersonId: zod.string().nullish(),
+      targetFunderId: zod.string().nullish(),
+      targetEmailId: zod.string().nullish(),
+      subjectEmail: zod.string().nullish(),
+      subjectName: zod.string().nullish(),
+      subjectDomain: zod.string().nullish(),
+      payload: zod.record(zod.string(), zod.unknown()),
+      dedupeKey: zod.string(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+      resolvedAt: zod.string().datetime({}).nullish(),
+      resolvedByUserId: zod.string().nullish(),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const GetEmailProposalSummaryResponse = zod.object({
+  byKind: zod.array(
+    zod.object({
+      kind: zod.enum([
+        "linkedin_job_change",
+        "auto_responder_move",
+        "bounce_invalid",
+        "bounce_soft",
+        "signature_update",
+      ]),
+      pending: zod.number(),
+    }),
+  ),
+  totalPending: zod.number(),
+});
+
+export const AcceptEmailProposalParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AcceptEmailProposalBody = zod.record(zod.string(), zod.unknown());
+
+export const AcceptEmailProposalResponse = zod.object({
+  id: zod.string(),
+  mailboxUserId: zod.string(),
+  kind: zod.enum([
+    "linkedin_job_change",
+    "auto_responder_move",
+    "bounce_invalid",
+    "bounce_soft",
+    "signature_update",
+  ]),
+  status: zod.enum(["pending", "applied", "rejected", "ignored"]),
+  sourceMessageId: zod.string().nullish(),
+  targetPersonId: zod.string().nullish(),
+  targetFunderId: zod.string().nullish(),
+  targetEmailId: zod.string().nullish(),
+  subjectEmail: zod.string().nullish(),
+  subjectName: zod.string().nullish(),
+  subjectDomain: zod.string().nullish(),
+  payload: zod.record(zod.string(), zod.unknown()),
+  dedupeKey: zod.string(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  resolvedAt: zod.string().datetime({}).nullish(),
+  resolvedByUserId: zod.string().nullish(),
+});
+
+export const RejectEmailProposalParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RejectEmailProposalResponse = zod.object({
+  id: zod.string(),
+  mailboxUserId: zod.string(),
+  kind: zod.enum([
+    "linkedin_job_change",
+    "auto_responder_move",
+    "bounce_invalid",
+    "bounce_soft",
+    "signature_update",
+  ]),
+  status: zod.enum(["pending", "applied", "rejected", "ignored"]),
+  sourceMessageId: zod.string().nullish(),
+  targetPersonId: zod.string().nullish(),
+  targetFunderId: zod.string().nullish(),
+  targetEmailId: zod.string().nullish(),
+  subjectEmail: zod.string().nullish(),
+  subjectName: zod.string().nullish(),
+  subjectDomain: zod.string().nullish(),
+  payload: zod.record(zod.string(), zod.unknown()),
+  dedupeKey: zod.string(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  resolvedAt: zod.string().datetime({}).nullish(),
+  resolvedByUserId: zod.string().nullish(),
+});
+
+export const listUnrecognizedCorrespondentsQueryDaysDefault = 60;
+export const listUnrecognizedCorrespondentsQueryDaysMax = 365;
+
+export const listUnrecognizedCorrespondentsQueryMinThreadsDefault = 2;
+
+export const ListUnrecognizedCorrespondentsQueryParams = zod.object({
+  mailboxUserId: zod.coerce.string().optional(),
+  days: zod.coerce
+    .number()
+    .min(1)
+    .max(listUnrecognizedCorrespondentsQueryDaysMax)
+    .default(listUnrecognizedCorrespondentsQueryDaysDefault),
+  minThreads: zod.coerce
+    .number()
+    .min(1)
+    .default(listUnrecognizedCorrespondentsQueryMinThreadsDefault),
+});
+
+export const ListUnrecognizedCorrespondentsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      emailAddress: zod.string(),
+      displayName: zod.string().nullish(),
+      domain: zod.string().nullish(),
+      threadCount: zod.number(),
+      firstSeenAt: zod.string().datetime({}),
+      lastSeenAt: zod.string().datetime({}),
+      lastSubject: zod.string().nullish(),
+    }),
+  ),
+});
+
+export const CreateCorrespondentIgnoreBody = zod.object({
+  emailAddress: zod.string(),
+});
+
 /**
  * @summary Health check
  */

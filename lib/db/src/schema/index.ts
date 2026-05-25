@@ -27,3 +27,5 @@ export * from "./emailSyncSkip";
 export * from "./emailSyncState";
 export * from "./calendarEvents";
 export * from "./calendarSyncState";
+export * from "./emailProposals";
+export * from "./correspondentIgnore";

@@ -24,6 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
 import { partitionEntities } from "@/lib/dropdownVisibility";
+import EmailProposalsCard from "@/components/EmailProposalsCard";
 
 // URL key for the entity multi-filter. Comma-separated entity ids. Empty/missing
 // = all entities. Persisted in the URL so the filtered view is shareable and
@@ -233,6 +234,8 @@ export default function Dashboard() {
           </Link>
         ))}
       </div>
+
+      <EmailProposalsCard />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Link href="/projections">

@@ -27,6 +27,8 @@ import emailMessagesRouter from "./emailMessages";
 import emailAttachmentsRouter from "./emailAttachments";
 import calendarEventsRouter from "./calendarEvents";
 import adminSyncRouter from "./adminSync";
+import emailProposalsRouter from "./emailProposals";
+import correspondentsRouter from "./correspondents";
 
 const router: IRouter = Router();
 
@@ -58,5 +60,7 @@ router.use(emailMessagesRouter);
 router.use(emailAttachmentsRouter);
 router.use(calendarEventsRouter);
 router.use(adminSyncRouter);
+router.use(emailProposalsRouter);
+router.use(correspondentsRouter);
 
 export default router;

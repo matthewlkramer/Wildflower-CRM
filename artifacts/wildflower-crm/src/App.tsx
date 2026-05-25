@@ -29,6 +29,7 @@ import Projections from "@/pages/projections";
 import GrantsCalendar from "@/pages/grants-calendar";
 import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import Admin from "@/pages/admin";
+import EmailIntelligence from "@/pages/email-intelligence";
 import Layout from "@/components/layout";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -197,6 +198,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/projections"><ProtectedRoute component={Projections} /></Route>
           <Route path="/fiscal-year/:fyId"><ProtectedRoute component={FiscalYearDetail} /></Route>
           <Route path="/grants-calendar"><ProtectedRoute component={GrantsCalendar} /></Route>
+          <Route path="/email-intelligence"><ProtectedRoute component={EmailIntelligence} /></Route>
           <Route path="/admin"><ProtectedRoute component={Admin} /></Route>
           
           <Route component={NotFound} />

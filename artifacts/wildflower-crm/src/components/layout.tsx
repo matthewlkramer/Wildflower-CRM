@@ -15,7 +15,8 @@ import {
   CalendarDays,
   Settings,
   LogOut,
-  Menu
+  Menu,
+  Inbox,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -34,6 +35,7 @@ const navItems = [
   { href: "/interactions", label: "Interactions", icon: MessageSquare },
   { href: "/projections", label: "Projections", icon: LineChart },
   { href: "/grants-calendar", label: "Grants Calendar", icon: CalendarDays },
+  { href: "/email-intelligence", label: "Email Intelligence", icon: Inbox },
   { href: "/admin", label: "Admin", icon: Settings },
 ];
 

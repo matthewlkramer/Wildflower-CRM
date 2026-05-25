@@ -24,6 +24,11 @@ import {
 import { getValidGoogleAccessTokenForUser, type ActiveGoogleGrant } from "./googleTokenStore";
 import { matchEmails, isMatchEmpty, type EmailMatchResult } from "./emailMatcher";
 import { uploadAttachment } from "./emailAttachmentStore";
+import {
+  processIntelForMatched,
+  processIntelForUnmatched,
+  shouldFetchFullForIntel,
+} from "./emailIntelligence";
 
 /**
  * Per-mailbox Gmail sync orchestrator.
@@ -458,6 +463,35 @@ async function processOneMessage(
       const parsed = new Date(dateRaw);
       if (!Number.isNaN(parsed.getTime())) sentAt = parsed;
     }
+
+    // Email-intelligence hook (unmatched path). Senders like LinkedIn
+    // notification digests and mailer-daemon bounces never match a CRM
+    // contact, but their bodies carry signals we want — so for those
+    // few sender patterns we pay the extra full-fetch cost. Everything
+    // else skips body fetch as before.
+    const fromFirst = fromAddrs[0] ?? null;
+    if (shouldFetchFullForIntel(fromFirst)) {
+      try {
+        const fullForIntel = await getMessage(grant.accessToken, gmailId, "full");
+        const partsForIntel = extractMessageParts(fullForIntel.payload);
+        await processIntelForUnmatched({
+          mailboxUserId: grant.userId,
+          gmailMessageId: gmailId,
+          fromEmail: fromFirst,
+          subject,
+          bodyText: partsForIntel.bodyText,
+          bodyHtml: partsForIntel.bodyHtml,
+        });
+      } catch (e) {
+        // Never let intel failures break the sync loop — log and
+        // continue with the normal skip insert below.
+        logger.warn(
+          { err: e, userId: grant.userId, gmailId },
+          "Email intelligence (unmatched) body fetch failed",
+        );
+      }
+    }
+
     await db
       .insert(emailSyncSkip)
       .values({
@@ -560,6 +594,24 @@ async function processOneMessage(
     if (!existing) return false;
     messageRowId = existing.id;
     wasNewMessage = false;
+  }
+
+  // Email-intelligence hook (matched path). Run only on first insert
+  // so replays of the same message don't re-emit proposals (the
+  // proposals table also dedupes via unique index, but skipping the
+  // detector work entirely on replay is cheaper and avoids touching
+  // the DB at all in the steady state).
+  if (wasNewMessage) {
+    await processIntelForMatched({
+      mailboxUserId: grant.userId,
+      messageRowId,
+      fromEmail: fromFull[0] ?? null,
+      subject,
+      bodyText: parts.bodyText,
+      bodyHtml: parts.bodyHtml,
+      direction,
+      matchedPersonIds: match.personIds,
+    });
   }
 
   // Attachment loop — idempotent on the (email_message_id,

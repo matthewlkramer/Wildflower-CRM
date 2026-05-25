@@ -33,8 +33,70 @@ tags:
   - { name: interactions }
   - { name: google-oauth }
   - { name: google-sync }
+  - { name: email-proposals }
+  - { name: correspondents }
 
 paths:
+  # ─── Email intelligence proposals ──────────────────────────────────────────
+  /email-proposals:
+    get:
+      operationId: listEmailProposals
+      tags: [email-proposals]
+      parameters:
+        - { name: kind, in: query, schema: { $ref: "#/components/schemas/EmailProposalKind" } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/EmailProposalStatus" } }
+        - { name: mailboxUserId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposalList" } } } }
+  /email-proposals/summary:
+    get:
+      operationId: getEmailProposalSummary
+      tags: [email-proposals]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposalSummary" } } } }
+  /email-proposals/{id}/accept:
+    post:
+      operationId: acceptEmailProposal
+      tags: [email-proposals]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/AcceptEmailProposalBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposal" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /email-proposals/{id}/reject:
+    post:
+      operationId: rejectEmailProposal
+      tags: [email-proposals]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposal" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Unrecognized correspondents panel ─────────────────────────────────────
+  /correspondents/unrecognized:
+    get:
+      operationId: listUnrecognizedCorrespondents
+      tags: [correspondents]
+      parameters:
+        - { name: mailboxUserId, in: query, schema: { type: string } }
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 365, default: 60 } }
+        - { name: minThreads, in: query, schema: { type: integer, minimum: 1, default: 2 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/UnrecognizedCorrespondentList" } } } }
+  /correspondent-ignore:
+    post:
+      operationId: createCorrespondentIgnore
+      tags: [correspondents]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateCorrespondentIgnoreBody" } } } }
+      responses:
+        "204": { description: Ignored }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /healthz:
     get:
       operationId: healthCheck
@@ -2414,3 +2476,78 @@ components:
             errors:              { type: integer }
             bootstrapCompleted:  { type: boolean }
             hasSyncToken:        { type: boolean }
+
+    # ─── Email intelligence ───────────────────────────────────────────────────
+    EmailProposalKind:
+      type: string
+      enum: [linkedin_job_change, auto_responder_move, bounce_invalid, bounce_soft, signature_update]
+    EmailProposalStatus:
+      type: string
+      enum: [pending, applied, rejected, ignored]
+    EmailProposal:
+      type: object
+      required: [id, mailboxUserId, kind, status, payload, dedupeKey, createdAt, updatedAt]
+      properties:
+        id:                 { type: string }
+        mailboxUserId:      { type: string }
+        kind:               { $ref: "#/components/schemas/EmailProposalKind" }
+        status:             { $ref: "#/components/schemas/EmailProposalStatus" }
+        sourceMessageId:    { type: string, nullable: true }
+        targetPersonId:     { type: string, nullable: true }
+        targetFunderId:     { type: string, nullable: true }
+        targetEmailId:      { type: string, nullable: true }
+        subjectEmail:       { type: string, nullable: true }
+        subjectName:        { type: string, nullable: true }
+        subjectDomain:      { type: string, nullable: true }
+        payload:            { type: object, additionalProperties: true }
+        dedupeKey:          { type: string }
+        createdAt:          { type: string, format: date-time }
+        updatedAt:          { type: string, format: date-time }
+        resolvedAt:         { type: string, format: date-time, nullable: true }
+        resolvedByUserId:   { type: string, nullable: true }
+    EmailProposalList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/EmailProposal" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    EmailProposalSummaryEntry:
+      type: object
+      required: [kind, pending]
+      properties:
+        kind:    { $ref: "#/components/schemas/EmailProposalKind" }
+        pending: { type: integer }
+    EmailProposalSummary:
+      type: object
+      required: [byKind, totalPending]
+      properties:
+        byKind:        { type: array, items: { $ref: "#/components/schemas/EmailProposalSummaryEntry" } }
+        totalPending:  { type: integer }
+    AcceptEmailProposalBody:
+      # All fields optional — the accept handler is per-kind and reads only
+      # what's relevant. e.g. signature_update may receive {applyTitle:true,
+      # applyPhone:false} to opt into individual field copies; auto_responder_move
+      # may receive {newPrimaryFunderId} to override the parsed company guess.
+      type: object
+      additionalProperties: true
+    UnrecognizedCorrespondent:
+      type: object
+      required: [emailAddress, threadCount, firstSeenAt, lastSeenAt]
+      properties:
+        emailAddress: { type: string }
+        displayName:  { type: string, nullable: true }
+        domain:       { type: string, nullable: true }
+        threadCount:  { type: integer }
+        firstSeenAt:  { type: string, format: date-time }
+        lastSeenAt:   { type: string, format: date-time }
+        lastSubject:  { type: string, nullable: true }
+    UnrecognizedCorrespondentList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/UnrecognizedCorrespondent" } }
+    CreateCorrespondentIgnoreBody:
+      type: object
+      required: [emailAddress]
+      properties:
+        emailAddress: { type: string }
