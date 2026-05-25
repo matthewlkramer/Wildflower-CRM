@@ -1,3 +1,8 @@
 uploads = []
 generated = []
-outputs = []
+
+[[outputs]]
+id = "xj1FaIq7QOhMyXj54XcNr"
+uri = "file://proposed_funder_domains.csv"
+type = "table"
+title = "Proposed funder email_domain updates (101 rows)"
