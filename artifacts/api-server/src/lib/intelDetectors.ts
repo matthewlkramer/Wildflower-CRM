@@ -451,6 +451,199 @@ export function parseEmailSignature(
 }
 
 // ──────────────────────────────────────────────────────────────────
+// Grant opportunity detection
+// ──────────────────────────────────────────────────────────────────
+
+// Known senders of grant / RFP digests. Don't have to be exhaustive
+// — the subject-line heuristic below catches the long tail.
+const GRANT_DIGEST_SENDERS: RegExp[] = [
+  /@(?:philanthropynewsdigest|philanthropy\.com|insidephilanthropy|philanthropytoday)\b/i,
+  /@(?:candid\.org|grantstation|grantwatch|grantsforward|grants\.gov)\b/i,
+  /@(?:cof|cof\.org|councilonfoundations|geofunders|tsne|edutopia)\b/i,
+  /@(?:fundsforngos|grantspace|fconline|foundationcenter)\b/i,
+  /\bnewsletter@/i,
+  /\bdigest@/i,
+  /\brfp@/i,
+  /\bgrants?@/i,
+];
+
+const GRANT_SUBJECT_RE =
+  /\b(request\s+for\s+proposals?|RFP|RFA|RFQ|letter\s+of\s+(?:inquiry|interest)|LOI|grant\s+(?:opportunity|opportunities|announcement|alert|cycle|deadline|round)|funding\s+(?:opportunity|opportunities|announcement|available)|(?:now\s+)?accepting\s+applications|call\s+for\s+(?:proposals|applications)|(?:open|new)\s+(?:grant|funding))\b/i;
+
+const GRANT_BODY_HINTS_RE =
+  /\b(deadline|due\s+(?:by|date)|apply\s+by|application\s+(?:deadline|due)|letter\s+of\s+(?:inquiry|interest)|LOI|request\s+for\s+proposals?|RFP|grant\s+(?:opportunity|amount|range|award|cycle))\b/i;
+
+/**
+ * Heuristic: does this sender/subject look like a grants newsletter
+ * or RFP announcement worth scanning for opportunities? Returns true
+ * when EITHER the sender domain/local-part is a known philanthropy
+ * digest OR the subject line explicitly advertises a grant / RFP /
+ * LOI. Body inspection is left to `extractGrantOpportunities` —
+ * keeping this header-only lets the gmailSync pre-fetch gate stay
+ * cheap.
+ */
+export function isLikelyGrantDigest(
+  fromEmail: string | null | undefined,
+  subject: string | null | undefined,
+): boolean {
+  if (fromEmail && GRANT_DIGEST_SENDERS.some((re) => re.test(fromEmail))) {
+    return true;
+  }
+  if (subject && GRANT_SUBJECT_RE.test(subject)) return true;
+  return false;
+}
+
+export interface GrantOpportunity {
+  title: string;
+  funderName: string | null;
+  deadline: string | null;
+  amount: string | null;
+  url: string | null;
+  snippet: string;
+}
+
+// Date-ish chunk: "December 15, 2026", "Dec 15", "12/15/2026", "2026-12-15".
+// The `(?!\d)` after the day token is load-bearing: without it, "May 2026"
+// (a bare month+year with no day) parses as "May 20" by grabbing the
+// first two digits of the year as a day-of-month. The negative lookahead
+// forces the day to be followed by a non-digit so the year digits of a
+// bare "Month Year" string don't get mis-parsed as a day.
+const DEADLINE_RE = new RegExp(
+  [
+    "(?:(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t)?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)",
+    "\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?(?!\\d)(?:,?\\s+\\d{4})?)",
+    "|\\d{1,2}/\\d{1,2}/\\d{2,4}(?!\\d)",
+    "|\\d{4}-\\d{2}-\\d{2}(?!\\d)",
+  ].join(""),
+  "i",
+);
+
+// Money-ish chunk: "$50,000", "$50K", "$50,000 - $500,000", "up to $1M".
+const AMOUNT_RE =
+  /(?:up\s+to\s+)?\$\s?\d[\d,]*(?:\.\d{1,2})?(?:\s*[KMB])?(?:\s*[-–to]+\s*\$?\s?\d[\d,]*(?:\.\d{1,2})?(?:\s*[KMB])?)?/i;
+
+// Captures the visible href of a link in either plain text or stripped
+// HTML, anchored on common grant-application words.
+const URL_RE = /https?:\/\/[^\s<>"')]+/g;
+
+/**
+ * Scan a grants-newsletter / RFP-announcement message for individual
+ * opportunities. Returns one entry per opportunity we can isolate.
+ *
+ * Strategy:
+ *   1. Strip HTML to plain text.
+ *   2. Split the body into "blocks" — separated by blank lines or
+ *      headings. Each block is a candidate opportunity item.
+ *   3. Keep a block only if it carries at least one grant-shaped
+ *      signal (deadline word / dollar amount / RFP keyword / apply
+ *      verb) — otherwise it's masthead / footer / unrelated content.
+ *   4. From each kept block extract: title (first non-empty line, ≤200
+ *      chars), funderName (line containing "Foundation"/"Fund"/
+ *      "Trust"/etc.), deadline (first date match), amount (first money
+ *      match), url (first http URL).
+ *
+ * Single-opportunity announcement emails (one block only) are
+ * promoted by using the subject as title fallback.
+ */
+export function extractGrantOpportunities(
+  subject: string | null,
+  bodyText: string | null,
+  bodyHtml: string | null,
+  fromEmail: string | null,
+): GrantOpportunity[] {
+  const text = (bodyText && bodyText.trim().length > 0
+    ? bodyText
+    : stripHtml(bodyHtml ?? "")) ?? "";
+  if (!text && !subject) return [];
+
+  // Block split: 1+ blank lines OR a Markdown/numbered list marker.
+  const blocks = text
+    .split(/\n\s*\n+/)
+    .map((b) => b.trim())
+    .filter((b) => b.length > 0);
+
+  const items: GrantOpportunity[] = [];
+  const seen = new Set<string>();
+
+  const consider = (block: string, titleOverride?: string) => {
+    // Block must look grant-shaped — either subject already qualified
+    // or the block contents do.
+    const blockHasSignal =
+      GRANT_BODY_HINTS_RE.test(block) ||
+      AMOUNT_RE.test(block) ||
+      DEADLINE_RE.test(block);
+    const subjectQualified =
+      !!titleOverride && subject ? GRANT_SUBJECT_RE.test(subject) : false;
+    if (!blockHasSignal && !subjectQualified) return;
+
+    const lines = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0 && !titleOverride) return;
+    const rawTitle = titleOverride ?? lines[0];
+    const title = rawTitle.replace(/^[\s#*•\-–—]+/, "").trim().slice(0, 200);
+    if (!title || title.length < 4) return;
+
+    let funderName: string | null = null;
+    for (const l of lines) {
+      const m = l.match(/\b([A-Z][\w&.,'’()/-]*(?:\s+[A-Z][\w&.,'’()/-]*){0,5}\s+(?:Foundation|Fund|Trust|Endowment|Philanthropies|Philanthropy|Initiative|Family\s+Office|Charitable\s+Trust))\b/);
+      if (m) {
+        funderName = m[1].trim();
+        break;
+      }
+    }
+
+    const deadlineMatch = block.match(
+      new RegExp(`(?:deadline|due(?:\\s+(?:by|date))?|apply\\s+by|submit\\s+by|closes?(?:\\s+on)?)[^\\n]{0,40}?(${DEADLINE_RE.source})`, "i"),
+    );
+    const deadline = deadlineMatch ? deadlineMatch[1].trim() : null;
+
+    const amountMatch = block.match(AMOUNT_RE);
+    const amount = amountMatch ? amountMatch[0].trim() : null;
+
+    const urlMatch = block.match(URL_RE);
+    const url = urlMatch
+      ? urlMatch.find(
+          (u) =>
+            !/unsubscribe|preferences|view-?in-?browser|email|list-manage|click\.|tracking/i.test(
+              u,
+            ),
+        ) ??
+        urlMatch[0]
+      : null;
+
+    const snippet = block.replace(/\s+/g, " ").trim().slice(0, 320);
+    const key = `${title.toLowerCase()}|${funderName?.toLowerCase() ?? ""}|${deadline ?? ""}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ title, funderName, deadline, amount, url, snippet });
+  };
+
+  if (blocks.length <= 1) {
+    // Probably a single-opportunity announcement email (e.g. a
+    // funder directly emailing an RFP). Use subject as title.
+    const onlyBlock = blocks[0] ?? "";
+    consider(onlyBlock, subject?.trim() || undefined);
+  } else {
+    for (const b of blocks) consider(b);
+    // If multi-block but nothing qualified yet, fall back to the
+    // subject + first qualifying block. Common in newsletter intros.
+    if (items.length === 0 && subject && GRANT_SUBJECT_RE.test(subject)) {
+      const firstQualified = blocks.find(
+        (b) =>
+          GRANT_BODY_HINTS_RE.test(b) ||
+          AMOUNT_RE.test(b) ||
+          DEADLINE_RE.test(b),
+      );
+      if (firstQualified) consider(firstQualified, subject);
+    }
+  }
+
+  // Best-effort sender annotation for callers' use; not stored on the
+  // item itself (the orchestrator records it on the proposal payload).
+  void fromEmail;
+  return items;
+}
+
+// ──────────────────────────────────────────────────────────────────
 // Bulk sender heuristic
 // ──────────────────────────────────────────────────────────────────
 

@@ -43,6 +43,8 @@ import {
  *       enhancedCode?, reason? }
  *   - signature_update: { name?, title?, company?, phone?,
  *       email?, current: {title?, primaryOrg?} }
+ *   - grant_opportunity: { title, funderName?, deadline?, amount?,
+ *       url?, snippet, sourceDigest? }
  */
 export const emailProposals = pgTable(
   "email_proposals",

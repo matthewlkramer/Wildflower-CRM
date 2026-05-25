@@ -12,10 +12,12 @@ import { logger } from "./logger";
 import { newId } from "./helpers";
 import {
   domainOf,
+  extractGrantOpportunities,
   extractLinkedInJobChanges,
   isAutoResponder,
   isBounceSender,
   isFreeMailDomain,
+  isLikelyGrantDigest,
   isLinkedInNotificationSender,
   parseAutoResponderMove,
   parseBounce,
@@ -41,9 +43,18 @@ import {
  * detector crash must not break the surrounding sync loop.
  */
 
-export function shouldFetchFullForIntel(fromEmail: string | null | undefined): boolean {
+export function shouldFetchFullForIntel(
+  fromEmail: string | null | undefined,
+  subject?: string | null,
+): boolean {
   if (!fromEmail) return false;
-  return isLinkedInNotificationSender(fromEmail) || isBounceSender(fromEmail);
+  if (isLinkedInNotificationSender(fromEmail)) return true;
+  if (isBounceSender(fromEmail)) return true;
+  // Grant digests need the full body to extract individual
+  // opportunities — header-only gate so we don't pay full-fetch on
+  // every newsletter, only ones whose sender/subject look granty.
+  if (isLikelyGrantDigest(fromEmail, subject ?? null)) return true;
+  return false;
 }
 
 export async function processIntelForUnmatched(args: {
@@ -61,6 +72,10 @@ export async function processIntelForUnmatched(args: {
     }
     if (isBounceSender(args.fromEmail)) {
       await handleBounce(args);
+      return;
+    }
+    if (isLikelyGrantDigest(args.fromEmail, args.subject)) {
+      await handleGrants(args);
       return;
     }
   } catch (err) {
@@ -86,6 +101,23 @@ export async function processIntelForMatched(args: {
   // TO them.
   if (args.direction !== "received") return;
   try {
+    // Grant digests can come from real CRM funders too (e.g. the
+    // Foundation we already track also blasts an RFP newsletter).
+    // Run grant detection on matched-path mail as well so we don't
+    // miss them just because the sender is in the CRM.
+    if (isLikelyGrantDigest(args.fromEmail, args.subject)) {
+      await handleGrants({
+        mailboxUserId: args.mailboxUserId,
+        gmailMessageId: args.messageRowId,
+        fromEmail: args.fromEmail,
+        subject: args.subject,
+        bodyText: args.bodyText,
+        bodyHtml: args.bodyHtml,
+      });
+      // Don't return — a grant digest from a CRM contact still
+      // might have an auto-responder or signature payload worth
+      // capturing.
+    }
     if (isAutoResponder(args.subject, args.bodyText)) {
       await handleAutoResponder(args);
       return;
@@ -201,6 +233,105 @@ async function handleBounce(args: {
       gmailMessageId: args.gmailMessageId,
     },
   });
+}
+
+async function handleGrants(args: {
+  mailboxUserId: string;
+  gmailMessageId: string;
+  fromEmail: string | null;
+  subject: string | null;
+  bodyText: string | null;
+  bodyHtml: string | null;
+}): Promise<void> {
+  const items = extractGrantOpportunities(
+    args.subject,
+    args.bodyText,
+    args.bodyHtml,
+    args.fromEmail,
+  );
+  if (items.length === 0) return;
+
+  for (const it of items) {
+    // Dedupe by (funder + deadline + title-prefix). Same RFP showing
+    // up in multiple newsletters or successive weekly digests will
+    // collide on this key and only land once in the pending queue.
+    // Title is normalized to lowercase + first 60 chars to absorb
+    // small wording drift between digest sources.
+    //
+    // When funder AND deadline both fail to parse, the key would
+    // otherwise be `grant:?:?:<title>` for every such item and
+    // unrelated opportunities sharing a generic title prefix (e.g.
+    // "Request for proposals") would silently collide. Mix in the
+    // URL host+path (or a snippet hash) as a discriminator to keep
+    // distinct opportunities distinct.
+    const titleKey = it.title.toLowerCase().replace(/\s+/g, " ").slice(0, 60);
+    const lowConfidence = !it.funderName && !it.deadline;
+    let discriminator = "";
+    if (lowConfidence) {
+      if (it.url) {
+        try {
+          const u = new URL(it.url);
+          discriminator = `${u.host}${u.pathname}`.toLowerCase().slice(0, 80);
+        } catch {
+          discriminator = it.url.toLowerCase().slice(0, 80);
+        }
+      } else {
+        // Snippet hash — stable across digest reruns, distinct
+        // across unrelated opportunities. Cheap FNV-1a.
+        let h = 2166136261;
+        const src = it.snippet.toLowerCase();
+        for (let i = 0; i < src.length; i++) {
+          h ^= src.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        discriminator = `s${(h >>> 0).toString(36)}`;
+      }
+    }
+    const dedupeKey = [
+      "grant",
+      it.funderName?.toLowerCase() ?? "?",
+      it.deadline ?? "?",
+      titleKey,
+      discriminator,
+    ].join(":");
+
+    // Try to attach to a CRM funder if the parsed funder name matches
+    // one we already know. Soft match — accept either direction of
+    // substring so "Acme Family Foundation" matches "The Acme
+    // Foundation" in the CRM. Returns the first hit (rare to have
+    // two funders with overlapping names; if so, reviewer can
+    // disambiguate on accept).
+    let targetFunderId: string | null = null;
+    if (it.funderName) {
+      const hit = await db
+        .select({ id: funders.id })
+        .from(funders)
+        .where(ilike(funders.name, `%${it.funderName}%`))
+        .limit(1)
+        .then((r) => r[0]);
+      if (hit) targetFunderId = hit.id;
+    }
+
+    await upsertProposal({
+      mailboxUserId: args.mailboxUserId,
+      kind: "grant_opportunity",
+      dedupeKey,
+      targetFunderId,
+      subjectName: it.funderName,
+      subjectDomain: domainOf(args.fromEmail),
+      subjectEmail: args.fromEmail?.toLowerCase() ?? null,
+      payload: {
+        title: it.title,
+        funderName: it.funderName,
+        deadline: it.deadline,
+        amount: it.amount,
+        url: it.url,
+        snippet: it.snippet,
+        sourceDigest: args.fromEmail,
+        gmailMessageId: args.gmailMessageId,
+      },
+    });
+  }
 }
 
 async function handleAutoResponder(args: {

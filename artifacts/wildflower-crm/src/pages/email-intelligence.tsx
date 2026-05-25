@@ -27,7 +27,8 @@ type Kind =
   | "auto_responder_move"
   | "bounce_invalid"
   | "bounce_soft"
-  | "signature_update";
+  | "signature_update"
+  | "grant_opportunity";
 
 const KIND_TABS: { value: Kind; label: string }[] = [
   { value: "linkedin_job_change", label: "Job changes" },
@@ -35,6 +36,7 @@ const KIND_TABS: { value: Kind; label: string }[] = [
   { value: "bounce_invalid", label: "Hard bounces" },
   { value: "bounce_soft", label: "Soft bounces" },
   { value: "signature_update", label: "Signature updates" },
+  { value: "grant_opportunity", label: "Grant opportunities" },
 ];
 
 const UNRECOGNIZED_TAB = "unrecognized";
@@ -262,6 +264,15 @@ function summarizeProposal(p: {
       return `Soft bounce: ${p.subjectEmail ?? "?"}`;
     case "signature_update":
       return `Signature update: ${p.subjectName ?? p.subjectEmail ?? "Someone"}`;
+    case "grant_opportunity": {
+      const title = (payload.title as string | undefined) ?? "Grant opportunity";
+      const funder = (payload.funderName as string | undefined) ?? p.subjectName;
+      const deadline = payload.deadline as string | undefined;
+      const parts = [title];
+      if (funder) parts.push(`— ${funder}`);
+      if (deadline) parts.push(`(due ${deadline})`);
+      return parts.join(" ");
+    }
   }
 }
 
@@ -317,6 +328,36 @@ function ProposalDetail({
           {cell("Reason", payload.reason)}
         </div>
       );
+    case "grant_opportunity": {
+      const url = payload.url as string | undefined;
+      return (
+        <div className="space-y-1">
+          {cell("Title", payload.title)}
+          {cell("Funder", payload.funderName)}
+          {cell("Deadline", payload.deadline)}
+          {cell("Amount", payload.amount)}
+          {url ? (
+            <div className="text-sm">
+              <span className="text-muted-foreground mr-2">Link:</span>
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary hover:underline break-all"
+              >
+                {url}
+              </a>
+            </div>
+          ) : null}
+          {cell("Source", payload.sourceDigest)}
+          {payload.snippet ? (
+            <p className="text-xs italic text-muted-foreground border-l-2 pl-2 mt-2">
+              "{String(payload.snippet)}"
+            </p>
+          ) : null}
+        </div>
+      );
+    }
     case "signature_update": {
       const parsed = (payload.parsed ?? {}) as Record<string, unknown>;
       return (

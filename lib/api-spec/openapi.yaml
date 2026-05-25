@@ -2480,7 +2480,7 @@ components:
     # ─── Email intelligence ───────────────────────────────────────────────────
     EmailProposalKind:
       type: string
-      enum: [linkedin_job_change, auto_responder_move, bounce_invalid, bounce_soft, signature_update]
+      enum: [linkedin_job_change, auto_responder_move, bounce_invalid, bounce_soft, signature_update, grant_opportunity]
     EmailProposalStatus:
       type: string
       enum: [pending, applied, rejected, ignored]

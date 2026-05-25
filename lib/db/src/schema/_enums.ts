@@ -283,6 +283,7 @@ export const emailProposalKindEnum = pgEnum("email_proposal_kind", [
   "bounce_invalid",
   "bounce_soft",
   "signature_update",
+  "grant_opportunity",
 ]);
 
 // Lifecycle of an email_proposals row. `pending` is the review queue;

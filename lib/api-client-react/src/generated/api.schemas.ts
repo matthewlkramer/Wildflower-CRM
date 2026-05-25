@@ -1674,6 +1674,7 @@ export const EmailProposalKind = {
   bounce_invalid: "bounce_invalid",
   bounce_soft: "bounce_soft",
   signature_update: "signature_update",
+  grant_opportunity: "grant_opportunity",
 } as const;
 
 export type EmailProposalStatus =

@@ -470,7 +470,7 @@ async function processOneMessage(
     // few sender patterns we pay the extra full-fetch cost. Everything
     // else skips body fetch as before.
     const fromFirst = fromAddrs[0] ?? null;
-    if (shouldFetchFullForIntel(fromFirst)) {
+    if (shouldFetchFullForIntel(fromFirst, subject)) {
       try {
         const fullForIntel = await getMessage(grant.accessToken, gmailId, "full");
         const partsForIntel = extractMessageParts(fullForIntel.payload);
