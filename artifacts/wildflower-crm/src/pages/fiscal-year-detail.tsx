@@ -10,7 +10,7 @@ import {
   type FiscalYearReceivedRow,
   type FiscalYearOpenRow,
 } from "@workspace/api-client-react";
-import { formatCurrency, formatEnum } from "@/lib/format";
+import { formatCurrency, formatEnum, abbreviateUsStates } from "@/lib/format";
 import { partitionEntities, partitionFiscalYears } from "@/lib/dropdownVisibility";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -333,7 +333,7 @@ function ReceivedTable({
                       individualGiverPersonName={r.individualGiverPersonName}
                     />
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{r.displayUsage || "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{r.displayUsage ? abbreviateUsStates(r.displayUsage) : "—"}</TableCell>
                   <TableCell className="text-right tabular-nums font-medium">{fmt(r.subAmount)}</TableCell>
                 </TableRow>
               ))}

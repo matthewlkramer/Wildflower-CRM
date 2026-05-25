@@ -8,6 +8,7 @@ import {
   InlineEditSelect,
   type InlineSelectOption,
 } from "@/components/inline-edit";
+import { abbreviateUsStates } from "@/lib/format";
 
 const PAGE_SIZE = 1000;
 const QUERY_PARAMS = { limit: PAGE_SIZE } as const;
@@ -20,8 +21,10 @@ const QUERY_PARAMS = { limit: PAGE_SIZE } as const;
 export function regionDisplayName(r: Region): string {
   const raw = r.displayPath?.trim() || r.name;
   if (raw === "United States") return "";
-  if (raw.startsWith("United States, ")) return raw.slice("United States, ".length);
-  return raw;
+  const stripped = raw.startsWith("United States, ")
+    ? raw.slice("United States, ".length)
+    : raw;
+  return abbreviateUsStates(stripped);
 }
 
 export function useRegionNameMap(): Map<string, string> {

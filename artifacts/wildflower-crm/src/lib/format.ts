@@ -64,6 +64,7 @@ export function formatCapacity(capacity: string | null | undefined): string {
  *   "Fundación"         → "Fnd"
  *   "Department"        → "Dept"
  *   "Education"         → "Educ"
+ *   "Anonymous"         → "Anon"
  * Match is case-insensitive; the abbreviated form is emitted as written.
  */
 export function formatFunderNameShort(
@@ -76,5 +77,80 @@ export function formatFunderNameShort(
     .replace(/\bFoundation\b/gi, "Fnd")
     .replace(/\bFundación\b/gi, "Fnd")
     .replace(/\bDepartment\b/gi, "Dept")
-    .replace(/\bEducation\b/gi, "Educ");
+    .replace(/\bEducation\b/gi, "Educ")
+    .replace(/\bAnonymous\b/gi, "Anon");
+}
+
+/**
+ * US state-name → USPS 2-letter code (case-insensitive, word-boundary).
+ * Multi-word and " State" variants are listed first so they consume the
+ * input before the single-word fallbacks fire (e.g. "New York State" →
+ * "NY" before "New York"; "Washington State" → "WA" before "Washington").
+ * "Washington (D.C.)" and "Washington, D.C." also collapse to "DC".
+ * Non-state words are left untouched, so suffixes like "Bay Area" or
+ * "Greater Boston" still render through.
+ */
+const US_STATE_ABBR: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bNew York State\b/gi, "NY"],
+  [/\bWashington State\b/gi, "WA"],
+  [/\bWashington \(D\.?C\.?\)/gi, "DC"],
+  [/\bWashington, D\.?C\.?/gi, "DC"],
+  [/\bNew Hampshire\b/gi, "NH"],
+  [/\bNew Jersey\b/gi, "NJ"],
+  [/\bNew Mexico\b/gi, "NM"],
+  [/\bNew York\b/gi, "NY"],
+  [/\bNorth Carolina\b/gi, "NC"],
+  [/\bNorth Dakota\b/gi, "ND"],
+  [/\bSouth Carolina\b/gi, "SC"],
+  [/\bSouth Dakota\b/gi, "SD"],
+  [/\bWest Virginia\b/gi, "WV"],
+  [/\bRhode Island\b/gi, "RI"],
+  [/\bPuerto Rico\b/gi, "PR"],
+  [/\bAlabama\b/gi, "AL"],
+  [/\bAlaska\b/gi, "AK"],
+  [/\bArizona\b/gi, "AZ"],
+  [/\bArkansas\b/gi, "AR"],
+  [/\bCalifornia\b/gi, "CA"],
+  [/\bColorado\b/gi, "CO"],
+  [/\bConnecticut\b/gi, "CT"],
+  [/\bDelaware\b/gi, "DE"],
+  [/\bFlorida\b/gi, "FL"],
+  [/\bGeorgia\b/gi, "GA"],
+  [/\bHawaii\b/gi, "HI"],
+  [/\bIdaho\b/gi, "ID"],
+  [/\bIllinois\b/gi, "IL"],
+  [/\bIndiana\b/gi, "IN"],
+  [/\bIowa\b/gi, "IA"],
+  [/\bKansas\b/gi, "KS"],
+  [/\bKentucky\b/gi, "KY"],
+  [/\bLouisiana\b/gi, "LA"],
+  [/\bMaine\b/gi, "ME"],
+  [/\bMaryland\b/gi, "MD"],
+  [/\bMassachusetts\b/gi, "MA"],
+  [/\bMichigan\b/gi, "MI"],
+  [/\bMinnesota\b/gi, "MN"],
+  [/\bMississippi\b/gi, "MS"],
+  [/\bMissouri\b/gi, "MO"],
+  [/\bMontana\b/gi, "MT"],
+  [/\bNebraska\b/gi, "NE"],
+  [/\bNevada\b/gi, "NV"],
+  [/\bOhio\b/gi, "OH"],
+  [/\bOklahoma\b/gi, "OK"],
+  [/\bOregon\b/gi, "OR"],
+  [/\bPennsylvania\b/gi, "PA"],
+  [/\bTennessee\b/gi, "TN"],
+  [/\bTexas\b/gi, "TX"],
+  [/\bUtah\b/gi, "UT"],
+  [/\bVermont\b/gi, "VT"],
+  [/\bVirginia\b/gi, "VA"],
+  [/\bWashington\b/gi, "WA"],
+  [/\bWisconsin\b/gi, "WI"],
+  [/\bWyoming\b/gi, "WY"],
+];
+
+export function abbreviateUsStates(s: string | null | undefined): string {
+  if (!s) return "";
+  let out = s;
+  for (const [re, abbr] of US_STATE_ABBR) out = out.replace(re, abbr);
+  return out;
 }
