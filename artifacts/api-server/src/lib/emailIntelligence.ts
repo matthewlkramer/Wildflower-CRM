@@ -7,7 +7,7 @@ import {
   emails,
   type NewEmailProposal,
 } from "@workspace/db/schema";
-import { and, eq, ilike } from "drizzle-orm";
+import { and, eq, ilike, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
 import {
@@ -482,7 +482,15 @@ async function upsertProposal(args: {
       payload: args.payload,
     })
     .onConflictDoNothing({
+      // The unique index on (mailbox_user_id, dedupe_key) is partial —
+      // it only covers rows with status = 'pending' so that a future
+      // identical signal can re-surface after a prior proposal is
+      // resolved (applied/rejected/ignored). Postgres requires the
+      // ON CONFLICT clause to mirror the index predicate or it raises
+      // "no unique or exclusion constraint matching the ON CONFLICT
+      // specification". The `where` here maps to that index_predicate.
       target: [emailProposals.mailboxUserId, emailProposals.dedupeKey],
+      where: sql`status = 'pending'`,
     });
 }
 
