@@ -6,7 +6,7 @@ import {
   emailSyncState,
   type EmailSyncState,
 } from "@workspace/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
 import {
@@ -605,6 +605,12 @@ async function processOneMessage(
         })
         .onConflictDoNothing({
           target: [emailAttachments.emailMessageId, emailAttachments.gmailAttachmentId],
+          // The unique index is partial (WHERE gmail_attachment_id IS
+          // NOT NULL) — Postgres requires the ON CONFLICT clause to
+          // repeat that predicate so the planner can match the partial
+          // index. Without this, every attachment insert fails with
+          // "no unique or exclusion constraint matching".
+          where: sql`${emailAttachments.gmailAttachmentId} IS NOT NULL`,
         })
         .returning({ id: emailAttachments.id });
       if (insertedAtt[0]) {

@@ -5,7 +5,7 @@ import {
   googleOauthTokens,
   users,
 } from "@workspace/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { syncUserGmail } from "./gmailSync";
 import { syncUserCalendar } from "./calendarSync";
@@ -30,9 +30,17 @@ import { withSyncLock } from "./syncLock";
  * by the sync workers themselves (see gmailSync.ts / calendarSync.ts).
  */
 
-const TICK_MS = 60_000;
+const TICK_MS = 10_000;
 const SYNC_INTERVAL_MS = 15 * 60_000;
 const JITTER_MS = 5 * 60_000;
+// While a mailbox/calendar is still in its initial bootstrap, we want
+// it to drain back-to-back instead of waiting the steady-state 15 min
+// between page batches. The per-source workers cap pages-per-run, so
+// "fire every tick" doesn't risk runaway Google quota usage — it just
+// means a fresh connection finishes its 30-day backfill in minutes
+// instead of hours. The per-user advisory lock + scheduler-level
+// `running` flag both still apply.
+const BOOTSTRAP_RETRY_MS = TICK_MS;
 
 // Stable per-user jitter (0..JITTER_MS-1). djb2-ish hash — we don't
 // need crypto here, just a deterministic spread across users so they
@@ -52,6 +60,8 @@ interface DueRow {
   userId: string;
   lastEmailSyncedAt: Date | null;
   lastCalendarSyncedAt: Date | null;
+  emailBootstrapDone: boolean;
+  calendarBootstrapDone: boolean;
 }
 
 export async function tick(now: number = Date.now()): Promise<void> {
@@ -69,6 +79,11 @@ export async function tick(now: number = Date.now()): Promise<void> {
         userId: googleOauthTokens.userId,
         lastEmailSyncedAt: emailSyncState.lastSyncedAt,
         lastCalendarSyncedAt: calendarSyncState.lastSyncedAt,
+        // Coerce the timestamp to a boolean — we only care whether
+        // bootstrap has finished, not when. NULL → false → still
+        // bootstrapping → eligible for fast cycling below.
+        emailBootstrapDone: sql<boolean>`${emailSyncState.bootstrapCompletedAt} IS NOT NULL`,
+        calendarBootstrapDone: sql<boolean>`${calendarSyncState.bootstrapCompletedAt} IS NOT NULL`,
       })
       .from(googleOauthTokens)
       .leftJoin(
@@ -95,45 +110,69 @@ export async function tick(now: number = Date.now()): Promise<void> {
       // We compute due time per-source. A new sync runs when EITHER
       // gmail or calendar is overdue — but we then run both, since
       // they share the same Google grant and rate limits.
+      //
+      // While bootstrap is still in progress for a source, skip the
+      // steady-state 15-min interval + jitter and fall back to a
+      // short fixed retry. The per-source workers cap pages-per-run
+      // so this just means a fresh connection drains its 30-day
+      // backfill quickly; once `bootstrap_completed_at` flips, the
+      // normal cadence kicks back in.
+      const emailIntervalMs = r.emailBootstrapDone
+        ? SYNC_INTERVAL_MS + jitter
+        : BOOTSTRAP_RETRY_MS;
+      const calIntervalMs = r.calendarBootstrapDone
+        ? SYNC_INTERVAL_MS + jitter
+        : BOOTSTRAP_RETRY_MS;
       const emailDue =
-        (r.lastEmailSyncedAt?.getTime() ?? 0) + SYNC_INTERVAL_MS + jitter;
+        now >= (r.lastEmailSyncedAt?.getTime() ?? 0) + emailIntervalMs;
       const calDue =
-        (r.lastCalendarSyncedAt?.getTime() ?? 0) + SYNC_INTERVAL_MS + jitter;
-      if (now < emailDue && now < calDue) continue;
+        now >= (r.lastCalendarSyncedAt?.getTime() ?? 0) + calIntervalMs;
+      if (!emailDue && !calDue) continue;
 
-      logger.info({ userId: r.userId }, "Sync scheduler firing for user");
-      try {
-        const lock = await withSyncLock(r.userId, "gmail", () =>
-          syncUserGmail(r.userId),
-        );
-        if (!lock.ran) {
-          logger.debug({ userId: r.userId }, "Scheduled Gmail sync skipped — locked");
-        } else if (lock.result && !lock.result.ok) {
-          logger.warn(
-            { userId: r.userId, err: lock.result.error, notConnected: lock.result.notConnected },
-            "Scheduled Gmail sync returned non-ok",
+      logger.info(
+        { userId: r.userId, emailDue, calDue },
+        "Sync scheduler firing for user",
+      );
+      // Each source is invoked only if its own due-time has elapsed —
+      // otherwise a source still in fast-bootstrap mode (10s) would
+      // drag the other already-steady-state source along at 10s too,
+      // wasting Google API quota.
+      if (emailDue) {
+        try {
+          const lock = await withSyncLock(r.userId, "gmail", () =>
+            syncUserGmail(r.userId),
           );
+          if (!lock.ran) {
+            logger.debug({ userId: r.userId }, "Scheduled Gmail sync skipped — locked");
+          } else if (lock.result && !lock.result.ok) {
+            logger.warn(
+              { userId: r.userId, err: lock.result.error, notConnected: lock.result.notConnected },
+              "Scheduled Gmail sync returned non-ok",
+            );
+          }
+        } catch (err) {
+          // syncUserGmail's contract is to never throw, but defensively
+          // catch in case a future change leaks an exception — we don't
+          // want one user's bug to stall the whole scheduler.
+          logger.error({ err, userId: r.userId }, "Scheduled Gmail sync threw");
         }
-      } catch (err) {
-        // syncUserGmail's contract is to never throw, but defensively
-        // catch in case a future change leaks an exception — we don't
-        // want one user's bug to stall the whole scheduler.
-        logger.error({ err, userId: r.userId }, "Scheduled Gmail sync threw");
       }
-      try {
-        const lock = await withSyncLock(r.userId, "calendar", () =>
-          syncUserCalendar(r.userId),
-        );
-        if (!lock.ran) {
-          logger.debug({ userId: r.userId }, "Scheduled Calendar sync skipped — locked");
-        } else if (lock.result && !lock.result.ok) {
-          logger.warn(
-            { userId: r.userId, err: lock.result.error, notConnected: lock.result.notConnected },
-            "Scheduled Calendar sync returned non-ok",
+      if (calDue) {
+        try {
+          const lock = await withSyncLock(r.userId, "calendar", () =>
+            syncUserCalendar(r.userId),
           );
+          if (!lock.ran) {
+            logger.debug({ userId: r.userId }, "Scheduled Calendar sync skipped — locked");
+          } else if (lock.result && !lock.result.ok) {
+            logger.warn(
+              { userId: r.userId, err: lock.result.error, notConnected: lock.result.notConnected },
+              "Scheduled Calendar sync returned non-ok",
+            );
+          }
+        } catch (err) {
+          logger.error({ err, userId: r.userId }, "Scheduled Calendar sync threw");
         }
-      } catch (err) {
-        logger.error({ err, userId: r.userId }, "Scheduled Calendar sync threw");
       }
     }
   } catch (err) {
