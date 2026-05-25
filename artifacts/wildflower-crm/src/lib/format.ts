@@ -14,7 +14,7 @@ export function formatCurrency(amount: number | string | null | undefined): stri
 export function formatDate(dateString: string | null | undefined): string {
   if (!dateString) return "—";
   try {
-    return format(parseISO(dateString), "MMM d, yyyy");
+    return format(parseISO(dateString), "MMM d, yy");
   } catch (e) {
     return dateString;
   }
@@ -63,6 +63,7 @@ export function formatCapacity(capacity: string | null | undefined): string {
  *   "Foundation"        → "Fnd"
  *   "Fundación"         → "Fnd"
  *   "Department"        → "Dept"
+ *   "Education"         → "Educ"
  * Match is case-insensitive; the abbreviated form is emitted as written.
  */
 export function formatFunderNameShort(
@@ -74,5 +75,6 @@ export function formatFunderNameShort(
     .replace(/\bFoundations\b/gi, "Fnds")
     .replace(/\bFoundation\b/gi, "Fnd")
     .replace(/\bFundación\b/gi, "Fnd")
-    .replace(/\bDepartment\b/gi, "Dept");
+    .replace(/\bDepartment\b/gi, "Dept")
+    .replace(/\bEducation\b/gi, "Educ");
 }
