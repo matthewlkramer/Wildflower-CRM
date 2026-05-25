@@ -285,7 +285,9 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                 testIdBase="funder-employees"
                 value={funder.numberOfEmployees ?? null}
                 options={EMPLOYEES_OPTIONS}
-                display={formatEnum(funder.numberOfEmployees)}
+                display={
+                  EMPLOYEES_OPTIONS.find((o) => o.value === funder.numberOfEmployees)?.label ?? "—"
+                }
                 onSave={(next) => patch({ numberOfEmployees: next })}
               />
             </Row>
