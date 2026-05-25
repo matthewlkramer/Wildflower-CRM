@@ -263,6 +263,27 @@ export function formatXHandle(url: string | null | undefined): string {
   return s;
 }
 
+export function formatFacebookHandle(url: string | null | undefined): string {
+  const s = stripUrl(url);
+  if (!s) return "—";
+  // facebook.com/<slug> or facebook.com/profile.php?id=<id>. We
+  // already strip query strings in stripUrl, so profile.php IDs end
+  // up as "profile.php" — fall back to that since there's no nicer
+  // handle to show.
+  const m = s.match(/^facebook\.com\/([^/]+)/i);
+  if (m) return m[1];
+  return s.replace(/^facebook\.com\/?/i, "") || s;
+}
+
+export function formatInstagramHandle(url: string | null | undefined): string {
+  const s = stripUrl(url);
+  if (!s) return "—";
+  const m = s.match(/^instagram\.com\/([^/]+)/i);
+  if (m) return `@${m[1]}`;
+  if (/^@?[A-Za-z0-9_.]{1,30}$/.test(s)) return s.startsWith("@") ? s : `@${s}`;
+  return s;
+}
+
 export function formatCrunchbaseHandle(
   url: string | null | undefined,
 ): string {

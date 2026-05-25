@@ -43,6 +43,8 @@ import {
   formatDate,
   formatEnum,
   formatFunderNameShort,
+  formatFacebookHandle,
+  formatInstagramHandle,
   formatLinkedinHandle,
   formatXHandle,
 } from "@/lib/format";
@@ -329,6 +331,44 @@ function PersonView({ person }: { person: PersonDetail }) {
                   )
                 }
                 onSave={(next) => patch({ x: next })} />
+            </Row>
+            <Row label="Facebook">
+              <InlineEditText label="Facebook" testIdBase="person-facebook"
+                value={person.facebook ?? null}
+                display={
+                  person.facebook ? (
+                    <a
+                      href={person.facebook}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline truncate"
+                    >
+                      {formatFacebookHandle(person.facebook)}
+                    </a>
+                  ) : (
+                    "—"
+                  )
+                }
+                onSave={(next) => patch({ facebook: next })} />
+            </Row>
+            <Row label="Instagram">
+              <InlineEditText label="Instagram" testIdBase="person-instagram"
+                value={person.instagram ?? null}
+                display={
+                  person.instagram ? (
+                    <a
+                      href={person.instagram}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline truncate"
+                    >
+                      {formatInstagramHandle(person.instagram)}
+                    </a>
+                  ) : (
+                    "—"
+                  )
+                }
+                onSave={(next) => patch({ instagram: next })} />
             </Row>
             <Row label="Meeting link">
               <InlineEditText label="Meeting link" testIdBase="person-meeting-link"

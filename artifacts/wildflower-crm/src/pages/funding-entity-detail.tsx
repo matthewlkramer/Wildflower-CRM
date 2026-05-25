@@ -40,8 +40,10 @@ import {
   formatDate,
   formatEnum,
   formatCapacity,
-  formatLinkedinHandle,
   formatCrunchbaseHandle,
+  formatFacebookHandle,
+  formatInstagramHandle,
+  formatLinkedinHandle,
 } from "@/lib/format";
 
 const ACTIVE_STATUS_OPTIONS = [
@@ -403,6 +405,50 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                   )
                 }
                 onSave={(next) => patch({ crunchbase: next })}
+              />
+            </Row>
+            <Row label="Facebook">
+              <InlineEditText
+                label="Facebook"
+                testIdBase="funder-facebook"
+                value={funder.facebook ?? null}
+                display={
+                  funder.facebook ? (
+                    <a
+                      href={funder.facebook}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline truncate"
+                    >
+                      {formatFacebookHandle(funder.facebook)}
+                    </a>
+                  ) : (
+                    "—"
+                  )
+                }
+                onSave={(next) => patch({ facebook: next })}
+              />
+            </Row>
+            <Row label="Instagram">
+              <InlineEditText
+                label="Instagram"
+                testIdBase="funder-instagram"
+                value={funder.instagram ?? null}
+                display={
+                  funder.instagram ? (
+                    <a
+                      href={funder.instagram}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline truncate"
+                    >
+                      {formatInstagramHandle(funder.instagram)}
+                    </a>
+                  ) : (
+                    "—"
+                  )
+                }
+                onSave={(next) => patch({ instagram: next })}
               />
             </Row>
           </CardContent>
