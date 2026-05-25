@@ -1469,6 +1469,111 @@ export interface UpdateInteractionBody {
   householdIds?: string[] | null;
 }
 
+export type EmailMessageDirection =
+  (typeof EmailMessageDirection)[keyof typeof EmailMessageDirection];
+
+export const EmailMessageDirection = {
+  sent: "sent",
+  received: "received",
+} as const;
+
+export interface EmailMessage {
+  id: string;
+  gmailMessageId?: string;
+  gmailThreadId?: string | null;
+  mailboxUserId: string;
+  direction: EmailMessageDirection;
+  sentAt: string;
+  subject?: string | null;
+  snippet?: string | null;
+  fromEmail?: string | null;
+  toEmails?: string[] | null;
+  ccEmails?: string[] | null;
+  bccEmails?: string[] | null;
+  hasAttachments?: boolean;
+  isPrivate: boolean;
+  privateSetByUserId?: string | null;
+  matchedPersonIds?: string[] | null;
+  matchedFunderIds?: string[] | null;
+  matchedHouseholdIds?: string[] | null;
+}
+
+export interface EmailAttachmentSummary {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  gmailAttachmentId?: string | null;
+}
+
+export type EmailMessageDetail = EmailMessage & {
+  bodyText?: string | null;
+  bodyHtml?: string | null;
+  attachments?: EmailAttachmentSummary[];
+};
+
+export interface EmailMessageList {
+  data: EmailMessage[];
+  pagination: Pagination;
+}
+
+export interface UpdateEmailMessagePrivacyBody {
+  isPrivate: boolean;
+}
+
+export interface CalendarEvent {
+  id: string;
+  calendarUserId: string;
+  gcalCalendarId: string;
+  gcalEventId: string;
+  startAt: string;
+  endAt?: string | null;
+  summary?: string | null;
+  description?: string | null;
+  location?: string | null;
+  attendeeEmails?: string[] | null;
+  organizerEmail?: string | null;
+  status?: string | null;
+  htmlLink?: string | null;
+  isPrivate: boolean;
+  privateSetByUserId?: string | null;
+  matchedPersonIds?: string[] | null;
+  matchedFunderIds?: string[] | null;
+  matchedHouseholdIds?: string[] | null;
+}
+
+export interface CalendarEventList {
+  data: CalendarEvent[];
+  pagination: Pagination;
+}
+
+export interface UpdateCalendarEventPrivacyBody {
+  isPrivate: boolean;
+}
+
+export interface AdminGoogleSyncSourceStatus {
+  lastSyncedAt?: string | null;
+  lastError?: string | null;
+  bootstrapCompletedAt?: string | null;
+  bootstrapInProgress: boolean;
+}
+
+export interface AdminGoogleSyncUserRow {
+  userId: string;
+  userEmail: string;
+  googleEmail?: string | null;
+  connected: boolean;
+  grantedAt?: string | null;
+  revokedAt?: string | null;
+  tokenLastError?: string | null;
+  gmail: AdminGoogleSyncSourceStatus;
+  calendar: AdminGoogleSyncSourceStatus;
+}
+
+export interface AdminGoogleSyncList {
+  data: AdminGoogleSyncUserRow[];
+}
+
 export interface GoogleOauthStatus {
   /** Server has GOOGLE_OAUTH_CLIENT_ID/SECRET set */
   configured: boolean;
@@ -1480,6 +1585,77 @@ export interface GoogleOauthStatus {
   grantedAt?: string | null;
   revokedAt?: string | null;
   lastError?: string | null;
+}
+
+export type GoogleSyncStatusGmail = {
+  lastHistoryId?: string | null;
+  lastSyncedAt?: string | null;
+  lastError?: string | null;
+  bootstrapCompletedAt?: string | null;
+  bootstrapInProgress?: boolean;
+} | null;
+
+export type GoogleSyncStatusCalendar = {
+  hasSyncToken?: boolean;
+  lastSyncedAt?: string | null;
+  lastError?: string | null;
+  bootstrapCompletedAt?: string | null;
+  bootstrapInProgress?: boolean;
+} | null;
+
+export interface GoogleSyncStatus {
+  gmail?: GoogleSyncStatusGmail;
+  calendar?: GoogleSyncStatusCalendar;
+}
+
+export type GmailSyncRunResponseReportMode =
+  (typeof GmailSyncRunResponseReportMode)[keyof typeof GmailSyncRunResponseReportMode];
+
+export const GmailSyncRunResponseReportMode = {
+  bootstrap: "bootstrap",
+  incremental: "incremental",
+  rebootstrap: "rebootstrap",
+} as const;
+
+export type GmailSyncRunResponseReport = {
+  mode?: GmailSyncRunResponseReportMode;
+  candidates?: number;
+  matched?: number;
+  skipped?: number;
+  attachments?: number;
+  attachmentBytes?: number;
+  bootstrapCompleted?: boolean;
+  finalHistoryId?: string | null;
+};
+
+export interface GmailSyncRunResponse {
+  ok: boolean;
+  report?: GmailSyncRunResponseReport;
+}
+
+export type CalendarSyncRunResponseReportMode =
+  (typeof CalendarSyncRunResponseReportMode)[keyof typeof CalendarSyncRunResponseReportMode];
+
+export const CalendarSyncRunResponseReportMode = {
+  bootstrap: "bootstrap",
+  incremental: "incremental",
+  rebootstrap: "rebootstrap",
+} as const;
+
+export type CalendarSyncRunResponseReport = {
+  mode?: CalendarSyncRunResponseReportMode;
+  candidates?: number;
+  matched?: number;
+  updated?: number;
+  skipped?: number;
+  errors?: number;
+  bootstrapCompleted?: boolean;
+  hasSyncToken?: boolean;
+};
+
+export interface CalendarSyncRunResponse {
+  ok: boolean;
+  report?: CalendarSyncRunResponseReport;
 }
 
 /**
@@ -1758,6 +1934,42 @@ export type ListInteractionsParams = {
    */
   page?: PageParameter;
 };
+
+export type ListEmailMessagesParams = {
+  search?: string;
+  mailboxUserId?: string;
+  personId?: string;
+  funderId?: string;
+  householdId?: string;
+  /**
+   * @minimum 1
+   * @maximum 1000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
+
+export type ListCalendarEventsParams = {
+  search?: string;
+  calendarUserId?: string;
+  personId?: string;
+  funderId?: string;
+  householdId?: string;
+  /**
+   * @minimum 1
+   * @maximum 1000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
+
+export type AdminResyncGoogleUser200 = { [key: string]: unknown };
 
 export type DisconnectGoogleOauth200 = {
   ok: boolean;

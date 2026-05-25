@@ -10,7 +10,7 @@ import {
   type UpdateHouseholdBody,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
-import { InteractionsPanel } from "@/components/interactions-panel";
+import { ActivityTimeline } from "@/components/activity-timeline";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -119,7 +119,7 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
         </Card>
       </div>
 
-      <InteractionsPanel householdId={household.id} />
+      <ActivityTimeline householdId={household.id} />
 
       <div className="text-xs text-muted-foreground">
         Created {formatDate(household.createdAt)} • Updated {formatDate(household.updatedAt)}

@@ -32,6 +32,7 @@ tags:
   - { name: analytics }
   - { name: interactions }
   - { name: google-oauth }
+  - { name: google-sync }
 
 paths:
   /healthz:
@@ -754,6 +755,106 @@ paths:
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses: { "204": { description: Deleted } }
 
+  # ─── Email messages (synced Gmail, read-only + privacy toggle) ────────────
+  /email-messages:
+    get:
+      operationId: listEmailMessages
+      tags: [email-messages]
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: mailboxUserId, in: query, schema: { type: string } }
+        - { name: personId, in: query, schema: { type: string } }
+        - { name: funderId, in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailMessageList" } } } }
+  /email-messages/{id}:
+    get:
+      operationId: getEmailMessage
+      tags: [email-messages]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailMessageDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /email-messages/{id}/privacy:
+    patch:
+      operationId: updateEmailMessagePrivacy
+      tags: [email-messages]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateEmailMessagePrivacyBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailMessage" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /email-attachments/{id}/download:
+    get:
+      operationId: downloadEmailAttachment
+      tags: [email-messages]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200":
+          description: Attachment bytes
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Calendar events (synced Google Calendar, read-only + privacy) ────────
+  /calendar-events:
+    get:
+      operationId: listCalendarEvents
+      tags: [calendar-events]
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: calendarUserId, in: query, schema: { type: string } }
+        - { name: personId, in: query, schema: { type: string } }
+        - { name: funderId, in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarEventList" } } } }
+  /calendar-events/{id}:
+    get:
+      operationId: getCalendarEvent
+      tags: [calendar-events]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarEvent" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /calendar-events/{id}/privacy:
+    patch:
+      operationId: updateCalendarEventPrivacy
+      tags: [calendar-events]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateCalendarEventPrivacyBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarEvent" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Admin: per-user sync health + manual resync ──────────────────────────
+  /admin/google-sync:
+    get:
+      operationId: adminListGoogleSync
+      tags: [admin]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AdminGoogleSyncList" } } } }
+        "403": { description: Admin required }
+  /admin/google-sync/{id}/resync:
+    post:
+      operationId: adminResyncGoogleUser
+      tags: [admin]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { type: object, additionalProperties: true } } }
+        "403": { description: Admin required }
+        "409": { description: User has no active Google grant }
+
   # ─── Google OAuth (per-CRM-user Gmail + Calendar grants) ──────────────────
   # NB: /google-oauth/start and /google-oauth/callback are browser
   # navigations (302 redirects to/from Google), not API client calls, so
@@ -770,6 +871,30 @@ paths:
       tags: [google-oauth]
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: object, required: [ok], properties: { ok: { type: boolean } } } } } }
+
+  # ─── Google sync (per-user Gmail + Calendar incremental sync) ─────────────
+  /google-sync/status:
+    get:
+      operationId: getGoogleSyncStatus
+      tags: [google-sync]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GoogleSyncStatus" } } } }
+  /google-sync/gmail:
+    post:
+      operationId: runGmailSync
+      tags: [google-sync]
+      summary: Trigger an immediate Gmail sync for the calling user.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GmailSyncRunResponse" } } } }
+        "409": { description: "Caller has no active Google grant" }
+  /google-sync/calendar:
+    post:
+      operationId: runCalendarSync
+      tags: [google-sync]
+      summary: Trigger an immediate Google Calendar sync for the calling user.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarSyncRunResponse" } } } }
+        "409": { description: "Caller has no active Google grant" }
 
   # ─── Analytics (aggregate read-only) ───────────────────────────────────────
   /dashboard-summary:
@@ -2095,6 +2220,123 @@ components:
         funderIds:        { type: array, items: { type: string }, nullable: true }
         householdIds:     { type: array, items: { type: string }, nullable: true }
 
+    # ─── Email messages + attachments + calendar events ──────────────────────
+    EmailMessage:
+      type: object
+      required: [id, mailboxUserId, direction, sentAt, isPrivate]
+      properties:
+        id:                  { type: string }
+        gmailMessageId:      { type: string }
+        gmailThreadId:       { type: string, nullable: true }
+        mailboxUserId:       { type: string }
+        direction:           { type: string, enum: [sent, received] }
+        sentAt:              { type: string, format: date-time }
+        subject:             { type: string, nullable: true }
+        snippet:             { type: string, nullable: true }
+        fromEmail:           { type: string, nullable: true }
+        toEmails:            { type: array, items: { type: string }, nullable: true }
+        ccEmails:            { type: array, items: { type: string }, nullable: true }
+        bccEmails:           { type: array, items: { type: string }, nullable: true }
+        hasAttachments:      { type: boolean }
+        isPrivate:           { type: boolean }
+        privateSetByUserId:  { type: string, nullable: true }
+        matchedPersonIds:    { type: array, items: { type: string }, nullable: true }
+        matchedFunderIds:    { type: array, items: { type: string }, nullable: true }
+        matchedHouseholdIds: { type: array, items: { type: string }, nullable: true }
+    EmailMessageDetail:
+      allOf:
+        - $ref: "#/components/schemas/EmailMessage"
+        - type: object
+          properties:
+            bodyText:    { type: string, nullable: true }
+            bodyHtml:    { type: string, nullable: true }
+            attachments:
+              type: array
+              items: { $ref: "#/components/schemas/EmailAttachmentSummary" }
+    EmailAttachmentSummary:
+      type: object
+      required: [id, filename, mimeType, sizeBytes]
+      properties:
+        id:                 { type: string }
+        filename:           { type: string }
+        mimeType:           { type: string }
+        sizeBytes:          { type: integer }
+        gmailAttachmentId:  { type: string, nullable: true }
+    EmailMessageList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/EmailMessage" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    UpdateEmailMessagePrivacyBody:
+      type: object
+      required: [isPrivate]
+      properties:
+        isPrivate: { type: boolean }
+    CalendarEvent:
+      type: object
+      required: [id, calendarUserId, gcalCalendarId, gcalEventId, startAt, isPrivate]
+      properties:
+        id:                  { type: string }
+        calendarUserId:      { type: string }
+        gcalCalendarId:      { type: string }
+        gcalEventId:         { type: string }
+        startAt:             { type: string, format: date-time }
+        endAt:               { type: string, format: date-time, nullable: true }
+        summary:             { type: string, nullable: true }
+        description:         { type: string, nullable: true }
+        location:            { type: string, nullable: true }
+        attendeeEmails:      { type: array, items: { type: string }, nullable: true }
+        organizerEmail:      { type: string, nullable: true }
+        status:              { type: string, nullable: true }
+        htmlLink:            { type: string, nullable: true }
+        isPrivate:           { type: boolean }
+        privateSetByUserId:  { type: string, nullable: true }
+        matchedPersonIds:    { type: array, items: { type: string }, nullable: true }
+        matchedFunderIds:    { type: array, items: { type: string }, nullable: true }
+        matchedHouseholdIds: { type: array, items: { type: string }, nullable: true }
+    CalendarEventList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/CalendarEvent" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    UpdateCalendarEventPrivacyBody:
+      type: object
+      required: [isPrivate]
+      properties:
+        isPrivate: { type: boolean }
+
+    # ─── Admin sync status ────────────────────────────────────────────────────
+    AdminGoogleSyncSourceStatus:
+      type: object
+      required: [bootstrapInProgress]
+      properties:
+        lastSyncedAt:           { type: string, format: date-time, nullable: true }
+        lastError:              { type: string, nullable: true }
+        bootstrapCompletedAt:   { type: string, format: date-time, nullable: true }
+        bootstrapInProgress:    { type: boolean }
+    AdminGoogleSyncUserRow:
+      type: object
+      required: [userId, userEmail, connected, gmail, calendar]
+      properties:
+        userId:           { type: string }
+        userEmail:        { type: string }
+        googleEmail:      { type: string, nullable: true }
+        connected:        { type: boolean }
+        grantedAt:        { type: string, format: date-time, nullable: true }
+        revokedAt:        { type: string, format: date-time, nullable: true }
+        tokenLastError:   { type: string, nullable: true }
+        gmail:            { $ref: "#/components/schemas/AdminGoogleSyncSourceStatus" }
+        calendar:         { $ref: "#/components/schemas/AdminGoogleSyncSourceStatus" }
+    AdminGoogleSyncList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/AdminGoogleSyncUserRow" }
+
     # ─── Google OAuth status ──────────────────────────────────────────────────
     GoogleOauthStatus:
       type: object
@@ -2108,3 +2350,58 @@ components:
         grantedAt:    { type: string, format: date-time, nullable: true }
         revokedAt:    { type: string, format: date-time, nullable: true }
         lastError:    { type: string, nullable: true }
+
+    # ─── Google sync status + run report ──────────────────────────────────────
+    GoogleSyncStatus:
+      type: object
+      properties:
+        gmail:
+          nullable: true
+          type: object
+          properties:
+            lastHistoryId:        { type: string, nullable: true }
+            lastSyncedAt:         { type: string, format: date-time, nullable: true }
+            lastError:            { type: string, nullable: true }
+            bootstrapCompletedAt: { type: string, format: date-time, nullable: true }
+            bootstrapInProgress:  { type: boolean }
+        calendar:
+          nullable: true
+          type: object
+          properties:
+            hasSyncToken:         { type: boolean }
+            lastSyncedAt:         { type: string, format: date-time, nullable: true }
+            lastError:            { type: string, nullable: true }
+            bootstrapCompletedAt: { type: string, format: date-time, nullable: true }
+            bootstrapInProgress:  { type: boolean }
+    GmailSyncRunResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        report:
+          type: object
+          properties:
+            mode:                { type: string, enum: [bootstrap, incremental, rebootstrap] }
+            candidates:          { type: integer }
+            matched:             { type: integer }
+            skipped:             { type: integer }
+            attachments:         { type: integer }
+            attachmentBytes:     { type: integer }
+            bootstrapCompleted:  { type: boolean }
+            finalHistoryId:      { type: string, nullable: true }
+    CalendarSyncRunResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        report:
+          type: object
+          properties:
+            mode:                { type: string, enum: [bootstrap, incremental, rebootstrap] }
+            candidates:          { type: integer }
+            matched:             { type: integer }
+            updated:             { type: integer }
+            skipped:             { type: integer }
+            errors:              { type: integer }
+            bootstrapCompleted:  { type: boolean }
+            hasSyncToken:        { type: boolean }

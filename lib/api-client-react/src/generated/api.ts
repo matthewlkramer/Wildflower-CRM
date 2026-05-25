@@ -19,7 +19,12 @@ import type {
 import type {
   Address,
   AddressList,
+  AdminGoogleSyncList,
+  AdminResyncGoogleUser200,
   BadRequestResponse,
+  CalendarEvent,
+  CalendarEventList,
+  CalendarSyncRunResponse,
   CreateAddressBody,
   CreateEmailBody,
   CreateEntityBody,
@@ -39,6 +44,9 @@ import type {
   DisconnectGoogleOauth200,
   Email,
   EmailList,
+  EmailMessage,
+  EmailMessageDetail,
+  EmailMessageList,
   Entity,
   FiscalYear,
   FiscalYearBreakdown,
@@ -54,7 +62,9 @@ import type {
   GiftOrPayment,
   GiftOrPaymentDetail,
   GiftOrPaymentList,
+  GmailSyncRunResponse,
   GoogleOauthStatus,
+  GoogleSyncStatus,
   HealthStatus,
   Household,
   HouseholdDetail,
@@ -62,6 +72,8 @@ import type {
   Interaction,
   InteractionList,
   ListAddressesParams,
+  ListCalendarEventsParams,
+  ListEmailMessagesParams,
   ListEmailsParams,
   ListFiscalYearEntityGoalsParams,
   ListFundersParams,
@@ -103,7 +115,9 @@ import type {
   School,
   SchoolList,
   UpdateAddressBody,
+  UpdateCalendarEventPrivacyBody,
   UpdateEmailBody,
+  UpdateEmailMessagePrivacyBody,
   UpdateEntityBody,
   UpdateFunderBody,
   UpdateGiftAllocationBody,
@@ -6713,6 +6727,745 @@ export const useDeleteInteraction = <
   return useMutation(getDeleteInteractionMutationOptions(options));
 };
 
+export const getListEmailMessagesUrl = (params?: ListEmailMessagesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/email-messages?${stringifiedParams}`
+    : `/api/email-messages`;
+};
+
+export const listEmailMessages = async (
+  params?: ListEmailMessagesParams,
+  options?: RequestInit,
+): Promise<EmailMessageList> => {
+  return customFetch<EmailMessageList>(getListEmailMessagesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEmailMessagesQueryKey = (
+  params?: ListEmailMessagesParams,
+) => {
+  return [`/api/email-messages`, ...(params ? [params] : [])] as const;
+};
+
+export const getListEmailMessagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEmailMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListEmailMessagesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEmailMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEmailMessagesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEmailMessages>>
+  > = ({ signal }) => listEmailMessages(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEmailMessages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEmailMessagesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEmailMessages>>
+>;
+export type ListEmailMessagesQueryError = ErrorType<unknown>;
+
+export function useListEmailMessages<
+  TData = Awaited<ReturnType<typeof listEmailMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListEmailMessagesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEmailMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEmailMessagesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetEmailMessageUrl = (id: string) => {
+  return `/api/email-messages/${id}`;
+};
+
+export const getEmailMessage = async (
+  id: string,
+  options?: RequestInit,
+): Promise<EmailMessageDetail> => {
+  return customFetch<EmailMessageDetail>(getGetEmailMessageUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEmailMessageQueryKey = (id: string) => {
+  return [`/api/email-messages/${id}`] as const;
+};
+
+export const getGetEmailMessageQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEmailMessage>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEmailMessage>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEmailMessageQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getEmailMessage>>> = ({
+    signal,
+  }) => getEmailMessage(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEmailMessage>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEmailMessageQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEmailMessage>>
+>;
+export type GetEmailMessageQueryError = ErrorType<NotFoundResponse>;
+
+export function useGetEmailMessage<
+  TData = Awaited<ReturnType<typeof getEmailMessage>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEmailMessage>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEmailMessageQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateEmailMessagePrivacyUrl = (id: string) => {
+  return `/api/email-messages/${id}/privacy`;
+};
+
+export const updateEmailMessagePrivacy = async (
+  id: string,
+  updateEmailMessagePrivacyBody: UpdateEmailMessagePrivacyBody,
+  options?: RequestInit,
+): Promise<EmailMessage> => {
+  return customFetch<EmailMessage>(getUpdateEmailMessagePrivacyUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEmailMessagePrivacyBody),
+  });
+};
+
+export const getUpdateEmailMessagePrivacyMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEmailMessagePrivacy>>,
+    TError,
+    { id: string; data: BodyType<UpdateEmailMessagePrivacyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEmailMessagePrivacy>>,
+  TError,
+  { id: string; data: BodyType<UpdateEmailMessagePrivacyBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEmailMessagePrivacy"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEmailMessagePrivacy>>,
+    { id: string; data: BodyType<UpdateEmailMessagePrivacyBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateEmailMessagePrivacy(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEmailMessagePrivacyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEmailMessagePrivacy>>
+>;
+export type UpdateEmailMessagePrivacyMutationBody =
+  BodyType<UpdateEmailMessagePrivacyBody>;
+export type UpdateEmailMessagePrivacyMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useUpdateEmailMessagePrivacy = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEmailMessagePrivacy>>,
+    TError,
+    { id: string; data: BodyType<UpdateEmailMessagePrivacyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEmailMessagePrivacy>>,
+  TError,
+  { id: string; data: BodyType<UpdateEmailMessagePrivacyBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEmailMessagePrivacyMutationOptions(options));
+};
+
+export const getDownloadEmailAttachmentUrl = (id: string) => {
+  return `/api/email-attachments/${id}/download`;
+};
+
+export const downloadEmailAttachment = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadEmailAttachmentUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadEmailAttachmentQueryKey = (id: string) => {
+  return [`/api/email-attachments/${id}/download`] as const;
+};
+
+export const getDownloadEmailAttachmentQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadEmailAttachment>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadEmailAttachment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDownloadEmailAttachmentQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof downloadEmailAttachment>>
+  > = ({ signal }) =>
+    downloadEmailAttachment(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadEmailAttachment>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadEmailAttachmentQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadEmailAttachment>>
+>;
+export type DownloadEmailAttachmentQueryError = ErrorType<NotFoundResponse>;
+
+export function useDownloadEmailAttachment<
+  TData = Awaited<ReturnType<typeof downloadEmailAttachment>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadEmailAttachment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadEmailAttachmentQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListCalendarEventsUrl = (params?: ListCalendarEventsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/calendar-events?${stringifiedParams}`
+    : `/api/calendar-events`;
+};
+
+export const listCalendarEvents = async (
+  params?: ListCalendarEventsParams,
+  options?: RequestInit,
+): Promise<CalendarEventList> => {
+  return customFetch<CalendarEventList>(getListCalendarEventsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCalendarEventsQueryKey = (
+  params?: ListCalendarEventsParams,
+) => {
+  return [`/api/calendar-events`, ...(params ? [params] : [])] as const;
+};
+
+export const getListCalendarEventsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCalendarEvents>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListCalendarEventsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCalendarEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListCalendarEventsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCalendarEvents>>
+  > = ({ signal }) => listCalendarEvents(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCalendarEvents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCalendarEventsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCalendarEvents>>
+>;
+export type ListCalendarEventsQueryError = ErrorType<unknown>;
+
+export function useListCalendarEvents<
+  TData = Awaited<ReturnType<typeof listCalendarEvents>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListCalendarEventsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCalendarEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCalendarEventsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetCalendarEventUrl = (id: string) => {
+  return `/api/calendar-events/${id}`;
+};
+
+export const getCalendarEvent = async (
+  id: string,
+  options?: RequestInit,
+): Promise<CalendarEvent> => {
+  return customFetch<CalendarEvent>(getGetCalendarEventUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCalendarEventQueryKey = (id: string) => {
+  return [`/api/calendar-events/${id}`] as const;
+};
+
+export const getGetCalendarEventQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCalendarEvent>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCalendarEvent>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCalendarEventQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCalendarEvent>>
+  > = ({ signal }) => getCalendarEvent(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCalendarEvent>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCalendarEventQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCalendarEvent>>
+>;
+export type GetCalendarEventQueryError = ErrorType<NotFoundResponse>;
+
+export function useGetCalendarEvent<
+  TData = Awaited<ReturnType<typeof getCalendarEvent>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCalendarEvent>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCalendarEventQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateCalendarEventPrivacyUrl = (id: string) => {
+  return `/api/calendar-events/${id}/privacy`;
+};
+
+export const updateCalendarEventPrivacy = async (
+  id: string,
+  updateCalendarEventPrivacyBody: UpdateCalendarEventPrivacyBody,
+  options?: RequestInit,
+): Promise<CalendarEvent> => {
+  return customFetch<CalendarEvent>(getUpdateCalendarEventPrivacyUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateCalendarEventPrivacyBody),
+  });
+};
+
+export const getUpdateCalendarEventPrivacyMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCalendarEventPrivacy>>,
+    TError,
+    { id: string; data: BodyType<UpdateCalendarEventPrivacyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCalendarEventPrivacy>>,
+  TError,
+  { id: string; data: BodyType<UpdateCalendarEventPrivacyBody> },
+  TContext
+> => {
+  const mutationKey = ["updateCalendarEventPrivacy"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCalendarEventPrivacy>>,
+    { id: string; data: BodyType<UpdateCalendarEventPrivacyBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateCalendarEventPrivacy(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCalendarEventPrivacyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateCalendarEventPrivacy>>
+>;
+export type UpdateCalendarEventPrivacyMutationBody =
+  BodyType<UpdateCalendarEventPrivacyBody>;
+export type UpdateCalendarEventPrivacyMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useUpdateCalendarEventPrivacy = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCalendarEventPrivacy>>,
+    TError,
+    { id: string; data: BodyType<UpdateCalendarEventPrivacyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateCalendarEventPrivacy>>,
+  TError,
+  { id: string; data: BodyType<UpdateCalendarEventPrivacyBody> },
+  TContext
+> => {
+  return useMutation(getUpdateCalendarEventPrivacyMutationOptions(options));
+};
+
+export const getAdminListGoogleSyncUrl = () => {
+  return `/api/admin/google-sync`;
+};
+
+export const adminListGoogleSync = async (
+  options?: RequestInit,
+): Promise<AdminGoogleSyncList> => {
+  return customFetch<AdminGoogleSyncList>(getAdminListGoogleSyncUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdminListGoogleSyncQueryKey = () => {
+  return [`/api/admin/google-sync`] as const;
+};
+
+export const getAdminListGoogleSyncQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminListGoogleSync>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminListGoogleSync>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getAdminListGoogleSyncQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminListGoogleSync>>
+  > = ({ signal }) => adminListGoogleSync({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminListGoogleSync>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminListGoogleSyncQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminListGoogleSync>>
+>;
+export type AdminListGoogleSyncQueryError = ErrorType<void>;
+
+export function useAdminListGoogleSync<
+  TData = Awaited<ReturnType<typeof adminListGoogleSync>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminListGoogleSync>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminListGoogleSyncQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getAdminResyncGoogleUserUrl = (id: string) => {
+  return `/api/admin/google-sync/${id}/resync`;
+};
+
+export const adminResyncGoogleUser = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AdminResyncGoogleUser200> => {
+  return customFetch<AdminResyncGoogleUser200>(
+    getAdminResyncGoogleUserUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getAdminResyncGoogleUserMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminResyncGoogleUser>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminResyncGoogleUser>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["adminResyncGoogleUser"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminResyncGoogleUser>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return adminResyncGoogleUser(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminResyncGoogleUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminResyncGoogleUser>>
+>;
+
+export type AdminResyncGoogleUserMutationError = ErrorType<void>;
+
+export const useAdminResyncGoogleUser = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminResyncGoogleUser>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminResyncGoogleUser>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getAdminResyncGoogleUserMutationOptions(options));
+};
+
 export const getGetGoogleOauthStatusUrl = () => {
   return `/api/google-oauth/status`;
 };
@@ -6854,6 +7607,236 @@ export const useDisconnectGoogleOauth = <
   TContext
 > => {
   return useMutation(getDisconnectGoogleOauthMutationOptions(options));
+};
+
+export const getGetGoogleSyncStatusUrl = () => {
+  return `/api/google-sync/status`;
+};
+
+export const getGoogleSyncStatus = async (
+  options?: RequestInit,
+): Promise<GoogleSyncStatus> => {
+  return customFetch<GoogleSyncStatus>(getGetGoogleSyncStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGoogleSyncStatusQueryKey = () => {
+  return [`/api/google-sync/status`] as const;
+};
+
+export const getGetGoogleSyncStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGoogleSyncStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoogleSyncStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGoogleSyncStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGoogleSyncStatus>>
+  > = ({ signal }) => getGoogleSyncStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGoogleSyncStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGoogleSyncStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGoogleSyncStatus>>
+>;
+export type GetGoogleSyncStatusQueryError = ErrorType<unknown>;
+
+export function useGetGoogleSyncStatus<
+  TData = Awaited<ReturnType<typeof getGoogleSyncStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoogleSyncStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGoogleSyncStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Trigger an immediate Gmail sync for the calling user.
+ */
+export const getRunGmailSyncUrl = () => {
+  return `/api/google-sync/gmail`;
+};
+
+export const runGmailSync = async (
+  options?: RequestInit,
+): Promise<GmailSyncRunResponse> => {
+  return customFetch<GmailSyncRunResponse>(getRunGmailSyncUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRunGmailSyncMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runGmailSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runGmailSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["runGmailSync"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runGmailSync>>,
+    void
+  > = () => {
+    return runGmailSync(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunGmailSyncMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runGmailSync>>
+>;
+
+export type RunGmailSyncMutationError = ErrorType<void>;
+
+/**
+ * @summary Trigger an immediate Gmail sync for the calling user.
+ */
+export const useRunGmailSync = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runGmailSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runGmailSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRunGmailSyncMutationOptions(options));
+};
+
+/**
+ * @summary Trigger an immediate Google Calendar sync for the calling user.
+ */
+export const getRunCalendarSyncUrl = () => {
+  return `/api/google-sync/calendar`;
+};
+
+export const runCalendarSync = async (
+  options?: RequestInit,
+): Promise<CalendarSyncRunResponse> => {
+  return customFetch<CalendarSyncRunResponse>(getRunCalendarSyncUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRunCalendarSyncMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runCalendarSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runCalendarSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["runCalendarSync"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runCalendarSync>>,
+    void
+  > = () => {
+    return runCalendarSync(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunCalendarSyncMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runCalendarSync>>
+>;
+
+export type RunCalendarSyncMutationError = ErrorType<void>;
+
+/**
+ * @summary Trigger an immediate Google Calendar sync for the calling user.
+ */
+export const useRunCalendarSync = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runCalendarSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runCalendarSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRunCalendarSyncMutationOptions(options));
 };
 
 /**

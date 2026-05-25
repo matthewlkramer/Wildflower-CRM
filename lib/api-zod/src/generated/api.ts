@@ -3695,6 +3695,269 @@ export const DeleteInteractionParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const listEmailMessagesQueryLimitDefault = 50;
+export const listEmailMessagesQueryLimitMax = 1000;
+
+export const listEmailMessagesQueryPageDefault = 1;
+
+export const ListEmailMessagesQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  mailboxUserId: zod.coerce.string().optional(),
+  personId: zod.coerce.string().optional(),
+  funderId: zod.coerce.string().optional(),
+  householdId: zod.coerce.string().optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listEmailMessagesQueryLimitMax)
+    .default(listEmailMessagesQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listEmailMessagesQueryPageDefault),
+});
+
+export const ListEmailMessagesResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      gmailMessageId: zod.string().optional(),
+      gmailThreadId: zod.string().nullish(),
+      mailboxUserId: zod.string(),
+      direction: zod.enum(["sent", "received"]),
+      sentAt: zod.string().datetime({}),
+      subject: zod.string().nullish(),
+      snippet: zod.string().nullish(),
+      fromEmail: zod.string().nullish(),
+      toEmails: zod.array(zod.string()).nullish(),
+      ccEmails: zod.array(zod.string()).nullish(),
+      bccEmails: zod.array(zod.string()).nullish(),
+      hasAttachments: zod.boolean().optional(),
+      isPrivate: zod.boolean(),
+      privateSetByUserId: zod.string().nullish(),
+      matchedPersonIds: zod.array(zod.string()).nullish(),
+      matchedFunderIds: zod.array(zod.string()).nullish(),
+      matchedHouseholdIds: zod.array(zod.string()).nullish(),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const GetEmailMessageParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetEmailMessageResponse = zod
+  .object({
+    id: zod.string(),
+    gmailMessageId: zod.string().optional(),
+    gmailThreadId: zod.string().nullish(),
+    mailboxUserId: zod.string(),
+    direction: zod.enum(["sent", "received"]),
+    sentAt: zod.string().datetime({}),
+    subject: zod.string().nullish(),
+    snippet: zod.string().nullish(),
+    fromEmail: zod.string().nullish(),
+    toEmails: zod.array(zod.string()).nullish(),
+    ccEmails: zod.array(zod.string()).nullish(),
+    bccEmails: zod.array(zod.string()).nullish(),
+    hasAttachments: zod.boolean().optional(),
+    isPrivate: zod.boolean(),
+    privateSetByUserId: zod.string().nullish(),
+    matchedPersonIds: zod.array(zod.string()).nullish(),
+    matchedFunderIds: zod.array(zod.string()).nullish(),
+    matchedHouseholdIds: zod.array(zod.string()).nullish(),
+  })
+  .and(
+    zod.object({
+      bodyText: zod.string().nullish(),
+      bodyHtml: zod.string().nullish(),
+      attachments: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            filename: zod.string(),
+            mimeType: zod.string(),
+            sizeBytes: zod.number(),
+            gmailAttachmentId: zod.string().nullish(),
+          }),
+        )
+        .optional(),
+    }),
+  );
+
+export const UpdateEmailMessagePrivacyParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateEmailMessagePrivacyBody = zod.object({
+  isPrivate: zod.boolean(),
+});
+
+export const UpdateEmailMessagePrivacyResponse = zod.object({
+  id: zod.string(),
+  gmailMessageId: zod.string().optional(),
+  gmailThreadId: zod.string().nullish(),
+  mailboxUserId: zod.string(),
+  direction: zod.enum(["sent", "received"]),
+  sentAt: zod.string().datetime({}),
+  subject: zod.string().nullish(),
+  snippet: zod.string().nullish(),
+  fromEmail: zod.string().nullish(),
+  toEmails: zod.array(zod.string()).nullish(),
+  ccEmails: zod.array(zod.string()).nullish(),
+  bccEmails: zod.array(zod.string()).nullish(),
+  hasAttachments: zod.boolean().optional(),
+  isPrivate: zod.boolean(),
+  privateSetByUserId: zod.string().nullish(),
+  matchedPersonIds: zod.array(zod.string()).nullish(),
+  matchedFunderIds: zod.array(zod.string()).nullish(),
+  matchedHouseholdIds: zod.array(zod.string()).nullish(),
+});
+
+export const DownloadEmailAttachmentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const listCalendarEventsQueryLimitDefault = 50;
+export const listCalendarEventsQueryLimitMax = 1000;
+
+export const listCalendarEventsQueryPageDefault = 1;
+
+export const ListCalendarEventsQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  calendarUserId: zod.coerce.string().optional(),
+  personId: zod.coerce.string().optional(),
+  funderId: zod.coerce.string().optional(),
+  householdId: zod.coerce.string().optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listCalendarEventsQueryLimitMax)
+    .default(listCalendarEventsQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listCalendarEventsQueryPageDefault),
+});
+
+export const ListCalendarEventsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      calendarUserId: zod.string(),
+      gcalCalendarId: zod.string(),
+      gcalEventId: zod.string(),
+      startAt: zod.string().datetime({}),
+      endAt: zod.string().datetime({}).nullish(),
+      summary: zod.string().nullish(),
+      description: zod.string().nullish(),
+      location: zod.string().nullish(),
+      attendeeEmails: zod.array(zod.string()).nullish(),
+      organizerEmail: zod.string().nullish(),
+      status: zod.string().nullish(),
+      htmlLink: zod.string().nullish(),
+      isPrivate: zod.boolean(),
+      privateSetByUserId: zod.string().nullish(),
+      matchedPersonIds: zod.array(zod.string()).nullish(),
+      matchedFunderIds: zod.array(zod.string()).nullish(),
+      matchedHouseholdIds: zod.array(zod.string()).nullish(),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const GetCalendarEventParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetCalendarEventResponse = zod.object({
+  id: zod.string(),
+  calendarUserId: zod.string(),
+  gcalCalendarId: zod.string(),
+  gcalEventId: zod.string(),
+  startAt: zod.string().datetime({}),
+  endAt: zod.string().datetime({}).nullish(),
+  summary: zod.string().nullish(),
+  description: zod.string().nullish(),
+  location: zod.string().nullish(),
+  attendeeEmails: zod.array(zod.string()).nullish(),
+  organizerEmail: zod.string().nullish(),
+  status: zod.string().nullish(),
+  htmlLink: zod.string().nullish(),
+  isPrivate: zod.boolean(),
+  privateSetByUserId: zod.string().nullish(),
+  matchedPersonIds: zod.array(zod.string()).nullish(),
+  matchedFunderIds: zod.array(zod.string()).nullish(),
+  matchedHouseholdIds: zod.array(zod.string()).nullish(),
+});
+
+export const UpdateCalendarEventPrivacyParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateCalendarEventPrivacyBody = zod.object({
+  isPrivate: zod.boolean(),
+});
+
+export const UpdateCalendarEventPrivacyResponse = zod.object({
+  id: zod.string(),
+  calendarUserId: zod.string(),
+  gcalCalendarId: zod.string(),
+  gcalEventId: zod.string(),
+  startAt: zod.string().datetime({}),
+  endAt: zod.string().datetime({}).nullish(),
+  summary: zod.string().nullish(),
+  description: zod.string().nullish(),
+  location: zod.string().nullish(),
+  attendeeEmails: zod.array(zod.string()).nullish(),
+  organizerEmail: zod.string().nullish(),
+  status: zod.string().nullish(),
+  htmlLink: zod.string().nullish(),
+  isPrivate: zod.boolean(),
+  privateSetByUserId: zod.string().nullish(),
+  matchedPersonIds: zod.array(zod.string()).nullish(),
+  matchedFunderIds: zod.array(zod.string()).nullish(),
+  matchedHouseholdIds: zod.array(zod.string()).nullish(),
+});
+
+export const AdminListGoogleSyncResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      userId: zod.string(),
+      userEmail: zod.string(),
+      googleEmail: zod.string().nullish(),
+      connected: zod.boolean(),
+      grantedAt: zod.string().datetime({}).nullish(),
+      revokedAt: zod.string().datetime({}).nullish(),
+      tokenLastError: zod.string().nullish(),
+      gmail: zod.object({
+        lastSyncedAt: zod.string().datetime({}).nullish(),
+        lastError: zod.string().nullish(),
+        bootstrapCompletedAt: zod.string().datetime({}).nullish(),
+        bootstrapInProgress: zod.boolean(),
+      }),
+      calendar: zod.object({
+        lastSyncedAt: zod.string().datetime({}).nullish(),
+        lastError: zod.string().nullish(),
+        bootstrapCompletedAt: zod.string().datetime({}).nullish(),
+        bootstrapInProgress: zod.boolean(),
+      }),
+    }),
+  ),
+});
+
+export const AdminResyncGoogleUserParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AdminResyncGoogleUserResponse = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
 export const GetGoogleOauthStatusResponse = zod.object({
   configured: zod
     .boolean()
@@ -3710,6 +3973,65 @@ export const GetGoogleOauthStatusResponse = zod.object({
 
 export const DisconnectGoogleOauthResponse = zod.object({
   ok: zod.boolean(),
+});
+
+export const GetGoogleSyncStatusResponse = zod.object({
+  gmail: zod
+    .object({
+      lastHistoryId: zod.string().nullish(),
+      lastSyncedAt: zod.string().datetime({}).nullish(),
+      lastError: zod.string().nullish(),
+      bootstrapCompletedAt: zod.string().datetime({}).nullish(),
+      bootstrapInProgress: zod.boolean().optional(),
+    })
+    .nullish(),
+  calendar: zod
+    .object({
+      hasSyncToken: zod.boolean().optional(),
+      lastSyncedAt: zod.string().datetime({}).nullish(),
+      lastError: zod.string().nullish(),
+      bootstrapCompletedAt: zod.string().datetime({}).nullish(),
+      bootstrapInProgress: zod.boolean().optional(),
+    })
+    .nullish(),
+});
+
+/**
+ * @summary Trigger an immediate Gmail sync for the calling user.
+ */
+export const RunGmailSyncResponse = zod.object({
+  ok: zod.boolean(),
+  report: zod
+    .object({
+      mode: zod.enum(["bootstrap", "incremental", "rebootstrap"]).optional(),
+      candidates: zod.number().optional(),
+      matched: zod.number().optional(),
+      skipped: zod.number().optional(),
+      attachments: zod.number().optional(),
+      attachmentBytes: zod.number().optional(),
+      bootstrapCompleted: zod.boolean().optional(),
+      finalHistoryId: zod.string().nullish(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Trigger an immediate Google Calendar sync for the calling user.
+ */
+export const RunCalendarSyncResponse = zod.object({
+  ok: zod.boolean(),
+  report: zod
+    .object({
+      mode: zod.enum(["bootstrap", "incremental", "rebootstrap"]).optional(),
+      candidates: zod.number().optional(),
+      matched: zod.number().optional(),
+      updated: zod.number().optional(),
+      skipped: zod.number().optional(),
+      errors: zod.number().optional(),
+      bootstrapCompleted: zod.boolean().optional(),
+      hasSyncToken: zod.boolean().optional(),
+    })
+    .optional(),
 });
 
 /**

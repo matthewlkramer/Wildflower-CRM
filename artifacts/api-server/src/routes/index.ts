@@ -22,6 +22,11 @@ import giftAllocationsRouter from "./giftAllocations";
 import analyticsRouter from "./analytics";
 import interactionsRouter from "./interactions";
 import googleOauthRouter from "./googleOauth";
+import googleSyncRouter from "./googleSync";
+import emailMessagesRouter from "./emailMessages";
+import emailAttachmentsRouter from "./emailAttachments";
+import calendarEventsRouter from "./calendarEvents";
+import adminSyncRouter from "./adminSync";
 
 const router: IRouter = Router();
 
@@ -48,5 +53,10 @@ router.use(giftAllocationsRouter);
 router.use(analyticsRouter);
 router.use(interactionsRouter);
 router.use(googleOauthRouter);
+router.use(googleSyncRouter);
+router.use(emailMessagesRouter);
+router.use(emailAttachmentsRouter);
+router.use(calendarEventsRouter);
+router.use(adminSyncRouter);
 
 export default router;

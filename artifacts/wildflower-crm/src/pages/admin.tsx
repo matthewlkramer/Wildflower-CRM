@@ -10,10 +10,13 @@ import {
   useDeleteFiscalYearEntityGoal,
   useGetGoogleOauthStatus,
   useDisconnectGoogleOauth,
+  useAdminListGoogleSync,
+  useAdminResyncGoogleUser,
   getListEntitiesQueryKey,
   getListFiscalYearEntityGoalsQueryKey,
   getGetDashboardSummaryQueryKey,
   getGetGoogleOauthStatusQueryKey,
+  getAdminListGoogleSyncQueryKey,
 } from "@workspace/api-client-react";
 import type { Entity, FiscalYearEntityGoal, FiscalYear } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -88,7 +91,152 @@ export default function Admin() {
       <EntitiesSection entities={entities} loading={entitiesQ.isLoading} />
       <GoalsSection entities={entities} fyList={fyList} goals={goals} loading={goalsQ.isLoading || fyListQ.isLoading} />
       <GoogleConnectSection />
+      <AdminSyncSection />
     </div>
+  );
+}
+
+// ── Admin: per-user sync health ──────────────────────────────────────────────
+// Admin-only table showing every connected user's Gmail + Calendar sync
+// state. The "Resync now" button calls the same workers the in-process
+// scheduler does — useful when debugging a stuck mailbox without
+// waiting 15 minutes for the next tick.
+
+function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return "never";
+  const d = new Date(iso);
+  const ageMs = Date.now() - d.getTime();
+  if (ageMs < 60_000) return "just now";
+  if (ageMs < 3_600_000) return `${Math.round(ageMs / 60_000)}m ago`;
+  if (ageMs < 86_400_000) return `${Math.round(ageMs / 3_600_000)}h ago`;
+  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function AdminSyncSection() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const q = useAdminListGoogleSync({
+    query: {
+      queryKey: getAdminListGoogleSyncQueryKey(),
+      refetchInterval: 30_000,
+    },
+  });
+  const resync = useAdminResyncGoogleUser({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getAdminListGoogleSyncQueryKey() });
+        toast({ title: "Resync triggered" });
+      },
+      onError: (e: unknown) => {
+        toast({
+          title: "Resync failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  // 403 for non-admins: hide the whole card so the page doesn't render
+  // a permanent error message for regular staff visiting their own
+  // /admin page (Connect Gmail still works for everyone).
+  const errStatus = (q.error as unknown as { status?: number } | null)?.status;
+  if (errStatus === 403) return null;
+
+  const rows = q.data?.data ?? [];
+
+  return (
+    <Card data-testid="admin-sync-section">
+      <CardHeader>
+        <CardTitle>Google sync health</CardTitle>
+        <CardDescription>
+          Per-user Gmail + Calendar sync status. The scheduler runs every
+          15 minutes per connected user, jittered to spread load. Use
+          "Resync now" to kick a specific user immediately.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {q.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No staff have connected their Google account yet.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>User</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Gmail</TableHead>
+                <TableHead>Calendar</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => (
+                <TableRow key={r.userId} data-testid={`sync-row-${r.userId}`}>
+                  <TableCell>
+                    <div className="font-medium">{r.userEmail}</div>
+                    {r.googleEmail && r.googleEmail !== r.userEmail ? (
+                      <div className="text-xs text-muted-foreground">
+                        as {r.googleEmail}
+                      </div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell>
+                    {r.connected ? (
+                      <span className="text-emerald-700 text-sm">Connected</span>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">
+                        Revoked {fmtTime(r.revokedAt)}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    <div>{fmtTime(r.gmail.lastSyncedAt)}</div>
+                    {r.gmail.bootstrapInProgress ? (
+                      <div className="text-xs text-amber-700">
+                        Initial sync in progress
+                      </div>
+                    ) : null}
+                    {r.gmail.lastError ? (
+                      <div className="text-xs text-destructive truncate max-w-xs" title={r.gmail.lastError}>
+                        {r.gmail.lastError}
+                      </div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    <div>{fmtTime(r.calendar.lastSyncedAt)}</div>
+                    {r.calendar.bootstrapInProgress ? (
+                      <div className="text-xs text-amber-700">
+                        Initial sync in progress
+                      </div>
+                    ) : null}
+                    {r.calendar.lastError ? (
+                      <div className="text-xs text-destructive truncate max-w-xs" title={r.calendar.lastError}>
+                        {r.calendar.lastError}
+                      </div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!r.connected || resync.isPending}
+                      onClick={() => resync.mutate({ id: r.userId })}
+                      data-testid={`resync-${r.userId}`}
+                    >
+                      Resync now
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

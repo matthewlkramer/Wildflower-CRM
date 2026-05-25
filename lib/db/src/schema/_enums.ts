@@ -253,6 +253,15 @@ export const pronounsEnum = pgEnum("pronouns", [
   "other",
 ]);
 
+// ---- Email sync enums ----
+// Whether a synced Gmail message was sent by the mailbox owner or
+// received in their mailbox. Decided by comparing the From header
+// against the connected Google account email.
+export const emailDirectionEnum = pgEnum("email_direction", [
+  "sent",
+  "received",
+]);
+
 // ---- Interaction enums ----
 // Kind of touch the fundraising team logged. Manual entries only —
 // Gmail / Calendar syncs land in their own tables, not here.

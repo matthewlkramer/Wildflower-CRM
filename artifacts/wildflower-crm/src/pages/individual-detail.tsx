@@ -11,7 +11,7 @@ import {
   type Pronouns,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
-import { InteractionsPanel } from "@/components/interactions-panel";
+import { ActivityTimeline } from "@/components/activity-timeline";
 import {
   InlineEditBoolean,
   InlineEditSelect,
@@ -440,7 +440,7 @@ function PersonView({ person }: { person: PersonDetail }) {
         </Card>
       )}
 
-      <InteractionsPanel personId={person.id} />
+      <ActivityTimeline personId={person.id} />
 
       <div className="text-xs text-muted-foreground">
         Created {formatDate(person.createdAt)} • Updated {formatDate(person.updatedAt)}
