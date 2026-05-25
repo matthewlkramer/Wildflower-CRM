@@ -55,11 +55,14 @@ export function formatCapacity(capacity: string | null | undefined): string {
 
 /**
  * Compact funder-name renderer for **table cells only** — never use this on
- * detail pages where the funder is the subject of the view. Applies two
- * word-boundary substitutions, "Family Foundation" first so "Foundation"
- * doesn't double-replace:
+ * detail pages where the funder is the subject of the view. Applies a
+ * fixed sequence of word-boundary substitutions; order matters so plural
+ * and compound forms are consumed before their singular roots:
  *   "Family Foundation" → "F.F."
+ *   "Foundations"       → "Fnds"
  *   "Foundation"        → "Fnd"
+ *   "Fundación"         → "Fnd"
+ *   "Department"        → "Dept"
  * Match is case-insensitive; the abbreviated form is emitted as written.
  */
 export function formatFunderNameShort(
@@ -68,5 +71,8 @@ export function formatFunderNameShort(
   if (!name) return "";
   return name
     .replace(/\bFamily Foundation\b/gi, "F.F.")
-    .replace(/\bFoundation\b/gi, "Fnd");
+    .replace(/\bFoundations\b/gi, "Fnds")
+    .replace(/\bFoundation\b/gi, "Fnd")
+    .replace(/\bFundación\b/gi, "Fnd")
+    .replace(/\bDepartment\b/gi, "Dept");
 }
