@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "@clerk/react": "^6.4.2"
+    "@clerk/react": "^6.4.2",
+    "@dnd-kit/core": "^6.3.1"
   }
 }
