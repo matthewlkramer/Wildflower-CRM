@@ -71,7 +71,7 @@ export function formatFunderNameShort(
   name: string | null | undefined,
 ): string {
   if (!name) return "";
-  return name
+  const abbreviated = name
     .replace(/\bFamily Foundation\b/gi, "F.F.")
     .replace(/\bFoundations\b/gi, "Fnds")
     .replace(/\bFoundation\b/gi, "Fnd")
@@ -79,6 +79,10 @@ export function formatFunderNameShort(
     .replace(/\bDepartment\b/gi, "Dept")
     .replace(/\bEducation\b/gi, "Educ")
     .replace(/\bAnonymous\b/gi, "Anon");
+  // Funder names frequently embed a state ("Excellent Schools New Mexico",
+  // "Texas Education Agency") — run the same state-abbreviation pass so
+  // tables stay compact.
+  return abbreviateUsStates(abbreviated);
 }
 
 /**
