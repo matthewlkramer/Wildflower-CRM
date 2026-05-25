@@ -11,6 +11,10 @@ import {
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { ActivityTimeline } from "@/components/activity-timeline";
+import {
+  LinkedGiftsCard,
+  LinkedOpportunitiesCard,
+} from "@/components/linked-records";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -118,6 +122,22 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
           </CardContent>
         </Card>
       </div>
+
+      <LinkedOpportunitiesCard
+        scope={{ householdId: household.id }}
+        title="Pledges"
+        status="won"
+        emptyLabel="No pledges from this household."
+      />
+
+      <LinkedOpportunitiesCard
+        scope={{ householdId: household.id }}
+        title="Open opportunities"
+        status="open"
+        emptyLabel="No open opportunities."
+      />
+
+      <LinkedGiftsCard scope={{ householdId: household.id }} />
 
       <ActivityTimeline householdId={household.id} />
 

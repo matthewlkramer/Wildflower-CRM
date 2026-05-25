@@ -13,6 +13,10 @@ import {
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import {
+  LinkedGiftsCard,
+  LinkedOpportunitiesCard,
+} from "@/components/linked-records";
+import {
   InlineEditBoolean,
   InlineEditSelect,
   InlineEditText,
@@ -439,6 +443,22 @@ function PersonView({ person }: { person: PersonDetail }) {
           </CardContent>
         </Card>
       )}
+
+      <LinkedOpportunitiesCard
+        scope={{ individualGiverPersonId: person.id }}
+        title="Pledges"
+        status="won"
+        emptyLabel="No pledges from this individual."
+      />
+
+      <LinkedOpportunitiesCard
+        scope={{ individualGiverPersonId: person.id }}
+        title="Open opportunities"
+        status="open"
+        emptyLabel="No open opportunities."
+      />
+
+      <LinkedGiftsCard scope={{ individualGiverPersonId: person.id }} />
 
       <ActivityTimeline personId={person.id} />
 

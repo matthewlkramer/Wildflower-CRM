@@ -19,6 +19,10 @@ import {
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import {
+  LinkedGiftsCard,
+  LinkedOpportunitiesCard,
+} from "@/components/linked-records";
+import {
   InlineEditBoolean,
   InlineEditSelect,
   InlineEditText,
@@ -529,6 +533,22 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           </CardContent>
         </Card>
       )}
+
+      <LinkedOpportunitiesCard
+        scope={{ funderId: funder.id }}
+        title="Pledges"
+        status="won"
+        emptyLabel="No pledges from this funder."
+      />
+
+      <LinkedOpportunitiesCard
+        scope={{ funderId: funder.id }}
+        title="Open opportunities"
+        status="open"
+        emptyLabel="No open opportunities."
+      />
+
+      <LinkedGiftsCard scope={{ funderId: funder.id }} />
 
       <ActivityTimeline funderId={funder.id} />
 
