@@ -1283,12 +1283,15 @@ BEGIN
     ELSE ''
   END;
 
-  -- 3) Optional region suffix.
+  -- 3) Optional region suffix. The bare 'united_states' region is the
+  -- implicit default country and is filtered out — it shouldn't surface in
+  -- the label. Non-US regions and US-state/metro regions all still show.
   IF p_region_ids IS NOT NULL AND array_length(p_region_ids, 1) > 0 THEN
     SELECT string_agg(COALESCE(NULLIF(name, ''), id), ', ' ORDER BY name)
       INTO v_regions
       FROM regions
-     WHERE id = ANY(p_region_ids);
+     WHERE id = ANY(p_region_ids)
+       AND id <> 'united_states';
     IF v_regions IS NOT NULL AND v_regions <> '' THEN
       IF v_label = '' OR v_label IS NULL THEN
         v_label := v_regions;

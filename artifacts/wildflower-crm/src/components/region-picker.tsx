@@ -12,8 +12,16 @@ import {
 const PAGE_SIZE = 1000;
 const QUERY_PARAMS = { limit: PAGE_SIZE } as const;
 
+// The seed data uses "United States" as the implicit default country — every
+// US region's displayPath starts with "United States, ...". Strip that prefix
+// (and treat the bare "united_states" region as having no display) so US
+// regions render as their state/metro path and non-US regions still lead with
+// their country (e.g. "Canada, British Columbia", "Asia, China, Beijing").
 export function regionDisplayName(r: Region): string {
-  return r.displayPath?.trim() || r.name;
+  const raw = r.displayPath?.trim() || r.name;
+  if (raw === "United States") return "";
+  if (raw.startsWith("United States, ")) return raw.slice("United States, ".length);
+  return raw;
 }
 
 export function useRegionNameMap(): Map<string, string> {
