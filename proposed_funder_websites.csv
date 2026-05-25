@@ -1,0 +1,31 @@
+funder_id,name,proposed_domain,verdict,notes
+rec3AIEdNLQSpTAfb,WEM Foundation,wempfoundation.org,confident,Note: spelled 'wempfoundation' not 'wemfoundation' — double-check before write
+recEnJihmxpxL6Mes,Scully Peretsman Fund,,no_result,No usable result from web search
+recR28K8Twq5uV8Q0,Indira Foundation,indira-foundation.org,confident,
+recZCVtNIbErrDuV4,FR Bigelow Foundation,frbigelow.org,confident,
+reciSZYA4SoOMwOk4,Nathan C. and Margaret Y. Thorne Fund,nathanchristian.org,review,Suspicious — 'Christian' doesn't appear in funder name
+recPT296ptACrK3Ae,Peter Alfond Foundation,peteralfondfoundation.org,confident,
+recdVRuaesGtFksSe,Ardinger Brown Family Fund,brownfamilyfoundationsc.org,review,"Generic 'Brown family' — 'sc' suggests South Carolina, may be wrong family"
+recYqD8EtfXPF7NB2,Mardag Foundation,mardag.org,confident,
+recQKRNjVhIbx5XUK,Patrick & Alice Rogers Family Foundation,rogersfoundation.org,review,Generic 'Rogers Foundation' — multiple Rogers funds exist
+reccCno05Dr77Nol7,I.A. O'Shaughnessy Foundation,iaoshaughnessyfdn.org,confident,
+recWnApSSIyAlLvLJ,National Philanthropic Trust,nptrust.org,confident,Well-known DAF platform
+recf936vgy2XqEVd8,Trout Lily Initiative,troutlilymontessori.org,confident,Wildflower is Montessori-aligned — plausible
+recpJVf8d3D7fDCad,Scholler Foundation,,no_result,No usable result from web search
+rec0zAN7wojFBbh4S,MDRC nonprofit research,mdrc.org,confident,
+recgZQQdWiHL8ZA6e,James A.C. and Maureen A. Kennedy Charitable Giving Fund,kennedy-center.org,reject,"That's the JFK Performing Arts Center, not a family fund"
+rec4RKWrAVMEyCtlc,Piper Family Foundation Minnesota,pipersandler.com,reject,That's Piper Sandler the investment bank
+recnvTVfO9PjlXm6Q,Cisco Foundation,cisco.com,confident,Parent corp domain
+recQjMuWZr3PKGZWX,Albright Family Foundation,albrightfoundation.org,confident,
+recCLnMLsP4Ie8Dun,Barton Family Foundation,bartonff.org,confident,
+recTRGRudNIIjTGCI,Ilse Nathan Foundation,nathan-foundation.org,review,Generic 'Nathan Foundation' — could be different family
+recYLFPDE8S8rOzg4,Ahmanson Foundation,theahmansonfoundation.org,confident,
+recKTO6JlfmtDA1aa,Amalgamated Foundation,amalgamatedfoundation.org,confident,
+,Bohemian Foundation,bohemianfoundation.org,confident,
+,Booth-Bricker Fund,theboothbrickerfund.org,confident,
+,Boston Scientific Foundation,bostonscientific.com,confident,Parent corp domain
+,Bernard van Leer Foundation,vanleerfoundation.org,confident,
+,Biogen Foundation,biogen.com,confident,Parent corp domain
+,Arthur Vining Davis Foundations,avdf.org,confident,"Acronym, well-known"
+,Arthur M. Blank Family Foundation,blankfoundation.org,confident,
+,American Express Foundation,americanexpress.com,confident,Parent corp domain

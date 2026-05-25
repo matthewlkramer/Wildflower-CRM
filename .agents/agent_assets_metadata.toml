@@ -6,3 +6,9 @@ id = "xj1FaIq7QOhMyXj54XcNr"
 uri = "file://proposed_funder_domains.csv"
 type = "table"
 title = "Proposed funder email_domain updates (100 rows, cleaned)"
+
+[[outputs]]
+id = "1PgMgw5oRUiM2eQI3e3dh"
+uri = "file://proposed_funder_websites.csv"
+type = "table"
+title = "Web-searched funder websites (30 funders, with confidence)"
