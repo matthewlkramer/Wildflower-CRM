@@ -21,11 +21,17 @@ router.use(requireAuth);
 //   COALESCE(full_name, first||' '||last) pattern as donor joins.
 // - lifetimeGiving: sum of gifts.amount for this funder.
 // - openOpportunityCount: count of open opps for this funder.
+// See people.ts: the outer-scope id reference must be the raw
+// fragment `"funders"."id"` rather than `${funders.id}`, which
+// Drizzle inlines as bare `"id"` and Postgres flags as ambiguous in
+// subqueries whose own FROM table has an `id` column (people_entity_roles,
+// opportunities_and_pledges, joined people, …).
+const FUNDERS_ID = sql.raw(`"funders"."id"`);
 const fundersListSelect = {
   ...getTableColumns(funders),
   primaryContactPersonId: sql<string | null>`(
     SELECT per.person_id FROM people_entity_roles per
-    WHERE per.funder_id = ${funders.id} AND per.primary_contact = true
+    WHERE per.funder_id = ${FUNDERS_ID} AND per.primary_contact = true
     ORDER BY per.updated_at DESC
     LIMIT 1
   )`.as("primary_contact_person_id"),
@@ -36,17 +42,17 @@ const fundersListSelect = {
     )
     FROM people_entity_roles per
     JOIN people p ON p.id = per.person_id
-    WHERE per.funder_id = ${funders.id} AND per.primary_contact = true
+    WHERE per.funder_id = ${FUNDERS_ID} AND per.primary_contact = true
     ORDER BY per.updated_at DESC
     LIMIT 1
   )`.as("primary_contact_person_name"),
   lifetimeGiving: sql<string | null>`(
     SELECT COALESCE(SUM(amount), 0)::text FROM gifts_and_payments
-      WHERE funder_id = ${funders.id}
+      WHERE funder_id = ${FUNDERS_ID}
   )`.as("lifetime_giving"),
   openOpportunityCount: sql<number>`(
     SELECT COUNT(*)::int FROM opportunities_and_pledges
-      WHERE funder_id = ${funders.id} AND status = 'open'
+      WHERE funder_id = ${FUNDERS_ID} AND status = 'open'
   )`.as("open_opportunity_count"),
 };
 

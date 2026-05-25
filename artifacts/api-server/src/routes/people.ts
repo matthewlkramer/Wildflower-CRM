@@ -20,18 +20,25 @@ router.use(requireAuth);
 // both fold in gifts to households the person is a member of — per
 // the agreed rule, members claim the full household amount with no
 // splitting. See replit.md "lifetime giving" decision.
+//
+// NB: the outer-scope reference must be written as the raw fragment
+// `"people"."id"` rather than `${people.id}`. Drizzle inlines column
+// objects as bare `"id"` here, which Postgres flags as ambiguous in
+// any subquery whose own FROM table also has an `id` column
+// (people_entity_roles, opportunities_and_pledges, funders, …).
+const PEOPLE_ID = sql.raw(`"people"."id"`);
 const peopleListSelect = {
   ...getTableColumns(people),
   lifetimeGiving: sql<string | null>`(
     COALESCE(
       (SELECT SUM(amount) FROM gifts_and_payments
-        WHERE individual_giver_person_id = ${people.id}),
+        WHERE individual_giver_person_id = ${PEOPLE_ID}),
       0
     ) + COALESCE(
       (SELECT SUM(amount) FROM gifts_and_payments
         WHERE household_id IN (
           SELECT household_id FROM people_entity_roles
-          WHERE person_id = ${people.id} AND household_id IS NOT NULL
+          WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
         )),
       0
     )
@@ -43,18 +50,18 @@ const peopleListSelect = {
   mostRecentGiftDate: sql<string | null>`(
     SELECT MAX(d) FROM (
       SELECT MAX(date_received) AS d FROM gifts_and_payments
-        WHERE individual_giver_person_id = ${people.id}
+        WHERE individual_giver_person_id = ${PEOPLE_ID}
       UNION ALL
       SELECT MAX(date_received) AS d FROM gifts_and_payments
         WHERE household_id IN (
           SELECT household_id FROM people_entity_roles
-          WHERE person_id = ${people.id} AND household_id IS NOT NULL
+          WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
         )
     ) AS _gift_dates
   )`.as("most_recent_gift_date"),
   openOpportunityCount: sql<number>`(
     SELECT COUNT(*)::int FROM opportunities_and_pledges
-      WHERE individual_giver_person_id = ${people.id} AND status = 'open'
+      WHERE individual_giver_person_id = ${PEOPLE_ID} AND status = 'open'
   )`.as("open_opportunity_count"),
   // DISTINCT to dedupe in case a person has multiple current role rows
   // at the same funder (different role titles, etc.).
@@ -62,7 +69,7 @@ const peopleListSelect = {
     SELECT ARRAY_AGG(DISTINCT f.name ORDER BY f.name)
     FROM people_entity_roles per
     JOIN funders f ON f.id = per.funder_id
-    WHERE per.person_id = ${people.id}
+    WHERE per.person_id = ${PEOPLE_ID}
       AND per.current = 'current'
       AND per.funder_id IS NOT NULL
   )`.as("active_funder_names"),

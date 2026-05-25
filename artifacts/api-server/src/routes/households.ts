@@ -17,18 +17,22 @@ router.use(requireAuth);
 // Lifetime giving and most-recent gift fold in gifts to member
 // individuals (peopleEntityRoles where household_id matches) so the
 // view answers "what has this household given, in any form?".
+// See people.ts: outer-scope id must be `"households"."id"` raw, not
+// `${households.id}` (Drizzle inlines as bare `"id"`, ambiguous in
+// subqueries whose FROM has an `id` col).
+const HOUSEHOLDS_ID = sql.raw(`"households"."id"`);
 const householdsListSelect = {
   ...getTableColumns(households),
   lifetimeGiving: sql<string | null>`(
     COALESCE(
       (SELECT SUM(amount) FROM gifts_and_payments
-        WHERE household_id = ${households.id}),
+        WHERE household_id = ${HOUSEHOLDS_ID}),
       0
     ) + COALESCE(
       (SELECT SUM(amount) FROM gifts_and_payments
         WHERE individual_giver_person_id IN (
           SELECT person_id FROM people_entity_roles
-          WHERE household_id = ${households.id}
+          WHERE household_id = ${HOUSEHOLDS_ID}
         )),
       0
     )
@@ -38,18 +42,18 @@ const householdsListSelect = {
   mostRecentGiftDate: sql<string | null>`(
     SELECT MAX(d) FROM (
       SELECT MAX(date_received) AS d FROM gifts_and_payments
-        WHERE household_id = ${households.id}
+        WHERE household_id = ${HOUSEHOLDS_ID}
       UNION ALL
       SELECT MAX(date_received) AS d FROM gifts_and_payments
         WHERE individual_giver_person_id IN (
           SELECT person_id FROM people_entity_roles
-          WHERE household_id = ${households.id}
+          WHERE household_id = ${HOUSEHOLDS_ID}
         )
     ) AS _gift_dates
   )`.as("most_recent_gift_date"),
   openOpportunityCount: sql<number>`(
     SELECT COUNT(*)::int FROM opportunities_and_pledges
-      WHERE household_id = ${households.id} AND status = 'open'
+      WHERE household_id = ${HOUSEHOLDS_ID} AND status = 'open'
   )`.as("open_opportunity_count"),
 };
 
