@@ -8,7 +8,12 @@ import {
   integer,
   date,
 } from "drizzle-orm/pg-core";
-import { capacityRatingEnum, pronounsEnum } from "./_enums";
+import {
+  capacityRatingEnum,
+  connectionStatusEnum,
+  enthusiasmEnum,
+  pronounsEnum,
+} from "./_enums";
 import { users } from "./users";
 import { regions } from "./regions";
 
@@ -61,6 +66,11 @@ export const people = pgTable("people", {
   // so we can compare and roll up individuals + orgs against the same
   // bands. Nullable: not every contact has been rated.
   capacityRating: capacityRatingEnum("capacity_rating"),
+  // Mirrors funders.connection_status / funders.enthusiasm so we can
+  // track pipeline progression on individual donors and prospects in
+  // the same vocabulary used for organizational funders.
+  connectionStatus: connectionStatusEnum("connection_status"),
+  enthusiasm: enthusiasmEnum("enthusiasm"),
   childrenAtWf: text("children_at_wf"),
   meetingLink: text("meeting_link"),
   // Self-ref. SET NULL: if the assistant person is deleted, this person

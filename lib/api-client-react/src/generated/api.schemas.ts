@@ -910,6 +910,8 @@ export interface Person {
   meetingLink?: string | null;
   assistantPersonId?: string | null;
   capacityRating?: CapacityRating | null;
+  connectionStatus?: ConnectionStatus | null;
+  enthusiasm?: Enthusiasm | null;
   /** Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string. */
   readonly lifetimeGiving?: string | null;
   /** Most recent date_received across direct individual gifts and gifts to households the person belongs to. */
@@ -977,6 +979,8 @@ export interface CreatePersonBody {
   meetingLink?: string;
   assistantPersonId?: string;
   capacityRating?: CapacityRating;
+  connectionStatus?: ConnectionStatus;
+  enthusiasm?: Enthusiasm;
 }
 
 export interface UpdatePersonBody {
@@ -1011,6 +1015,8 @@ export interface UpdatePersonBody {
   meetingLink?: string | null;
   assistantPersonId?: string | null;
   capacityRating?: CapacityRating | null;
+  connectionStatus?: ConnectionStatus | null;
+  enthusiasm?: Enthusiasm | null;
 }
 
 export interface PeopleEntityRoleList {
@@ -1778,6 +1784,8 @@ export type ListPeopleParams = {
   deceased?: boolean;
   regionId?: string;
   capacityRating?: CapacityRating;
+  connectionStatus?: ConnectionStatus;
+  enthusiasm?: Enthusiasm;
   /**
    * @minimum 1
    * @maximum 1000

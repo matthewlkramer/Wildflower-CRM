@@ -98,6 +98,8 @@ router.get(
     if (deceased !== undefined) filters.push(eq(people.deceased, deceased));
     if (q.regionId) filters.push(eq(people.currentHomeRegionId, q.regionId));
     if (q.capacityRating) filters.push(eq(people.capacityRating, q.capacityRating));
+    if (q.connectionStatus) filters.push(eq(people.connectionStatus, q.connectionStatus));
+    if (q.enthusiasm) filters.push(eq(people.enthusiasm, q.enthusiasm));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

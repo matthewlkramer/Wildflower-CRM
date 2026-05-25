@@ -1650,6 +1650,12 @@ export const ListPeopleQueryParams = zod.object({
   capacityRating: zod
     .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
     .optional(),
+  connectionStatus: zod
+    .enum(["connected", "have_a_connector", "no_connection"])
+    .optional(),
+  enthusiasm: zod
+    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+    .optional(),
   limit: zod.coerce
     .number()
     .min(1)
@@ -1697,6 +1703,12 @@ export const ListPeopleResponse = zod.object({
       assistantPersonId: zod.string().nullish(),
       capacityRating: zod
         .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+        .nullish(),
+      connectionStatus: zod
+        .enum(["connected", "have_a_connector", "no_connection"])
+        .nullish(),
+      enthusiasm: zod
+        .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
         .nullish(),
       lifetimeGiving: zod
         .string()
@@ -1770,6 +1782,12 @@ export const CreatePersonBody = zod.object({
   capacityRating: zod
     .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
     .optional(),
+  connectionStatus: zod
+    .enum(["connected", "have_a_connector", "no_connection"])
+    .optional(),
+  enthusiasm: zod
+    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+    .optional(),
 });
 
 export const GetPersonParams = zod.object({
@@ -1814,6 +1832,12 @@ export const GetPersonResponse = zod
     assistantPersonId: zod.string().nullish(),
     capacityRating: zod
       .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+      .nullish(),
+    connectionStatus: zod
+      .enum(["connected", "have_a_connector", "no_connection"])
+      .nullish(),
+    enthusiasm: zod
+      .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
       .nullish(),
     lifetimeGiving: zod
       .string()
@@ -1977,6 +2001,12 @@ export const UpdatePersonBody = zod.object({
   capacityRating: zod
     .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
     .nullish(),
+  connectionStatus: zod
+    .enum(["connected", "have_a_connector", "no_connection"])
+    .nullish(),
+  enthusiasm: zod
+    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+    .nullish(),
 });
 
 export const UpdatePersonResponse = zod.object({
@@ -2016,6 +2046,12 @@ export const UpdatePersonResponse = zod.object({
   assistantPersonId: zod.string().nullish(),
   capacityRating: zod
     .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .nullish(),
+  connectionStatus: zod
+    .enum(["connected", "have_a_connector", "no_connection"])
+    .nullish(),
+  enthusiasm: zod
+    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .nullish(),
   lifetimeGiving: zod
     .string()

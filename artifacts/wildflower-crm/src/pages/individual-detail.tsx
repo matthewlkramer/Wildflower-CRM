@@ -9,6 +9,8 @@ import {
   type PersonDetail,
   type UpdatePersonBody,
   type Pronouns,
+  type ConnectionStatus,
+  type Enthusiasm,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { ActivityTimeline } from "@/components/activity-timeline";
@@ -64,6 +66,22 @@ const CAPACITY_OPTIONS = [
   { value: "tier_250k_1m", label: "$250k–$1M" },
   { value: "tier_1m_plus", label: "$1M+" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<string>>;
+
+// Same enums used on funders; mirrored here so the funder + person
+// pipeline vocabulary stays in sync.
+const CONNECTION_STATUS_OPTIONS = [
+  { value: "connected", label: "Connected" },
+  { value: "have_a_connector", label: "Have a connector" },
+  { value: "no_connection", label: "No connection" },
+] as const satisfies ReadonlyArray<InlineSelectOption<ConnectionStatus>>;
+
+const ENTHUSIASM_OPTIONS = [
+  { value: "advocate", label: "Advocate" },
+  { value: "supportive", label: "Supportive" },
+  { value: "warm", label: "Warm" },
+  { value: "neutral", label: "Neutral" },
+  { value: "unsupportive", label: "Unsupportive" },
+] as const satisfies ReadonlyArray<InlineSelectOption<Enthusiasm>>;
 import { useToast } from "@/hooks/use-toast";
 import { personDisplayName } from "@/lib/person";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -212,6 +230,26 @@ function PersonView({ person }: { person: PersonDetail }) {
                 options={CAPACITY_OPTIONS}
                 display={formatCapacity(person.capacityRating)}
                 onSave={(next) => patch({ capacityRating: next as PersonDetail["capacityRating"] })}
+              />
+            </Row>
+            <Row label="Connection">
+              <InlineEditSelect
+                label="Connection status"
+                testIdBase="person-connection"
+                value={person.connectionStatus ?? null}
+                options={CONNECTION_STATUS_OPTIONS}
+                display={formatEnum(person.connectionStatus)}
+                onSave={(next) => patch({ connectionStatus: next })}
+              />
+            </Row>
+            <Row label="Enthusiasm">
+              <InlineEditSelect
+                label="Enthusiasm"
+                testIdBase="person-enthusiasm"
+                value={person.enthusiasm ?? null}
+                options={ENTHUSIASM_OPTIONS}
+                display={formatEnum(person.enthusiasm)}
+                onSave={(next) => patch({ enthusiasm: next })}
               />
             </Row>
           </CardContent>

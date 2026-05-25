@@ -364,6 +364,8 @@ paths:
         - { name: deceased, in: query, schema: { type: boolean } }
         - { name: regionId, in: query, schema: { type: string } }
         - { name: capacityRating, in: query, schema: { $ref: "#/components/schemas/CapacityRating" } }
+        - { name: connectionStatus, in: query, schema: { $ref: "#/components/schemas/ConnectionStatus" } }
+        - { name: enthusiasm, in: query, schema: { $ref: "#/components/schemas/Enthusiasm" } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -1564,6 +1566,8 @@ components:
         meetingLink:              { type: string, nullable: true }
         assistantPersonId:        { type: string, nullable: true }
         capacityRating:           { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
+        connectionStatus:         { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
+        enthusiasm:               { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
         # Server-computed aggregates for the individuals list view. NOT
         # writable; computed per-request by the list-people query. Per
         # replit.md: lifetime giving is direct individual gifts + all
@@ -1623,6 +1627,8 @@ components:
         meetingLink:              { type: string }
         assistantPersonId:        { type: string }
         capacityRating:           { $ref: "#/components/schemas/CapacityRating" }
+        connectionStatus:         { $ref: "#/components/schemas/ConnectionStatus" }
+        enthusiasm:               { $ref: "#/components/schemas/Enthusiasm" }
     UpdatePersonBody:
       type: object
       properties:
@@ -1657,6 +1663,8 @@ components:
         meetingLink:              { type: string, nullable: true }
         assistantPersonId:        { type: string, nullable: true }
         capacityRating:           { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
+        connectionStatus:         { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
+        enthusiasm:               { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
 
     # ─── People-entity-roles ───────────────────────────────────────────────────
     PeopleEntityRole:
