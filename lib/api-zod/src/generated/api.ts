@@ -3028,6 +3028,12 @@ export const GetGiftOrPaymentResponse = zod
             spendingStart: zod.string().date().nullish(),
             spendingEnd: zod.string().date().nullish(),
             regionIds: zod.array(zod.string()).nullish(),
+            displayUsage: zod
+              .string()
+              .nullish()
+              .describe(
+                "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only.",
+              ),
             createdAt: zod.string().datetime({}),
             updatedAt: zod.string().datetime({}),
           }),
@@ -3171,6 +3177,12 @@ export const ListGiftAllocationsResponse = zod.object({
       spendingStart: zod.string().date().nullish(),
       spendingEnd: zod.string().date().nullish(),
       regionIds: zod.array(zod.string()).nullish(),
+      displayUsage: zod
+        .string()
+        .nullish()
+        .describe(
+          "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only.",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -3254,6 +3266,12 @@ export const UpdateGiftAllocationResponse = zod.object({
   spendingStart: zod.string().date().nullish(),
   spendingEnd: zod.string().date().nullish(),
   regionIds: zod.array(zod.string()).nullish(),
+  displayUsage: zod
+    .string()
+    .nullish()
+    .describe(
+      "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });

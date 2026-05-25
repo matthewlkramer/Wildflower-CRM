@@ -1229,3 +1229,168 @@ ON CONFLICT (fiscal_year_id, entity_id) DO UPDATE
 UPDATE entities SET active = false, updated_at = NOW()
  WHERE id IN ('embracing_equity', 'rising_tide', 'observation_support_tech', 'tierra_indigena')
    AND active = true;
+
+-- ============================================================================
+-- 2026-05-24  gift_allocations.display_usage — denormalised human label
+-- ============================================================================
+-- Trigger-maintained text label so list views and exports can show usage as
+-- one cell without joining schools/regions/fundable_projects. Rules (in order):
+--   1. school_recipient_id set → school's short_name (fallback name/long_name)
+--   2. intended_usage base label:
+--        gen_ops → "Gen Ops"
+--        school_startup → "School Startup"
+--        growth → "Growth"
+--        teacher_training → "Teacher Training"
+--        project → fundable_projects.name  (fallback "Project")
+--        null → ""
+--   3. If region_ids non-empty and not case 1, append " - <region names>".
+--
+-- Triggers on schools/regions/fundable_projects keep affected rows in sync
+-- when their display name changes.
+
+CREATE OR REPLACE FUNCTION compute_gift_allocation_display_usage(
+  p_intended_usage   intended_usage,
+  p_school_id        text,
+  p_project_id       text,
+  p_region_ids       text[]
+) RETURNS text
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+  v_label   text;
+  v_regions text;
+BEGIN
+  -- 1) School takes precedence over usage + regions.
+  IF p_school_id IS NOT NULL THEN
+    SELECT COALESCE(NULLIF(short_name, ''), NULLIF(name, ''), long_name)
+      INTO v_label
+      FROM schools
+     WHERE id = p_school_id;
+    RETURN COALESCE(v_label, '');
+  END IF;
+
+  -- 2) Base label from intended_usage enum.
+  v_label := CASE p_intended_usage
+    WHEN 'gen_ops'          THEN 'Gen Ops'
+    WHEN 'school_startup'   THEN 'School Startup'
+    WHEN 'growth'           THEN 'Growth'
+    WHEN 'teacher_training' THEN 'Teacher Training'
+    WHEN 'project'          THEN COALESCE(
+      (SELECT NULLIF(name, '') FROM fundable_projects WHERE id = p_project_id),
+      'Project'
+    )
+    ELSE ''
+  END;
+
+  -- 3) Optional region suffix.
+  IF p_region_ids IS NOT NULL AND array_length(p_region_ids, 1) > 0 THEN
+    SELECT string_agg(COALESCE(NULLIF(name, ''), id), ', ' ORDER BY name)
+      INTO v_regions
+      FROM regions
+     WHERE id = ANY(p_region_ids);
+    IF v_regions IS NOT NULL AND v_regions <> '' THEN
+      IF v_label = '' OR v_label IS NULL THEN
+        v_label := v_regions;
+      ELSE
+        v_label := v_label || ' - ' || v_regions;
+      END IF;
+    END IF;
+  END IF;
+
+  RETURN COALESCE(v_label, '');
+END;
+$$;
+
+-- BEFORE trigger keeps display_usage in lockstep with row writes.
+CREATE OR REPLACE FUNCTION gift_allocations_set_display_usage()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.display_usage := compute_gift_allocation_display_usage(
+    NEW.intended_usage,
+    NEW.school_recipient_id,
+    NEW.fundable_project_id,
+    NEW.region_ids
+  );
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS gift_allocations_display_usage_trg ON gift_allocations;
+CREATE TRIGGER gift_allocations_display_usage_trg
+  BEFORE INSERT OR UPDATE OF intended_usage, school_recipient_id,
+                              fundable_project_id, region_ids
+  ON gift_allocations
+  FOR EACH ROW
+  EXECUTE FUNCTION gift_allocations_set_display_usage();
+
+-- Cascade rename: schools.name/short_name/long_name → recompute matching rows.
+CREATE OR REPLACE FUNCTION schools_refresh_gift_allocation_display_usage()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE gift_allocations
+     SET display_usage = compute_gift_allocation_display_usage(
+           intended_usage, school_recipient_id, fundable_project_id, region_ids
+         ),
+         updated_at = NOW()
+   WHERE school_recipient_id = NEW.id;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS schools_refresh_display_usage_trg ON schools;
+CREATE TRIGGER schools_refresh_display_usage_trg
+  AFTER UPDATE OF name, short_name, long_name ON schools
+  FOR EACH ROW
+  WHEN (NEW.name IS DISTINCT FROM OLD.name
+        OR NEW.short_name IS DISTINCT FROM OLD.short_name
+        OR NEW.long_name  IS DISTINCT FROM OLD.long_name)
+  EXECUTE FUNCTION schools_refresh_gift_allocation_display_usage();
+
+-- Cascade rename: fundable_projects.name → recompute matching rows.
+CREATE OR REPLACE FUNCTION projects_refresh_gift_allocation_display_usage()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE gift_allocations
+     SET display_usage = compute_gift_allocation_display_usage(
+           intended_usage, school_recipient_id, fundable_project_id, region_ids
+         ),
+         updated_at = NOW()
+   WHERE fundable_project_id = NEW.id;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS projects_refresh_display_usage_trg ON fundable_projects;
+CREATE TRIGGER projects_refresh_display_usage_trg
+  AFTER UPDATE OF name ON fundable_projects
+  FOR EACH ROW
+  WHEN (NEW.name IS DISTINCT FROM OLD.name)
+  EXECUTE FUNCTION projects_refresh_gift_allocation_display_usage();
+
+-- Cascade rename: regions.name → recompute matching rows (array containment).
+CREATE OR REPLACE FUNCTION regions_refresh_gift_allocation_display_usage()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE gift_allocations
+     SET display_usage = compute_gift_allocation_display_usage(
+           intended_usage, school_recipient_id, fundable_project_id, region_ids
+         ),
+         updated_at = NOW()
+   WHERE region_ids @> ARRAY[NEW.id];
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS regions_refresh_display_usage_trg ON regions;
+CREATE TRIGGER regions_refresh_display_usage_trg
+  AFTER UPDATE OF name ON regions
+  FOR EACH ROW
+  WHEN (NEW.name IS DISTINCT FROM OLD.name)
+  EXECUTE FUNCTION regions_refresh_gift_allocation_display_usage();
+
+-- One-time backfill for existing rows. Idempotent — safe to re-run.
+UPDATE gift_allocations
+   SET display_usage = compute_gift_allocation_display_usage(
+         intended_usage, school_recipient_id, fundable_project_id, region_ids
+       )
+ WHERE display_usage IS DISTINCT FROM compute_gift_allocation_display_usage(
+         intended_usage, school_recipient_id, fundable_project_id, region_ids
+       );

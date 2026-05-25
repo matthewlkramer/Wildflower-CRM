@@ -1282,6 +1282,8 @@ export interface GiftAllocation {
   spendingStart?: string | null;
   spendingEnd?: string | null;
   regionIds?: string[] | null;
+  /** Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only. */
+  readonly displayUsage?: string | null;
   createdAt: string;
   updatedAt: string;
 }

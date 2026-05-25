@@ -57,6 +57,19 @@ export const giftAllocations = pgTable("gift_allocations", {
   // Array of regions.id values. Array columns can't carry native FK
   // constraints; API layer enforces.
   regionIds: text("region_ids").array(),
+  // Denormalised human-readable label for the allocation's usage. Computed by
+  // the `gift_allocations_display_usage_trg` trigger (see post-import-fixups
+  // .sql) — never set this directly. Rules:
+  //   - If schoolRecipientId is set → the school's short_name/name.
+  //   - Else base label from intendedUsage:
+  //       gen_ops → "Gen Ops", school_startup → "School Startup",
+  //       growth → "Growth", teacher_training → "Teacher Training",
+  //       project → fundable_projects.name (fallback "Project"),
+  //       null → "".
+  //   - If regionIds is non-empty (and not the school case) → append
+  //     " - <region names>". Triggers on schools/regions/fundable_projects
+  //     keep this in sync when names change.
+  displayUsage: text("display_usage"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
