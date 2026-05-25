@@ -71,7 +71,12 @@ import { uploadAttachment } from "./emailAttachmentStore";
  * simplest correct retry policy that loses nothing.
  */
 
-const BOOTSTRAP_QUERY = "newer_than:30d";
+// Empty query = bootstrap the entire mailbox (Gmail excludes Spam and
+// Trash by default, which is what we want — we don't ingest those into
+// the CRM). Per-source page caps + the in-process scheduler ensure
+// this drains in the background without blowing Google quota even on
+// large mailboxes.
+const BOOTSTRAP_QUERY = "";
 const BOOTSTRAP_PAGE_SIZE = 100;
 const BOOTSTRAP_MAX_PAGES_PER_RUN = 3;
 const HISTORY_MAX_PAGES_PER_RUN = 10;
@@ -441,9 +446,30 @@ async function processOneMessage(
   }
 
   if (isMatchEmpty(match)) {
+    // Persist enough metadata that, if a new CRM contact is added
+    // later whose email shows up in any of from/to/cc/bcc, we can
+    // surface the previously-skipped message and re-download its body
+    // + attachments. This makes the skip table forward-compatible
+    // without needing to keep the body bytes around.
+    const subject = getHeader(meta.payload, "Subject") ?? null;
+    const dateRaw = getHeader(meta.payload, "Date");
+    let sentAt: Date | null = null;
+    if (dateRaw) {
+      const parsed = new Date(dateRaw);
+      if (!Number.isNaN(parsed.getTime())) sentAt = parsed;
+    }
     await db
       .insert(emailSyncSkip)
-      .values({ mailboxUserId: grant.userId, gmailMessageId: gmailId })
+      .values({
+        mailboxUserId: grant.userId,
+        gmailMessageId: gmailId,
+        fromAddrs: fromAddrs,
+        toAddrs: toAddrs,
+        ccAddrs: ccAddrs,
+        bccAddrs: bccAddrs,
+        subject,
+        sentAt,
+      })
       .onConflictDoNothing();
     report.skipped++;
     return true;
