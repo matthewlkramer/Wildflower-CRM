@@ -1938,6 +1938,102 @@ export interface UpdateTaskBody {
   mentionUserIds?: string[] | null;
 }
 
+export type BulkUpdateResultFailedItem = {
+  id: string;
+  message: string;
+};
+
+export interface BulkUpdateResult {
+  /** Number of ids in the request. */
+  requested: number;
+  succeededIds: string[];
+  failed: BulkUpdateResultFailedItem[];
+}
+
+/**
+ * Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged.
+ */
+export interface BulkUpdatePeoplePatch {
+  ownerUserId?: string | null;
+  currentHomeRegionId?: string | null;
+  capacityRating?: CapacityRating | null;
+  isPriority?: boolean;
+  deceased?: boolean;
+}
+
+export interface BulkUpdatePeopleBody {
+  /**
+   * @minItems 1
+   * @maxItems 1000
+   */
+  ids: string[];
+  patch: BulkUpdatePeoplePatch;
+}
+
+export interface BulkUpdateFundersPatch {
+  ownerUserId?: string | null;
+  activeStatus?: ActiveStatus | null;
+  connectionStatus?: ConnectionStatus | null;
+  capacityRating?: CapacityRating | null;
+  enthusiasm?: Enthusiasm | null;
+  isPriority?: boolean;
+  fundingEntitySubtype?: FundingEntitySubtype | null;
+}
+
+export interface BulkUpdateFundersBody {
+  /**
+   * @minItems 1
+   * @maxItems 1000
+   */
+  ids: string[];
+  patch: BulkUpdateFundersPatch;
+}
+
+export interface BulkUpdateHouseholdsPatch {
+  active?: boolean;
+}
+
+export interface BulkUpdateHouseholdsBody {
+  /**
+   * @minItems 1
+   * @maxItems 1000
+   */
+  ids: string[];
+  patch: BulkUpdateHouseholdsPatch;
+}
+
+export interface BulkUpdateOpportunitiesPatch {
+  ownerUserId?: string | null;
+  status?: OpportunityStatus | null;
+  stage?: OpportunityStage | null;
+  type?: OpportunityType | null;
+  /** Required by the closed_requires_completion_date CHECK when bulk-setting status to a closed value (won/lost/dormant) and the rows do not already have one. */
+  actualCompletionDate?: string | null;
+}
+
+export interface BulkUpdateOpportunitiesBody {
+  /**
+   * @minItems 1
+   * @maxItems 1000
+   */
+  ids: string[];
+  patch: BulkUpdateOpportunitiesPatch;
+}
+
+export interface BulkUpdateGiftsPatch {
+  ownerUserId?: string | null;
+  type?: GiftType | null;
+}
+
+export interface BulkUpdateGiftsBody {
+  /**
+   * @minItems 1
+   * @maxItems 1000
+   */
+  ids: string[];
+  patch: BulkUpdateGiftsPatch;
+}
+
 /**
  * Not found
  */

@@ -4972,3 +4972,180 @@ export const GetFiscalYearBreakdownResponse = zod
   .describe(
     'Supporting detail for a single FY\'s dashboard money tiles. `received` powers the\n\"Received\" tile (gift_allocations summed); `openPipeline` powers both the\n\"Open asks\" tile (totalAsk) and the \"Weighted asks\" tile (totalWeighted).\n',
   );
+
+export const bulkUpdatePeopleBodyIdsMax = 1000;
+
+export const BulkUpdatePeopleBody = zod.object({
+  ids: zod.array(zod.string()).min(1).max(bulkUpdatePeopleBodyIdsMax),
+  patch: zod
+    .object({
+      ownerUserId: zod.string().nullish(),
+      currentHomeRegionId: zod.string().nullish(),
+      capacityRating: zod
+        .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+        .nullish(),
+      isPriority: zod.boolean().optional(),
+      deceased: zod.boolean().optional(),
+    })
+    .describe(
+      "Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged.",
+    ),
+});
+
+export const BulkUpdatePeopleResponse = zod.object({
+  requested: zod.number().describe("Number of ids in the request."),
+  succeededIds: zod.array(zod.string()),
+  failed: zod.array(
+    zod.object({
+      id: zod.string(),
+      message: zod.string(),
+    }),
+  ),
+});
+
+export const bulkUpdateFundersBodyIdsMax = 1000;
+
+export const BulkUpdateFundersBody = zod.object({
+  ids: zod.array(zod.string()).min(1).max(bulkUpdateFundersBodyIdsMax),
+  patch: zod.object({
+    ownerUserId: zod.string().nullish(),
+    activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
+    connectionStatus: zod
+      .enum(["connected", "have_a_connector", "no_connection"])
+      .nullish(),
+    capacityRating: zod
+      .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+      .nullish(),
+    enthusiasm: zod
+      .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+      .nullish(),
+    isPriority: zod.boolean().optional(),
+    fundingEntitySubtype: zod
+      .enum([
+        "family_foundation",
+        "institutional_foundation",
+        "corporate_foundation",
+        "community_foundation",
+        "bank_foundation",
+        "family_office_trust",
+        "intermediary",
+        "government",
+        "nonprofit",
+        "corporation",
+        "capital_provider",
+        "philanthropic_advisor",
+        "cdfi",
+        "education_forprofit",
+        "competition",
+        "public_private",
+        "daf_platform",
+        "platform",
+      ])
+      .nullish(),
+  }),
+});
+
+export const BulkUpdateFundersResponse = zod.object({
+  requested: zod.number().describe("Number of ids in the request."),
+  succeededIds: zod.array(zod.string()),
+  failed: zod.array(
+    zod.object({
+      id: zod.string(),
+      message: zod.string(),
+    }),
+  ),
+});
+
+export const bulkUpdateHouseholdsBodyIdsMax = 1000;
+
+export const BulkUpdateHouseholdsBody = zod.object({
+  ids: zod.array(zod.string()).min(1).max(bulkUpdateHouseholdsBodyIdsMax),
+  patch: zod.object({
+    active: zod.boolean().optional(),
+  }),
+});
+
+export const BulkUpdateHouseholdsResponse = zod.object({
+  requested: zod.number().describe("Number of ids in the request."),
+  succeededIds: zod.array(zod.string()),
+  failed: zod.array(
+    zod.object({
+      id: zod.string(),
+      message: zod.string(),
+    }),
+  ),
+});
+
+export const bulkUpdateOpportunitiesAndPledgesBodyIdsMax = 1000;
+
+export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
+  ids: zod
+    .array(zod.string())
+    .min(1)
+    .max(bulkUpdateOpportunitiesAndPledgesBodyIdsMax),
+  patch: zod.object({
+    ownerUserId: zod.string().nullish(),
+    status: zod.enum(["open", "won", "dormant", "lost"]).nullish(),
+    stage: zod
+      .enum([
+        "cold_lead",
+        "warm_lead",
+        "in_conversation",
+        "convince",
+        "conditional_commitment",
+        "probable_renewal",
+        "verbal_commitment",
+        "written_commitment",
+        "cash_in",
+      ])
+      .nullish(),
+    type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
+    actualCompletionDate: zod
+      .string()
+      .date()
+      .nullish()
+      .describe(
+        "Required by the closed_requires_completion_date CHECK when bulk-setting status to a closed value (won\/lost\/dormant) and the rows do not already have one.",
+      ),
+  }),
+});
+
+export const BulkUpdateOpportunitiesAndPledgesResponse = zod.object({
+  requested: zod.number().describe("Number of ids in the request."),
+  succeededIds: zod.array(zod.string()),
+  failed: zod.array(
+    zod.object({
+      id: zod.string(),
+      message: zod.string(),
+    }),
+  ),
+});
+
+export const bulkUpdateGiftsAndPaymentsBodyIdsMax = 1000;
+
+export const BulkUpdateGiftsAndPaymentsBody = zod.object({
+  ids: zod.array(zod.string()).min(1).max(bulkUpdateGiftsAndPaymentsBodyIdsMax),
+  patch: zod.object({
+    ownerUserId: zod.string().nullish(),
+    type: zod
+      .enum([
+        "standard_gift",
+        "pledge_payment",
+        "directed_gift",
+        "loan_fund_investment",
+        "matching_gift",
+      ])
+      .nullish(),
+  }),
+});
+
+export const BulkUpdateGiftsAndPaymentsResponse = zod.object({
+  requested: zod.number().describe("Number of ids in the request."),
+  succeededIds: zod.array(zod.string()),
+  failed: zod.array(
+    zod.object({
+      id: zod.string(),
+      message: zod.string(),
+    }),
+  ),
+});

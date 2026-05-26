@@ -4,11 +4,17 @@ import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListFunders,
   getListFundersQueryKey,
+  useBulkUpdateFunders,
   type ListFundersParams,
   type FundingEntitySubtype,
   type ConnectionStatus,
   type ActiveStatus,
 } from "@workspace/api-client-react";
+import { useRowSelection } from "@/hooks/use-row-selection";
+import { BulkActionBar } from "@/components/bulk-action-bar";
+import { BulkEditDialog } from "@/components/bulk-edit-dialog";
+import { FUNDERS_BULK_FIELDS } from "@/lib/bulk-fields";
+import { Checkbox } from "@/components/ui/checkbox";
 import { formatCapacity, formatCurrency, formatEnum, formatFunderNameShort } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
@@ -74,6 +80,9 @@ export default function FundingEntities() {
   const [connectionStatuses, setConnectionStatuses] = useState<string[]>([]);
   const [owners, setOwners] = useState<string[]>([]);
   const [page, setPage] = useState(1);
+  const selection = useRowSelection();
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const bulkMut = useBulkUpdateFunders();
 
   const params: ListFundersParams = {
     limit: PAGE_SIZE,
@@ -158,6 +167,7 @@ export default function FundingEntities() {
             onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
+              selection.clear();
             }}
             aria-label="Search funders by name"
             data-testid="input-search-funders"
@@ -167,27 +177,27 @@ export default function FundingEntities() {
         <MultiFilterSelect
           label="Subtype"
           selected={subtypes}
-          onChange={(v) => { setSubtypes(v); setPage(1); }}
+          onChange={(v) => { setSubtypes(v); setPage(1); selection.clear(); }}
           options={SUBTYPES}
           testId="select-subtype"
         />
         <MultiFilterSelect
           label="Active status"
           selected={activeStatuses}
-          onChange={(v) => { setActiveStatuses(v); setPage(1); }}
+          onChange={(v) => { setActiveStatuses(v); setPage(1); selection.clear(); }}
           options={ACTIVE_STATUSES}
           testId="select-active-status"
         />
         <MultiFilterSelect
           label="Connection"
           selected={connectionStatuses}
-          onChange={(v) => { setConnectionStatuses(v); setPage(1); }}
+          onChange={(v) => { setConnectionStatuses(v); setPage(1); selection.clear(); }}
           options={CONNECTION_STATUSES}
           testId="select-connection-status"
         />
         <OwnerMultiFilter
           selected={owners}
-          onChange={(v) => { setOwners(v); setPage(1); }}
+          onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
           testId="select-funder-owner"
         />
 
@@ -202,6 +212,7 @@ export default function FundingEntities() {
               setConnectionStatuses([]);
               setOwners([]);
               setPage(1);
+              selection.clear();
             }}
           >
             Clear
@@ -213,6 +224,17 @@ export default function FundingEntities() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8">
+                <Checkbox
+                  checked={
+                    sortedRows.length > 0 &&
+                    sortedRows.every((r) => selection.isSelected(r.id))
+                  }
+                  onCheckedChange={() => selection.toggleVisible(sortedRows.map((r) => r.id))}
+                  aria-label="Select all funders on this page"
+                  data-testid="checkbox-select-all-funders"
+                />
+              </TableHead>
               <SortableTH colKey="priority" {...ts}><span className="sr-only">Priority</span></SortableTH>
               <SortableTH colKey="name" {...ts}>Name</SortableTH>
               <SortableTH colKey="subtype" {...ts}>Subtype</SortableTH>
@@ -230,7 +252,7 @@ export default function FundingEntities() {
             {isLoading ? (
               <TableRow>
                 <TableCell
-                  colSpan={11}
+                  colSpan={12}
                   className="text-center h-24 text-muted-foreground"
                 >
                   Loading…
@@ -239,7 +261,7 @@ export default function FundingEntities() {
             ) : isError ? (
               <TableRow>
                 <TableCell
-                  colSpan={11}
+                  colSpan={12}
                   className="text-center h-24 text-destructive"
                 >
                   {error instanceof Error
@@ -250,7 +272,7 @@ export default function FundingEntities() {
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={11}
+                  colSpan={12}
                   className="text-center h-24 text-muted-foreground"
                 >
                   No funders match these filters.
@@ -266,6 +288,14 @@ export default function FundingEntities() {
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
                     data-testid={`row-funder-${f.id}`}
                   >
+                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selection.isSelected(f.id)}
+                        onCheckedChange={() => selection.toggle(f.id)}
+                        aria-label={`Select ${f.name}`}
+                        data-testid={`checkbox-select-${f.id}`}
+                      />
+                    </TableCell>
                     <TableCell className="w-8 pr-0">
                       <PriorityStar kind="funder" id={f.id} isPriority={f.isPriority} />
                     </TableCell>
@@ -325,6 +355,29 @@ export default function FundingEntities() {
           </TableBody>
         </Table>
       </div>
+
+      <BulkActionBar
+        count={selection.count}
+        onEdit={() => setBulkOpen(true)}
+        onClear={selection.clear}
+        entityNoun="funder"
+      />
+      <BulkEditDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        entityNoun="funder"
+        selectedIds={selection.selectedIds}
+        fields={FUNDERS_BULK_FIELDS}
+        invalidateKeys={[getListFundersQueryKey()]}
+        onSubmit={async (patch) =>
+          bulkMut.mutateAsync({
+            data: { ids: selection.selectedIds, patch },
+          })
+        }
+        onDone={(r) => {
+          if (r.failed.length === 0) selection.clear();
+        }}
+      />
 
       {totalPages > 1 && (
         <Pagination>

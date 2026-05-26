@@ -23,6 +23,12 @@ import type {
   AdminGoogleSyncList,
   AdminResyncGoogleUser200,
   BadRequestResponse,
+  BulkUpdateFundersBody,
+  BulkUpdateGiftsBody,
+  BulkUpdateHouseholdsBody,
+  BulkUpdateOpportunitiesBody,
+  BulkUpdatePeopleBody,
+  BulkUpdateResult,
   CalendarEvent,
   CalendarEventList,
   CalendarSyncRunResponse,
@@ -9550,3 +9556,413 @@ export function useGetFiscalYearBreakdown<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getBulkUpdatePeopleUrl = () => {
+  return `/api/people/bulk-update`;
+};
+
+export const bulkUpdatePeople = async (
+  bulkUpdatePeopleBody: BulkUpdatePeopleBody,
+  options?: RequestInit,
+): Promise<BulkUpdateResult> => {
+  return customFetch<BulkUpdateResult>(getBulkUpdatePeopleUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkUpdatePeopleBody),
+  });
+};
+
+export const getBulkUpdatePeopleMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdatePeople>>,
+    TError,
+    { data: BodyType<BulkUpdatePeopleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkUpdatePeople>>,
+  TError,
+  { data: BodyType<BulkUpdatePeopleBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkUpdatePeople"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkUpdatePeople>>,
+    { data: BodyType<BulkUpdatePeopleBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkUpdatePeople(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkUpdatePeopleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkUpdatePeople>>
+>;
+export type BulkUpdatePeopleMutationBody = BodyType<BulkUpdatePeopleBody>;
+export type BulkUpdatePeopleMutationError = ErrorType<BadRequestResponse>;
+
+export const useBulkUpdatePeople = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdatePeople>>,
+    TError,
+    { data: BodyType<BulkUpdatePeopleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkUpdatePeople>>,
+  TError,
+  { data: BodyType<BulkUpdatePeopleBody> },
+  TContext
+> => {
+  return useMutation(getBulkUpdatePeopleMutationOptions(options));
+};
+
+export const getBulkUpdateFundersUrl = () => {
+  return `/api/funders/bulk-update`;
+};
+
+export const bulkUpdateFunders = async (
+  bulkUpdateFundersBody: BulkUpdateFundersBody,
+  options?: RequestInit,
+): Promise<BulkUpdateResult> => {
+  return customFetch<BulkUpdateResult>(getBulkUpdateFundersUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkUpdateFundersBody),
+  });
+};
+
+export const getBulkUpdateFundersMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateFunders>>,
+    TError,
+    { data: BodyType<BulkUpdateFundersBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkUpdateFunders>>,
+  TError,
+  { data: BodyType<BulkUpdateFundersBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkUpdateFunders"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkUpdateFunders>>,
+    { data: BodyType<BulkUpdateFundersBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkUpdateFunders(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkUpdateFundersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkUpdateFunders>>
+>;
+export type BulkUpdateFundersMutationBody = BodyType<BulkUpdateFundersBody>;
+export type BulkUpdateFundersMutationError = ErrorType<BadRequestResponse>;
+
+export const useBulkUpdateFunders = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateFunders>>,
+    TError,
+    { data: BodyType<BulkUpdateFundersBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkUpdateFunders>>,
+  TError,
+  { data: BodyType<BulkUpdateFundersBody> },
+  TContext
+> => {
+  return useMutation(getBulkUpdateFundersMutationOptions(options));
+};
+
+export const getBulkUpdateHouseholdsUrl = () => {
+  return `/api/households/bulk-update`;
+};
+
+export const bulkUpdateHouseholds = async (
+  bulkUpdateHouseholdsBody: BulkUpdateHouseholdsBody,
+  options?: RequestInit,
+): Promise<BulkUpdateResult> => {
+  return customFetch<BulkUpdateResult>(getBulkUpdateHouseholdsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkUpdateHouseholdsBody),
+  });
+};
+
+export const getBulkUpdateHouseholdsMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateHouseholds>>,
+    TError,
+    { data: BodyType<BulkUpdateHouseholdsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkUpdateHouseholds>>,
+  TError,
+  { data: BodyType<BulkUpdateHouseholdsBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkUpdateHouseholds"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkUpdateHouseholds>>,
+    { data: BodyType<BulkUpdateHouseholdsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkUpdateHouseholds(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkUpdateHouseholdsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkUpdateHouseholds>>
+>;
+export type BulkUpdateHouseholdsMutationBody =
+  BodyType<BulkUpdateHouseholdsBody>;
+export type BulkUpdateHouseholdsMutationError = ErrorType<BadRequestResponse>;
+
+export const useBulkUpdateHouseholds = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateHouseholds>>,
+    TError,
+    { data: BodyType<BulkUpdateHouseholdsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkUpdateHouseholds>>,
+  TError,
+  { data: BodyType<BulkUpdateHouseholdsBody> },
+  TContext
+> => {
+  return useMutation(getBulkUpdateHouseholdsMutationOptions(options));
+};
+
+export const getBulkUpdateOpportunitiesAndPledgesUrl = () => {
+  return `/api/opportunities-and-pledges/bulk-update`;
+};
+
+export const bulkUpdateOpportunitiesAndPledges = async (
+  bulkUpdateOpportunitiesBody: BulkUpdateOpportunitiesBody,
+  options?: RequestInit,
+): Promise<BulkUpdateResult> => {
+  return customFetch<BulkUpdateResult>(
+    getBulkUpdateOpportunitiesAndPledgesUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkUpdateOpportunitiesBody),
+    },
+  );
+};
+
+export const getBulkUpdateOpportunitiesAndPledgesMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateOpportunitiesAndPledges>>,
+    TError,
+    { data: BodyType<BulkUpdateOpportunitiesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkUpdateOpportunitiesAndPledges>>,
+  TError,
+  { data: BodyType<BulkUpdateOpportunitiesBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkUpdateOpportunitiesAndPledges"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkUpdateOpportunitiesAndPledges>>,
+    { data: BodyType<BulkUpdateOpportunitiesBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkUpdateOpportunitiesAndPledges(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkUpdateOpportunitiesAndPledgesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkUpdateOpportunitiesAndPledges>>
+>;
+export type BulkUpdateOpportunitiesAndPledgesMutationBody =
+  BodyType<BulkUpdateOpportunitiesBody>;
+export type BulkUpdateOpportunitiesAndPledgesMutationError =
+  ErrorType<BadRequestResponse>;
+
+export const useBulkUpdateOpportunitiesAndPledges = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateOpportunitiesAndPledges>>,
+    TError,
+    { data: BodyType<BulkUpdateOpportunitiesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkUpdateOpportunitiesAndPledges>>,
+  TError,
+  { data: BodyType<BulkUpdateOpportunitiesBody> },
+  TContext
+> => {
+  return useMutation(
+    getBulkUpdateOpportunitiesAndPledgesMutationOptions(options),
+  );
+};
+
+export const getBulkUpdateGiftsAndPaymentsUrl = () => {
+  return `/api/gifts-and-payments/bulk-update`;
+};
+
+export const bulkUpdateGiftsAndPayments = async (
+  bulkUpdateGiftsBody: BulkUpdateGiftsBody,
+  options?: RequestInit,
+): Promise<BulkUpdateResult> => {
+  return customFetch<BulkUpdateResult>(getBulkUpdateGiftsAndPaymentsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkUpdateGiftsBody),
+  });
+};
+
+export const getBulkUpdateGiftsAndPaymentsMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateGiftsAndPayments>>,
+    TError,
+    { data: BodyType<BulkUpdateGiftsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkUpdateGiftsAndPayments>>,
+  TError,
+  { data: BodyType<BulkUpdateGiftsBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkUpdateGiftsAndPayments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkUpdateGiftsAndPayments>>,
+    { data: BodyType<BulkUpdateGiftsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkUpdateGiftsAndPayments(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkUpdateGiftsAndPaymentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkUpdateGiftsAndPayments>>
+>;
+export type BulkUpdateGiftsAndPaymentsMutationBody =
+  BodyType<BulkUpdateGiftsBody>;
+export type BulkUpdateGiftsAndPaymentsMutationError =
+  ErrorType<BadRequestResponse>;
+
+export const useBulkUpdateGiftsAndPayments = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateGiftsAndPayments>>,
+    TError,
+    { data: BodyType<BulkUpdateGiftsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkUpdateGiftsAndPayments>>,
+  TError,
+  { data: BodyType<BulkUpdateGiftsBody> },
+  TContext
+> => {
+  return useMutation(getBulkUpdateGiftsAndPaymentsMutationOptions(options));
+};

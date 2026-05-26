@@ -1218,6 +1218,53 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYearBreakdown" } } } }
 
+  # ─── Bulk record updates ───────────────────────────────────────────────────
+  # One endpoint per entity. The body is { ids, patch } where `patch` is
+  # a per-entity subset of writable fields. Only fields present in `patch`
+  # are written — forward-only, untouched fields are never overwritten.
+  # Returns 200 even on partial failures; per-id failures are listed in
+  # the response body (the audit log records both success and failure).
+  /people/bulk-update:
+    post:
+      operationId: bulkUpdatePeople
+      tags: [people]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdatePeopleBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /funders/bulk-update:
+    post:
+      operationId: bulkUpdateFunders
+      tags: [funders]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateFundersBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /households/bulk-update:
+    post:
+      operationId: bulkUpdateHouseholds
+      tags: [households]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateHouseholdsBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /opportunities-and-pledges/bulk-update:
+    post:
+      operationId: bulkUpdateOpportunitiesAndPledges
+      tags: [opportunities-and-pledges]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateOpportunitiesBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /gifts-and-payments/bulk-update:
+    post:
+      operationId: bulkUpdateGiftsAndPayments
+      tags: [gifts-and-payments]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateGiftsBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
 components:
   parameters:
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 50 } }
@@ -2920,3 +2967,85 @@ components:
         opportunityIds:  { type: array, items: { type: string }, nullable: true }
         giftIds:         { type: array, items: { type: string }, nullable: true }
         mentionUserIds:  { type: array, items: { type: string }, nullable: true }
+
+    # ─── Bulk record updates ───────────────────────────────────────────────────
+    BulkUpdateResult:
+      type: object
+      required: [requested, succeededIds, failed]
+      properties:
+        requested:    { type: integer, description: "Number of ids in the request." }
+        succeededIds: { type: array, items: { type: string } }
+        failed:
+          type: array
+          items:
+            type: object
+            required: [id, message]
+            properties:
+              id:      { type: string }
+              message: { type: string }
+    BulkUpdatePeoplePatch:
+      type: object
+      description: "Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged."
+      properties:
+        ownerUserId:         { type: string, nullable: true }
+        currentHomeRegionId: { type: string, nullable: true }
+        capacityRating:      { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
+        isPriority:          { type: boolean }
+        deceased:            { type: boolean }
+    BulkUpdatePeopleBody:
+      type: object
+      required: [ids, patch]
+      properties:
+        ids:   { type: array, items: { type: string }, minItems: 1, maxItems: 1000 }
+        patch: { $ref: "#/components/schemas/BulkUpdatePeoplePatch" }
+    BulkUpdateFundersPatch:
+      type: object
+      properties:
+        ownerUserId:          { type: string, nullable: true }
+        activeStatus:         { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
+        connectionStatus:     { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
+        capacityRating:       { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
+        enthusiasm:           { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
+        isPriority:           { type: boolean }
+        fundingEntitySubtype: { allOf: [ { $ref: "#/components/schemas/FundingEntitySubtype" } ], nullable: true }
+    BulkUpdateFundersBody:
+      type: object
+      required: [ids, patch]
+      properties:
+        ids:   { type: array, items: { type: string }, minItems: 1, maxItems: 1000 }
+        patch: { $ref: "#/components/schemas/BulkUpdateFundersPatch" }
+    BulkUpdateHouseholdsPatch:
+      type: object
+      properties:
+        active: { type: boolean }
+    BulkUpdateHouseholdsBody:
+      type: object
+      required: [ids, patch]
+      properties:
+        ids:   { type: array, items: { type: string }, minItems: 1, maxItems: 1000 }
+        patch: { $ref: "#/components/schemas/BulkUpdateHouseholdsPatch" }
+    BulkUpdateOpportunitiesPatch:
+      type: object
+      properties:
+        ownerUserId: { type: string, nullable: true }
+        status:      { allOf: [ { $ref: "#/components/schemas/OpportunityStatus" } ], nullable: true }
+        stage:       { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true }
+        type:        { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
+        actualCompletionDate: { type: string, format: date, nullable: true, description: "Required by the closed_requires_completion_date CHECK when bulk-setting status to a closed value (won/lost/dormant) and the rows do not already have one." }
+    BulkUpdateOpportunitiesBody:
+      type: object
+      required: [ids, patch]
+      properties:
+        ids:   { type: array, items: { type: string }, minItems: 1, maxItems: 1000 }
+        patch: { $ref: "#/components/schemas/BulkUpdateOpportunitiesPatch" }
+    BulkUpdateGiftsPatch:
+      type: object
+      properties:
+        ownerUserId: { type: string, nullable: true }
+        type:        { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
+    BulkUpdateGiftsBody:
+      type: object
+      required: [ids, patch]
+      properties:
+        ids:   { type: array, items: { type: string }, minItems: 1, maxItems: 1000 }
+        patch: { $ref: "#/components/schemas/BulkUpdateGiftsPatch" }

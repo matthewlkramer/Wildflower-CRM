@@ -4,9 +4,15 @@ import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListPeople,
   getListPeopleQueryKey,
+  useBulkUpdatePeople,
   type ListPeopleParams,
   type CapacityRating,
 } from "@workspace/api-client-react";
+import { useRowSelection } from "@/hooks/use-row-selection";
+import { BulkActionBar } from "@/components/bulk-action-bar";
+import { BulkEditDialog } from "@/components/bulk-edit-dialog";
+import { PEOPLE_BULK_FIELDS } from "@/lib/bulk-fields";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   formatCapacity,
   formatCurrency,
@@ -62,7 +68,7 @@ const DECEASED_OPTIONS: MultiFilterOption[] = [
   { value: "false", label: "Living" },
   { value: "true", label: "Deceased" },
 ];
-const COL_SPAN = 11;
+const COL_SPAN = 12;
 
 export default function Individuals() {
   const [search, setSearch] = useState("");
@@ -71,6 +77,9 @@ export default function Individuals() {
   const [capacityTiers, setCapacityTiers] = useState<string[]>([]);
   const [owners, setOwners] = useState<string[]>([]);
   const [page, setPage] = useState(1);
+  const selection = useRowSelection();
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const bulkMut = useBulkUpdatePeople();
 
   const params: ListPeopleParams = {
     limit: PAGE_SIZE,
@@ -158,6 +167,7 @@ export default function Individuals() {
             onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
+              selection.clear();
             }}
             aria-label="Search people by name"
             data-testid="input-search-people"
@@ -167,20 +177,20 @@ export default function Individuals() {
         <MultiFilterSelect
           label="Status"
           selected={deceasedSel}
-          onChange={(v) => { setDeceasedSel(v); setPage(1); }}
+          onChange={(v) => { setDeceasedSel(v); setPage(1); selection.clear(); }}
           options={DECEASED_OPTIONS}
           testId="select-deceased"
         />
         <MultiFilterSelect
           label="Capacity"
           selected={capacityTiers}
-          onChange={(v) => { setCapacityTiers(v); setPage(1); }}
+          onChange={(v) => { setCapacityTiers(v); setPage(1); selection.clear(); }}
           options={CAPACITY_TIERS.map((t) => ({ value: t, label: formatCapacity(t) ?? t }))}
           testId="select-capacity"
         />
         <OwnerMultiFilter
           selected={owners}
-          onChange={(v) => { setOwners(v); setPage(1); }}
+          onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
           testId="select-person-owner"
         />
 
@@ -194,6 +204,7 @@ export default function Individuals() {
               setCapacityTiers([]);
               setOwners([]);
               setPage(1);
+              selection.clear();
             }}
           >
             Clear
@@ -205,6 +216,17 @@ export default function Individuals() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8">
+                <Checkbox
+                  checked={
+                    sortedRows.length > 0 &&
+                    sortedRows.every((r) => selection.isSelected(r.id))
+                  }
+                  onCheckedChange={() => selection.toggleVisible(sortedRows.map((r) => r.id))}
+                  aria-label="Select all people on this page"
+                  data-testid="checkbox-select-all-people"
+                />
+              </TableHead>
               <SortableTH colKey="priority" {...ts}><span className="sr-only">Priority</span></SortableTH>
               <SortableTH colKey="name" {...ts}>Name</SortableTH>
               <SortableTH colKey="status" {...ts}>Status</SortableTH>
@@ -249,6 +271,14 @@ export default function Individuals() {
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
                     data-testid={`row-person-${p.id}`}
                   >
+                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selection.isSelected(p.id)}
+                        onCheckedChange={() => selection.toggle(p.id)}
+                        aria-label={`Select ${personDisplayName(p)}`}
+                        data-testid={`checkbox-select-${p.id}`}
+                      />
+                    </TableCell>
                     <TableCell className="w-8 pr-0">
                       <PriorityStar kind="person" id={p.id} isPriority={p.isPriority} />
                     </TableCell>
@@ -291,6 +321,29 @@ export default function Individuals() {
           </TableBody>
         </Table>
       </div>
+
+      <BulkActionBar
+        count={selection.count}
+        onEdit={() => setBulkOpen(true)}
+        onClear={selection.clear}
+        entityNoun="person"
+      />
+      <BulkEditDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        entityNoun="person"
+        selectedIds={selection.selectedIds}
+        fields={PEOPLE_BULK_FIELDS}
+        invalidateKeys={[getListPeopleQueryKey()]}
+        onSubmit={async (patch) =>
+          bulkMut.mutateAsync({
+            data: { ids: selection.selectedIds, patch },
+          })
+        }
+        onDone={(r) => {
+          if (r.failed.length === 0) selection.clear();
+        }}
+      />
 
       {totalPages > 1 && (
         <Pagination>

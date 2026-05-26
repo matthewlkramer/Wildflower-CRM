@@ -4,11 +4,17 @@ import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListGiftsAndPayments,
   getListGiftsAndPaymentsQueryKey,
+  useBulkUpdateGiftsAndPayments,
   type ListGiftsAndPaymentsParams,
   type GiftType,
   useListEntities,
   getListEntitiesQueryKey,
 } from "@workspace/api-client-react";
+import { useRowSelection } from "@/hooks/use-row-selection";
+import { BulkActionBar } from "@/components/bulk-action-bar";
+import { BulkEditDialog } from "@/components/bulk-edit-dialog";
+import { GIFTS_BULK_FIELDS } from "@/lib/bulk-fields";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useDebounce } from "@/hooks/use-debounce";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 import {
@@ -43,7 +49,7 @@ const TYPES: GiftType[] = [
 ];
 
 const PAGE_SIZE = 50;
-const COL_SPAN = 9;
+const COL_SPAN = 10;
 
 export default function Gifts() {
   const [search, setSearch] = useState("");
@@ -51,6 +57,9 @@ export default function Gifts() {
   const [types, setTypes] = useState<string[]>([]);
   const [owners, setOwners] = useState<string[]>([]);
   const [page, setPage] = useState(1);
+  const selection = useRowSelection();
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const bulkMut = useBulkUpdateGiftsAndPayments();
 
   const params: ListGiftsAndPaymentsParams = {
     limit: PAGE_SIZE,
@@ -112,7 +121,7 @@ export default function Gifts() {
           <Input
             placeholder="Search by name…"
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); selection.clear(); }}
             aria-label="Search gifts by name"
             data-testid="input-search-gifts"
           />
@@ -120,13 +129,13 @@ export default function Gifts() {
         <MultiFilterSelect
           label="Type"
           selected={types}
-          onChange={(v) => { setTypes(v); setPage(1); }}
+          onChange={(v) => { setTypes(v); setPage(1); selection.clear(); }}
           options={TYPES}
           testId="select-gift-type"
         />
         <OwnerMultiFilter
           selected={owners}
-          onChange={(v) => { setOwners(v); setPage(1); }}
+          onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
           testId="select-gift-owner"
         />
         {(search || types.length > 0 || owners.length > 0) && (
@@ -138,6 +147,7 @@ export default function Gifts() {
               setTypes([]);
               setOwners([]);
               setPage(1);
+              selection.clear();
             }}
           >
             Clear
@@ -149,6 +159,17 @@ export default function Gifts() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8">
+                <Checkbox
+                  checked={
+                    sortedRows.length > 0 &&
+                    sortedRows.every((r) => selection.isSelected(r.id))
+                  }
+                  onCheckedChange={() => selection.toggleVisible(sortedRows.map((r) => r.id))}
+                  aria-label="Select all gifts on this page"
+                  data-testid="checkbox-select-all-gifts"
+                />
+              </TableHead>
               <SortableTH colKey="name" {...ts}>Name</SortableTH>
               <SortableTH colKey="donor" {...ts}>Donor</SortableTH>
               <SortableTH colKey="dateReceived" {...ts}>Date received</SortableTH>
@@ -180,6 +201,14 @@ export default function Gifts() {
                 const grantYears = (g.grantYears ?? []).map((y) => y.toUpperCase());
                 return (
                   <TableRow key={g.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-gift-${g.id}`}>
+                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selection.isSelected(g.id)}
+                        onCheckedChange={() => selection.toggle(g.id)}
+                        aria-label={`Select ${g.name ?? g.id}`}
+                        data-testid={`checkbox-select-${g.id}`}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">
                       <Link href={`/gifts/${g.id}`} className="block w-full">{g.name ?? `Gift ${g.id}`}</Link>
                     </TableCell>
@@ -219,6 +248,29 @@ export default function Gifts() {
           </TableBody>
         </Table>
       </div>
+
+      <BulkActionBar
+        count={selection.count}
+        onEdit={() => setBulkOpen(true)}
+        onClear={selection.clear}
+        entityNoun="gift"
+      />
+      <BulkEditDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        entityNoun="gift"
+        selectedIds={selection.selectedIds}
+        fields={GIFTS_BULK_FIELDS}
+        invalidateKeys={[getListGiftsAndPaymentsQueryKey()]}
+        onSubmit={async (patch) =>
+          bulkMut.mutateAsync({
+            data: { ids: selection.selectedIds, patch },
+          })
+        }
+        onDone={(r) => {
+          if (r.failed.length === 0) selection.clear();
+        }}
+      />
 
       {totalPages > 1 && (
         <Pagination>

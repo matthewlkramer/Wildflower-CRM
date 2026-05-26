@@ -1,0 +1,49 @@
+import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
+
+/**
+ * Sticky bottom action bar that appears while at least one row is
+ * selected. Floats above the page using `sticky bottom-4` so it stays
+ * in view while scrolling but doesn't cover the table chrome.
+ */
+export function BulkActionBar({
+  count,
+  onEdit,
+  onClear,
+  entityNoun,
+}: {
+  count: number;
+  onEdit: () => void;
+  onClear: () => void;
+  /** Singular noun used in the label, e.g. "person" → "1 person selected". */
+  entityNoun: string;
+}) {
+  if (count === 0) return null;
+  const label = `${count.toLocaleString()} ${count === 1 ? entityNoun : `${entityNoun}s`} selected`;
+  return (
+    <div
+      className="sticky bottom-4 z-30 mx-auto flex w-fit items-center gap-3 rounded-full border bg-card px-4 py-2 shadow-lg"
+      data-testid="bulk-action-bar"
+      role="region"
+      aria-label="Bulk actions"
+    >
+      <span className="text-sm font-medium" data-testid="bulk-selected-count">
+        {label}
+      </span>
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={onEdit} data-testid="button-bulk-edit">
+          Edit selected
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClear}
+          data-testid="button-bulk-clear"
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Clear selection</span>
+        </Button>
+      </div>
+    </div>
+  );
+}

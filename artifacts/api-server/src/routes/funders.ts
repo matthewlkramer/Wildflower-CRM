@@ -6,9 +6,11 @@ import {
   ListFundersQueryParams,
   CreateFunderBody,
   UpdateFunderBody,
+  BulkUpdateFundersBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
@@ -105,6 +107,26 @@ router.get(
       db.select().from(addresses).where(eq(addresses.funderId, id)),
     ]);
     res.json({ ...row, people, emails: emailRows, addresses: addressRows });
+  }),
+);
+
+router.post(
+  "/funders/bulk-update",
+  asyncHandler(async (req, res) => {
+    await executeBulkUpdate(req, res, {
+      entity: "funders",
+      table: funders,
+      bodySchema: BulkUpdateFundersBody,
+      allowedFields: [
+        "ownerUserId",
+        "activeStatus",
+        "connectionStatus",
+        "capacityRating",
+        "enthusiasm",
+        "isPriority",
+        "fundingEntitySubtype",
+      ],
+    });
   }),
 );
 

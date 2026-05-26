@@ -6,9 +6,11 @@ import {
   ListHouseholdsQueryParams,
   CreateHouseholdBody,
   UpdateHouseholdBody,
+  BulkUpdateHouseholdsBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
 const router: IRouter = Router();
@@ -96,6 +98,18 @@ router.get(
       db.select().from(addresses).where(eq(addresses.householdId, id)),
     ]);
     res.json({ ...row, people, emails: emailRows, addresses: addressRows });
+  }),
+);
+
+router.post(
+  "/households/bulk-update",
+  asyncHandler(async (req, res) => {
+    await executeBulkUpdate(req, res, {
+      entity: "households",
+      table: households,
+      bodySchema: BulkUpdateHouseholdsBody,
+      allowedFields: ["active"],
+    });
   }),
 );
 

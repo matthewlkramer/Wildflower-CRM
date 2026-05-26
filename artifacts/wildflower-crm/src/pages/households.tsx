@@ -4,8 +4,14 @@ import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListHouseholds,
   getListHouseholdsQueryKey,
+  useBulkUpdateHouseholds,
   type ListHouseholdsParams,
 } from "@workspace/api-client-react";
+import { useRowSelection } from "@/hooks/use-row-selection";
+import { BulkActionBar } from "@/components/bulk-action-bar";
+import { BulkEditDialog } from "@/components/bulk-edit-dialog";
+import { HOUSEHOLDS_BULK_FIELDS } from "@/lib/bulk-fields";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useDebounce } from "@/hooks/use-debounce";
 import { formatCurrency, formatDateShort } from "@/lib/format";
 import {
@@ -47,6 +53,9 @@ export default function Households() {
   const debouncedSearch = useDebounce(search, 250);
   const [activeSel, setActiveSel] = useState<string[]>([]);
   const [page, setPage] = useState(1);
+  const selection = useRowSelection();
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const bulkMut = useBulkUpdateHouseholds();
 
   const params: ListHouseholdsParams = {
     limit: PAGE_SIZE,
@@ -101,6 +110,7 @@ export default function Households() {
             onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
+              selection.clear();
             }}
             aria-label="Search households by name"
             data-testid="input-search-households"
@@ -109,7 +119,7 @@ export default function Households() {
         <MultiFilterSelect
           label="Status"
           selected={activeSel}
-          onChange={(v) => { setActiveSel(v); setPage(1); }}
+          onChange={(v) => { setActiveSel(v); setPage(1); selection.clear(); }}
           options={ACTIVE_OPTIONS}
           testId="select-household-active"
         />
@@ -121,6 +131,7 @@ export default function Households() {
               setSearch("");
               setActiveSel([]);
               setPage(1);
+              selection.clear();
             }}
           >
             Clear
@@ -132,6 +143,17 @@ export default function Households() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8">
+                <Checkbox
+                  checked={
+                    sortedRows.length > 0 &&
+                    sortedRows.every((r) => selection.isSelected(r.id))
+                  }
+                  onCheckedChange={() => selection.toggleVisible(sortedRows.map((r) => r.id))}
+                  aria-label="Select all households on this page"
+                  data-testid="checkbox-select-all-households"
+                />
+              </TableHead>
               <SortableTH colKey="name" {...ts}>Name</SortableTH>
               <SortableTH colKey="status" {...ts}>Status</SortableTH>
               <SortableTH colKey="lifetimeGiving" align="right" {...ts}>Lifetime giving</SortableTH>
@@ -142,17 +164,17 @@ export default function Households() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">Loading…</TableCell>
+                <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">Loading…</TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24 text-destructive">
+                <TableCell colSpan={6} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load households."}
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">
                   No households match these filters.
                 </TableCell>
               </TableRow>
@@ -166,6 +188,14 @@ export default function Households() {
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
                     data-testid={`row-household-${h.id}`}
                   >
+                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selection.isSelected(h.id)}
+                        onCheckedChange={() => selection.toggle(h.id)}
+                        aria-label={`Select ${h.name}`}
+                        data-testid={`checkbox-select-${h.id}`}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">
                       <Link href={`/households/${h.id}`} className="block w-full">{h.name}</Link>
                     </TableCell>
@@ -188,6 +218,29 @@ export default function Households() {
           </TableBody>
         </Table>
       </div>
+
+      <BulkActionBar
+        count={selection.count}
+        onEdit={() => setBulkOpen(true)}
+        onClear={selection.clear}
+        entityNoun="household"
+      />
+      <BulkEditDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        entityNoun="household"
+        selectedIds={selection.selectedIds}
+        fields={HOUSEHOLDS_BULK_FIELDS}
+        invalidateKeys={[getListHouseholdsQueryKey()]}
+        onSubmit={async (patch) =>
+          bulkMut.mutateAsync({
+            data: { ids: selection.selectedIds, patch },
+          })
+        }
+        onDone={(r) => {
+          if (r.failed.length === 0) selection.clear();
+        }}
+      />
 
       {totalPages > 1 && (
         <Pagination>

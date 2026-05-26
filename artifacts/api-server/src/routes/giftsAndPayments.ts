@@ -41,11 +41,13 @@ import {
   ListGiftsAndPaymentsQueryParams,
   CreateGiftOrPaymentBodyRefined,
   UpdateGiftOrPaymentBody,
+  BulkUpdateGiftsAndPaymentsBody,
   validateGiftInvariants,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { inArray } from "drizzle-orm";
 
 const GIFTS_ARRAY_PARAMS = ["type", "ownerUserId"] as const;
@@ -113,6 +115,18 @@ router.get(
     if (!row) return notFound(res, "gift");
     const allocations = await db.select().from(giftAllocations).where(eq(giftAllocations.giftId, id));
     res.json({ ...row, allocations });
+  }),
+);
+
+router.post(
+  "/gifts-and-payments/bulk-update",
+  asyncHandler(async (req, res) => {
+    await executeBulkUpdate(req, res, {
+      entity: "gifts_and_payments",
+      table: giftsAndPayments,
+      bodySchema: BulkUpdateGiftsAndPaymentsBody,
+      allowedFields: ["ownerUserId", "type"],
+    });
   }),
 );
 

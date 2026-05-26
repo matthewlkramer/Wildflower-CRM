@@ -61,11 +61,13 @@ import {
   ListOpportunitiesAndPledgesQueryParams,
   CreateOpportunityOrPledgeBodyRefined,
   UpdateOpportunityOrPledgeBody,
+  BulkUpdateOpportunitiesAndPledgesBody,
   validateOppInvariants,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { executeBulkUpdate } from "../lib/bulkUpdate";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -167,6 +169,34 @@ router.get(
       db.select().from(giftsAndPayments).where(eq(giftsAndPayments.paymentOnPledgeId, id)),
     ]);
     res.json({ ...row, allocations, payments });
+  }),
+);
+
+router.post(
+  "/opportunities-and-pledges/bulk-update",
+  asyncHandler(async (req, res) => {
+    await executeBulkUpdate(req, res, {
+      entity: "opportunities_and_pledges",
+      table: opportunitiesAndPledges,
+      bodySchema: BulkUpdateOpportunitiesAndPledgesBody,
+      allowedFields: ["ownerUserId", "status", "stage", "type", "actualCompletionDate"],
+      // Donor xor is preserved (no donor fields in this patch), but the
+      // closed_requires_completion_date CHECK can still trip if a row is
+      // bulk-set to status='won'/'lost' without an existing or supplied
+      // actualCompletionDate. Run the same invariant check the single
+      // PATCH route uses, on the merged post-update state.
+      validateRow: (existing, patch) => {
+        const merged = { ...existing, ...patch } as Record<string, unknown>;
+        const issues = validateOppInvariants({
+          funderId: merged.funderId as string | null | undefined,
+          individualGiverPersonId: merged.individualGiverPersonId as string | null | undefined,
+          householdId: merged.householdId as string | null | undefined,
+          status: merged.status as string | null | undefined,
+          actualCompletionDate: merged.actualCompletionDate as string | Date | null | undefined,
+        });
+        return issues.length ? issues.map((i) => i.message).join("; ") : null;
+      },
+    });
   }),
 );
 

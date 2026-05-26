@@ -6,9 +6,11 @@ import {
   ListPeopleQueryParams,
   CreatePersonBody,
   UpdatePersonBody,
+  BulkUpdatePeopleBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
@@ -136,6 +138,24 @@ router.get(
       db.select().from(addresses).where(eq(addresses.personId, id)),
     ]);
     res.json({ ...row, roles, emails: emailRows, phoneNumbers: phoneRows, addresses: addressRows });
+  }),
+);
+
+router.post(
+  "/people/bulk-update",
+  asyncHandler(async (req, res) => {
+    await executeBulkUpdate(req, res, {
+      entity: "people",
+      table: people,
+      bodySchema: BulkUpdatePeopleBody,
+      allowedFields: [
+        "ownerUserId",
+        "currentHomeRegionId",
+        "capacityRating",
+        "isPriority",
+        "deceased",
+      ],
+    });
   }),
 );
 
