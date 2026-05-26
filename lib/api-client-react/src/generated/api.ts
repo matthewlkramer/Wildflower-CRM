@@ -133,6 +133,7 @@ import type {
   UnrecognizedCorrespondentList,
   UpdateAddressBody,
   UpdateCalendarEventPrivacyBody,
+  UpdateCurrentUserBody,
   UpdateEmailBody,
   UpdateEmailMessagePrivacyBody,
   UpdateEntityBody,
@@ -869,6 +870,86 @@ export function useGetCurrentUser<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getUpdateCurrentUserUrl = () => {
+  return `/api/users/me`;
+};
+
+export const updateCurrentUser = async (
+  updateCurrentUserBody: UpdateCurrentUserBody,
+  options?: RequestInit,
+): Promise<User> => {
+  return customFetch<User>(getUpdateCurrentUserUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateCurrentUserBody),
+  });
+};
+
+export const getUpdateCurrentUserMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCurrentUser>>,
+    TError,
+    { data: BodyType<UpdateCurrentUserBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCurrentUser>>,
+  TError,
+  { data: BodyType<UpdateCurrentUserBody> },
+  TContext
+> => {
+  const mutationKey = ["updateCurrentUser"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCurrentUser>>,
+    { data: BodyType<UpdateCurrentUserBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateCurrentUser(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCurrentUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateCurrentUser>>
+>;
+export type UpdateCurrentUserMutationBody = BodyType<UpdateCurrentUserBody>;
+export type UpdateCurrentUserMutationError = ErrorType<unknown>;
+
+export const useUpdateCurrentUser = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCurrentUser>>,
+    TError,
+    { data: BodyType<UpdateCurrentUserBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateCurrentUser>>,
+  TError,
+  { data: BodyType<UpdateCurrentUserBody> },
+  TContext
+> => {
+  return useMutation(getUpdateCurrentUserMutationOptions(options));
+};
 
 export const getListRegionsUrl = (params?: ListRegionsParams) => {
   const normalizedParams = new URLSearchParams();

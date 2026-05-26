@@ -145,6 +145,18 @@ export function EmailDetailDialog({ emailId, onClose }: Props) {
               </div>
             ) : null}
 
+            {data.aiSummary ? (
+              <div
+                className="rounded-md border bg-muted/30 p-3 text-sm"
+                data-testid="email-ai-summary"
+              >
+                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                  Summary (sender opted out of storing body)
+                </div>
+                <div>{data.aiSummary}</div>
+              </div>
+            ) : null}
+
             <div className="text-sm">
               {data.bodyHtml ? (
                 // Rendered in a sandboxed iframe srcdoc so any HTML/CSS in
@@ -174,7 +186,7 @@ export function EmailDetailDialog({ emailId, onClose }: Props) {
                 <pre className="whitespace-pre-wrap font-sans text-sm">
                   {data.bodyText}
                 </pre>
-              ) : (
+              ) : data.aiSummary ? null : (
                 <p className="text-muted-foreground">(no body)</p>
               )}
             </div>

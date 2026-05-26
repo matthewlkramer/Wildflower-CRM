@@ -49,6 +49,12 @@ export const emailMessages = pgTable(
     snippet: text("snippet"),
     bodyText: text("body_text"),
     bodyHtml: text("body_html"),
+    // One-line topic summary generated at sync time when the mailbox
+    // owner's `email_sync_mode = 'summary_only'`. In that mode bodyText
+    // / bodyHtml / snippet are all null and no attachments are stored;
+    // this is the ONLY content anyone — including the owner — ever sees
+    // for this message. Null when the owner is in `full` mode.
+    aiSummary: text("ai_summary"),
     fromEmail: text("from_email"),
     toEmails: text("to_emails").array(),
     ccEmails: text("cc_emails").array(),

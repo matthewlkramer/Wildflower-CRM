@@ -2,7 +2,12 @@ import { useMemo } from "react";
 import {
   useListEntities,
   getListEntitiesQueryKey,
+  useGetCurrentUser,
+  useUpdateCurrentUser,
+  getGetCurrentUserQueryKey,
+  type EmailSyncMode,
 } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -30,8 +35,97 @@ export default function Settings() {
       </div>
 
       <DefaultEntitySection />
+      <EmailPrivacySection />
       <GoogleConnectSection returnTo="/settings" />
     </div>
+  );
+}
+
+function EmailPrivacySection() {
+  const qc = useQueryClient();
+  const { data: me } = useGetCurrentUser({
+    query: { queryKey: getGetCurrentUserQueryKey() },
+  });
+  const updateMe = useUpdateCurrentUser({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getGetCurrentUserQueryKey() });
+      },
+    },
+  });
+  const current: EmailSyncMode = me?.emailSyncMode ?? "full";
+  const set = (mode: EmailSyncMode) => {
+    if (mode === current) return;
+    updateMe.mutate({ data: { emailSyncMode: mode } });
+  };
+  return (
+    <Card data-testid="settings-email-privacy-section">
+      <CardHeader>
+        <CardTitle>Email sync privacy</CardTitle>
+        <CardDescription>
+          Controls what's stored when your Gmail is synced into the CRM.
+          The setting applies to NEW emails synced from this point on —
+          emails already in the CRM are not changed retroactively. Your
+          choice wins for everyone: if you pick summary-only, no
+          teammate ever sees the body of your synced emails, because the
+          body is never persisted in the first place.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <PrivacyChoice
+          checked={current === "full"}
+          onSelect={() => set("full")}
+          disabled={updateMe.isPending}
+          testId="email-privacy-full"
+          title="Full sync (default)"
+          desc="Store the subject, body, and attachments of every synced email. Anyone on your team viewing the contact can read the full message."
+        />
+        <PrivacyChoice
+          checked={current === "summary_only"}
+          onSelect={() => set("summary_only")}
+          disabled={updateMe.isPending}
+          testId="email-privacy-summary"
+          title="Summary only"
+          desc="Store ONLY a one-line AI summary of each email — body and attachments are summarized in flight and then discarded. They are never written to our database and cannot be retrieved later. AI-generated proposals and intelligence are also skipped for your mailbox."
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function PrivacyChoice({
+  checked, onSelect, disabled, testId, title, desc,
+}: {
+  checked: boolean;
+  onSelect: () => void;
+  disabled: boolean;
+  testId: string;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={disabled}
+      data-testid={testId}
+      aria-pressed={checked}
+      className={`w-full text-left rounded-md border p-3 transition-colors ${
+        checked ? "border-primary bg-primary/5" : "hover:bg-muted/40"
+      } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={`mt-1 h-4 w-4 rounded-full border ${
+            checked ? "border-primary bg-primary" : "border-muted-foreground/40"
+          }`}
+        />
+        <div className="space-y-1">
+          <div className="text-sm font-medium">{title}</div>
+          <div className="text-xs text-muted-foreground">{desc}</div>
+        </div>
+      </div>
+    </button>
   );
 }
 

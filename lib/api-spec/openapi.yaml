@@ -129,6 +129,14 @@ paths:
       tags: [users]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+    patch:
+      operationId: updateCurrentUser
+      tags: [users]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UpdateCurrentUserBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
 
   # ─── Regions ────────────────────────────────────────────────────────────────
   /regions:
@@ -1279,18 +1287,27 @@ components:
     # ─── Users ─────────────────────────────────────────────────────────────────
     User:
       type: object
-      required: [id, email, role, createdAt, updatedAt]
+      required: [id, email, role, emailSyncMode, createdAt, updatedAt]
       properties:
-        id:           { type: string }
-        clerkId:      { type: string }
-        email:        { type: string }
-        firstName:    { type: string, nullable: true }
-        lastName:     { type: string, nullable: true }
-        displayName:  { type: string, nullable: true }
-        role:         { $ref: "#/components/schemas/UserRole" }
-        defaultFund:  { type: string, nullable: true }
-        createdAt:    { type: string, format: date-time }
-        updatedAt:    { type: string, format: date-time }
+        id:             { type: string }
+        clerkId:        { type: string }
+        email:          { type: string }
+        firstName:      { type: string, nullable: true }
+        lastName:       { type: string, nullable: true }
+        displayName:    { type: string, nullable: true }
+        role:           { $ref: "#/components/schemas/UserRole" }
+        defaultFund:    { type: string, nullable: true }
+        emailSyncMode:  { $ref: "#/components/schemas/EmailSyncMode" }
+        createdAt:      { type: string, format: date-time }
+        updatedAt:      { type: string, format: date-time }
+    EmailSyncMode:
+      type: string
+      enum: [full, summary_only]
+      description: "Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited."
+    UpdateCurrentUserBody:
+      type: object
+      properties:
+        emailSyncMode:  { $ref: "#/components/schemas/EmailSyncMode" }
 
     # ─── Regions ───────────────────────────────────────────────────────────────
     Region:
@@ -2520,6 +2537,7 @@ components:
         matchedPersonIds:    { type: array, items: { type: string }, nullable: true }
         matchedFunderIds:    { type: array, items: { type: string }, nullable: true }
         matchedHouseholdIds: { type: array, items: { type: string }, nullable: true }
+        aiSummary:           { type: string, nullable: true, description: "One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent." }
     EmailMessageDetail:
       allOf:
         - $ref: "#/components/schemas/EmailMessage"

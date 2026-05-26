@@ -345,6 +345,16 @@ export const IntendedUsage = {
   project: "project",
 } as const;
 
+/**
+ * Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.
+ */
+export type EmailSyncMode = (typeof EmailSyncMode)[keyof typeof EmailSyncMode];
+
+export const EmailSyncMode = {
+  full: "full",
+  summary_only: "summary_only",
+} as const;
+
 export interface User {
   id: string;
   clerkId?: string;
@@ -354,8 +364,13 @@ export interface User {
   displayName?: string | null;
   role: UserRole;
   defaultFund?: string | null;
+  emailSyncMode: EmailSyncMode;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface UpdateCurrentUserBody {
+  emailSyncMode?: EmailSyncMode;
 }
 
 export interface Region {
@@ -1520,6 +1535,8 @@ export interface EmailMessage {
   matchedPersonIds?: string[] | null;
   matchedFunderIds?: string[] | null;
   matchedHouseholdIds?: string[] | null;
+  /** One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent. */
+  aiSummary?: string | null;
 }
 
 export interface EmailAttachmentSummary {

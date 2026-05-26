@@ -4,11 +4,13 @@ import {
   emailAttachments,
   emailSyncSkip,
   emailSyncState,
+  users,
   type EmailSyncState,
 } from "@workspace/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
+import { summarizeEmail } from "./summarizeEmail";
 import {
   getMessage,
   getProfile,
@@ -427,6 +429,17 @@ async function processOneMessage(
   gmailId: string,
   report: GmailSyncReport,
 ): Promise<boolean> {
+  // Per-message lookup of the mailbox owner's privacy mode. Cheap (PK
+  // lookup) and lets the user flip the setting and have it take effect
+  // on the very next message without waiting for the next sync cycle.
+  // If the user row is gone we treat them as `full` — sync would be
+  // dead-in-the-water anyway because every insert FK's to users.id.
+  const ownerRow = await db
+    .select({ mode: users.emailSyncMode })
+    .from(users)
+    .where(eq(users.id, grant.userId))
+    .then((r) => r[0]);
+  const summaryOnly = ownerRow?.mode === "summary_only";
   let meta: GmailMessage;
   try {
     meta = await getMessage(grant.accessToken, gmailId, "metadata");
@@ -471,7 +484,11 @@ async function processOneMessage(
     // few sender patterns we pay the extra full-fetch cost. Everything
     // else skips body fetch as before.
     const fromFirst = fromAddrs[0] ?? null;
-    if (shouldFetchFullForIntel(fromFirst, subject)) {
+    // In summary_only mode the owner has opted out of any body
+    // persistence at all — unmatched-path intelligence inspects + stores
+    // body-derived signals in email_proposals, so skip it entirely and
+    // go straight to the skip-row insert below.
+    if (!summaryOnly && shouldFetchFullForIntel(fromFirst, subject)) {
       try {
         const fullForIntel = await getMessage(grant.accessToken, gmailId, "full");
         const partsForIntel = extractMessageParts(fullForIntel.payload);
@@ -561,6 +578,19 @@ async function processOneMessage(
   const internalMs = full.internalDate ? Number(full.internalDate) : Date.now();
   const sentAt = new Date(internalMs);
 
+  // Privacy split: in summary_only mode we summarize the body ONCE here
+  // and then store nothing else — no snippet, no body, no attachments.
+  // The summary is the only artifact anyone (including the owner) ever
+  // sees. In full mode this is a no-op and behavior is unchanged.
+  const aiSummary = summaryOnly
+    ? await summarizeEmail({
+        subject,
+        fromEmail: fromFull[0] ?? null,
+        bodyText: parts.bodyText,
+        bodyHtml: parts.bodyHtml,
+      })
+    : null;
+
   // ON CONFLICT DO NOTHING on the (mailbox, gmail_id) unique index.
   // `returning({ id })` returns the new row's id on a real insert,
   // or an empty array if the row already existed.
@@ -574,18 +604,21 @@ async function processOneMessage(
       direction,
       sentAt,
       subject,
-      snippet: full.snippet ?? null,
-      bodyText: parts.bodyText,
-      bodyHtml: parts.bodyHtml,
+      snippet: summaryOnly ? null : (full.snippet ?? null),
+      bodyText: summaryOnly ? null : parts.bodyText,
+      bodyHtml: summaryOnly ? null : parts.bodyHtml,
+      aiSummary,
       fromEmail: fromFull[0] ?? null,
       toEmails: toFull,
       ccEmails: ccFull,
       bccEmails: bccFull,
-      hasAttachments: parts.attachments.length > 0,
-      // Optimistic: empty attachment list means already complete;
-      // non-empty starts false and is flipped true after a clean
-      // attachment-loop iteration below.
-      attachmentsComplete: parts.attachments.length === 0,
+      // In summary_only mode we deliberately drop attachments — neither
+      // the existence flag nor the rows are persisted. `hasAttachments`
+      // is reported false so the UI doesn't show a paperclip the user
+      // can never click. `attachmentsComplete` is true so the message
+      // never re-enters the "needs retry" attachment loop.
+      hasAttachments: !summaryOnly && parts.attachments.length > 0,
+      attachmentsComplete: summaryOnly || parts.attachments.length === 0,
       matchedPersonIds: match.personIds,
       matchedFunderIds: match.funderIds,
       matchedHouseholdIds: match.householdIds,
@@ -624,8 +657,10 @@ async function processOneMessage(
   // so replays of the same message don't re-emit proposals (the
   // proposals table also dedupes via unique index, but skipping the
   // detector work entirely on replay is cheaper and avoids touching
-  // the DB at all in the steady state).
-  if (wasNewMessage) {
+  // the DB at all in the steady state). Skip entirely in summary_only
+  // mode — the owner has opted out of body-derived persistence, and
+  // intel writes body excerpts into email_proposals.
+  if (wasNewMessage && !summaryOnly) {
     try {
       await processIntelForMatched({
         mailboxUserId: grant.userId,
@@ -662,6 +697,10 @@ async function processOneMessage(
   // existed AND a row exists for every attachment we'd insert, we
   // can skip the whole loop. Cheap to check, saves the byte
   // re-download in the steady-state replay.
+  // Skip the attachment loop entirely in summary_only mode — we
+  // already set hasAttachments=false and attachmentsComplete=true on
+  // the message row above, so there is nothing left to do.
+  if (summaryOnly) return true;
   if (!wasNewMessage && parts.attachments.length > 0) {
     const attIds = parts.attachments
       .map((a) => a.attachmentId)

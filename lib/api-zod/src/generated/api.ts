@@ -297,6 +297,11 @@ export const ListUsersResponseItem = zod.object({
   displayName: zod.string().nullish(),
   role: zod.enum(["admin", "team_member", "finance", "read_only"]),
   defaultFund: zod.string().nullish(),
+  emailSyncMode: zod
+    .enum(["full", "summary_only"])
+    .describe(
+      "Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence\/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -311,6 +316,38 @@ export const GetCurrentUserResponse = zod.object({
   displayName: zod.string().nullish(),
   role: zod.enum(["admin", "team_member", "finance", "read_only"]),
   defaultFund: zod.string().nullish(),
+  emailSyncMode: zod
+    .enum(["full", "summary_only"])
+    .describe(
+      "Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence\/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UpdateCurrentUserBody = zod.object({
+  emailSyncMode: zod
+    .enum(["full", "summary_only"])
+    .optional()
+    .describe(
+      "Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence\/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.",
+    ),
+});
+
+export const UpdateCurrentUserResponse = zod.object({
+  id: zod.string(),
+  clerkId: zod.string().optional(),
+  email: zod.string(),
+  firstName: zod.string().nullish(),
+  lastName: zod.string().nullish(),
+  displayName: zod.string().nullish(),
+  role: zod.enum(["admin", "team_member", "finance", "read_only"]),
+  defaultFund: zod.string().nullish(),
+  emailSyncMode: zod
+    .enum(["full", "summary_only"])
+    .describe(
+      "Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence\/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -4394,6 +4431,12 @@ export const ListEmailMessagesResponse = zod.object({
       matchedPersonIds: zod.array(zod.string()).nullish(),
       matchedFunderIds: zod.array(zod.string()).nullish(),
       matchedHouseholdIds: zod.array(zod.string()).nullish(),
+      aiSummary: zod
+        .string()
+        .nullish()
+        .describe(
+          "One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent.",
+        ),
     }),
   ),
   pagination: zod.object({
@@ -4427,6 +4470,12 @@ export const GetEmailMessageResponse = zod
     matchedPersonIds: zod.array(zod.string()).nullish(),
     matchedFunderIds: zod.array(zod.string()).nullish(),
     matchedHouseholdIds: zod.array(zod.string()).nullish(),
+    aiSummary: zod
+      .string()
+      .nullish()
+      .describe(
+        "One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent.",
+      ),
   })
   .and(
     zod.object({
@@ -4473,6 +4522,12 @@ export const UpdateEmailMessagePrivacyResponse = zod.object({
   matchedPersonIds: zod.array(zod.string()).nullish(),
   matchedFunderIds: zod.array(zod.string()).nullish(),
   matchedHouseholdIds: zod.array(zod.string()).nullish(),
+  aiSummary: zod
+    .string()
+    .nullish()
+    .describe(
+      "One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent.",
+    ),
 });
 
 export const DownloadEmailAttachmentParams = zod.object({

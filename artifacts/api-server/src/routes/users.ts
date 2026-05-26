@@ -3,8 +3,9 @@ import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { asc, eq, isNull } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, notFound, paramId } from "../lib/helpers";
+import { asyncHandler, notFound, paramId, parseOrBadRequest } from "../lib/helpers";
 import { getAppUser } from "../lib/appRequest";
+import { UpdateCurrentUserBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -30,6 +31,23 @@ router.get(
   "/users/me",
   asyncHandler(async (req, res) => {
     res.json(getAppUser(req));
+  }),
+);
+
+router.patch(
+  "/users/me",
+  asyncHandler(async (req, res) => {
+    const me = getAppUser(req);
+    if (!me) return notFound(res, "user");
+    const body = parseOrBadRequest(UpdateCurrentUserBody, req.body, res);
+    if (!body) return;
+    const [row] = await db
+      .update(users)
+      .set({ ...body, updatedAt: new Date() })
+      .where(eq(users.id, me.id))
+      .returning();
+    if (!row) return notFound(res, "user");
+    res.json(row);
   }),
 );
 

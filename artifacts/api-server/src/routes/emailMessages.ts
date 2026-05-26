@@ -100,6 +100,7 @@ router.get(
           matchedPersonIds: emailMessages.matchedPersonIds,
           matchedFunderIds: emailMessages.matchedFunderIds,
           matchedHouseholdIds: emailMessages.matchedHouseholdIds,
+          aiSummary: emailMessages.aiSummary,
         })
         .from(emailMessages)
         .where(where)

@@ -28,7 +28,8 @@ import {
   processIntelForUnmatched,
   shouldFetchFullForIntel,
 } from "./emailIntelligence";
-import { emailProposals } from "@workspace/db/schema";
+import { emailProposals, users } from "@workspace/db/schema";
+import { summarizeEmail } from "./summarizeEmail";
 import { proposeActionsForProposal } from "./proposeActions";
 
 /**
@@ -103,23 +104,45 @@ export async function backfillIntelForUser(
       phaseD: { scanned: 0, analyzed: 0, errors: 0 },
     };
     try {
-      logger.info({ userId }, "Backfill starting (phase A: re-match skips)");
-      await phaseA(grant, report);
+      // Resolve the owner's privacy mode ONCE at the start of the
+      // backfill run. In `summary_only` mode we still run phase A
+      // (so newly-matching contacts get promoted to a message row,
+      // just with a summary instead of a body), but phases B + C +
+      // D are skipped wholesale because they re-run body-derived
+      // intelligence and proposals — exactly what the user opted
+      // out of. Phase A is the only one that can produce new
+      // visible activity in the contact timeline; B/C/D are
+      // body-mining sweeps the user has declined.
+      const ownerRow = await db
+        .select({ mode: users.emailSyncMode })
+        .from(users)
+        .where(eq(users.id, userId))
+        .then((r) => r[0]);
+      const summaryOnly = ownerRow?.mode === "summary_only";
+      logger.info(
+        { userId, summaryOnly },
+        "Backfill starting (phase A: re-match skips)",
+      );
+      await phaseA(grant, report, summaryOnly);
       logger.info(
         { userId, phaseA: report.phaseA },
-        "Backfill phase A done; starting phase B (re-intel matched)",
+        summaryOnly
+          ? "Backfill phase A done; skipping phases B/C/D (summary_only mode)"
+          : "Backfill phase A done; starting phase B (re-intel matched)",
       );
-      await phaseB(userId, grant.googleEmail, report);
-      logger.info(
-        { userId, phaseB: report.phaseB },
-        "Backfill phase B done; starting phase C (re-intel skips via full-fetch gate)",
-      );
-      await phaseC(grant, report);
-      logger.info(
-        { userId, phaseC: report.phaseC },
-        "Backfill phase C done; starting phase D (AI action proposal for pending rows)",
-      );
-      await phaseD(userId, report);
+      if (!summaryOnly) {
+        await phaseB(userId, grant.googleEmail, report);
+        logger.info(
+          { userId, phaseB: report.phaseB },
+          "Backfill phase B done; starting phase C (re-intel skips via full-fetch gate)",
+        );
+        await phaseC(grant, report);
+        logger.info(
+          { userId, phaseC: report.phaseC },
+          "Backfill phase C done; starting phase D (AI action proposal for pending rows)",
+        );
+        await phaseD(userId, report);
+      }
       // Stamp backfill_completed_at so the scheduler's auto-trigger
       // doesn't immediately re-fire this on the next tick. A row
       // exists in email_sync_state by the time bootstrap has run, so
@@ -157,6 +180,7 @@ export async function backfillIntelForUser(
 async function phaseA(
   grant: ActiveGoogleGrant,
   report: BackfillReport,
+  summaryOnly: boolean,
 ): Promise<void> {
   // Cursor by gmailMessageId so a row promoted (deleted) mid-pass
   // doesn't cause us to skip the next row.
@@ -204,7 +228,7 @@ async function phaseA(
         if (isMatchEmpty(match)) {
           stillUnmatched = true;
         } else {
-          const ok = await promoteSkipToMatched(grant, row.gmailMessageId);
+          const ok = await promoteSkipToMatched(grant, row.gmailMessageId, summaryOnly);
           if (ok) report.phaseA.promoted++;
           else report.phaseA.errors++;
         }
@@ -234,6 +258,7 @@ async function phaseA(
 async function promoteSkipToMatched(
   grant: ActiveGoogleGrant,
   gmailId: string,
+  summaryOnly: boolean,
 ): Promise<boolean> {
   let full: GmailMessage;
   try {
@@ -265,6 +290,17 @@ async function promoteSkipToMatched(
   const internalMs = full.internalDate ? Number(full.internalDate) : Date.now();
   const sentAt = new Date(internalMs);
 
+  // Privacy split mirrors gmailSync.processOneMessage: in summary_only
+  // mode we summarize the body in flight and persist NOTHING else —
+  // no snippet, no body, no attachments, no intel.
+  const aiSummary = summaryOnly
+    ? await summarizeEmail({
+        subject,
+        fromEmail: fromFull[0] ?? null,
+        bodyText: parts.bodyText,
+        bodyHtml: parts.bodyHtml,
+      })
+    : null;
   const inserted = await db
     .insert(emailMessages)
     .values({
@@ -275,15 +311,16 @@ async function promoteSkipToMatched(
       direction,
       sentAt,
       subject,
-      snippet: full.snippet ?? null,
-      bodyText: parts.bodyText,
-      bodyHtml: parts.bodyHtml,
+      snippet: summaryOnly ? null : (full.snippet ?? null),
+      bodyText: summaryOnly ? null : parts.bodyText,
+      bodyHtml: summaryOnly ? null : parts.bodyHtml,
+      aiSummary,
       fromEmail: fromFull[0] ?? null,
       toEmails: toFull,
       ccEmails: ccFull,
       bccEmails: bccFull,
-      hasAttachments: parts.attachments.length > 0,
-      attachmentsComplete: parts.attachments.length === 0,
+      hasAttachments: !summaryOnly && parts.attachments.length > 0,
+      attachmentsComplete: summaryOnly || parts.attachments.length === 0,
       matchedPersonIds: match.personIds,
       matchedFunderIds: match.funderIds,
       matchedHouseholdIds: match.householdIds,
@@ -317,8 +354,9 @@ async function promoteSkipToMatched(
 
   // Intel (matched path). Only on a true new insert so we don't
   // re-emit proposals on repeat backfill runs against the same row;
-  // phase B will sweep already-matched rows separately.
-  if (inserted[0]) {
+  // phase B will sweep already-matched rows separately. Skipped
+  // entirely in summary_only mode.
+  if (inserted[0] && !summaryOnly) {
     await processIntelForMatched({
       mailboxUserId: grant.userId,
       messageRowId,
@@ -333,9 +371,13 @@ async function promoteSkipToMatched(
   }
 
   // Attachment loop — same shape as gmailSync, idempotent on the
-  // partial unique index.
+  // partial unique index. Skipped entirely in summary_only mode;
+  // attachmentsComplete was already set true on the message row above
+  // and the skip-row cleanup below proceeds as if zero attachments
+  // had been requested.
   let attachmentErrors = 0;
-  for (const att of parts.attachments) {
+  const attachmentList = summaryOnly ? [] : parts.attachments;
+  for (const att of attachmentList) {
     try {
       const bytes = await getAttachmentBytes(
         grant.accessToken,
@@ -376,7 +418,7 @@ async function promoteSkipToMatched(
       );
     }
   }
-  if (parts.attachments.length > 0 && attachmentErrors === 0) {
+  if (attachmentList.length > 0 && attachmentErrors === 0) {
     await db
       .update(emailMessages)
       .set({ attachmentsComplete: true, updatedAt: new Date() })
