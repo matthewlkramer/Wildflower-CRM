@@ -12,7 +12,7 @@ import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, 
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
-const FUNDERS_ARRAY_PARAMS = ["subtype", "activeStatus", "connectionStatus", "capacityRating"] as const;
+const FUNDERS_ARRAY_PARAMS = ["subtype", "activeStatus", "connectionStatus", "capacityRating", "ownerUserId"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -77,6 +77,7 @@ router.get(
     if (q.connectionStatus && q.connectionStatus.length > 0) filters.push(inArray(funders.connectionStatus, q.connectionStatus));
     if (q.enthusiasm) filters.push(eq(funders.enthusiasm, q.enthusiasm));
     if (q.capacityRating && q.capacityRating.length > 0) filters.push(inArray(funders.capacityRating, q.capacityRating));
+    if (q.ownerUserId && q.ownerUserId.length > 0) filters.push(inArray(funders.ownerUserId, q.ownerUserId));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

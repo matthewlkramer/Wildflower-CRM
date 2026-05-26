@@ -27,6 +27,8 @@ import { DonorCell } from "@/components/donor-cell";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
+import { OwnerMultiFilter } from "@/components/owner-multi-filter";
+import { useUserNameMap } from "@/components/user-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/use-debounce";
 
@@ -53,6 +55,7 @@ export default function Pipeline() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
   const [types, setTypes] = useState<string[]>([]);
+  const [owners, setOwners] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const params: ListOpportunitiesAndPledgesParams = {
@@ -61,6 +64,7 @@ export default function Pipeline() {
     status: ["open"],
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as OpportunityType[] } : {}),
+    ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
   };
 
   const queryKey = getListOpportunitiesAndPledgesQueryKey(params);
@@ -100,6 +104,7 @@ export default function Pipeline() {
   }, [rows]);
 
   const activeOpp = activeId ? rows.find((r) => r.id === activeId) ?? null : null;
+  const userNames = useUserNameMap();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -162,13 +167,19 @@ export default function Pipeline() {
           options={TYPES}
           testId="select-pipeline-type"
         />
-        {(search || types.length > 0) && (
+        <OwnerMultiFilter
+          selected={owners}
+          onChange={setOwners}
+          testId="select-pipeline-owner"
+        />
+        {(search || types.length > 0 || owners.length > 0) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setSearch("");
               setTypes([]);
+              setOwners([]);
             }}
           >
             Clear
@@ -195,11 +206,12 @@ export default function Pipeline() {
                 opps={byStage.get(stage) ?? []}
                 loading={isLoading}
                 draggingId={activeId}
+                userNames={userNames}
               />
             ))}
           </div>
           <DragOverlay>
-            {activeOpp ? <OppCard opp={activeOpp} isOverlay /> : null}
+            {activeOpp ? <OppCard opp={activeOpp} userNames={userNames} isOverlay /> : null}
           </DragOverlay>
         </DndContext>
       )}
@@ -212,11 +224,13 @@ function StageColumn({
   opps,
   loading,
   draggingId,
+  userNames,
 }: {
   stage: OpportunityStage;
   opps: OpportunityOrPledge[];
   loading: boolean;
   draggingId: string | null;
+  userNames: Map<string, string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage });
   const totalAsk = opps.reduce((sum, o) => sum + Number(o.askAmount ?? 0), 0);
@@ -247,7 +261,7 @@ function StageColumn({
           <div className="text-xs text-muted-foreground text-center py-6">No opportunities</div>
         ) : (
           opps.map((o) => (
-            <OppCard key={o.id} opp={o} hidden={draggingId === o.id} />
+            <OppCard key={o.id} opp={o} userNames={userNames} hidden={draggingId === o.id} />
           ))
         )}
       </div>
@@ -257,10 +271,12 @@ function StageColumn({
 
 function OppCard({
   opp,
+  userNames,
   hidden = false,
   isOverlay = false,
 }: {
   opp: OpportunityOrPledge;
+  userNames: Map<string, string>;
   hidden?: boolean;
   isOverlay?: boolean;
 }) {
@@ -313,6 +329,11 @@ function OppCard({
           {formatDateShort(opp.projectedCloseDate)}
         </span>
       </div>
+      {opp.ownerUserId && (
+        <div className="mt-1 text-[11px] text-muted-foreground truncate">
+          {userNames.get(opp.ownerUserId) ?? opp.ownerUserId}
+        </div>
+      )}
     </div>
   );
 }

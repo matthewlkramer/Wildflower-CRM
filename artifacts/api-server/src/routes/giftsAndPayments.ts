@@ -45,7 +45,7 @@ import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 import { inArray } from "drizzle-orm";
 
-const GIFTS_ARRAY_PARAMS = ["type"] as const;
+const GIFTS_ARRAY_PARAMS = ["type", "ownerUserId"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -76,6 +76,7 @@ router.get(
     if (q.individualGiverPersonId) filters.push(eq(giftsAndPayments.individualGiverPersonId, q.individualGiverPersonId));
     if (q.paymentOnPledgeId) filters.push(eq(giftsAndPayments.paymentOnPledgeId, q.paymentOnPledgeId));
     if (q.paymentMethod) filters.push(eq(giftsAndPayments.paymentMethod, q.paymentMethod));
+    if (q.ownerUserId && q.ownerUserId.length > 0) filters.push(inArray(giftsAndPayments.ownerUserId, q.ownerUserId));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

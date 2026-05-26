@@ -700,6 +700,7 @@ export const ListFundersQueryParams = zod.object({
       ]),
     )
     .optional(),
+  ownerUserId: zod.array(zod.coerce.string()).optional(),
   limit: zod.coerce
     .number()
     .min(1)
@@ -1948,6 +1949,7 @@ export const ListPeopleQueryParams = zod.object({
   enthusiasm: zod
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .optional(),
+  ownerUserId: zod.array(zod.coerce.string()).optional(),
   limit: zod.coerce
     .number()
     .min(1)
@@ -2819,7 +2821,7 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   funderId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   individualGiverPersonId: zod.coerce.string().optional(),
-  ownerUserId: zod.coerce.string().optional(),
+  ownerUserId: zod.array(zod.coerce.string()).optional(),
   fiscalYear: zod
     .array(zod.coerce.string())
     .optional()
@@ -2883,6 +2885,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       usageNotes: zod.string().nullish(),
       copperPledgeId: zod.string().nullish(),
       primaryContactPersonId: zod.string().nullish(),
+      ownerUserId: zod.string().nullish(),
       funderName: zod.string().nullish(),
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
@@ -2994,6 +2997,7 @@ export const GetOpportunityOrPledgeResponse = zod
     usageNotes: zod.string().nullish(),
     copperPledgeId: zod.string().nullish(),
     primaryContactPersonId: zod.string().nullish(),
+    ownerUserId: zod.string().nullish(),
     funderName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
@@ -3203,6 +3207,7 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
   primaryContactPersonId: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
   funderName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -3420,6 +3425,7 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
       "daf_bill_com",
     ])
     .optional(),
+  ownerUserId: zod.array(zod.coerce.string()).optional(),
   limit: zod.coerce
     .number()
     .min(1)
@@ -3909,7 +3915,7 @@ export const ListInteractionsQueryParams = zod.object({
   personId: zod.coerce.string().optional(),
   funderId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
-  ownerUserId: zod.coerce.string().optional(),
+  ownerUserId: zod.array(zod.coerce.string()).optional(),
   kind: zod
     .array(
       zod.enum(["meeting", "phone_call", "video_call", "conference", "other"]),

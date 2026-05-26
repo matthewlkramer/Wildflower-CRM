@@ -1154,6 +1154,7 @@ export interface OpportunityOrPledge {
   usageNotes?: string | null;
   copperPledgeId?: string | null;
   primaryContactPersonId?: string | null;
+  ownerUserId?: string | null;
   funderName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
@@ -1901,6 +1902,7 @@ export type ListFundersParams = {
   connectionStatus?: ConnectionStatus[];
   enthusiasm?: Enthusiasm;
   capacityRating?: CapacityRating[];
+  ownerUserId?: string[];
   /**
    * @minimum 1
    * @maximum 1000
@@ -1961,6 +1963,7 @@ export type ListPeopleParams = {
   capacityRating?: CapacityRating[];
   connectionStatus?: ConnectionStatus[];
   enthusiasm?: Enthusiasm;
+  ownerUserId?: string[];
   /**
    * @minimum 1
    * @maximum 1000
@@ -2044,7 +2047,7 @@ export type ListOpportunitiesAndPledgesParams = {
   funderId?: string;
   householdId?: string;
   individualGiverPersonId?: string;
-  ownerUserId?: string;
+  ownerUserId?: string[];
   /**
  * Filter to opportunities that have at least one pledge_allocation
 with `grant_year` in the given set. Accepts `future` and any
@@ -2085,6 +2088,7 @@ export type ListGiftsAndPaymentsParams = {
   individualGiverPersonId?: string;
   paymentOnPledgeId?: string;
   paymentMethod?: GiftPaymentMethod;
+  ownerUserId?: string[];
   /**
    * @minimum 1
    * @maximum 1000
@@ -2114,7 +2118,7 @@ export type ListInteractionsParams = {
   personId?: string;
   funderId?: string;
   householdId?: string;
-  ownerUserId?: string;
+  ownerUserId?: string[];
   kind?: InteractionKind[];
   /**
    * @minimum 1

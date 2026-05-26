@@ -31,6 +31,8 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { DonorCell } from "@/components/donor-cell";
+import { OwnerMultiFilter } from "@/components/owner-multi-filter";
+import { useUserNameMap } from "@/components/user-picker";
 
 const TYPES: GiftType[] = [
   "standard_gift",
@@ -41,12 +43,13 @@ const TYPES: GiftType[] = [
 ];
 
 const PAGE_SIZE = 50;
-const COL_SPAN = 8;
+const COL_SPAN = 9;
 
 export default function Gifts() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
   const [types, setTypes] = useState<string[]>([]);
+  const [owners, setOwners] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   const params: ListGiftsAndPaymentsParams = {
@@ -54,6 +57,7 @@ export default function Gifts() {
     page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as GiftType[] } : {}),
+    ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
@@ -61,6 +65,7 @@ export default function Gifts() {
   });
 
   const ts = useTableState("gifts");
+  const userNames = useUserNameMap();
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey(), staleTime: 5 * 60_000 },
   });
@@ -83,10 +88,14 @@ export default function Gifts() {
           dateReceived: (r) => r.dateReceived ?? null,
           type: (r) => r.type ?? null,
           amount: (r) => (r.amount != null ? Number(r.amount) : null),
+          owner: (r) =>
+            r.ownerUserId
+              ? (userNames.get(r.ownerUserId) ?? r.ownerUserId).toLowerCase()
+              : null,
         },
         ts.sort,
       ),
-    [rows, ts.sort],
+    [rows, ts.sort, userNames],
   );
 
   return (
@@ -115,13 +124,19 @@ export default function Gifts() {
           options={TYPES}
           testId="select-gift-type"
         />
-        {(search || types.length > 0) && (
+        <OwnerMultiFilter
+          selected={owners}
+          onChange={(v) => { setOwners(v); setPage(1); }}
+          testId="select-gift-owner"
+        />
+        {(search || types.length > 0 || owners.length > 0) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setSearch("");
               setTypes([]);
+              setOwners([]);
               setPage(1);
             }}
           >
@@ -142,6 +157,7 @@ export default function Gifts() {
               <SortableTH colKey="entities" sortable={false} {...ts}>Entities</SortableTH>
               <SortableTH colKey="usages" sortable={false} {...ts}>Usages</SortableTH>
               <SortableTH colKey="grantYears" sortable={false} {...ts}>Grant years</SortableTH>
+              <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -188,6 +204,11 @@ export default function Gifts() {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {grantYears.length === 0 ? "—" : grantYears.join(", ")}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {g.ownerUserId
+                        ? (userNames.get(g.ownerUserId) ?? g.ownerUserId)
+                        : "—"}
                     </TableCell>
                   </TableRow>
                 );

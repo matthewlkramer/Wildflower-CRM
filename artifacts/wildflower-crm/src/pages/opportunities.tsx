@@ -36,6 +36,8 @@ import {
 } from "@/components/ui/pagination";
 import { DonorCell } from "@/components/donor-cell";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
+import { OwnerMultiFilter } from "@/components/owner-multi-filter";
+import { useUserNameMap } from "@/components/user-picker";
 
 const STATUSES: OpportunityStatus[] = ["open", "won", "dormant", "lost"];
 const STAGES: OpportunityStage[] = [
@@ -78,6 +80,7 @@ export default function Opportunities({
   const [stages, setStages] = useState<string[]>([]);
   const [types, setTypes] = useState<string[]>([]);
   const [fiscalYears, setFiscalYears] = useState<string[]>([]);
+  const [owners, setOwners] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   // Sort every array filter before serializing into request params so
@@ -98,6 +101,7 @@ export default function Opportunities({
     ...(stages.length > 0 ? { stage: [...stages].sort() as OpportunityStage[] } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as OpportunityType[] } : {}),
     ...(fiscalYears.length > 0 ? { fiscalYear: [...fiscalYears].sort() } : {}),
+    ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListOpportunitiesAndPledges(params, {
@@ -107,6 +111,7 @@ export default function Opportunities({
   const rows = data?.data ?? [];
 
   const ts = useTableState("opportunities");
+  const userNames = useUserNameMap();
   const STAGE_ORDER: Record<string, number> = {
     cold_lead: 1, warm_lead: 2, in_conversation: 3, convince: 4,
     conditional_commitment: 5, probable_renewal: 6, verbal_commitment: 7,
@@ -127,10 +132,14 @@ export default function Opportunities({
           awarded: (r) => (r.awardedAmount != null ? Number(r.awardedAmount) : null),
           fy: (r) => (r.coveredFiscalYears ?? []).join(",") || null,
           projectedClose: (r) => r.projectedCloseDate ?? null,
+          owner: (r) =>
+            r.ownerUserId
+              ? (userNames.get(r.ownerUserId) ?? r.ownerUserId).toLowerCase()
+              : null,
         },
         ts.sort,
       ),
-    [rows, ts.sort],
+    [rows, ts.sort, userNames],
   );
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -146,7 +155,8 @@ export default function Opportunities({
     (!lockedStatus && !sameDefaultStatus) ||
     stages.length > 0 ||
     types.length > 0 ||
-    fiscalYears.length > 0;
+    fiscalYears.length > 0 ||
+    owners.length > 0;
 
   return (
     <div className="space-y-6">
@@ -194,6 +204,11 @@ export default function Opportunities({
           selected={fiscalYears}
           onChange={(v) => { setFiscalYears(v); setPage(1); }}
         />
+        <OwnerMultiFilter
+          selected={owners}
+          onChange={(v) => { setOwners(v); setPage(1); }}
+          testId="select-opp-owner"
+        />
         {hasActiveFilters && (
           <Button
             variant="ghost"
@@ -204,6 +219,7 @@ export default function Opportunities({
               setStages([]);
               setTypes([]);
               setFiscalYears([]);
+              setOwners([]);
               setPage(1);
             }}
           >
@@ -228,19 +244,20 @@ export default function Opportunities({
               <SortableTH colKey="awarded" align="right" {...ts}>Awarded</SortableTH>
               <SortableTH colKey="fy" {...ts}>FY</SortableTH>
               <SortableTH colKey="projectedClose" {...ts}>Projected close</SortableTH>
+              <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center h-24 text-destructive">
+                <TableCell colSpan={9} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load opportunities."}
                 </TableCell>
               </TableRow>
             ) : sortedRows.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
               sortedRows.map((o) => {
                 const coveredFys = (o.coveredFiscalYears ?? []).map((y) => y.toUpperCase());
@@ -275,6 +292,11 @@ export default function Opportunities({
                       {coveredFys.length === 0 ? "—" : coveredFys.join(", ")}
                     </TableCell>
                     <TableCell>{formatDateShort(o.projectedCloseDate)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {o.ownerUserId
+                        ? (userNames.get(o.ownerUserId) ?? o.ownerUserId)
+                        : "—"}
+                    </TableCell>
                   </TableRow>
                 );
               })

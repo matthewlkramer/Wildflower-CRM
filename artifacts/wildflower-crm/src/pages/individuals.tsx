@@ -31,6 +31,8 @@ import {
   MultiFilterSelect,
   type MultiFilterOption,
 } from "@/components/multi-filter-select";
+import { OwnerMultiFilter } from "@/components/owner-multi-filter";
+import { useUserNameMap } from "@/components/user-picker";
 import {
   Pagination,
   PaginationContent,
@@ -59,13 +61,14 @@ const DECEASED_OPTIONS: MultiFilterOption[] = [
   { value: "false", label: "Living" },
   { value: "true", label: "Deceased" },
 ];
-const COL_SPAN = 9;
+const COL_SPAN = 10;
 
 export default function Individuals() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
   const [deceasedSel, setDeceasedSel] = useState<string[]>([]);
   const [capacityTiers, setCapacityTiers] = useState<string[]>([]);
+  const [owners, setOwners] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   const params: ListPeopleParams = {
@@ -79,6 +82,7 @@ export default function Individuals() {
     ...(capacityTiers.length > 0
       ? { capacityRating: [...capacityTiers].sort() as CapacityRating[] }
       : {}),
+    ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListPeople(params, {
@@ -89,6 +93,7 @@ export default function Individuals() {
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const regionNames = useRegionNameMap();
+  const userNames = useUserNameMap();
 
   const ts = useTableState("individuals");
   const CAPACITY_ORDER: Record<string, number> = {
@@ -113,14 +118,21 @@ export default function Individuals() {
           lastGift: (r) => r.mostRecentGiftDate ?? null,
           openAsks: (r) => r.openOpportunityCount ?? null,
           activeFunders: (r) => (r.activeFunderNames ?? []).length || null,
+          owner: (r) =>
+            r.ownerUserId
+              ? (userNames.get(r.ownerUserId) ?? r.ownerUserId).toLowerCase()
+              : null,
         },
         ts.sort,
       ),
-    [rows, ts.sort, regionNames],
+    [rows, ts.sort, regionNames, userNames],
   );
 
   const hasActiveFilters =
-    !!search || deceasedSel.length > 0 || capacityTiers.length > 0;
+    !!search ||
+    deceasedSel.length > 0 ||
+    capacityTiers.length > 0 ||
+    owners.length > 0;
 
   return (
     <div className="space-y-6">
@@ -164,6 +176,11 @@ export default function Individuals() {
           options={CAPACITY_TIERS.map((t) => ({ value: t, label: formatCapacity(t) ?? t }))}
           testId="select-capacity"
         />
+        <OwnerMultiFilter
+          selected={owners}
+          onChange={(v) => { setOwners(v); setPage(1); }}
+          testId="select-person-owner"
+        />
 
         {hasActiveFilters && (
           <Button
@@ -173,6 +190,7 @@ export default function Individuals() {
               setSearch("");
               setDeceasedSel([]);
               setCapacityTiers([]);
+              setOwners([]);
               setPage(1);
             }}
           >
@@ -194,6 +212,7 @@ export default function Individuals() {
               <SortableTH colKey="lastGift" {...ts}>Last gift</SortableTH>
               <SortableTH colKey="openAsks" align="right" {...ts}>Open asks</SortableTH>
               <SortableTH colKey="activeFunders" {...ts}>Active funders</SortableTH>
+              <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -253,6 +272,11 @@ export default function Individuals() {
                       {funders.length === 0
                         ? "—"
                         : funders.map(formatFunderNameShort).join(", ")}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {p.ownerUserId
+                        ? (userNames.get(p.ownerUserId) ?? p.ownerUserId)
+                        : "—"}
                     </TableCell>
                   </TableRow>
                 );

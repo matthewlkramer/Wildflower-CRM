@@ -24,6 +24,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CreateFunderDialog } from "@/components/create-funder-dialog";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
+import { OwnerMultiFilter } from "@/components/owner-multi-filter";
+import { useUserNameMap } from "@/components/user-picker";
 import {
   Pagination,
   PaginationContent,
@@ -69,6 +71,7 @@ export default function FundingEntities() {
   const [subtypes, setSubtypes] = useState<string[]>([]);
   const [activeStatuses, setActiveStatuses] = useState<string[]>([]);
   const [connectionStatuses, setConnectionStatuses] = useState<string[]>([]);
+  const [owners, setOwners] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   const params: ListFundersParams = {
@@ -82,6 +85,7 @@ export default function FundingEntities() {
     ...(connectionStatuses.length > 0
       ? { connectionStatus: [...connectionStatuses].sort() as ConnectionStatus[] }
       : {}),
+    ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListFunders(params, {
@@ -93,6 +97,7 @@ export default function FundingEntities() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const ts = useTableState("funding-entities");
+  const userNames = useUserNameMap();
   const CAPACITY_ORDER: Record<string, number> = {
     tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
   };
@@ -112,17 +117,22 @@ export default function FundingEntities() {
           lifetimeGiving: (r) =>
             r.lifetimeGiving != null ? Number(r.lifetimeGiving) : null,
           openAsks: (r) => r.openOpportunityCount ?? null,
+          owner: (r) =>
+            r.ownerUserId
+              ? (userNames.get(r.ownerUserId) ?? r.ownerUserId).toLowerCase()
+              : null,
         },
         ts.sort,
       ),
-    [rows, ts.sort],
+    [rows, ts.sort, userNames],
   );
 
   const hasActiveFilters =
     !!search ||
     subtypes.length > 0 ||
     activeStatuses.length > 0 ||
-    connectionStatuses.length > 0;
+    connectionStatuses.length > 0 ||
+    owners.length > 0;
 
   return (
     <div className="space-y-6">
@@ -173,6 +183,11 @@ export default function FundingEntities() {
           options={CONNECTION_STATUSES}
           testId="select-connection-status"
         />
+        <OwnerMultiFilter
+          selected={owners}
+          onChange={(v) => { setOwners(v); setPage(1); }}
+          testId="select-funder-owner"
+        />
 
         {hasActiveFilters && (
           <Button
@@ -183,6 +198,7 @@ export default function FundingEntities() {
               setSubtypes([]);
               setActiveStatuses([]);
               setConnectionStatuses([]);
+              setOwners([]);
               setPage(1);
             }}
           >
@@ -204,13 +220,14 @@ export default function FundingEntities() {
               <SortableTH colKey="primaryContact" {...ts}>Primary contact</SortableTH>
               <SortableTH colKey="lifetimeGiving" align="right" {...ts}>Lifetime giving</SortableTH>
               <SortableTH colKey="openAsks" align="right" {...ts}>Open asks</SortableTH>
+              <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={10}
                   className="text-center h-24 text-muted-foreground"
                 >
                   Loading…
@@ -219,7 +236,7 @@ export default function FundingEntities() {
             ) : isError ? (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={10}
                   className="text-center h-24 text-destructive"
                 >
                   {error instanceof Error
@@ -230,7 +247,7 @@ export default function FundingEntities() {
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={10}
                   className="text-center h-24 text-muted-foreground"
                 >
                   No funders match these filters.
@@ -289,6 +306,11 @@ export default function FundingEntities() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {openAsks > 0 ? openAsks : "—"}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {f.ownerUserId
+                        ? (userNames.get(f.ownerUserId) ?? f.ownerUserId)
+                        : "—"}
                     </TableCell>
                   </TableRow>
                 );

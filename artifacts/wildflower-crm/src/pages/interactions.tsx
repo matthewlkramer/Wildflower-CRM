@@ -30,6 +30,8 @@ import {
   MultiFilterSelect,
   type MultiFilterOption,
 } from "@/components/multi-filter-select";
+import { OwnerMultiFilter } from "@/components/owner-multi-filter";
+import { useUserNameMap } from "@/components/user-picker";
 
 const PAGE_SIZE = 50;
 const KIND_OPTIONS: MultiFilterOption[] = [
@@ -58,6 +60,7 @@ function participantCount(r: Interaction): number {
 export default function Interactions() {
   const [search, setSearch] = useState("");
   const [kinds, setKinds] = useState<string[]>([]);
+  const [owners, setOwners] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const debouncedSearch = useDebounce(search, 250);
   const params: ListInteractionsParams = {
@@ -65,8 +68,10 @@ export default function Interactions() {
     page,
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(kinds.length > 0 ? { kind: [...kinds].sort() as InteractionKind[] } : {}),
+    ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
   };
   const { data, isLoading } = useListInteractions(params);
+  const userNames = useUserNameMap();
   const rows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -83,10 +88,14 @@ export default function Interactions() {
           location: (r) => r.location?.toLowerCase() ?? null,
           duration: (r) => r.durationMinutes ?? null,
           participants: (r) => participantCount(r),
+          owner: (r) =>
+            r.ownerUserId
+              ? (userNames.get(r.ownerUserId) ?? r.ownerUserId).toLowerCase()
+              : null,
         },
         ts.sort,
       ),
-    [rows, ts.sort],
+    [rows, ts.sort, userNames],
   );
 
   return (
@@ -121,6 +130,14 @@ export default function Interactions() {
           options={KIND_OPTIONS}
           testId="select-filter-kind"
         />
+        <OwnerMultiFilter
+          selected={owners}
+          onChange={(v) => {
+            setOwners(v);
+            setPage(1);
+          }}
+          testId="select-interaction-owner"
+        />
       </div>
       <Table>
         <TableHeader>
@@ -131,18 +148,19 @@ export default function Interactions() {
             <SortableTH colKey="location" {...ts}>Location</SortableTH>
             <SortableTH colKey="duration" align="right" {...ts}>Duration</SortableTH>
             <SortableTH colKey="participants" align="right" {...ts}>Participants</SortableTH>
+            <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
+              <TableCell colSpan={7} className="text-center text-muted-foreground">
                 Loading…
               </TableCell>
             </TableRow>
           ) : sortedRows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
+              <TableCell colSpan={7} className="text-center text-muted-foreground">
                 No interactions logged yet.
               </TableCell>
             </TableRow>
@@ -171,6 +189,11 @@ export default function Interactions() {
                 </TableCell>
                 <TableCell className="text-right text-sm text-muted-foreground">
                   {participantCount(r)}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {r.ownerUserId
+                    ? (userNames.get(r.ownerUserId) ?? r.ownerUserId)
+                    : "—"}
                 </TableCell>
               </TableRow>
             ))

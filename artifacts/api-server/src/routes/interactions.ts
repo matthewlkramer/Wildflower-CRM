@@ -21,7 +21,7 @@ import {
 const router: IRouter = Router();
 router.use(requireAuth);
 
-const INTERACTIONS_ARRAY_PARAMS = ["kind"] as const;
+const INTERACTIONS_ARRAY_PARAMS = ["kind", "ownerUserId"] as const;
 
 router.get(
   "/interactions",
@@ -44,7 +44,7 @@ router.get(
       if (orClause) filters.push(orClause);
     }
     if (q.kind && q.kind.length > 0) filters.push(inArray(interactions.kind, q.kind));
-    if (q.ownerUserId) filters.push(eq(interactions.ownerUserId, q.ownerUserId));
+    if (q.ownerUserId && q.ownerUserId.length > 0) filters.push(inArray(interactions.ownerUserId, q.ownerUserId));
     // Array containment — same `@>` slug-array pattern used elsewhere in the
     // codebase (see people.regionIds). Cheap thanks to the GIN indexes.
     if (q.personId) {

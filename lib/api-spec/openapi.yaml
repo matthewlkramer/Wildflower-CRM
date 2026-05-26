@@ -279,6 +279,11 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { $ref: "#/components/schemas/CapacityRating" } }
+        - name: ownerUserId
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -459,6 +464,11 @@ paths:
           explode: false
           schema: { type: array, items: { $ref: "#/components/schemas/ConnectionStatus" } }
         - { name: enthusiasm, in: query, schema: { $ref: "#/components/schemas/Enthusiasm" } }
+        - name: ownerUserId
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -666,7 +676,11 @@ paths:
         - { name: funderId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
-        - { name: ownerUserId, in: query, schema: { type: string } }
+        - name: ownerUserId
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - name: fiscalYear
           in: query
           required: false
@@ -763,6 +777,11 @@ paths:
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
         - { name: paymentOnPledgeId, in: query, schema: { type: string } }
         - { name: paymentMethod, in: query, schema: { $ref: "#/components/schemas/GiftPaymentMethod" } }
+        - name: ownerUserId
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -841,7 +860,11 @@ paths:
         - { name: personId, in: query, schema: { type: string } }
         - { name: funderId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
-        - { name: ownerUserId, in: query, schema: { type: string } }
+        - name: ownerUserId
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - name: kind
           in: query
           style: form
@@ -2008,6 +2031,7 @@ components:
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
         primaryContactPersonId:     { type: string, nullable: true }
+        ownerUserId:                { type: string, nullable: true }
         # Denormalized display names, joined server-side from funders /
         # households / people. Present on list + detail responses so the
         # UI doesn't have to fire one fetch per row to resolve donor IDs.

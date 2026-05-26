@@ -64,7 +64,7 @@ import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, 
 const router: IRouter = Router();
 router.use(requireAuth);
 
-const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type"] as const;
+const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type", "ownerUserId"] as const;
 
 function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
   res.status(400).json({
@@ -102,7 +102,7 @@ router.get(
     if (q.funderId) filters.push(eq(opportunitiesAndPledges.funderId, q.funderId));
     if (q.householdId) filters.push(eq(opportunitiesAndPledges.householdId, q.householdId));
     if (q.individualGiverPersonId) filters.push(eq(opportunitiesAndPledges.individualGiverPersonId, q.individualGiverPersonId));
-    if (q.ownerUserId) filters.push(eq(opportunitiesAndPledges.ownerUserId, q.ownerUserId));
+    if (q.ownerUserId && q.ownerUserId.length > 0) filters.push(inArray(opportunitiesAndPledges.ownerUserId, q.ownerUserId));
     // Multi-value fiscal-year filter — matches opps that have at least
     // one pledge_allocation row whose grant_year is in the selected set.
     // Use EXISTS rather than a JOIN so we don't fan rows out (one opp
