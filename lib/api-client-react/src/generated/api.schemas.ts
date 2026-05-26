@@ -2325,6 +2325,12 @@ export type ListOpportunitiesAndPledgesParams = {
   ownerUserId?: string[];
   /**
  * Filter to opportunities that have at least one pledge_allocation
+with `entity_id` in the given set. Comma-separated form supported.
+
+ */
+  entityId?: string[];
+  /**
+ * Filter to opportunities that have at least one pledge_allocation
 with `grant_year` in the given set. Accepts `future` and any
 `fiscal_years.id` slug (e.g. `fy2026`). Multi-value: repeat the
 param or comma-separate. Omit to include all fiscal years.
@@ -2364,6 +2370,12 @@ export type ListGiftsAndPaymentsParams = {
   paymentOnPledgeId?: string;
   paymentMethod?: GiftPaymentMethod;
   ownerUserId?: string[];
+  /**
+ * Filter to gifts that have at least one gift_allocation with `entity_id`
+in the given set. Comma-separated form supported.
+
+ */
+  entityId?: string[];
   /**
    * @minimum 1
    * @maximum 1000
@@ -2508,6 +2520,15 @@ empty list to include all entities.
 
  */
   entityIds?: string[];
+};
+
+export type GetProjectionsByFyEntityParams = {
+  /**
+ * Optional set of `entities.id` slugs. When provided, only allocations
+on those entities are included. Comma-separated form supported.
+
+ */
+  entityId?: string[];
 };
 
 export type GetFiscalYearBreakdownParams = {

@@ -9,6 +9,7 @@ import {
   getListFiscalYearsQueryKey,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/format";
+import { useEntityFilter } from "@/lib/entity-filter-context";
 import {
   Table,
   TableBody,
@@ -28,8 +29,18 @@ function toNum(s: string | null | undefined): number {
 }
 
 export default function Projections() {
-  const proj = useGetProjectionsByFyEntity({
-    query: { queryKey: getGetProjectionsByFyEntityQueryKey() },
+  // Global entity filter (header dropdown). When set, the projections grid
+  // restricts to allocations on the selected entities.
+  const { selected: globalEntityIds } = useEntityFilter();
+  const projParams = useMemo(
+    () =>
+      globalEntityIds.length > 0
+        ? { entityId: [...globalEntityIds].sort() }
+        : undefined,
+    [globalEntityIds],
+  );
+  const proj = useGetProjectionsByFyEntity(projParams, {
+    query: { queryKey: getGetProjectionsByFyEntityQueryKey(projParams) },
   });
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey() },

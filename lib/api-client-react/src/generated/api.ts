@@ -71,6 +71,7 @@ import type {
   FunderList,
   GetDashboardSummaryParams,
   GetFiscalYearBreakdownParams,
+  GetProjectionsByFyEntityParams,
   GiftAllocation,
   GiftAllocationList,
   GiftOrPayment,
@@ -9357,42 +9358,69 @@ excludes superseded/abandoned allocation rows, and groups remaining rows by
 
  * @summary Open-pipeline pledge_allocations aggregated by (grantYear, entityId).
  */
-export const getGetProjectionsByFyEntityUrl = () => {
-  return `/api/projections-by-fy-entity`;
+export const getGetProjectionsByFyEntityUrl = (
+  params?: GetProjectionsByFyEntityParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/projections-by-fy-entity?${stringifiedParams}`
+    : `/api/projections-by-fy-entity`;
 };
 
 export const getProjectionsByFyEntity = async (
+  params?: GetProjectionsByFyEntityParams,
   options?: RequestInit,
 ): Promise<ProjectionsByFyEntity> => {
-  return customFetch<ProjectionsByFyEntity>(getGetProjectionsByFyEntityUrl(), {
-    ...options,
-    method: "GET",
-  });
+  return customFetch<ProjectionsByFyEntity>(
+    getGetProjectionsByFyEntityUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
-export const getGetProjectionsByFyEntityQueryKey = () => {
-  return [`/api/projections-by-fy-entity`] as const;
+export const getGetProjectionsByFyEntityQueryKey = (
+  params?: GetProjectionsByFyEntityParams,
+) => {
+  return [
+    `/api/projections-by-fy-entity`,
+    ...(params ? [params] : []),
+  ] as const;
 };
 
 export const getGetProjectionsByFyEntityQueryOptions = <
   TData = Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: GetProjectionsByFyEntityParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getGetProjectionsByFyEntityQueryKey();
+    queryOptions?.queryKey ?? getGetProjectionsByFyEntityQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getProjectionsByFyEntity>>
-  > = ({ signal }) => getProjectionsByFyEntity({ signal, ...requestOptions });
+  > = ({ signal }) =>
+    getProjectionsByFyEntity(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
@@ -9413,15 +9441,18 @@ export type GetProjectionsByFyEntityQueryError = ErrorType<unknown>;
 export function useGetProjectionsByFyEntity<
   TData = Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetProjectionsByFyEntityQueryOptions(options);
+>(
+  params?: GetProjectionsByFyEntityParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectionsByFyEntity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectionsByFyEntityQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

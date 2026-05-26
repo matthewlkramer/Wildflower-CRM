@@ -367,7 +367,27 @@ router.get(
 
 router.get(
   "/projections-by-fy-entity",
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    // Accept entityId as a comma-separated list or a repeated query param.
+    // Mirrors the orval `style: form, explode: false` serialization used
+    // by every other multi-value filter in this codebase.
+    const raw = req.query.entityId;
+    const entityIds: string[] = Array.isArray(raw)
+      ? raw.map(String)
+      : typeof raw === "string" && raw.length > 0
+        ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
+    const baseFilters = [
+      eq(opportunitiesAndPledges.status, "open"),
+      inArray(pledgeAllocations.status, [
+        "working",
+        "committed",
+        "committed_with_conditions",
+      ]),
+    ];
+    if (entityIds.length > 0) {
+      baseFilters.push(inArray(pledgeAllocations.entityId, entityIds));
+    }
     const rows = await db
       .select({
         grantYear: pledgeAllocations.grantYear,
@@ -384,16 +404,7 @@ router.get(
           opportunitiesAndPledges.id,
         ),
       )
-      .where(
-        and(
-          eq(opportunitiesAndPledges.status, "open"),
-          inArray(pledgeAllocations.status, [
-            "working",
-            "committed",
-            "committed_with_conditions",
-          ]),
-        ),
-      )
+      .where(and(...baseFilters))
       .groupBy(pledgeAllocations.grantYear, pledgeAllocations.entityId);
 
     res.json({

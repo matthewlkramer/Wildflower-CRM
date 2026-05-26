@@ -11,6 +11,7 @@ import {
   getListEntitiesQueryKey,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
+import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { GIFTS_BULK_FIELDS } from "@/lib/bulk-fields";
@@ -61,12 +62,20 @@ export default function Gifts() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdateGiftsAndPayments();
 
+  // Global entity filter (header dropdown). Forwarded to the server so the
+  // gifts list is scoped to gifts with at least one allocation on the
+  // selected entities. Mirrors the dashboard and opportunities pages.
+  const { selected: globalEntityIds } = useEntityFilter();
+
   const params: ListGiftsAndPaymentsParams = {
     limit: PAGE_SIZE,
     page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as GiftType[] } : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
+    ...(globalEntityIds.length > 0
+      ? { entityId: [...globalEntityIds].sort() }
+      : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {

@@ -13,6 +13,7 @@ import {
   type OpportunityType,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
+import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { OPPORTUNITIES_BULK_FIELDS } from "@/lib/bulk-fields";
@@ -98,6 +99,11 @@ export default function Opportunities({
     () => new Map((entitiesQ.data ?? []).map((e) => [e.id, e.name])),
     [entitiesQ.data],
   );
+  // Global entity filter (header dropdown). When the user has narrowed
+  // to one or more entities we forward that into the list query so the
+  // server only returns opps with at least one pledge_allocation on
+  // those entities. Mirrors the dashboard behaviour.
+  const { selected: globalEntityIds } = useEntityFilter();
 
   // Sort every array filter before serializing into request params so
   // the react-query cache key is stable regardless of the order the user
@@ -118,6 +124,9 @@ export default function Opportunities({
     ...(types.length > 0 ? { type: [...types].sort() as OpportunityType[] } : {}),
     ...(fiscalYears.length > 0 ? { fiscalYear: [...fiscalYears].sort() } : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
+    ...(globalEntityIds.length > 0
+      ? { entityId: [...globalEntityIds].sort() }
+      : {}),
   };
 
   const { data, isLoading, isError, error } = useListOpportunitiesAndPledges(params, {

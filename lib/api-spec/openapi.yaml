@@ -691,6 +691,15 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
+        - name: entityId
+          in: query
+          required: false
+          description: |
+            Filter to opportunities that have at least one pledge_allocation
+            with `entity_id` in the given set. Comma-separated form supported.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - name: fiscalYear
           in: query
           required: false
@@ -789,6 +798,15 @@ paths:
         - { name: paymentMethod, in: query, schema: { $ref: "#/components/schemas/GiftPaymentMethod" } }
         - name: ownerUserId
           in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
+        - name: entityId
+          in: query
+          required: false
+          description: |
+            Filter to gifts that have at least one gift_allocation with `entity_id`
+            in the given set. Comma-separated form supported.
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
@@ -1190,6 +1208,16 @@ paths:
         excludes superseded/abandoned allocation rows, and groups remaining rows by
         (grantYear, entityId). `expected` weights `sub_amount` by the parent opp's `win_probability`
         (defaulting to 1 when null). Both grouping keys may be null.
+      parameters:
+        - name: entityId
+          in: query
+          required: false
+          description: |
+            Optional set of `entities.id` slugs. When provided, only allocations
+            on those entities are included. Comma-separated form supported.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ProjectionsByFyEntity" } } } }
 

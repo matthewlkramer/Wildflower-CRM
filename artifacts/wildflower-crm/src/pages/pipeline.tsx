@@ -31,6 +31,7 @@ import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/use-debounce";
+import { useEntityFilter } from "@/lib/entity-filter-context";
 
 const STAGES: OpportunityStage[] = [
   "cold_lead",
@@ -58,6 +59,8 @@ export default function Pipeline() {
   const [owners, setOwners] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
 
+  const { selected: globalEntityIds } = useEntityFilter();
+
   const params: ListOpportunitiesAndPledgesParams = {
     limit: PAGE_LIMIT,
     page: 1,
@@ -65,6 +68,9 @@ export default function Pipeline() {
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as OpportunityType[] } : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
+    ...(globalEntityIds.length > 0
+      ? { entityId: [...globalEntityIds].sort() }
+      : {}),
   };
 
   const queryKey = getListOpportunitiesAndPledgesQueryKey(params);

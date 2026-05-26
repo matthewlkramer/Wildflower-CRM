@@ -50,7 +50,7 @@ import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, 
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { inArray } from "drizzle-orm";
 
-const GIFTS_ARRAY_PARAMS = ["type", "ownerUserId"] as const;
+const GIFTS_ARRAY_PARAMS = ["type", "ownerUserId", "entityId"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -82,6 +82,14 @@ router.get(
     if (q.paymentOnPledgeId) filters.push(eq(giftsAndPayments.paymentOnPledgeId, q.paymentOnPledgeId));
     if (q.paymentMethod) filters.push(eq(giftsAndPayments.paymentMethod, q.paymentMethod));
     if (q.ownerUserId && q.ownerUserId.length > 0) filters.push(inArray(giftsAndPayments.ownerUserId, q.ownerUserId));
+    // Entity filter — EXISTS on gift_allocations so we don't fan rows out
+    // when a single gift has multiple allocations. Driven by the global
+    // entity filter in the header.
+    if (q.entityId && q.entityId.length > 0) {
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.entityId, q.entityId)})`,
+      );
+    }
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

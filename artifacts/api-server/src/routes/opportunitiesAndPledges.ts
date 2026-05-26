@@ -81,7 +81,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 const router: IRouter = Router();
 router.use(requireAuth);
 
-const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type", "ownerUserId"] as const;
+const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type", "ownerUserId", "entityId"] as const;
 
 function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
   res.status(400).json({
@@ -135,6 +135,26 @@ router.get(
               and(
                 eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id),
                 inArray(pledgeAllocations.grantYear, fiscalYearSelected),
+              ),
+            ),
+        ),
+      );
+    }
+    // Entity filter — same EXISTS pattern as fiscalYear. Matches opps
+    // that have at least one pledge_allocation row pinned to one of
+    // the requested entity slugs. Driven by the global entity filter
+    // in the header (and the opps page's own entity multi-select).
+    const entitySelected = q.entityId ?? [];
+    if (entitySelected.length > 0) {
+      filters.push(
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(pledgeAllocations)
+            .where(
+              and(
+                eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id),
+                inArray(pledgeAllocations.entityId, entitySelected),
               ),
             ),
         ),

@@ -2899,6 +2899,12 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   householdId: zod.coerce.string().optional(),
   individualGiverPersonId: zod.coerce.string().optional(),
   ownerUserId: zod.array(zod.coerce.string()).optional(),
+  entityId: zod
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Filter to opportunities that have at least one pledge_allocation\nwith `entity_id` in the given set. Comma-separated form supported.\n",
+    ),
   fiscalYear: zod
     .array(zod.coerce.string())
     .optional()
@@ -3514,6 +3520,12 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
     ])
     .optional(),
   ownerUserId: zod.array(zod.coerce.string()).optional(),
+  entityId: zod
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Filter to gifts that have at least one gift_allocation with `entity_id`\nin the given set. Comma-separated form supported.\n",
+    ),
   limit: zod.coerce
     .number()
     .min(1)
@@ -4829,6 +4841,15 @@ excludes superseded/abandoned allocation rows, and groups remaining rows by
 
  * @summary Open-pipeline pledge_allocations aggregated by (grantYear, entityId).
  */
+export const GetProjectionsByFyEntityQueryParams = zod.object({
+  entityId: zod
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Optional set of `entities.id` slugs. When provided, only allocations\non those entities are included. Comma-separated form supported.\n",
+    ),
+});
+
 export const GetProjectionsByFyEntityResponse = zod.object({
   rows: zod.array(
     zod.object({

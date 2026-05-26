@@ -16,9 +16,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DonorCell } from "@/components/donor-cell";
+import { useEntityFilter } from "@/lib/entity-filter-context";
 
 const FETCH_LIMIT = 1000;
-const QUERY_PARAMS = { status: ["open" as const], limit: FETCH_LIMIT, page: 1 };
 
 // Today's calendar date in Wildflower's booking timezone (America/Chicago),
 // formatted as YYYY-MM-DD so it sorts/compares correctly against the
@@ -35,9 +35,21 @@ function todayInChicago(): string {
 }
 
 export default function GrantsCalendar() {
+  const { selected: globalEntityIds } = useEntityFilter();
+  const queryParams = useMemo(
+    () => ({
+      status: ["open" as const],
+      limit: FETCH_LIMIT,
+      page: 1,
+      ...(globalEntityIds.length > 0
+        ? { entityId: [...globalEntityIds].sort() }
+        : {}),
+    }),
+    [globalEntityIds],
+  );
   const { data, isLoading, isError, error } = useListOpportunitiesAndPledges(
-    QUERY_PARAMS,
-    { query: { queryKey: getListOpportunitiesAndPledgesQueryKey(QUERY_PARAMS) } },
+    queryParams,
+    { query: { queryKey: getListOpportunitiesAndPledgesQueryKey(queryParams) } },
   );
 
   const ts = useTableState("grants-calendar", { key: "applicationDeadline", dir: "asc" });
