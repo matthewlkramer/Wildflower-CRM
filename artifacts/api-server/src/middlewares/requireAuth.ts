@@ -53,6 +53,20 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
       }
 
       if (!user) {
+        // First-login provisioning. The frontend (dashboard, layout
+        // shell, etc.) fires multiple parallel API requests on first
+        // page load, so several requireAuth invocations race here for
+        // the same Clerk userId — all of them found no user, all of
+        // them would try to insert, and only the first would win on
+        // the `users_clerk_id_unique` constraint. The losers used to
+        // 500 and the dashboard showed broken tiles for the new user's
+        // entire first session.
+        //
+        // Make the insert idempotent on conflict: ON CONFLICT (clerk_id)
+        // DO UPDATE updated_at — the bump is a no-op semantically but
+        // forces RETURNING to give us the existing row instead of an
+        // empty result. All concurrent first-login requests therefore
+        // resolve to the same user row.
         user = await db
           .insert(users)
           .values({
@@ -61,8 +75,15 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
             email: email ?? `${auth.userId}@unknown.com`,
             role: "team_member",
           })
+          .onConflictDoUpdate({
+            target: users.clerkId,
+            set: { updatedAt: new Date() },
+          })
           .returning()
           .then((rows) => rows[0]);
+        // Defense-in-depth: if a different request already provisioned
+        // an archived row under this clerkId (operator pre-archived a
+        // placeholder), the archive check below will still 403 them.
       }
     }
 
