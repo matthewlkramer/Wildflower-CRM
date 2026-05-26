@@ -25,6 +25,14 @@ export const ListEmailProposalsQueryParams = zod.object({
     .optional(),
   status: zod.enum(["pending", "applied", "rejected", "ignored"]).optional(),
   mailboxUserId: zod.coerce.string().optional(),
+  personId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to proposals targeting this person."),
+  funderId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to proposals targeting this funder."),
   limit: zod.coerce
     .number()
     .min(1)

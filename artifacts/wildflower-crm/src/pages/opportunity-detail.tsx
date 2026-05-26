@@ -12,6 +12,7 @@ import {
   type OpportunityStatus,
   type OpportunityType,
 } from "@workspace/api-client-react";
+import { ActivityTimeline } from "@/components/activity-timeline";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import {
   InlineEditCurrency,
@@ -401,6 +402,18 @@ function OppView({
             {opp.lossReason && <NoteBlock label="Loss reason">{opp.lossReason}</NoteBlock>}
           </CardContent>
         </Card>
+      )}
+
+      {/* Activity timeline scoped to whichever donor this opportunity is
+          linked to. Opportunities don't have their own activity arrays;
+          the relevant signal is "everything we've heard from / about the
+          donor" so we just reuse the donor's timeline here. */}
+      {(opp.funderId || opp.individualGiverPersonId || opp.householdId) && (
+        <ActivityTimeline
+          funderId={opp.funderId ?? undefined}
+          personId={opp.individualGiverPersonId ?? undefined}
+          householdId={opp.householdId ?? undefined}
+        />
       )}
 
       <div className="text-xs text-muted-foreground">

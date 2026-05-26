@@ -1,12 +1,17 @@
 import { useMemo, useState } from "react";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
   useListInteractions,
   useListEmailMessages,
   useListCalendarEvents,
+  useListEmailProposals,
+  getListEmailProposalsQueryKey,
   type Interaction,
   type EmailMessage,
   type CalendarEvent,
+  type EmailProposal,
+  type EmailProposalKind,
   type InteractionKind,
 } from "@workspace/api-client-react";
 import {
@@ -18,6 +23,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { LogInteractionDialog } from "@/components/log-interaction-dialog";
 import { EmailDetailDialog } from "@/components/email-detail-dialog";
+import { cn } from "@/lib/utils";
 import {
   Calendar as CalendarIcon,
   Mail,
@@ -28,6 +34,7 @@ import {
   Lock,
   Paperclip,
   ExternalLink,
+  Sparkles,
 } from "lucide-react";
 
 interface Props {
@@ -36,10 +43,23 @@ interface Props {
   householdId?: string;
 }
 
+// Discriminated union of every event we can put on the timeline. `source`
+// drives both the filter chips and the per-source counter; `at` is the
+// timestamp used for the merged sort.
 type Item =
-  | { kind: "interaction"; at: string; row: Interaction }
-  | { kind: "email"; at: string; row: EmailMessage }
-  | { kind: "calendar"; at: string; row: CalendarEvent };
+  | { source: "interaction"; at: string; row: Interaction }
+  | { source: "email"; at: string; row: EmailMessage }
+  | { source: "calendar"; at: string; row: CalendarEvent }
+  | { source: "intel"; at: string; row: EmailProposal };
+
+type Source = Item["source"];
+
+const SOURCE_LABEL: Record<Source, string> = {
+  interaction: "Notes",
+  email: "Email",
+  calendar: "Calendar",
+  intel: "Intel",
+};
 
 const INTERACTION_LABEL: Record<InteractionKind, string> = {
   meeting: "Meeting",
@@ -47,6 +67,15 @@ const INTERACTION_LABEL: Record<InteractionKind, string> = {
   video_call: "Video call",
   conference: "Conference",
   other: "Note",
+};
+
+const PROPOSAL_KIND_LABEL: Record<EmailProposalKind, string> = {
+  linkedin_job_change: "LinkedIn job change",
+  bounce_invalid: "Hard bounce",
+  bounce_soft: "Soft bounce",
+  auto_responder_move: "Auto-responder · moved",
+  signature_update: "Signature drift",
+  grant_opportunity: "Grant opportunity",
 };
 
 function InteractionIcon({ kind }: { kind: InteractionKind }) {
@@ -71,47 +100,109 @@ const PAGE_SIZE = 50;
 
 export function ActivityTimeline({ personId, funderId, householdId }: Props) {
   // Per-source limit grows by PAGE_SIZE on each "Load more" click.
-  // We over-fetch a little (3 sources * limit) but the alternative —
-  // a unified server-side merged timeline endpoint — is more plumbing
-  // than this UI warrants right now. If any single source returns
-  // fewer rows than the cap, we know we've exhausted it.
+  // We over-fetch (4 sources * limit) but the alternative — a unified
+  // server-side merged endpoint — is more plumbing than this UI warrants
+  // today. If a source returns fewer rows than the cap, we know it's
+  // exhausted.
   const [limit, setLimit] = useState(PAGE_SIZE);
+  // Source filter — `null` means show everything. Implemented as chips
+  // above the feed (the "tabs above" pattern from the roadmap).
+  const [activeSource, setActiveSource] = useState<Source | null>(null);
+
   const filters = { personId, funderId, householdId, limit };
   const ints = useListInteractions(filters);
   const emails = useListEmailMessages(filters);
   const cals = useListCalendarEvents(filters);
+
+  // Email proposals are targeted at a single person or funder — they
+  // don't have a household linkage in the schema, so we only fetch them
+  // when scoped to a person or funder. Skipped queries are gated via
+  // `enabled` so we don't waste a request returning the caller's
+  // entire proposal queue.
+  const proposalsEnabled = !!(personId || funderId);
+  const proposalParams = { personId, funderId, limit, status: "pending" as const };
+  const proposals = useListEmailProposals(proposalParams, {
+    query: {
+      enabled: proposalsEnabled,
+      queryKey: getListEmailProposalsQueryKey(proposalParams),
+    },
+  });
+
   const [openEmailId, setOpenEmailId] = useState<string | null>(null);
 
-  // Merge + sort newest-first on the client. Each source caps at limit=50,
-  // so we hold at most ~150 rows in memory per detail page — plenty for the
-  // UI but explicit so we don't accidentally try to render thousands.
-  const items: Item[] = useMemo(() => {
+  // Merge + sort newest-first on the client. Each source caps at limit,
+  // so we hold at most ~200 rows in memory per detail page — plenty for
+  // the UI but explicit so we don't accidentally try to render thousands.
+  const allItems: Item[] = useMemo(() => {
     const merged: Item[] = [
       ...(ints.data?.data ?? []).map<Item>((r) => ({
-        kind: "interaction", at: r.occurredAt, row: r,
+        source: "interaction", at: r.occurredAt, row: r,
       })),
       ...(emails.data?.data ?? []).map<Item>((r) => ({
-        kind: "email", at: r.sentAt, row: r,
+        source: "email", at: r.sentAt, row: r,
       })),
       ...(cals.data?.data ?? []).map<Item>((r) => ({
-        kind: "calendar", at: r.startAt, row: r,
+        source: "calendar", at: r.startAt, row: r,
+      })),
+      ...(proposals.data?.data ?? []).map<Item>((r) => ({
+        source: "intel", at: r.createdAt, row: r,
       })),
     ];
     merged.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
     return merged;
-  }, [ints.data, emails.data, cals.data]);
+  }, [ints.data, emails.data, cals.data, proposals.data]);
 
-  const loading = ints.isLoading || emails.isLoading || cals.isLoading;
-  // "More to load" if any source is currently at its cap. The matching
-  // server uses total counts, so once we've fetched everything from
-  // every source the button hides itself.
-  const totals = {
-    int: ints.data?.pagination.total ?? 0,
-    email: emails.data?.pagination.total ?? 0,
-    cal: cals.data?.pagination.total ?? 0,
-  };
-  const hasMore =
-    totals.int > limit || totals.email > limit || totals.cal > limit;
+  const items = useMemo(
+    () => (activeSource ? allItems.filter((it) => it.source === activeSource) : allItems),
+    [allItems, activeSource],
+  );
+
+  const loading =
+    ints.isLoading ||
+    emails.isLoading ||
+    cals.isLoading ||
+    (proposalsEnabled && proposals.isLoading);
+
+  // Per-source counts for the chip badges, computed from totals where
+  // available (server-reported) so the chip reflects the true count, not
+  // the currently-loaded page size.
+  const counts = useMemo(() => {
+    const c: Record<Source, number> = {
+      interaction: ints.data?.pagination.total ?? 0,
+      email: emails.data?.pagination.total ?? 0,
+      calendar: cals.data?.pagination.total ?? 0,
+      intel: proposalsEnabled ? (proposals.data?.pagination.total ?? 0) : 0,
+    };
+    return c;
+  }, [ints.data, emails.data, cals.data, proposals.data, proposalsEnabled]);
+
+  const totalAll = counts.interaction + counts.email + counts.calendar + counts.intel;
+
+  // "More to load" if any *visible* source is currently at its cap.
+  // When a filter is active we only need to grow that one source.
+  const hasMore = (() => {
+    const overCap = (n: number) => n > limit;
+    if (activeSource === "interaction") return overCap(counts.interaction);
+    if (activeSource === "email") return overCap(counts.email);
+    if (activeSource === "calendar") return overCap(counts.calendar);
+    if (activeSource === "intel") return overCap(counts.intel);
+    return (
+      overCap(counts.interaction) ||
+      overCap(counts.email) ||
+      overCap(counts.calendar) ||
+      (proposalsEnabled && overCap(counts.intel))
+    );
+  })();
+
+  const chips: { key: Source | "all"; label: string; count: number }[] = [
+    { key: "all", label: "All", count: totalAll },
+    { key: "interaction", label: SOURCE_LABEL.interaction, count: counts.interaction },
+    { key: "email", label: SOURCE_LABEL.email, count: counts.email },
+    { key: "calendar", label: SOURCE_LABEL.calendar, count: counts.calendar },
+    ...(proposalsEnabled
+      ? [{ key: "intel" as const, label: SOURCE_LABEL.intel, count: counts.intel }]
+      : []),
+  ];
 
   return (
     <Card data-testid="activity-timeline">
@@ -125,16 +216,52 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
         />
       </CardHeader>
       <CardContent>
+        {/* Source filter chips. Clicking re-selects the active filter or
+            clears back to All. Per-chip count badge mirrors HubSpot's
+            "tabs above the feed" pattern from the roadmap. */}
+        <div className="flex flex-wrap gap-2 pb-3" data-testid="activity-source-chips">
+          {chips.map((c) => {
+            const isActive = (c.key === "all" && activeSource === null) || c.key === activeSource;
+            return (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setActiveSource(c.key === "all" ? null : (c.key as Source))}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
+                  isActive
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted",
+                )}
+                data-testid={`activity-source-${c.key}`}
+                data-active={isActive ? "true" : "false"}
+              >
+                <span>{c.label}</span>
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 text-[10px] tabular-nums",
+                    isActive ? "bg-primary-foreground/20" : "bg-muted",
+                  )}
+                >
+                  {c.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No activity yet. Log an interaction or connect Gmail / Calendar in Settings.
+            {activeSource
+              ? `No ${SOURCE_LABEL[activeSource].toLowerCase()} on this record yet.`
+              : "No activity yet. Log an interaction or connect Gmail / Calendar in Settings."}
           </p>
         ) : (
           <ul className="space-y-3">
             {items.map((it) => {
-              if (it.kind === "interaction") {
+              if (it.source === "interaction") {
                 const r = it.row;
                 return (
                   <li
@@ -160,7 +287,7 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
                   </li>
                 );
               }
-              if (it.kind === "email") {
+              if (it.source === "email") {
                 const r = it.row;
                 return (
                   <li
@@ -191,50 +318,91 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
                   </li>
                 );
               }
+              if (it.source === "calendar") {
+                const r = it.row;
+                return (
+                  <li
+                    key={`cal-${r.id}`}
+                    className="border rounded-md p-3 text-sm space-y-1"
+                    data-testid={`activity-calendar-${r.id}`}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <CalendarIcon className="h-4 w-4" />
+                      <Badge variant="outline">Calendar</Badge>
+                      {r.isPrivate ? (
+                        <Badge variant="secondary" className="gap-1">
+                          <Lock className="h-3 w-3" /> Private
+                        </Badge>
+                      ) : null}
+                      {r.status === "cancelled" ? (
+                        <Badge variant="destructive">Cancelled</Badge>
+                      ) : null}
+                      <span className="text-xs text-muted-foreground">{fmtWhen(r.startAt)}</span>
+                      {r.htmlLink ? (
+                        <a
+                          href={r.htmlLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ml-auto inline-flex items-center gap-1 text-xs hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Open <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : null}
+                    </div>
+                    <div className="font-medium">{r.summary ?? "(no title)"}</div>
+                    {r.location ? (
+                      <div className="text-xs text-muted-foreground">{r.location}</div>
+                    ) : null}
+                    {r.attendeeEmails?.length ? (
+                      <div className="text-xs text-muted-foreground truncate">
+                        {r.attendeeEmails.join(", ")}
+                      </div>
+                    ) : null}
+                    {r.description ? (
+                      <p className="text-muted-foreground line-clamp-2 whitespace-pre-wrap">
+                        {r.description}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              }
+              // source === "intel" — email-intelligence proposal. We
+              // show a compact card with a "Review" link into the
+              // email-intelligence queue rather than letting the user
+              // accept/reject inline — the queue page has the full
+              // payload + proposed actions context, this is just a
+              // surfacing in the relationship's timeline.
               const r = it.row;
               return (
                 <li
-                  key={`cal-${r.id}`}
-                  className="border rounded-md p-3 text-sm space-y-1"
-                  data-testid={`activity-calendar-${r.id}`}
+                  key={`intel-${r.id}`}
+                  className="border rounded-md p-3 text-sm space-y-1 bg-amber-50/40 dark:bg-amber-950/10"
+                  data-testid={`activity-proposal-${r.id}`}
                 >
                   <div className="flex items-center gap-2 flex-wrap">
-                    <CalendarIcon className="h-4 w-4" />
-                    <Badge variant="outline">Calendar</Badge>
-                    {r.isPrivate ? (
-                      <Badge variant="secondary" className="gap-1">
-                        <Lock className="h-3 w-3" /> Private
-                      </Badge>
-                    ) : null}
-                    {r.status === "cancelled" ? (
-                      <Badge variant="destructive">Cancelled</Badge>
-                    ) : null}
-                    <span className="text-xs text-muted-foreground">{fmtWhen(r.startAt)}</span>
-                    {r.htmlLink ? (
-                      <a
-                        href={r.htmlLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="ml-auto inline-flex items-center gap-1 text-xs hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Open <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : null}
+                    <Sparkles className="h-4 w-4 text-amber-600" />
+                    <Badge variant="outline">
+                      {PROPOSAL_KIND_LABEL[r.kind] ?? r.kind}
+                    </Badge>
+                    <Badge variant="secondary">Pending review</Badge>
+                    <span className="text-xs text-muted-foreground">{fmtWhen(r.createdAt)}</span>
+                    <Link
+                      href="/email-intelligence"
+                      className="ml-auto inline-flex items-center gap-1 text-xs hover:underline"
+                    >
+                      Review <ExternalLink className="h-3 w-3" />
+                    </Link>
                   </div>
-                  <div className="font-medium">{r.summary ?? "(no title)"}</div>
-                  {r.location ? (
-                    <div className="text-xs text-muted-foreground">{r.location}</div>
-                  ) : null}
-                  {r.attendeeEmails?.length ? (
-                    <div className="text-xs text-muted-foreground truncate">
-                      {r.attendeeEmails.join(", ")}
+                  {r.subjectName || r.subjectEmail ? (
+                    <div className="font-medium truncate">
+                      {r.subjectName ?? r.subjectEmail}
                     </div>
                   ) : null}
-                  {r.description ? (
-                    <p className="text-muted-foreground line-clamp-2 whitespace-pre-wrap">
-                      {r.description}
-                    </p>
+                  {r.subjectEmail && r.subjectName ? (
+                    <div className="text-xs text-muted-foreground truncate">
+                      {r.subjectEmail}
+                    </div>
                   ) : null}
                 </li>
               );

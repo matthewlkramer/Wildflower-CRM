@@ -1823,6 +1823,14 @@ export type ListEmailProposalsParams = {
   status?: EmailProposalStatus;
   mailboxUserId?: string;
   /**
+   * Filter to proposals targeting this person.
+   */
+  personId?: string;
+  /**
+   * Filter to proposals targeting this funder.
+   */
+  funderId?: string;
+  /**
    * @minimum 1
    * @maximum 1000
    */

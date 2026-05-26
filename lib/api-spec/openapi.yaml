@@ -46,6 +46,8 @@ paths:
         - { name: kind, in: query, schema: { $ref: "#/components/schemas/EmailProposalKind" } }
         - { name: status, in: query, schema: { $ref: "#/components/schemas/EmailProposalStatus" } }
         - { name: mailboxUserId, in: query, schema: { type: string } }
+        - { name: personId, in: query, schema: { type: string }, description: "Filter to proposals targeting this person." }
+        - { name: funderId, in: query, schema: { type: string }, description: "Filter to proposals targeting this funder." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
