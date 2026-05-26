@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HeaderEntityFilter } from "@/components/entity-filter";
+import { CommandPaletteProvider, CommandPaletteTrigger } from "@/components/command-palette";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -62,6 +63,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   );
 
   return (
+    <CommandPaletteProvider>
     <div className="flex min-h-screen bg-background">
       {/* Desktop Sidebar */}
       <aside className="hidden w-64 flex-col border-r bg-sidebar md:flex">
@@ -117,6 +119,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               there's no logo (sidebar already shows it). */}
           <div className="hidden md:block" />
           <div className="flex items-center gap-2">
+            <CommandPaletteTrigger />
             <HeaderEntityFilter />
             <Sheet>
               <SheetTrigger asChild>
@@ -141,5 +144,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </main>
       </div>
     </div>
+    </CommandPaletteProvider>
   );
 }
