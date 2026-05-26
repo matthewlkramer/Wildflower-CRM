@@ -611,6 +611,7 @@ async function processOneMessage(
       bodyHtml: parts.bodyHtml,
       direction,
       matchedPersonIds: match.personIds,
+      ownerEmail: grant.googleEmail,
     });
   }
 

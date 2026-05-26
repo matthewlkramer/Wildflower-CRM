@@ -96,11 +96,22 @@ export async function processIntelForMatched(args: {
   bodyHtml: string | null;
   direction: "sent" | "received";
   matchedPersonIds: string[] | null;
+  ownerEmail: string | null;
 }): Promise<void> {
   // We only mine inbound replies — signature / auto-responder data
   // only makes sense when the message is FROM the CRM contact, not
   // TO them.
   if (args.direction !== "received") return;
+  // Internal teammate-to-teammate mail is not a CRM signal. Skip the
+  // entire intel pass when the sender shares the mailbox owner's
+  // domain — these messages are the dominant source of two prior
+  // bugs: (a) the owner's own signature leaking out of a quoted
+  // reply and being attributed to a colleague, and (b) grant /
+  // RFP language in internal threads spawning runaway
+  // grant_opportunity proposals against teammates' email addresses.
+  const ownerDomain = domainOf(args.ownerEmail);
+  const fromDomain = domainOf(args.fromEmail);
+  if (ownerDomain && fromDomain && ownerDomain === fromDomain) return;
   try {
     // Grant digests can come from real CRM funders too (e.g. the
     // Foundation we already track also blasts an RFP newsletter).
@@ -384,6 +395,7 @@ async function handleSignature(
     fromEmail: string | null;
     bodyText: string | null;
     bodyHtml: string | null;
+    ownerEmail: string | null;
   },
   personId: string,
 ): Promise<void> {
@@ -392,6 +404,18 @@ async function handleSignature(
   // Need either title or company changes vs current state for this
   // to be worth surfacing.
   if (!sig.title && !sig.company && !sig.phone) return;
+  // Last-resort guard against the parser still latching onto a
+  // quoted-reply block: if the email we pulled out of the sig isn't
+  // the sender's address (and isn't blank), the sig almost certainly
+  // belongs to someone else in the thread (most often the mailbox
+  // owner). Drop it rather than attribute the wrong job to the
+  // matched CRM person.
+  const ownerDomain = domainOf(args.ownerEmail);
+  const sigDomain = domainOf(sig.email);
+  const fromDomain = domainOf(args.fromEmail);
+  if (sig.email && args.ownerEmail && sig.email === args.ownerEmail.toLowerCase()) return;
+  if (sigDomain && ownerDomain && sigDomain === ownerDomain) return;
+  if (sig.email && fromDomain && sigDomain && sigDomain !== fromDomain) return;
 
   const person = await db
     .select({

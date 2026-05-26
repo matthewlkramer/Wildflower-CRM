@@ -109,7 +109,7 @@ export async function backfillIntelForUser(
         { userId, phaseA: report.phaseA },
         "Backfill phase A done; starting phase B (re-intel matched)",
       );
-      await phaseB(userId, report);
+      await phaseB(userId, grant.googleEmail, report);
       logger.info(
         { userId, phaseB: report.phaseB },
         "Backfill phase B done; starting phase C (re-intel skips via full-fetch gate)",
@@ -328,6 +328,7 @@ async function promoteSkipToMatched(
       bodyHtml: parts.bodyHtml,
       direction,
       matchedPersonIds: match.personIds,
+      ownerEmail: grant.googleEmail,
     });
   }
 
@@ -414,6 +415,7 @@ async function promoteSkipToMatched(
 
 async function phaseB(
   userId: string,
+  ownerEmail: string,
   report: BackfillReport,
 ): Promise<void> {
   let cursor: string | null = null;
@@ -464,6 +466,7 @@ async function phaseB(
           bodyHtml: row.bodyHtml,
           direction: row.direction,
           matchedPersonIds: row.matchedPersonIds,
+          ownerEmail,
         });
         report.phaseB.ranIntel++;
       } catch (err) {

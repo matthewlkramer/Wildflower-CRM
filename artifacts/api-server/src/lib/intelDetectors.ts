@@ -387,15 +387,39 @@ export function parseEmailSignature(
   bodyText: string | null,
   bodyHtml: string | null,
 ): SignatureParse | null {
-  const text = (bodyText && bodyText.trim().length > 0
-    ? bodyText
-    : stripHtml(bodyHtml ?? "")) ?? "";
+  // When HTML is available we prefer it because we can structurally
+  // drop quoted-reply blocks (Gmail wraps them in
+  // `<div class="gmail_quote">` / `<blockquote>`, Apple Mail uses
+  // `<blockquote type="cite">`). Stripping these BEFORE the regex
+  // splits below prevents a stray prior message's signature (often
+  // the mailbox owner's own outbound sig) from being parsed as if it
+  // belonged to the current sender.
+  let text: string;
+  if (bodyHtml && bodyHtml.trim().length > 0) {
+    const dequoted = bodyHtml
+      .replace(/<blockquote[\s\S]*?<\/blockquote>/gi, " ")
+      .replace(
+        /<div[^>]*class=["'][^"']*gmail_quote[^"']*["'][\s\S]*$/gi,
+        " ",
+      );
+    text = stripHtml(dequoted);
+    // Some clients (Outlook) don't use blockquote and we end up with
+    // a flat text dump even from HTML. Fall through to the text
+    // marker splitter below regardless.
+    if (!text && bodyText) text = bodyText;
+  } else {
+    text = bodyText ?? "";
+  }
   if (!text) return null;
 
-  // Trim the quoted-reply tail.
+  // Trim the quoted-reply tail. Covers Gmail ("On … wrote:"),
+  // Outlook ("From: " header block, "________________________________"
+  // divider), Apple Mail ("Begin forwarded message:"), Spanish/French
+  // Gmail ("El … escribió:", "Le … a écrit:"), and the loose "wrote:"
+  // line that some clients emit without the "On " prefix.
   const beforeQuote = text
     .split(
-      /\n\s*(?:On\s+.{1,80}\s+wrote:|From:\s|-----\s*Original Message\s*-----|________________________________)/i,
+      /\n\s*(?:On\s+.{1,80}\s+wrote:|El\s+.{1,80}\s+escribi[oó]:|Le\s+.{1,80}\s+a\s+[ée]crit\s*:|From:\s|-----\s*Original Message\s*-----|________________________________|Begin\s+forwarded\s+message:|>\s)/i,
     )[0] ?? text;
   const lines = beforeQuote
     .split(/\r?\n/)
