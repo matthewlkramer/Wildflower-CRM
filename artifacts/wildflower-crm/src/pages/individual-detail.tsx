@@ -14,6 +14,8 @@ import {
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { ActivityTimeline } from "@/components/activity-timeline";
+import { NotesPanel } from "@/components/notes-panel";
+import { TasksPanel } from "@/components/tasks-panel";
 import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
@@ -574,6 +576,11 @@ function PersonView({ person }: { person: PersonDetail }) {
       <LinkedGiftsCard scope={{ individualGiverPersonId: person.id }} />
 
       <ActivityTimeline personId={person.id} />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <NotesPanel personId={person.id} />
+        <TasksPanel personId={person.id} />
+      </div>
 
       <div className="text-xs text-muted-foreground">
         Created {formatDate(person.createdAt)} • Updated {formatDate(person.updatedAt)}

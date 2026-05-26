@@ -11,6 +11,8 @@ import {
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { ActivityTimeline } from "@/components/activity-timeline";
+import { NotesPanel } from "@/components/notes-panel";
+import { TasksPanel } from "@/components/tasks-panel";
 import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
@@ -147,6 +149,11 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
       <LinkedGiftsCard scope={{ householdId: household.id }} />
 
       <ActivityTimeline householdId={household.id} />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <NotesPanel householdId={household.id} />
+        <TasksPanel householdId={household.id} />
+      </div>
 
       <div className="text-xs text-muted-foreground">
         Created {formatDate(household.createdAt)} • Updated {formatDate(household.updatedAt)}

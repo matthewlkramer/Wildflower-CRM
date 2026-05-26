@@ -29,3 +29,5 @@ export * from "./calendarEvents";
 export * from "./calendarSyncState";
 export * from "./emailProposals";
 export * from "./correspondentIgnore";
+export * from "./notes";
+export * from "./tasks";

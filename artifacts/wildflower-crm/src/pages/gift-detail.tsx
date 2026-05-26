@@ -12,6 +12,8 @@ import {
   type GiftPaymentMethod,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { NotesPanel } from "@/components/notes-panel";
+import { TasksPanel } from "@/components/tasks-panel";
 import {
   InlineEditCurrency,
   InlineEditDate,
@@ -332,6 +334,11 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
           </CardContent>
         </Card>
       )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <NotesPanel giftId={gift.id} />
+        <TasksPanel giftId={gift.id} />
+      </div>
 
       <div className="text-xs text-muted-foreground">
         Created {formatDate(gift.createdAt)} • Updated {formatDate(gift.updatedAt)}

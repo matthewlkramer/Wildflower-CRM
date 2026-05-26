@@ -35,6 +35,8 @@ tags:
   - { name: google-sync }
   - { name: email-proposals }
   - { name: correspondents }
+  - { name: notes }
+  - { name: tasks }
 
 paths:
   # ─── Email intelligence proposals ──────────────────────────────────────────
@@ -901,6 +903,110 @@ paths:
     delete:
       operationId: deleteInteraction
       tags: [interactions]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Notes ────────────────────────────────────────────────────────────────
+  /notes:
+    get:
+      operationId: listNotes
+      tags: [notes]
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: personId, in: query, schema: { type: string } }
+        - { name: funderId, in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+        - { name: opportunityId, in: query, schema: { type: string } }
+        - { name: giftId, in: query, schema: { type: string } }
+        - { name: mentionUserId, in: query, schema: { type: string }, description: "Filter to notes mentioning this user." }
+        - { name: authorUserId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/NoteList" } } } }
+    post:
+      operationId: createNote
+      tags: [notes]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateNoteBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /notes/{id}:
+    get:
+      operationId: getNote
+      tags: [notes]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateNote
+      tags: [notes]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateNoteBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteNote
+      tags: [notes]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Tasks ────────────────────────────────────────────────────────────────
+  /tasks:
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: personId, in: query, schema: { type: string } }
+        - { name: funderId, in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+        - { name: opportunityId, in: query, schema: { type: string } }
+        - { name: giftId, in: query, schema: { type: string } }
+        - { name: mentionUserId, in: query, schema: { type: string } }
+        - { name: assigneeUserId, in: query, schema: { type: string } }
+        - { name: createdByUserId, in: query, schema: { type: string } }
+        - name: status
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/TaskStatus" } }
+        - { name: dueBefore, in: query, schema: { type: string, format: date }, description: "Inclusive upper bound on due_date." }
+        - { name: dueAfter,  in: query, schema: { type: string, format: date }, description: "Inclusive lower bound on due_date." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TaskList" } } } }
+    post:
+      operationId: createTask
+      tags: [tasks]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateTaskBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /tasks/{id}:
+    get:
+      operationId: getTask
+      tags: [tasks]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateTask
+      tags: [tasks]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateTaskBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses: { "204": { description: Deleted } }
 
@@ -2692,3 +2798,107 @@ components:
       required: [emailAddress]
       properties:
         emailAddress: { type: string }
+
+    # ─── Notes ───────────────────────────────────────────────────────────────
+    Note:
+      type: object
+      required: [id, body, authorUserId, createdAt, updatedAt]
+      properties:
+        id:              { type: string }
+        body:            { type: string }
+        authorUserId:    { type: string }
+        personIds:       { type: array, items: { type: string }, nullable: true }
+        funderIds:       { type: array, items: { type: string }, nullable: true }
+        householdIds:    { type: array, items: { type: string }, nullable: true }
+        opportunityIds:  { type: array, items: { type: string }, nullable: true }
+        giftIds:         { type: array, items: { type: string }, nullable: true }
+        mentionUserIds:  { type: array, items: { type: string }, nullable: true }
+        createdAt:       { type: string, format: date-time }
+        updatedAt:       { type: string, format: date-time }
+    NoteList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/Note" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreateNoteBody:
+      type: object
+      required: [body]
+      properties:
+        body:            { type: string }
+        personIds:       { type: array, items: { type: string } }
+        funderIds:       { type: array, items: { type: string } }
+        householdIds:    { type: array, items: { type: string } }
+        opportunityIds:  { type: array, items: { type: string } }
+        giftIds:         { type: array, items: { type: string } }
+        mentionUserIds:  { type: array, items: { type: string } }
+    UpdateNoteBody:
+      type: object
+      properties:
+        body:            { type: string }
+        personIds:       { type: array, items: { type: string }, nullable: true }
+        funderIds:       { type: array, items: { type: string }, nullable: true }
+        householdIds:    { type: array, items: { type: string }, nullable: true }
+        opportunityIds:  { type: array, items: { type: string }, nullable: true }
+        giftIds:         { type: array, items: { type: string }, nullable: true }
+        mentionUserIds:  { type: array, items: { type: string }, nullable: true }
+
+    # ─── Tasks ───────────────────────────────────────────────────────────────
+    TaskStatus:
+      type: string
+      enum: [open, waiting, done, cancelled]
+    Task:
+      type: object
+      required: [id, title, status, createdByUserId, createdAt, updatedAt]
+      properties:
+        id:               { type: string }
+        title:            { type: string }
+        description:      { type: string, nullable: true }
+        dueDate:          { type: string, format: date, nullable: true }
+        status:           { $ref: "#/components/schemas/TaskStatus" }
+        completedAt:      { type: string, format: date-time, nullable: true }
+        assigneeUserId:   { type: string, nullable: true }
+        createdByUserId:  { type: string }
+        personIds:        { type: array, items: { type: string }, nullable: true }
+        funderIds:        { type: array, items: { type: string }, nullable: true }
+        householdIds:     { type: array, items: { type: string }, nullable: true }
+        opportunityIds:   { type: array, items: { type: string }, nullable: true }
+        giftIds:          { type: array, items: { type: string }, nullable: true }
+        mentionUserIds:   { type: array, items: { type: string }, nullable: true }
+        createdAt:        { type: string, format: date-time }
+        updatedAt:        { type: string, format: date-time }
+    TaskList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/Task" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreateTaskBody:
+      type: object
+      required: [title]
+      properties:
+        title:           { type: string }
+        description:     { type: string }
+        dueDate:         { type: string, format: date }
+        status:          { $ref: "#/components/schemas/TaskStatus" }
+        assigneeUserId:  { type: string }
+        personIds:       { type: array, items: { type: string } }
+        funderIds:       { type: array, items: { type: string } }
+        householdIds:    { type: array, items: { type: string } }
+        opportunityIds:  { type: array, items: { type: string } }
+        giftIds:         { type: array, items: { type: string } }
+        mentionUserIds:  { type: array, items: { type: string } }
+    UpdateTaskBody:
+      type: object
+      properties:
+        title:           { type: string }
+        description:     { type: string, nullable: true }
+        dueDate:         { type: string, format: date, nullable: true }
+        status:          { $ref: "#/components/schemas/TaskStatus" }
+        assigneeUserId:  { type: string, nullable: true }
+        personIds:       { type: array, items: { type: string }, nullable: true }
+        funderIds:       { type: array, items: { type: string }, nullable: true }
+        householdIds:    { type: array, items: { type: string }, nullable: true }
+        opportunityIds:  { type: array, items: { type: string }, nullable: true }
+        giftIds:         { type: array, items: { type: string }, nullable: true }
+        mentionUserIds:  { type: array, items: { type: string }, nullable: true }

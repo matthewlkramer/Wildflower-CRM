@@ -1821,6 +1821,106 @@ export interface CreateCorrespondentIgnoreBody {
   emailAddress: string;
 }
 
+export interface Note {
+  id: string;
+  body: string;
+  authorUserId: string;
+  personIds?: string[] | null;
+  funderIds?: string[] | null;
+  householdIds?: string[] | null;
+  opportunityIds?: string[] | null;
+  giftIds?: string[] | null;
+  mentionUserIds?: string[] | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NoteList {
+  data: Note[];
+  pagination: Pagination;
+}
+
+export interface CreateNoteBody {
+  body: string;
+  personIds?: string[];
+  funderIds?: string[];
+  householdIds?: string[];
+  opportunityIds?: string[];
+  giftIds?: string[];
+  mentionUserIds?: string[];
+}
+
+export interface UpdateNoteBody {
+  body?: string;
+  personIds?: string[] | null;
+  funderIds?: string[] | null;
+  householdIds?: string[] | null;
+  opportunityIds?: string[] | null;
+  giftIds?: string[] | null;
+  mentionUserIds?: string[] | null;
+}
+
+export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
+
+export const TaskStatus = {
+  open: "open",
+  waiting: "waiting",
+  done: "done",
+  cancelled: "cancelled",
+} as const;
+
+export interface Task {
+  id: string;
+  title: string;
+  description?: string | null;
+  dueDate?: string | null;
+  status: TaskStatus;
+  completedAt?: string | null;
+  assigneeUserId?: string | null;
+  createdByUserId: string;
+  personIds?: string[] | null;
+  funderIds?: string[] | null;
+  householdIds?: string[] | null;
+  opportunityIds?: string[] | null;
+  giftIds?: string[] | null;
+  mentionUserIds?: string[] | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskList {
+  data: Task[];
+  pagination: Pagination;
+}
+
+export interface CreateTaskBody {
+  title: string;
+  description?: string;
+  dueDate?: string;
+  status?: TaskStatus;
+  assigneeUserId?: string;
+  personIds?: string[];
+  funderIds?: string[];
+  householdIds?: string[];
+  opportunityIds?: string[];
+  giftIds?: string[];
+  mentionUserIds?: string[];
+}
+
+export interface UpdateTaskBody {
+  title?: string;
+  description?: string | null;
+  dueDate?: string | null;
+  status?: TaskStatus;
+  assigneeUserId?: string | null;
+  personIds?: string[] | null;
+  funderIds?: string[] | null;
+  householdIds?: string[] | null;
+  opportunityIds?: string[] | null;
+  giftIds?: string[] | null;
+  mentionUserIds?: string[] | null;
+}
+
 /**
  * Not found
  */
@@ -2136,6 +2236,59 @@ export type ListInteractionsParams = {
   householdId?: string;
   ownerUserId?: string[];
   kind?: InteractionKind[];
+  /**
+   * @minimum 1
+   * @maximum 1000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
+
+export type ListNotesParams = {
+  search?: string;
+  personId?: string;
+  funderId?: string;
+  householdId?: string;
+  opportunityId?: string;
+  giftId?: string;
+  /**
+   * Filter to notes mentioning this user.
+   */
+  mentionUserId?: string;
+  authorUserId?: string;
+  /**
+   * @minimum 1
+   * @maximum 1000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
+
+export type ListTasksParams = {
+  search?: string;
+  personId?: string;
+  funderId?: string;
+  householdId?: string;
+  opportunityId?: string;
+  giftId?: string;
+  mentionUserId?: string;
+  assigneeUserId?: string;
+  createdByUserId?: string;
+  status?: TaskStatus[];
+  /**
+   * Inclusive upper bound on due_date.
+   */
+  dueBefore?: string;
+  /**
+   * Inclusive lower bound on due_date.
+   */
+  dueAfter?: string;
   /**
    * @minimum 1
    * @maximum 1000

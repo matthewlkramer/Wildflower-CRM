@@ -18,6 +18,8 @@ import {
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { ActivityTimeline } from "@/components/activity-timeline";
+import { NotesPanel } from "@/components/notes-panel";
+import { TasksPanel } from "@/components/tasks-panel";
 import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
@@ -642,6 +644,11 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       <div className="text-xs text-muted-foreground">
         Created {formatDate(funder.createdAt)} • Updated{" "}
         {formatDate(funder.updatedAt)}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <NotesPanel funderId={funder.id} />
+        <TasksPanel funderId={funder.id} />
       </div>
     </div>
   );

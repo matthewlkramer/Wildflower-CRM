@@ -311,3 +311,10 @@ export const peopleEntityRoleConnectionEnum = pgEnum(
     "elected_official",
   ],
 );
+
+export const taskStatusEnum = pgEnum("task_status", [
+  "open",
+  "waiting",
+  "done",
+  "cancelled",
+]);

@@ -29,6 +29,8 @@ import calendarEventsRouter from "./calendarEvents";
 import adminSyncRouter from "./adminSync";
 import emailProposalsRouter from "./emailProposals";
 import correspondentsRouter from "./correspondents";
+import notesRouter from "./notes";
+import tasksRouter from "./tasks";
 
 const router: IRouter = Router();
 
@@ -62,5 +64,7 @@ router.use(calendarEventsRouter);
 router.use(adminSyncRouter);
 router.use(emailProposalsRouter);
 router.use(correspondentsRouter);
+router.use(notesRouter);
+router.use(tasksRouter);
 
 export default router;

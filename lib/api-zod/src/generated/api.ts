@@ -4104,6 +4104,256 @@ export const DeleteInteractionParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const listNotesQueryLimitDefault = 50;
+export const listNotesQueryLimitMax = 1000;
+
+export const listNotesQueryPageDefault = 1;
+
+export const ListNotesQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  personId: zod.coerce.string().optional(),
+  funderId: zod.coerce.string().optional(),
+  householdId: zod.coerce.string().optional(),
+  opportunityId: zod.coerce.string().optional(),
+  giftId: zod.coerce.string().optional(),
+  mentionUserId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to notes mentioning this user."),
+  authorUserId: zod.coerce.string().optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listNotesQueryLimitMax)
+    .default(listNotesQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listNotesQueryPageDefault),
+});
+
+export const ListNotesResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      body: zod.string(),
+      authorUserId: zod.string(),
+      personIds: zod.array(zod.string()).nullish(),
+      funderIds: zod.array(zod.string()).nullish(),
+      householdIds: zod.array(zod.string()).nullish(),
+      opportunityIds: zod.array(zod.string()).nullish(),
+      giftIds: zod.array(zod.string()).nullish(),
+      mentionUserIds: zod.array(zod.string()).nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const CreateNoteBody = zod.object({
+  body: zod.string(),
+  personIds: zod.array(zod.string()).optional(),
+  funderIds: zod.array(zod.string()).optional(),
+  householdIds: zod.array(zod.string()).optional(),
+  opportunityIds: zod.array(zod.string()).optional(),
+  giftIds: zod.array(zod.string()).optional(),
+  mentionUserIds: zod.array(zod.string()).optional(),
+});
+
+export const GetNoteParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetNoteResponse = zod.object({
+  id: zod.string(),
+  body: zod.string(),
+  authorUserId: zod.string(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+  householdIds: zod.array(zod.string()).nullish(),
+  opportunityIds: zod.array(zod.string()).nullish(),
+  giftIds: zod.array(zod.string()).nullish(),
+  mentionUserIds: zod.array(zod.string()).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UpdateNoteParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateNoteBody = zod.object({
+  body: zod.string().optional(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+  householdIds: zod.array(zod.string()).nullish(),
+  opportunityIds: zod.array(zod.string()).nullish(),
+  giftIds: zod.array(zod.string()).nullish(),
+  mentionUserIds: zod.array(zod.string()).nullish(),
+});
+
+export const UpdateNoteResponse = zod.object({
+  id: zod.string(),
+  body: zod.string(),
+  authorUserId: zod.string(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+  householdIds: zod.array(zod.string()).nullish(),
+  opportunityIds: zod.array(zod.string()).nullish(),
+  giftIds: zod.array(zod.string()).nullish(),
+  mentionUserIds: zod.array(zod.string()).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const DeleteNoteParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const listTasksQueryLimitDefault = 50;
+export const listTasksQueryLimitMax = 1000;
+
+export const listTasksQueryPageDefault = 1;
+
+export const ListTasksQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  personId: zod.coerce.string().optional(),
+  funderId: zod.coerce.string().optional(),
+  householdId: zod.coerce.string().optional(),
+  opportunityId: zod.coerce.string().optional(),
+  giftId: zod.coerce.string().optional(),
+  mentionUserId: zod.coerce.string().optional(),
+  assigneeUserId: zod.coerce.string().optional(),
+  createdByUserId: zod.coerce.string().optional(),
+  status: zod
+    .array(zod.enum(["open", "waiting", "done", "cancelled"]))
+    .optional(),
+  dueBefore: zod.coerce
+    .string()
+    .date()
+    .optional()
+    .describe("Inclusive upper bound on due_date."),
+  dueAfter: zod.coerce
+    .string()
+    .date()
+    .optional()
+    .describe("Inclusive lower bound on due_date."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listTasksQueryLimitMax)
+    .default(listTasksQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listTasksQueryPageDefault),
+});
+
+export const ListTasksResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string(),
+      description: zod.string().nullish(),
+      dueDate: zod.string().date().nullish(),
+      status: zod.enum(["open", "waiting", "done", "cancelled"]),
+      completedAt: zod.string().datetime({}).nullish(),
+      assigneeUserId: zod.string().nullish(),
+      createdByUserId: zod.string(),
+      personIds: zod.array(zod.string()).nullish(),
+      funderIds: zod.array(zod.string()).nullish(),
+      householdIds: zod.array(zod.string()).nullish(),
+      opportunityIds: zod.array(zod.string()).nullish(),
+      giftIds: zod.array(zod.string()).nullish(),
+      mentionUserIds: zod.array(zod.string()).nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const CreateTaskBody = zod.object({
+  title: zod.string(),
+  description: zod.string().optional(),
+  dueDate: zod.string().date().optional(),
+  status: zod.enum(["open", "waiting", "done", "cancelled"]).optional(),
+  assigneeUserId: zod.string().optional(),
+  personIds: zod.array(zod.string()).optional(),
+  funderIds: zod.array(zod.string()).optional(),
+  householdIds: zod.array(zod.string()).optional(),
+  opportunityIds: zod.array(zod.string()).optional(),
+  giftIds: zod.array(zod.string()).optional(),
+  mentionUserIds: zod.array(zod.string()).optional(),
+});
+
+export const GetTaskParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetTaskResponse = zod.object({
+  id: zod.string(),
+  title: zod.string(),
+  description: zod.string().nullish(),
+  dueDate: zod.string().date().nullish(),
+  status: zod.enum(["open", "waiting", "done", "cancelled"]),
+  completedAt: zod.string().datetime({}).nullish(),
+  assigneeUserId: zod.string().nullish(),
+  createdByUserId: zod.string(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+  householdIds: zod.array(zod.string()).nullish(),
+  opportunityIds: zod.array(zod.string()).nullish(),
+  giftIds: zod.array(zod.string()).nullish(),
+  mentionUserIds: zod.array(zod.string()).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UpdateTaskParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateTaskBody = zod.object({
+  title: zod.string().optional(),
+  description: zod.string().nullish(),
+  dueDate: zod.string().date().nullish(),
+  status: zod.enum(["open", "waiting", "done", "cancelled"]).optional(),
+  assigneeUserId: zod.string().nullish(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+  householdIds: zod.array(zod.string()).nullish(),
+  opportunityIds: zod.array(zod.string()).nullish(),
+  giftIds: zod.array(zod.string()).nullish(),
+  mentionUserIds: zod.array(zod.string()).nullish(),
+});
+
+export const UpdateTaskResponse = zod.object({
+  id: zod.string(),
+  title: zod.string(),
+  description: zod.string().nullish(),
+  dueDate: zod.string().date().nullish(),
+  status: zod.enum(["open", "waiting", "done", "cancelled"]),
+  completedAt: zod.string().datetime({}).nullish(),
+  assigneeUserId: zod.string().nullish(),
+  createdByUserId: zod.string(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+  householdIds: zod.array(zod.string()).nullish(),
+  opportunityIds: zod.array(zod.string()).nullish(),
+  giftIds: zod.array(zod.string()).nullish(),
+  mentionUserIds: zod.array(zod.string()).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const DeleteTaskParams = zod.object({
+  id: zod.coerce.string(),
+});
+
 export const listEmailMessagesQueryLimitDefault = 50;
 export const listEmailMessagesQueryLimitMax = 1000;
 

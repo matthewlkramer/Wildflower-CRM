@@ -2,8 +2,15 @@ import { Link } from "wouter";
 import {
   useGetDashboardSummary,
   getGetDashboardSummaryQueryKey,
+  useGetCurrentUser,
+  useListTasks,
+  useListNotes,
+  getListTasksQueryKey,
+  getListNotesQueryKey,
+  type TaskStatus,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
 import EmailProposalsCard from "@/components/EmailProposalsCard";
 import { useEntityFilter } from "@/lib/entity-filter-context";
@@ -188,6 +195,8 @@ export default function Dashboard() {
         ))}
       </div>
 
+      <MyTasksAndMentionsRow />
+
       <EmailProposalsCard />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -216,6 +225,96 @@ export default function Dashboard() {
           </Card>
         </Link>
       </div>
+    </div>
+  );
+}
+
+function MyTasksAndMentionsRow() {
+  const { data: me } = useGetCurrentUser();
+  const userId = me?.id;
+  const OPEN_STATUSES: TaskStatus[] = ["open", "waiting"];
+  const myTasksParams = { assigneeUserId: userId, status: OPEN_STATUSES, limit: 10 };
+  const taskMentionParams = { mentionUserId: userId, status: OPEN_STATUSES, limit: 10 };
+  const noteMentionParams = { mentionUserId: userId, limit: 10 };
+  const { data: tasksData } = useListTasks(myTasksParams, {
+    query: { enabled: !!userId, queryKey: getListTasksQueryKey(myTasksParams) },
+  });
+  const { data: mentionedTasks } = useListTasks(taskMentionParams, {
+    query: { enabled: !!userId, queryKey: getListTasksQueryKey(taskMentionParams) },
+  });
+  const { data: mentionedNotes } = useListNotes(noteMentionParams, {
+    query: { enabled: !!userId, queryKey: getListNotesQueryKey(noteMentionParams) },
+  });
+  const myTasks = tasksData?.data ?? [];
+  const taskMentions = mentionedTasks?.data ?? [];
+  const noteMentions = mentionedNotes?.data ?? [];
+  const fmtDate = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" }) : "—";
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Card data-testid="card-my-tasks">
+        <CardHeader>
+          <CardTitle className="text-lg">My open tasks</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {myTasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nothing on your plate.</p>
+          ) : (
+            <ul className="space-y-2">
+              {myTasks.map((t) => (
+                <li
+                  key={t.id}
+                  className="flex items-center justify-between gap-2 text-sm border rounded-md p-2"
+                  data-testid={`dash-task-${t.id}`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Badge variant={t.status === "waiting" ? "secondary" : "default"}>
+                      {t.status}
+                    </Badge>
+                    <span className="truncate">{t.title}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    Due {fmtDate(t.dueDate)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+      <Card data-testid="card-mentions">
+        <CardHeader>
+          <CardTitle className="text-lg">Mentions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {taskMentions.length === 0 && noteMentions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No mentions yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {taskMentions.map((t) => (
+                <li
+                  key={`t-${t.id}`}
+                  className="text-sm border rounded-md p-2"
+                  data-testid={`dash-mention-task-${t.id}`}
+                >
+                  <span className="text-xs text-muted-foreground mr-1">Task:</span>
+                  {t.title}
+                </li>
+              ))}
+              {noteMentions.map((n) => (
+                <li
+                  key={`n-${n.id}`}
+                  className="text-sm border rounded-md p-2"
+                  data-testid={`dash-mention-note-${n.id}`}
+                >
+                  <span className="text-xs text-muted-foreground mr-1">Note:</span>
+                  <span className="line-clamp-2 whitespace-pre-wrap">{n.body}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

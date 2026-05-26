@@ -13,6 +13,8 @@ import {
   type OpportunityType,
 } from "@workspace/api-client-react";
 import { ActivityTimeline } from "@/components/activity-timeline";
+import { NotesPanel } from "@/components/notes-panel";
+import { TasksPanel } from "@/components/tasks-panel";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import {
   InlineEditCurrency,
@@ -415,6 +417,11 @@ function OppView({
           householdId={opp.householdId ?? undefined}
         />
       )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <NotesPanel opportunityId={opp.id} />
+        <TasksPanel opportunityId={opp.id} />
+      </div>
 
       <div className="text-xs text-muted-foreground">
         Created {formatDate(opp.createdAt)} • Updated {formatDate(opp.updatedAt)}
