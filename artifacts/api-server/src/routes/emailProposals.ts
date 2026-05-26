@@ -206,9 +206,37 @@ router.post(
     });
 
     if (!outcome) {
-      // Either the id doesn't exist for this mailbox, or another
-      // request already resolved it.
-      return notFound(res, "pending email proposal");
+      // The conditional UPDATE didn't match. Distinguish "doesn't
+      // exist / not yours" (-> 404) from "already resolved" (-> 200
+      // idempotent no-op) so a retried POST after a network hiccup
+      // doesn't surface as an error to the user. We re-read scoped to
+      // the same mailbox to keep authz tight.
+      const [existing] = await db
+        .select()
+        .from(emailProposals)
+        .where(
+          and(
+            eq(emailProposals.id, paramId(req)),
+            eq(emailProposals.mailboxUserId, user.id),
+          ),
+        )
+        .limit(1);
+      if (!existing) return notFound(res, "email proposal");
+      if (existing.status === "applied") {
+        // Re-accept of an already-applied proposal: no-op. Return the
+        // current row with an empty applied-actions array — the actions
+        // ran on the original accept; we don't re-run them.
+        res.json({ ...existing, appliedActions: [] });
+        return;
+      }
+      // Some other terminal state (rejected, ignored). Surface that
+      // clearly rather than pretending the accept succeeded.
+      res.status(409).json({
+        error: "proposal_not_pending",
+        status: existing.status,
+        message: `Cannot accept proposal in status '${existing.status}'.`,
+      });
+      return;
     }
     if ("error" in outcome) {
       const { failed, partial } = outcome.error;
@@ -258,8 +286,32 @@ router.post(
         ),
       )
       .returning();
-    if (!row) return notFound(res, "email proposal");
-    res.json(row);
+    if (row) {
+      res.json(row);
+      return;
+    }
+    // Same idempotency story as accept: re-reject of an already-rejected
+    // row is a no-op; other terminal states get a clear 409.
+    const [existing] = await db
+      .select()
+      .from(emailProposals)
+      .where(
+        and(
+          eq(emailProposals.id, paramId(req)),
+          eq(emailProposals.mailboxUserId, user.id),
+        ),
+      )
+      .limit(1);
+    if (!existing) return notFound(res, "email proposal");
+    if (existing.status === "rejected") {
+      res.json(existing);
+      return;
+    }
+    res.status(409).json({
+      error: "proposal_not_pending",
+      status: existing.status,
+      message: `Cannot reject proposal in status '${existing.status}'.`,
+    });
   }),
 );
 

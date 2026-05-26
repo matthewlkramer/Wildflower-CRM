@@ -19,6 +19,7 @@ import {
   getHeader,
   parseAddressHeader,
   GmailHistoryGoneError,
+  GmailNotFoundError,
   type GmailMessage,
 } from "./gmail";
 import { getValidGoogleAccessTokenForUser, type ActiveGoogleGrant } from "./googleTokenStore";
@@ -483,12 +484,35 @@ async function processOneMessage(
           bodyHtml: partsForIntel.bodyHtml,
         });
       } catch (e) {
-        // Never let intel failures break the sync loop — log and
-        // continue with the normal skip insert below.
-        logger.warn(
-          { err: e, userId: grant.userId, gmailId },
-          "Email intelligence (unmatched) body fetch failed",
-        );
+        // Classify the failure to avoid the two failure modes at the
+        // extremes:
+        //
+        //   - Permanent (the message is gone from Gmail — 404): if we
+        //     return false here we'd hold the page cursor forever
+        //     because `pageErrors > 0` blocks cursor advancement. Fall
+        //     through to write the skip row so this gmailId is filtered
+        //     next sync and the mailbox can make progress. We lose this
+        //     one signal, which is acceptable because the message no
+        //     longer exists anyway.
+        //
+        //   - Transient (network blip, 5xx, detector DB error): return
+        //     false so `filterUnseenIds` doesn't suppress this gmailId
+        //     next sync. The cursor stays held until the message is
+        //     successfully processed, mirroring the matched-branch
+        //     "full fetch failed; will retry" behavior at line 527.
+        if (e instanceof GmailNotFoundError) {
+          logger.warn(
+            { err: e, userId: grant.userId, gmailId },
+            "Email intelligence (unmatched) source message gone; writing skip row",
+          );
+          // fall through to skip-row insert below
+        } else {
+          logger.warn(
+            { err: e, userId: grant.userId, gmailId },
+            "Email intelligence (unmatched) failed; deferring skip insert for retry",
+          );
+          return false;
+        }
       }
     }
 
@@ -602,17 +626,30 @@ async function processOneMessage(
   // detector work entirely on replay is cheaper and avoids touching
   // the DB at all in the steady state).
   if (wasNewMessage) {
-    await processIntelForMatched({
-      mailboxUserId: grant.userId,
-      messageRowId,
-      fromEmail: fromFull[0] ?? null,
-      subject,
-      bodyText: parts.bodyText,
-      bodyHtml: parts.bodyHtml,
-      direction,
-      matchedPersonIds: match.personIds,
-      ownerEmail: grant.googleEmail,
-    });
+    try {
+      await processIntelForMatched({
+        mailboxUserId: grant.userId,
+        messageRowId,
+        fromEmail: fromFull[0] ?? null,
+        subject,
+        bodyText: parts.bodyText,
+        bodyHtml: parts.bodyHtml,
+        direction,
+        matchedPersonIds: match.personIds,
+        ownerEmail: grant.googleEmail,
+      });
+    } catch (e) {
+      // Matched-path intel is best-effort: the message row is already
+      // safely inserted and `wasNewMessage` gates intel to first-insert
+      // only, so a detector / DB error here would silently never run
+      // again on retry. Catch + warn so an intel bug never causes a
+      // matched message to look like a sync failure (which would also
+      // skip the attachment loop below).
+      logger.warn(
+        { err: e, userId: grant.userId, gmailId, messageRowId },
+        "Email intelligence (matched) failed; message stored, intel skipped",
+      );
+    }
   }
 
   // Attachment loop — idempotent on the (email_message_id,
