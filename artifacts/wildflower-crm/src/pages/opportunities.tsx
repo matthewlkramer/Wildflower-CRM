@@ -10,7 +10,7 @@ import {
   type OpportunityType,
 } from "@workspace/api-client-react";
 import { useDebounce } from "@/hooks/use-debounce";
-import { formatCurrency, formatDateShort, formatEnum, fiscalYearFromDate } from "@/lib/format";
+import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 import {
   Table,
   TableBody,
@@ -114,7 +114,10 @@ export default function Opportunities({
           ask: (r) => (r.askAmount != null ? Number(r.askAmount) : null),
           coveredFys: (r) => (r.coveredFiscalYears ?? []).join(",") || null,
           awarded: (r) => (r.awardedAmount != null ? Number(r.awardedAmount) : null),
-          fy: (r) => r.fiscalYear ?? null,
+          // FY is the rolled-up set of grant years from child
+          // pledge_allocations; sort by the earliest (or join) so
+          // multi-year asks land predictably.
+          fy: (r) => (r.coveredFiscalYears ?? []).join(",") || null,
           projectedClose: (r) => r.projectedCloseDate ?? null,
         },
         ts.sort,
@@ -201,12 +204,10 @@ export default function Opportunities({
               <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
               sortedRows.map((o) => {
-                // Server returns the FY slug — but fall back to a
-                // client-side derivation so legacy cached responses
-                // (pre-aggregate rollout) still show something useful.
-                const fy = o.fiscalYear ?? fiscalYearFromDate(o.projectedCloseDate);
-                // Allocation-derived FY coverage. Each entry is already
-                // an FY slug like "fy26"; uppercase for display.
+                // FY column reflects the grant years on the child
+                // pledge_allocations (the opp itself no longer carries
+                // a fiscal_year column). Each entry is an FY slug like
+                // "fy26"; uppercase for display.
                 const coveredFys = (o.coveredFiscalYears ?? []).map((y) => y.toUpperCase());
                 return (
                   <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-opp-${o.id}`}>
@@ -235,7 +236,9 @@ export default function Opportunities({
                       <TableCell className="text-right tabular-nums">{formatCurrency(o.askAmount)}</TableCell>
                     )}
                     <TableCell className="text-right tabular-nums">{formatCurrency(o.awardedAmount)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{fy ?? "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {coveredFys.length === 0 ? "—" : coveredFys.join(", ")}
+                    </TableCell>
                     <TableCell>{formatDateShort(o.projectedCloseDate)}</TableCell>
                   </TableRow>
                 );
