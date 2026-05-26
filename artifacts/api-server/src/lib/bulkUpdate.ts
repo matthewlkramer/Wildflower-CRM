@@ -32,6 +32,20 @@ export type RowValidator<Row, P> = (
   patch: P,
 ) => string | null;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TX = any;
+
+// Optional per-row side-effect step. Runs INSIDE the row's savepoint
+// AFTER the main column update, so a failure rolls back this row's
+// updates (column + side-effect) atomically without affecting other
+// rows. Used for reconciling related tables (e.g. pledge_allocations
+// for opportunities' `coveredFiscalYears`).
+export type ExtraApply<P extends object> = (
+  tx: TX,
+  id: string,
+  virtualPatch: Partial<P>,
+) => Promise<void>;
+
 export interface BulkUpdateConfig<Row, P extends object> {
   /** Audit-log entity name (e.g. "people"). */
   entity: string;
@@ -41,18 +55,27 @@ export interface BulkUpdateConfig<Row, P extends object> {
   /** Zod schema for the full body (ids + patch). */
   bodySchema: ZodLike<BulkUpdateBody<P>>;
   /**
-   * Whitelist of patch keys this endpoint will write. Any extra keys
-   * from the (zod-validated) body are silently dropped — defence in
-   * depth against the body schema accidentally allowing a non-bulk
-   * field through. Must be a subset of writable columns on `table`.
+   * Whitelist of column keys this endpoint writes via UPDATE. Any
+   * extra keys from the (zod-validated) body are silently dropped —
+   * defence in depth against the body schema accidentally allowing a
+   * non-bulk field through. Must be a subset of writable columns on
+   * `table`.
    */
   allowedFields: ReadonlyArray<keyof P & string>;
+  /**
+   * Virtual fields — present in the body schema but NOT written by
+   * .set(). Passed to `extraApply` so handlers can reconcile related
+   * tables (e.g. `coveredFiscalYears` -> pledge_allocations rows).
+   */
+  virtualFields?: ReadonlyArray<keyof P & string>;
   /**
    * Optional per-row pre-check. Receives the existing row and the
    * (already-whitelisted) patch; returns an error string to fail the
    * row, or null to proceed.
    */
   validateRow?: RowValidator<Row, Partial<P>>;
+  /** See ExtraApply. */
+  extraApply?: ExtraApply<P>;
 }
 
 interface BulkFailure {
@@ -63,13 +86,14 @@ interface BulkFailure {
 /**
  * Execute a bulk-update operation. Validates the body, loads existing
  * rows, runs the per-entity invariant check on each row's merged
- * post-update state, performs the writes per-row (so one row's failure
- * doesn't block the others), and writes a single `bulk_operations`
- * audit row capturing both successes and failures.
+ * post-update state, performs the writes per-row inside a savepoint
+ * (so one row's failure doesn't block the others), and writes a
+ * single `bulk_operations` audit row capturing both successes and
+ * failures.
  *
- * Returns the JSON response the route handler should send; the route
- * is responsible for actually writing to `res` so we keep this
- * framework-agnostic enough for future reuse.
+ * The whole operation is wrapped in one outer transaction so the
+ * audit row + per-row updates commit (or roll back) atomically — if
+ * the audit insert itself fails, no row updates persist.
  */
 export async function executeBulkUpdate<Row extends Record<string, unknown>, P extends object>(
   req: Request,
@@ -80,21 +104,30 @@ export async function executeBulkUpdate<Row extends Record<string, unknown>, P e
   if (!parsed) return;
   const { ids, patch } = parsed;
 
-  // Whitelist patch keys.
+  // Whitelist patch keys — column patch (goes to UPDATE) and virtual
+  // patch (handed to extraApply) are kept separate.
   const cleanPatch: Partial<P> = {};
   for (const k of cfg.allowedFields) {
     if (Object.prototype.hasOwnProperty.call(patch, k)) {
       (cleanPatch as Record<string, unknown>)[k] = (patch as Record<string, unknown>)[k];
     }
   }
-  const touchedFields = Object.keys(cleanPatch);
-  if (touchedFields.length === 0) {
+  const virtualPatch: Partial<P> = {};
+  for (const k of cfg.virtualFields ?? []) {
+    if (Object.prototype.hasOwnProperty.call(patch, k)) {
+      (virtualPatch as Record<string, unknown>)[k] = (patch as Record<string, unknown>)[k];
+    }
+  }
+  const hasColumnPatch = Object.keys(cleanPatch).length > 0;
+  const hasVirtualPatch = Object.keys(virtualPatch).length > 0;
+  if (!hasColumnPatch && !hasVirtualPatch) {
     res.status(400).json({
       error: "validation_error",
       message: "patch must contain at least one writable field",
     });
     return;
   }
+  const touchedFields = [...Object.keys(cleanPatch), ...Object.keys(virtualPatch)];
 
   // De-duplicate ids while preserving order so the audit log mirrors
   // exactly what the user asked for.
@@ -119,46 +152,65 @@ export async function executeBulkUpdate<Row extends Record<string, unknown>, P e
 
   const succeededIds: string[] = [];
   const failed: BulkFailure[] = [];
+  const actor = getAppUser(req);
 
-  for (const id of uniqueIds) {
-    const existing = byId.get(id);
-    if (!existing) {
-      failed.push({ id, message: "not found" });
-      continue;
-    }
-    if (cfg.validateRow) {
-      const err = cfg.validateRow(existing, cleanPatch);
-      if (err) {
-        failed.push({ id, message: err });
+  // Single outer transaction wraps every per-row savepoint and the
+  // audit insert. Per-row savepoints let DB constraint violations or
+  // extraApply failures roll back just that row without aborting the
+  // whole batch (postgres requires SAVEPOINT to recover an aborted
+  // statement within a transaction).
+  await db.transaction(async (tx) => {
+    for (const id of uniqueIds) {
+      const existing = byId.get(id);
+      if (!existing) {
+        failed.push({ id, message: "not found" });
         continue;
       }
+      if (cfg.validateRow) {
+        const err = cfg.validateRow(existing, cleanPatch);
+        if (err) {
+          failed.push({ id, message: err });
+          continue;
+        }
+      }
+      try {
+        await tx.transaction(async (sp: TX) => {
+          if (hasColumnPatch) {
+            await sp
+              .update(cfg.table)
+              .set({ ...cleanPatch, updatedAt: new Date() })
+              .where(eq(cfg.table.id, id) as SQL);
+          }
+          if (cfg.extraApply && hasVirtualPatch) {
+            await cfg.extraApply(sp, id, virtualPatch);
+            if (!hasColumnPatch) {
+              // Bump updatedAt even when only side-effects changed,
+              // so the row reflects the bulk op.
+              await sp
+                .update(cfg.table)
+                .set({ updatedAt: new Date() })
+                .where(eq(cfg.table.id, id) as SQL);
+            }
+          }
+        });
+        succeededIds.push(id);
+      } catch (e) {
+        failed.push({
+          id,
+          message: e instanceof Error ? e.message : "update failed",
+        });
+      }
     }
-    try {
-      await db
-        .update(cfg.table)
-        .set({ ...cleanPatch, updatedAt: new Date() })
-        .where(eq(cfg.table.id, id) as SQL);
-      succeededIds.push(id);
-    } catch (e) {
-      failed.push({
-        id,
-        message: e instanceof Error ? e.message : "update failed",
-      });
-    }
-  }
 
-  // Audit log — single row per bulk call. Use the resolved app user
-  // (provisioned by requireAuth) so we record our internal user id
-  // rather than the raw Clerk id.
-  const actor = getAppUser(req);
-  await db.insert(bulkOperations).values({
-    id: newId(),
-    actorUserId: actor?.id ?? "unknown",
-    entity: cfg.entity,
-    fields: touchedFields,
-    targetIds: uniqueIds,
-    succeededIds,
-    failedIds: failed.map((f) => f.id),
+    await tx.insert(bulkOperations).values({
+      id: newId(),
+      actorUserId: actor?.id ?? "unknown",
+      entity: cfg.entity,
+      fields: touchedFields,
+      targetIds: uniqueIds,
+      succeededIds,
+      failedIds: failed.map((f) => f.id),
+    });
   });
 
   res.json({

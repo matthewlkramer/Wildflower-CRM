@@ -5107,6 +5107,18 @@ export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
       .describe(
         "Required by the closed_requires_completion_date CHECK when bulk-setting status to a closed value (won\/lost\/dormant) and the rows do not already have one.",
       ),
+    coveredFiscalYears: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Set of fiscal-year slugs (e.g. 'fy2026') to attach to each opportunity via pledge_allocations. Combined with coveredFiscalYearsMode.",
+      ),
+    coveredFiscalYearsMode: zod
+      .enum(["replace", "append"])
+      .optional()
+      .describe(
+        "replace = wipe existing pledge_allocations on each opp and recreate one minimal row per FY (DESTRUCTIVE: loses subAmount\/intendedUsage on those rows). append = add allocations only for FYs not already present.",
+      ),
   }),
 });
 
@@ -5136,6 +5148,30 @@ export const BulkUpdateGiftsAndPaymentsBody = zod.object({
         "matching_gift",
       ])
       .nullish(),
+    entityIds: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Set of entity ids to attach to each gift via gift_allocations. Combined with entityIdsMode.",
+      ),
+    entityIdsMode: zod
+      .enum(["replace", "append"])
+      .optional()
+      .describe(
+        "replace = wipe gift_allocations rows whose entity_id is set (DESTRUCTIVE) and recreate one minimal row per entity. append = add allocations only for entities not already present.",
+      ),
+    grantYears: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Set of fiscal-year slugs to attach via gift_allocations. Combined with grantYearsMode.",
+      ),
+    grantYearsMode: zod
+      .enum(["replace", "append"])
+      .optional()
+      .describe(
+        "replace = wipe gift_allocations rows whose grant_year is set (DESTRUCTIVE) and recreate one minimal row per FY. append = add allocations only for FYs not already present.",
+      ),
   }),
 });
 

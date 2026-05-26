@@ -3032,6 +3032,14 @@ components:
         stage:       { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true }
         type:        { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
         actualCompletionDate: { type: string, format: date, nullable: true, description: "Required by the closed_requires_completion_date CHECK when bulk-setting status to a closed value (won/lost/dormant) and the rows do not already have one." }
+        coveredFiscalYears:
+          type: array
+          items: { type: string }
+          description: "Set of fiscal-year slugs (e.g. 'fy2026') to attach to each opportunity via pledge_allocations. Combined with coveredFiscalYearsMode."
+        coveredFiscalYearsMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = wipe existing pledge_allocations on each opp and recreate one minimal row per FY (DESTRUCTIVE: loses subAmount/intendedUsage on those rows). append = add allocations only for FYs not already present."
     BulkUpdateOpportunitiesBody:
       type: object
       required: [ids, patch]
@@ -3043,6 +3051,22 @@ components:
       properties:
         ownerUserId: { type: string, nullable: true }
         type:        { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
+        entityIds:
+          type: array
+          items: { type: string }
+          description: "Set of entity ids to attach to each gift via gift_allocations. Combined with entityIdsMode."
+        entityIdsMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = wipe gift_allocations rows whose entity_id is set (DESTRUCTIVE) and recreate one minimal row per entity. append = add allocations only for entities not already present."
+        grantYears:
+          type: array
+          items: { type: string }
+          description: "Set of fiscal-year slugs to attach via gift_allocations. Combined with grantYearsMode."
+        grantYearsMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = wipe gift_allocations rows whose grant_year is set (DESTRUCTIVE) and recreate one minimal row per FY. append = add allocations only for FYs not already present."
     BulkUpdateGiftsBody:
       type: object
       required: [ids, patch]

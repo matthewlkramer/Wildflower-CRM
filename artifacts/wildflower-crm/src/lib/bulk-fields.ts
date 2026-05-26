@@ -6,11 +6,11 @@ import {
 /**
  * Per-entity bulk-edit field configs.
  *
- * Field selection is column-level only (the FK/text columns living on
- * the parent row). Bulk-editing the allocation tables that drive
- * opportunities/gifts (entityIds, coveredFiscalYears, grantYears) is
- * deliberately left to a follow-up — those involve a replace/append
- * decision that doesn't belong in a generic patch dialog.
+ * Column fields (FK/enum/boolean) live on the parent row. The
+ * `string-array` kind reconciles a related allocation table on the
+ * server side (pledge_allocations for opps, gift_allocations for
+ * gifts) with a replace/append mode toggle. Replace is flagged as
+ * destructive so it routes through the confirmation gate.
  */
 
 export const PEOPLE_BULK_FIELDS: ReadonlyArray<BulkField> = [
@@ -193,6 +193,13 @@ export const OPPORTUNITIES_BULK_FIELDS: ReadonlyArray<BulkField> = [
     label: "Actual completion date",
     nullable: true,
   },
+  {
+    kind: "string-array",
+    key: "coveredFiscalYears",
+    modeKey: "coveredFiscalYearsMode",
+    label: "Covered fiscal years",
+    source: "fiscalYears",
+  },
 ];
 
 export const GIFTS_BULK_FIELDS: ReadonlyArray<BulkField> = [
@@ -209,5 +216,19 @@ export const GIFTS_BULK_FIELDS: ReadonlyArray<BulkField> = [
       { value: "loan_fund_investment", label: "Loan fund investment" },
       { value: "matching_gift", label: "Matching gift" },
     ],
+  },
+  {
+    kind: "string-array",
+    key: "entityIds",
+    modeKey: "entityIdsMode",
+    label: "Entities",
+    source: "entities",
+  },
+  {
+    kind: "string-array",
+    key: "grantYears",
+    modeKey: "grantYearsMode",
+    label: "Grant years",
+    source: "fiscalYears",
   },
 ];

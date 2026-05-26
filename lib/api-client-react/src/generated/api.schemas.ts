@@ -2002,6 +2002,17 @@ export interface BulkUpdateHouseholdsBody {
   patch: BulkUpdateHouseholdsPatch;
 }
 
+/**
+ * replace = wipe existing pledge_allocations on each opp and recreate one minimal row per FY (DESTRUCTIVE: loses subAmount/intendedUsage on those rows). append = add allocations only for FYs not already present.
+ */
+export type BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode =
+  (typeof BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode)[keyof typeof BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode];
+
+export const BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode = {
+  replace: "replace",
+  append: "append",
+} as const;
+
 export interface BulkUpdateOpportunitiesPatch {
   ownerUserId?: string | null;
   status?: OpportunityStatus | null;
@@ -2009,6 +2020,10 @@ export interface BulkUpdateOpportunitiesPatch {
   type?: OpportunityType | null;
   /** Required by the closed_requires_completion_date CHECK when bulk-setting status to a closed value (won/lost/dormant) and the rows do not already have one. */
   actualCompletionDate?: string | null;
+  /** Set of fiscal-year slugs (e.g. 'fy2026') to attach to each opportunity via pledge_allocations. Combined with coveredFiscalYearsMode. */
+  coveredFiscalYears?: string[];
+  /** replace = wipe existing pledge_allocations on each opp and recreate one minimal row per FY (DESTRUCTIVE: loses subAmount/intendedUsage on those rows). append = add allocations only for FYs not already present. */
+  coveredFiscalYearsMode?: BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode;
 }
 
 export interface BulkUpdateOpportunitiesBody {
@@ -2020,9 +2035,39 @@ export interface BulkUpdateOpportunitiesBody {
   patch: BulkUpdateOpportunitiesPatch;
 }
 
+/**
+ * replace = wipe gift_allocations rows whose entity_id is set (DESTRUCTIVE) and recreate one minimal row per entity. append = add allocations only for entities not already present.
+ */
+export type BulkUpdateGiftsPatchEntityIdsMode =
+  (typeof BulkUpdateGiftsPatchEntityIdsMode)[keyof typeof BulkUpdateGiftsPatchEntityIdsMode];
+
+export const BulkUpdateGiftsPatchEntityIdsMode = {
+  replace: "replace",
+  append: "append",
+} as const;
+
+/**
+ * replace = wipe gift_allocations rows whose grant_year is set (DESTRUCTIVE) and recreate one minimal row per FY. append = add allocations only for FYs not already present.
+ */
+export type BulkUpdateGiftsPatchGrantYearsMode =
+  (typeof BulkUpdateGiftsPatchGrantYearsMode)[keyof typeof BulkUpdateGiftsPatchGrantYearsMode];
+
+export const BulkUpdateGiftsPatchGrantYearsMode = {
+  replace: "replace",
+  append: "append",
+} as const;
+
 export interface BulkUpdateGiftsPatch {
   ownerUserId?: string | null;
   type?: GiftType | null;
+  /** Set of entity ids to attach to each gift via gift_allocations. Combined with entityIdsMode. */
+  entityIds?: string[];
+  /** replace = wipe gift_allocations rows whose entity_id is set (DESTRUCTIVE) and recreate one minimal row per entity. append = add allocations only for entities not already present. */
+  entityIdsMode?: BulkUpdateGiftsPatchEntityIdsMode;
+  /** Set of fiscal-year slugs to attach via gift_allocations. Combined with grantYearsMode. */
+  grantYears?: string[];
+  /** replace = wipe gift_allocations rows whose grant_year is set (DESTRUCTIVE) and recreate one minimal row per FY. append = add allocations only for FYs not already present. */
+  grantYearsMode?: BulkUpdateGiftsPatchGrantYearsMode;
 }
 
 export interface BulkUpdateGiftsBody {

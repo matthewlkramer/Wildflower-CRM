@@ -180,6 +180,10 @@ router.post(
       table: opportunitiesAndPledges,
       bodySchema: BulkUpdateOpportunitiesAndPledgesBody,
       allowedFields: ["ownerUserId", "status", "stage", "type", "actualCompletionDate"],
+      // Allocation-table reconciliation field — not a column on
+      // opportunities_and_pledges, so it goes through extraApply and
+      // is excluded from the column SET.
+      virtualFields: ["coveredFiscalYears", "coveredFiscalYearsMode"],
       // Donor xor is preserved (no donor fields in this patch), but the
       // closed_requires_completion_date CHECK can still trip if a row is
       // bulk-set to status='won'/'lost' without an existing or supplied
@@ -195,6 +199,44 @@ router.post(
           actualCompletionDate: merged.actualCompletionDate as string | Date | null | undefined,
         });
         return issues.length ? issues.map((i) => i.message).join("; ") : null;
+      },
+      // Reconcile pledge_allocations rows so the opportunity's
+      // covered FYs match the requested set. Replace = wipe existing
+      // allocations and recreate one minimal row per FY (DESTRUCTIVE
+      // — loses subAmount/intendedUsage/etc on those rows). Append =
+      // insert allocations only for FYs not already represented.
+      extraApply: async (tx, id, vp) => {
+        const fys = (vp as { coveredFiscalYears?: string[] }).coveredFiscalYears;
+        if (!fys) return;
+        const mode =
+          (vp as { coveredFiscalYearsMode?: string }).coveredFiscalYearsMode ===
+          "append"
+            ? "append"
+            : "replace";
+        if (mode === "replace") {
+          await tx
+            .delete(pledgeAllocations)
+            .where(eq(pledgeAllocations.pledgeOrOpportunityId, id));
+        }
+        const existingFys =
+          mode === "append"
+            ? (
+                await tx
+                  .select({ y: pledgeAllocations.grantYear })
+                  .from(pledgeAllocations)
+                  .where(eq(pledgeAllocations.pledgeOrOpportunityId, id))
+              )
+                .map((r: { y: string | null }) => r.y)
+                .filter((y: string | null): y is string => !!y)
+            : [];
+        const toInsert = fys.filter((fy) => !existingFys.includes(fy));
+        for (const fy of toInsert) {
+          await tx.insert(pledgeAllocations).values({
+            id: newId(),
+            pledgeOrOpportunityId: id,
+            grantYear: fy,
+          });
+        }
       },
     });
   }),

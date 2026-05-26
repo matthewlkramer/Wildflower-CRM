@@ -341,7 +341,9 @@ export default function Individuals() {
           })
         }
         onDone={(r) => {
-          if (r.failed.length === 0) selection.clear();
+          // Drop succeeded rows from the selection so failures stay
+          // selected for retry / inspection.
+          selection.removeMany(r.succeededIds);
         }}
       />
 

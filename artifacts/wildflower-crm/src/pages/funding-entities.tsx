@@ -375,7 +375,7 @@ export default function FundingEntities() {
           })
         }
         onDone={(r) => {
-          if (r.failed.length === 0) selection.clear();
+          selection.removeMany(r.succeededIds);
         }}
       />
 

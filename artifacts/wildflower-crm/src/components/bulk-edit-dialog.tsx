@@ -5,6 +5,10 @@ import {
   getListUsersQueryKey,
   useListRegions,
   getListRegionsQueryKey,
+  useListFiscalYears,
+  getListFiscalYearsQueryKey,
+  useListEntities,
+  getListEntitiesQueryKey,
 } from "@workspace/api-client-react";
 import { userDisplayName } from "@/components/user-picker";
 import { regionDisplayName } from "@/components/region-picker";
@@ -37,6 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 
 const NULL_SENTINEL = "__null__";
@@ -76,20 +81,32 @@ export type BulkField =
       key: string;
       label: string;
       nullable?: boolean;
+    }
+  | {
+      kind: "string-array";
+      key: string;
+      /** Companion patch key holding the "replace" / "append" mode. */
+      modeKey: string;
+      label: string;
+      /** Where to pull the option set from. */
+      source: "fiscalYears" | "entities";
     };
 
 // Per-field draft state. Each field starts disabled (`enabled=false`)
 // and is only included in the outbound patch when the user toggles its
 // checkbox on AND provides a value. `value` is kept as a string for the
-// `<Select>`/`<Input>` and coerced at submit time.
+// `<Select>`/`<Input>` and coerced at submit time. `values` and `mode`
+// are used by the `string-array` kind only.
 type FieldDraft = {
   enabled: boolean;
   value: string; // empty string = unset, NULL_SENTINEL = explicit null
   bool: boolean; // for kind === "boolean"
+  values: string[]; // for kind === "string-array"
+  mode: "replace" | "append"; // for kind === "string-array"
 };
 
 function blankDraft(): FieldDraft {
-  return { enabled: false, value: "", bool: false };
+  return { enabled: false, value: "", bool: false, values: [], mode: "append" };
 }
 
 export interface BulkEditDialogProps {
@@ -103,8 +120,8 @@ export interface BulkEditDialogProps {
   /**
    * Caller-supplied submit. Receives the assembled patch (only opted-in
    * fields; values coerced to their final shape — null, boolean, date
-   * string, or enum). Should reject on transport errors so the dialog
-   * can show a toast and stay open.
+   * string, enum, or string[]+mode). Should reject on transport errors
+   * so the dialog can show a toast and stay open.
    */
   onSubmit: (patch: Record<string, unknown>) => Promise<BulkResult>;
   /**
@@ -140,8 +157,15 @@ export function BulkEditDialog({
     patch: Record<string, unknown>;
     reasons: string[];
   } | null>(null);
+  // Lifted-out result panel that appears after a partial-failure
+  // submit so the user can see (and copy) every failure. Full-success
+  // submits just toast and close.
+  const [resultPanel, setResultPanel] = useState<BulkResult | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const needsFy = fields.some((f) => f.kind === "string-array" && f.source === "fiscalYears");
+  const needsEntities = fields.some((f) => f.kind === "string-array" && f.source === "entities");
 
   // Used for owner/region select options inside the dialog.
   const { data: usersData } = useListUsers({
@@ -171,6 +195,41 @@ export function BulkEditDialog({
     [regionsData],
   );
 
+  // Allocation-table option sets — only fetched when actually needed.
+  const { data: fyData } = useListFiscalYears({
+    query: {
+      queryKey: getListFiscalYearsQueryKey(),
+      staleTime: 5 * 60_000,
+      enabled: open && needsFy,
+    },
+  });
+  const fyOptions = useMemo(
+    () =>
+      [...(fyData ?? [])]
+        .map((f) => ({ value: f.id, label: f.id }))
+        .sort((a, b) => a.value.localeCompare(b.value)),
+    [fyData],
+  );
+
+  const { data: entitiesData } = useListEntities({
+    query: {
+      queryKey: getListEntitiesQueryKey(),
+      staleTime: 5 * 60_000,
+      enabled: open && needsEntities,
+    },
+  });
+  const entityOptions = useMemo(
+    () =>
+      [...(entitiesData ?? [])]
+        .map((e) => ({ value: e.id, label: e.name }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [entitiesData],
+  );
+
+  function optionsFor(source: "fiscalYears" | "entities") {
+    return source === "fiscalYears" ? fyOptions : entityOptions;
+  }
+
   function reset() {
     setDrafts(Object.fromEntries(fields.map((f) => [f.key, blankDraft()])));
     setPendingConfirm(null);
@@ -181,9 +240,8 @@ export function BulkEditDialog({
   }
 
   // Build the outbound patch and the list of "destructive" reasons
-  // that would trigger the confirmation gate. Returns null if the user
-  // toggled fields on but left them empty (we surface a toast instead
-  // of failing silently).
+  // that would trigger the confirmation gate. Returns an error if the
+  // user toggled fields on but left them empty.
   function assemble():
     | { patch: Record<string, unknown>; reasons: string[] }
     | { error: string } {
@@ -239,6 +297,19 @@ export function BulkEditDialog({
           }
           break;
         }
+        case "string-array": {
+          if (d.values.length === 0) {
+            return { error: `Pick at least one value for ${f.label} or untick it.` };
+          }
+          patch[f.key] = [...d.values];
+          patch[f.modeKey] = d.mode;
+          // Replace is destructive on the related allocation table —
+          // it deletes existing rows before re-inserting.
+          if (d.mode === "replace") {
+            reasons.push(`${f.label} → Replace (drops existing rows)`);
+          }
+          break;
+        }
       }
     }
 
@@ -262,20 +333,18 @@ export function BulkEditDialog({
       toast({
         title:
           failCount === 0
-            ? `Updated ${successCount.toLocaleString()} ${entityNoun}${successCount === 1 ? "" : "s"}`
-            : `Updated ${successCount.toLocaleString()}, ${failCount.toLocaleString()} failed`,
-        description:
-          failCount === 0
-            ? undefined
-            : result.failed
-                .slice(0, 3)
-                .map((f) => `${f.id}: ${f.message}`)
-                .join(" • "),
+            ? `Updated ${successCount.toLocaleString()} of ${result.requested.toLocaleString()} ${entityNoun}${result.requested === 1 ? "" : "s"}`
+            : `Updated ${successCount.toLocaleString()} of ${result.requested.toLocaleString()} (${failCount.toLocaleString()} failed — see details)`,
         variant: failCount > 0 && successCount === 0 ? "destructive" : undefined,
       });
       onDone(result);
+      // Always close the form dialog — failures show in a separate
+      // results panel so the user can copy them.
       reset();
       onOpenChange(false);
+      if (failCount > 0) {
+        setResultPanel(result);
+      }
     } catch (e) {
       toast({
         title: "Bulk update failed",
@@ -405,19 +474,88 @@ export function BulkEditDialog({
         );
         break;
       }
+      case "string-array": {
+        const options = optionsFor(f.source);
+        const valuesSet = new Set(d.values);
+        control = (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Select
+                value={d.mode}
+                onValueChange={(v) =>
+                  patchDraft(f.key, { mode: v === "replace" ? "replace" : "append" })
+                }
+                disabled={!d.enabled}
+              >
+                <SelectTrigger
+                  className="w-32"
+                  data-testid={`bulk-mode-${f.key}`}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="append">Append</SelectItem>
+                  <SelectItem value="replace">Replace</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">
+                {d.mode === "replace"
+                  ? "Drops existing, re-creates from selection"
+                  : "Adds only what's missing"}
+              </span>
+            </div>
+            <ScrollArea
+              className={`h-32 rounded-md border p-2 ${d.enabled ? "" : "opacity-50"}`}
+            >
+              <div className="space-y-1">
+                {options.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Loading…</p>
+                )}
+                {options.map((o) => {
+                  const checked = valuesSet.has(o.value);
+                  return (
+                    <label
+                      key={o.value}
+                      className="flex items-center gap-2 text-sm"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        disabled={!d.enabled}
+                        onCheckedChange={(c) => {
+                          const next = new Set(valuesSet);
+                          if (c === true) next.add(o.value);
+                          else next.delete(o.value);
+                          patchDraft(f.key, { values: Array.from(next) });
+                        }}
+                        data-testid={`bulk-array-opt-${f.key}-${o.value}`}
+                      />
+                      <span>{o.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          </div>
+        );
+        break;
+      }
     }
 
     return (
-      <div key={f.key} className="grid grid-cols-[24px_1fr_2fr] items-center gap-3">
+      <div
+        key={f.key}
+        className={`grid grid-cols-[24px_1fr_2fr] gap-3 ${f.kind === "string-array" ? "items-start" : "items-center"}`}
+      >
         <Checkbox
           checked={d.enabled}
           onCheckedChange={(v) => patchDraft(f.key, { enabled: v === true })}
           aria-label={`Update ${f.label}`}
           data-testid={`bulk-toggle-${f.key}`}
+          className={f.kind === "string-array" ? "mt-2" : ""}
         />
         <Label
           htmlFor={id}
-          className={d.enabled ? "" : "text-muted-foreground"}
+          className={`${d.enabled ? "" : "text-muted-foreground"} ${f.kind === "string-array" ? "pt-2" : ""}`}
         >
           {f.label}
         </Label>
@@ -447,7 +585,9 @@ export function BulkEditDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2">{fields.map(renderField)}</div>
+          <ScrollArea className="max-h-[60vh] pr-3">
+            <div className="space-y-3 py-2">{fields.map(renderField)}</div>
+          </ScrollArea>
 
           <DialogFooter>
             <Button
@@ -512,6 +652,64 @@ export function BulkEditDialog({
               data-testid="button-bulk-confirm"
             >
               Yes, apply
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Post-submit results panel — only shown when there were
+          per-row failures. Lists every failed id + reason so the user
+          can copy them out. Successful rows have already been
+          removed from the parent's selection by onDone. */}
+      <AlertDialog
+        open={!!resultPanel}
+        onOpenChange={(o) => {
+          if (!o) setResultPanel(null);
+        }}
+      >
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bulk update results</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                {resultPanel && (
+                  <p>
+                    Updated{" "}
+                    <strong>{resultPanel.succeededIds.length.toLocaleString()}</strong>{" "}
+                    of {resultPanel.requested.toLocaleString()} {entityNoun}
+                    {resultPanel.requested === 1 ? "" : "s"}.{" "}
+                    <strong>{resultPanel.failed.length.toLocaleString()}</strong> failed.
+                  </p>
+                )}
+                {resultPanel && resultPanel.failed.length > 0 && (
+                  <div className="rounded-md border bg-muted/40 p-2 text-sm">
+                    <details>
+                      <summary className="cursor-pointer font-medium">
+                        Show failure details ({resultPanel.failed.length})
+                      </summary>
+                      <ScrollArea className="mt-2 max-h-56 pr-2">
+                        <ul className="space-y-1 font-mono text-xs">
+                          {resultPanel.failed.map((f) => (
+                            <li key={f.id} className="break-words">
+                              <span className="text-muted-foreground">{f.id}</span>
+                              {" — "}
+                              {f.message}
+                            </li>
+                          ))}
+                        </ul>
+                      </ScrollArea>
+                    </details>
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              onClick={() => setResultPanel(null)}
+              data-testid="button-bulk-results-close"
+            >
+              Close
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

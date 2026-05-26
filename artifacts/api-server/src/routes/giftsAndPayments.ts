@@ -126,6 +126,85 @@ router.post(
       table: giftsAndPayments,
       bodySchema: BulkUpdateGiftsAndPaymentsBody,
       allowedFields: ["ownerUserId", "type"],
+      // Allocation-set reconciliation fields — managed via extraApply
+      // rather than as columns on gifts_and_payments.
+      virtualFields: ["entityIds", "entityIdsMode", "grantYears", "grantYearsMode"],
+      // Reconcile gift_allocations to match the requested entityIds /
+      // grantYears sets. Each virtual field is independent and only
+      // touches allocation rows where that column is set; replace
+      // wipes those rows (DESTRUCTIVE — loses subAmount and the
+      // counterpart field on those rows), append adds missing values
+      // only.
+      extraApply: async (tx, id, vp) => {
+        const v = vp as {
+          entityIds?: string[];
+          entityIdsMode?: string;
+          grantYears?: string[];
+          grantYearsMode?: string;
+        };
+        if (v.entityIds) {
+          const mode = v.entityIdsMode === "append" ? "append" : "replace";
+          if (mode === "replace") {
+            await tx
+              .delete(giftAllocations)
+              .where(
+                and(
+                  eq(giftAllocations.giftId, id),
+                  sql`${giftAllocations.entityId} IS NOT NULL`,
+                ),
+              );
+          }
+          const existing =
+            mode === "append"
+              ? (
+                  await tx
+                    .select({ e: giftAllocations.entityId })
+                    .from(giftAllocations)
+                    .where(eq(giftAllocations.giftId, id))
+                )
+                  .map((r: { e: string | null }) => r.e)
+                  .filter((e: string | null): e is string => !!e)
+              : [];
+          for (const entityId of v.entityIds.filter((e) => !existing.includes(e))) {
+            await tx.insert(giftAllocations).values({
+              id: newId(),
+              giftId: id,
+              entityId,
+            });
+          }
+        }
+        if (v.grantYears) {
+          const mode = v.grantYearsMode === "append" ? "append" : "replace";
+          if (mode === "replace") {
+            await tx
+              .delete(giftAllocations)
+              .where(
+                and(
+                  eq(giftAllocations.giftId, id),
+                  sql`${giftAllocations.grantYear} IS NOT NULL`,
+                ),
+              );
+          }
+          const existing =
+            mode === "append"
+              ? (
+                  await tx
+                    .select({ y: giftAllocations.grantYear })
+                    .from(giftAllocations)
+                    .where(eq(giftAllocations.giftId, id))
+                )
+                  .map((r: { y: string | null }) => r.y)
+                  .filter((y: string | null): y is string => !!y)
+              : [];
+          for (const fy of v.grantYears.filter((y) => !existing.includes(y))) {
+            await tx.insert(giftAllocations).values({
+              id: newId(),
+              giftId: id,
+              grantYear: fy,
+            });
+          }
+        }
+      },
     });
   }),
 );

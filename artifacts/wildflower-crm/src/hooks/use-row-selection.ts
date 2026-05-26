@@ -42,6 +42,20 @@ export function useRowSelection() {
 
   const clear = useCallback(() => setSelected(new Set()), []);
 
+  /**
+   * Remove a specific set of ids from the selection. Used after bulk
+   * submit so successfully-updated rows drop out while failed rows
+   * stay selected for the user to retry / inspect.
+   */
+  const removeMany = useCallback((ids: ReadonlyArray<string>) => {
+    if (ids.length === 0) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
+  }, []);
+
   const isSelected = useCallback((id: string) => selected.has(id), [selected]);
 
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
@@ -53,5 +67,6 @@ export function useRowSelection() {
     toggle,
     toggleVisible,
     clear,
+    removeMany,
   };
 }
