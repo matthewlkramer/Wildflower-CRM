@@ -12,3 +12,9 @@ id = "1PgMgw5oRUiM2eQI3e3dh"
 uri = "file://proposed_funder_websites.csv"
 type = "table"
 title = "Web-searched funder websites (30 funders, with confidence)"
+
+[[outputs]]
+id = "MOjbF1n2-CRTpGkhMFZCQ"
+uri = "file://docs/crm-competitive-review.md"
+type = "text"
+title = "CRM Competitive Review & Roadmap"
