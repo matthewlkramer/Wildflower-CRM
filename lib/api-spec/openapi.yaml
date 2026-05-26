@@ -1370,6 +1370,8 @@ components:
         householdName:              { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         individualGiverPersonName:  { type: string, nullable: true }
+        funderIsPriority:                 { type: boolean, nullable: true, readOnly: true }
+        individualGiverPersonIsPriority:  { type: boolean, nullable: true, readOnly: true }
     FiscalYearOpenRow:
       type: object
       required: [allocationId, subAmount, weightedAmount, opportunityId]
@@ -1393,6 +1395,8 @@ components:
         householdName:              { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         individualGiverPersonName:  { type: string, nullable: true }
+        funderIsPriority:                 { type: boolean, nullable: true, readOnly: true }
+        individualGiverPersonIsPriority:  { type: boolean, nullable: true, readOnly: true }
     FiscalYearBreakdown:
       type: object
       required: [fiscalYear, goal, received, openPipeline]
@@ -1453,6 +1457,7 @@ components:
         instagram:             { type: string, nullable: true }
         youtube:               { type: string, nullable: true }
         crunchbase:            { type: string, nullable: true }
+        isPriority:            { type: boolean, description: "Top-priority flag surfaced as a star on the funders table and on opportunities/gifts where this funder is the donor." }
         # Server-computed aggregates for the funders list view.
         primaryContactPersonId:   { type: string, nullable: true, readOnly: true, description: "people_entity_roles row with primary_contact=true for this funder, if any." }
         primaryContactPersonName: { type: string, nullable: true, readOnly: true }
@@ -1508,6 +1513,7 @@ components:
         instagram:             { type: string }
         youtube:               { type: string }
         crunchbase:            { type: string }
+        isPriority:            { type: boolean }
     UpdateFunderBody:
       type: object
       properties:
@@ -1541,6 +1547,7 @@ components:
         instagram:             { type: string, nullable: true }
         youtube:               { type: string, nullable: true }
         crunchbase:            { type: string, nullable: true }
+        isPriority:            { type: boolean }
 
     # ─── Organizations ─────────────────────────────────────────────────────────
     Organization:
@@ -1715,6 +1722,7 @@ components:
         capacityRating:           { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         connectionStatus:         { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
         enthusiasm:               { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
+        isPriority:               { type: boolean, description: "Top-priority flag surfaced as a star on the individuals table and on opportunities/gifts where this person is the individual giver." }
         # Server-computed aggregates for the individuals list view. NOT
         # writable; computed per-request by the list-people query. Per
         # replit.md: lifetime giving is direct individual gifts + all
@@ -1776,6 +1784,7 @@ components:
         capacityRating:           { $ref: "#/components/schemas/CapacityRating" }
         connectionStatus:         { $ref: "#/components/schemas/ConnectionStatus" }
         enthusiasm:               { $ref: "#/components/schemas/Enthusiasm" }
+        isPriority:               { type: boolean }
     UpdatePersonBody:
       type: object
       properties:
@@ -1812,6 +1821,7 @@ components:
         capacityRating:           { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         connectionStatus:         { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
         enthusiasm:               { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
+        isPriority:               { type: boolean }
 
     # ─── People-entity-roles ───────────────────────────────────────────────────
     PeopleEntityRole:
@@ -2038,6 +2048,8 @@ components:
         funderName:                 { type: string, nullable: true }
         householdName:              { type: string, nullable: true }
         individualGiverPersonName:  { type: string, nullable: true }
+        funderIsPriority:                 { type: boolean, nullable: true, readOnly: true }
+        individualGiverPersonIsPriority:  { type: boolean, nullable: true, readOnly: true }
         # Display name of primary_contact_person_id, joined server-side.
         # Used by the grants calendar's contact column.
         primaryContactPersonName:   { type: string, nullable: true, readOnly: true }
@@ -2200,6 +2212,8 @@ components:
         funderName:                 { type: string, nullable: true }
         householdName:              { type: string, nullable: true }
         individualGiverPersonName:  { type: string, nullable: true }
+        funderIsPriority:                 { type: boolean, nullable: true, readOnly: true }
+        individualGiverPersonIsPriority:  { type: boolean, nullable: true, readOnly: true }
         # Aggregates across this gift's gift_allocations rows. All three
         # arrays are de-duplicated and may be empty.
         entityIds:                  { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct entity_id values from gift_allocations." }

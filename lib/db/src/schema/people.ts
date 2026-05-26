@@ -8,6 +8,7 @@ import {
   integer,
   date,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import {
   capacityRatingEnum,
   connectionStatusEnum,
@@ -79,12 +80,18 @@ export const people = pgTable("people", {
     (): AnyPgColumn => people.id,
     { onDelete: "set null" },
   ),
+  // Top-priority flag surfaced as a star icon on the individuals
+  // table and inline next to the person's name wherever they appear
+  // as a donor (opportunities, gifts). See funders.isPriority for the
+  // matching field on the funder side.
+  isPriority: boolean("is_priority").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("people_current_home_region_id_idx").on(t.currentHomeRegionId),
   index("people_owner_user_id_idx").on(t.ownerUserId),
   index("people_assistant_person_id_idx").on(t.assistantPersonId),
+  index("people_is_priority_idx").on(t.isPriority).where(sql`is_priority = true`),
   index("people_region_ids_gin_idx").using("gin", t.regionIds),
   index("people_interests_thematic_gin_idx").using("gin", t.interestsThematic),
   index("people_interests_ages_gin_idx").using("gin", t.interestsAges),

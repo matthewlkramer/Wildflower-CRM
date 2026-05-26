@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CreateFunderDialog } from "@/components/create-funder-dialog";
+import { PriorityStar } from "@/components/priority-star";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
@@ -106,6 +107,7 @@ export default function FundingEntities() {
       sortRows(
         rows,
         {
+          priority: (r) => (r.isPriority ? 1 : 0),
           name: (r) => formatFunderNameShort(r.name).toLowerCase(),
           subtype: (r) => r.fundingEntitySubtype ?? null,
           active: (r) => r.activeStatus ?? null,
@@ -211,6 +213,7 @@ export default function FundingEntities() {
         <Table>
           <TableHeader>
             <TableRow>
+              <SortableTH colKey="priority" {...ts}><span className="sr-only">Priority</span></SortableTH>
               <SortableTH colKey="name" {...ts}>Name</SortableTH>
               <SortableTH colKey="subtype" {...ts}>Subtype</SortableTH>
               <SortableTH colKey="active" {...ts}>Active</SortableTH>
@@ -227,7 +230,7 @@ export default function FundingEntities() {
             {isLoading ? (
               <TableRow>
                 <TableCell
-                  colSpan={10}
+                  colSpan={11}
                   className="text-center h-24 text-muted-foreground"
                 >
                   Loading…
@@ -236,7 +239,7 @@ export default function FundingEntities() {
             ) : isError ? (
               <TableRow>
                 <TableCell
-                  colSpan={10}
+                  colSpan={11}
                   className="text-center h-24 text-destructive"
                 >
                   {error instanceof Error
@@ -247,7 +250,7 @@ export default function FundingEntities() {
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={10}
+                  colSpan={11}
                   className="text-center h-24 text-muted-foreground"
                 >
                   No funders match these filters.
@@ -263,6 +266,9 @@ export default function FundingEntities() {
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
                     data-testid={`row-funder-${f.id}`}
                   >
+                    <TableCell className="w-8 pr-0">
+                      <PriorityStar kind="funder" id={f.id} isPriority={f.isPriority} />
+                    </TableCell>
                     <TableCell className="font-medium">
                       <Link
                         href={`/funding-entities/${f.id}`}

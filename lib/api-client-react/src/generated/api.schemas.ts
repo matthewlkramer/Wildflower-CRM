@@ -535,6 +535,8 @@ export interface FiscalYearReceivedRow {
   householdName?: string | null;
   individualGiverPersonId?: string | null;
   individualGiverPersonName?: string | null;
+  readonly funderIsPriority?: boolean | null;
+  readonly individualGiverPersonIsPriority?: boolean | null;
 }
 
 /**
@@ -562,6 +564,8 @@ export interface FiscalYearOpenRow {
   householdName?: string | null;
   individualGiverPersonId?: string | null;
   individualGiverPersonName?: string | null;
+  readonly funderIsPriority?: boolean | null;
+  readonly individualGiverPersonIsPriority?: boolean | null;
 }
 
 export type FiscalYearBreakdownReceived = {
@@ -623,6 +627,8 @@ export interface Funder {
   instagram?: string | null;
   youtube?: string | null;
   crunchbase?: string | null;
+  /** Top-priority flag surfaced as a star on the funders table and on opportunities/gifts where this funder is the donor. */
+  isPriority?: boolean;
   /** people_entity_roles row with primary_contact=true for this funder, if any. */
   readonly primaryContactPersonId?: string | null;
   readonly primaryContactPersonName?: string | null;
@@ -727,6 +733,7 @@ export interface CreateFunderBody {
   instagram?: string;
   youtube?: string;
   crunchbase?: string;
+  isPriority?: boolean;
 }
 
 export interface UpdateFunderBody {
@@ -760,6 +767,7 @@ export interface UpdateFunderBody {
   instagram?: string | null;
   youtube?: string | null;
   crunchbase?: string | null;
+  isPriority?: boolean;
 }
 
 export interface Organization {
@@ -912,6 +920,8 @@ export interface Person {
   capacityRating?: CapacityRating | null;
   connectionStatus?: ConnectionStatus | null;
   enthusiasm?: Enthusiasm | null;
+  /** Top-priority flag surfaced as a star on the individuals table and on opportunities/gifts where this person is the individual giver. */
+  isPriority?: boolean;
   /** Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string. */
   readonly lifetimeGiving?: string | null;
   /** Most recent date_received across direct individual gifts and gifts to households the person belongs to. */
@@ -981,6 +991,7 @@ export interface CreatePersonBody {
   capacityRating?: CapacityRating;
   connectionStatus?: ConnectionStatus;
   enthusiasm?: Enthusiasm;
+  isPriority?: boolean;
 }
 
 export interface UpdatePersonBody {
@@ -1017,6 +1028,7 @@ export interface UpdatePersonBody {
   capacityRating?: CapacityRating | null;
   connectionStatus?: ConnectionStatus | null;
   enthusiasm?: Enthusiasm | null;
+  isPriority?: boolean;
 }
 
 export interface PeopleEntityRoleList {
@@ -1158,6 +1170,8 @@ export interface OpportunityOrPledge {
   funderName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
+  readonly funderIsPriority?: boolean | null;
+  readonly individualGiverPersonIsPriority?: boolean | null;
   readonly primaryContactPersonName?: string | null;
   readonly fiscalYear?: string | null;
   readonly coveredFiscalYears?: readonly string[] | null;
@@ -1206,6 +1220,8 @@ export interface GiftOrPayment {
   funderName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
+  readonly funderIsPriority?: boolean | null;
+  readonly individualGiverPersonIsPriority?: boolean | null;
   /** Distinct entity_id values from gift_allocations. */
   readonly entityIds?: readonly string[] | null;
   /** Distinct display_usage values from gift_allocations (server-computed labels). */

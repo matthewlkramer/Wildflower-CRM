@@ -18,6 +18,9 @@ const donorJoinSelect = {
       NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
     )
   `.as("individual_giver_person_name"),
+  // See opportunitiesAndPledges.ts donorJoinSelect for rationale.
+  funderIsPriority: funders.isPriority,
+  individualGiverPersonIsPriority: people.isPriority,
   entityIds: sql<string[] | null>`(
     SELECT ARRAY_AGG(DISTINCT ga.entity_id ORDER BY ga.entity_id)
     FROM gift_allocations ga

@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CreatePersonDialog } from "@/components/create-person-dialog";
+import { PriorityStar } from "@/components/priority-star";
 import {
   MultiFilterSelect,
   type MultiFilterOption,
@@ -61,7 +62,7 @@ const DECEASED_OPTIONS: MultiFilterOption[] = [
   { value: "false", label: "Living" },
   { value: "true", label: "Deceased" },
 ];
-const COL_SPAN = 10;
+const COL_SPAN = 11;
 
 export default function Individuals() {
   const [search, setSearch] = useState("");
@@ -104,6 +105,7 @@ export default function Individuals() {
       sortRows(
         rows,
         {
+          priority: (r) => (r.isPriority ? 1 : 0),
           name: (r) => personDisplayName(r).toLowerCase(),
           status: (r) => (r.deceased ? 1 : 0),
           region: (r) =>
@@ -203,6 +205,7 @@ export default function Individuals() {
         <Table>
           <TableHeader>
             <TableRow>
+              <SortableTH colKey="priority" {...ts}><span className="sr-only">Priority</span></SortableTH>
               <SortableTH colKey="name" {...ts}>Name</SortableTH>
               <SortableTH colKey="status" {...ts}>Status</SortableTH>
               <SortableTH colKey="region" {...ts}>Region</SortableTH>
@@ -246,6 +249,9 @@ export default function Individuals() {
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
                     data-testid={`row-person-${p.id}`}
                   >
+                    <TableCell className="w-8 pr-0">
+                      <PriorityStar kind="person" id={p.id} isPriority={p.isPriority} />
+                    </TableCell>
                     <TableCell className="font-medium">
                       <Link href={`/individuals/${p.id}`} className="block w-full">
                         {personDisplayName(p)}

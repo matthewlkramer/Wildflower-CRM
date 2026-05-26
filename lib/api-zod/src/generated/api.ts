@@ -780,6 +780,12 @@ export const ListFundersResponse = zod.object({
       instagram: zod.string().nullish(),
       youtube: zod.string().nullish(),
       crunchbase: zod.string().nullish(),
+      isPriority: zod
+        .boolean()
+        .optional()
+        .describe(
+          "Top-priority flag surfaced as a star on the funders table and on opportunities\/gifts where this funder is the donor.",
+        ),
       primaryContactPersonId: zod
         .string()
         .nullish()
@@ -878,6 +884,7 @@ export const CreateFunderBody = zod.object({
   instagram: zod.string().optional(),
   youtube: zod.string().optional(),
   crunchbase: zod.string().optional(),
+  isPriority: zod.boolean().optional(),
 });
 
 export const GetFunderParams = zod.object({
@@ -954,6 +961,12 @@ export const GetFunderResponse = zod
     instagram: zod.string().nullish(),
     youtube: zod.string().nullish(),
     crunchbase: zod.string().nullish(),
+    isPriority: zod
+      .boolean()
+      .optional()
+      .describe(
+        "Top-priority flag surfaced as a star on the funders table and on opportunities\/gifts where this funder is the donor.",
+      ),
     primaryContactPersonId: zod
       .string()
       .nullish()
@@ -1128,6 +1141,7 @@ export const UpdateFunderBody = zod.object({
   instagram: zod.string().nullish(),
   youtube: zod.string().nullish(),
   crunchbase: zod.string().nullish(),
+  isPriority: zod.boolean().optional(),
 });
 
 export const UpdateFunderResponse = zod.object({
@@ -1199,6 +1213,12 @@ export const UpdateFunderResponse = zod.object({
   instagram: zod.string().nullish(),
   youtube: zod.string().nullish(),
   crunchbase: zod.string().nullish(),
+  isPriority: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Top-priority flag surfaced as a star on the funders table and on opportunities\/gifts where this funder is the donor.",
+    ),
   primaryContactPersonId: zod
     .string()
     .nullish()
@@ -2004,6 +2024,12 @@ export const ListPeopleResponse = zod.object({
       enthusiasm: zod
         .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
         .nullish(),
+      isPriority: zod
+        .boolean()
+        .optional()
+        .describe(
+          "Top-priority flag surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.",
+        ),
       lifetimeGiving: zod
         .string()
         .nullish()
@@ -2082,6 +2108,7 @@ export const CreatePersonBody = zod.object({
   enthusiasm: zod
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .optional(),
+  isPriority: zod.boolean().optional(),
 });
 
 export const GetPersonParams = zod.object({
@@ -2133,6 +2160,12 @@ export const GetPersonResponse = zod
     enthusiasm: zod
       .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
       .nullish(),
+    isPriority: zod
+      .boolean()
+      .optional()
+      .describe(
+        "Top-priority flag surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.",
+      ),
     lifetimeGiving: zod
       .string()
       .nullish()
@@ -2301,6 +2334,7 @@ export const UpdatePersonBody = zod.object({
   enthusiasm: zod
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .nullish(),
+  isPriority: zod.boolean().optional(),
 });
 
 export const UpdatePersonResponse = zod.object({
@@ -2347,6 +2381,12 @@ export const UpdatePersonResponse = zod.object({
   enthusiasm: zod
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .nullish(),
+  isPriority: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Top-priority flag surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.",
+    ),
   lifetimeGiving: zod
     .string()
     .nullish()
@@ -2889,6 +2929,8 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       funderName: zod.string().nullish(),
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
+      funderIsPriority: zod.boolean().nullish(),
+      individualGiverPersonIsPriority: zod.boolean().nullish(),
       primaryContactPersonName: zod.string().nullish(),
       fiscalYear: zod.string().nullish(),
       coveredFiscalYears: zod.array(zod.string()).nullish(),
@@ -3001,6 +3043,8 @@ export const GetOpportunityOrPledgeResponse = zod
     funderName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
+    funderIsPriority: zod.boolean().nullish(),
+    individualGiverPersonIsPriority: zod.boolean().nullish(),
     primaryContactPersonName: zod.string().nullish(),
     fiscalYear: zod.string().nullish(),
     coveredFiscalYears: zod.array(zod.string()).nullish(),
@@ -3092,6 +3136,8 @@ export const GetOpportunityOrPledgeResponse = zod
             funderName: zod.string().nullish(),
             householdName: zod.string().nullish(),
             individualGiverPersonName: zod.string().nullish(),
+            funderIsPriority: zod.boolean().nullish(),
+            individualGiverPersonIsPriority: zod.boolean().nullish(),
             entityIds: zod
               .array(zod.string())
               .nullish()
@@ -3211,6 +3257,8 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   funderName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
+  funderIsPriority: zod.boolean().nullish(),
+  individualGiverPersonIsPriority: zod.boolean().nullish(),
   primaryContactPersonName: zod.string().nullish(),
   fiscalYear: zod.string().nullish(),
   coveredFiscalYears: zod.array(zod.string()).nullish(),
@@ -3482,6 +3530,8 @@ export const ListGiftsAndPaymentsResponse = zod.object({
       funderName: zod.string().nullish(),
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
+      funderIsPriority: zod.boolean().nullish(),
+      individualGiverPersonIsPriority: zod.boolean().nullish(),
       entityIds: zod
         .array(zod.string())
         .nullish()
@@ -3596,6 +3646,8 @@ export const GetGiftOrPaymentResponse = zod
     funderName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
+    funderIsPriority: zod.boolean().nullish(),
+    individualGiverPersonIsPriority: zod.boolean().nullish(),
     entityIds: zod
       .array(zod.string())
       .nullish()
@@ -3741,6 +3793,8 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   funderName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
+  funderIsPriority: zod.boolean().nullish(),
+  individualGiverPersonIsPriority: zod.boolean().nullish(),
   entityIds: zod
     .array(zod.string())
     .nullish()
@@ -4556,6 +4610,8 @@ export const GetFiscalYearBreakdownResponse = zod
             householdName: zod.string().nullish(),
             individualGiverPersonId: zod.string().nullish(),
             individualGiverPersonName: zod.string().nullish(),
+            funderIsPriority: zod.boolean().nullish(),
+            individualGiverPersonIsPriority: zod.boolean().nullish(),
           })
           .describe(
             "A single gift_allocation row booked to the FY's grant_year, denormalized with parent gift + donor info.",
@@ -4599,6 +4655,8 @@ export const GetFiscalYearBreakdownResponse = zod
             householdName: zod.string().nullish(),
             individualGiverPersonId: zod.string().nullish(),
             individualGiverPersonName: zod.string().nullish(),
+            funderIsPriority: zod.boolean().nullish(),
+            individualGiverPersonIsPriority: zod.boolean().nullish(),
           })
           .describe(
             "A single pledge_allocation row on an open opportunity for the FY's grant_year, denormalized with parent opp + donor info.",

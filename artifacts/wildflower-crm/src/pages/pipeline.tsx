@@ -315,10 +315,12 @@ function OppCard({
         <DonorCell
           funderId={opp.funderId}
           funderName={opp.funderName}
+          funderIsPriority={opp.funderIsPriority}
           householdId={opp.householdId}
           householdName={opp.householdName}
           individualGiverPersonId={opp.individualGiverPersonId}
           individualGiverPersonName={opp.individualGiverPersonName}
+          individualGiverPersonIsPriority={opp.individualGiverPersonIsPriority}
         />
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-2 text-xs">
