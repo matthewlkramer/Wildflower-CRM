@@ -19,6 +19,7 @@ import {
   parseOrBadRequest,
   parsePagination,
 } from "../lib/helpers";
+import { applyAction, validateAction, type ApplyActionResult } from "../lib/applyProposalActions";
 
 /**
  * Email-intelligence proposal queue.
@@ -129,11 +130,11 @@ router.post(
 
     // Atomic state-transition: claim the proposal by flipping status
     // pending → applied inside the same transaction that runs the
-    // per-kind side-effect. Conditional UPDATE on status='pending'
-    // means a concurrent accept/reject loses the race deterministically
-    // (returning [] instead of corrupting state). Side-effects only
-    // run if we won the claim.
-    const updated = await db.transaction(async (tx) => {
+    // AI-proposed action dispatcher. Conditional UPDATE on
+    // status='pending' means a concurrent accept/reject loses the
+    // race deterministically. Action dispatcher errors abort the
+    // transaction so partial mutations never land.
+    const outcome = await db.transaction(async (tx) => {
       const [claimed] = await tx
         .update(emailProposals)
         .set({
@@ -152,56 +153,81 @@ router.post(
         .returning();
       if (!claimed) return undefined;
       const proposal = claimed;
-      switch (proposal.kind) {
-        case "bounce_invalid": {
-          if (proposal.targetEmailId) {
-            await tx
-              .update(emails)
-              .set({ validity: "invalid", updatedAt: new Date() })
-              .where(eq(emails.id, proposal.targetEmailId));
-          }
-          break;
+
+      const rawActions = Array.isArray(proposal.proposedActions)
+        ? (proposal.proposedActions as unknown[])
+        : [];
+      const applyResults: ApplyActionResult[] = [];
+      for (const raw of rawActions) {
+        const validated = validateAction(raw);
+        if (!validated.ok) {
+          // The stored action set is malformed (older row, manual
+          // edit, drifted schema). Refuse to apply the whole set
+          // rather than partially apply what we can parse.
+          const failed: ApplyActionResult = {
+            type: ((raw as { type?: string })?.type ?? "unknown") as ApplyActionResult["type"],
+            status: "failed",
+            message: `Invalid stored action: ${validated.message}`,
+          };
+          applyResults.push(failed);
+          throw new ProposalApplyError(failed, applyResults);
         }
-        case "bounce_soft": {
-          // No auto side-effect — soft bounces are a review-only
-          // signal; the user decides whether to follow up with the
-          // recipient manually.
-          break;
-        }
-        case "signature_update":
-        case "linkedin_job_change":
-        case "auto_responder_move": {
-          // First cut: no auto-mutation of person/funder records.
-          // The proposal stays accessible (status=applied) so the
-          // dashboard widget surfaces it to the team member as a
-          // todo with the parsed context, but the actual record
-          // edits go through the existing person/funder UIs to
-          // avoid silently overwriting curated data.
-          //
-          // Touch updated_at on the person to keep last-seen sort
-          // order intact when a sig drift is acknowledged.
-          if (proposal.targetPersonId) {
-            await tx
-              .update(people)
-              .set({ updatedAt: new Date() })
-              .where(eq(people.id, proposal.targetPersonId));
-          }
-          break;
+        const result = await applyAction(tx, validated.action, {
+          mailboxUserId: user.id,
+        });
+        applyResults.push(result);
+        if (result.status === "failed") {
+          // Abort the whole transaction. The user will get the
+          // failure message and the proposal stays pending.
+          throw new ProposalApplyError(result, applyResults);
         }
       }
-      return proposal;
+
+      // Always touch updated_at on the target person (if any) so the
+      // person resorts to the top of "recently touched" lists when
+      // the reviewer acknowledges a signal — even when no AI actions
+      // ran.
+      if (proposal.targetPersonId) {
+        await tx
+          .update(people)
+          .set({ updatedAt: new Date() })
+          .where(eq(people.id, proposal.targetPersonId));
+      }
+
+      return { proposal, applyResults };
+    }).catch((err) => {
+      if (err instanceof ProposalApplyError) return { error: err };
+      throw err;
     });
 
-    if (!updated) {
+    if (!outcome) {
       // Either the id doesn't exist for this mailbox, or another
-      // request already resolved it. We can't tell which without a
-      // second query, so report as not found — the UI will refetch
-      // and discover the row is no longer pending.
+      // request already resolved it.
       return notFound(res, "pending email proposal");
     }
-    res.json(updated);
+    if ("error" in outcome) {
+      const { failed, partial } = outcome.error;
+      res.status(422).json({
+        error: "action_failed",
+        message: failed.message ?? "Action failed to apply.",
+        failedAction: failed.type,
+        attemptedResults: partial,
+      });
+      return;
+    }
+    res.json({ ...outcome.proposal, appliedActions: outcome.applyResults });
   }),
 );
+
+class ProposalApplyError extends Error {
+  failed: ApplyActionResult;
+  partial: ApplyActionResult[];
+  constructor(failed: ApplyActionResult, partial: ApplyActionResult[]) {
+    super(failed.message ?? `Failed to apply ${failed.type}`);
+    this.failed = failed;
+    this.partial = partial;
+  }
+}
 
 router.post(
   "/email-proposals/:id/reject",

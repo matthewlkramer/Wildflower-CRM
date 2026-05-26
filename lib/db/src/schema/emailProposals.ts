@@ -75,6 +75,18 @@ export const emailProposals = pgTable(
     subjectName: text("subject_name"),
     subjectDomain: text("subject_domain"),
     payload: jsonb("payload").notNull().default({}),
+    // AI-proposed structured actions to execute when the user accepts
+    // this proposal. Populated asynchronously by `proposeActionsForProposal`
+    // after the detector emits the row — see `proposeActions.ts` for the
+    // action-object schema and `applyProposalActions.ts` for dispatch.
+    // Empty array = AI ran but produced no actionable change suggestions
+    // (signal worth surfacing but nothing to auto-mutate). NULL via
+    // default `[]` won't happen at the row level — instead we use
+    // `actionsAnalyzedAt IS NULL` as the "AI hasn't run yet" signal.
+    proposedActions: jsonb("proposed_actions").notNull().default([]),
+    actionsAnalyzedAt: timestamp("actions_analyzed_at"),
+    actionsModel: text("actions_model"),
+    actionsError: text("actions_error"),
     // Dedupe key — per-kind shape (see file header). Combined with
     // mailbox_user_id for the unique index so two users with the same
     // signal each get their own row.

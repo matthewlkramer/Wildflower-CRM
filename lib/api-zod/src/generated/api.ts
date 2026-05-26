@@ -55,6 +55,35 @@ export const ListEmailProposalsResponse = zod.object({
       subjectName: zod.string().nullish(),
       subjectDomain: zod.string().nullish(),
       payload: zod.record(zod.string(), zod.unknown()),
+      proposedActions: zod
+        .array(
+          zod.object({
+            type: zod.enum([
+              "deactivate_per",
+              "create_per",
+              "create_person_with_per",
+              "add_email",
+              "set_primary_email",
+              "mark_email_invalid",
+              "create_grant_opportunity",
+            ]),
+            reason: zod.string(),
+          }),
+        )
+        .optional(),
+      actionsAnalyzedAt: zod.string().datetime({}).nullish(),
+      actionsModel: zod.string().nullish(),
+      actionsError: zod.string().nullish(),
+      appliedActions: zod
+        .array(
+          zod.object({
+            type: zod.string(),
+            status: zod.enum(["applied", "skipped", "failed"]),
+            message: zod.string().nullish(),
+            createdId: zod.string().nullish(),
+          }),
+        )
+        .nullish(),
       dedupeKey: zod.string(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -112,6 +141,35 @@ export const AcceptEmailProposalResponse = zod.object({
   subjectName: zod.string().nullish(),
   subjectDomain: zod.string().nullish(),
   payload: zod.record(zod.string(), zod.unknown()),
+  proposedActions: zod
+    .array(
+      zod.object({
+        type: zod.enum([
+          "deactivate_per",
+          "create_per",
+          "create_person_with_per",
+          "add_email",
+          "set_primary_email",
+          "mark_email_invalid",
+          "create_grant_opportunity",
+        ]),
+        reason: zod.string(),
+      }),
+    )
+    .optional(),
+  actionsAnalyzedAt: zod.string().datetime({}).nullish(),
+  actionsModel: zod.string().nullish(),
+  actionsError: zod.string().nullish(),
+  appliedActions: zod
+    .array(
+      zod.object({
+        type: zod.string(),
+        status: zod.enum(["applied", "skipped", "failed"]),
+        message: zod.string().nullish(),
+        createdId: zod.string().nullish(),
+      }),
+    )
+    .nullish(),
   dedupeKey: zod.string(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -143,6 +201,35 @@ export const RejectEmailProposalResponse = zod.object({
   subjectName: zod.string().nullish(),
   subjectDomain: zod.string().nullish(),
   payload: zod.record(zod.string(), zod.unknown()),
+  proposedActions: zod
+    .array(
+      zod.object({
+        type: zod.enum([
+          "deactivate_per",
+          "create_per",
+          "create_person_with_per",
+          "add_email",
+          "set_primary_email",
+          "mark_email_invalid",
+          "create_grant_opportunity",
+        ]),
+        reason: zod.string(),
+      }),
+    )
+    .optional(),
+  actionsAnalyzedAt: zod.string().datetime({}).nullish(),
+  actionsModel: zod.string().nullish(),
+  actionsError: zod.string().nullish(),
+  appliedActions: zod
+    .array(
+      zod.object({
+        type: zod.string(),
+        status: zod.enum(["applied", "skipped", "failed"]),
+        message: zod.string().nullish(),
+        createdId: zod.string().nullish(),
+      }),
+    )
+    .nullish(),
   dedupeKey: zod.string(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),

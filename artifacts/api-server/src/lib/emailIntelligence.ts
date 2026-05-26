@@ -10,6 +10,7 @@ import {
 import { and, eq, ilike, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
+import { proposeActionsForProposal } from "./proposeActions";
 import {
   domainOf,
   extractGrantOpportunities,
@@ -465,10 +466,11 @@ async function upsertProposal(args: {
   subjectDomain?: string | null;
   payload: Record<string, unknown>;
 }): Promise<void> {
-  await db
+  const id = newId();
+  const inserted = await db
     .insert(emailProposals)
     .values({
-      id: newId(),
+      id,
       mailboxUserId: args.mailboxUserId,
       kind: args.kind,
       dedupeKey: args.dedupeKey,
@@ -491,7 +493,20 @@ async function upsertProposal(args: {
       // specification". The `where` here maps to that index_predicate.
       target: [emailProposals.mailboxUserId, emailProposals.dedupeKey],
       where: sql`status = 'pending'`,
+    })
+    .returning({ id: emailProposals.id });
+
+  // Fire-and-forget AI action proposal. Only kicks off when we
+  // actually inserted (returning is empty on conflict-do-nothing) so
+  // a re-emit of the same signal doesn't re-spend tokens. Errors are
+  // swallowed inside proposeActionsForProposal — they only land in
+  // the row's `actionsError` column, never in the sync loop.
+  if (inserted.length > 0) {
+    const newProposalId = inserted[0].id;
+    void proposeActionsForProposal(newProposalId).catch((err) => {
+      logger.warn({ err, proposalId: newProposalId }, "proposeActionsForProposal threw");
     });
+  }
 }
 
 // Returns:

@@ -28,6 +28,8 @@ import {
   processIntelForUnmatched,
   shouldFetchFullForIntel,
 } from "./emailIntelligence";
+import { emailProposals } from "@workspace/db/schema";
+import { proposeActionsForProposal } from "./proposeActions";
 
 /**
  * One-time backfill orchestrator. Re-runs the matcher + email-intelligence
@@ -77,6 +79,7 @@ export interface BackfillReport {
   phaseA: { scanned: number; promoted: number; errors: number };
   phaseB: { scanned: number; ranIntel: number; errors: number };
   phaseC: { scanned: number; ranIntel: number; errors: number };
+  phaseD: { scanned: number; analyzed: number; errors: number };
 }
 
 export interface BackfillOutcome {
@@ -97,6 +100,7 @@ export async function backfillIntelForUser(
       phaseA: { scanned: 0, promoted: 0, errors: 0 },
       phaseB: { scanned: 0, ranIntel: 0, errors: 0 },
       phaseC: { scanned: 0, ranIntel: 0, errors: 0 },
+      phaseD: { scanned: 0, analyzed: 0, errors: 0 },
     };
     try {
       logger.info({ userId }, "Backfill starting (phase A: re-match skips)");
@@ -111,6 +115,11 @@ export async function backfillIntelForUser(
         "Backfill phase B done; starting phase C (re-intel skips via full-fetch gate)",
       );
       await phaseC(grant, report);
+      logger.info(
+        { userId, phaseC: report.phaseC },
+        "Backfill phase C done; starting phase D (AI action proposal for pending rows)",
+      );
+      await phaseD(userId, report);
       // Stamp backfill_completed_at so the scheduler's auto-trigger
       // doesn't immediately re-fire this on the next tick. A row
       // exists in email_sync_state by the time bootstrap has run, so
@@ -535,6 +544,71 @@ async function phaseC(
     }
     if (report.phaseC.scanned % 2000 === 0) {
       logger.info({ userId: grant.userId, phaseC: report.phaseC }, "Backfill phase C progress");
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase D: AI action proposal for any pending proposals that haven't been
+// analyzed yet. Picks up rows emitted before the AI step shipped, as well
+// as rows whose fire-and-forget AI call failed mid-sync. Runs strictly
+// sequentially so concurrent runs don't blow through token budget; ~1–2s
+// per proposal is fine because this only happens once per row over the
+// life of the mailbox.
+// ---------------------------------------------------------------------------
+
+async function phaseD(userId: string, report: BackfillReport): Promise<void> {
+  const PHASE_D_PAGE = 50;
+  // Two-pass cursor: pass 1 picks up rows that have never been
+  // analyzed (`actions_analyzed_at IS NULL`). Pass 2 retries rows
+  // that errored on their last analysis attempt and haven't been
+  // retried in the past 24h — that bounds how often we re-spend
+  // tokens on a chronically-failing row (e.g. a payload that the
+  // model rejects) while still recovering from transient errors.
+  const retryAfter = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  for (const phase of ["fresh", "retry"] as const) {
+    const seenIds = new Set<string>();
+    while (true) {
+      const rows = await db
+        .select({ id: emailProposals.id })
+        .from(emailProposals)
+        .where(
+          and(
+            eq(emailProposals.mailboxUserId, userId),
+            eq(emailProposals.status, "pending"),
+            phase === "fresh"
+              ? sql`${emailProposals.actionsAnalyzedAt} is null`
+              : sql`${emailProposals.actionsError} is not null and ${emailProposals.actionsAnalyzedAt} < ${retryAfter}`,
+          ),
+        )
+        .limit(PHASE_D_PAGE);
+      const fresh = rows.filter((r) => !seenIds.has(r.id));
+      if (fresh.length === 0) break;
+      for (const row of fresh) {
+        seenIds.add(row.id);
+        report.phaseD.scanned++;
+        try {
+          // For retry pass we need to clear actions_analyzed_at so
+          // the atomic claim inside proposeActionsForProposal can
+          // take the row again.
+          if (phase === "retry") {
+            await db
+              .update(emailProposals)
+              .set({ actionsAnalyzedAt: null, updatedAt: new Date() })
+              .where(eq(emailProposals.id, row.id));
+          }
+          const r = await proposeActionsForProposal(row.id);
+          if (r.error) report.phaseD.errors++;
+          else report.phaseD.analyzed++;
+        } catch (err) {
+          report.phaseD.errors++;
+          logger.warn(
+            { err, userId, proposalId: row.id, phase },
+            "Backfill phase D: proposeActionsForProposal threw",
+          );
+        }
+      }
+      logger.info({ userId, phase, phaseD: report.phaseD }, "Backfill phase D progress");
     }
   }
 }

@@ -1689,6 +1689,41 @@ export const EmailProposalStatus = {
 
 export type EmailProposalPayload = { [key: string]: unknown };
 
+export type ProposedActionType =
+  (typeof ProposedActionType)[keyof typeof ProposedActionType];
+
+export const ProposedActionType = {
+  deactivate_per: "deactivate_per",
+  create_per: "create_per",
+  create_person_with_per: "create_person_with_per",
+  add_email: "add_email",
+  set_primary_email: "set_primary_email",
+  mark_email_invalid: "mark_email_invalid",
+  create_grant_opportunity: "create_grant_opportunity",
+} as const;
+
+export interface ProposedAction {
+  type: ProposedActionType;
+  reason: string;
+  [key: string]: unknown;
+}
+
+export type ApplyActionResultStatus =
+  (typeof ApplyActionResultStatus)[keyof typeof ApplyActionResultStatus];
+
+export const ApplyActionResultStatus = {
+  applied: "applied",
+  skipped: "skipped",
+  failed: "failed",
+} as const;
+
+export interface ApplyActionResult {
+  type: string;
+  status: ApplyActionResultStatus;
+  message?: string | null;
+  createdId?: string | null;
+}
+
 export interface EmailProposal {
   id: string;
   mailboxUserId: string;
@@ -1702,6 +1737,11 @@ export interface EmailProposal {
   subjectName?: string | null;
   subjectDomain?: string | null;
   payload: EmailProposalPayload;
+  proposedActions?: ProposedAction[];
+  actionsAnalyzedAt?: string | null;
+  actionsModel?: string | null;
+  actionsError?: string | null;
+  appliedActions?: ApplyActionResult[] | null;
   dedupeKey: string;
   createdAt: string;
   updatedAt: string;

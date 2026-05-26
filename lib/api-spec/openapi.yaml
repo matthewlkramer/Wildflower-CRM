@@ -2500,11 +2500,40 @@ components:
         subjectName:        { type: string, nullable: true }
         subjectDomain:      { type: string, nullable: true }
         payload:            { type: object, additionalProperties: true }
+        proposedActions:    { type: array, items: { $ref: "#/components/schemas/ProposedAction" } }
+        actionsAnalyzedAt:  { type: string, format: date-time, nullable: true }
+        actionsModel:       { type: string, nullable: true }
+        actionsError:       { type: string, nullable: true }
+        appliedActions:     { type: array, items: { $ref: "#/components/schemas/ApplyActionResult" }, nullable: true }
         dedupeKey:          { type: string }
         createdAt:          { type: string, format: date-time }
         updatedAt:          { type: string, format: date-time }
         resolvedAt:         { type: string, format: date-time, nullable: true }
         resolvedByUserId:   { type: string, nullable: true }
+    ProposedAction:
+      type: object
+      required: [type, reason]
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+          enum:
+            - deactivate_per
+            - create_per
+            - create_person_with_per
+            - add_email
+            - set_primary_email
+            - mark_email_invalid
+            - create_grant_opportunity
+        reason: { type: string }
+    ApplyActionResult:
+      type: object
+      required: [type, status]
+      properties:
+        type:      { type: string }
+        status:    { type: string, enum: [applied, skipped, failed] }
+        message:   { type: string, nullable: true }
+        createdId: { type: string, nullable: true }
     EmailProposalList:
       type: object
       required: [data, pagination]

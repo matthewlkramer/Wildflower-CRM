@@ -229,11 +229,119 @@ function ProposalList({ kind }: { kind: Kind }) {
           </CardHeader>
           <CardContent>
             <ProposalDetail kind={kind} payload={p.payload ?? {}} />
+            <ProposedActionsBlock
+              actions={(p.proposedActions ?? []) as ProposedActionView[]}
+              analyzedAt={p.actionsAnalyzedAt ?? null}
+              error={p.actionsError ?? null}
+            />
           </CardContent>
         </Card>
       ))}
     </div>
   );
+}
+
+type ProposedActionView = {
+  type: string;
+  reason?: string;
+  [k: string]: unknown;
+};
+
+function ProposedActionsBlock({
+  actions,
+  analyzedAt,
+  error,
+}: {
+  actions: ProposedActionView[];
+  analyzedAt: string | null;
+  error: string | null;
+}) {
+  if (error) {
+    return (
+      <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+        <div className="text-xs font-medium text-destructive">
+          AI analysis failed
+        </div>
+        <div className="text-xs text-muted-foreground mt-1">{error}</div>
+      </div>
+    );
+  }
+  if (!analyzedAt) {
+    return (
+      <div className="mt-4 text-xs text-muted-foreground italic">
+        Analyzing what to do…
+      </div>
+    );
+  }
+  if (actions.length === 0) {
+    return (
+      <div className="mt-4 text-xs text-muted-foreground">
+        AI suggested no automatic changes — accepting will just acknowledge this
+        signal.
+      </div>
+    );
+  }
+  return (
+    <div className="mt-4 rounded-md border border-primary/20 bg-primary/5 p-3 space-y-2">
+      <div className="text-xs font-semibold text-primary uppercase tracking-wide">
+        On accept, the following will happen:
+      </div>
+      <ul className="space-y-1.5">
+        {actions.map((a, i) => (
+          <li key={i} className="text-sm">
+            <span className="font-medium">{describeAction(a)}</span>
+            {a.reason ? (
+              <div className="text-xs text-muted-foreground italic mt-0.5">
+                — {a.reason}
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function describeAction(a: ProposedActionView): string {
+  const s = (k: string) => (typeof a[k] === "string" ? (a[k] as string) : undefined);
+  const n = (k: string) => (typeof a[k] === "number" ? (a[k] as number) : undefined);
+  const b = (k: string) => (typeof a[k] === "boolean" ? (a[k] as boolean) : undefined);
+  switch (a.type) {
+    case "deactivate_per":
+      return `Mark current role inactive (role id ${s("perId") ?? "?"})`;
+    case "create_per": {
+      const where =
+        s("funderId") ? `funder ${s("funderId")}` :
+        s("organizationId") ? `organization ${s("organizationId")}` :
+        s("paymentIntermediaryId") ? `payment intermediary ${s("paymentIntermediaryId")}` :
+        s("householdId") ? `household ${s("householdId")}` : "(entity?)";
+      return `Add new role at ${where}${s("externalTitleOrRole") ? ` as "${s("externalTitleOrRole")}"` : ""}`;
+    }
+    case "create_person_with_per": {
+      const where =
+        s("funderId") ? ` at funder ${s("funderId")}` :
+        s("organizationId") ? ` at organization ${s("organizationId")}` : "";
+      const role = s("externalTitleOrRole") ? ` as "${s("externalTitleOrRole")}"` : "";
+      const email = s("emailAddress") ? ` (${s("emailAddress")})` : "";
+      return `Create person ${s("firstName") ?? ""} ${s("lastName") ?? ""}${email}${where}${role}`;
+    }
+    case "add_email":
+      return `Add email ${s("emailAddress")} to person${b("setPrimary") ? " (and make it primary)" : ""}`;
+    case "set_primary_email":
+      return `Promote ${s("emailAddress") ?? s("emailId") ?? "an email"} to primary`;
+    case "mark_email_invalid":
+      return `Mark ${s("emailAddress")} as invalid (bounced)`;
+    case "create_grant_opportunity": {
+      const amt = n("askAmount");
+      const parts = [`Create grant opportunity "${s("title")}"`];
+      if (s("funderId") || s("funderName")) parts.push(`at ${s("funderName") ?? s("funderId")}`);
+      if (amt) parts.push(`ask $${amt.toLocaleString()}`);
+      if (s("deadline")) parts.push(`due ${s("deadline")}`);
+      return parts.join(", ");
+    }
+    default:
+      return a.type;
+  }
 }
 
 function summarizeProposal(p: {
