@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { HeaderEntityFilter } from "@/components/entity-filter";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -36,6 +37,7 @@ const navItems = [
   { href: "/projections", label: "Projections", icon: LineChart },
   { href: "/grants-calendar", label: "Grants Calendar", icon: CalendarDays },
   { href: "/email-intelligence", label: "Email Intelligence", icon: Inbox },
+  { href: "/settings", label: "Settings", icon: Settings },
   { href: "/admin", label: "Admin", icon: Settings },
 ];
 
@@ -96,10 +98,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      {/* Mobile Header & Content */}
+      {/* Header (desktop + mobile) + Content. The header carries the global
+          entity filter so the user's selection persists across every page
+          rather than being a per-page widget on /dashboard only. */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center justify-between border-b bg-background px-4 md:hidden">
-          <div className="flex items-center gap-2 font-serif font-semibold text-primary">
+        <header className="flex h-14 items-center justify-between gap-3 border-b bg-background px-4">
+          <div className="flex items-center gap-2 font-serif font-semibold text-primary md:hidden">
             <svg viewBox="0 0 100 100" className="h-6 w-6" fill="none">
               <circle cx="50" cy="50" r="45" fill="#E8F3E8"/>
               <path d="M50 85 C50 85 45 60 50 40" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/>
@@ -109,21 +113,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </svg>
             Wildflower CRM
           </div>
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-64 p-0">
-              <div className="flex h-14 items-center border-b px-4 font-serif font-semibold text-primary">
-                Menu
-              </div>
-              <div className="p-4">
-                <NavLinks />
-              </div>
-            </SheetContent>
-          </Sheet>
+          {/* Spacer pushes the entity filter to the right on desktop where
+              there's no logo (sidebar already shows it). */}
+          <div className="hidden md:block" />
+          <div className="flex items-center gap-2">
+            <HeaderEntityFilter />
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="md:hidden">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-64 p-0">
+                <div className="flex h-14 items-center border-b px-4 font-serif font-semibold text-primary">
+                  Menu
+                </div>
+                <div className="p-4">
+                  <NavLinks />
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 md:p-8">

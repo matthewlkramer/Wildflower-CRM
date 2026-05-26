@@ -1764,6 +1764,24 @@ export interface EmailProposalSummary {
   totalPending: number;
 }
 
+export type EmailProposalActionFailedError =
+  (typeof EmailProposalActionFailedError)[keyof typeof EmailProposalActionFailedError];
+
+export const EmailProposalActionFailedError = {
+  action_failed: "action_failed",
+} as const;
+
+export type EmailProposalActionFailedAttemptedResultsItem = {
+  [key: string]: unknown;
+};
+
+export interface EmailProposalActionFailed {
+  error: EmailProposalActionFailedError;
+  message: string;
+  failedAction: string;
+  attemptedResults: EmailProposalActionFailedAttemptedResultsItem[];
+}
+
 export interface AcceptEmailProposalBody {
   [key: string]: unknown;
 }

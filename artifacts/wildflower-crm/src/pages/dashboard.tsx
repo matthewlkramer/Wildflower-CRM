@@ -1,54 +1,18 @@
-import { useMemo, useState } from "react";
-import { Link, useSearch, useLocation } from "wouter";
-import { Check, ChevronsUpDown, X } from "lucide-react";
+import { Link } from "wouter";
 import {
   useGetDashboardSummary,
-  useListEntities,
   getGetDashboardSummaryQueryKey,
-  getListEntitiesQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandGroup,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
-import { partitionEntities } from "@/lib/dropdownVisibility";
 import EmailProposalsCard from "@/components/EmailProposalsCard";
-
-// URL key for the entity multi-filter. Comma-separated entity ids. Empty/missing
-// = all entities. Persisted in the URL so the filtered view is shareable and
-// survives reloads / back-forward navigation.
-const ENTITIES_QUERY_KEY = "entities";
-
-function parseEntitiesFromSearch(search: string): string[] {
-  const raw = new URLSearchParams(search).get(ENTITIES_QUERY_KEY) ?? "";
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
+import { useEntityFilter } from "@/lib/entity-filter-context";
 
 export default function Dashboard() {
-  const [, navigate] = useLocation();
-  const search = useSearch();
-  // Normalize the order so {a,b} and {b,a} share a single query-cache bucket
-  // and produce identical canonical URLs.
-  const selectedEntityIds = useMemo(() => {
-    const ids = parseEntitiesFromSearch(search);
-    ids.sort();
-    return ids;
-  }, [search]);
+  // Entity filter is global now (lives in the header on every page) — read
+  // it from context instead of the URL. The "Apply now" button on Settings
+  // and the header dropdown are the two write points.
+  const { selected: selectedEntityIds } = useEntityFilter();
 
   // Pass entityIds only when the user has narrowed the filter. Omitting keeps
   // the unfiltered query (and query-cache key) stable.
@@ -56,25 +20,10 @@ export default function Dashboard() {
   const { data, isLoading, isError, error } = useGetDashboardSummary(summaryParams, {
     query: { queryKey: getGetDashboardSummaryQueryKey(summaryParams) },
   });
-  const entitiesQ = useListEntities({
-    query: { queryKey: getListEntitiesQueryKey(), staleTime: 5 * 60_000 },
-  });
 
   const counts = data?.counts;
   const fy = data?.currentFiscalYear;
   const byFy = data?.byFiscalYear ?? [];
-  const entityOptions = useMemo(
-    () => (entitiesQ.data ?? []).map((e) => ({ id: e.id, name: e.name, active: e.active })),
-    [entitiesQ.data],
-  );
-
-  const setEntities = (next: string[]) => {
-    const sp = new URLSearchParams(search);
-    if (next.length === 0) sp.delete(ENTITIES_QUERY_KEY);
-    else sp.set(ENTITIES_QUERY_KEY, next.join(","));
-    const qs = sp.toString();
-    navigate(qs ? `/dashboard?${qs}` : "/dashboard", { replace: true });
-  };
 
   // Forward entity scope to the FY detail page. The detail view has a
   // single-entity dropdown, so we can only forward when exactly one entity is
@@ -167,19 +116,23 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-serif font-bold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            A quick snapshot of the CRM. Fiscal year runs July 1 – June 30; currently{" "}
-            <span className="font-medium">{fy?.label ?? "…"}</span>.
-          </p>
-        </div>
-        <EntityMultiFilter
-          options={entityOptions}
-          value={selectedEntityIds}
-          onChange={setEntities}
-        />
+      <div>
+        <h1 className="text-3xl font-serif font-bold text-foreground">Dashboard</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          A quick snapshot of the CRM. Fiscal year runs July 1 – June 30; currently{" "}
+          <span className="font-medium">{fy?.label ?? "…"}</span>.
+          {selectedEntityIds.length > 0 ? (
+            <>
+              {" "}Filtered to{" "}
+              <span className="font-medium">
+                {selectedEntityIds.length === 1
+                  ? "1 entity"
+                  : `${selectedEntityIds.length} entities`}
+              </span>{" "}
+              (change in the header).
+            </>
+          ) : null}
+        </p>
       </div>
 
       {isError ? (
@@ -267,139 +220,3 @@ export default function Dashboard() {
   );
 }
 
-// Multi-select entity filter for the money tiles. Renders a popover with
-// checkbox-style options and a chip strip showing the active selection. An
-// empty selection means "all entities" (no filter applied).
-function EntityMultiFilter({
-  options,
-  value,
-  onChange,
-}: {
-  options: ReadonlyArray<{ id: string; name: string; active: boolean }>;
-  value: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const selectedSet = new Set(value);
-  const labelFor = (id: string) => options.find((o) => o.id === id)?.name ?? id;
-  const triggerLabel =
-    value.length === 0
-      ? "All entities"
-      : value.length === 1
-        ? labelFor(value[0])
-        : `${value.length} entities`;
-
-  // Retired entities are hidden behind a "Show retired" toggle. Auto-expand
-  // if the current selection already includes a retired one so it stays
-  // visible (and toggleable) in the list.
-  const { active, retired } = useMemo(() => partitionEntities(options), [options]);
-  const retiredIds = useMemo(() => new Set(retired.map((r) => r.id)), [retired]);
-  const selectionIncludesRetired = value.some((id) => retiredIds.has(id));
-  const [showRetired, setShowRetired] = useState(false);
-  // Always force-expand when the current selection lives in the retired set
-  // so the chips have a corresponding row in the list. Derived (not effect-
-  // backed) so it survives async option loads — no timing race between when
-  // options hydrate and when the toggle state would otherwise be seeded.
-  const effectiveShowRetired = showRetired || selectionIncludesRetired;
-  const visibleOptions = effectiveShowRetired ? [...active, ...retired] : active;
-
-  const toggle = (id: string) => {
-    onChange(
-      selectedSet.has(id) ? value.filter((v) => v !== id) : [...value, id],
-    );
-  };
-  const clear = () => onChange([]);
-
-  return (
-    <div className="flex flex-col items-end gap-1.5">
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            role="combobox"
-            size="sm"
-            className="h-8 min-w-[12rem] justify-between font-normal"
-            data-testid="filter-entities"
-          >
-            <span className="truncate">
-              <span className="text-muted-foreground mr-1">Entities:</span>
-              {triggerLabel}
-            </span>
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[16rem]" align="end">
-          <Command>
-            <CommandList>
-              <CommandGroup>
-                {visibleOptions.map((o) => {
-                  const selected = selectedSet.has(o.id);
-                  return (
-                    <CommandItem
-                      key={o.id}
-                      value={o.id}
-                      onSelect={() => toggle(o.id)}
-                      data-testid={`filter-entities-option-${o.id}`}
-                    >
-                      <Check className={cn("mr-2 h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
-                      <span className="truncate">{o.name}</span>
-                    </CommandItem>
-                  );
-                })}
-              </CommandGroup>
-              {retired.length > 0 && !selectionIncludesRetired ? (
-                <CommandGroup>
-                  <CommandItem
-                    value="__toggle_retired__"
-                    onSelect={() => setShowRetired((s) => !s)}
-                    data-testid="filter-entities-toggle-retired"
-                    className="text-muted-foreground text-xs justify-center"
-                  >
-                    {effectiveShowRetired
-                      ? "Hide retired entities"
-                      : `Show retired entities (${retired.length})`}
-                  </CommandItem>
-                </CommandGroup>
-              ) : null}
-              {value.length > 0 ? (
-                <CommandGroup>
-                  <CommandItem
-                    value="__clear__"
-                    onSelect={clear}
-                    data-testid="filter-entities-clear"
-                    className="text-muted-foreground"
-                  >
-                    <X className="mr-2 h-4 w-4" />
-                    Clear filter (all entities)
-                  </CommandItem>
-                </CommandGroup>
-              ) : null}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-      {value.length > 0 ? (
-        <div className="flex flex-wrap gap-1 justify-end max-w-[24rem]">
-          {value.map((id) => (
-            <Badge
-              key={id}
-              variant="secondary"
-              className="gap-1 pr-1"
-              data-testid={`filter-entities-chip-${id}`}
-            >
-              {labelFor(id)}
-              <button
-                type="button"
-                onClick={() => toggle(id)}
-                aria-label={`Remove ${labelFor(id)}`}
-                className="rounded hover:bg-muted-foreground/10"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}

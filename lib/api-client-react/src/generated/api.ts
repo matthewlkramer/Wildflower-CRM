@@ -50,6 +50,7 @@ import type {
   EmailMessageDetail,
   EmailMessageList,
   EmailProposal,
+  EmailProposalActionFailed,
   EmailProposalList,
   EmailProposalSummary,
   Entity,
@@ -329,7 +330,9 @@ export const acceptEmailProposal = async (
 };
 
 export const getAcceptEmailProposalMutationOptions = <
-  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TError = ErrorType<
+    BadRequestResponse | NotFoundResponse | EmailProposalActionFailed
+  >,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -371,11 +374,13 @@ export type AcceptEmailProposalMutationResult = NonNullable<
 >;
 export type AcceptEmailProposalMutationBody = BodyType<AcceptEmailProposalBody>;
 export type AcceptEmailProposalMutationError = ErrorType<
-  BadRequestResponse | NotFoundResponse
+  BadRequestResponse | NotFoundResponse | EmailProposalActionFailed
 >;
 
 export const useAcceptEmailProposal = <
-  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TError = ErrorType<
+    BadRequestResponse | NotFoundResponse | EmailProposalActionFailed
+  >,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<

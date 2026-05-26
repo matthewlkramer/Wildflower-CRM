@@ -68,6 +68,11 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposal" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Accept dispatched but one of the apply actions failed; the proposal remains pending and all side effects were rolled back.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailProposalActionFailed" }
   /email-proposals/{id}/reject:
     post:
       operationId: rejectEmailProposal
@@ -2552,6 +2557,18 @@ components:
       properties:
         byKind:        { type: array, items: { $ref: "#/components/schemas/EmailProposalSummaryEntry" } }
         totalPending:  { type: integer }
+    EmailProposalActionFailed:
+      # Returned with status 422 when an accept dispatched but one of the
+      # apply actions failed. The proposal stays pending (the route's
+      # transaction rolls back the row's status change too) and partial
+      # action results are surfaced so the UI can show what did/didn't run.
+      type: object
+      required: [error, message, failedAction, attemptedResults]
+      properties:
+        error:            { type: string, enum: [action_failed] }
+        message:          { type: string }
+        failedAction:     { type: string }
+        attemptedResults: { type: array, items: { type: object, additionalProperties: true } }
     AcceptEmailProposalBody:
       # All fields optional — the accept handler is per-kind and reads only
       # what's relevant. e.g. signature_update may receive {applyTitle:true,

@@ -29,8 +29,10 @@ import Projections from "@/pages/projections";
 import GrantsCalendar from "@/pages/grants-calendar";
 import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import Admin from "@/pages/admin";
+import Settings from "@/pages/settings";
 import EmailIntelligence from "@/pages/email-intelligence";
 import Layout from "@/components/layout";
+import { EntityFilterProvider } from "@/lib/entity-filter-context";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
@@ -111,12 +113,16 @@ function HomeRedirect() {
 }
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+  // EntityFilterProvider lives inside the signed-in tree so the entities
+  // list query (which requires auth) doesn't fire on the marketing page.
   return (
     <>
       <Show when="signed-in">
-        <Layout>
-          <Component />
-        </Layout>
+        <EntityFilterProvider>
+          <Layout>
+            <Component />
+          </Layout>
+        </EntityFilterProvider>
       </Show>
       <Show when="signed-out">
         <Redirect to="/sign-in" />
@@ -199,6 +205,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/fiscal-year/:fyId"><ProtectedRoute component={FiscalYearDetail} /></Route>
           <Route path="/grants-calendar"><ProtectedRoute component={GrantsCalendar} /></Route>
           <Route path="/email-intelligence"><ProtectedRoute component={EmailIntelligence} /></Route>
+          <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
           <Route path="/admin"><ProtectedRoute component={Admin} /></Route>
           
           <Route component={NotFound} />

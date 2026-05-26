@@ -134,11 +134,29 @@ export async function processIntelForMatched(args: {
       await handleAutoResponder(args);
       return;
     }
-    // Signature parsing only on the first matched person — we don't
-    // want to attribute the same sender's sig to multiple unrelated
-    // CRM rows.
-    if (args.matchedPersonIds && args.matchedPersonIds.length > 0) {
-      await handleSignature(args, args.matchedPersonIds[0]);
+    // Signature parsing must be attributed to the SENDER, not just
+    // any participant on the thread. `matchedPersonIds` aggregates
+    // every CRM person on from/to/cc/bcc (sorted by id, so index 0
+    // is arbitrary) — using it directly would write a signature
+    // proposal against an unrelated recipient. Resolve the sender's
+    // address to a single person id; skip when ambiguous (0 or >1
+    // matches) since we have no way to pick correctly.
+    if (args.fromEmail) {
+      const senderRows = await db
+        .select({ personId: emails.personId })
+        .from(emails)
+        .where(
+          and(
+            eq(sql`lower(${emails.email})`, args.fromEmail.toLowerCase()),
+            sql`${emails.personId} is not null`,
+          ),
+        );
+      const senderPersonIds = [
+        ...new Set(senderRows.map((r) => r.personId).filter((id): id is string => !!id)),
+      ];
+      if (senderPersonIds.length === 1) {
+        await handleSignature(args, senderPersonIds[0]);
+      }
     }
   } catch (err) {
     logger.warn(
