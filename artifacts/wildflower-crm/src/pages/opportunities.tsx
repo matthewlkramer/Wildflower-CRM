@@ -4,6 +4,7 @@ import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListOpportunitiesAndPledges,
   getListOpportunitiesAndPledgesQueryKey,
+  useListFiscalYears,
   type ListOpportunitiesAndPledgesParams,
   type OpportunityStatus,
   type OpportunityStage,
@@ -29,6 +30,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ChevronDown } from "lucide-react";
 import {
   Pagination,
   PaginationContent,
@@ -76,6 +80,7 @@ export default function Opportunities({
   const [status, setStatus] = useState<string>(defaultStatus ?? ANY);
   const [stage, setStage] = useState<string>(ANY);
   const [type, setType] = useState<string>(ANY);
+  const [fiscalYears, setFiscalYears] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   const effectiveStatus = lockedStatus ?? (status !== ANY ? (status as OpportunityStatus) : undefined);
@@ -87,6 +92,11 @@ export default function Opportunities({
     ...(effectiveStatus ? { status: effectiveStatus } : {}),
     ...(stage !== ANY ? { stage: stage as OpportunityStage } : {}),
     ...(type !== ANY ? { type: type as OpportunityType } : {}),
+    // Sort the FY slugs so the react-query cache key is stable
+    // regardless of the order the user clicked checkboxes in
+    // (`['fy2026','future']` and `['future','fy2026']` would
+    // otherwise produce distinct keys / refetches).
+    ...(fiscalYears.length > 0 ? { fiscalYear: [...fiscalYears].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListOpportunitiesAndPledges(params, {
@@ -156,7 +166,11 @@ export default function Opportunities({
         )}
         <FilterSelect label="Stage" value={stage} onChange={(v) => { setStage(v); setPage(1); }} options={STAGES} testId="select-opp-stage" />
         <FilterSelect label="Type" value={type} onChange={(v) => { setType(v); setPage(1); }} options={TYPES} testId="select-opp-type" />
-        {(search || (!lockedStatus && status !== (defaultStatus ?? ANY)) || stage !== ANY || type !== ANY) && (
+        <FiscalYearMultiSelect
+          selected={fiscalYears}
+          onChange={(v) => { setFiscalYears(v); setPage(1); }}
+        />
+        {(search || (!lockedStatus && status !== (defaultStatus ?? ANY)) || stage !== ANY || type !== ANY || fiscalYears.length > 0) && (
           <Button
             variant="ghost"
             size="sm"
@@ -165,6 +179,7 @@ export default function Opportunities({
               if (!lockedStatus) setStatus(defaultStatus ?? ANY);
               setStage(ANY);
               setType(ANY);
+              setFiscalYears([]);
               setPage(1);
             }}
           >
@@ -263,6 +278,118 @@ export default function Opportunities({
           </PaginationContent>
         </Pagination>
       )}
+    </div>
+  );
+}
+
+// Multi-select dropdown for the `fiscalYear` filter. Options are
+// pulled from the fiscal-years table (slugs like `fy2026`, plus the
+// special `future` slug). The list is sorted with "Future" pinned at
+// the top, then newest → oldest FY, and clipped to a sensible window
+// (everything between the earliest grant_year present in the data
+// and a few years past current) — the full table goes out to FY2050
+// which is noise on a filter UI.
+function FiscalYearMultiSelect({
+  selected,
+  onChange,
+}: {
+  selected: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const { data: allFys } = useListFiscalYears();
+  const [open, setOpen] = useState(false);
+
+  const options = useMemo(() => {
+    const rows = allFys ?? [];
+    const currentYear = new Date().getUTCFullYear();
+    // FY ends Jun 30; if we're past June we're in the next FY.
+    const currentFyEnd =
+      new Date().getUTCMonth() >= 6 ? currentYear + 1 : currentYear;
+    // Show FY2016 through current+3, plus the "future" sentinel.
+    const visible = rows.filter((r) => {
+      if (r.id === "future") return true;
+      const m = /^fy(\d{4})$/.exec(r.id);
+      if (!m) return false;
+      const yr = Number(m[1]);
+      return yr >= 2016 && yr <= currentFyEnd + 3;
+    });
+    visible.sort((a, b) => {
+      if (a.id === "future") return -1;
+      if (b.id === "future") return 1;
+      return b.id.localeCompare(a.id); // newest first
+    });
+    return visible;
+  }, [allFys]);
+
+  const toggle = (id: string) => {
+    if (selected.includes(id)) onChange(selected.filter((x) => x !== id));
+    else onChange([...selected, id]);
+  };
+
+  const label =
+    selected.length === 0
+      ? "Any"
+      : selected.length === 1
+        ? (allFys?.find((r) => r.id === selected[0])?.label ?? selected[0])
+        : `${selected.length} selected`;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium text-muted-foreground">
+        Fiscal year
+      </label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-label="Fiscal year"
+            className="w-[200px] justify-between font-normal"
+            data-testid="select-opp-fiscal-year"
+          >
+            <span className="truncate">{label}</span>
+            <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[220px] p-2" align="start">
+          <div className="max-h-[300px] overflow-y-auto space-y-1">
+            {options.length === 0 ? (
+              <div className="text-sm text-muted-foreground px-2 py-1">
+                Loading…
+              </div>
+            ) : (
+              options.map((opt) => {
+                const checked = selected.includes(opt.id);
+                return (
+                  <label
+                    key={opt.id}
+                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted cursor-pointer text-sm"
+                    data-testid={`option-fy-${opt.id}`}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={() => toggle(opt.id)}
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+          {selected.length > 0 && (
+            <div className="mt-2 pt-2 border-t">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full h-7 text-xs"
+                onClick={() => onChange([])}
+              >
+                Clear
+              </Button>
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

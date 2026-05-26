@@ -2,7 +2,7 @@ import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, funders, households, people } from "@workspace/db/schema";
 import { alias } from "drizzle-orm/pg-core";
-import { and, count, desc, eq, getTableColumns, ilike, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, exists, getTableColumns, ilike, inArray, sql, type SQL } from "drizzle-orm";
 
 // Second `people` alias so we can join *both* the individual giver
 // (via individual_giver_person_id) and the primary contact (via
@@ -64,6 +64,30 @@ import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, para
 const router: IRouter = Router();
 router.use(requireAuth);
 
+// Normalize the raw `fiscalYear` query value into a string[] BEFORE
+// running the orval-generated zod validator (which is typed
+// `array<string>`). Orval emits form/explode=false arrays as
+// comma-joined strings (`?fiscalYear=fy2026,future`); Express also
+// tolerates repeated keys (`?fiscalYear=fy2026&fiscalYear=future`).
+// Accept either, split commas, lowercase + trim, drop empties. We
+// pre-normalize because the generated zod schema would otherwise
+// reject the single-string comma form with a 400 before our handler
+// could even see it.
+function normalizeFiscalYearQuery(raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  const out: string[] = [];
+  const consume = (v: unknown) => {
+    if (typeof v !== "string") return;
+    for (const piece of v.split(",")) {
+      const trimmed = piece.trim().toLowerCase();
+      if (trimmed) out.push(trimmed);
+    }
+  };
+  if (Array.isArray(raw)) raw.forEach(consume);
+  else consume(raw);
+  return out;
+}
+
 function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
   res.status(400).json({
     error: "validation_error",
@@ -75,7 +99,13 @@ function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void 
 router.get(
   "/opportunities-and-pledges",
   asyncHandler(async (req, res) => {
-    const q = parseOrBadRequest(ListOpportunitiesAndPledgesQueryParams, req.query, res);
+    // Pre-normalize `fiscalYear` so the generated array<string> zod
+    // schema accepts the orval comma-form (single string).
+    const normalizedQuery = {
+      ...req.query,
+      fiscalYear: normalizeFiscalYearQuery(req.query.fiscalYear),
+    };
+    const q = parseOrBadRequest(ListOpportunitiesAndPledgesQueryParams, normalizedQuery, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
@@ -87,6 +117,26 @@ router.get(
     if (q.householdId) filters.push(eq(opportunitiesAndPledges.householdId, q.householdId));
     if (q.individualGiverPersonId) filters.push(eq(opportunitiesAndPledges.individualGiverPersonId, q.individualGiverPersonId));
     if (q.ownerUserId) filters.push(eq(opportunitiesAndPledges.ownerUserId, q.ownerUserId));
+    // Multi-value fiscal-year filter — matches opps that have at least
+    // one pledge_allocation row whose grant_year is in the selected set.
+    // Use EXISTS rather than a JOIN so we don't fan rows out (one opp
+    // with three allocations should still count once).
+    const fiscalYearSelected = q.fiscalYear ?? [];
+    if (fiscalYearSelected.length > 0) {
+      filters.push(
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(pledgeAllocations)
+            .where(
+              and(
+                eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id),
+                inArray(pledgeAllocations.grantYear, fiscalYearSelected),
+              ),
+            ),
+        ),
+      );
+    }
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

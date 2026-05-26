@@ -2046,6 +2046,14 @@ export type ListOpportunitiesAndPledgesParams = {
   individualGiverPersonId?: string;
   ownerUserId?: string;
   /**
+ * Filter to opportunities that have at least one pledge_allocation
+with `grant_year` in the given set. Accepts `future` and any
+`fiscal_years.id` slug (e.g. `fy2026`). Multi-value: repeat the
+param or comma-separate. Omit to include all fiscal years.
+
+ */
+  fiscalYear?: string[];
+  /**
    * @minimum 1
    * @maximum 1000
    */

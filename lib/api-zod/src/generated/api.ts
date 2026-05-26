@@ -2798,6 +2798,12 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   householdId: zod.coerce.string().optional(),
   individualGiverPersonId: zod.coerce.string().optional(),
   ownerUserId: zod.coerce.string().optional(),
+  fiscalYear: zod
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Filter to opportunities that have at least one pledge_allocation\nwith `grant_year` in the given set. Accepts `future` and any\n`fiscal_years.id` slug (e.g. `fy2026`). Multi-value: repeat the\nparam or comma-separate. Omit to include all fiscal years.\n",
+    ),
   limit: zod.coerce
     .number()
     .min(1)
