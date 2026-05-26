@@ -13,6 +13,8 @@ import { getAppUser } from "../lib/appRequest";
 import { syncUserGmail } from "../lib/gmailSync";
 import { syncUserCalendar } from "../lib/calendarSync";
 import { withSyncLock } from "../lib/syncLock";
+import { backfillIntelForUser } from "../lib/gmailBackfill";
+import { logger } from "../lib/logger";
 
 /**
  * Admin-only sync visibility + manual resync. Surfaces per-user Gmail
@@ -138,6 +140,51 @@ router.post(
         ? calLock.result
         : { ok: false, error: "sync_in_progress" },
     });
+  }),
+);
+
+/**
+ * One-time backfill: re-run email-domain matching + email-intelligence
+ * detectors over messages already synced. Useful after adding new
+ * detectors (e.g. grant_opportunity) or after expanding the CRM
+ * person/funder set — historical messages don't pick up new
+ * capabilities through the normal incremental sync loop because the
+ * Gmail history cursor has moved past them.
+ *
+ * Fire-and-forget: the backfill on a 10k+ mailbox can take many
+ * minutes. We respond 202 immediately and the worker acquires the
+ * same `gmail` advisory lock the scheduler uses (inside
+ * `backfillIntelForUser`) so it can't collide with a concurrent
+ * normal sync tick on the same mailbox; a contending scheduler tick
+ * will just no-op until backfill releases the lock. Progress is
+ * visible in the server logs ("Backfill phase A/B/C progress" + final
+ * "Backfill complete").
+ */
+router.post(
+  "/admin/google-sync/:id/backfill-intel",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const targetUserId = paramId(req);
+    const grant = await db
+      .select({ revokedAt: googleOauthTokens.revokedAt })
+      .from(googleOauthTokens)
+      .where(eq(googleOauthTokens.userId, targetUserId))
+      .then((r) => r[0]);
+    if (!grant || grant.revokedAt) {
+      res.status(409).json({
+        error: "not_connected",
+        message: "User has no active Google grant.",
+      });
+      return;
+    }
+    // Kick off in the background so the HTTP response doesn't time
+    // out on long-running mailboxes. The worker takes the `gmail`
+    // advisory lock internally so it serializes against the
+    // scheduler. Errors are logged inside backfillIntelForUser.
+    void backfillIntelForUser(targetUserId).catch((err) => {
+      logger.error({ err, userId: targetUserId }, "Backfill route: failed");
+    });
+    res.status(202).json({ ok: true, message: "Backfill started" });
   }),
 );
 
