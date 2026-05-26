@@ -4,6 +4,7 @@ import {
   useGetOpportunityOrPledge,
   useUpdateOpportunityOrPledge,
   useDeleteOpportunityOrPledge,
+  useListEntities,
   getGetOpportunityOrPledgeQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
   type OpportunityOrPledgeDetail,
@@ -126,6 +127,16 @@ function OppView({
   function patch(body: UpdateOpportunityOrPledgeBody) {
     return update.mutateAsync({ id: opp.id, data: body });
   }
+
+  // Resolve entity slugs (from pledge_allocations) to human names so
+  // the Pipeline summary + Allocations list can show real labels.
+  const entitiesQ = useListEntities();
+  const entityNameById = new Map(
+    (entitiesQ.data ?? []).map((e) => [e.id, e.name]),
+  );
+  const entityLabels = (opp.entityIds ?? []).map(
+    (id) => entityNameById.get(id) ?? id,
+  );
 
   const funderName = useFunderName(opp.funderId ?? null);
   const giverName = usePersonName(opp.individualGiverPersonId ?? null);
@@ -276,6 +287,13 @@ function OppView({
             </Row>
             <Row label="Conditional">{formatEnum(opp.conditional)}</Row>
             <Row label="Conditions met">{opp.conditionsMet ? "Yes" : "No"}</Row>
+            <Row label="Entities">
+              {entityLabels.length === 0 ? (
+                <span className="text-muted-foreground">—</span>
+              ) : (
+                entityLabels.join(", ")
+              )}
+            </Row>
           </CardContent>
         </Card>
 
@@ -376,15 +394,21 @@ function OppView({
         <CardContent>
           {opp.allocations && opp.allocations.length > 0 ? (
             <ul className="space-y-2 text-sm">
-              {opp.allocations.map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-2" data-testid={`row-opp-alloc-${a.id}`}>
-                  <span className="truncate">
-                    {formatEnum(a.intendedUsage) || "—"}
-                    {a.grantYear ? ` • ${a.grantYear}` : ""}
-                  </span>
-                  <span className="font-medium whitespace-nowrap">{formatCurrency(a.subAmount)}</span>
-                </li>
-              ))}
+              {opp.allocations.map((a) => {
+                const entityLabel = a.entityId
+                  ? (entityNameById.get(a.entityId) ?? a.entityId)
+                  : null;
+                return (
+                  <li key={a.id} className="flex items-center justify-between gap-2" data-testid={`row-opp-alloc-${a.id}`}>
+                    <span className="truncate">
+                      {formatEnum(a.intendedUsage) || "—"}
+                      {entityLabel ? ` • ${entityLabel}` : ""}
+                      {a.grantYear ? ` • ${a.grantYear}` : ""}
+                    </span>
+                    <span className="font-medium whitespace-nowrap">{formatCurrency(a.subAmount)}</span>
+                  </li>
+                );
+              })}
             </ul>
           ) : (<p className="text-sm text-muted-foreground">No allocations.</p>)}
         </CardContent>

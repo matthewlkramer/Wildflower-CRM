@@ -6,6 +6,7 @@ import {
   getListOpportunitiesAndPledgesQueryKey,
   useBulkUpdateOpportunitiesAndPledges,
   useListFiscalYears,
+  useListEntities,
   type ListOpportunitiesAndPledgesParams,
   type OpportunityStatus,
   type OpportunityStage,
@@ -90,6 +91,13 @@ export default function Opportunities({
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdateOpportunitiesAndPledges();
+  // Lookup map so the Entities column can render slug -> human name
+  // without firing one fetch per row. Same pattern as gifts.tsx.
+  const entitiesQ = useListEntities();
+  const entityNameById = useMemo(
+    () => new Map((entitiesQ.data ?? []).map((e) => [e.id, e.name])),
+    [entitiesQ.data],
+  );
 
   // Sort every array filter before serializing into request params so
   // the react-query cache key is stable regardless of the order the user
@@ -262,6 +270,7 @@ export default function Opportunities({
                 <SortableTH colKey="ask" align="right" {...ts}>Ask</SortableTH>
               )}
               <SortableTH colKey="awarded" align="right" {...ts}>Awarded</SortableTH>
+              <SortableTH colKey="entities" sortable={false} {...ts}>Entities</SortableTH>
               <SortableTH colKey="fy" {...ts}>FY</SortableTH>
               <SortableTH colKey="projectedClose" {...ts}>Projected close</SortableTH>
               <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
@@ -269,18 +278,21 @@ export default function Opportunities({
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={10} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center h-24 text-destructive">
+                <TableCell colSpan={11} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load opportunities."}
                 </TableCell>
               </TableRow>
             ) : sortedRows.length === 0 ? (
-              <TableRow><TableCell colSpan={10} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
               sortedRows.map((o) => {
                 const coveredFys = (o.coveredFiscalYears ?? []).map((y) => y.toUpperCase());
+                const entities = (o.entityIds ?? []).map(
+                  (id) => entityNameById.get(id) ?? id,
+                );
                 return (
                   <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-opp-${o.id}`}>
                     <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
@@ -318,6 +330,9 @@ export default function Opportunities({
                       <TableCell className="text-right tabular-nums">{formatCurrency(o.askAmount)}</TableCell>
                     )}
                     <TableCell className="text-right tabular-nums">{formatCurrency(o.awardedAmount)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[200px]">
+                      {entities.length === 0 ? "—" : entities.join(", ")}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {coveredFys.length === 0 ? "—" : coveredFys.join(", ")}
                     </TableCell>

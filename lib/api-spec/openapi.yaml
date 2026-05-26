@@ -2230,6 +2230,10 @@ components:
         # Distinct grant_year values across pledge_allocations for this
         # opp, sorted ascending. Empty array if no allocations.
         coveredFiscalYears:         { type: array, items: { type: string }, nullable: true, readOnly: true }
+        # Distinct entity_id values across pledge_allocations for this
+        # opp, sorted ascending. Empty array if no allocations have an
+        # entity set.
+        entityIds:                  { type: array, items: { type: string }, nullable: true, readOnly: true }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
     OpportunityOrPledgeDetail:

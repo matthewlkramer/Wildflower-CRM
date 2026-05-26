@@ -55,6 +55,15 @@ const donorJoinSelect = {
     WHERE pa.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}
       AND pa.grant_year IS NOT NULL
   )`.as("covered_fiscal_years"),
+  // Distinct entity slugs from pledge_allocations. Mirrors the gifts
+  // route so the opps list/detail can render an Entities column
+  // without firing one fetch per row.
+  entityIds: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT pa.entity_id ORDER BY pa.entity_id)
+    FROM pledge_allocations pa
+    WHERE pa.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}
+      AND pa.entity_id IS NOT NULL
+  )`.as("entity_ids"),
 };
 
 import {

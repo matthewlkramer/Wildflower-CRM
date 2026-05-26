@@ -2971,6 +2971,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       primaryContactPersonName: zod.string().nullish(),
       fiscalYear: zod.string().nullish(),
       coveredFiscalYears: zod.array(zod.string()).nullish(),
+      entityIds: zod.array(zod.string()).nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -3085,6 +3086,7 @@ export const GetOpportunityOrPledgeResponse = zod
     primaryContactPersonName: zod.string().nullish(),
     fiscalYear: zod.string().nullish(),
     coveredFiscalYears: zod.array(zod.string()).nullish(),
+    entityIds: zod.array(zod.string()).nullish(),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   })
@@ -3299,6 +3301,7 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   primaryContactPersonName: zod.string().nullish(),
   fiscalYear: zod.string().nullish(),
   coveredFiscalYears: zod.array(zod.string()).nullish(),
+  entityIds: zod.array(zod.string()).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });

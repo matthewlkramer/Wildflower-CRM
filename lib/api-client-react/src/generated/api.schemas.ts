@@ -1190,6 +1190,7 @@ export interface OpportunityOrPledge {
   readonly primaryContactPersonName?: string | null;
   readonly fiscalYear?: string | null;
   readonly coveredFiscalYears?: readonly string[] | null;
+  readonly entityIds?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
 }
