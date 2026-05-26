@@ -40,6 +40,17 @@ export const emailSyncState = pgTable("email_sync_state", {
   // `last_history_id` stays pinned so Gmail keeps replaying the
   // missed deltas — losing nothing.
   incrementalPageToken: text("incremental_page_token"),
+  // Stamped by the one-shot email-intelligence backfill
+  // (`backfillIntelForUser`) on successful completion. Null means the
+  // backfill hasn't yet run against this mailbox's fully-synced
+  // contents. The scheduler watches for `bootstrap_completed_at IS
+  // NOT NULL AND backfill_completed_at IS NULL` and kicks off a
+  // backfill once bootstrap finishes — so a freshly-connected
+  // mailbox auto-sweeps detector/matcher additions over its full
+  // history without manual intervention.
+  backfillCompletedAt: timestamp("backfill_completed_at", {
+    withTimezone: true,
+  }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

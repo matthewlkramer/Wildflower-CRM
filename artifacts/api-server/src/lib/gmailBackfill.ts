@@ -3,6 +3,7 @@ import {
   emailMessages,
   emailAttachments,
   emailSyncSkip,
+  emailSyncState,
 } from "@workspace/db/schema";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
@@ -110,6 +111,14 @@ export async function backfillIntelForUser(
         "Backfill phase B done; starting phase C (re-intel skips via full-fetch gate)",
       );
       await phaseC(grant, report);
+      // Stamp backfill_completed_at so the scheduler's auto-trigger
+      // doesn't immediately re-fire this on the next tick. A row
+      // exists in email_sync_state by the time bootstrap has run, so
+      // a plain UPDATE is safe (no upsert needed).
+      await db
+        .update(emailSyncState)
+        .set({ backfillCompletedAt: new Date(), updatedAt: new Date() })
+        .where(eq(emailSyncState.mailboxUserId, userId));
       logger.info({ userId, report }, "Backfill complete");
       return { ok: true as const, report };
     } catch (err) {

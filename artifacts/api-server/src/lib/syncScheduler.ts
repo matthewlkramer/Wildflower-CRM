@@ -10,6 +10,13 @@ import { logger } from "./logger";
 import { syncUserGmail } from "./gmailSync";
 import { syncUserCalendar } from "./calendarSync";
 import { withSyncLock } from "./syncLock";
+import { backfillIntelForUser } from "./gmailBackfill";
+
+// Per-user guard so we don't spawn overlapping auto-backfills for the
+// same mailbox if a tick fires while one is still running. Cleared in
+// the finally block. The advisory lock inside backfillIntelForUser is
+// the real correctness guard; this just keeps the logs quiet.
+const backfillInFlight = new Set<string>();
 
 /**
  * Per-user Gmail + Calendar sync scheduler. Runs in-process inside the
@@ -62,6 +69,7 @@ interface DueRow {
   lastCalendarSyncedAt: Date | null;
   emailBootstrapDone: boolean;
   calendarBootstrapDone: boolean;
+  emailBackfillDone: boolean;
 }
 
 export async function tick(now: number = Date.now()): Promise<void> {
@@ -84,6 +92,7 @@ export async function tick(now: number = Date.now()): Promise<void> {
         // bootstrapping → eligible for fast cycling below.
         emailBootstrapDone: sql<boolean>`${emailSyncState.bootstrapCompletedAt} IS NOT NULL`,
         calendarBootstrapDone: sql<boolean>`${calendarSyncState.bootstrapCompletedAt} IS NOT NULL`,
+        emailBackfillDone: sql<boolean>`${emailSyncState.backfillCompletedAt} IS NOT NULL`,
       })
       .from(googleOauthTokens)
       .leftJoin(
@@ -156,6 +165,34 @@ export async function tick(now: number = Date.now()): Promise<void> {
           // want one user's bug to stall the whole scheduler.
           logger.error({ err, userId: r.userId }, "Scheduled Gmail sync threw");
         }
+      }
+      // Auto-trigger the one-shot email-intelligence backfill the
+      // moment Gmail bootstrap finishes. Re-running detectors/matchers
+      // over the freshly-synced history is what surfaces signature
+      // updates, LinkedIn job changes, bounces, etc. for the user's
+      // existing mailbox. The backfill takes the same `gmail`
+      // advisory lock so it serializes against the scheduled sync we
+      // just ran. Fire-and-forget — errors are logged inside.
+      if (
+        r.emailBootstrapDone &&
+        !r.emailBackfillDone &&
+        !backfillInFlight.has(r.userId)
+      ) {
+        backfillInFlight.add(r.userId);
+        logger.info(
+          { userId: r.userId },
+          "Auto-triggering email-intelligence backfill (bootstrap done, backfill pending)",
+        );
+        void backfillIntelForUser(r.userId)
+          .catch((err) => {
+            logger.error(
+              { err, userId: r.userId },
+              "Auto-triggered backfill failed",
+            );
+          })
+          .finally(() => {
+            backfillInFlight.delete(r.userId);
+          });
       }
       if (calDue) {
         try {
