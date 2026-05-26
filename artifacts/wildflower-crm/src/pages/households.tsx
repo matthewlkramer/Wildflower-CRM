@@ -18,15 +18,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { CreateHouseholdDialog } from "@/components/create-household-dialog";
+import {
+  MultiFilterSelect,
+  type MultiFilterOption,
+} from "@/components/multi-filter-select";
 import {
   Pagination,
   PaginationContent,
@@ -37,19 +34,25 @@ import {
 } from "@/components/ui/pagination";
 
 const PAGE_SIZE = 50;
-const ANY = "_any";
+// Active/Inactive is conceptually boolean but rendered as a
+// multi-select for UI consistency with every other filter on the page.
+// 0 or 2 selected → unfiltered; exactly 1 → send the single boolean.
+const ACTIVE_OPTIONS: MultiFilterOption[] = [
+  { value: "true", label: "Active" },
+  { value: "false", label: "Inactive" },
+];
 
 export default function Households() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
-  const [active, setActive] = useState<string>(ANY);
+  const [activeSel, setActiveSel] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   const params: ListHouseholdsParams = {
     limit: PAGE_SIZE,
     page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-    ...(active !== ANY ? { active: active === "true" } : {}),
+    ...(activeSel.length === 1 ? { active: activeSel[0] === "true" } : {}),
   };
 
   const { data, isLoading, isError, error } = useListHouseholds(params, {
@@ -103,34 +106,20 @@ export default function Households() {
             data-testid="input-search-households"
           />
         </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-household-active" className="text-xs font-medium text-muted-foreground">
-            Status
-          </label>
-          <Select
-            value={active}
-            onValueChange={(v) => {
-              setActive(v);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger id="filter-household-active" className="w-[180px]" aria-label="Status" data-testid="select-household-active">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY}>Any</SelectItem>
-              <SelectItem value="true">Active</SelectItem>
-              <SelectItem value="false">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {(search || active !== ANY) && (
+        <MultiFilterSelect
+          label="Status"
+          selected={activeSel}
+          onChange={(v) => { setActiveSel(v); setPage(1); }}
+          options={ACTIVE_OPTIONS}
+          testId="select-household-active"
+        />
+        {(search || activeSel.length > 0) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setSearch("");
-              setActive(ANY);
+              setActiveSel([]);
               setPage(1);
             }}
           >
@@ -169,8 +158,6 @@ export default function Households() {
               </TableRow>
             ) : (
               sortedRows.map((h) => {
-                // See individuals.tsx — "0" giving renders as "—" so the
-                // user doesn't have to disambiguate $0 from "unset".
                 const hasGiving = h.lifetimeGiving != null && Number(h.lifetimeGiving) > 0;
                 const openAsks = h.openOpportunityCount ?? 0;
                 return (

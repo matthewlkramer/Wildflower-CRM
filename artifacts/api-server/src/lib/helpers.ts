@@ -75,3 +75,38 @@ export function parseBoolQuery(
   if (s === "false" || s === "0" || s === "no") return false;
   return undefined;
 }
+
+/**
+ * Normalize a query-string value into a `string[]` BEFORE running the
+ * orval-generated `array<…>` zod validator. Orval emits form/explode=false
+ * arrays as comma-joined single strings (`?status=open,won`), while
+ * Express also tolerates repeated keys (`?status=open&status=won`). We
+ * accept either, split commas, trim, drop empties. Without this
+ * pre-pass, a single-string comma form would 400 against the generated
+ * `zod.array(...)` schema before the handler ever runs.
+ *
+ * Pass an array of `param` names; returns a shallow-cloned `req.query`
+ * with each named param coerced to `string[]`.
+ */
+export function normalizeArrayQuery(
+  query: Record<string, unknown>,
+  params: readonly string[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...query };
+  for (const name of params) {
+    const raw = out[name];
+    if (raw === undefined || raw === null) continue;
+    const collected: string[] = [];
+    const consume = (v: unknown) => {
+      if (typeof v !== "string") return;
+      for (const piece of v.split(",")) {
+        const trimmed = piece.trim();
+        if (trimmed) collected.push(trimmed);
+      }
+    };
+    if (Array.isArray(raw)) raw.forEach(consume);
+    else consume(raw);
+    out[name] = collected;
+  }
+  return out;
+}

@@ -18,7 +18,7 @@ import {
 import { DonorCell } from "@/components/donor-cell";
 
 const FETCH_LIMIT = 1000;
-const QUERY_PARAMS = { status: "open" as const, limit: FETCH_LIMIT, page: 1 };
+const QUERY_PARAMS = { status: ["open" as const], limit: FETCH_LIMIT, page: 1 };
 
 // Today's calendar date in Wildflower's booking timezone (America/Chicago),
 // formatted as YYYY-MM-DD so it sorts/compares correctly against the

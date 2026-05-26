@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { interactions } from "@workspace/db/schema";
-import { and, desc, count, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, count, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   ListInteractionsQueryParams,
   CreateInteractionBody,
@@ -11,6 +11,7 @@ import { requireAuth } from "../middlewares/requireAuth";
 import {
   asyncHandler,
   newId,
+  normalizeArrayQuery,
   notFound,
   paramId,
   parseOrBadRequest,
@@ -20,10 +21,16 @@ import {
 const router: IRouter = Router();
 router.use(requireAuth);
 
+const INTERACTIONS_ARRAY_PARAMS = ["kind"] as const;
+
 router.get(
   "/interactions",
   asyncHandler(async (req, res) => {
-    const q = parseOrBadRequest(ListInteractionsQueryParams, req.query, res);
+    const normalizedQuery = normalizeArrayQuery(
+      req.query as Record<string, unknown>,
+      INTERACTIONS_ARRAY_PARAMS,
+    );
+    const q = parseOrBadRequest(ListInteractionsQueryParams, normalizedQuery, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
@@ -36,7 +43,7 @@ router.get(
       );
       if (orClause) filters.push(orClause);
     }
-    if (q.kind) filters.push(eq(interactions.kind, q.kind));
+    if (q.kind && q.kind.length > 0) filters.push(inArray(interactions.kind, q.kind));
     if (q.ownerUserId) filters.push(eq(interactions.ownerUserId, q.ownerUserId));
     // Array containment — same `@>` slug-array pattern used elsewhere in the
     // codebase (see people.regionIds). Cheap thanks to the GIN indexes.

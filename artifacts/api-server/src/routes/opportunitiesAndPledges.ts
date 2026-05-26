@@ -59,34 +59,12 @@ import {
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 
 const router: IRouter = Router();
 router.use(requireAuth);
 
-// Normalize the raw `fiscalYear` query value into a string[] BEFORE
-// running the orval-generated zod validator (which is typed
-// `array<string>`). Orval emits form/explode=false arrays as
-// comma-joined strings (`?fiscalYear=fy2026,future`); Express also
-// tolerates repeated keys (`?fiscalYear=fy2026&fiscalYear=future`).
-// Accept either, split commas, lowercase + trim, drop empties. We
-// pre-normalize because the generated zod schema would otherwise
-// reject the single-string comma form with a 400 before our handler
-// could even see it.
-function normalizeFiscalYearQuery(raw: unknown): string[] {
-  if (raw === undefined || raw === null) return [];
-  const out: string[] = [];
-  const consume = (v: unknown) => {
-    if (typeof v !== "string") return;
-    for (const piece of v.split(",")) {
-      const trimmed = piece.trim().toLowerCase();
-      if (trimmed) out.push(trimmed);
-    }
-  };
-  if (Array.isArray(raw)) raw.forEach(consume);
-  else consume(raw);
-  return out;
-}
+const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type"] as const;
 
 function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
   res.status(400).json({
@@ -99,20 +77,28 @@ function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void 
 router.get(
   "/opportunities-and-pledges",
   asyncHandler(async (req, res) => {
-    // Pre-normalize `fiscalYear` so the generated array<string> zod
-    // schema accepts the orval comma-form (single string).
-    const normalizedQuery = {
-      ...req.query,
-      fiscalYear: normalizeFiscalYearQuery(req.query.fiscalYear),
-    };
+    // Pre-normalize array params so the generated array<…> zod schemas
+    // accept the orval comma-form (single string).
+    const normalizedQuery = normalizeArrayQuery(
+      req.query as Record<string, unknown>,
+      OPP_ARRAY_PARAMS,
+    );
+    // Fiscal-year slugs are stored lowercase (`fy2026`, `future`). Preserve
+    // the prior route behavior of accepting manually-typed uppercase values
+    // by lowercasing here, after the comma-form split.
+    if (Array.isArray(normalizedQuery.fiscalYear)) {
+      normalizedQuery.fiscalYear = (normalizedQuery.fiscalYear as unknown[]).map(
+        (v) => (typeof v === "string" ? v.toLowerCase() : v),
+      );
+    }
     const q = parseOrBadRequest(ListOpportunitiesAndPledgesQueryParams, normalizedQuery, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.search) filters.push(ilike(opportunitiesAndPledges.name, `%${q.search}%`));
-    if (q.status) filters.push(eq(opportunitiesAndPledges.status, q.status));
-    if (q.stage) filters.push(eq(opportunitiesAndPledges.stage, q.stage));
-    if (q.type) filters.push(eq(opportunitiesAndPledges.type, q.type));
+    if (q.status && q.status.length > 0) filters.push(inArray(opportunitiesAndPledges.status, q.status));
+    if (q.stage && q.stage.length > 0) filters.push(inArray(opportunitiesAndPledges.stage, q.stage));
+    if (q.type && q.type.length > 0) filters.push(inArray(opportunitiesAndPledges.type, q.type));
     if (q.funderId) filters.push(eq(opportunitiesAndPledges.funderId, q.funderId));
     if (q.householdId) filters.push(eq(opportunitiesAndPledges.householdId, q.householdId));
     if (q.individualGiverPersonId) filters.push(eq(opportunitiesAndPledges.individualGiverPersonId, q.individualGiverPersonId));

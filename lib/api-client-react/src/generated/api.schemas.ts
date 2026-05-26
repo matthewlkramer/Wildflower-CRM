@@ -1896,11 +1896,11 @@ export type ListFiscalYearEntityGoalsParams = {
 
 export type ListFundersParams = {
   search?: string;
-  subtype?: FundingEntitySubtype;
-  activeStatus?: ActiveStatus;
-  connectionStatus?: ConnectionStatus;
+  subtype?: FundingEntitySubtype[];
+  activeStatus?: ActiveStatus[];
+  connectionStatus?: ConnectionStatus[];
   enthusiasm?: Enthusiasm;
-  capacityRating?: CapacityRating;
+  capacityRating?: CapacityRating[];
   /**
    * @minimum 1
    * @maximum 1000
@@ -1958,8 +1958,8 @@ export type ListPeopleParams = {
   search?: string;
   deceased?: boolean;
   regionId?: string;
-  capacityRating?: CapacityRating;
-  connectionStatus?: ConnectionStatus;
+  capacityRating?: CapacityRating[];
+  connectionStatus?: ConnectionStatus[];
   enthusiasm?: Enthusiasm;
   /**
    * @minimum 1
@@ -2038,9 +2038,9 @@ export type ListAddressesParams = {
 
 export type ListOpportunitiesAndPledgesParams = {
   search?: string;
-  status?: OpportunityStatus;
-  stage?: OpportunityStage;
-  type?: OpportunityType;
+  status?: OpportunityStatus[];
+  stage?: OpportunityStage[];
+  type?: OpportunityType[];
   funderId?: string;
   householdId?: string;
   individualGiverPersonId?: string;
@@ -2079,7 +2079,7 @@ export type ListPledgeAllocationsParams = {
 
 export type ListGiftsAndPaymentsParams = {
   search?: string;
-  type?: GiftType;
+  type?: GiftType[];
   funderId?: string;
   householdId?: string;
   individualGiverPersonId?: string;
@@ -2115,7 +2115,7 @@ export type ListInteractionsParams = {
   funderId?: string;
   householdId?: string;
   ownerUserId?: string;
-  kind?: InteractionKind;
+  kind?: InteractionKind[];
   /**
    * @minimum 1
    * @maximum 1000

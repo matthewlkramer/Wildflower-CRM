@@ -658,36 +658,47 @@ export const listFundersQueryPageDefault = 1;
 export const ListFundersQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   subtype: zod
-    .enum([
-      "family_foundation",
-      "institutional_foundation",
-      "corporate_foundation",
-      "community_foundation",
-      "bank_foundation",
-      "family_office_trust",
-      "intermediary",
-      "government",
-      "nonprofit",
-      "corporation",
-      "capital_provider",
-      "philanthropic_advisor",
-      "cdfi",
-      "education_forprofit",
-      "competition",
-      "public_private",
-      "daf_platform",
-      "platform",
-    ])
+    .array(
+      zod.enum([
+        "family_foundation",
+        "institutional_foundation",
+        "corporate_foundation",
+        "community_foundation",
+        "bank_foundation",
+        "family_office_trust",
+        "intermediary",
+        "government",
+        "nonprofit",
+        "corporation",
+        "capital_provider",
+        "philanthropic_advisor",
+        "cdfi",
+        "education_forprofit",
+        "competition",
+        "public_private",
+        "daf_platform",
+        "platform",
+      ]),
+    )
     .optional(),
-  activeStatus: zod.enum(["active", "defunct", "spenddown"]).optional(),
+  activeStatus: zod
+    .array(zod.enum(["active", "defunct", "spenddown"]))
+    .optional(),
   connectionStatus: zod
-    .enum(["connected", "have_a_connector", "no_connection"])
+    .array(zod.enum(["connected", "have_a_connector", "no_connection"]))
     .optional(),
   enthusiasm: zod
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .optional(),
   capacityRating: zod
-    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .array(
+      zod.enum([
+        "tier_10k_50k",
+        "tier_50k_250k",
+        "tier_250k_1m",
+        "tier_1m_plus",
+      ]),
+    )
     .optional(),
   limit: zod.coerce
     .number()
@@ -1922,10 +1933,17 @@ export const ListPeopleQueryParams = zod.object({
   deceased: zod.coerce.boolean().optional(),
   regionId: zod.coerce.string().optional(),
   capacityRating: zod
-    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .array(
+      zod.enum([
+        "tier_10k_50k",
+        "tier_50k_250k",
+        "tier_250k_1m",
+        "tier_1m_plus",
+      ]),
+    )
     .optional(),
   connectionStatus: zod
-    .enum(["connected", "have_a_connector", "no_connection"])
+    .array(zod.enum(["connected", "have_a_connector", "no_connection"]))
     .optional(),
   enthusiasm: zod
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
@@ -2779,21 +2797,25 @@ export const listOpportunitiesAndPledgesQueryPageDefault = 1;
 
 export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   search: zod.coerce.string().optional(),
-  status: zod.enum(["open", "won", "dormant", "lost"]).optional(),
+  status: zod.array(zod.enum(["open", "won", "dormant", "lost"])).optional(),
   stage: zod
-    .enum([
-      "cold_lead",
-      "warm_lead",
-      "in_conversation",
-      "convince",
-      "conditional_commitment",
-      "probable_renewal",
-      "verbal_commitment",
-      "written_commitment",
-      "cash_in",
-    ])
+    .array(
+      zod.enum([
+        "cold_lead",
+        "warm_lead",
+        "in_conversation",
+        "convince",
+        "conditional_commitment",
+        "probable_renewal",
+        "verbal_commitment",
+        "written_commitment",
+        "cash_in",
+      ]),
+    )
     .optional(),
-  type: zod.enum(["solicitation", "renewal", "open_application"]).optional(),
+  type: zod
+    .array(zod.enum(["solicitation", "renewal", "open_application"]))
+    .optional(),
   funderId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   individualGiverPersonId: zod.coerce.string().optional(),
@@ -3372,13 +3394,15 @@ export const listGiftsAndPaymentsQueryPageDefault = 1;
 export const ListGiftsAndPaymentsQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   type: zod
-    .enum([
-      "standard_gift",
-      "pledge_payment",
-      "directed_gift",
-      "loan_fund_investment",
-      "matching_gift",
-    ])
+    .array(
+      zod.enum([
+        "standard_gift",
+        "pledge_payment",
+        "directed_gift",
+        "loan_fund_investment",
+        "matching_gift",
+      ]),
+    )
     .optional(),
   funderId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
@@ -3887,7 +3911,9 @@ export const ListInteractionsQueryParams = zod.object({
   householdId: zod.coerce.string().optional(),
   ownerUserId: zod.coerce.string().optional(),
   kind: zod
-    .enum(["meeting", "phone_call", "video_call", "conference", "other"])
+    .array(
+      zod.enum(["meeting", "phone_call", "video_call", "conference", "other"]),
+    )
     .optional(),
   limit: zod.coerce
     .number()

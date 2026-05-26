@@ -8,8 +8,11 @@ import {
   UpdateFunderBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
+
+const FUNDERS_ARRAY_PARAMS = ["subtype", "activeStatus", "connectionStatus", "capacityRating"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -60,16 +63,20 @@ const fundersListSelect = {
 router.get(
   "/funders",
   asyncHandler(async (req, res) => {
-    const q = parseOrBadRequest(ListFundersQueryParams, req.query, res);
+    const normalizedQuery = normalizeArrayQuery(
+      req.query as Record<string, unknown>,
+      FUNDERS_ARRAY_PARAMS,
+    );
+    const q = parseOrBadRequest(ListFundersQueryParams, normalizedQuery, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.search) filters.push(ilike(funders.name, `%${q.search}%`));
-    if (q.subtype) filters.push(eq(funders.fundingEntitySubtype, q.subtype));
-    if (q.activeStatus) filters.push(eq(funders.activeStatus, q.activeStatus));
-    if (q.connectionStatus) filters.push(eq(funders.connectionStatus, q.connectionStatus));
+    if (q.subtype && q.subtype.length > 0) filters.push(inArray(funders.fundingEntitySubtype, q.subtype));
+    if (q.activeStatus && q.activeStatus.length > 0) filters.push(inArray(funders.activeStatus, q.activeStatus));
+    if (q.connectionStatus && q.connectionStatus.length > 0) filters.push(inArray(funders.connectionStatus, q.connectionStatus));
     if (q.enthusiasm) filters.push(eq(funders.enthusiasm, q.enthusiasm));
-    if (q.capacityRating) filters.push(eq(funders.capacityRating, q.capacityRating));
+    if (q.capacityRating && q.capacityRating.length > 0) filters.push(inArray(funders.capacityRating, q.capacityRating));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

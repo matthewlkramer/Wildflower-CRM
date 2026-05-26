@@ -18,13 +18,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Pagination,
   PaginationContent,
   PaginationItem,
@@ -33,10 +26,13 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { LogInteractionDialog } from "@/components/log-interaction-dialog";
+import {
+  MultiFilterSelect,
+  type MultiFilterOption,
+} from "@/components/multi-filter-select";
 
 const PAGE_SIZE = 50;
-const ANY = "_any";
-const KIND_OPTIONS: { value: InteractionKind; label: string }[] = [
+const KIND_OPTIONS: MultiFilterOption[] = [
   { value: "meeting", label: "Meeting" },
   { value: "phone_call", label: "Phone call" },
   { value: "video_call", label: "Video call" },
@@ -61,14 +57,14 @@ function participantCount(r: Interaction): number {
 
 export default function Interactions() {
   const [search, setSearch] = useState("");
-  const [kind, setKind] = useState<InteractionKind | typeof ANY>(ANY);
+  const [kinds, setKinds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const debouncedSearch = useDebounce(search, 250);
   const params: ListInteractionsParams = {
     limit: PAGE_SIZE,
     page,
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
-    ...(kind !== ANY ? { kind } : {}),
+    ...(kinds.length > 0 ? { kind: [...kinds].sort() as InteractionKind[] } : {}),
   };
   const { data, isLoading } = useListInteractions(params);
   const rows = data?.data ?? [];
@@ -104,7 +100,7 @@ export default function Interactions() {
         </div>
         <LogInteractionDialog />
       </div>
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-end gap-3">
         <Input
           placeholder="Search summary, notes, location…"
           value={search}
@@ -115,25 +111,16 @@ export default function Interactions() {
           className="max-w-xs"
           data-testid="input-search-interactions"
         />
-        <Select
-          value={kind}
-          onValueChange={(v) => {
-            setKind(v as InteractionKind | typeof ANY);
+        <MultiFilterSelect
+          label="Kind"
+          selected={kinds}
+          onChange={(v) => {
+            setKinds(v);
             setPage(1);
           }}
-        >
-          <SelectTrigger className="w-40" data-testid="select-filter-kind">
-            <SelectValue placeholder="Kind" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ANY}>All kinds</SelectItem>
-            {KIND_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          options={KIND_OPTIONS}
+          testId="select-filter-kind"
+        />
       </div>
       <Table>
         <TableHeader>

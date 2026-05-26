@@ -25,15 +25,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { CreatePersonDialog } from "@/components/create-person-dialog";
+import {
+  MultiFilterSelect,
+  type MultiFilterOption,
+} from "@/components/multi-filter-select";
 import {
   Pagination,
   PaginationContent,
@@ -45,7 +42,6 @@ import {
 import { personDisplayName } from "@/lib/person";
 
 const PAGE_SIZE = 50;
-const ANY = "_any";
 // Capacity column + filter — same enum + labels we use on funders, just
 // surfaced on individuals now that the field exists on people too.
 const CAPACITY_TIERS: CapacityRating[] = [
@@ -54,21 +50,35 @@ const CAPACITY_TIERS: CapacityRating[] = [
   "tier_250k_1m",
   "tier_1m_plus",
 ];
+// Living/Deceased is conceptually a boolean filter — but for UI
+// consistency with every other filter on the page, we surface it as a
+// multi-select with both options. Picking 0 or 2 options is equivalent
+// to "no filter" and we omit the query param entirely; picking exactly
+// one sends the single boolean to the server.
+const DECEASED_OPTIONS: MultiFilterOption[] = [
+  { value: "false", label: "Living" },
+  { value: "true", label: "Deceased" },
+];
 const COL_SPAN = 9;
 
 export default function Individuals() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
-  const [deceased, setDeceased] = useState<string>(ANY);
-  const [capacity, setCapacity] = useState<string>(ANY);
+  const [deceasedSel, setDeceasedSel] = useState<string[]>([]);
+  const [capacityTiers, setCapacityTiers] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   const params: ListPeopleParams = {
     limit: PAGE_SIZE,
     page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-    ...(deceased !== ANY ? { deceased: deceased === "true" } : {}),
-    ...(capacity !== ANY ? { capacityRating: capacity as CapacityRating } : {}),
+    // Only send the boolean when exactly one option is picked. 0 or 2 = unfiltered.
+    ...(deceasedSel.length === 1
+      ? { deceased: deceasedSel[0] === "true" }
+      : {}),
+    ...(capacityTiers.length > 0
+      ? { capacityRating: [...capacityTiers].sort() as CapacityRating[] }
+      : {}),
   };
 
   const { data, isLoading, isError, error } = useListPeople(params, {
@@ -80,9 +90,6 @@ export default function Individuals() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const regionNames = useRegionNameMap();
 
-  // Client-side sort + drag-to-resize for the current page of results.
-  // The list endpoint doesn't accept a sort param yet, so this re-orders
-  // the visible page only; widths are persisted per-table in localStorage.
   const ts = useTableState("individuals");
   const CAPACITY_ORDER: Record<string, number> = {
     tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
@@ -112,6 +119,9 @@ export default function Individuals() {
     [rows, ts.sort, regionNames],
   );
 
+  const hasActiveFilters =
+    !!search || deceasedSel.length > 0 || capacityTiers.length > 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
@@ -140,59 +150,29 @@ export default function Individuals() {
           />
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-deceased" className="text-xs font-medium text-muted-foreground">
-            Status
-          </label>
-          <Select
-            value={deceased}
-            onValueChange={(v) => {
-              setDeceased(v);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger id="filter-deceased" className="w-[180px]" aria-label="Status" data-testid="select-deceased">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY}>Any</SelectItem>
-              <SelectItem value="false">Living</SelectItem>
-              <SelectItem value="true">Deceased</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <MultiFilterSelect
+          label="Status"
+          selected={deceasedSel}
+          onChange={(v) => { setDeceasedSel(v); setPage(1); }}
+          options={DECEASED_OPTIONS}
+          testId="select-deceased"
+        />
+        <MultiFilterSelect
+          label="Capacity"
+          selected={capacityTiers}
+          onChange={(v) => { setCapacityTiers(v); setPage(1); }}
+          options={CAPACITY_TIERS.map((t) => ({ value: t, label: formatCapacity(t) ?? t }))}
+          testId="select-capacity"
+        />
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-capacity" className="text-xs font-medium text-muted-foreground">
-            Capacity
-          </label>
-          <Select
-            value={capacity}
-            onValueChange={(v) => {
-              setCapacity(v);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger id="filter-capacity" className="w-[180px]" aria-label="Capacity" data-testid="select-capacity">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY}>Any</SelectItem>
-              {CAPACITY_TIERS.map((t) => (
-                <SelectItem key={t} value={t}>{formatCapacity(t)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {(search || deceased !== ANY || capacity !== ANY) && (
+        {hasActiveFilters && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setSearch("");
-              setDeceased(ANY);
-              setCapacity(ANY);
+              setDeceasedSel([]);
+              setCapacityTiers([]);
               setPage(1);
             }}
           >
@@ -237,9 +217,6 @@ export default function Individuals() {
               </TableRow>
             ) : (
               sortedRows.map((p) => {
-                // Aggregates are best-effort. Lifetime "0" means we got a
-                // SUM but there were no gifts; render "—" so the user
-                // doesn't have to mentally distinguish $0 from "unset".
                 const giving = p.lifetimeGiving;
                 const hasGiving = giving != null && Number(giving) > 0;
                 const openAsks = p.openOpportunityCount ?? 0;

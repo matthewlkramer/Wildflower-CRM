@@ -258,11 +258,27 @@ paths:
       tags: [funders]
       parameters:
         - { name: search, in: query, schema: { type: string } }
-        - { name: subtype, in: query, schema: { $ref: "#/components/schemas/FundingEntitySubtype" } }
-        - { name: activeStatus, in: query, schema: { $ref: "#/components/schemas/ActiveStatus" } }
-        - { name: connectionStatus, in: query, schema: { $ref: "#/components/schemas/ConnectionStatus" } }
+        - name: subtype
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/FundingEntitySubtype" } }
+        - name: activeStatus
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/ActiveStatus" } }
+        - name: connectionStatus
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/ConnectionStatus" } }
         - { name: enthusiasm, in: query, schema: { $ref: "#/components/schemas/Enthusiasm" } }
-        - { name: capacityRating, in: query, schema: { $ref: "#/components/schemas/CapacityRating" } }
+        - name: capacityRating
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/CapacityRating" } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -432,8 +448,16 @@ paths:
         - { name: search, in: query, schema: { type: string } }
         - { name: deceased, in: query, schema: { type: boolean } }
         - { name: regionId, in: query, schema: { type: string } }
-        - { name: capacityRating, in: query, schema: { $ref: "#/components/schemas/CapacityRating" } }
-        - { name: connectionStatus, in: query, schema: { $ref: "#/components/schemas/ConnectionStatus" } }
+        - name: capacityRating
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/CapacityRating" } }
+        - name: connectionStatus
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/ConnectionStatus" } }
         - { name: enthusiasm, in: query, schema: { $ref: "#/components/schemas/Enthusiasm" } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
@@ -624,9 +648,21 @@ paths:
       tags: [opportunities-and-pledges]
       parameters:
         - { name: search, in: query, schema: { type: string } }
-        - { name: status, in: query, schema: { $ref: "#/components/schemas/OpportunityStatus" } }
-        - { name: stage, in: query, schema: { $ref: "#/components/schemas/OpportunityStage" } }
-        - { name: type, in: query, schema: { $ref: "#/components/schemas/OpportunityType" } }
+        - name: status
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/OpportunityStatus" } }
+        - name: stage
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/OpportunityStage" } }
+        - name: type
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/OpportunityType" } }
         - { name: funderId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
@@ -717,7 +753,11 @@ paths:
       tags: [gifts-and-payments]
       parameters:
         - { name: search, in: query, schema: { type: string } }
-        - { name: type, in: query, schema: { $ref: "#/components/schemas/GiftType" } }
+        - name: type
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/GiftType" } }
         - { name: funderId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
@@ -802,7 +842,11 @@ paths:
         - { name: funderId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: ownerUserId, in: query, schema: { type: string } }
-        - { name: kind, in: query, schema: { $ref: "#/components/schemas/InteractionKind" } }
+        - name: kind
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/InteractionKind" } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:

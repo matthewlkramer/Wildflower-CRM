@@ -20,14 +20,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { MultiFilterSelect } from "@/components/multi-filter-select";
 import {
   Pagination,
   PaginationContent,
@@ -47,31 +41,26 @@ const TYPES: GiftType[] = [
 ];
 
 const PAGE_SIZE = 50;
-const ANY = "_any";
 const COL_SPAN = 8;
 
 export default function Gifts() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
-  const [type, setType] = useState<string>(ANY);
+  const [types, setTypes] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   const params: ListGiftsAndPaymentsParams = {
     limit: PAGE_SIZE,
     page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-    ...(type !== ANY ? { type: type as GiftType } : {}),
+    ...(types.length > 0 ? { type: [...types].sort() as GiftType[] } : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
     query: { queryKey: getListGiftsAndPaymentsQueryKey(params) },
   });
 
-  // Sort + drag-to-resize for the current page only (no server-side sort yet).
   const ts = useTableState("gifts");
-  // Entity slug → display name lookup for the new Entities column. Cached
-  // for 5 min — entity rows almost never change, and we don't want to
-  // refetch on every page change.
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey(), staleTime: 5 * 60_000 },
   });
@@ -119,14 +108,20 @@ export default function Gifts() {
             data-testid="input-search-gifts"
           />
         </div>
-        <FilterSelect label="Type" value={type} onChange={(v) => { setType(v); setPage(1); }} options={TYPES} testId="select-gift-type" />
-        {(search || type !== ANY) && (
+        <MultiFilterSelect
+          label="Type"
+          selected={types}
+          onChange={(v) => { setTypes(v); setPage(1); }}
+          options={TYPES}
+          testId="select-gift-type"
+        />
+        {(search || types.length > 0) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setSearch("");
-              setType(ANY);
+              setTypes([]);
               setPage(1);
             }}
           >
@@ -162,9 +157,6 @@ export default function Gifts() {
               <TableRow><TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">No gifts match these filters.</TableCell></TableRow>
             ) : (
               sortedRows.map((g) => {
-                // Each aggregate is already de-duplicated server-side.
-                // Map entity slugs to names; fall back to the slug if we
-                // haven't loaded the entity list yet (rare, brief).
                 const entities = (g.entityIds ?? []).map(
                   (id) => entityNameById.get(id) ?? id,
                 );
@@ -220,34 +212,6 @@ export default function Gifts() {
           </PaginationContent>
         </Pagination>
       )}
-    </div>
-  );
-}
-
-function FilterSelect({
-  label, value, onChange, options, testId,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: readonly string[];
-  testId: string;
-}) {
-  const inputId = `filter-${testId}`;
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground">{label}</label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={inputId} className="w-[170px]" aria-label={label} data-testid={testId}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ANY}>Any</SelectItem>
-          {options.map((o) => (
-            <SelectItem key={o} value={o}>{formatEnum(o)}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
     </div>
   );
 }

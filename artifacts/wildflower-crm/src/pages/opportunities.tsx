@@ -22,13 +22,6 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -42,6 +35,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { DonorCell } from "@/components/donor-cell";
+import { MultiFilterSelect } from "@/components/multi-filter-select";
 
 const STATUSES: OpportunityStatus[] = ["open", "won", "dormant", "lost"];
 const STAGES: OpportunityStage[] = [
@@ -58,7 +52,6 @@ const STAGES: OpportunityStage[] = [
 const TYPES: OpportunityType[] = ["solicitation", "renewal", "open_application"];
 
 const PAGE_SIZE = 50;
-const ANY = "_any";
 
 type Props = {
   title?: string;
@@ -77,25 +70,33 @@ export default function Opportunities({
 }: Props) {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
-  const [status, setStatus] = useState<string>(defaultStatus ?? ANY);
-  const [stage, setStage] = useState<string>(ANY);
-  const [type, setType] = useState<string>(ANY);
+  // All enum filters are multi-select. Status defaults to a single-item
+  // array when `defaultStatus` is provided (e.g. the dashboard pre-filters
+  // to "open"), and is forced to `[lockedStatus]` when locked (pledges view).
+  const defaultStatusArr = defaultStatus ? [defaultStatus] : [];
+  const [statuses, setStatuses] = useState<string[]>(defaultStatusArr);
+  const [stages, setStages] = useState<string[]>([]);
+  const [types, setTypes] = useState<string[]>([]);
   const [fiscalYears, setFiscalYears] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
-  const effectiveStatus = lockedStatus ?? (status !== ANY ? (status as OpportunityStatus) : undefined);
+  // Sort every array filter before serializing into request params so
+  // the react-query cache key is stable regardless of the order the user
+  // clicked checkboxes in (`['a','b']` and `['b','a']` would otherwise
+  // produce distinct keys / refetches).
+  const effectiveStatuses = lockedStatus
+    ? [lockedStatus]
+    : [...statuses].sort();
 
   const params: ListOpportunitiesAndPledgesParams = {
     limit: PAGE_SIZE,
     page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-    ...(effectiveStatus ? { status: effectiveStatus } : {}),
-    ...(stage !== ANY ? { stage: stage as OpportunityStage } : {}),
-    ...(type !== ANY ? { type: type as OpportunityType } : {}),
-    // Sort the FY slugs so the react-query cache key is stable
-    // regardless of the order the user clicked checkboxes in
-    // (`['fy2026','future']` and `['future','fy2026']` would
-    // otherwise produce distinct keys / refetches).
+    ...(effectiveStatuses.length > 0
+      ? { status: effectiveStatuses as OpportunityStatus[] }
+      : {}),
+    ...(stages.length > 0 ? { stage: [...stages].sort() as OpportunityStage[] } : {}),
+    ...(types.length > 0 ? { type: [...types].sort() as OpportunityType[] } : {}),
     ...(fiscalYears.length > 0 ? { fiscalYear: [...fiscalYears].sort() } : {}),
   };
 
@@ -124,9 +125,6 @@ export default function Opportunities({
           ask: (r) => (r.askAmount != null ? Number(r.askAmount) : null),
           coveredFys: (r) => (r.coveredFiscalYears ?? []).join(",") || null,
           awarded: (r) => (r.awardedAmount != null ? Number(r.awardedAmount) : null),
-          // FY is the rolled-up set of grant years from child
-          // pledge_allocations; sort by the earliest (or join) so
-          // multi-year asks land predictably.
           fy: (r) => (r.coveredFiscalYears ?? []).join(",") || null,
           projectedClose: (r) => r.projectedCloseDate ?? null,
         },
@@ -137,10 +135,18 @@ export default function Opportunities({
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // Pledges (status='won') trade the Ask column for Covered FYs, since
-  // by the time something is won the ask is historical and the
-  // grant-year coverage is what fundraising actually wants to see.
   const isPledgeView = lockedStatus === "won";
+
+  // Determine "is anything filtered beyond default?" for the Clear button.
+  const sameDefaultStatus =
+    statuses.length === defaultStatusArr.length &&
+    [...statuses].sort().join(",") === [...defaultStatusArr].sort().join(",");
+  const hasActiveFilters =
+    !!search ||
+    (!lockedStatus && !sameDefaultStatus) ||
+    stages.length > 0 ||
+    types.length > 0 ||
+    fiscalYears.length > 0;
 
   return (
     <div className="space-y-6">
@@ -162,23 +168,41 @@ export default function Opportunities({
           />
         </div>
         {!lockedStatus && (
-          <FilterSelect label="Status" value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={STATUSES} testId="select-opp-status" />
+          <MultiFilterSelect
+            label="Status"
+            selected={statuses}
+            onChange={(v) => { setStatuses(v); setPage(1); }}
+            options={STATUSES}
+            testId="select-opp-status"
+          />
         )}
-        <FilterSelect label="Stage" value={stage} onChange={(v) => { setStage(v); setPage(1); }} options={STAGES} testId="select-opp-stage" />
-        <FilterSelect label="Type" value={type} onChange={(v) => { setType(v); setPage(1); }} options={TYPES} testId="select-opp-type" />
+        <MultiFilterSelect
+          label="Stage"
+          selected={stages}
+          onChange={(v) => { setStages(v); setPage(1); }}
+          options={STAGES}
+          testId="select-opp-stage"
+        />
+        <MultiFilterSelect
+          label="Type"
+          selected={types}
+          onChange={(v) => { setTypes(v); setPage(1); }}
+          options={TYPES}
+          testId="select-opp-type"
+        />
         <FiscalYearMultiSelect
           selected={fiscalYears}
           onChange={(v) => { setFiscalYears(v); setPage(1); }}
         />
-        {(search || (!lockedStatus && status !== (defaultStatus ?? ANY)) || stage !== ANY || type !== ANY || fiscalYears.length > 0) && (
+        {hasActiveFilters && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setSearch("");
-              if (!lockedStatus) setStatus(defaultStatus ?? ANY);
-              setStage(ANY);
-              setType(ANY);
+              if (!lockedStatus) setStatuses(defaultStatusArr);
+              setStages([]);
+              setTypes([]);
               setFiscalYears([]);
               setPage(1);
             }}
@@ -219,10 +243,6 @@ export default function Opportunities({
               <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
               sortedRows.map((o) => {
-                // FY column reflects the grant years on the child
-                // pledge_allocations (the opp itself no longer carries
-                // a fiscal_year column). Each entry is an FY slug like
-                // "fy26"; uppercase for display.
                 const coveredFys = (o.coveredFiscalYears ?? []).map((y) => y.toUpperCase());
                 return (
                   <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-opp-${o.id}`}>
@@ -285,10 +305,7 @@ export default function Opportunities({
 // Multi-select dropdown for the `fiscalYear` filter. Options are
 // pulled from the fiscal-years table (slugs like `fy2026`, plus the
 // special `future` slug). The list is sorted with "Future" pinned at
-// the top, then newest → oldest FY, and clipped to a sensible window
-// (everything between the earliest grant_year present in the data
-// and a few years past current) — the full table goes out to FY2050
-// which is noise on a filter UI.
+// the top, then newest → oldest FY, and clipped to a sensible window.
 function FiscalYearMultiSelect({
   selected,
   onChange,
@@ -302,10 +319,8 @@ function FiscalYearMultiSelect({
   const options = useMemo(() => {
     const rows = allFys ?? [];
     const currentYear = new Date().getUTCFullYear();
-    // FY ends Jun 30; if we're past June we're in the next FY.
     const currentFyEnd =
       new Date().getUTCMonth() >= 6 ? currentYear + 1 : currentYear;
-    // Show FY2016 through current+3, plus the "future" sentinel.
     const visible = rows.filter((r) => {
       if (r.id === "future") return true;
       const m = /^fy(\d{4})$/.exec(r.id);
@@ -316,7 +331,7 @@ function FiscalYearMultiSelect({
     visible.sort((a, b) => {
       if (a.id === "future") return -1;
       if (b.id === "future") return 1;
-      return b.id.localeCompare(a.id); // newest first
+      return b.id.localeCompare(a.id);
     });
     return visible;
   }, [allFys]);
@@ -390,34 +405,6 @@ function FiscalYearMultiSelect({
           )}
         </PopoverContent>
       </Popover>
-    </div>
-  );
-}
-
-function FilterSelect({
-  label, value, onChange, options, testId,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: readonly string[];
-  testId: string;
-}) {
-  const inputId = `filter-${testId}`;
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground">{label}</label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={inputId} className="w-[170px]" aria-label={label} data-testid={testId}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ANY}>Any</SelectItem>
-          {options.map((o) => (
-            <SelectItem key={o} value={o}>{formatEnum(o)}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
     </div>
   );
 }

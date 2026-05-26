@@ -42,7 +42,10 @@ import {
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { inArray } from "drizzle-orm";
+
+const GIFTS_ARRAY_PARAMS = ["type"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -58,12 +61,16 @@ function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void 
 router.get(
   "/gifts-and-payments",
   asyncHandler(async (req, res) => {
-    const q = parseOrBadRequest(ListGiftsAndPaymentsQueryParams, req.query, res);
+    const normalizedQuery = normalizeArrayQuery(
+      req.query as Record<string, unknown>,
+      GIFTS_ARRAY_PARAMS,
+    );
+    const q = parseOrBadRequest(ListGiftsAndPaymentsQueryParams, normalizedQuery, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.search) filters.push(ilike(giftsAndPayments.name, `%${q.search}%`));
-    if (q.type) filters.push(eq(giftsAndPayments.type, q.type));
+    if (q.type && q.type.length > 0) filters.push(inArray(giftsAndPayments.type, q.type));
     if (q.funderId) filters.push(eq(giftsAndPayments.funderId, q.funderId));
     if (q.householdId) filters.push(eq(giftsAndPayments.householdId, q.householdId));
     if (q.individualGiverPersonId) filters.push(eq(giftsAndPayments.individualGiverPersonId, q.individualGiverPersonId));

@@ -21,15 +21,9 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { CreateFunderDialog } from "@/components/create-funder-dialog";
+import { MultiFilterSelect } from "@/components/multi-filter-select";
 import {
   Pagination,
   PaginationContent,
@@ -68,26 +62,25 @@ const CONNECTION_STATUSES: ConnectionStatus[] = [
 ];
 
 const PAGE_SIZE = 50;
-const ANY = "_any";
 
 export default function FundingEntities() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
-  const [subtype, setSubtype] = useState<string>(ANY);
-  const [activeStatus, setActiveStatus] = useState<string>(ANY);
-  const [connectionStatus, setConnectionStatus] = useState<string>(ANY);
+  const [subtypes, setSubtypes] = useState<string[]>([]);
+  const [activeStatuses, setActiveStatuses] = useState<string[]>([]);
+  const [connectionStatuses, setConnectionStatuses] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   const params: ListFundersParams = {
     limit: PAGE_SIZE,
     page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-    ...(subtype !== ANY ? { subtype: subtype as FundingEntitySubtype } : {}),
-    ...(activeStatus !== ANY
-      ? { activeStatus: activeStatus as ActiveStatus }
+    ...(subtypes.length > 0 ? { subtype: [...subtypes].sort() as FundingEntitySubtype[] } : {}),
+    ...(activeStatuses.length > 0
+      ? { activeStatus: [...activeStatuses].sort() as ActiveStatus[] }
       : {}),
-    ...(connectionStatus !== ANY
-      ? { connectionStatus: connectionStatus as ConnectionStatus }
+    ...(connectionStatuses.length > 0
+      ? { connectionStatus: [...connectionStatuses].sort() as ConnectionStatus[] }
       : {}),
   };
 
@@ -125,12 +118,11 @@ export default function FundingEntities() {
     [rows, ts.sort],
   );
 
-  function resetToFirstPage<T>(setter: (v: T) => void) {
-    return (v: T) => {
-      setter(v);
-      setPage(1);
-    };
-  }
+  const hasActiveFilters =
+    !!search ||
+    subtypes.length > 0 ||
+    activeStatuses.length > 0 ||
+    connectionStatuses.length > 0;
 
   return (
     <div className="space-y-6">
@@ -160,40 +152,37 @@ export default function FundingEntities() {
           />
         </div>
 
-        <FilterSelect
+        <MultiFilterSelect
           label="Subtype"
-          value={subtype}
-          onChange={resetToFirstPage(setSubtype)}
+          selected={subtypes}
+          onChange={(v) => { setSubtypes(v); setPage(1); }}
           options={SUBTYPES}
           testId="select-subtype"
         />
-        <FilterSelect
+        <MultiFilterSelect
           label="Active status"
-          value={activeStatus}
-          onChange={resetToFirstPage(setActiveStatus)}
+          selected={activeStatuses}
+          onChange={(v) => { setActiveStatuses(v); setPage(1); }}
           options={ACTIVE_STATUSES}
           testId="select-active-status"
         />
-        <FilterSelect
+        <MultiFilterSelect
           label="Connection"
-          value={connectionStatus}
-          onChange={resetToFirstPage(setConnectionStatus)}
+          selected={connectionStatuses}
+          onChange={(v) => { setConnectionStatuses(v); setPage(1); }}
           options={CONNECTION_STATUSES}
           testId="select-connection-status"
         />
 
-        {(search ||
-          subtype !== ANY ||
-          activeStatus !== ANY ||
-          connectionStatus !== ANY) && (
+        {hasActiveFilters && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setSearch("");
-              setSubtype(ANY);
-              setActiveStatus(ANY);
-              setConnectionStatus(ANY);
+              setSubtypes([]);
+              setActiveStatuses([]);
+              setConnectionStatuses([]);
               setPage(1);
             }}
           >
@@ -348,42 +337,6 @@ export default function FundingEntities() {
           </PaginationContent>
         </Pagination>
       )}
-    </div>
-  );
-}
-
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options,
-  testId,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: readonly string[];
-  testId: string;
-}) {
-  const inputId = `filter-${testId}`;
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground">
-        {label}
-      </label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={inputId} className="w-[180px]" aria-label={label} data-testid={testId}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ANY}>Any</SelectItem>
-          {options.map((o) => (
-            <SelectItem key={o} value={o}>
-              {formatEnum(o)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
     </div>
   );
 }

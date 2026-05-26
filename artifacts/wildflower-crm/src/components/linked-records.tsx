@@ -133,7 +133,7 @@ export function LinkedOpportunitiesCard({
 }) {
   const params: ListOpportunitiesAndPledgesParams = {
     ...buildBaseParams(scope),
-    ...(status ? { status } : {}),
+    ...(status ? { status: [status] } : {}),
     limit: PAGE_SIZE,
     page: 1,
   };

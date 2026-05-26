@@ -26,13 +26,7 @@ import { formatCurrency, formatDateShort, formatEnum, fiscalYearFromDate } from 
 import { DonorCell } from "@/components/donor-cell";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/use-debounce";
 
@@ -51,7 +45,6 @@ const STAGES: OpportunityStage[] = [
 const TYPES: OpportunityType[] = ["solicitation", "renewal", "open_application"];
 
 const PAGE_LIMIT = 500;
-const ANY = "_any";
 
 export default function Pipeline() {
   const { toast } = useToast();
@@ -59,15 +52,15 @@ export default function Pipeline() {
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
-  const [type, setType] = useState<string>(ANY);
+  const [types, setTypes] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const params: ListOpportunitiesAndPledgesParams = {
     limit: PAGE_LIMIT,
     page: 1,
-    status: "open",
+    status: ["open"],
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-    ...(type !== ANY ? { type: type as OpportunityType } : {}),
+    ...(types.length > 0 ? { type: [...types].sort() as OpportunityType[] } : {}),
   };
 
   const queryKey = getListOpportunitiesAndPledgesQueryKey(params);
@@ -83,7 +76,6 @@ export default function Pipeline() {
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
         });
-        // Refetch to undo the optimistic update.
         queryClient.invalidateQueries({ queryKey });
       },
       onSettled: () => {
@@ -125,7 +117,6 @@ export default function Pipeline() {
     const moved = rows.find((r) => r.id === oppId);
     if (!moved || moved.stage === nextStage) return;
 
-    // Optimistic update on the cached list response.
     queryClient.setQueryData<typeof data>(queryKey, (prev) => {
       if (!prev) return prev;
       return {
@@ -164,20 +155,20 @@ export default function Pipeline() {
             data-testid="input-search-pipeline"
           />
         </div>
-        <FilterSelect
+        <MultiFilterSelect
           label="Type"
-          value={type}
-          onChange={setType}
+          selected={types}
+          onChange={setTypes}
           options={TYPES}
           testId="select-pipeline-type"
         />
-        {(search || type !== ANY) && (
+        {(search || types.length > 0) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setSearch("");
-              setType(ANY);
+              setTypes([]);
             }}
           >
             Clear
@@ -322,42 +313,6 @@ function OppCard({
           {formatDateShort(opp.projectedCloseDate)}
         </span>
       </div>
-    </div>
-  );
-}
-
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options,
-  testId,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: readonly string[];
-  testId: string;
-}) {
-  const inputId = `filter-${testId}`;
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground">
-        {label}
-      </label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={inputId} className="w-[170px]" aria-label={label} data-testid={testId}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ANY}>Any</SelectItem>
-          {options.map((o) => (
-            <SelectItem key={o} value={o}>
-              {formatEnum(o)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
     </div>
   );
 }

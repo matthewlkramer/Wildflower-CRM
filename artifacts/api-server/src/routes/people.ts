@@ -8,8 +8,11 @@ import {
   UpdatePersonBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
+
+const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -79,7 +82,11 @@ const peopleListSelect = {
 router.get(
   "/people",
   asyncHandler(async (req, res) => {
-    const q = parseOrBadRequest(ListPeopleQueryParams, req.query, res);
+    const normalizedQuery = normalizeArrayQuery(
+      req.query as Record<string, unknown>,
+      PEOPLE_ARRAY_PARAMS,
+    );
+    const q = parseOrBadRequest(ListPeopleQueryParams, normalizedQuery, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
@@ -97,8 +104,8 @@ router.get(
     const deceased = parseBoolQuery(req, "deceased");
     if (deceased !== undefined) filters.push(eq(people.deceased, deceased));
     if (q.regionId) filters.push(eq(people.currentHomeRegionId, q.regionId));
-    if (q.capacityRating) filters.push(eq(people.capacityRating, q.capacityRating));
-    if (q.connectionStatus) filters.push(eq(people.connectionStatus, q.connectionStatus));
+    if (q.capacityRating && q.capacityRating.length > 0) filters.push(inArray(people.capacityRating, q.capacityRating));
+    if (q.connectionStatus && q.connectionStatus.length > 0) filters.push(inArray(people.connectionStatus, q.connectionStatus));
     if (q.enthusiasm) filters.push(eq(people.enthusiasm, q.enthusiasm));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
