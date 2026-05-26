@@ -276,18 +276,32 @@ async function handleGrants(args: {
     // "Request for proposals") would silently collide. Mix in the
     // URL host+path (or a snippet hash) as a discriminator to keep
     // distinct opportunities distinct.
-    const titleKey = it.title.toLowerCase().replace(/\s+/g, " ").slice(0, 60);
-    const lowConfidence = !it.funderName && !it.deadline;
-    let discriminator = "";
-    if (lowConfidence) {
-      if (it.url) {
-        try {
-          const u = new URL(it.url);
-          discriminator = `${u.host}${u.pathname}`.toLowerCase().slice(0, 80);
-        } catch {
-          discriminator = it.url.toLowerCase().slice(0, 80);
-        }
-      } else {
+    // Dedupe strategy: when the opportunity has a URL, the URL's
+    // host+path is the most stable cross-message identifier (titles
+    // and funder names drift between weekly newsletter copies and
+    // between digest sources, but the application link almost never
+    // does). Otherwise fall back to funderName+deadline+title, with
+    // a snippet hash for the low-confidence case where none of those
+    // parse out and a generic title would otherwise collide unrelated
+    // opportunities.
+    let dedupeKey: string;
+    if (it.url) {
+      let urlKey = it.url.toLowerCase().slice(0, 120);
+      try {
+        const u = new URL(it.url);
+        // Drop tracking query params — the same RFP can show up with
+        // different utm_* / mc_eid / safelinks wrappers and we want
+        // those to collide on one proposal.
+        urlKey = `${u.host}${u.pathname}`.toLowerCase().slice(0, 120);
+      } catch {
+        // Bad URL — fall back to the raw string we already have.
+      }
+      dedupeKey = `grant:url:${urlKey}`;
+    } else {
+      const titleKey = it.title.toLowerCase().replace(/\s+/g, " ").slice(0, 60);
+      const lowConfidence = !it.funderName && !it.deadline;
+      let discriminator = "";
+      if (lowConfidence) {
         // Snippet hash — stable across digest reruns, distinct
         // across unrelated opportunities. Cheap FNV-1a.
         let h = 2166136261;
@@ -298,14 +312,14 @@ async function handleGrants(args: {
         }
         discriminator = `s${(h >>> 0).toString(36)}`;
       }
+      dedupeKey = [
+        "grant",
+        it.funderName?.toLowerCase() ?? "?",
+        it.deadline ?? "?",
+        titleKey,
+        discriminator,
+      ].join(":");
     }
-    const dedupeKey = [
-      "grant",
-      it.funderName?.toLowerCase() ?? "?",
-      it.deadline ?? "?",
-      titleKey,
-      discriminator,
-    ].join(":");
 
     // Try to attach to a CRM funder if the parsed funder name matches
     // one we already know. Soft match — accept either direction of

@@ -497,6 +497,25 @@ const GRANT_SUBJECT_RE =
 const GRANT_BODY_HINTS_RE =
   /\b(deadline|due\s+(?:by|date)|apply\s+by|application\s+(?:deadline|due)|letter\s+of\s+(?:inquiry|interest)|LOI|request\s+for\s+proposals?|RFP|grant\s+(?:opportunity|amount|range|award|cycle))\b/i;
 
+// Words that, when paired with a dollar amount, indicate the amount
+// represents grant funding (not a ticket price, course price, salary,
+// etc.). Used to gate the AMOUNT_RE signal so that "4-day intensive |
+// $199" no longer counts as a grant opportunity.
+const GRANT_AMOUNT_CONTEXT_RE =
+  /\b(funding|grant|award|prize|fellowship|scholarship|stipend|investment|RFP|RFA|LOI)\b/i;
+
+// Subjects that signal an event invite / newsletter / promo rather
+// than an open grant. If the subject (or the candidate block) matches
+// one of these AND the subject doesn't also explicitly mention RFP /
+// LOI / grant funding, we skip extraction entirely.
+const NON_GRANT_EVENT_RE =
+  /\b(webinar|info(?:rmation)?\s+session|demo(?:\s+day)?|bootcamp|intensive|workshop|conference|summit|meetup|happy\s+hour|fireside\s+chat|networking|panel\s+discussion|office\s+hours|ask\s+me\s+anything|AMA|book\s+launch|product\s+launch|new\s+feature|release\s+notes|case\s+study)\b/i;
+
+// First-line patterns that mean the block is the tail of a quoted
+// reply / forwarded message, not a real opportunity description.
+const QUOTED_TAIL_FIRST_LINE_RE =
+  /^(?:>|_{3,}|-{3,}|={3,}|\*{3,}|#{3,}|<https?:|Forwarded\s+message|Begin\s+forwarded\s+message|On\s+.{1,80}\s+wrote:|From:\s|Sent\s+from\s+my)/i;
+
 /**
  * Heuristic: does this sender/subject look like a grants newsletter
  * or RFP announcement worth scanning for opportunities? Returns true
@@ -580,6 +599,20 @@ export function extractGrantOpportunities(
     : stripHtml(bodyHtml ?? "")) ?? "";
   if (!text && !subject) return [];
 
+  // Event / webinar / demo / bootcamp invites are not grant
+  // opportunities, even when they show up in a digest that DOES carry
+  // real RFPs. If the subject is clearly an event invite AND it
+  // doesn't also explicitly advertise a grant / RFP / LOI / funding
+  // round, abandon extraction. (When both are present we let the
+  // per-block filter below sort them out.)
+  if (
+    subject &&
+    NON_GRANT_EVENT_RE.test(subject) &&
+    !GRANT_SUBJECT_RE.test(subject)
+  ) {
+    return [];
+  }
+
   // Block split: 1+ blank lines OR a Markdown/numbered list marker.
   const blocks = text
     .split(/\n\s*\n+/)
@@ -590,11 +623,31 @@ export function extractGrantOpportunities(
   const seen = new Set<string>();
 
   const consider = (block: string, titleOverride?: string) => {
+    // Skip blocks that are obviously the tail of a quoted reply or
+    // forwarded message — the "title" would be the quote marker
+    // itself (e.g. "> Got time to talk before the holidays?",
+    // "Forwarded message ---------", a bare "________"), not a real
+    // opportunity. Only applies when titleOverride wasn't supplied.
+    if (!titleOverride && QUOTED_TAIL_FIRST_LINE_RE.test(block)) return;
+
+    // Per-block event filter: catches digests that legitimately mix
+    // RFPs and webinars in the same email. We don't want the webinar
+    // entries to land as grant proposals.
+    if (NON_GRANT_EVENT_RE.test(block) && !GRANT_BODY_HINTS_RE.test(block)) {
+      return;
+    }
+
+    // A dollar amount only counts as a grant signal when it sits in
+    // grant-context language. Bare price tags ("$199", "$15/mo")
+    // would otherwise drag in newsletter / product-launch blocks.
+    const amountIsGrantLike =
+      AMOUNT_RE.test(block) && GRANT_AMOUNT_CONTEXT_RE.test(block);
+
     // Block must look grant-shaped — either subject already qualified
     // or the block contents do.
     const blockHasSignal =
       GRANT_BODY_HINTS_RE.test(block) ||
-      AMOUNT_RE.test(block) ||
+      amountIsGrantLike ||
       DEADLINE_RE.test(block);
     const subjectQualified =
       !!titleOverride && subject ? GRANT_SUBJECT_RE.test(subject) : false;
@@ -603,8 +656,14 @@ export function extractGrantOpportunities(
     const lines = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0 && !titleOverride) return;
     const rawTitle = titleOverride ?? lines[0];
-    const title = rawTitle.replace(/^[\s#*•\-–—]+/, "").trim().slice(0, 200);
-    if (!title || title.length < 4) return;
+    const title = rawTitle.replace(/^[\s#*•\-–—>_=]+/, "").trim().slice(0, 200);
+    // Title sanity: must have a meaningful word count and not be a
+    // URL fragment or pure punctuation / divider.
+    if (!title || title.length < 8) return;
+    if (QUOTED_TAIL_FIRST_LINE_RE.test(title)) return;
+    if (/^https?:|^<https?:/i.test(title)) return;
+    const wordCount = title.split(/\s+/).filter((w) => /[a-z]/i.test(w)).length;
+    if (wordCount < 3) return;
 
     let funderName: string | null = null;
     for (const l of lines) {
