@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListHouseholds,
   getListHouseholdsQueryKey,
@@ -58,6 +59,24 @@ export default function Households() {
   const rows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const ts = useTableState("households");
+  const sortedRows = useMemo(
+    () =>
+      sortRows(
+        rows,
+        {
+          name: (r) => r.name.toLowerCase(),
+          status: (r) => (r.active ? 1 : 0),
+          lifetimeGiving: (r) =>
+            r.lifetimeGiving != null ? Number(r.lifetimeGiving) : null,
+          lastGift: (r) => r.mostRecentGiftDate ?? null,
+          openAsks: (r) => r.openOpportunityCount ?? null,
+        },
+        ts.sort,
+      ),
+    [rows, ts.sort],
+  );
 
   return (
     <div className="space-y-6">
@@ -124,11 +143,11 @@ export default function Households() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Lifetime giving</TableHead>
-              <TableHead>Last gift</TableHead>
-              <TableHead className="text-right">Open asks</TableHead>
+              <SortableTH colKey="name" {...ts}>Name</SortableTH>
+              <SortableTH colKey="status" {...ts}>Status</SortableTH>
+              <SortableTH colKey="lifetimeGiving" align="right" {...ts}>Lifetime giving</SortableTH>
+              <SortableTH colKey="lastGift" {...ts}>Last gift</SortableTH>
+              <SortableTH colKey="openAsks" align="right" {...ts}>Open asks</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -149,7 +168,7 @@ export default function Households() {
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((h) => {
+              sortedRows.map((h) => {
                 // See individuals.tsx — "0" giving renders as "—" so the
                 // user doesn't have to disambiguate $0 from "unset".
                 const hasGiving = h.lifetimeGiving != null && Number(h.lifetimeGiving) > 0;

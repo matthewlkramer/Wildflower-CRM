@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListInteractions,
   type Interaction,
@@ -74,6 +75,24 @@ export default function Interactions() {
   const total = data?.pagination.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  const ts = useTableState("interactions", { key: "when", dir: "desc" });
+  const sortedRows = useMemo(
+    () =>
+      sortRows(
+        rows,
+        {
+          when: (r) => r.occurredAt,
+          kind: (r) => r.kind,
+          summary: (r) => r.summary?.toLowerCase() ?? null,
+          location: (r) => r.location?.toLowerCase() ?? null,
+          duration: (r) => r.durationMinutes ?? null,
+          participants: (r) => participantCount(r),
+        },
+        ts.sort,
+      ),
+    [rows, ts.sort],
+  );
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
@@ -119,12 +138,12 @@ export default function Interactions() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>When</TableHead>
-            <TableHead>Kind</TableHead>
-            <TableHead>Summary</TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead className="text-right">Duration</TableHead>
-            <TableHead className="text-right">Participants</TableHead>
+            <SortableTH colKey="when" {...ts}>When</SortableTH>
+            <SortableTH colKey="kind" {...ts}>Kind</SortableTH>
+            <SortableTH colKey="summary" {...ts}>Summary</SortableTH>
+            <SortableTH colKey="location" {...ts}>Location</SortableTH>
+            <SortableTH colKey="duration" align="right" {...ts}>Duration</SortableTH>
+            <SortableTH colKey="participants" align="right" {...ts}>Participants</SortableTH>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -134,14 +153,14 @@ export default function Interactions() {
                 Loading…
               </TableCell>
             </TableRow>
-          ) : rows.length === 0 ? (
+          ) : sortedRows.length === 0 ? (
             <TableRow>
               <TableCell colSpan={6} className="text-center text-muted-foreground">
                 No interactions logged yet.
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((r) => (
+            sortedRows.map((r) => (
               <TableRow key={r.id} data-testid={`row-interaction-${r.id}`}>
                 <TableCell className="whitespace-nowrap text-sm">
                   {formatWhen(r.occurredAt)}

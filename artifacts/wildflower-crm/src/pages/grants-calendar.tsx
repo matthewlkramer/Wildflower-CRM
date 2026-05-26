@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "wouter";
+import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListOpportunitiesAndPledges,
   getListOpportunitiesAndPledgesQueryKey,
@@ -39,6 +40,12 @@ export default function GrantsCalendar() {
     { query: { queryKey: getListOpportunitiesAndPledgesQueryKey(QUERY_PARAMS) } },
   );
 
+  const ts = useTableState("grants-calendar", { key: "applicationDeadline", dir: "asc" });
+  const STAGE_ORDER: Record<string, number> = {
+    cold_lead: 1, warm_lead: 2, in_conversation: 3, convince: 4,
+    conditional_commitment: 5, probable_renewal: 6, verbal_commitment: 7,
+    written_commitment: 8, cash_in: 9,
+  };
   const upcoming = useMemo(() => {
     const rows = data?.data ?? [];
     const today = todayInChicago();
@@ -51,6 +58,25 @@ export default function GrantsCalendar() {
       .sort((a, b) => a.sortDate.localeCompare(b.sortDate))
       .map(({ o }) => o);
   }, [data]);
+
+  const sortedUpcoming = useMemo(
+    () =>
+      sortRows(
+        upcoming,
+        {
+          applicationDeadline: (o) => o.applicationDeadline ?? null,
+          projectedClose: (o) => o.projectedCloseDate ?? null,
+          name: (o) => (o.name ?? "").toLowerCase(),
+          funder: (o) =>
+            (o.funderName ?? o.householdName ?? o.individualGiverPersonName ?? "").toLowerCase(),
+          primaryContact: (o) => o.primaryContactPersonName?.toLowerCase() ?? null,
+          stage: (o) => (o.stage ? (STAGE_ORDER[o.stage] ?? 0) : null),
+          ask: (o) => (o.askAmount != null ? Number(o.askAmount) : null),
+        },
+        ts.sort,
+      ),
+    [upcoming, ts.sort],
+  );
 
   return (
     <div className="space-y-6">
@@ -68,13 +94,13 @@ export default function GrantsCalendar() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Application deadline</TableHead>
-              <TableHead>Projected close</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Funder</TableHead>
-              <TableHead>Primary contact</TableHead>
-              <TableHead>Stage</TableHead>
-              <TableHead className="text-right">Ask</TableHead>
+              <SortableTH colKey="applicationDeadline" {...ts}>Application deadline</SortableTH>
+              <SortableTH colKey="projectedClose" {...ts}>Projected close</SortableTH>
+              <SortableTH colKey="name" {...ts}>Name</SortableTH>
+              <SortableTH colKey="funder" {...ts}>Funder</SortableTH>
+              <SortableTH colKey="primaryContact" {...ts}>Primary contact</SortableTH>
+              <SortableTH colKey="stage" {...ts}>Stage</SortableTH>
+              <SortableTH colKey="ask" align="right" {...ts}>Ask</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -86,10 +112,10 @@ export default function GrantsCalendar() {
                   {error instanceof Error ? error.message : "Failed to load opportunities."}
                 </TableCell>
               </TableRow>
-            ) : upcoming.length === 0 ? (
+            ) : sortedUpcoming.length === 0 ? (
               <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">No open opportunities with deadlines today or later.</TableCell></TableRow>
             ) : (
-              upcoming.map((o: OpportunityOrPledge) => (
+              sortedUpcoming.map((o: OpportunityOrPledge) => (
                 <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-cal-${o.id}`}>
                   <TableCell>{formatDateShort(o.applicationDeadline)}</TableCell>
                   <TableCell>{formatDateShort(o.projectedCloseDate)}</TableCell>

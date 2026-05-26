@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListGiftsAndPayments,
   getListGiftsAndPaymentsQueryKey,
@@ -65,6 +66,9 @@ export default function Gifts() {
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
     query: { queryKey: getListGiftsAndPaymentsQueryKey(params) },
   });
+
+  // Sort + drag-to-resize for the current page only (no server-side sort yet).
+  const ts = useTableState("gifts");
   // Entity slug → display name lookup for the new Entities column. Cached
   // for 5 min — entity rows almost never change, and we don't want to
   // refetch on every page change.
@@ -78,6 +82,23 @@ export default function Gifts() {
   const rows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const sortedRows = useMemo(
+    () =>
+      sortRows(
+        rows,
+        {
+          name: (r) => (r.name ?? "").toLowerCase(),
+          donor: (r) =>
+            (r.funderName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
+          dateReceived: (r) => r.dateReceived ?? null,
+          type: (r) => r.type ?? null,
+          amount: (r) => (r.amount != null ? Number(r.amount) : null),
+        },
+        ts.sort,
+      ),
+    [rows, ts.sort],
+  );
 
   return (
     <div className="space-y-6">
@@ -118,14 +139,14 @@ export default function Gifts() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Donor</TableHead>
-              <TableHead>Date received</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead>Entities</TableHead>
-              <TableHead>Usages</TableHead>
-              <TableHead>Grant years</TableHead>
+              <SortableTH colKey="name" {...ts}>Name</SortableTH>
+              <SortableTH colKey="donor" {...ts}>Donor</SortableTH>
+              <SortableTH colKey="dateReceived" {...ts}>Date received</SortableTH>
+              <SortableTH colKey="type" {...ts}>Type</SortableTH>
+              <SortableTH colKey="amount" align="right" {...ts}>Amount</SortableTH>
+              <SortableTH colKey="entities" sortable={false} {...ts}>Entities</SortableTH>
+              <SortableTH colKey="usages" sortable={false} {...ts}>Usages</SortableTH>
+              <SortableTH colKey="grantYears" sortable={false} {...ts}>Grant years</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -137,10 +158,10 @@ export default function Gifts() {
                   {error instanceof Error ? error.message : "Failed to load gifts."}
                 </TableCell>
               </TableRow>
-            ) : rows.length === 0 ? (
+            ) : sortedRows.length === 0 ? (
               <TableRow><TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">No gifts match these filters.</TableCell></TableRow>
             ) : (
-              rows.map((g) => {
+              sortedRows.map((g) => {
                 // Each aggregate is already de-duplicated server-side.
                 // Map entity slugs to names; fall back to the slug if we
                 // haven't loaded the entity list yet (rare, brief).

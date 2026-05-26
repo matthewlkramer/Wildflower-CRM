@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListPeople,
   getListPeopleQueryKey,
@@ -78,6 +79,38 @@ export default function Individuals() {
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const regionNames = useRegionNameMap();
+
+  // Client-side sort + drag-to-resize for the current page of results.
+  // The list endpoint doesn't accept a sort param yet, so this re-orders
+  // the visible page only; widths are persisted per-table in localStorage.
+  const ts = useTableState("individuals");
+  const CAPACITY_ORDER: Record<string, number> = {
+    tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
+  };
+  const sortedRows = useMemo(
+    () =>
+      sortRows(
+        rows,
+        {
+          name: (r) => personDisplayName(r).toLowerCase(),
+          status: (r) => (r.deceased ? 1 : 0),
+          region: (r) =>
+            r.currentHomeRegionId
+              ? (regionNames.get(r.currentHomeRegionId) ?? r.currentHomeRegionId)
+              : null,
+          capacity: (r) =>
+            r.capacityRating ? (CAPACITY_ORDER[r.capacityRating] ?? 0) : null,
+          lastContacted: (r) => r.lastContacted ?? null,
+          lifetimeGiving: (r) =>
+            r.lifetimeGiving != null ? Number(r.lifetimeGiving) : null,
+          lastGift: (r) => r.mostRecentGiftDate ?? null,
+          openAsks: (r) => r.openOpportunityCount ?? null,
+          activeFunders: (r) => (r.activeFunderNames ?? []).length || null,
+        },
+        ts.sort,
+      ),
+    [rows, ts.sort, regionNames],
+  );
 
   return (
     <div className="space-y-6">
@@ -172,15 +205,15 @@ export default function Individuals() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Region</TableHead>
-              <TableHead>Capacity</TableHead>
-              <TableHead>Last contacted</TableHead>
-              <TableHead className="text-right">Lifetime giving</TableHead>
-              <TableHead>Last gift</TableHead>
-              <TableHead className="text-right">Open asks</TableHead>
-              <TableHead>Active funders</TableHead>
+              <SortableTH colKey="name" {...ts}>Name</SortableTH>
+              <SortableTH colKey="status" {...ts}>Status</SortableTH>
+              <SortableTH colKey="region" {...ts}>Region</SortableTH>
+              <SortableTH colKey="capacity" {...ts}>Capacity</SortableTH>
+              <SortableTH colKey="lastContacted" {...ts}>Last contacted</SortableTH>
+              <SortableTH colKey="lifetimeGiving" align="right" {...ts}>Lifetime giving</SortableTH>
+              <SortableTH colKey="lastGift" {...ts}>Last gift</SortableTH>
+              <SortableTH colKey="openAsks" align="right" {...ts}>Open asks</SortableTH>
+              <SortableTH colKey="activeFunders" {...ts}>Active funders</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -196,14 +229,14 @@ export default function Individuals() {
                   {error instanceof Error ? error.message : "Failed to load people."}
                 </TableCell>
               </TableRow>
-            ) : rows.length === 0 ? (
+            ) : sortedRows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">
                   No people match these filters.
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((p) => {
+              sortedRows.map((p) => {
                 // Aggregates are best-effort. Lifetime "0" means we got a
                 // SUM but there were no gifts; render "—" so the user
                 // doesn't have to mentally distinguish $0 from "unset".

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListOpportunitiesAndPledges,
   getListOpportunitiesAndPledgesQueryKey,
@@ -93,6 +94,33 @@ export default function Opportunities({
   });
 
   const rows = data?.data ?? [];
+
+  const ts = useTableState("opportunities");
+  const STAGE_ORDER: Record<string, number> = {
+    cold_lead: 1, warm_lead: 2, in_conversation: 3, convince: 4,
+    conditional_commitment: 5, probable_renewal: 6, verbal_commitment: 7,
+    written_commitment: 8, cash_in: 9,
+  };
+  const sortedRows = useMemo(
+    () =>
+      sortRows(
+        rows,
+        {
+          name: (r) => (r.name ?? "").toLowerCase(),
+          donor: (r) =>
+            (r.funderName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
+          stage: (r) => (r.stage ? (STAGE_ORDER[r.stage] ?? 0) : null),
+          status: (r) => r.status ?? null,
+          ask: (r) => (r.askAmount != null ? Number(r.askAmount) : null),
+          coveredFys: (r) => (r.coveredFiscalYears ?? []).join(",") || null,
+          awarded: (r) => (r.awardedAmount != null ? Number(r.awardedAmount) : null),
+          fy: (r) => r.fiscalYear ?? null,
+          projectedClose: (r) => r.projectedCloseDate ?? null,
+        },
+        ts.sort,
+      ),
+    [rows, ts.sort],
+  );
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -146,18 +174,18 @@ export default function Opportunities({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Donor</TableHead>
-              <TableHead>Stage</TableHead>
-              <TableHead>Status</TableHead>
+              <SortableTH colKey="name" {...ts}>Name</SortableTH>
+              <SortableTH colKey="donor" {...ts}>Donor</SortableTH>
+              <SortableTH colKey="stage" {...ts}>Stage</SortableTH>
+              <SortableTH colKey="status" {...ts}>Status</SortableTH>
               {isPledgeView ? (
-                <TableHead>Covered FYs</TableHead>
+                <SortableTH colKey="coveredFys" {...ts}>Covered FYs</SortableTH>
               ) : (
-                <TableHead className="text-right">Ask</TableHead>
+                <SortableTH colKey="ask" align="right" {...ts}>Ask</SortableTH>
               )}
-              <TableHead className="text-right">Awarded</TableHead>
-              <TableHead>FY</TableHead>
-              <TableHead>Projected close</TableHead>
+              <SortableTH colKey="awarded" align="right" {...ts}>Awarded</SortableTH>
+              <SortableTH colKey="fy" {...ts}>FY</SortableTH>
+              <SortableTH colKey="projectedClose" {...ts}>Projected close</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -169,10 +197,10 @@ export default function Opportunities({
                   {error instanceof Error ? error.message : "Failed to load opportunities."}
                 </TableCell>
               </TableRow>
-            ) : rows.length === 0 ? (
+            ) : sortedRows.length === 0 ? (
               <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
-              rows.map((o) => {
+              sortedRows.map((o) => {
                 // Server returns the FY slug — but fall back to a
                 // client-side derivation so legacy cached responses
                 // (pre-aggregate rollout) still show something useful.

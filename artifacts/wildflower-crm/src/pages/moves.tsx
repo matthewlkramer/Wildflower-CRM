@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "wouter";
+import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import { useListPeople } from "@workspace/api-client-react";
 import { personDisplayName } from "@/lib/person";
 import { formatDateShort } from "@/lib/format";
@@ -37,6 +38,28 @@ export default function Moves() {
   const userNames = useUserNameMap();
   const regionNames = useRegionNameMap();
 
+  // Default sort matches the page's existing "oldest contact first" order.
+  const ts = useTableState("moves", { key: "lastContacted", dir: "asc" });
+  const sortedRows = useMemo(
+    () =>
+      sortRows(
+        rows,
+        {
+          name: (r) => personDisplayName(r).toLowerCase(),
+          lastContacted: (r) => r.lastContacted ?? null,
+          interactions: (r) => r.interactionCount ?? null,
+          owner: (r) =>
+            r.ownerUserId ? (userNames.get(r.ownerUserId) ?? r.ownerUserId) : null,
+          region: (r) =>
+            r.currentHomeRegionId
+              ? (regionNames.get(r.currentHomeRegionId) ?? r.currentHomeRegionId)
+              : null,
+        },
+        ts.sort,
+      ),
+    [rows, ts.sort, userNames, regionNames],
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -53,11 +76,11 @@ export default function Moves() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Last contacted</TableHead>
-              <TableHead className="text-right">Interactions</TableHead>
-              <TableHead>Owner</TableHead>
-              <TableHead>Region</TableHead>
+              <SortableTH colKey="name" {...ts}>Name</SortableTH>
+              <SortableTH colKey="lastContacted" {...ts}>Last contacted</SortableTH>
+              <SortableTH colKey="interactions" align="right" {...ts}>Interactions</SortableTH>
+              <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
+              <SortableTH colKey="region" {...ts}>Region</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -69,10 +92,10 @@ export default function Moves() {
                   {error instanceof Error ? error.message : "Failed to load people."}
                 </TableCell>
               </TableRow>
-            ) : rows.length === 0 ? (
+            ) : sortedRows.length === 0 ? (
               <TableRow><TableCell colSpan={5} className="text-center h-24 text-muted-foreground">No people found.</TableCell></TableRow>
             ) : (
-              rows.map((p) => (
+              sortedRows.map((p) => (
                 <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-move-${p.id}`}>
                   <TableCell className="font-medium">
                     <Link href={`/individuals/${p.id}`} className="block w-full">

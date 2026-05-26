@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListFunders,
   getListFundersQueryKey,
@@ -98,6 +99,32 @@ export default function FundingEntities() {
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  const ts = useTableState("funding-entities");
+  const CAPACITY_ORDER: Record<string, number> = {
+    tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
+  };
+  const sortedRows = useMemo(
+    () =>
+      sortRows(
+        rows,
+        {
+          name: (r) => formatFunderNameShort(r.name).toLowerCase(),
+          subtype: (r) => r.fundingEntitySubtype ?? null,
+          active: (r) => r.activeStatus ?? null,
+          connection: (r) => r.connectionStatus ?? null,
+          enthusiasm: (r) => r.enthusiasm ?? null,
+          capacity: (r) =>
+            r.capacityRating ? (CAPACITY_ORDER[r.capacityRating] ?? 0) : null,
+          primaryContact: (r) => r.primaryContactPersonName?.toLowerCase() ?? null,
+          lifetimeGiving: (r) =>
+            r.lifetimeGiving != null ? Number(r.lifetimeGiving) : null,
+          openAsks: (r) => r.openOpportunityCount ?? null,
+        },
+        ts.sort,
+      ),
+    [rows, ts.sort],
+  );
+
   function resetToFirstPage<T>(setter: (v: T) => void) {
     return (v: T) => {
       setter(v);
@@ -179,15 +206,15 @@ export default function FundingEntities() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Subtype</TableHead>
-              <TableHead>Active</TableHead>
-              <TableHead>Connection</TableHead>
-              <TableHead>Enthusiasm</TableHead>
-              <TableHead>Capacity</TableHead>
-              <TableHead>Primary contact</TableHead>
-              <TableHead className="text-right">Lifetime giving</TableHead>
-              <TableHead className="text-right">Open asks</TableHead>
+              <SortableTH colKey="name" {...ts}>Name</SortableTH>
+              <SortableTH colKey="subtype" {...ts}>Subtype</SortableTH>
+              <SortableTH colKey="active" {...ts}>Active</SortableTH>
+              <SortableTH colKey="connection" {...ts}>Connection</SortableTH>
+              <SortableTH colKey="enthusiasm" {...ts}>Enthusiasm</SortableTH>
+              <SortableTH colKey="capacity" {...ts}>Capacity</SortableTH>
+              <SortableTH colKey="primaryContact" {...ts}>Primary contact</SortableTH>
+              <SortableTH colKey="lifetimeGiving" align="right" {...ts}>Lifetime giving</SortableTH>
+              <SortableTH colKey="openAsks" align="right" {...ts}>Open asks</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -221,7 +248,7 @@ export default function FundingEntities() {
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((f) => {
+              sortedRows.map((f) => {
                 const hasGiving = f.lifetimeGiving != null && Number(f.lifetimeGiving) > 0;
                 const openAsks = f.openOpportunityCount ?? 0;
                 return (

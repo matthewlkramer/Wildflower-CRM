@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useGetProjectionsByFyEntity,
   useListEntities,
@@ -121,6 +122,32 @@ export default function Projections() {
   const isError = proj.isError;
   const error = proj.error;
 
+  const ts = useTableState("projections", { key: "fy", dir: "asc" });
+  const sortedFyRows = useMemo(() => {
+    // Build a sortable record per FY. The fy accessor returns the row's
+    // original index so the default sort preserves upstream ordering
+    // (special buckets like __unbucketed__ already pinned to the end).
+    const records = fyRows.map((fy, idx) => {
+      const rec: Record<string, unknown> = {
+        __fy: fy,
+        __order: idx,
+        rowTotal: fyTotals.get(fy)?.expected ?? null,
+      };
+      for (const ent of entityCols) {
+        rec[`ent_${ent}`] = cell.get(`${fy}|${ent}`)?.expected ?? null;
+      }
+      return rec;
+    });
+    const accessors: Record<string, (r: Record<string, unknown>) => unknown> = {
+      fy: (r) => r.__order as number,
+      rowTotal: (r) => r.rowTotal as number | null,
+    };
+    for (const ent of entityCols) {
+      accessors[`ent_${ent}`] = (r) => r[`ent_${ent}`] as number | null;
+    }
+    return sortRows(records, accessors, ts.sort).map((r) => r.__fy as string);
+  }, [fyRows, entityCols, cell, fyTotals, ts.sort]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -144,13 +171,13 @@ export default function Projections() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Fiscal year</TableHead>
+              <SortableTH colKey="fy" {...ts}>Fiscal year</SortableTH>
               {entityCols.map((e) => (
-                <TableHead key={e} className="text-right whitespace-nowrap">
+                <SortableTH key={e} colKey={`ent_${e}`} align="right" {...ts} className="whitespace-nowrap">
                   {entityName(e)}
-                </TableHead>
+                </SortableTH>
               ))}
-              <TableHead className="text-right whitespace-nowrap">Row total</TableHead>
+              <SortableTH colKey="rowTotal" align="right" {...ts} className="whitespace-nowrap">Row total</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -183,7 +210,7 @@ export default function Projections() {
               </TableRow>
             ) : (
               <>
-                {fyRows.map((fy) => {
+                {sortedFyRows.map((fy) => {
                   const rowTotal = fyTotals.get(fy);
                   return (
                     <TableRow key={fy} data-testid={`row-projection-${fy}`}>

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams, useSearch, useLocation } from "wouter";
+import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useGetFiscalYearBreakdown,
   useListFiscalYears,
@@ -300,25 +301,41 @@ function SummaryTile({
 function ReceivedTable({
   rows, total, isLoading,
 }: { rows: FiscalYearReceivedRow[]; total: string; isLoading: boolean }) {
+  const ts = useTableState("fy-received", { key: "dateReceived", dir: "desc" });
+  const sortedRows = useMemo(
+    () =>
+      sortRows(
+        rows,
+        {
+          dateReceived: (r) => r.dateReceived ?? null,
+          donor: (r) =>
+            (r.funderName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
+          usage: (r) => r.displayUsage?.toLowerCase() ?? null,
+          amount: (r) => (r.subAmount != null ? Number(r.subAmount) : null),
+        },
+        ts.sort,
+      ),
+    [rows, ts.sort],
+  );
   return (
     <div className="rounded-md border bg-card overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Date received</TableHead>
-            <TableHead>Donor</TableHead>
-            <TableHead>Usage</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
+            <SortableTH colKey="dateReceived" {...ts}>Date received</SortableTH>
+            <SortableTH colKey="donor" {...ts}>Donor</SortableTH>
+            <SortableTH colKey="usage" {...ts}>Usage</SortableTH>
+            <SortableTH colKey="amount" align="right" {...ts}>Amount</SortableTH>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading ? (
             <TableRow><TableCell colSpan={4} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
-          ) : rows.length === 0 ? (
+          ) : sortedRows.length === 0 ? (
             <TableRow><TableCell colSpan={4} className="text-center h-24 text-muted-foreground">No gift allocations booked to this fiscal year.</TableCell></TableRow>
           ) : (
             <>
-              {rows.map((r) => (
+              {sortedRows.map((r) => (
                 <TableRow key={r.allocationId} data-testid={`row-received-${r.allocationId}`}>
                   <TableCell className="whitespace-nowrap">
                     <Link href={`/gifts/${r.giftId}`} className="hover:underline">
@@ -360,28 +377,52 @@ function OpenTable({
   highlight: "ask" | "weighted";
   isLoading: boolean;
 }) {
+  // Persist sort/widths per highlight mode so switching Ask ↔ Weighted
+  // doesn't strand the user on a sort key tied to the other metric.
+  const ts = useTableState(`fy-open-${highlight}`, {
+    key: highlight === "weighted" ? "weighted" : "ask",
+    dir: "desc",
+  });
+  const sortedRows = useMemo(
+    () =>
+      sortRows(
+        rows,
+        {
+          projectedClose: (r) => r.projectedCloseDate ?? null,
+          donor: (r) =>
+            (r.funderName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
+          opportunity: (r) => (r.opportunityName ?? r.opportunityId ?? "").toLowerCase(),
+          stage: (r) => r.opportunityStage ?? null,
+          winProb: (r) => (r.winProbability != null ? Number(r.winProbability) : null),
+          ask: (r) => (r.subAmount != null ? Number(r.subAmount) : null),
+          weighted: (r) => (r.weightedAmount != null ? Number(r.weightedAmount) : null),
+        },
+        ts.sort,
+      ),
+    [rows, ts.sort],
+  );
   return (
     <div className="rounded-md border bg-card overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Projected close</TableHead>
-            <TableHead>Donor</TableHead>
-            <TableHead>Opportunity</TableHead>
-            <TableHead>Stage</TableHead>
-            <TableHead className="text-right">Win prob</TableHead>
-            <TableHead className={highlight === "ask" ? "text-right font-semibold" : "text-right"}>Ask</TableHead>
-            <TableHead className={highlight === "weighted" ? "text-right font-semibold" : "text-right"}>Weighted</TableHead>
+            <SortableTH colKey="projectedClose" {...ts}>Projected close</SortableTH>
+            <SortableTH colKey="donor" {...ts}>Donor</SortableTH>
+            <SortableTH colKey="opportunity" {...ts}>Opportunity</SortableTH>
+            <SortableTH colKey="stage" {...ts}>Stage</SortableTH>
+            <SortableTH colKey="winProb" align="right" {...ts}>Win prob</SortableTH>
+            <SortableTH colKey="ask" align="right" {...ts} className={highlight === "ask" ? "font-semibold" : undefined}>Ask</SortableTH>
+            <SortableTH colKey="weighted" align="right" {...ts} className={highlight === "weighted" ? "font-semibold" : undefined}>Weighted</SortableTH>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading ? (
             <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
-          ) : rows.length === 0 ? (
+          ) : sortedRows.length === 0 ? (
             <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">No open pledge allocations booked to this fiscal year.</TableCell></TableRow>
           ) : (
             <>
-              {rows.map((r) => (
+              {sortedRows.map((r) => (
                 <TableRow key={r.allocationId} data-testid={`row-open-${r.allocationId}`}>
                   <TableCell className="whitespace-nowrap">{fmtDate(r.projectedCloseDate)}</TableCell>
                   <TableCell>
