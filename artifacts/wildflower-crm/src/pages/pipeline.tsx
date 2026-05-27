@@ -70,9 +70,9 @@ export default function Pipeline() {
     limit: PAGE_LIMIT,
     page: 1,
     // Pipeline shows everything that hasn't been declined or abandoned:
-    // open (in-flight) and won (closed but still relevant to the
-    // working view). Dormant and lost are excluded.
-    status: ["open", "won"],
+    // open (in-flight) and pledge (committed but not yet fully paid).
+    // Dormant, lost, and cash_in (already booked) are excluded.
+    status: ["open", "pledge"],
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as OpportunityType[] } : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),

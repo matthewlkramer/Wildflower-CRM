@@ -174,7 +174,7 @@ router.get(
       [{ value: orgsCt }],
       [{ value: oppsCt }],
       [{ value: openCt }],
-      [{ value: wonCt }],
+      [{ value: pledgesCt }],
       [{ value: giftsCt }],
       currentFyMetrics,
       nextFyMetrics,
@@ -188,10 +188,14 @@ router.get(
         .select({ value: count() })
         .from(opportunitiesAndPledges)
         .where(eq(opportunitiesAndPledges.status, "open")),
+      // Pledges-page count: was_pledge=true OR stage ∈ pledge stages.
+      // Mirrors the pledgeView=pledges filter in the opps list route.
       db
         .select({ value: count() })
         .from(opportunitiesAndPledges)
-        .where(eq(opportunitiesAndPledges.status, "won")),
+        .where(
+          sql`(${opportunitiesAndPledges.wasPledge} = true OR ${opportunitiesAndPledges.stage} IN ('conditional_commitment','verbal_commitment','written_commitment'))`,
+        ),
       db.select({ value: count() }).from(giftsAndPayments),
       fyMetricsFor(currentFy, entityIds),
       fyMetricsFor(nextFy, entityIds),
@@ -205,7 +209,7 @@ router.get(
         organizations: Number(orgsCt),
         opportunities: Number(oppsCt),
         openOpportunities: Number(openCt),
-        wonPledges: Number(wonCt),
+        pledges: Number(pledgesCt),
         gifts: Number(giftsCt),
       },
       currentFiscalYear: currentFy,

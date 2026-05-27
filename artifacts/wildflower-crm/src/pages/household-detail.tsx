@@ -135,13 +135,14 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
       <LinkedOpportunitiesCard
         scope={{ householdId: household.id }}
         title="Pledges"
-        status="won"
+        pledgeView="pledges"
         emptyLabel="No pledges from this household."
       />
 
       <LinkedOpportunitiesCard
         scope={{ householdId: household.id }}
         title="Open opportunities"
+        pledgeView="opportunities"
         status="open"
         emptyLabel="No open opportunities."
       />

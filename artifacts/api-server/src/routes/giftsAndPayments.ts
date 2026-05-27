@@ -48,7 +48,7 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { maybeAdvancePledgeStages } from "../lib/pledgeStage";
+import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { inArray } from "drizzle-orm";
 
 const GIFTS_ARRAY_PARAMS = ["type", "ownerUserId", "entityId"] as const;
@@ -224,7 +224,7 @@ router.post(
     const body = parseOrBadRequest(CreateGiftOrPaymentBodyRefined, req.body, res);
     if (!body) return;
     const [row] = await db.insert(giftsAndPayments).values({ id: newId(), ...body }).returning();
-    await maybeAdvancePledgeStages(row?.paymentOnPledgeId);
+    await applyDerivedOppFieldsMany(row?.paymentOnPledgeId);
     res.status(201).json(row);
   }),
 );
@@ -260,7 +260,7 @@ router.patch(
     if (!row) return notFound(res, "gift");
     // PATCH may re-point payment_on_pledge_id — recompute on both the
     // old and the new pledge so a newly-covered target advances.
-    await maybeAdvancePledgeStages(existing.paymentOnPledgeId, row.paymentOnPledgeId);
+    await applyDerivedOppFieldsMany(existing.paymentOnPledgeId, row.paymentOnPledgeId);
     res.json(row);
   }),
 );
@@ -279,7 +279,7 @@ router.delete(
       .where(eq(giftsAndPayments.id, id))
       .then((r) => r[0]);
     await db.delete(giftsAndPayments).where(eq(giftsAndPayments.id, id));
-    await maybeAdvancePledgeStages(existing?.paymentOnPledgeId);
+    await applyDerivedOppFieldsMany(existing?.paymentOnPledgeId);
     res.status(204).end();
   }),
 );

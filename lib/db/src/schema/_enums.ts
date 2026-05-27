@@ -45,9 +45,19 @@ export const peopleRoleCurrentEnum = pgEnum("people_role_current", [
   "past",
 ]);
 
+// Lifecycle status of an opportunity/pledge row.
+//   open    — actively in the funnel, not yet committed
+//   pledge  — funder has committed (stage in conditional/verbal/written)
+//   cash_in — fully paid (stage=cash_in or sum of payments >= awarded)
+//   dormant — paused; sticky user override
+//   lost    — declined/withdrawn; sticky user override
+// Status is auto-derived from stage + payments on every write EXCEPT when
+// the row is already dormant/lost (those are sticky and only clear when
+// the user explicitly picks a different value).
 export const opportunityStatusEnum = pgEnum("opportunity_status", [
   "open",
-  "won",
+  "pledge",
+  "cash_in",
   "dormant",
   "lost",
 ]);

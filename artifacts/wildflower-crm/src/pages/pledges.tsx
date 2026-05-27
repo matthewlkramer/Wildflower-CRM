@@ -4,7 +4,7 @@ export default function Pledges() {
   return (
     <Opportunities
       title="Pledges"
-      lockedStatus="won"
+      pledgeView="pledges"
       basePath="/pledges"
     />
   );

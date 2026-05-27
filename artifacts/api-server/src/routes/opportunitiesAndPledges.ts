@@ -86,12 +86,20 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { maybeAdvancePledgeStage } from "../lib/pledgeStage";
+import { applyDerivedOppFields } from "../lib/pledgeStage";
 
 const router: IRouter = Router();
 router.use(requireAuth);
 
 const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type", "ownerUserId", "entityId"] as const;
+
+// Stages that put a row on the Pledges page even without was_pledge=true.
+// Mirrors `PLEDGE_STAGES` in lib/pledgeStage.ts.
+const PLEDGE_STAGE_VALUES = [
+  "conditional_commitment",
+  "verbal_commitment",
+  "written_commitment",
+] as const;
 
 function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
   res.status(400).json({
@@ -130,6 +138,25 @@ router.get(
     if (q.householdId) filters.push(eq(opportunitiesAndPledges.householdId, q.householdId));
     if (q.individualGiverPersonId) filters.push(eq(opportunitiesAndPledges.individualGiverPersonId, q.individualGiverPersonId));
     if (q.ownerUserId && q.ownerUserId.length > 0) filters.push(inArray(opportunitiesAndPledges.ownerUserId, q.ownerUserId));
+    if (typeof q.wasPledge === "boolean") filters.push(eq(opportunitiesAndPledges.wasPledge, q.wasPledge));
+    // Convenience filter that encodes the page split. Translates to a
+    // boolean OR on (was_pledge, stage ∈ pledge stages). See the
+    // OpportunityOrPledge schema comments for the rationale.
+    if (q.pledgeView === "pledges") {
+      filters.push(
+        sql`(${opportunitiesAndPledges.wasPledge} = true OR ${opportunitiesAndPledges.stage} = ANY(ARRAY[${sql.join(
+          PLEDGE_STAGE_VALUES.map((v) => sql`${v}`),
+          sql`, `,
+        )}]::opportunity_stage[]))`,
+      );
+    } else if (q.pledgeView === "opportunities") {
+      filters.push(
+        sql`(${opportunitiesAndPledges.wasPledge} = false AND (${opportunitiesAndPledges.stage} IS NULL OR ${opportunitiesAndPledges.stage} <> ALL(ARRAY[${sql.join(
+          PLEDGE_STAGE_VALUES.map((v) => sql`${v}`),
+          sql`, `,
+        )}]::opportunity_stage[])))`,
+      );
+    }
     // Multi-value fiscal-year filter — matches opps that have at least
     // one pledge_allocation row whose grant_year is in the selected set.
     // Use EXISTS rather than a JOIN so we don't fan rows out (one opp
@@ -218,7 +245,7 @@ router.post(
       entity: "opportunities_and_pledges",
       table: opportunitiesAndPledges,
       bodySchema: BulkUpdateOpportunitiesAndPledgesBody,
-      allowedFields: ["ownerUserId", "status", "stage", "type", "actualCompletionDate"],
+      allowedFields: ["ownerUserId", "status", "stage", "type", "wasPledge", "isConditional", "actualCompletionDate"],
       // Allocation-table reconciliation field — not a column on
       // opportunities_and_pledges, so it goes through extraApply and
       // is excluded from the column SET.
@@ -239,12 +266,12 @@ router.post(
         });
         return issues.length ? issues.map((i) => i.message).join("; ") : null;
       },
-      // After a successful bulk write, recompute auto-advance for each
-      // updated row — bulk patches commonly flip status to 'won' or set
-      // stage='written_commitment', either of which can make an
-      // already-paid pledge newly eligible to flip to 'cash_in'.
+      // After a successful bulk write, recompute derived fields per row
+      // — bulk patches commonly flip stage or status, which can change
+      // was_pledge (sticky-true) or trigger the written_commitment→cash_in
+      // auto-advance once payments are in.
       afterApply: async (id) => {
-        await maybeAdvancePledgeStage(id);
+        await applyDerivedOppFields(id);
       },
       // Reconcile pledge_allocations rows so the opportunity's
       // covered FYs match the requested set. Replace = wipe existing
@@ -294,7 +321,11 @@ router.post(
     const body = parseOrBadRequest(CreateOpportunityOrPledgeBodyRefined, req.body, res);
     if (!body) return;
     const [row] = await db.insert(opportunitiesAndPledges).values({ id: newId(), ...body }).returning();
-    res.status(201).json(row);
+    if (row) await applyDerivedOppFields(row.id);
+    const final = row
+      ? (await db.select().from(opportunitiesAndPledges).where(eq(opportunitiesAndPledges.id, row.id)).then((r) => r[0])) ?? row
+      : row;
+    res.status(201).json(final);
   }),
 );
 
@@ -329,11 +360,16 @@ router.patch(
       .where(eq(opportunitiesAndPledges.id, id))
       .returning();
     if (!row) return notFound(res, "opportunity");
-    // The patch may have lowered awardedAmount, flipped status to 'won',
-    // or set stage to 'written_commitment' — any of which can make an
-    // already-paid pledge newly eligible for auto-advance.
-    await maybeAdvancePledgeStage(id);
-    res.json(row);
+    // The patch may have changed stage, awardedAmount, or status — any
+    // of which can flip was_pledge sticky-true, change the derived
+    // status, or trigger the written_commitment→cash_in auto-advance.
+    await applyDerivedOppFields(id);
+    const final = await db
+      .select()
+      .from(opportunitiesAndPledges)
+      .where(eq(opportunitiesAndPledges.id, id))
+      .then((r) => r[0]);
+    res.json(final ?? row);
   }),
 );
 

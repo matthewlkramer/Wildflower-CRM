@@ -41,33 +41,42 @@ import { households } from "./households";
 // this — it's a convention, documented here and in replit.md, that
 // the UI and API are expected to honor.
 //
-//   status='open'  (live opportunity — fundraising conversation in flight)
+//   status='open'   (live opportunity — fundraising conversation in flight)
 //     EXPECTED: ask_amount, type, stage, win_probability,
 //               projected_close_date, application_deadline, owner_user_id,
 //               primary_contact_person_id, conditional, conditions
 //     IGNORED : awarded_amount, actual_completion_date, conditions_met,
 //               loss_reason
 //
-//   status='won'   (pledge — funder committed; money may or may not be in)
+//   status='pledge' (funder committed; money may or may not be in)
 //     EXPECTED: awarded_amount, conditional, conditions, conditions_met,
-//               actual_completion_date (once money has fully arrived),
-//               payment_details
-//     IGNORED : win_probability, stage, projected_close_date,
-//               application_deadline, loss_reason
+//               payment_details, grant_letter_url (foundation grants)
+//     IGNORED : win_probability, projected_close_date, loss_reason
 //
-//   status='lost'  (declined / withdrawn)
+//   status='cash_in' (fully paid — sum of payments >= awarded, or stage=cash_in)
+//     EXPECTED: awarded_amount, actual_completion_date
+//     IGNORED : win_probability, loss_reason
+//
+//   status='lost'  (declined / withdrawn — sticky user override)
 //     EXPECTED: loss_reason, actual_completion_date (date of decline)
 //     IGNORED : awarded_amount, conditions_met, win_probability, stage
 //
-//   status='dormant' (paused — neither actively worked nor formally lost)
+//   status='dormant' (paused — sticky user override)
 //     EXPECTED: whatever was captured before it went quiet (treat as a
 //               frozen snapshot of the opportunity-phase fields)
 //     IGNORED : awarded_amount, actual_completion_date, conditions_met
 //
+// `was_pledge` (boolean, sticky-true) records that this row was ever a
+// pledge, regardless of current status. Auto-flipped true when stage
+// reaches conditional/verbal/written, when a grant letter is uploaded,
+// or when a user manually checks the box. Never auto-flipped false.
+// `is_conditional` (boolean) marks pledges that carry conditions.
+// Migration auto-set it true for rows currently at stage=conditional_commitment.
+//
 // Partial indexes below match the two hot read paths: "open pipeline"
 // (filter by status='open', sorted by projected_close_date, often
-// scoped by funder) and "won grants in a given period" (filter by
-// status='won', sorted by actual_completion_date).
+// scoped by funder) and "cash-in grants in a given period" (filter by
+// status='cash_in', sorted by actual_completion_date).
 export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   id: text("id").primaryKey(),
   name: text("name"),
@@ -122,6 +131,22 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // Legacy integer pledge ID inherited from Copper. Not a FK; preserved for
   // cross-reference back to the prior CRM.
   copperPledgeId: text("copper_pledge_id"),
+  // Sticky-true: once an opp ever became a pledge (stage hit conditional/
+  // verbal/written, grant letter uploaded, or manually flagged), this
+  // stays true forever. Drives the Pledges page filter so historical
+  // pledges remain visible after being fully paid.
+  wasPledge: boolean("was_pledge").default(false).notNull(),
+  // Marks a pledge as carrying conditions. Auto-set true on migration
+  // for stage=conditional_commitment rows; user-editable thereafter.
+  isConditional: boolean("is_conditional").default(false).notNull(),
+  // Grant letter (foundation pledge documentation). Lives in object
+  // storage; only the URL is stored. Uploading flips was_pledge=true.
+  grantLetterUrl: text("grant_letter_url"),
+  grantLetterFilename: text("grant_letter_filename"),
+  // ISO-string mode so the OpenAPI-typed string flows through without
+  // coercion in route handlers; reads as the same ISO string the
+  // generated client expects.
+  grantLetterUploadedAt: timestamp("grant_letter_uploaded_at", { mode: "string" }),
   // SET NULL: primary contact is a soft pointer.
   primaryContactPersonId: text("primary_contact_person_id").references(
     () => people.id,
@@ -144,9 +169,9 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   index("opportunities_and_pledges_open_pipeline_idx")
     .on(t.funderId, t.projectedCloseDate)
     .where(sql`${t.status} = 'open'`),
-  index("opportunities_and_pledges_won_completed_idx")
+  index("opportunities_and_pledges_cash_in_completed_idx")
     .on(t.actualCompletionDate)
-    .where(sql`${t.status} = 'won'`),
+    .where(sql`${t.status} = 'cash_in'`),
   // Donor exclusivity: exactly one of funder / individual-giver / household.
   check(
     "opportunities_and_pledges_donor_xor",

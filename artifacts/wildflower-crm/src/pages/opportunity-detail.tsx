@@ -56,7 +56,8 @@ const STAGE_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { value: "open", label: "Open" },
-  { value: "won", label: "Won" },
+  { value: "pledge", label: "Pledge" },
+  { value: "cash_in", label: "Cash in" },
   { value: "dormant", label: "Dormant" },
   { value: "lost", label: "Lost" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityStatus>>;
@@ -245,41 +246,50 @@ function OppView({
               />
             </Row>
             <Row label="Status">
-              {isPledge ? (
-                <Badge variant="default">{formatEnum(opp.status) || "Won"}</Badge>
-              ) : (
-                <InlineEditSelect
-                  label="Status"
-                  testIdBase="opp-status"
-                  value={opp.status ?? null}
-                  options={STATUS_OPTIONS}
-                  display={
-                    opp.status ? (
-                      <Badge variant={opp.status === "won" ? "default" : "outline"}>
-                        {formatEnum(opp.status)}
-                      </Badge>
-                    ) : (
-                      "—"
-                    )
+              {/*
+                Status is normally auto-derived (open / pledge / cash_in)
+                but users can still hand-set sticky overrides (dormant /
+                lost). Surface the select on both Pledge and Opportunity
+                detail pages — the only difference between them is the
+                page filter, not the underlying record.
+              */}
+              <InlineEditSelect
+                label="Status"
+                testIdBase="opp-status"
+                value={opp.status ?? null}
+                options={STATUS_OPTIONS}
+                display={
+                  opp.status ? (
+                    <Badge
+                      variant={
+                        opp.status === "cash_in" || opp.status === "pledge"
+                          ? "default"
+                          : "outline"
+                      }
+                    >
+                      {formatEnum(opp.status)}
+                    </Badge>
+                  ) : (
+                    "—"
+                  )
+                }
+                onSave={(next) => {
+                  // Convenience: when closing a single opp that has no
+                  // completion date yet, default to today so the user
+                  // doesn't have to set it manually. The bulk-edit path
+                  // intentionally does NOT do this (cleanup of historical
+                  // rows shouldn't invent a fake date).
+                  const closed =
+                    next === "cash_in" || next === "lost" || next === "dormant";
+                  const body: UpdateOpportunityOrPledgeBody = { status: next };
+                  if (closed && !opp.actualCompletionDate) {
+                    body.actualCompletionDate = new Date()
+                      .toISOString()
+                      .slice(0, 10);
                   }
-                  onSave={(next) => {
-                    // Convenience: when closing a single opp that has no
-                    // completion date yet, default to today so the user
-                    // doesn't have to set it manually. The bulk-edit path
-                    // intentionally does NOT do this (cleanup of historical
-                    // rows shouldn't invent a fake date).
-                    const closed =
-                      next === "won" || next === "lost" || next === "dormant";
-                    const body: UpdateOpportunityOrPledgeBody = { status: next };
-                    if (closed && !opp.actualCompletionDate) {
-                      body.actualCompletionDate = new Date()
-                        .toISOString()
-                        .slice(0, 10);
-                    }
-                    return patch(body);
-                  }}
-                />
-              )}
+                  return patch(body);
+                }}
+              />
             </Row>
             <Row label="Type">
               <InlineEditSelect
@@ -321,6 +331,82 @@ function OppView({
                 onSave={(next) => patch({ conditionsMet: next ?? false })}
               />
             </Row>
+            <Row label="Is conditional">
+              {/*
+                Independent boolean flag (separate from the
+                `conditional` semantic-context enum above). Toggled
+                manually; pre-set true on records imported with a
+                `conditional_commitment` stage.
+              */}
+              <InlineEditBoolean
+                label="Is conditional"
+                testIdBase="opp-is-conditional"
+                value={opp.isConditional ?? false}
+                allowNull={false}
+                display={opp.isConditional ? "Yes" : "No"}
+                onSave={(next) => patch({ isConditional: next ?? false })}
+              />
+            </Row>
+            <Row label="Was pledge">
+              {/*
+                Sticky-true flag that pins a row to the Pledges page
+                even after stage moves backward or status flips to
+                cash_in. Auto-flipped true on stage ∈ (conditional,
+                verbal, written) or grant-letter upload; also user-
+                tickable here. Never auto-flipped back to false — only
+                the user can clear it.
+              */}
+              <InlineEditBoolean
+                label="Was pledge"
+                testIdBase="opp-was-pledge"
+                value={opp.wasPledge ?? false}
+                allowNull={false}
+                display={opp.wasPledge ? "Yes" : "No"}
+                onSave={(next) => patch({ wasPledge: next ?? false })}
+              />
+            </Row>
+            <Row label="Grant letter">
+              {/*
+                Manual URL field for now — drop-zone upload is a
+                planned follow-up that will POST to the API server's
+                object-storage helper and then PATCH this row.
+                Setting a URL also flips was_pledge sticky-true on
+                the server side (see applyDerivedOppFields).
+              */}
+              <InlineEditText
+                label="Grant letter URL"
+                testIdBase="opp-grant-letter-url"
+                value={opp.grantLetterUrl ?? null}
+                placeholder="https://…"
+                display={
+                  opp.grantLetterUrl ? (
+                    <a
+                      href={opp.grantLetterUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {opp.grantLetterFilename ?? "View letter"}
+                    </a>
+                  ) : (
+                    "—"
+                  )
+                }
+                onSave={(next) => patch({ grantLetterUrl: next })}
+              />
+            </Row>
+            {opp.grantLetterUrl && (
+              <Row label="Grant letter filename">
+                <InlineEditText
+                  label="Grant letter filename"
+                  testIdBase="opp-grant-letter-filename"
+                  value={opp.grantLetterFilename ?? null}
+                  placeholder="award_letter.pdf"
+                  display={opp.grantLetterFilename ?? "—"}
+                  onSave={(next) => patch({ grantLetterFilename: next })}
+                />
+              </Row>
+            )}
             <Row label="Owner">
               <InlineEditUserPicker
                 testIdBase="opp-owner"

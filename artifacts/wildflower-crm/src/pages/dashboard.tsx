@@ -51,7 +51,7 @@ export default function Dashboard() {
     { label: "Organizations", value: counts?.organizations, href: "/organizations", testId: "tile-orgs" },
     { label: "Opportunities", value: counts?.opportunities, href: "/opportunities", testId: "tile-opps" },
     { label: "Open opps", value: counts?.openOpportunities, href: "/opportunities", testId: "tile-open-opps" },
-    { label: "Won pledges", value: counts?.wonPledges, href: "/pledges", testId: "tile-pledges" },
+    { label: "Pledges", value: counts?.pledges, href: "/pledges", testId: "tile-pledges" },
     { label: "Gifts & payments", value: counts?.gifts, href: "/gifts", testId: "tile-gifts" },
   ];
 

@@ -154,7 +154,8 @@ export const OPPORTUNITIES_BULK_FIELDS: ReadonlyArray<BulkField> = [
     nullable: true,
     options: [
       { value: "open", label: "Open" },
-      { value: "won", label: "Won" },
+      { value: "pledge", label: "Pledge" },
+      { value: "cash_in", label: "Cash in" },
       { value: "lost", label: "Lost", destructive: true },
       { value: "dormant", label: "Dormant", destructive: true },
     ],

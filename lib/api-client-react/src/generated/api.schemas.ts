@@ -254,12 +254,25 @@ export const OrganizationType = {
   tribal: "tribal",
 } as const;
 
+/**
+ * Lifecycle status of an opportunity/pledge row.
+  open    — actively in the funnel, not yet committed
+  pledge  — funder has committed (stage in conditional/verbal/written)
+  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)
+  dormant — paused; sticky user override
+  lost    — declined/withdrawn; sticky user override
+Status is auto-derived from stage + payments on every write EXCEPT when
+the row is already dormant/lost (sticky overrides — only clear when the
+user explicitly picks a different value).
+
+ */
 export type OpportunityStatus =
   (typeof OpportunityStatus)[keyof typeof OpportunityStatus];
 
 export const OpportunityStatus = {
   open: "open",
-  won: "won",
+  pledge: "pledge",
+  cash_in: "cash_in",
   dormant: "dormant",
   lost: "lost",
 } as const;
@@ -472,7 +485,7 @@ export interface DashboardCounts {
   organizations: number;
   opportunities: number;
   openOpportunities: number;
-  wonPledges: number;
+  pledges: number;
   gifts: number;
 }
 
@@ -1181,6 +1194,11 @@ export interface OpportunityOrPledge {
   paymentDetails?: string | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
+  wasPledge: boolean;
+  isConditional: boolean;
+  grantLetterUrl?: string | null;
+  grantLetterFilename?: string | null;
+  grantLetterUploadedAt?: string | null;
   primaryContactPersonId?: string | null;
   ownerUserId?: string | null;
   funderName?: string | null;
@@ -1282,6 +1300,11 @@ export interface CreateOpportunityOrPledgeBody {
   paymentDetails?: string;
   usageNotes?: string;
   copperPledgeId?: string;
+  wasPledge?: boolean;
+  isConditional?: boolean;
+  grantLetterUrl?: string;
+  grantLetterFilename?: string;
+  grantLetterUploadedAt?: string;
   primaryContactPersonId?: string;
   ownerUserId?: string;
 }
@@ -1309,6 +1332,11 @@ export interface UpdateOpportunityOrPledgeBody {
   paymentDetails?: string | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
+  wasPledge?: boolean;
+  isConditional?: boolean;
+  grantLetterUrl?: string | null;
+  grantLetterFilename?: string | null;
+  grantLetterUploadedAt?: string | null;
   primaryContactPersonId?: string | null;
   ownerUserId?: string | null;
 }
@@ -2022,7 +2050,9 @@ export interface BulkUpdateOpportunitiesPatch {
   status?: OpportunityStatus | null;
   stage?: OpportunityStage | null;
   type?: OpportunityType | null;
-  /** Optional close date when bulk-setting status to won/lost. Left null is allowed; the closed_requires_completion_date CHECK has been removed to support historical cleanup workflows. */
+  wasPledge?: boolean | null;
+  isConditional?: boolean | null;
+  /** Optional close date when bulk-setting status to cash_in/lost. Left null is allowed to support historical cleanup workflows. */
   actualCompletionDate?: string | null;
   /** Set of fiscal-year slugs (e.g. 'fy2026') to attach to each opportunity via pledge_allocations. Combined with coveredFiscalYearsMode. */
   coveredFiscalYears?: string[];
@@ -2321,6 +2351,20 @@ export type ListOpportunitiesAndPledgesParams = {
   search?: string;
   status?: OpportunityStatus[];
   stage?: OpportunityStage[];
+  /**
+ * Convenience filter encoding the page split:
+  pledges       — wasPledge=true OR stage ∈ (conditional, verbal,
+                  written). Drives the /pledges page.
+  opportunities — the complement (rest of the rows). Drives the
+                  /opportunities page.
+Omit to include all rows.
+
+ */
+  pledgeView?: ListOpportunitiesAndPledgesPledgeView;
+  /**
+   * Filter strictly on the was_pledge column.
+   */
+  wasPledge?: boolean;
   type?: OpportunityType[];
   funderId?: string;
   householdId?: string;
@@ -2350,6 +2394,14 @@ param or comma-separate. Omit to include all fiscal years.
    */
   page?: PageParameter;
 };
+
+export type ListOpportunitiesAndPledgesPledgeView =
+  (typeof ListOpportunitiesAndPledgesPledgeView)[keyof typeof ListOpportunitiesAndPledgesPledgeView];
+
+export const ListOpportunitiesAndPledgesPledgeView = {
+  pledges: "pledges",
+  opportunities: "opportunities",
+} as const;
 
 export type ListPledgeAllocationsParams = {
   pledgeOrOpportunityId?: string;

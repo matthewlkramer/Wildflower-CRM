@@ -45,7 +45,7 @@ import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
 import { useUserNameMap } from "@/components/user-picker";
 
-const STATUSES: OpportunityStatus[] = ["open", "won", "dormant", "lost"];
+const STATUSES: OpportunityStatus[] = ["open", "pledge", "cash_in", "dormant", "lost"];
 const STAGES: OpportunityStage[] = [
   "cold_lead",
   "warm_lead",
@@ -63,30 +63,44 @@ const PAGE_SIZE = 50;
 
 type Props = {
   title?: string;
-  /** When set, locks the status filter to this value and hides the control. */
-  lockedStatus?: OpportunityStatus;
-  /** Default for the status filter when not locked. */
-  defaultStatus?: OpportunityStatus | null;
+  /**
+   * Page split:
+   *   "pledges"       → server applies (wasPledge=true OR stage ∈ pledge stages),
+   *                     status filter defaults to all-but-cash_in.
+   *   "opportunities" → server applies the complement,
+   *                     status filter defaults to [open].
+   * Omit for an unscoped view (admin / debugging).
+   */
+  pledgeView?: "pledges" | "opportunities";
+  /** Default for the status filter when none is provided. */
+  defaultStatuses?: OpportunityStatus[];
   basePath?: string;
 };
 
 export default function Opportunities({
   title = "Opportunities",
-  lockedStatus,
-  defaultStatus = null,
+  pledgeView,
+  defaultStatuses,
   basePath = "/opportunities",
 }: Props) {
   // Filter state is persisted per-tab (sessionStorage) so navigating to
   // a detail row and clicking Back restores the same view. /opportunities
-  // and /pledges (same component, lockedStatus="won") need distinct
-  // namespaces so their filters don't bleed into each other.
-  const persistNs = `wf.list.opps.${lockedStatus ?? "all"}`;
+  // and /pledges (same component) need distinct namespaces so their
+  // filters don't bleed into each other.
+  const persistNs = `wf.list.opps.${pledgeView ?? "all"}`;
   const [search, setSearch] = usePersistedState<string>(`${persistNs}.search`, "");
   const debouncedSearch = useDebounce(search, 250);
-  // All enum filters are multi-select. Status defaults to a single-item
-  // array when `defaultStatus` is provided (e.g. the dashboard pre-filters
-  // to "open"), and is forced to `[lockedStatus]` when locked (pledges view).
-  const defaultStatusArr = defaultStatus ? [defaultStatus] : [];
+  // All enum filters are multi-select. Status defaults to:
+  //   pledges view       → everything except cash_in (committed but not yet paid)
+  //   opportunities view → [open] only (active funnel)
+  //   unscoped           → no default
+  const defaultStatusArr: OpportunityStatus[] =
+    defaultStatuses ??
+    (pledgeView === "pledges"
+      ? ["open", "pledge", "dormant", "lost"]
+      : pledgeView === "opportunities"
+        ? ["open"]
+        : []);
   const [statuses, setStatuses] = usePersistedState<string[]>(`${persistNs}.statuses`, defaultStatusArr);
   const [stages, setStages] = usePersistedState<string[]>(`${persistNs}.stages`, []);
   const [types, setTypes] = usePersistedState<string[]>(`${persistNs}.types`, []);
@@ -113,14 +127,13 @@ export default function Opportunities({
   // the react-query cache key is stable regardless of the order the user
   // clicked checkboxes in (`['a','b']` and `['b','a']` would otherwise
   // produce distinct keys / refetches).
-  const effectiveStatuses = lockedStatus
-    ? [lockedStatus]
-    : [...statuses].sort();
+  const effectiveStatuses = [...statuses].sort();
 
   const params: ListOpportunitiesAndPledgesParams = {
     limit: PAGE_SIZE,
     page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+    ...(pledgeView ? { pledgeView } : {}),
     ...(effectiveStatuses.length > 0
       ? { status: effectiveStatuses as OpportunityStatus[] }
       : {}),
@@ -173,7 +186,7 @@ export default function Opportunities({
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const isPledgeView = lockedStatus === "won";
+  const isPledgeView = pledgeView === "pledges";
 
   // Determine "is anything filtered beyond default?" for the Clear button.
   const sameDefaultStatus =
@@ -181,7 +194,7 @@ export default function Opportunities({
     [...statuses].sort().join(",") === [...defaultStatusArr].sort().join(",");
   const hasActiveFilters =
     !!search ||
-    (!lockedStatus && !sameDefaultStatus) ||
+    !sameDefaultStatus ||
     stages.length > 0 ||
     types.length > 0 ||
     fiscalYears.length > 0 ||
@@ -206,15 +219,13 @@ export default function Opportunities({
             data-testid="input-search-opportunities"
           />
         </div>
-        {!lockedStatus && (
-          <MultiFilterSelect
-            label="Status"
-            selected={statuses}
-            onChange={(v) => { setStatuses(v); setPage(1); selection.clear(); }}
-            options={STATUSES}
-            testId="select-opp-status"
-          />
-        )}
+        <MultiFilterSelect
+          label="Status"
+          selected={statuses}
+          onChange={(v) => { setStatuses(v); setPage(1); selection.clear(); }}
+          options={STATUSES}
+          testId="select-opp-status"
+        />
         <MultiFilterSelect
           label="Stage"
           selected={stages}
@@ -244,7 +255,7 @@ export default function Opportunities({
             size="sm"
             onClick={() => {
               setSearch("");
-              if (!lockedStatus) setStatuses(defaultStatusArr);
+              setStatuses(defaultStatusArr);
               setStages([]);
               setTypes([]);
               setFiscalYears([]);
@@ -338,7 +349,7 @@ export default function Opportunities({
                     </TableCell>
                     <TableCell>{formatEnum(o.stage)}</TableCell>
                     <TableCell>
-                      {o.status ? <Badge variant={o.status === "won" ? "default" : "outline"}>{formatEnum(o.status)}</Badge> : "—"}
+                      {o.status ? <Badge variant={o.status === "cash_in" || o.status === "pledge" ? "default" : "outline"}>{formatEnum(o.status)}</Badge> : "—"}
                     </TableCell>
                     {isPledgeView ? (
                       <TableCell className="text-xs text-muted-foreground">

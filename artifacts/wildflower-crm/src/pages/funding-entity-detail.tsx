@@ -649,13 +649,14 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       <LinkedOpportunitiesCard
         scope={{ funderId: funder.id }}
         title="Pledges"
-        status="won"
+        pledgeView="pledges"
         emptyLabel="No pledges from this funder."
       />
 
       <LinkedOpportunitiesCard
         scope={{ funderId: funder.id }}
         title="Open opportunities"
+        pledgeView="opportunities"
         status="open"
         emptyLabel="No open opportunities."
       />

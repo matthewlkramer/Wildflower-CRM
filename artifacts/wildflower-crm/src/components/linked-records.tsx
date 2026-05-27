@@ -115,24 +115,30 @@ export function LinkedGiftsCard({ scope }: { scope: LinkedRecordsScope }) {
 }
 
 /**
- * Pledges = opportunities with status='won', shown as a separate card
- * because fundraisers reason about them differently (covered FYs vs
- * still-being-negotiated ask amounts).
+ * Pledges card — uses the server's pledgeView filter (wasPledge=true OR
+ * stage ∈ conditional/verbal/written) so historical pledges stay
+ * visible after they're fully paid. Opportunities card uses the
+ * complement. Shown as separate cards because fundraisers reason about
+ * them differently (covered FYs vs still-being-negotiated ask amounts).
  */
 export function LinkedOpportunitiesCard({
   scope,
+  pledgeView,
   status,
   title,
   emptyLabel,
 }: {
   scope: LinkedRecordsScope;
-  /** Optional status filter — omit to show all (open + won + dormant + lost). */
+  /** Server-side page split. Omit to include all rows. */
+  pledgeView?: "pledges" | "opportunities";
+  /** Optional explicit status filter (rare; usually drive via pledgeView). */
   status?: OpportunityStatus;
   title: string;
   emptyLabel: string;
 }) {
   const params: ListOpportunitiesAndPledgesParams = {
     ...buildBaseParams(scope),
+    ...(pledgeView ? { pledgeView } : {}),
     ...(status ? { status: [status] } : {}),
     limit: PAGE_SIZE,
     page: 1,
@@ -143,7 +149,7 @@ export function LinkedOpportunitiesCard({
   );
   const rows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
-  const isPledgeView = status === "won";
+  const isPledgeView = pledgeView === "pledges";
 
   return (
     <Card>
@@ -179,12 +185,17 @@ export function LinkedOpportunitiesCard({
               </TableHeader>
               <TableBody>
                 {rows.map((o) => {
-                  // Pledges (won) link through the /pledges shell so
+                  // Rows that belong on the Pledges page (wasPledge=true
+                  // OR stage ∈ pledge stages) link through /pledges so
                   // breadcrumbs/back-links stay consistent with how the
                   // user navigated in; everything else routes through
                   // /opportunities.
+                  const stageIsPledge =
+                    o.stage === "conditional_commitment" ||
+                    o.stage === "verbal_commitment" ||
+                    o.stage === "written_commitment";
                   const href =
-                    o.status === "won"
+                    o.wasPledge || stageIsPledge
                       ? `/pledges/${o.id}`
                       : `/opportunities/${o.id}`;
                   return (
@@ -205,7 +216,9 @@ export function LinkedOpportunitiesCard({
                         {o.status ? (
                           <Badge
                             variant={
-                              o.status === "won" ? "default" : "outline"
+                              o.status === "cash_in" || o.status === "pledge"
+                                ? "default"
+                                : "outline"
                             }
                           >
                             {formatEnum(o.status)}

@@ -2876,7 +2876,15 @@ export const listOpportunitiesAndPledgesQueryPageDefault = 1;
 
 export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   search: zod.coerce.string().optional(),
-  status: zod.array(zod.enum(["open", "won", "dormant", "lost"])).optional(),
+  status: zod
+    .array(
+      zod
+        .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+        .describe(
+          "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+        ),
+    )
+    .optional(),
   stage: zod
     .array(
       zod.enum([
@@ -2892,6 +2900,16 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
       ]),
     )
     .optional(),
+  pledgeView: zod
+    .enum(["pledges", "opportunities"])
+    .optional()
+    .describe(
+      "Convenience filter encoding the page split:\n  pledges       — wasPledge=true OR stage ∈ (conditional, verbal,\n                  written). Drives the \/pledges page.\n  opportunities — the complement (rest of the rows). Drives the\n                  \/opportunities page.\nOmit to include all rows.\n",
+    ),
+  wasPledge: zod.coerce
+    .boolean()
+    .optional()
+    .describe("Filter strictly on the was_pledge column."),
   type: zod
     .array(zod.enum(["solicitation", "renewal", "open_application"]))
     .optional(),
@@ -2946,7 +2964,12 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       individualGiverPersonId: zod.string().nullish(),
       individualAdvisorPersonId: zod.string().nullish(),
       matchId: zod.string().nullish(),
-      status: zod.enum(["open", "won", "dormant", "lost"]).nullish(),
+      status: zod
+        .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+        .describe(
+          "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+        )
+        .nullish(),
       projectedCloseDate: zod.string().date().nullish(),
       actualCompletionDate: zod.string().date().nullish(),
       winProbability: zod.string().nullish(),
@@ -2968,6 +2991,11 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       paymentDetails: zod.string().nullish(),
       usageNotes: zod.string().nullish(),
       copperPledgeId: zod.string().nullish(),
+      wasPledge: zod.boolean(),
+      isConditional: zod.boolean(),
+      grantLetterUrl: zod.string().nullish(),
+      grantLetterFilename: zod.string().nullish(),
+      grantLetterUploadedAt: zod.string().datetime({}).nullish(),
       primaryContactPersonId: zod.string().nullish(),
       ownerUserId: zod.string().nullish(),
       funderName: zod.string().nullish(),
@@ -3010,7 +3038,12 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   individualGiverPersonId: zod.string().optional(),
   individualAdvisorPersonId: zod.string().optional(),
   matchId: zod.string().optional(),
-  status: zod.enum(["open", "won", "dormant", "lost"]).optional(),
+  status: zod
+    .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+    .optional()
+    .describe(
+      "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+    ),
   projectedCloseDate: zod.string().date().optional(),
   actualCompletionDate: zod.string().date().optional(),
   winProbability: zod.string().optional(),
@@ -3032,6 +3065,11 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   paymentDetails: zod.string().optional(),
   usageNotes: zod.string().optional(),
   copperPledgeId: zod.string().optional(),
+  wasPledge: zod.boolean().optional(),
+  isConditional: zod.boolean().optional(),
+  grantLetterUrl: zod.string().optional(),
+  grantLetterFilename: zod.string().optional(),
+  grantLetterUploadedAt: zod.string().datetime({}).optional(),
   primaryContactPersonId: zod.string().optional(),
   ownerUserId: zod.string().optional(),
 });
@@ -3063,7 +3101,12 @@ export const GetOpportunityOrPledgeResponse = zod
     individualGiverPersonId: zod.string().nullish(),
     individualAdvisorPersonId: zod.string().nullish(),
     matchId: zod.string().nullish(),
-    status: zod.enum(["open", "won", "dormant", "lost"]).nullish(),
+    status: zod
+      .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+      .describe(
+        "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+      )
+      .nullish(),
     projectedCloseDate: zod.string().date().nullish(),
     actualCompletionDate: zod.string().date().nullish(),
     winProbability: zod.string().nullish(),
@@ -3085,6 +3128,11 @@ export const GetOpportunityOrPledgeResponse = zod
     paymentDetails: zod.string().nullish(),
     usageNotes: zod.string().nullish(),
     copperPledgeId: zod.string().nullish(),
+    wasPledge: zod.boolean(),
+    isConditional: zod.boolean(),
+    grantLetterUrl: zod.string().nullish(),
+    grantLetterFilename: zod.string().nullish(),
+    grantLetterUploadedAt: zod.string().datetime({}).nullish(),
     primaryContactPersonId: zod.string().nullish(),
     ownerUserId: zod.string().nullish(),
     funderName: zod.string().nullish(),
@@ -3232,7 +3280,12 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
   individualGiverPersonId: zod.string().nullish(),
   individualAdvisorPersonId: zod.string().nullish(),
   matchId: zod.string().nullish(),
-  status: zod.enum(["open", "won", "dormant", "lost"]).nullish(),
+  status: zod
+    .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+    .describe(
+      "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+    )
+    .nullish(),
   projectedCloseDate: zod.string().date().nullish(),
   actualCompletionDate: zod.string().date().nullish(),
   winProbability: zod.string().nullish(),
@@ -3254,6 +3307,11 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
   paymentDetails: zod.string().nullish(),
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
+  wasPledge: zod.boolean().optional(),
+  isConditional: zod.boolean().optional(),
+  grantLetterUrl: zod.string().nullish(),
+  grantLetterFilename: zod.string().nullish(),
+  grantLetterUploadedAt: zod.string().datetime({}).nullish(),
   primaryContactPersonId: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
 });
@@ -3280,7 +3338,12 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   individualGiverPersonId: zod.string().nullish(),
   individualAdvisorPersonId: zod.string().nullish(),
   matchId: zod.string().nullish(),
-  status: zod.enum(["open", "won", "dormant", "lost"]).nullish(),
+  status: zod
+    .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+    .describe(
+      "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+    )
+    .nullish(),
   projectedCloseDate: zod.string().date().nullish(),
   actualCompletionDate: zod.string().date().nullish(),
   winProbability: zod.string().nullish(),
@@ -3302,6 +3365,11 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   paymentDetails: zod.string().nullish(),
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
+  wasPledge: zod.boolean(),
+  isConditional: zod.boolean(),
+  grantLetterUrl: zod.string().nullish(),
+  grantLetterFilename: zod.string().nullish(),
+  grantLetterUploadedAt: zod.string().datetime({}).nullish(),
   primaryContactPersonId: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
   funderName: zod.string().nullish(),
@@ -4788,7 +4856,7 @@ export const GetDashboardSummaryResponse = zod.object({
     organizations: zod.number(),
     opportunities: zod.number(),
     openOpportunities: zod.number(),
-    wonPledges: zod.number(),
+    pledges: zod.number(),
     gifts: zod.number(),
   }),
   currentFiscalYear: zod.object({
@@ -5114,7 +5182,12 @@ export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
     .max(bulkUpdateOpportunitiesAndPledgesBodyIdsMax),
   patch: zod.object({
     ownerUserId: zod.string().nullish(),
-    status: zod.enum(["open", "won", "dormant", "lost"]).nullish(),
+    status: zod
+      .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+      .describe(
+        "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+      )
+      .nullish(),
     stage: zod
       .enum([
         "cold_lead",
@@ -5129,12 +5202,14 @@ export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
       ])
       .nullish(),
     type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
+    wasPledge: zod.boolean().nullish(),
+    isConditional: zod.boolean().nullish(),
     actualCompletionDate: zod
       .string()
       .date()
       .nullish()
       .describe(
-        "Optional close date when bulk-setting status to won\/lost. Left null is allowed; the closed_requires_completion_date CHECK has been removed to support historical cleanup workflows.",
+        "Optional close date when bulk-setting status to cash_in\/lost. Left null is allowed to support historical cleanup workflows.",
       ),
     coveredFiscalYears: zod
       .array(zod.string())
