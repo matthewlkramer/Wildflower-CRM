@@ -15,7 +15,6 @@ import {
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { NotesPanel } from "@/components/notes-panel";
-import { MeetingNotesPanel } from "@/components/meeting-notes-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import {
   LinkedGiftsCard,
@@ -617,8 +616,6 @@ function PersonView({ person }: { person: PersonDetail }) {
       <LinkedGiftsCard scope={{ individualGiverPersonId: person.id }} />
 
       <ActivityTimeline personId={person.id} />
-
-      <MeetingNotesPanel personId={person.id} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <NotesPanel personId={person.id} />

@@ -19,7 +19,6 @@ import {
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { NotesPanel } from "@/components/notes-panel";
-import { MeetingNotesPanel } from "@/components/meeting-notes-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import {
   LinkedGiftsCard,
@@ -665,8 +664,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       <LinkedGiftsCard scope={{ funderId: funder.id }} />
 
       <ActivityTimeline funderId={funder.id} />
-
-      <MeetingNotesPanel funderId={funder.id} />
 
       <div className="text-xs text-muted-foreground">
         Created {formatDate(funder.createdAt)} • Updated{" "}

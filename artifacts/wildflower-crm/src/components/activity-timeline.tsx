@@ -6,6 +6,7 @@ import {
   useListEmailMessages,
   useListCalendarEvents,
   useListEmailProposals,
+  useListMeetingNotes,
   getListEmailProposalsQueryKey,
   type Interaction,
   type EmailMessage,
@@ -13,7 +14,13 @@ import {
   type EmailProposal,
   type EmailProposalKind,
   type InteractionKind,
+  type MeetingNote,
 } from "@workspace/api-client-react";
+import {
+  AddMeetingNoteDialog,
+  MeetingNoteRow,
+  type MeetingContext,
+} from "@/components/meeting-notes-panel";
 import {
   Card,
   CardContent,
@@ -50,7 +57,8 @@ type Item =
   | { source: "interaction"; at: string; row: Interaction }
   | { source: "email"; at: string; row: EmailMessage }
   | { source: "calendar"; at: string; row: CalendarEvent }
-  | { source: "intel"; at: string; row: EmailProposal };
+  | { source: "intel"; at: string; row: EmailProposal }
+  | { source: "meeting"; at: string; row: MeetingNote };
 
 type Source = Item["source"];
 
@@ -59,6 +67,7 @@ const SOURCE_LABEL: Record<Source, string> = {
   email: "Email",
   calendar: "Calendar",
   intel: "Intel",
+  meeting: "Meetings",
 };
 
 const INTERACTION_LABEL: Record<InteractionKind, string> = {
@@ -113,6 +122,7 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
   const ints = useListInteractions(filters);
   const emails = useListEmailMessages(filters);
   const cals = useListCalendarEvents(filters);
+  const meetings = useListMeetingNotes(filters);
 
   // Email proposals are targeted at a single person or funder — they
   // don't have a household linkage in the schema, so we only fetch them
@@ -147,10 +157,13 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
       ...(proposals.data?.data ?? []).map<Item>((r) => ({
         source: "intel", at: r.createdAt, row: r,
       })),
+      ...(meetings.data?.data ?? []).map<Item>((r) => ({
+        source: "meeting", at: r.meetingDate, row: r,
+      })),
     ];
     merged.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
     return merged;
-  }, [ints.data, emails.data, cals.data, proposals.data]);
+  }, [ints.data, emails.data, cals.data, proposals.data, meetings.data]);
 
   const items = useMemo(
     () => (activeSource ? allItems.filter((it) => it.source === activeSource) : allItems),
@@ -161,6 +174,7 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
     ints.isLoading ||
     emails.isLoading ||
     cals.isLoading ||
+    meetings.isLoading ||
     (proposalsEnabled && proposals.isLoading);
 
   // Per-source counts for the chip badges, computed from totals where
@@ -172,11 +186,17 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
       email: emails.data?.pagination.total ?? 0,
       calendar: cals.data?.pagination.total ?? 0,
       intel: proposalsEnabled ? (proposals.data?.pagination.total ?? 0) : 0,
+      meeting: meetings.data?.pagination.total ?? 0,
     };
     return c;
-  }, [ints.data, emails.data, cals.data, proposals.data, proposalsEnabled]);
+  }, [ints.data, emails.data, cals.data, proposals.data, proposalsEnabled, meetings.data]);
 
-  const totalAll = counts.interaction + counts.email + counts.calendar + counts.intel;
+  const totalAll =
+    counts.interaction +
+    counts.email +
+    counts.calendar +
+    counts.intel +
+    counts.meeting;
 
   // "More to load" if any *visible* source is currently at its cap.
   // When a filter is active we only need to grow that one source.
@@ -186,10 +206,12 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
     if (activeSource === "email") return overCap(counts.email);
     if (activeSource === "calendar") return overCap(counts.calendar);
     if (activeSource === "intel") return overCap(counts.intel);
+    if (activeSource === "meeting") return overCap(counts.meeting);
     return (
       overCap(counts.interaction) ||
       overCap(counts.email) ||
       overCap(counts.calendar) ||
+      overCap(counts.meeting) ||
       (proposalsEnabled && overCap(counts.intel))
     );
   })();
@@ -199,6 +221,7 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
     { key: "interaction", label: SOURCE_LABEL.interaction, count: counts.interaction },
     { key: "email", label: SOURCE_LABEL.email, count: counts.email },
     { key: "calendar", label: SOURCE_LABEL.calendar, count: counts.calendar },
+    { key: "meeting", label: SOURCE_LABEL.meeting, count: counts.meeting },
     ...(proposalsEnabled
       ? [{ key: "intel" as const, label: SOURCE_LABEL.intel, count: counts.intel }]
       : []),
@@ -208,12 +231,17 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
     <Card data-testid="activity-timeline">
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-lg">Activity</CardTitle>
-        <LogInteractionDialog
-          prefillPersonId={personId}
-          prefillFunderId={funderId}
-          prefillHouseholdId={householdId}
-          compact
-        />
+        <div className="flex items-center gap-2">
+          <AddMeetingNoteDialog
+            ctx={{ personId, funderId, householdId } as MeetingContext}
+          />
+          <LogInteractionDialog
+            prefillPersonId={personId}
+            prefillFunderId={funderId}
+            prefillHouseholdId={householdId}
+            compact
+          />
+        </div>
       </CardHeader>
       <CardContent>
         {/* Source filter chips. Clicking re-selects the active filter or
@@ -366,6 +394,13 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
                     ) : null}
                   </li>
                 );
+              }
+              if (it.source === "meeting") {
+                // Render the same row component the standalone panel
+                // uses, so edit/delete/promote behavior is identical
+                // whether the user opens it from the timeline or the
+                // legacy panel.
+                return <MeetingNoteRow key={`mtg-${it.row.id}`} note={it.row} />;
               }
               // source === "intel" — email-intelligence proposal. We
               // show a compact card with a "Review" link into the
