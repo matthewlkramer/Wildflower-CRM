@@ -34,10 +34,22 @@ import tasksRouter from "./tasks";
 import meetingNotesRouter from "./meetingNotes";
 import savedViewsRouter from "./savedViews";
 import storageRouter from "./storage";
+import emailTrackingRouter from "./emailTracking";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+// emailTrackingRouter mounts here (NOT at the bottom) on purpose. Several
+// sub-routers below — usersRouter, regionsRouter, schoolsRouter, etc. —
+// apply `router.use(requireAuth)` at module top, and Express runs that
+// middleware for every request that walks through the sub-router whether
+// or not one of its internal routes matches. Anything mounted after those
+// routers is unreachable when unauthenticated. The Magio extension calls
+// POST /email-tracking, GET /email-tracking/search|status, and the pixel
+// endpoint anonymously from mail.google.com, so this router must be
+// reachable before any auth-gated sub-router fires. Per-route requireAuth
+// is still applied inside emailTrackingRouter for the CRM-facing reads.
+router.use(emailTrackingRouter);
 router.use(usersRouter);
 router.use(regionsRouter);
 router.use(schoolsRouter);

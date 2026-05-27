@@ -1148,6 +1148,92 @@ paths:
         "204": { description: Deleted }
         "403": { description: Forbidden }
 
+  # ─── Email tracking (Magio-compatible) ───────────────────────────────────
+  # Vendored from github.com/DeepakSilaych/Magio. The browser extension
+  # POSTs here when the operator clicks Send in Gmail; we mint an id,
+  # resolve the To: address against the CRM contacts table, and the
+  # extension injects a 1×1 pixel pointing at /track/{id}.gif. POST/search/
+  # status/delete-latest are intentionally UNAUTHENTICATED to keep the
+  # extension stateless (matches upstream). The CRM-facing read paths
+  # require auth.
+  /email-tracking:
+    get:
+      operationId: listTrackedEmails
+      tags: [email-tracking]
+      description: "CRM dashboard listing. Requires auth."
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 1000 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TrackedEmailList" } } } }
+    post:
+      operationId: createTrackedEmail
+      tags: [email-tracking]
+      description: "Called by the extension at send-time. Unauthenticated by design."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateTrackedEmailBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/TrackedEmail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /email-tracking/search:
+    get:
+      operationId: searchTrackedEmail
+      tags: [email-tracking]
+      description: "Extension sidebar lookup by subject. Returns null when no match. Unauthenticated."
+      parameters:
+        - { name: subject, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/TrackedEmailWithViews" }
+                  - { type: "null" }
+  /email-tracking/status:
+    get:
+      operationId: listTrackedEmailStatuses
+      tags: [email-tracking]
+      description: "Extension list-icon source — subject + view count for every tracked email. Unauthenticated."
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TrackedEmailStatus" } } } } }
+  /email-tracking/by-contact:
+    get:
+      operationId: listTrackedEmailsByContact
+      tags: [email-tracking]
+      description: "Tracked sends linked to one CRM contact. Exactly one of personId / funderId / householdId required. Requires auth."
+      parameters:
+        - { name: personId,    in: query, schema: { type: string } }
+        - { name: funderId,    in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TrackedEmailList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /email-tracking/{id}:
+    get:
+      operationId: getTrackedEmail
+      tags: [email-tracking]
+      description: "CRM detail view. Requires auth."
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TrackedEmailWithViews" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /email-tracking/{id}/views/latest:
+    delete:
+      operationId: deleteLatestTrackedEmailView
+      tags: [email-tracking]
+      description: "Magio's sender-self-view cleanup: drops any views logged in the last 5 minutes for this email. Unauthenticated (extension uses it)."
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted: { type: integer }
+
   # ─── Email messages (synced Gmail, read-only + privacy toggle) ────────────
   /email-messages:
     get:
@@ -3303,6 +3389,59 @@ components:
         name:       { type: string }
         visibility: { $ref: "#/components/schemas/SavedViewVisibility" }
         state:      { type: object, additionalProperties: true }
+
+    # ─── Email tracking (Magio-compatible) ─────────────────────────────────
+    TrackedEmail:
+      type: object
+      required: [id, subject, recipient, sender, recipientPersonIds, recipientFunderIds, recipientHouseholdIds, createdAt]
+      properties:
+        id:                       { type: string }
+        subject:                  { type: string }
+        recipient:                { type: string, description: "Verbatim To: line scraped by the extension, may be a comma list." }
+        sender:                   { type: string }
+        senderIp:                 { type: string, nullable: true }
+        recipientPersonIds:       { type: array, items: { type: string } }
+        recipientFunderIds:       { type: array, items: { type: string } }
+        recipientHouseholdIds:    { type: array, items: { type: string } }
+        createdAt:                { type: string, format: date-time }
+        totalViews:               { type: integer, description: "Convenience aggregate; present on list/detail responses." }
+        lastView:                 { type: string, format: date-time, nullable: true }
+    TrackedEmailView:
+      type: object
+      required: [id, viewedAt]
+      properties:
+        id:        { type: string }
+        viewedAt:  { type: string, format: date-time }
+        ipAddress: { type: string, nullable: true }
+        userAgent: { type: string, nullable: true }
+    TrackedEmailWithViews:
+      allOf:
+        - $ref: "#/components/schemas/TrackedEmail"
+        - type: object
+          required: [totalViews, uniqueIps, views]
+          properties:
+            totalViews: { type: integer }
+            uniqueIps:  { type: integer }
+            views:      { type: array, items: { $ref: "#/components/schemas/TrackedEmailView" } }
+    TrackedEmailList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/TrackedEmail" } }
+    TrackedEmailStatus:
+      type: object
+      required: [subject, viewCount]
+      properties:
+        subject:   { type: string }
+        viewCount: { type: integer }
+    CreateTrackedEmailBody:
+      type: object
+      required: [subject, recipient, sender]
+      description: "Posted by the extension at send-time."
+      properties:
+        subject:   { type: string }
+        recipient: { type: string, description: "Comma- or semicolon-separated address list scraped from compose UI." }
+        sender:    { type: string }
 
     # ─── Bulk record updates ───────────────────────────────────────────────────
     BulkUpdateResult:

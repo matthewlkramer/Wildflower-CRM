@@ -52,7 +52,9 @@ import type {
   CreatePledgeAllocationBody,
   CreateSavedViewBody,
   CreateTaskBody,
+  CreateTrackedEmailBody,
   DashboardSummary,
+  DeleteLatestTrackedEmailView200,
   DisconnectGoogleOauth200,
   Email,
   EmailList,
@@ -112,6 +114,8 @@ import type {
   ListSavedViewsParams,
   ListSchoolsParams,
   ListTasksParams,
+  ListTrackedEmailsByContactParams,
+  ListTrackedEmailsParams,
   ListUnrecognizedCorrespondentsParams,
   MeetingNote,
   MeetingNoteList,
@@ -146,8 +150,13 @@ import type {
   SavedViewList,
   School,
   SchoolList,
+  SearchTrackedEmailParams,
   Task,
   TaskList,
+  TrackedEmail,
+  TrackedEmailList,
+  TrackedEmailStatus,
+  TrackedEmailWithViews,
   UnrecognizedCorrespondentList,
   UpdateAddressBody,
   UpdateCalendarEventPrivacyBody,
@@ -8981,6 +8990,623 @@ export const useDeleteSavedView = <
   TContext
 > => {
   return useMutation(getDeleteSavedViewMutationOptions(options));
+};
+
+/**
+ * CRM dashboard listing. Requires auth.
+ */
+export const getListTrackedEmailsUrl = (params?: ListTrackedEmailsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/email-tracking?${stringifiedParams}`
+    : `/api/email-tracking`;
+};
+
+export const listTrackedEmails = async (
+  params?: ListTrackedEmailsParams,
+  options?: RequestInit,
+): Promise<TrackedEmailList> => {
+  return customFetch<TrackedEmailList>(getListTrackedEmailsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListTrackedEmailsQueryKey = (
+  params?: ListTrackedEmailsParams,
+) => {
+  return [`/api/email-tracking`, ...(params ? [params] : [])] as const;
+};
+
+export const getListTrackedEmailsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTrackedEmails>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListTrackedEmailsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTrackedEmails>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListTrackedEmailsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listTrackedEmails>>
+  > = ({ signal }) => listTrackedEmails(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listTrackedEmails>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListTrackedEmailsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listTrackedEmails>>
+>;
+export type ListTrackedEmailsQueryError = ErrorType<unknown>;
+
+export function useListTrackedEmails<
+  TData = Awaited<ReturnType<typeof listTrackedEmails>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListTrackedEmailsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTrackedEmails>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListTrackedEmailsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Called by the extension at send-time. Unauthenticated by design.
+ */
+export const getCreateTrackedEmailUrl = () => {
+  return `/api/email-tracking`;
+};
+
+export const createTrackedEmail = async (
+  createTrackedEmailBody: CreateTrackedEmailBody,
+  options?: RequestInit,
+): Promise<TrackedEmail> => {
+  return customFetch<TrackedEmail>(getCreateTrackedEmailUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createTrackedEmailBody),
+  });
+};
+
+export const getCreateTrackedEmailMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTrackedEmail>>,
+    TError,
+    { data: BodyType<CreateTrackedEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createTrackedEmail>>,
+  TError,
+  { data: BodyType<CreateTrackedEmailBody> },
+  TContext
+> => {
+  const mutationKey = ["createTrackedEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createTrackedEmail>>,
+    { data: BodyType<CreateTrackedEmailBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createTrackedEmail(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateTrackedEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createTrackedEmail>>
+>;
+export type CreateTrackedEmailMutationBody = BodyType<CreateTrackedEmailBody>;
+export type CreateTrackedEmailMutationError = ErrorType<BadRequestResponse>;
+
+export const useCreateTrackedEmail = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTrackedEmail>>,
+    TError,
+    { data: BodyType<CreateTrackedEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createTrackedEmail>>,
+  TError,
+  { data: BodyType<CreateTrackedEmailBody> },
+  TContext
+> => {
+  return useMutation(getCreateTrackedEmailMutationOptions(options));
+};
+
+/**
+ * Extension sidebar lookup by subject. Returns null when no match. Unauthenticated.
+ */
+export const getSearchTrackedEmailUrl = (params: SearchTrackedEmailParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/email-tracking/search?${stringifiedParams}`
+    : `/api/email-tracking/search`;
+};
+
+export const searchTrackedEmail = async (
+  params: SearchTrackedEmailParams,
+  options?: RequestInit,
+): Promise<TrackedEmailWithViews | null> => {
+  return customFetch<TrackedEmailWithViews | null>(
+    getSearchTrackedEmailUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getSearchTrackedEmailQueryKey = (
+  params?: SearchTrackedEmailParams,
+) => {
+  return [`/api/email-tracking/search`, ...(params ? [params] : [])] as const;
+};
+
+export const getSearchTrackedEmailQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchTrackedEmail>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchTrackedEmailParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchTrackedEmail>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getSearchTrackedEmailQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof searchTrackedEmail>>
+  > = ({ signal }) => searchTrackedEmail(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchTrackedEmail>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type SearchTrackedEmailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchTrackedEmail>>
+>;
+export type SearchTrackedEmailQueryError = ErrorType<unknown>;
+
+export function useSearchTrackedEmail<
+  TData = Awaited<ReturnType<typeof searchTrackedEmail>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchTrackedEmailParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchTrackedEmail>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getSearchTrackedEmailQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Extension list-icon source — subject + view count for every tracked email. Unauthenticated.
+ */
+export const getListTrackedEmailStatusesUrl = () => {
+  return `/api/email-tracking/status`;
+};
+
+export const listTrackedEmailStatuses = async (
+  options?: RequestInit,
+): Promise<TrackedEmailStatus[]> => {
+  return customFetch<TrackedEmailStatus[]>(getListTrackedEmailStatusesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListTrackedEmailStatusesQueryKey = () => {
+  return [`/api/email-tracking/status`] as const;
+};
+
+export const getListTrackedEmailStatusesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTrackedEmailStatuses>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listTrackedEmailStatuses>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListTrackedEmailStatusesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listTrackedEmailStatuses>>
+  > = ({ signal }) => listTrackedEmailStatuses({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listTrackedEmailStatuses>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListTrackedEmailStatusesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listTrackedEmailStatuses>>
+>;
+export type ListTrackedEmailStatusesQueryError = ErrorType<unknown>;
+
+export function useListTrackedEmailStatuses<
+  TData = Awaited<ReturnType<typeof listTrackedEmailStatuses>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listTrackedEmailStatuses>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListTrackedEmailStatusesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Tracked sends linked to one CRM contact. Exactly one of personId / funderId / householdId required. Requires auth.
+ */
+export const getListTrackedEmailsByContactUrl = (
+  params?: ListTrackedEmailsByContactParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/email-tracking/by-contact?${stringifiedParams}`
+    : `/api/email-tracking/by-contact`;
+};
+
+export const listTrackedEmailsByContact = async (
+  params?: ListTrackedEmailsByContactParams,
+  options?: RequestInit,
+): Promise<TrackedEmailList> => {
+  return customFetch<TrackedEmailList>(
+    getListTrackedEmailsByContactUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListTrackedEmailsByContactQueryKey = (
+  params?: ListTrackedEmailsByContactParams,
+) => {
+  return [
+    `/api/email-tracking/by-contact`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListTrackedEmailsByContactQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTrackedEmailsByContact>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  params?: ListTrackedEmailsByContactParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTrackedEmailsByContact>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListTrackedEmailsByContactQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listTrackedEmailsByContact>>
+  > = ({ signal }) =>
+    listTrackedEmailsByContact(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listTrackedEmailsByContact>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListTrackedEmailsByContactQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listTrackedEmailsByContact>>
+>;
+export type ListTrackedEmailsByContactQueryError =
+  ErrorType<BadRequestResponse>;
+
+export function useListTrackedEmailsByContact<
+  TData = Awaited<ReturnType<typeof listTrackedEmailsByContact>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  params?: ListTrackedEmailsByContactParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTrackedEmailsByContact>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListTrackedEmailsByContactQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * CRM detail view. Requires auth.
+ */
+export const getGetTrackedEmailUrl = (id: string) => {
+  return `/api/email-tracking/${id}`;
+};
+
+export const getTrackedEmail = async (
+  id: string,
+  options?: RequestInit,
+): Promise<TrackedEmailWithViews> => {
+  return customFetch<TrackedEmailWithViews>(getGetTrackedEmailUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTrackedEmailQueryKey = (id: string) => {
+  return [`/api/email-tracking/${id}`] as const;
+};
+
+export const getGetTrackedEmailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTrackedEmail>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTrackedEmail>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTrackedEmailQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTrackedEmail>>> = ({
+    signal,
+  }) => getTrackedEmail(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTrackedEmail>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTrackedEmailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTrackedEmail>>
+>;
+export type GetTrackedEmailQueryError = ErrorType<NotFoundResponse>;
+
+export function useGetTrackedEmail<
+  TData = Awaited<ReturnType<typeof getTrackedEmail>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTrackedEmail>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTrackedEmailQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Magio's sender-self-view cleanup: drops any views logged in the last 5 minutes for this email. Unauthenticated (extension uses it).
+ */
+export const getDeleteLatestTrackedEmailViewUrl = (id: string) => {
+  return `/api/email-tracking/${id}/views/latest`;
+};
+
+export const deleteLatestTrackedEmailView = async (
+  id: string,
+  options?: RequestInit,
+): Promise<DeleteLatestTrackedEmailView200> => {
+  return customFetch<DeleteLatestTrackedEmailView200>(
+    getDeleteLatestTrackedEmailViewUrl(id),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeleteLatestTrackedEmailViewMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLatestTrackedEmailView>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteLatestTrackedEmailView>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteLatestTrackedEmailView"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteLatestTrackedEmailView>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteLatestTrackedEmailView(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteLatestTrackedEmailViewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteLatestTrackedEmailView>>
+>;
+
+export type DeleteLatestTrackedEmailViewMutationError = ErrorType<unknown>;
+
+export const useDeleteLatestTrackedEmailView = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLatestTrackedEmailView>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteLatestTrackedEmailView>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteLatestTrackedEmailViewMutationOptions(options));
 };
 
 export const getListEmailMessagesUrl = (params?: ListEmailMessagesParams) => {

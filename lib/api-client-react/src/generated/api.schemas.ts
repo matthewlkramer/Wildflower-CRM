@@ -2091,6 +2091,54 @@ export interface UpdateSavedViewBody {
   state?: UpdateSavedViewBodyState;
 }
 
+export interface TrackedEmail {
+  id: string;
+  subject: string;
+  /** Verbatim To: line scraped by the extension, may be a comma list. */
+  recipient: string;
+  sender: string;
+  senderIp?: string | null;
+  recipientPersonIds: string[];
+  recipientFunderIds: string[];
+  recipientHouseholdIds: string[];
+  createdAt: string;
+  /** Convenience aggregate; present on list/detail responses. */
+  totalViews?: number;
+  lastView?: string | null;
+}
+
+export interface TrackedEmailView {
+  id: string;
+  viewedAt: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}
+
+export type TrackedEmailWithViews = TrackedEmail & {
+  totalViews: number;
+  uniqueIps: number;
+  views: TrackedEmailView[];
+};
+
+export interface TrackedEmailList {
+  data: TrackedEmail[];
+}
+
+export interface TrackedEmailStatus {
+  subject: string;
+  viewCount: number;
+}
+
+/**
+ * Posted by the extension at send-time.
+ */
+export interface CreateTrackedEmailBody {
+  subject: string;
+  /** Comma- or semicolon-separated address list scraped from compose UI. */
+  recipient: string;
+  sender: string;
+}
+
 export type BulkUpdateResultFailedItem = {
   id: string;
   message: string;
@@ -2668,6 +2716,28 @@ export type ListSavedViewsParams = {
    * Page identifier, e.g. 'individuals', 'funders'.
    */
   listKey: string;
+};
+
+export type ListTrackedEmailsParams = {
+  /**
+   * @minimum 1
+   * @maximum 1000
+   */
+  limit?: number;
+};
+
+export type SearchTrackedEmailParams = {
+  subject: string;
+};
+
+export type ListTrackedEmailsByContactParams = {
+  personId?: string;
+  funderId?: string;
+  householdId?: string;
+};
+
+export type DeleteLatestTrackedEmailView200 = {
+  deleted: number;
 };
 
 export type ListEmailMessagesParams = {

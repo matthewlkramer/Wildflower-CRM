@@ -34,3 +34,4 @@ export * from "./tasks";
 export * from "./meetingNotes";
 export * from "./bulkOperations";
 export * from "./savedViews";
+export * from "./trackedEmails";

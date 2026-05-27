@@ -18,3 +18,9 @@ id = "MOjbF1n2-CRTpGkhMFZCQ"
 uri = "file://docs/crm-competitive-review.md"
 type = "text"
 title = "CRM Competitive Review & Roadmap"
+
+[[outputs]]
+id = "VJpEbVGKIya4SlxpQY2PG"
+uri = "file://tools/magio-extension/build/wildflower-tracking-extension.zip"
+type = "unspecified"
+title = "Wildflower Tracking — Chrome extension (side-load)"

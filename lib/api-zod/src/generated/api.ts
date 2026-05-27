@@ -4808,6 +4808,205 @@ export const DeleteSavedViewParams = zod.object({
   id: zod.coerce.string(),
 });
 
+/**
+ * CRM dashboard listing. Requires auth.
+ */
+export const listTrackedEmailsQueryLimitDefault = 100;
+export const listTrackedEmailsQueryLimitMax = 1000;
+
+export const ListTrackedEmailsQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listTrackedEmailsQueryLimitMax)
+    .default(listTrackedEmailsQueryLimitDefault),
+});
+
+export const ListTrackedEmailsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      subject: zod.string(),
+      recipient: zod
+        .string()
+        .describe(
+          "Verbatim To: line scraped by the extension, may be a comma list.",
+        ),
+      sender: zod.string(),
+      senderIp: zod.string().nullish(),
+      recipientPersonIds: zod.array(zod.string()),
+      recipientFunderIds: zod.array(zod.string()),
+      recipientHouseholdIds: zod.array(zod.string()),
+      createdAt: zod.string().datetime({}),
+      totalViews: zod
+        .number()
+        .optional()
+        .describe("Convenience aggregate; present on list\/detail responses."),
+      lastView: zod.string().datetime({}).nullish(),
+    }),
+  ),
+});
+
+/**
+ * Called by the extension at send-time. Unauthenticated by design.
+ */
+export const CreateTrackedEmailBody = zod
+  .object({
+    subject: zod.string(),
+    recipient: zod
+      .string()
+      .describe(
+        "Comma- or semicolon-separated address list scraped from compose UI.",
+      ),
+    sender: zod.string(),
+  })
+  .describe("Posted by the extension at send-time.");
+
+/**
+ * Extension sidebar lookup by subject. Returns null when no match. Unauthenticated.
+ */
+export const SearchTrackedEmailQueryParams = zod.object({
+  subject: zod.coerce.string(),
+});
+
+export const SearchTrackedEmailResponse = zod.union([
+  zod
+    .object({
+      id: zod.string(),
+      subject: zod.string(),
+      recipient: zod
+        .string()
+        .describe(
+          "Verbatim To: line scraped by the extension, may be a comma list.",
+        ),
+      sender: zod.string(),
+      senderIp: zod.string().nullish(),
+      recipientPersonIds: zod.array(zod.string()),
+      recipientFunderIds: zod.array(zod.string()),
+      recipientHouseholdIds: zod.array(zod.string()),
+      createdAt: zod.string().datetime({}),
+      totalViews: zod
+        .number()
+        .optional()
+        .describe("Convenience aggregate; present on list\/detail responses."),
+      lastView: zod.string().datetime({}).nullish(),
+    })
+    .and(
+      zod.object({
+        totalViews: zod.number(),
+        uniqueIps: zod.number(),
+        views: zod.array(
+          zod.object({
+            id: zod.string(),
+            viewedAt: zod.string().datetime({}),
+            ipAddress: zod.string().nullish(),
+            userAgent: zod.string().nullish(),
+          }),
+        ),
+      }),
+    ),
+  zod.null(),
+]);
+
+/**
+ * Extension list-icon source — subject + view count for every tracked email. Unauthenticated.
+ */
+export const ListTrackedEmailStatusesResponseItem = zod.object({
+  subject: zod.string(),
+  viewCount: zod.number(),
+});
+export const ListTrackedEmailStatusesResponse = zod.array(
+  ListTrackedEmailStatusesResponseItem,
+);
+
+/**
+ * Tracked sends linked to one CRM contact. Exactly one of personId / funderId / householdId required. Requires auth.
+ */
+export const ListTrackedEmailsByContactQueryParams = zod.object({
+  personId: zod.coerce.string().optional(),
+  funderId: zod.coerce.string().optional(),
+  householdId: zod.coerce.string().optional(),
+});
+
+export const ListTrackedEmailsByContactResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      subject: zod.string(),
+      recipient: zod
+        .string()
+        .describe(
+          "Verbatim To: line scraped by the extension, may be a comma list.",
+        ),
+      sender: zod.string(),
+      senderIp: zod.string().nullish(),
+      recipientPersonIds: zod.array(zod.string()),
+      recipientFunderIds: zod.array(zod.string()),
+      recipientHouseholdIds: zod.array(zod.string()),
+      createdAt: zod.string().datetime({}),
+      totalViews: zod
+        .number()
+        .optional()
+        .describe("Convenience aggregate; present on list\/detail responses."),
+      lastView: zod.string().datetime({}).nullish(),
+    }),
+  ),
+});
+
+/**
+ * CRM detail view. Requires auth.
+ */
+export const GetTrackedEmailParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetTrackedEmailResponse = zod
+  .object({
+    id: zod.string(),
+    subject: zod.string(),
+    recipient: zod
+      .string()
+      .describe(
+        "Verbatim To: line scraped by the extension, may be a comma list.",
+      ),
+    sender: zod.string(),
+    senderIp: zod.string().nullish(),
+    recipientPersonIds: zod.array(zod.string()),
+    recipientFunderIds: zod.array(zod.string()),
+    recipientHouseholdIds: zod.array(zod.string()),
+    createdAt: zod.string().datetime({}),
+    totalViews: zod
+      .number()
+      .optional()
+      .describe("Convenience aggregate; present on list\/detail responses."),
+    lastView: zod.string().datetime({}).nullish(),
+  })
+  .and(
+    zod.object({
+      totalViews: zod.number(),
+      uniqueIps: zod.number(),
+      views: zod.array(
+        zod.object({
+          id: zod.string(),
+          viewedAt: zod.string().datetime({}),
+          ipAddress: zod.string().nullish(),
+          userAgent: zod.string().nullish(),
+        }),
+      ),
+    }),
+  );
+
+/**
+ * Magio's sender-self-view cleanup: drops any views logged in the last 5 minutes for this email. Unauthenticated (extension uses it).
+ */
+export const DeleteLatestTrackedEmailViewParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const DeleteLatestTrackedEmailViewResponse = zod.object({
+  deleted: zod.number(),
+});
+
 export const listEmailMessagesQueryLimitDefault = 50;
 export const listEmailMessagesQueryLimitMax = 1000;
 

@@ -31,6 +31,7 @@ import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import Admin from "@/pages/admin";
 import Settings from "@/pages/settings";
 import EmailIntelligence from "@/pages/email-intelligence";
+import EmailTracking from "@/pages/email-tracking";
 import Layout from "@/components/layout";
 import { EntityFilterProvider } from "@/lib/entity-filter-context";
 
@@ -205,6 +206,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/fiscal-year/:fyId"><ProtectedRoute component={FiscalYearDetail} /></Route>
           <Route path="/grants-calendar"><ProtectedRoute component={GrantsCalendar} /></Route>
           <Route path="/email-intelligence"><ProtectedRoute component={EmailIntelligence} /></Route>
+          <Route path="/email-tracking"><ProtectedRoute component={EmailTracking} /></Route>
           <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
           <Route path="/admin"><ProtectedRoute component={Admin} /></Route>
           
