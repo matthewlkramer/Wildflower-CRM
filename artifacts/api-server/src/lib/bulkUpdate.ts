@@ -32,6 +32,17 @@ export type RowValidator<Row, P> = (
   patch: P,
 ) => string | null;
 
+// Optional per-row patch transformer. Receives the existing row and the
+// shared (whitelisted) patch; returns a per-row patch to apply via
+// UPDATE. Default behavior (when omitted) is to apply the shared patch
+// unchanged. Use this to inject row-derived defaults (e.g.
+// auto-defaulting a missing actualCompletionDate when bulk-setting
+// status to a closed value).
+export type RowPatchTransformer<Row, P extends object> = (
+  existing: Row,
+  patch: Partial<P>,
+) => Partial<P>;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type TX = any;
 
@@ -74,6 +85,12 @@ export interface BulkUpdateConfig<Row, P extends object> {
    * row, or null to proceed.
    */
   validateRow?: RowValidator<Row, Partial<P>>;
+  /**
+   * Optional per-row patch transformer. Runs BEFORE validateRow so the
+   * validator sees the final patch that will be written. See
+   * RowPatchTransformer.
+   */
+  transformRowPatch?: RowPatchTransformer<Row, P>;
   /** See ExtraApply. */
   extraApply?: ExtraApply<P>;
 }
@@ -166,8 +183,12 @@ export async function executeBulkUpdate<Row extends Record<string, unknown>, P e
         failed.push({ id, message: "not found" });
         continue;
       }
+      const rowPatch: Partial<P> = cfg.transformRowPatch
+        ? cfg.transformRowPatch(existing, cleanPatch)
+        : cleanPatch;
+      const rowHasColumnPatch = Object.keys(rowPatch).length > 0;
       if (cfg.validateRow) {
-        const err = cfg.validateRow(existing, cleanPatch);
+        const err = cfg.validateRow(existing, rowPatch);
         if (err) {
           failed.push({ id, message: err });
           continue;
@@ -175,10 +196,10 @@ export async function executeBulkUpdate<Row extends Record<string, unknown>, P e
       }
       try {
         await tx.transaction(async (sp: TX) => {
-          if (hasColumnPatch) {
+          if (rowHasColumnPatch) {
             await sp
               .update(cfg.table)
-              .set({ ...cleanPatch, updatedAt: new Date() })
+              .set({ ...rowPatch, updatedAt: new Date() })
               .where(eq(cfg.table.id, id) as SQL);
           }
           if (cfg.extraApply && hasVirtualPatch) {

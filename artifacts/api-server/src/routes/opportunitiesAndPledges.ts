@@ -213,6 +213,26 @@ router.post(
       // opportunities_and_pledges, so it goes through extraApply and
       // is excluded from the column SET.
       virtualFields: ["coveredFiscalYears", "coveredFiscalYearsMode"],
+      // When bulk-setting status to a closed value (won/lost) the DB
+      // closed_requires_completion_date CHECK requires actualCompletionDate
+      // to be set. To support cleanup workflows where the user just wants
+      // to mark a batch as won/lost without manually picking a date, we
+      // auto-default actualCompletionDate to today PER ROW that lacks
+      // one — preserving any existing date the row already has, and
+      // never overwriting an explicit date the user supplied in the patch.
+      transformRowPatch: (existing, patch) => {
+        const status = (patch as { status?: string | null }).status;
+        const closing = status === "won" || status === "lost";
+        if (!closing) return patch;
+        const explicitDate = (patch as { actualCompletionDate?: unknown })
+          .actualCompletionDate;
+        if (explicitDate !== undefined) return patch;
+        const existingDate = (existing as { actualCompletionDate?: unknown })
+          .actualCompletionDate;
+        if (existingDate != null) return patch;
+        const today = new Date().toISOString().slice(0, 10);
+        return { ...patch, actualCompletionDate: today };
+      },
       // Donor xor is preserved (no donor fields in this patch), but the
       // closed_requires_completion_date CHECK can still trip if a row is
       // bulk-set to status='won'/'lost' without an existing or supplied
