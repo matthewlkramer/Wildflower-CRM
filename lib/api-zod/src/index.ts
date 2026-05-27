@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   CreateOpportunityOrPledgeBody,
   CreateGiftOrPaymentBody,
+  CreateMeetingNoteBody,
 } from "./generated/api";
 
 /**
@@ -100,5 +101,45 @@ export const CreateGiftOrPaymentBodyRefined =
   CreateGiftOrPaymentBody.superRefine(
     (b: z.infer<typeof CreateGiftOrPaymentBody>, ctx) => {
       issuesToZodCtx(validateGiftInvariants(b), ctx);
+    },
+  );
+
+/**
+ * Meeting-notes contact-xor: exactly one of personId / funderId / householdId
+ * must be set. Mirrors the `meeting_notes_contact_xor` DB CHECK so the API
+ * returns 400 instead of 500. PATCH routes must validate against MERGED
+ * post-update state (un-refined `UpdateMeetingNoteBody` from generated/api).
+ */
+export const MEETING_CONTACT_XOR_MESSAGE =
+  "Exactly one of personId, funderId, or householdId must be set (contact XOR).";
+
+export interface MeetingContactState {
+  personId?: string | null;
+  funderId?: string | null;
+  householdId?: string | null;
+}
+
+function meetingContactCount(s: MeetingContactState): number {
+  return (
+    (s.personId != null ? 1 : 0) +
+    (s.funderId != null ? 1 : 0) +
+    (s.householdId != null ? 1 : 0)
+  );
+}
+
+export function validateMeetingContactInvariants(
+  state: MeetingContactState,
+): InvariantIssue[] {
+  const issues: InvariantIssue[] = [];
+  if (meetingContactCount(state) !== 1) {
+    issues.push({ path: "personId", message: MEETING_CONTACT_XOR_MESSAGE });
+  }
+  return issues;
+}
+
+export const CreateMeetingNoteBodyRefined =
+  CreateMeetingNoteBody.superRefine(
+    (b: z.infer<typeof CreateMeetingNoteBody>, ctx) => {
+      issuesToZodCtx(validateMeetingContactInvariants(b), ctx);
     },
   );

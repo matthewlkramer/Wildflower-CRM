@@ -4479,6 +4479,241 @@ export const DeleteTaskParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const listMeetingNotesQueryLimitDefault = 50;
+export const listMeetingNotesQueryLimitMax = 1000;
+
+export const listMeetingNotesQueryPageDefault = 1;
+
+export const ListMeetingNotesQueryParams = zod.object({
+  personId: zod.coerce.string().optional(),
+  funderId: zod.coerce.string().optional(),
+  householdId: zod.coerce.string().optional(),
+  creatorUserId: zod.coerce.string().optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listMeetingNotesQueryLimitMax)
+    .default(listMeetingNotesQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listMeetingNotesQueryPageDefault),
+});
+
+export const ListMeetingNotesResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string().nullish(),
+      meetingDate: zod.string().datetime({}),
+      attendees: zod.array(zod.string()).nullish(),
+      rawTranscript: zod
+        .string()
+        .nullish()
+        .describe("Always null when summaryOnly is true."),
+      summaryOnly: zod
+        .boolean()
+        .describe(
+          "Snapshot of the creator's email_sync_mode at create time. When true, the raw transcript was dropped pre-insert.",
+        ),
+      aiSummary: zod.string().nullish(),
+      actionItems: zod
+        .array(
+          zod.object({
+            title: zod.string(),
+            assigneeName: zod
+              .string()
+              .nullish()
+              .describe(
+                "Free-text assignee name as extracted from the transcript.",
+              ),
+            dueDate: zod.string().date().nullish(),
+            promotedTaskId: zod
+              .string()
+              .nullish()
+              .describe(
+                "Set after this item was promoted into a task via \/promote-action-item.",
+              ),
+          }),
+        )
+        .nullish(),
+      creatorUserId: zod.string(),
+      personId: zod.string().nullish(),
+      funderId: zod.string().nullish(),
+      householdId: zod.string().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const CreateMeetingNoteBody = zod
+  .object({
+    transcript: zod
+      .string()
+      .describe(
+        "Raw pasted transcript. Dropped server-side before insert when the caller's email_sync_mode is summary_only.",
+      ),
+    title: zod.string().optional(),
+    meetingDate: zod
+      .string()
+      .datetime({})
+      .optional()
+      .describe("Defaults to now if omitted."),
+    attendees: zod.array(zod.string()).optional(),
+    personId: zod.string().optional(),
+    funderId: zod.string().optional(),
+    householdId: zod.string().optional(),
+  })
+  .describe(
+    "Exactly one of personId \/ funderId \/ householdId must be set (contact XOR).",
+  );
+
+export const GetMeetingNoteParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetMeetingNoteResponse = zod.object({
+  id: zod.string(),
+  title: zod.string().nullish(),
+  meetingDate: zod.string().datetime({}),
+  attendees: zod.array(zod.string()).nullish(),
+  rawTranscript: zod
+    .string()
+    .nullish()
+    .describe("Always null when summaryOnly is true."),
+  summaryOnly: zod
+    .boolean()
+    .describe(
+      "Snapshot of the creator's email_sync_mode at create time. When true, the raw transcript was dropped pre-insert.",
+    ),
+  aiSummary: zod.string().nullish(),
+  actionItems: zod
+    .array(
+      zod.object({
+        title: zod.string(),
+        assigneeName: zod
+          .string()
+          .nullish()
+          .describe(
+            "Free-text assignee name as extracted from the transcript.",
+          ),
+        dueDate: zod.string().date().nullish(),
+        promotedTaskId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Set after this item was promoted into a task via \/promote-action-item.",
+          ),
+      }),
+    )
+    .nullish(),
+  creatorUserId: zod.string(),
+  personId: zod.string().nullish(),
+  funderId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UpdateMeetingNoteParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateMeetingNoteBody = zod.object({
+  title: zod.string().nullish(),
+  meetingDate: zod.string().datetime({}).optional(),
+  attendees: zod.array(zod.string()).nullish(),
+  aiSummary: zod.string().nullish(),
+  actionItems: zod
+    .array(
+      zod.object({
+        title: zod.string(),
+        assigneeName: zod
+          .string()
+          .nullish()
+          .describe(
+            "Free-text assignee name as extracted from the transcript.",
+          ),
+        dueDate: zod.string().date().nullish(),
+        promotedTaskId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Set after this item was promoted into a task via \/promote-action-item.",
+          ),
+      }),
+    )
+    .nullish(),
+  personId: zod.string().nullish(),
+  funderId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+});
+
+export const UpdateMeetingNoteResponse = zod.object({
+  id: zod.string(),
+  title: zod.string().nullish(),
+  meetingDate: zod.string().datetime({}),
+  attendees: zod.array(zod.string()).nullish(),
+  rawTranscript: zod
+    .string()
+    .nullish()
+    .describe("Always null when summaryOnly is true."),
+  summaryOnly: zod
+    .boolean()
+    .describe(
+      "Snapshot of the creator's email_sync_mode at create time. When true, the raw transcript was dropped pre-insert.",
+    ),
+  aiSummary: zod.string().nullish(),
+  actionItems: zod
+    .array(
+      zod.object({
+        title: zod.string(),
+        assigneeName: zod
+          .string()
+          .nullish()
+          .describe(
+            "Free-text assignee name as extracted from the transcript.",
+          ),
+        dueDate: zod.string().date().nullish(),
+        promotedTaskId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Set after this item was promoted into a task via \/promote-action-item.",
+          ),
+      }),
+    )
+    .nullish(),
+  creatorUserId: zod.string(),
+  personId: zod.string().nullish(),
+  funderId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const DeleteMeetingNoteParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const PromoteMeetingActionItemParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const PromoteMeetingActionItemBody = zod.object({
+  index: zod.number().describe("Zero-based index into actionItems[]."),
+  assigneeUserId: zod
+    .string()
+    .optional()
+    .describe(
+      "Optional override; the extracted assigneeName is free-text and may not map to a user.",
+    ),
+  dueDate: zod.string().date().optional(),
+});
+
 export const listEmailMessagesQueryLimitDefault = 50;
 export const listEmailMessagesQueryLimitMax = 1000;
 

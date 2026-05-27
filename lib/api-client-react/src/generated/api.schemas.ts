@@ -1970,6 +1970,73 @@ export interface UpdateTaskBody {
   mentionUserIds?: string[] | null;
 }
 
+export interface MeetingActionItem {
+  title: string;
+  /** Free-text assignee name as extracted from the transcript. */
+  assigneeName?: string | null;
+  dueDate?: string | null;
+  /** Set after this item was promoted into a task via /promote-action-item. */
+  promotedTaskId?: string | null;
+}
+
+export interface MeetingNote {
+  id: string;
+  title?: string | null;
+  meetingDate: string;
+  attendees?: string[] | null;
+  /** Always null when summaryOnly is true. */
+  rawTranscript?: string | null;
+  /** Snapshot of the creator's email_sync_mode at create time. When true, the raw transcript was dropped pre-insert. */
+  summaryOnly: boolean;
+  aiSummary?: string | null;
+  actionItems?: MeetingActionItem[] | null;
+  creatorUserId: string;
+  personId?: string | null;
+  funderId?: string | null;
+  householdId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MeetingNoteList {
+  data: MeetingNote[];
+  pagination: Pagination;
+}
+
+/**
+ * Exactly one of personId / funderId / householdId must be set (contact XOR).
+ */
+export interface CreateMeetingNoteBody {
+  /** Raw pasted transcript. Dropped server-side before insert when the caller's email_sync_mode is summary_only. */
+  transcript: string;
+  title?: string;
+  /** Defaults to now if omitted. */
+  meetingDate?: string;
+  attendees?: string[];
+  personId?: string;
+  funderId?: string;
+  householdId?: string;
+}
+
+export interface UpdateMeetingNoteBody {
+  title?: string | null;
+  meetingDate?: string;
+  attendees?: string[] | null;
+  aiSummary?: string | null;
+  actionItems?: MeetingActionItem[] | null;
+  personId?: string | null;
+  funderId?: string | null;
+  householdId?: string | null;
+}
+
+export interface PromoteActionItemBody {
+  /** Zero-based index into actionItems[]. */
+  index: number;
+  /** Optional override; the extracted assigneeName is free-text and may not map to a user. */
+  assigneeUserId?: string;
+  dueDate?: string;
+}
+
 export type BulkUpdateResultFailedItem = {
   id: string;
   message: string;
@@ -2515,6 +2582,22 @@ export type ListTasksParams = {
    * Inclusive lower bound on due_date.
    */
   dueAfter?: string;
+  /**
+   * @minimum 1
+   * @maximum 1000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
+
+export type ListMeetingNotesParams = {
+  personId?: string;
+  funderId?: string;
+  householdId?: string;
+  creatorUserId?: string;
   /**
    * @minimum 1
    * @maximum 1000

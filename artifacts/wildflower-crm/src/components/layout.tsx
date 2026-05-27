@@ -23,6 +23,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HeaderEntityFilter } from "@/components/entity-filter";
 import { CommandPaletteProvider, CommandPaletteTrigger } from "@/components/command-palette";
+import { AddMeetingNoteDialog } from "@/components/meeting-notes-panel";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -119,6 +120,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               there's no logo (sidebar already shows it). */}
           <div className="hidden md:block" />
           <div className="flex items-center gap-2">
+            <AddMeetingNoteDialog unpinned />
             <CommandPaletteTrigger />
             <HeaderEntityFilter />
             <Sheet>

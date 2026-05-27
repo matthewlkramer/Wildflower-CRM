@@ -31,4 +31,5 @@ export * from "./emailProposals";
 export * from "./correspondentIgnore";
 export * from "./notes";
 export * from "./tasks";
+export * from "./meetingNotes";
 export * from "./bulkOperations";
