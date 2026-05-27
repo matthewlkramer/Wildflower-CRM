@@ -13,6 +13,7 @@ import {
   type OpportunityType,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
@@ -77,18 +78,23 @@ export default function Opportunities({
   defaultStatus = null,
   basePath = "/opportunities",
 }: Props) {
-  const [search, setSearch] = useState("");
+  // Filter state is persisted per-tab (sessionStorage) so navigating to
+  // a detail row and clicking Back restores the same view. /opportunities
+  // and /pledges (same component, lockedStatus="won") need distinct
+  // namespaces so their filters don't bleed into each other.
+  const persistNs = `wf.list.opps.${lockedStatus ?? "all"}`;
+  const [search, setSearch] = usePersistedState<string>(`${persistNs}.search`, "");
   const debouncedSearch = useDebounce(search, 250);
   // All enum filters are multi-select. Status defaults to a single-item
   // array when `defaultStatus` is provided (e.g. the dashboard pre-filters
   // to "open"), and is forced to `[lockedStatus]` when locked (pledges view).
   const defaultStatusArr = defaultStatus ? [defaultStatus] : [];
-  const [statuses, setStatuses] = useState<string[]>(defaultStatusArr);
-  const [stages, setStages] = useState<string[]>([]);
-  const [types, setTypes] = useState<string[]>([]);
-  const [fiscalYears, setFiscalYears] = useState<string[]>([]);
-  const [owners, setOwners] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
+  const [statuses, setStatuses] = usePersistedState<string[]>(`${persistNs}.statuses`, defaultStatusArr);
+  const [stages, setStages] = usePersistedState<string[]>(`${persistNs}.stages`, []);
+  const [types, setTypes] = usePersistedState<string[]>(`${persistNs}.types`, []);
+  const [fiscalYears, setFiscalYears] = usePersistedState<string[]>(`${persistNs}.fiscalYears`, []);
+  const [owners, setOwners] = usePersistedState<string[]>(`${persistNs}.owners`, []);
+  const [page, setPage] = usePersistedState<number>(`${persistNs}.page`, 1);
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdateOpportunitiesAndPledges();

@@ -9,6 +9,7 @@ import {
   type CapacityRating,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { PEOPLE_BULK_FIELDS } from "@/lib/bulk-fields";
@@ -71,12 +72,14 @@ const DECEASED_OPTIONS: MultiFilterOption[] = [
 const COL_SPAN = 12;
 
 export default function Individuals() {
-  const [search, setSearch] = useState("");
+  // Filter state persists per-tab so back-navigation from a person
+  // detail page restores the same filtered view.
+  const [search, setSearch] = usePersistedState<string>("wf.list.people.search", "");
   const debouncedSearch = useDebounce(search, 250);
-  const [deceasedSel, setDeceasedSel] = useState<string[]>([]);
-  const [capacityTiers, setCapacityTiers] = useState<string[]>([]);
-  const [owners, setOwners] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
+  const [deceasedSel, setDeceasedSel] = usePersistedState<string[]>("wf.list.people.deceased", []);
+  const [capacityTiers, setCapacityTiers] = usePersistedState<string[]>("wf.list.people.capacity", []);
+  const [owners, setOwners] = usePersistedState<string[]>("wf.list.people.owners", []);
+  const [page, setPage] = usePersistedState<number>("wf.list.people.page", 1);
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdatePeople();

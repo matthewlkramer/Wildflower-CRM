@@ -11,6 +11,7 @@ import {
   type ActiveStatus,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { FUNDERS_BULK_FIELDS } from "@/lib/bulk-fields";
@@ -73,13 +74,15 @@ const CONNECTION_STATUSES: ConnectionStatus[] = [
 const PAGE_SIZE = 50;
 
 export default function FundingEntities() {
-  const [search, setSearch] = useState("");
+  // Filter state persists per-tab so back-navigation from a funder
+  // detail restores the same filtered view.
+  const [search, setSearch] = usePersistedState<string>("wf.list.funders.search", "");
   const debouncedSearch = useDebounce(search, 250);
-  const [subtypes, setSubtypes] = useState<string[]>([]);
-  const [activeStatuses, setActiveStatuses] = useState<string[]>([]);
-  const [connectionStatuses, setConnectionStatuses] = useState<string[]>([]);
-  const [owners, setOwners] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
+  const [subtypes, setSubtypes] = usePersistedState<string[]>("wf.list.funders.subtypes", []);
+  const [activeStatuses, setActiveStatuses] = usePersistedState<string[]>("wf.list.funders.activeStatuses", []);
+  const [connectionStatuses, setConnectionStatuses] = usePersistedState<string[]>("wf.list.funders.connectionStatuses", []);
+  const [owners, setOwners] = usePersistedState<string[]>("wf.list.funders.owners", []);
+  const [page, setPage] = usePersistedState<number>("wf.list.funders.page", 1);
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdateFunders();

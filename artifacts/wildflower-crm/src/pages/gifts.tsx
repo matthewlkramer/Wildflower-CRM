@@ -11,6 +11,7 @@ import {
   getListEntitiesQueryKey,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
@@ -53,11 +54,13 @@ const PAGE_SIZE = 50;
 const COL_SPAN = 10;
 
 export default function Gifts() {
-  const [search, setSearch] = useState("");
+  // Filter state is persisted per-tab so back-navigation from a gift
+  // detail page restores the same filtered/paginated view.
+  const [search, setSearch] = usePersistedState<string>("wf.list.gifts.search", "");
   const debouncedSearch = useDebounce(search, 250);
-  const [types, setTypes] = useState<string[]>([]);
-  const [owners, setOwners] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
+  const [types, setTypes] = usePersistedState<string[]>("wf.list.gifts.types", []);
+  const [owners, setOwners] = usePersistedState<string[]>("wf.list.gifts.owners", []);
+  const [page, setPage] = usePersistedState<number>("wf.list.gifts.page", 1);
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdateGiftsAndPayments();

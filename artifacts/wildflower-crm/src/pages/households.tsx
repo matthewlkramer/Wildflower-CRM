@@ -8,6 +8,7 @@ import {
   type ListHouseholdsParams,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { HOUSEHOLDS_BULK_FIELDS } from "@/lib/bulk-fields";
@@ -49,10 +50,12 @@ const ACTIVE_OPTIONS: MultiFilterOption[] = [
 ];
 
 export default function Households() {
-  const [search, setSearch] = useState("");
+  // Filter state persists per-tab so back-navigation from a household
+  // detail restores the same filtered view.
+  const [search, setSearch] = usePersistedState<string>("wf.list.households.search", "");
   const debouncedSearch = useDebounce(search, 250);
-  const [activeSel, setActiveSel] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
+  const [activeSel, setActiveSel] = usePersistedState<string[]>("wf.list.households.active", []);
+  const [page, setPage] = usePersistedState<number>("wf.list.households.page", 1);
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdateHouseholds();

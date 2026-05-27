@@ -31,6 +31,7 @@ import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/use-debounce";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 
 const STAGES: OpportunityStage[] = [
@@ -53,10 +54,12 @@ export default function Pipeline() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [search, setSearch] = useState("");
+  // Filter state persists per-tab so navigating to an opp detail and
+  // back keeps the user's filter selection.
+  const [search, setSearch] = usePersistedState<string>("wf.list.pipeline.search", "");
   const debouncedSearch = useDebounce(search, 250);
-  const [types, setTypes] = useState<string[]>([]);
-  const [owners, setOwners] = useState<string[]>([]);
+  const [types, setTypes] = usePersistedState<string[]>("wf.list.pipeline.types", []);
+  const [owners, setOwners] = usePersistedState<string[]>("wf.list.pipeline.owners", []);
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const { selected: globalEntityIds } = useEntityFilter();

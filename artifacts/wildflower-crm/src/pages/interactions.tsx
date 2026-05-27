@@ -7,6 +7,7 @@ import {
   type ListInteractionsParams,
 } from "@workspace/api-client-react";
 import { useDebounce } from "@/hooks/use-debounce";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import {
   Table,
   TableBody,
@@ -58,10 +59,12 @@ function participantCount(r: Interaction): number {
 }
 
 export default function Interactions() {
-  const [search, setSearch] = useState("");
-  const [kinds, setKinds] = useState<string[]>([]);
-  const [owners, setOwners] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
+  // Filter state persists per-tab so back-navigation keeps the same
+  // filtered view of interactions.
+  const [search, setSearch] = usePersistedState<string>("wf.list.interactions.search", "");
+  const [kinds, setKinds] = usePersistedState<string[]>("wf.list.interactions.kinds", []);
+  const [owners, setOwners] = usePersistedState<string[]>("wf.list.interactions.owners", []);
+  const [page, setPage] = usePersistedState<number>("wf.list.interactions.page", 1);
   const debouncedSearch = useDebounce(search, 250);
   const params: ListInteractionsParams = {
     limit: PAGE_SIZE,
