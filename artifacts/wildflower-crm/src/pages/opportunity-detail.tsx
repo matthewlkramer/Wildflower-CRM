@@ -262,23 +262,7 @@ function OppView({
                       "—"
                     )
                   }
-                  onSave={(next) => {
-                    // The server enforces `closed_requires_completion_date`:
-                    // status in ('won','lost','dormant') => actualCompletionDate
-                    // must be set. If the user is closing an opp that has no
-                    // completion date yet, default to today so the request
-                    // succeeds. They can still edit the date afterwards in
-                    // the Completion date field below.
-                    const closed =
-                      next === "won" || next === "lost" || next === "dormant";
-                    const body: UpdateOpportunityOrPledgeBody = { status: next };
-                    if (closed && !opp.actualCompletionDate) {
-                      body.actualCompletionDate = new Date()
-                        .toISOString()
-                        .slice(0, 10);
-                    }
-                    return patch(body);
-                  }}
+                  onSave={(next) => patch({ status: next })}
                 />
               )}
             </Row>
