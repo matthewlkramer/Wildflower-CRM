@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { calendarEvents } from "@workspace/db/schema";
-import { and, count, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, lt, or, sql, type SQL } from "drizzle-orm";
 import {
   ListCalendarEventsQueryParams,
   UpdateCalendarEventPrivacyBody,
@@ -71,13 +71,23 @@ router.get(
         sql`${calendarEvents.matchedHouseholdIds} @> ARRAY[${q.householdId}]::text[]`,
       );
     }
+    if (q.startAfter) {
+      filters.push(gte(calendarEvents.startAt, new Date(q.startAfter)));
+    }
+    if (q.startBefore) {
+      filters.push(lt(calendarEvents.startAt, new Date(q.startBefore)));
+    }
+    const orderBy =
+      q.order === "asc"
+        ? asc(calendarEvents.startAt)
+        : desc(calendarEvents.startAt);
     const where = and(...filters);
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
         .select()
         .from(calendarEvents)
         .where(where)
-        .orderBy(desc(calendarEvents.startAt))
+        .orderBy(orderBy)
         .limit(limit)
         .offset(offset),
       db.select({ value: count() }).from(calendarEvents).where(where),

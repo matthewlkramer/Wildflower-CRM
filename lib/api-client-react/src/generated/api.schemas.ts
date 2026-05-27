@@ -2692,6 +2692,18 @@ export type ListCalendarEventsParams = {
   funderId?: string;
   householdId?: string;
   /**
+   * Only events with startAt >= this timestamp.
+   */
+  startAfter?: string;
+  /**
+   * Only events with startAt < this timestamp.
+   */
+  startBefore?: string;
+  /**
+   * Sort by startAt. Default desc (most recent first).
+   */
+  order?: ListCalendarEventsOrder;
+  /**
    * @minimum 1
    * @maximum 1000
    */
@@ -2701,6 +2713,14 @@ export type ListCalendarEventsParams = {
    */
   page?: PageParameter;
 };
+
+export type ListCalendarEventsOrder =
+  (typeof ListCalendarEventsOrder)[keyof typeof ListCalendarEventsOrder];
+
+export const ListCalendarEventsOrder = {
+  asc: "asc",
+  desc: "desc",
+} as const;
 
 export type AdminResyncGoogleUser200 = { [key: string]: unknown };
 

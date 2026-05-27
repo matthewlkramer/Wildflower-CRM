@@ -1205,6 +1205,9 @@ paths:
         - { name: personId, in: query, schema: { type: string } }
         - { name: funderId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
+        - { name: startAfter, in: query, schema: { type: string, format: date-time }, description: "Only events with startAt >= this timestamp." }
+        - { name: startBefore, in: query, schema: { type: string, format: date-time }, description: "Only events with startAt < this timestamp." }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc], default: desc }, description: "Sort by startAt. Default desc (most recent first)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:

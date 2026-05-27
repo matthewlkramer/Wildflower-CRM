@@ -4944,6 +4944,7 @@ export const DownloadEmailAttachmentParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const listCalendarEventsQueryOrderDefault = `desc`;
 export const listCalendarEventsQueryLimitDefault = 50;
 export const listCalendarEventsQueryLimitMax = 1000;
 
@@ -4955,6 +4956,20 @@ export const ListCalendarEventsQueryParams = zod.object({
   personId: zod.coerce.string().optional(),
   funderId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
+  startAfter: zod.coerce
+    .string()
+    .datetime({})
+    .optional()
+    .describe("Only events with startAt >= this timestamp."),
+  startBefore: zod.coerce
+    .string()
+    .datetime({})
+    .optional()
+    .describe("Only events with startAt < this timestamp."),
+  order: zod
+    .enum(["asc", "desc"])
+    .default(listCalendarEventsQueryOrderDefault)
+    .describe("Sort by startAt. Default desc (most recent first)."),
   limit: zod.coerce
     .number()
     .min(1)

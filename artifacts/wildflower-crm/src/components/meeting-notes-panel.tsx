@@ -514,17 +514,47 @@ export function AddMeetingNoteDialog({
   ctx,
   unpinned,
   trigger,
+  prefill,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: {
   ctx?: MeetingContext;
   unpinned?: boolean;
   trigger?: React.ReactNode;
+  /**
+   * Optional initial values for title / meeting date (ISO string) / attendees
+   * (comma-separated). Used by the dashboard "upcoming meetings" widget to
+   * seed the form from a calendar event. Applied whenever the dialog opens.
+   */
+  prefill?: { title?: string; meetingDate?: string; attendees?: string };
+  /** Optional controlled open state for external triggers (e.g. dashboard widget). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [meetingDate, setMeetingDate] = useState("");
-  const [attendees, setAttendees] = useState("");
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (v: boolean) => {
+    if (!isControlled) setUncontrolledOpen(v);
+    controlledOnOpenChange?.(v);
+  };
+  const [title, setTitle] = useState(prefill?.title ?? "");
+  const [meetingDate, setMeetingDate] = useState(prefill?.meetingDate ?? "");
+  const [attendees, setAttendees] = useState(prefill?.attendees ?? "");
   const [transcript, setTranscript] = useState("");
   const [picked, setPicked] = useState<PickedContact | null>(null);
+
+  // Reseed from prefill each time the dialog opens so the dashboard widget
+  // can reuse a single dialog instance across multiple meetings.
+  useEffect(() => {
+    if (!open || !prefill) return;
+    if (prefill.title !== undefined) setTitle(prefill.title);
+    if (prefill.meetingDate !== undefined) setMeetingDate(prefill.meetingDate);
+    if (prefill.attendees !== undefined) setAttendees(prefill.attendees);
+    // We intentionally only react to `open` flipping true; prefill is a stable
+    // snapshot passed in by the caller for this open cycle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();

@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
 import EmailProposalsCard from "@/components/EmailProposalsCard";
+import UpcomingMeetingsCard from "@/components/upcoming-meetings-card";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 
 export default function Dashboard() {
@@ -194,6 +195,8 @@ export default function Dashboard() {
           </Link>
         ))}
       </div>
+
+      <UpcomingMeetingsCard />
 
       <MyTasksAndMentionsRow />
 
