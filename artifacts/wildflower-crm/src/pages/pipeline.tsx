@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
+import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
 import { useUserNameMap } from "@/components/user-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -60,6 +61,7 @@ export default function Pipeline() {
   const debouncedSearch = useDebounce(search, 250);
   const [types, setTypes] = usePersistedState<string[]>("wf.list.pipeline.types", []);
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.pipeline.owners", []);
+  const [fiscalYears, setFiscalYears] = usePersistedState<string[]>("wf.list.pipeline.fiscalYears", []);
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const { selected: globalEntityIds } = useEntityFilter();
@@ -67,10 +69,14 @@ export default function Pipeline() {
   const params: ListOpportunitiesAndPledgesParams = {
     limit: PAGE_LIMIT,
     page: 1,
-    status: ["open"],
+    // Pipeline shows everything that hasn't been declined or abandoned:
+    // open (in-flight) and won (closed but still relevant to the
+    // working view). Dormant and lost are excluded.
+    status: ["open", "won"],
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as OpportunityType[] } : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
+    ...(fiscalYears.length > 0 ? { fiscalYear: [...fiscalYears].sort() } : {}),
     ...(globalEntityIds.length > 0
       ? { entityId: [...globalEntityIds].sort() }
       : {}),
@@ -176,12 +182,17 @@ export default function Pipeline() {
           options={TYPES}
           testId="select-pipeline-type"
         />
+        <FiscalYearMultiSelect
+          selected={fiscalYears}
+          onChange={setFiscalYears}
+          testId="select-pipeline-fiscal-year"
+        />
         <OwnerMultiFilter
           selected={owners}
           onChange={setOwners}
           testId="select-pipeline-owner"
         />
-        {(search || types.length > 0 || owners.length > 0) && (
+        {(search || types.length > 0 || owners.length > 0 || fiscalYears.length > 0) && (
           <Button
             variant="ghost"
             size="sm"
@@ -189,6 +200,7 @@ export default function Pipeline() {
               setSearch("");
               setTypes([]);
               setOwners([]);
+              setFiscalYears([]);
             }}
           >
             Clear
