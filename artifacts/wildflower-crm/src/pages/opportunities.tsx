@@ -284,22 +284,24 @@ export default function Opportunities({
               )}
               <SortableTH colKey="awarded" align="right" {...ts}>Awarded</SortableTH>
               <SortableTH colKey="entities" sortable={false} {...ts}>Entities</SortableTH>
-              <SortableTH colKey="fy" {...ts}>FY</SortableTH>
+              {!isPledgeView && (
+                <SortableTH colKey="fy" {...ts}>FY</SortableTH>
+              )}
               <SortableTH colKey="projectedClose" {...ts}>Projected close</SortableTH>
               <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={11} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={isPledgeView ? 10 : 11} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center h-24 text-destructive">
+                <TableCell colSpan={isPledgeView ? 10 : 11} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load opportunities."}
                 </TableCell>
               </TableRow>
             ) : sortedRows.length === 0 ? (
-              <TableRow><TableCell colSpan={11} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={isPledgeView ? 10 : 11} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
               sortedRows.map((o) => {
                 const coveredFys = (o.coveredFiscalYears ?? []).map((y) => y.toUpperCase());
@@ -346,9 +348,11 @@ export default function Opportunities({
                     <TableCell className="text-xs text-muted-foreground max-w-[200px]">
                       {entities.length === 0 ? "—" : entities.join(", ")}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {coveredFys.length === 0 ? "—" : coveredFys.join(", ")}
-                    </TableCell>
+                    {!isPledgeView && (
+                      <TableCell className="text-xs text-muted-foreground">
+                        {coveredFys.length === 0 ? "—" : coveredFys.join(", ")}
+                      </TableCell>
+                    )}
                     <TableCell>{formatDateShort(o.projectedCloseDate)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {o.ownerUserId
