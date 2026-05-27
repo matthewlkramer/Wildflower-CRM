@@ -23,4 +23,22 @@ title = "CRM Competitive Review & Roadmap"
 id = "VJpEbVGKIya4SlxpQY2PG"
 uri = "file://tools/magio-extension/build/wildflower-tracking-extension.zip"
 type = "unspecified"
-title = "Wildflower Tracking — Chrome extension (side-load)"
+title = "Extension bundle (upload this to the Chrome Web Store)"
+
+[[outputs]]
+id = "OHRRM_nsErt0JmUVK-w6k"
+uri = "file://tools/magio-extension/STORE_LISTING.md"
+type = "text"
+title = "Chrome Web Store listing copy"
+
+[[outputs]]
+id = "zG8ibIk-EDPPXtotKxa2v"
+uri = "file://tools/magio-extension/PRIVACY_POLICY.md"
+type = "text"
+title = "Privacy policy (publish at wildflowerschools.org/privacy-extension)"
+
+[[outputs]]
+id = "Wn1KvsdWczrS4kw_ISH_x"
+uri = "file://tools/magio-extension/WORKSPACE_DEPLOY.md"
+type = "text"
+title = "Google Workspace force-install instructions"

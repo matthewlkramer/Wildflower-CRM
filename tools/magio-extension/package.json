@@ -1,8 +1,8 @@
 {
   "name": "wildflower-tracking-extension",
-  "displayName": "Wildflower Email Tracking",
-  "version": "0.1.0",
-  "description": "Email-open tracking for Gmail, wired into the Wildflower Fundraising CRM. Vendored from github.com/DeepakSilaych/Magio (MIT).",
+  "displayName": "Wildflower Foundation CRM",
+  "version": "1.0.0",
+  "description": "Wildflower Foundation CRM extension tool. Tracks email opens for messages sent from Gmail and links them back to contacts in the Wildflower Fundraising CRM.",
   "author": "Wildflower Schools (vendored from Magio by Deepak Silaych)",
   "scripts": {
     "dev": "plasmo dev",
