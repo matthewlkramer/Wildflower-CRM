@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -191,6 +192,103 @@ export function InlineEditText({
         testIdBase={testIdBase}
         label={label}
       />
+    </div>
+  );
+}
+
+// ---------- TEXTAREA ----------
+// Multi-line variant of InlineEditText for fields like notes, conditions,
+// usage notes, "about me" etc. that frequently contain paragraphs and
+// newlines. Save on Cmd/Ctrl+Enter so plain Enter can be used to insert
+// newlines.
+
+export function InlineEditTextarea({
+  label,
+  display,
+  value,
+  onSave,
+  testIdBase,
+  placeholder,
+  rows = 4,
+}: BaseProps & {
+  value: string | null;
+  onSave: (next: string | null) => SaveResult;
+  placeholder?: string;
+  rows?: number;
+}) {
+  const [editing, setEditing] = useState(false);
+  const { busy, run } = useSaveRunner();
+  const [draft, setDraft] = useState(value ?? "");
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (editing) {
+      setDraft(value ?? "");
+      requestAnimationFrame(() => taRef.current?.focus());
+    }
+  }, [editing, value]);
+
+  if (!editing) {
+    // Don't use EditTriggerRow here — its `truncate` + `whitespace-nowrap`
+    // collapses multi-line note bodies onto a single ellipsised line.
+    // Render the display block at full width with the edit pencil
+    // floated alongside instead.
+    return (
+      <div className="flex items-start gap-2 min-w-0 w-full">
+        <div className="flex-1 min-w-0">{display}</div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={() => setEditing(true)}
+          aria-label={`Edit ${label}`}
+          data-testid={testIdBase ? `button-edit-${testIdBase}` : undefined}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  const trimmed = draft.trim();
+  const next = trimmed.length === 0 ? null : draft;
+  const dirty = next !== (value ?? null);
+  const trySave = () => {
+    if (!dirty || busy) return;
+    run(() => onSave(next), () => setEditing(false));
+  };
+
+  return (
+    <div className="flex items-start gap-1 min-w-0 w-full">
+      <Textarea
+        ref={taRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder={placeholder}
+        aria-label={label}
+        disabled={busy}
+        rows={rows}
+        data-testid={testIdBase ? `textarea-${testIdBase}` : undefined}
+        className="text-sm"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            trySave();
+          }
+          if (e.key === "Escape" && !busy) setEditing(false);
+        }}
+      />
+      <div className="flex flex-col">
+        <ActionButtons
+          busy={busy}
+          canSave={dirty}
+          onSave={trySave}
+          onCancel={() => setEditing(false)}
+          testIdBase={testIdBase}
+          label={label}
+        />
+      </div>
     </div>
   );
 }

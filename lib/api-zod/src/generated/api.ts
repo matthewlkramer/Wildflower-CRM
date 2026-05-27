@@ -3032,6 +3032,7 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   usageNotes: zod.string().optional(),
   copperPledgeId: zod.string().optional(),
   primaryContactPersonId: zod.string().optional(),
+  ownerUserId: zod.string().optional(),
 });
 
 export const GetOpportunityOrPledgeParams = zod.object({
@@ -3252,6 +3253,7 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
   primaryContactPersonId: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
 });
 
 export const UpdateOpportunityOrPledgeResponse = zod.object({

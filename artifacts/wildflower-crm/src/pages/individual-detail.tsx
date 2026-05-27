@@ -24,6 +24,7 @@ import {
   InlineEditBoolean,
   InlineEditSelect,
   InlineEditText,
+  InlineEditTextarea,
   type InlineSelectOption,
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
@@ -276,7 +277,16 @@ function PersonView({ person }: { person: PersonDetail }) {
                 display={regionDisplay}
                 onSave={(next) => patch({ currentHomeRegionId: next })} />
             </Row>
-            <Row label="Children at WF">{person.childrenAtWf ?? "—"}</Row>
+            <Row label="Children at WF">
+              <InlineEditText
+                label="Children at WF"
+                testIdBase="person-children-at-wf"
+                value={person.childrenAtWf ?? null}
+                placeholder="e.g. 2"
+                display={person.childrenAtWf ?? "—"}
+                onSave={(next) => patch({ childrenAtWf: next })}
+              />
+            </Row>
             <Row label="Newsletter">
               <InlineEditBoolean
                 label="Newsletter subscribed"
@@ -536,28 +546,57 @@ function PersonView({ person }: { person: PersonDetail }) {
         </Card>
       </div>
 
-      {(person.aboutMe || person.details || person.tags) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Notes</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {person.tags && <Row label="Tags">{person.tags}</Row>}
-            {person.aboutMe && (
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">About</div>
-                <p className="whitespace-pre-wrap">{person.aboutMe}</p>
-              </div>
-            )}
-            {person.details && (
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
-                <p className="whitespace-pre-wrap">{person.details}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Notes</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <Row label="Tags">
+            <InlineEditText
+              label="Tags"
+              testIdBase="person-tags"
+              value={person.tags ?? null}
+              placeholder="Comma-separated tags"
+              display={person.tags ?? "—"}
+              onSave={(next) => patch({ tags: next })}
+            />
+          </Row>
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">About</div>
+            <InlineEditTextarea
+              label="About"
+              testIdBase="person-about-me"
+              value={person.aboutMe ?? null}
+              placeholder="Add a bio…"
+              display={
+                person.aboutMe ? (
+                  <p className="whitespace-pre-wrap text-left">{person.aboutMe}</p>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )
+              }
+              onSave={(next) => patch({ aboutMe: next })}
+            />
+          </div>
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
+            <InlineEditTextarea
+              label="Details"
+              testIdBase="person-details"
+              value={person.details ?? null}
+              placeholder="Add details…"
+              display={
+                person.details ? (
+                  <p className="whitespace-pre-wrap text-left">{person.details}</p>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )
+              }
+              onSave={(next) => patch({ details: next })}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <LinkedOpportunitiesCard
         scope={{ individualGiverPersonId: person.id }}

@@ -15,10 +15,12 @@ import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { NotesPanel } from "@/components/notes-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import {
+  InlineEditBoolean,
   InlineEditCurrency,
   InlineEditDate,
   InlineEditSelect,
   InlineEditText,
+  InlineEditTextarea,
   type InlineSelectOption,
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
@@ -235,7 +237,16 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                 onSave={(next) => patch({ grantYear: next })}
               />
             </Row>
-            <Row label="Designated to school">{gift.designatedToSchool ? "Yes" : "No"}</Row>
+            <Row label="Designated to school">
+              <InlineEditBoolean
+                label="Designated to school"
+                testIdBase="gift-designated-to-school"
+                value={gift.designatedToSchool}
+                allowNull={false}
+                display={gift.designatedToSchool ? "Yes" : "No"}
+                onSave={(next) => patch({ designatedToSchool: next ?? false })}
+              />
+            </Row>
             <Row label="Owner">
               <InlineEditUserPicker
                 testIdBase="gift-owner"
@@ -320,20 +331,38 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
         </CardContent>
       </Card>
 
-      {(gift.details || gift.tags) && (
-        <Card>
-          <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {gift.tags && <Row label="Tags">{gift.tags}</Row>}
-            {gift.details && (
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
-                <p className="whitespace-pre-wrap">{gift.details}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <Row label="Tags">
+            <InlineEditText
+              label="Tags"
+              testIdBase="gift-tags"
+              value={gift.tags ?? null}
+              placeholder="Comma-separated tags"
+              display={gift.tags ?? "—"}
+              onSave={(next) => patch({ tags: next })}
+            />
+          </Row>
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
+            <InlineEditTextarea
+              label="Details"
+              testIdBase="gift-details"
+              value={gift.details ?? null}
+              placeholder="Add details…"
+              display={
+                gift.details ? (
+                  <p className="whitespace-pre-wrap text-left">{gift.details}</p>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )
+              }
+              onSave={(next) => patch({ details: next })}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <NotesPanel giftId={gift.id} />

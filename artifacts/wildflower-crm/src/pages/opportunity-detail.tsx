@@ -12,18 +12,22 @@ import {
   type OpportunityStage,
   type OpportunityStatus,
   type OpportunityType,
+  type OpportunityConditional,
 } from "@workspace/api-client-react";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { NotesPanel } from "@/components/notes-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import {
+  InlineEditBoolean,
   InlineEditCurrency,
   InlineEditDate,
   InlineEditSelect,
   InlineEditText,
+  InlineEditTextarea,
   type InlineSelectOption,
 } from "@/components/inline-edit";
+import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import {
   InlineEditPersonPicker,
   InlineEditDonor,
@@ -61,6 +65,13 @@ const TYPE_OPTIONS = [
   { value: "renewal", label: "Renewal" },
   { value: "open_application", label: "Open application" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityType>>;
+
+const CONDITIONAL_OPTIONS = [
+  { value: "unconditional", label: "Unconditional" },
+  { value: "reimbursable", label: "Reimbursable" },
+  { value: "conditional_on_funder_determination", label: "Conditional — funder determination" },
+  { value: "conditional_on_target", label: "Conditional — on target" },
+] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityConditional>>;
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -137,6 +148,11 @@ function OppView({
   const entityLabels = (opp.entityIds ?? []).map(
     (id) => entityNameById.get(id) ?? id,
   );
+
+  const userNames = useUserNameMap();
+  const ownerDisplay = opp.ownerUserId
+    ? (userNames.get(opp.ownerUserId) ?? opp.ownerUserId)
+    : "—";
 
   const funderName = useFunderName(opp.funderId ?? null);
   const giverName = usePersonName(opp.individualGiverPersonId ?? null);
@@ -285,8 +301,46 @@ function OppView({
                 onSave={(next) => patch({ winProbability: next })}
               />
             </Row>
-            <Row label="Conditional">{formatEnum(opp.conditional)}</Row>
-            <Row label="Conditions met">{opp.conditionsMet ? "Yes" : "No"}</Row>
+            <Row label="Conditional">
+              <InlineEditSelect
+                label="Conditional"
+                testIdBase="opp-conditional"
+                value={opp.conditional ?? null}
+                options={CONDITIONAL_OPTIONS}
+                display={formatEnum(opp.conditional) || "—"}
+                onSave={(next) => patch({ conditional: next })}
+              />
+            </Row>
+            <Row label="Conditions met">
+              <InlineEditBoolean
+                label="Conditions met"
+                testIdBase="opp-conditions-met"
+                value={opp.conditionsMet}
+                allowNull={false}
+                display={opp.conditionsMet ? "Yes" : "No"}
+                onSave={(next) => patch({ conditionsMet: next ?? false })}
+              />
+            </Row>
+            <Row label="Owner">
+              <InlineEditUserPicker
+                testIdBase="opp-owner"
+                value={opp.ownerUserId ?? null}
+                display={ownerDisplay}
+                onSave={(next) => patch({ ownerUserId: next })}
+              />
+            </Row>
+            <Row label="Fiscal year">
+              <span className="text-muted-foreground">
+                {opp.fiscalYear ?? "—"}
+              </span>
+            </Row>
+            <Row label="Covered FYs">
+              <span className="text-muted-foreground">
+                {opp.coveredFiscalYears && opp.coveredFiscalYears.length > 0
+                  ? opp.coveredFiscalYears.join(", ")
+                  : "—"}
+              </span>
+            </Row>
             <Row label="Entities">
               {entityLabels.length === 0 ? (
                 <span className="text-muted-foreground">—</span>
@@ -434,17 +488,35 @@ function OppView({
         </CardContent>
       </Card>
 
-      {(opp.conditions || opp.paymentDetails || opp.usageNotes || opp.lossReason) && (
-        <Card>
-          <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {opp.conditions && <NoteBlock label="Conditions">{opp.conditions}</NoteBlock>}
-            {opp.paymentDetails && <NoteBlock label="Payment details">{opp.paymentDetails}</NoteBlock>}
-            {opp.usageNotes && <NoteBlock label="Usage notes">{opp.usageNotes}</NoteBlock>}
-            {opp.lossReason && <NoteBlock label="Loss reason">{opp.lossReason}</NoteBlock>}
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <EditableNote
+            label="Conditions"
+            testIdBase="opp-conditions"
+            value={opp.conditions ?? null}
+            onSave={(next) => patch({ conditions: next })}
+          />
+          <EditableNote
+            label="Payment details"
+            testIdBase="opp-payment-details"
+            value={opp.paymentDetails ?? null}
+            onSave={(next) => patch({ paymentDetails: next })}
+          />
+          <EditableNote
+            label="Usage notes"
+            testIdBase="opp-usage-notes"
+            value={opp.usageNotes ?? null}
+            onSave={(next) => patch({ usageNotes: next })}
+          />
+          <EditableNote
+            label="Loss reason"
+            testIdBase="opp-loss-reason"
+            value={opp.lossReason ?? null}
+            onSave={(next) => patch({ lossReason: next })}
+          />
+        </CardContent>
+      </Card>
 
       {/* Activity timeline scoped to whichever donor this opportunity is
           linked to. Opportunities don't have their own activity arrays;
@@ -580,11 +652,33 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function NoteBlock({ label, children }: { label: string; children: React.ReactNode }) {
+function EditableNote({
+  label,
+  testIdBase,
+  value,
+  onSave,
+}: {
+  label: string;
+  testIdBase: string;
+  value: string | null;
+  onSave: (next: string | null) => Promise<unknown> | unknown;
+}) {
+  const display = value ? (
+    <p className="whitespace-pre-wrap text-left">{value}</p>
+  ) : (
+    <span className="text-muted-foreground">—</span>
+  );
   return (
     <div>
       <div className="text-xs font-medium text-muted-foreground mb-1">{label}</div>
-      <p className="whitespace-pre-wrap">{children}</p>
+      <InlineEditTextarea
+        label={label}
+        testIdBase={testIdBase}
+        value={value}
+        display={display}
+        onSave={onSave}
+        placeholder={`Add ${label.toLowerCase()}…`}
+      />
     </div>
   );
 }

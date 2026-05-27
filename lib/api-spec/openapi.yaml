@@ -2303,6 +2303,7 @@ components:
         usageNotes:                 { type: string }
         copperPledgeId:             { type: string }
         primaryContactPersonId:     { type: string }
+        ownerUserId:                { type: string }
     UpdateOpportunityOrPledgeBody:
       type: object
       properties:
@@ -2329,6 +2330,7 @@ components:
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
         primaryContactPersonId:     { type: string, nullable: true }
+        ownerUserId:                { type: string, nullable: true }
 
     # ─── Pledge allocations ────────────────────────────────────────────────────
     PledgeAllocation:

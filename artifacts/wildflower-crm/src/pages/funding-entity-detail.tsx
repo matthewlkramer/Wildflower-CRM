@@ -28,6 +28,7 @@ import {
   InlineEditBoolean,
   InlineEditSelect,
   InlineEditText,
+  InlineEditTextarea,
   type InlineSelectOption,
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
@@ -597,31 +598,53 @@ function FunderView({ funder }: { funder: FunderDetail }) {
         </Card>
       </div>
 
-      {(funder.details ||
-        funder.otherNames ||
-        funder.historicalNames?.length ||
-        funder.tags) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Notes</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {funder.otherNames && (
-              <Row label="Other names">{funder.otherNames}</Row>
-            )}
-            <TagRow label="Historical names" values={funder.historicalNames} />
-            {funder.tags && <Row label="Tags">{funder.tags}</Row>}
-            {funder.details && (
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">
-                  Details
-                </div>
-                <p className="whitespace-pre-wrap">{funder.details}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Notes</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <Row label="Other names">
+            <InlineEditText
+              label="Other names"
+              testIdBase="funder-other-names"
+              value={funder.otherNames ?? null}
+              placeholder="Aliases, abbreviations…"
+              display={funder.otherNames ?? "—"}
+              onSave={(next) => patch({ otherNames: next })}
+            />
+          </Row>
+          <TagRow label="Historical names" values={funder.historicalNames} />
+          <Row label="Tags">
+            <InlineEditText
+              label="Tags"
+              testIdBase="funder-tags"
+              value={funder.tags ?? null}
+              placeholder="Comma-separated tags"
+              display={funder.tags ?? "—"}
+              onSave={(next) => patch({ tags: next })}
+            />
+          </Row>
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">
+              Details
+            </div>
+            <InlineEditTextarea
+              label="Details"
+              testIdBase="funder-details"
+              value={funder.details ?? null}
+              placeholder="Add details…"
+              display={
+                funder.details ? (
+                  <p className="whitespace-pre-wrap text-left">{funder.details}</p>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )
+              }
+              onSave={(next) => patch({ details: next })}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <LinkedOpportunitiesCard
         scope={{ funderId: funder.id }}

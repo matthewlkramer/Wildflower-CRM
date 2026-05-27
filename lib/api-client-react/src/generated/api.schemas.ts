@@ -1282,6 +1282,7 @@ export interface CreateOpportunityOrPledgeBody {
   usageNotes?: string;
   copperPledgeId?: string;
   primaryContactPersonId?: string;
+  ownerUserId?: string;
 }
 
 export interface UpdateOpportunityOrPledgeBody {
@@ -1308,6 +1309,7 @@ export interface UpdateOpportunityOrPledgeBody {
   usageNotes?: string | null;
   copperPledgeId?: string | null;
   primaryContactPersonId?: string | null;
+  ownerUserId?: string | null;
 }
 
 export interface PledgeAllocationList {
