@@ -86,9 +86,14 @@ router.post(
       .then((r) => r[0]);
     const summaryOnly = owner?.mode === "summary_only";
 
-    // Summarize BEFORE the transcript-drop decision below so summary_only
-    // users still get a useful summary derived from the body they pasted.
-    const ai = await summarizeMeeting(body.transcript);
+    // Two intake paths: pasted transcript (run through AI to produce a
+    // summary + action items) vs hand-typed notes (`summary`, stored
+    // verbatim with no AI processing and no rawTranscript). Refined
+    // body validation has already enforced that exactly one is set.
+    const isTranscriptPath = typeof body.transcript === "string" && body.transcript.trim().length > 0;
+    const ai = isTranscriptPath
+      ? await summarizeMeeting(body.transcript!)
+      : { summary: body.summary!.trim(), actionItems: [] as MeetingActionItem[] };
 
     const [row] = await db
       .insert(meetingNotes)
@@ -99,8 +104,9 @@ router.post(
         attendees: body.attendees ?? null,
         // Privacy split mirrors the Gmail sync path: in summary_only
         // mode we drop the transcript here, BEFORE the insert, so the
-        // raw bytes never reach postgres in the first place.
-        rawTranscript: summaryOnly ? null : body.transcript,
+        // raw bytes never reach postgres in the first place. The
+        // hand-typed-notes path never has a transcript to begin with.
+        rawTranscript: !isTranscriptPath || summaryOnly ? null : body.transcript!,
         summaryOnly,
         aiSummary: ai.summary,
         actionItems: ai.actionItems as unknown as MeetingActionItem[],

@@ -141,5 +141,22 @@ export const CreateMeetingNoteBodyRefined =
   CreateMeetingNoteBody.superRefine(
     (b: z.infer<typeof CreateMeetingNoteBody>, ctx) => {
       issuesToZodCtx(validateMeetingContactInvariants(b), ctx);
+      // Exactly one of transcript / summary. Both routes are mutually
+      // exclusive: transcript runs through AI; summary is stored verbatim.
+      const hasT = typeof b.transcript === "string" && b.transcript.trim().length > 0;
+      const hasS = typeof b.summary === "string" && b.summary.trim().length > 0;
+      if (!hasT && !hasS) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["transcript"],
+          message: "Either transcript or summary is required.",
+        });
+      } else if (hasT && hasS) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["summary"],
+          message: "Provide either transcript or summary, not both.",
+        });
+      }
     },
   );

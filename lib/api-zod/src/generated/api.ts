@@ -4553,8 +4553,15 @@ export const CreateMeetingNoteBody = zod
   .object({
     transcript: zod
       .string()
+      .optional()
       .describe(
-        "Raw pasted transcript. Dropped server-side before insert when the caller's email_sync_mode is summary_only.",
+        "Raw pasted transcript. Dropped server-side before insert when the caller's email_sync_mode is summary_only. Runs through AI summarization to produce aiSummary + actionItems.",
+      ),
+    summary: zod
+      .string()
+      .optional()
+      .describe(
+        "Hand-typed notes. Stored verbatim as aiSummary with no AI processing; no rawTranscript or actionItems are generated. Mutually exclusive with transcript.",
       ),
     title: zod.string().optional(),
     meetingDate: zod
@@ -4568,7 +4575,7 @@ export const CreateMeetingNoteBody = zod
     householdId: zod.string().optional(),
   })
   .describe(
-    "Exactly one of personId \/ funderId \/ householdId must be set (contact XOR).",
+    "Exactly one of personId \/ funderId \/ householdId must be set (contact XOR). Exactly one of `transcript` or `summary` must be provided — `transcript` runs through AI summarization, `summary` is stored verbatim as the note body (used by the hand-typed-notes flow).",
   );
 
 export const GetMeetingNoteParams = zod.object({

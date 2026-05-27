@@ -39,6 +39,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Sparkles,
   Trash2,
@@ -541,16 +542,26 @@ export function AddMeetingNoteDialog({
   const [title, setTitle] = useState(prefill?.title ?? "");
   const [meetingDate, setMeetingDate] = useState(prefill?.meetingDate ?? "");
   const [attendees, setAttendees] = useState(prefill?.attendees ?? "");
+  const [notes, setNotes] = useState("");
   const [transcript, setTranscript] = useState("");
+  // "notes" = hand-typed notes (stored verbatim, no AI); "transcript" = paste
+  // a transcript and let the model summarize. We default to "notes" because
+  // that's what people will use until the transcript flow is figured out.
+  const [mode, setMode] = useState<"notes" | "transcript">("notes");
   const [picked, setPicked] = useState<PickedContact | null>(null);
 
   // Reseed from prefill each time the dialog opens so the dashboard widget
-  // can reuse a single dialog instance across multiple meetings.
+  // can reuse a single dialog instance across multiple meetings. Also reset
+  // the tab to the "Type notes" default — if the user opened the dialog,
+  // switched to transcript, then closed without saving, the next open
+  // should land back on the default tab rather than remembering the prior
+  // choice.
   useEffect(() => {
-    if (!open || !prefill) return;
-    if (prefill.title !== undefined) setTitle(prefill.title);
-    if (prefill.meetingDate !== undefined) setMeetingDate(prefill.meetingDate);
-    if (prefill.attendees !== undefined) setAttendees(prefill.attendees);
+    if (!open) return;
+    setMode("notes");
+    if (prefill?.title !== undefined) setTitle(prefill.title);
+    if (prefill?.meetingDate !== undefined) setMeetingDate(prefill.meetingDate);
+    if (prefill?.attendees !== undefined) setAttendees(prefill.attendees);
     // We intentionally only react to `open` flipping true; prefill is a stable
     // snapshot passed in by the caller for this open cycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -572,7 +583,9 @@ export function AddMeetingNoteDialog({
         setTitle("");
         setMeetingDate("");
         setAttendees("");
+        setNotes("");
         setTranscript("");
+        setMode("notes");
         setPicked(null);
       },
       onError: (err: unknown) => {
@@ -594,7 +607,8 @@ export function AddMeetingNoteDialog({
     (effectivePerson ? 1 : 0) +
     (effectiveFunder ? 1 : 0) +
     (effectiveHousehold ? 1 : 0);
-  const canSubmit = transcript.trim().length > 0 && contactCount === 1;
+  const bodyText = mode === "notes" ? notes : transcript;
+  const canSubmit = bodyText.trim().length > 0 && contactCount === 1;
 
   // File upload: accept text-shaped transcript files and read them
   // client-side into the textarea so the user can still tweak before
@@ -623,6 +637,9 @@ export function AddMeetingNoteDialog({
     }
     const text = await file.text();
     setTranscript(text);
+    // Uploaded files are always transcripts — flip to that tab so the user
+    // can see what they just loaded, even if they were on the notes tab.
+    setMode("transcript");
     if (!title.trim()) {
       // Use the filename (sans extension) as a sensible default title.
       setTitle(file.name.replace(/\.[^.]+$/, ""));
@@ -651,9 +668,8 @@ export function AddMeetingNoteDialog({
         <DialogHeader>
           <DialogTitle>New meeting note</DialogTitle>
           <DialogDescription>
-            Paste the meeting transcript or upload a .txt/.vtt/.md file.
-            We'll generate a summary and extract action items you can
-            promote to tasks.
+            Type notes by hand as the meeting happens, or paste a full
+            transcript afterwards and we'll summarize it for you.
           </DialogDescription>
         </DialogHeader>
         {isSummaryOnly ? (
@@ -679,7 +695,12 @@ export function AddMeetingNoteDialog({
               .filter(Boolean);
             create.mutate({
               data: {
-                transcript: transcript.trim(),
+                // Send exactly one of transcript or summary based on the
+                // active tab — the server treats them differently
+                // (transcript → AI; summary → stored verbatim).
+                transcript:
+                  mode === "transcript" ? transcript.trim() : undefined,
+                summary: mode === "notes" ? notes.trim() : undefined,
                 title: title.trim() || undefined,
                 meetingDate: meetingDate
                   ? new Date(meetingDate).toISOString()
@@ -731,43 +752,78 @@ export function AddMeetingNoteDialog({
               <ContactPicker value={picked} onChange={setPicked} />
             </div>
           ) : null}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="mtg-transcript">Transcript</Label>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-xs"
-                onClick={() => fileInputRef.current?.click()}
-                data-testid="button-upload-transcript"
-              >
-                <Upload className="h-3.5 w-3.5 mr-1" />
-                Upload file
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".txt,.vtt,.srt,.md,.markdown,text/plain,text/vtt,text/markdown"
-                className="hidden"
-                onChange={(e) => {
-                  void handleFile(e.target.files?.[0]);
-                  // Reset so re-selecting the same file fires onChange.
-                  e.target.value = "";
-                }}
-                data-testid="input-transcript-file"
+          <Tabs
+            value={mode}
+            onValueChange={(v) => setMode(v as "notes" | "transcript")}
+            className="space-y-2"
+          >
+            <TabsList className="grid grid-cols-2 w-full">
+              <TabsTrigger value="notes" data-testid="tab-mode-notes">
+                Type notes
+              </TabsTrigger>
+              <TabsTrigger value="transcript" data-testid="tab-mode-transcript">
+                Paste transcript
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="notes" className="space-y-1.5 mt-0">
+              <Label htmlFor="mtg-notes" className="sr-only">
+                Notes
+              </Label>
+              <Textarea
+                id="mtg-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={10}
+                placeholder="Type notes as the meeting happens…"
+                autoFocus={mode === "notes"}
+                data-testid="input-meeting-notes"
               />
-            </div>
-            <Textarea
-              id="mtg-transcript"
-              value={transcript}
-              onChange={(e) => setTranscript(e.target.value)}
-              rows={10}
-              placeholder="Paste the full meeting transcript here, or upload a .txt / .vtt / .md file…"
-              autoFocus
-              data-testid="input-meeting-transcript"
-            />
-          </div>
+              <p className="text-xs text-muted-foreground">
+                Saved verbatim — no AI summary, no action-item extraction.
+              </p>
+            </TabsContent>
+            <TabsContent value="transcript" className="space-y-1.5 mt-0">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="mtg-transcript">Transcript</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="button-upload-transcript"
+                >
+                  <Upload className="h-3.5 w-3.5 mr-1" />
+                  Upload file
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.vtt,.srt,.md,.markdown,text/plain,text/vtt,text/markdown"
+                  className="hidden"
+                  onChange={(e) => {
+                    void handleFile(e.target.files?.[0]);
+                    // Reset so re-selecting the same file fires onChange.
+                    e.target.value = "";
+                  }}
+                  data-testid="input-transcript-file"
+                />
+              </div>
+              <Textarea
+                id="mtg-transcript"
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+                rows={10}
+                placeholder="Paste the full meeting transcript here, or upload a .txt / .vtt / .md file…"
+                autoFocus={mode === "transcript"}
+                data-testid="input-meeting-transcript"
+              />
+              <p className="text-xs text-muted-foreground">
+                We'll summarize and extract action items you can promote to
+                tasks.
+              </p>
+            </TabsContent>
+          </Tabs>
           <DialogFooter>
             <Button
               type="button"
@@ -782,7 +838,13 @@ export function AddMeetingNoteDialog({
               disabled={!canSubmit || create.isPending}
               data-testid="button-save-meeting-note"
             >
-              {create.isPending ? "Summarizing…" : "Save & summarize"}
+              {create.isPending
+                ? mode === "transcript"
+                  ? "Summarizing…"
+                  : "Saving…"
+                : mode === "transcript"
+                  ? "Save & summarize"
+                  : "Save notes"}
             </Button>
           </DialogFooter>
         </form>

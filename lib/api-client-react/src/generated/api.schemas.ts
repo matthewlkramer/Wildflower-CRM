@@ -2004,11 +2004,13 @@ export interface MeetingNoteList {
 }
 
 /**
- * Exactly one of personId / funderId / householdId must be set (contact XOR).
+ * Exactly one of personId / funderId / householdId must be set (contact XOR). Exactly one of `transcript` or `summary` must be provided — `transcript` runs through AI summarization, `summary` is stored verbatim as the note body (used by the hand-typed-notes flow).
  */
 export interface CreateMeetingNoteBody {
-  /** Raw pasted transcript. Dropped server-side before insert when the caller's email_sync_mode is summary_only. */
-  transcript: string;
+  /** Raw pasted transcript. Dropped server-side before insert when the caller's email_sync_mode is summary_only. Runs through AI summarization to produce aiSummary + actionItems. */
+  transcript?: string;
+  /** Hand-typed notes. Stored verbatim as aiSummary with no AI processing; no rawTranscript or actionItems are generated. Mutually exclusive with transcript. */
+  summary?: string;
   title?: string;
   /** Defaults to now if omitted. */
   meetingDate?: string;

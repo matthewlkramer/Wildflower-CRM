@@ -3234,10 +3234,10 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     CreateMeetingNoteBody:
       type: object
-      required: [transcript]
-      description: "Exactly one of personId / funderId / householdId must be set (contact XOR)."
+      description: "Exactly one of personId / funderId / householdId must be set (contact XOR). Exactly one of `transcript` or `summary` must be provided — `transcript` runs through AI summarization, `summary` is stored verbatim as the note body (used by the hand-typed-notes flow)."
       properties:
-        transcript:      { type: string, description: "Raw pasted transcript. Dropped server-side before insert when the caller's email_sync_mode is summary_only." }
+        transcript:      { type: string, description: "Raw pasted transcript. Dropped server-side before insert when the caller's email_sync_mode is summary_only. Runs through AI summarization to produce aiSummary + actionItems." }
+        summary:         { type: string, description: "Hand-typed notes. Stored verbatim as aiSummary with no AI processing; no rawTranscript or actionItems are generated. Mutually exclusive with transcript." }
         title:           { type: string }
         meetingDate:     { type: string, format: date-time, description: "Defaults to now if omitted." }
         attendees:       { type: array, items: { type: string } }
