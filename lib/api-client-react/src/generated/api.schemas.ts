@@ -2037,6 +2037,58 @@ export interface PromoteActionItemBody {
   dueDate?: string;
 }
 
+/**
+ * team = shared with everyone (creator-edit-only); individual = private to creator.
+ */
+export type SavedViewVisibility =
+  (typeof SavedViewVisibility)[keyof typeof SavedViewVisibility];
+
+export const SavedViewVisibility = {
+  team: "team",
+  individual: "individual",
+} as const;
+
+/**
+ * Opaque page-specific state blob: filters + sort.
+ */
+export type SavedViewState = { [key: string]: unknown };
+
+export interface SavedView {
+  id: string;
+  listKey: string;
+  name: string;
+  visibility: SavedViewVisibility;
+  /** Opaque page-specific state blob: filters + sort. */
+  state: SavedViewState;
+  creatorUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedViewList {
+  data: SavedView[];
+}
+
+export type CreateSavedViewBodyState = { [key: string]: unknown };
+
+export interface CreateSavedViewBody {
+  listKey: string;
+  name: string;
+  visibility: SavedViewVisibility;
+  state: CreateSavedViewBodyState;
+}
+
+export type UpdateSavedViewBodyState = { [key: string]: unknown };
+
+/**
+ * Only the creator may PATCH. All fields optional; at least one required.
+ */
+export interface UpdateSavedViewBody {
+  name?: string;
+  visibility?: SavedViewVisibility;
+  state?: UpdateSavedViewBodyState;
+}
+
 export type BulkUpdateResultFailedItem = {
   id: string;
   message: string;
@@ -2607,6 +2659,13 @@ export type ListMeetingNotesParams = {
    * @minimum 1
    */
   page?: PageParameter;
+};
+
+export type ListSavedViewsParams = {
+  /**
+   * Page identifier, e.g. 'individuals', 'funders'.
+   */
+  listKey: string;
 };
 
 export type ListEmailMessagesParams = {

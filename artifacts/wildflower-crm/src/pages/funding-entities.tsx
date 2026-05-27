@@ -12,6 +12,9 @@ import {
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { useSavedViews } from "@/hooks/use-saved-views";
+import { SavedViewsBar } from "@/components/saved-views-bar";
+import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { FUNDERS_BULK_FIELDS } from "@/lib/bulk-fields";
@@ -170,6 +173,60 @@ export default function FundingEntities() {
     connectionStatuses.length > 0 ||
     owners.length > 0;
 
+  // ─── Saved views ─────────────────────────────────────────────────
+  type FundersView = {
+    search: string;
+    subtypes: string[];
+    activeStatuses: string[];
+    connectionStatuses: string[];
+    owners: string[];
+    sort: SortState;
+  };
+  const currentView: FundersView = {
+    search,
+    subtypes,
+    activeStatuses,
+    connectionStatuses,
+    owners,
+    sort: ts.sort,
+  };
+  const clearAll = () => {
+    setSearch("");
+    setSubtypes(DEFAULT_SUBTYPES);
+    setActiveStatuses(DEFAULT_ACTIVE_STATUSES);
+    setConnectionStatuses([]);
+    setOwners([]);
+    ts.setSort({ key: null, dir: "asc" });
+    setPage(1);
+    selection.clear();
+  };
+  const viewsCtrl = useSavedViews<FundersView>({
+    listKey: "funding-entities",
+    current: currentView,
+    apply: (s) => {
+      setSearch(s.search ?? "");
+      setSubtypes(s.subtypes ?? DEFAULT_SUBTYPES);
+      setActiveStatuses(s.activeStatuses ?? DEFAULT_ACTIVE_STATUSES);
+      setConnectionStatuses(s.connectionStatuses ?? []);
+      setOwners(s.owners ?? []);
+      ts.setSort(s.sort ?? { key: null, dir: "asc" });
+      setPage(1);
+      selection.clear();
+    },
+    isDefault: (s) => {
+      const sortedSubtypes = [...(s.subtypes ?? [])].sort().join(",");
+      const sortedActiveStatuses = [...(s.activeStatuses ?? [])].sort().join(",");
+      return (
+        !s.search &&
+        sortedSubtypes === sortedDefaultSubtypes &&
+        sortedActiveStatuses === sortedDefaultActiveStatuses &&
+        (s.connectionStatuses?.length ?? 0) === 0 &&
+        (s.owners?.length ?? 0) === 0 &&
+        (s.sort?.key ?? null) === null
+      );
+    },
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
@@ -183,6 +240,12 @@ export default function FundingEntities() {
         </div>
         <CreateFunderDialog />
       </div>
+
+      <SavedViewsBar
+        controller={viewsCtrl}
+        canSave={hasActiveFilters || ts.sort.key !== null}
+        onClearAll={clearAll}
+      />
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="grow min-w-[200px]">

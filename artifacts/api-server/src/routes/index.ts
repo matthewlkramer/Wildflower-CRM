@@ -32,6 +32,7 @@ import correspondentsRouter from "./correspondents";
 import notesRouter from "./notes";
 import tasksRouter from "./tasks";
 import meetingNotesRouter from "./meetingNotes";
+import savedViewsRouter from "./savedViews";
 import storageRouter from "./storage";
 
 const router: IRouter = Router();
@@ -69,6 +70,7 @@ router.use(correspondentsRouter);
 router.use(notesRouter);
 router.use(tasksRouter);
 router.use(meetingNotesRouter);
+router.use(savedViewsRouter);
 router.use(storageRouter);
 
 export default router;

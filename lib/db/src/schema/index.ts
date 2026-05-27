@@ -33,3 +33,4 @@ export * from "./notes";
 export * from "./tasks";
 export * from "./meetingNotes";
 export * from "./bulkOperations";
+export * from "./savedViews";

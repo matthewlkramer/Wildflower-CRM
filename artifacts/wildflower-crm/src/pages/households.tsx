@@ -9,6 +9,9 @@ import {
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { useSavedViews } from "@/hooks/use-saved-views";
+import { SavedViewsBar } from "@/components/saved-views-bar";
+import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { HOUSEHOLDS_BULK_FIELDS } from "@/lib/bulk-fields";
@@ -93,6 +96,37 @@ export default function Households() {
     [rows, ts.sort],
   );
 
+  // ─── Saved views ─────────────────────────────────────────────────
+  type HouseholdsView = {
+    search: string;
+    activeSel: string[];
+    sort: SortState;
+  };
+  const currentView: HouseholdsView = { search, activeSel, sort: ts.sort };
+  const clearAll = () => {
+    setSearch("");
+    setActiveSel([]);
+    ts.setSort({ key: null, dir: "asc" });
+    setPage(1);
+    selection.clear();
+  };
+  const viewsCtrl = useSavedViews<HouseholdsView>({
+    listKey: "households",
+    current: currentView,
+    apply: (s) => {
+      setSearch(s.search ?? "");
+      setActiveSel(s.activeSel ?? []);
+      ts.setSort(s.sort ?? { key: null, dir: "asc" });
+      setPage(1);
+      selection.clear();
+    },
+    isDefault: (s) =>
+      !s.search &&
+      (s.activeSel?.length ?? 0) === 0 &&
+      (s.sort?.key ?? null) === null,
+  });
+  const hasActiveFilters = !!search || activeSel.length > 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
@@ -104,6 +138,12 @@ export default function Households() {
         </div>
         <CreateHouseholdDialog />
       </div>
+
+      <SavedViewsBar
+        controller={viewsCtrl}
+        canSave={hasActiveFilters || ts.sort.key !== null}
+        onClearAll={clearAll}
+      />
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="grow min-w-[200px]">

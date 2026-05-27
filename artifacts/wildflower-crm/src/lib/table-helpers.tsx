@@ -65,7 +65,7 @@ export function useTableState(
     }));
   }, []);
 
-  return { widths, setWidth, sort, toggleSort };
+  return { widths, setWidth, sort, setSort, toggleSort };
 }
 
 export type TableStateProps = ReturnType<typeof useTableState>;

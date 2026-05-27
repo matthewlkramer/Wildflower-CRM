@@ -1,22 +1,33 @@
 import { useState } from "react";
-import { Bookmark, Check, Plus, Save, Trash2, X } from "lucide-react";
+import { Bookmark, Check, Plus, Save, Trash2, User, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { UseSavedViewsResult } from "@/hooks/use-saved-views";
+import type {
+  SavedView,
+  SavedViewVisibility,
+  UseSavedViewsResult,
+} from "@/hooks/use-saved-views";
 
-// Render the row of saved-view chips + Save-as / Update affordances
-// above a list page's filter controls. Designed to be a one-line drop-in
-// on top of an existing list page; the actual filter state lives in the
-// caller via useSavedViews.
+// Renders the row of saved-view chips + Save-as / Update affordances
+// above a list page's filter controls. One-line drop-in: pass the
+// controller from useSavedViews, plus canSave (false on the empty
+// default state) and onClearAll (the page's own "reset all" function).
 
 interface Props<T extends object> {
   controller: UseSavedViewsResult<T>;
-  /** When true, "Save as…" and "Update view" are hidden. Use for the
-   *  default state (no filters set) where there's nothing to save. */
+  /** When true, "Save as…" and "Update view" are hidden. */
   canSave: boolean;
-  /** Reset the page back to the default (cleared) filter state. */
+  /** Reset the page back to the default (cleared) filter+sort state. */
   onClearAll: () => void;
+}
+
+function VisibilityIcon({ visibility }: { visibility: SavedViewVisibility }) {
+  return visibility === "team" ? (
+    <Users className="h-3 w-3" aria-label="Team view" />
+  ) : (
+    <User className="h-3 w-3" aria-label="Individual view" />
+  );
 }
 
 export function SavedViewsBar<T extends object>({
@@ -24,22 +35,47 @@ export function SavedViewsBar<T extends object>({
   canSave,
   onClearAll,
 }: Props<T>) {
-  const { views, activeId, isModified, saveAs, updateActive, remove, applyView, clearActive } =
-    controller;
+  const {
+    views,
+    activeId,
+    pinnedId,
+    isModified,
+    currentUserId,
+    saveAs,
+    updateActive,
+    remove,
+    applyView,
+    clearActive,
+  } = controller;
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
+  const [visibility, setVisibility] = useState<SavedViewVisibility>("individual");
+  const [submitting, setSubmitting] = useState(false);
 
-  function commitSave() {
+  async function commitSave() {
     const trimmed = name.trim();
-    if (!trimmed) return;
-    saveAs(trimmed);
-    setName("");
-    setSaving(false);
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    try {
+      await saveAs(trimmed, visibility);
+      setName("");
+      setSaving(false);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const noViews = views.length === 0;
-  // Default chip is "active" when there's no pinned/active view at all.
   const defaultActive = activeId === null && !isModified;
+
+  // "Update view" needs to find the user's last-pinned view even when
+  // the current filters have been edited away from it (`isModified`
+  // ⇒ activeId === null). Use the controller's pinnedId for ownership
+  // — activeId would always be null in the "modified" case.
+  const pinned: SavedView<T> | undefined = pinnedId
+    ? views.find((v) => v.id === pinnedId)
+    : undefined;
+  const pinnedOwnedByMe = !!pinned && pinned.creatorUserId === currentUserId;
 
   return (
     <div className="flex flex-wrap items-center gap-2" data-testid="saved-views-bar">
@@ -64,48 +100,60 @@ export function SavedViewsBar<T extends object>({
 
       {views.map((v) => {
         const isActive = activeId === v.id;
+        const ownedByMe = v.creatorUserId === currentUserId;
         return (
           <div key={v.id} className="inline-flex">
             <button
               type="button"
               onClick={() => applyView(v.id)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-l-full border px-2.5 py-1 text-xs transition-colors",
+                "inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs transition-colors",
+                ownedByMe ? "rounded-l-full" : "rounded-full",
                 isActive
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-border bg-background text-muted-foreground hover:bg-muted",
               )}
               data-testid={`saved-view-${v.id}`}
               data-active={isActive ? "true" : "false"}
+              data-visibility={v.visibility}
+              title={
+                v.visibility === "team"
+                  ? `Team view${ownedByMe ? " (you)" : ""}`
+                  : "Individual view (only you can see this)"
+              }
             >
-              <Bookmark className="h-3 w-3" />
+              <VisibilityIcon visibility={v.visibility} />
               <span className="max-w-[160px] truncate">{v.name}</span>
               {isActive ? <Check className="h-3 w-3" /> : null}
             </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (window.confirm(`Delete view "${v.name}"?`)) remove(v.id);
-              }}
-              className={cn(
-                "inline-flex items-center justify-center rounded-r-full border border-l-0 px-1.5 py-1 transition-colors",
-                isActive
-                  ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "border-border bg-background text-muted-foreground hover:bg-muted",
-              )}
-              aria-label={`Delete view ${v.name}`}
-              data-testid={`saved-view-${v.id}-delete`}
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
+            {/* Delete is creator-only — non-owners can apply team views
+                but never delete them. Hiding the button (rather than
+                disabling) keeps the chip compact in the common case. */}
+            {ownedByMe ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.confirm(`Delete view "${v.name}"?`)) {
+                    void remove(v.id);
+                  }
+                }}
+                className={cn(
+                  "inline-flex items-center justify-center rounded-r-full border border-l-0 px-1.5 py-1 transition-colors",
+                  isActive
+                    ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted",
+                )}
+                aria-label={`Delete view ${v.name}`}
+                data-testid={`saved-view-${v.id}-delete`}
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            ) : null}
           </div>
         );
       })}
 
-      {/* Inline "Save as new view" affordance. Only shown when the user
-          has filters worth saving, to avoid encouraging a 'default-named'
-          view that simply represents the empty state. */}
       {canSave && !saving ? (
         <Button
           variant="ghost"
@@ -121,10 +169,10 @@ export function SavedViewsBar<T extends object>({
 
       {saving ? (
         <form
-          className="inline-flex items-center gap-1"
+          className="inline-flex items-center gap-1.5"
           onSubmit={(e) => {
             e.preventDefault();
-            commitSave();
+            void commitSave();
           }}
         >
           <Input
@@ -141,14 +189,51 @@ export function SavedViewsBar<T extends object>({
               }
             }}
           />
+          {/* Compact visibility toggle — two buttons rather than a
+              radio so the click target is finger-sized and the
+              selected state is obvious. */}
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setVisibility("individual")}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-xs transition-colors",
+                visibility === "individual"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted",
+              )}
+              data-testid="saved-views-visibility-individual"
+              aria-pressed={visibility === "individual"}
+              title="Only visible to you"
+            >
+              <User className="h-3 w-3" />
+              Just me
+            </button>
+            <button
+              type="button"
+              onClick={() => setVisibility("team")}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-xs border-l border-border transition-colors",
+                visibility === "team"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted",
+              )}
+              data-testid="saved-views-visibility-team"
+              aria-pressed={visibility === "team"}
+              title="Visible to everyone (only you can edit/delete)"
+            >
+              <Users className="h-3 w-3" />
+              Team
+            </button>
+          </div>
           <Button
             type="submit"
             size="sm"
             className="h-7 px-2 text-xs"
-            disabled={!name.trim()}
+            disabled={!name.trim() || submitting}
             data-testid="saved-views-name-confirm"
           >
-            Save
+            {submitting ? "Saving…" : "Save"}
           </Button>
           <Button
             type="button"
@@ -166,14 +251,15 @@ export function SavedViewsBar<T extends object>({
         </form>
       ) : null}
 
-      {/* Update-active appears when the user has applied a view and
-          then changed the filters — same flow as Notion / Linear. */}
-      {isModified && !saving ? (
+      {/* Update-active: only offered when the user has applied a view
+          they own and then changed filters. Non-owners can't update
+          team views (server returns 403), so we hide the button. */}
+      {isModified && !saving && pinnedOwnedByMe ? (
         <Button
           variant="outline"
           size="sm"
           className="h-7 px-2 text-xs"
-          onClick={updateActive}
+          onClick={() => void updateActive()}
           data-testid="saved-views-update-active"
         >
           <Save className="h-3 w-3 mr-1" />
@@ -181,8 +267,6 @@ export function SavedViewsBar<T extends object>({
         </Button>
       ) : null}
 
-      {/* Initial-onboarding hint when there are no views yet. Keeps the
-          control discoverable without being noisy. */}
       {noViews && !canSave && !saving ? (
         <span className="text-xs text-muted-foreground">
           Apply filters to save a view.

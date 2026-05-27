@@ -13,6 +13,9 @@ import {
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { useSavedViews } from "@/hooks/use-saved-views";
+import { SavedViewsBar } from "@/components/saved-views-bar";
+import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
@@ -200,6 +203,68 @@ export default function Opportunities({
     fiscalYears.length > 0 ||
     owners.length > 0;
 
+  // ─── Saved views ─────────────────────────────────────────────────
+  // /opportunities and /pledges share this component but should not
+  // share saved views — distinct listKey per pledgeView.
+  type OppsView = {
+    search: string;
+    statuses: string[];
+    stages: string[];
+    types: string[];
+    fiscalYears: string[];
+    owners: string[];
+    sort: SortState;
+  };
+  const savedViewsListKey = `opportunities:${pledgeView ?? "all"}`;
+  const currentView: OppsView = {
+    search,
+    statuses,
+    stages,
+    types,
+    fiscalYears,
+    owners,
+    sort: ts.sort,
+  };
+  const clearAll = () => {
+    setSearch("");
+    setStatuses(defaultStatusArr);
+    setStages([]);
+    setTypes([]);
+    setFiscalYears([]);
+    setOwners([]);
+    ts.setSort({ key: null, dir: "asc" });
+    setPage(1);
+    selection.clear();
+  };
+  const viewsCtrl = useSavedViews<OppsView>({
+    listKey: savedViewsListKey,
+    current: currentView,
+    apply: (s) => {
+      setSearch(s.search ?? "");
+      setStatuses(s.statuses ?? defaultStatusArr);
+      setStages(s.stages ?? []);
+      setTypes(s.types ?? []);
+      setFiscalYears(s.fiscalYears ?? []);
+      setOwners(s.owners ?? []);
+      ts.setSort(s.sort ?? { key: null, dir: "asc" });
+      setPage(1);
+      selection.clear();
+    },
+    isDefault: (s) => {
+      const sortedStatuses = [...(s.statuses ?? [])].sort().join(",");
+      const sortedDefaults = [...defaultStatusArr].sort().join(",");
+      return (
+        !s.search &&
+        sortedStatuses === sortedDefaults &&
+        (s.stages?.length ?? 0) === 0 &&
+        (s.types?.length ?? 0) === 0 &&
+        (s.fiscalYears?.length ?? 0) === 0 &&
+        (s.owners?.length ?? 0) === 0 &&
+        (s.sort?.key ?? null) === null
+      );
+    },
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -208,6 +273,12 @@ export default function Opportunities({
           {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
         </p>
       </div>
+
+      <SavedViewsBar
+        controller={viewsCtrl}
+        canSave={hasActiveFilters || ts.sort.key !== null}
+        onClearAll={clearAll}
+      />
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="grow min-w-[200px]">

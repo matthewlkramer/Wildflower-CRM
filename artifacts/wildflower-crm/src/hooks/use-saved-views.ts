@@ -1,56 +1,68 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useListSavedViews,
+  useCreateSavedView,
+  useUpdateSavedView,
+  useDeleteSavedView,
+  useGetCurrentUser,
+  getListSavedViewsQueryKey,
+} from "@workspace/api-client-react";
 
-// Lightweight per-page "saved views" — named filter presets persisted in
-// localStorage. The roadmap calls for localStorage first, DB-backed
-// (shareable) later; the public API here is intentionally narrow so the
-// later DB-backed implementation can swap behind it without churning
-// every list page.
+// DB-backed per-list-page saved views.
+//
+// Each list page picks a stable `listKey` (e.g. "individuals"). The
+// page passes its current filter+sort blob as `current`, plus an
+// `apply` callback that writes a blob back to its own state. The hook
+// itself doesn't know what's in the blob — it just round-trips it.
+//
+// Visibility:
+//   - 'team':       visible to everyone, edit/delete only by creator
+//   - 'individual': visible only to the creator
+//
+// The currently-pinned view id is kept per-list in localStorage (a
+// device-local preference), so reloading the page lands the user back
+// in the same view, but switching devices doesn't drag the choice
+// across.
+
+export type SavedViewVisibility = "team" | "individual";
 
 export type SavedView<T> = {
   id: string;
   name: string;
+  visibility: SavedViewVisibility;
   state: T;
+  creatorUserId: string;
 };
 
-type Stored<T> = {
-  version: 1;
-  views: SavedView<T>[];
-  lastActiveId: string | null;
-};
+function pinnedKey(listKey: string): string {
+  return `wfcrm.savedViews.pinned.${listKey}`;
+}
 
-const VERSION = 1;
-
-function read<T>(storageKey: string): Stored<T> | null {
+function readPinned(listKey: string): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Stored<T>;
-    // Forward-compat guard: ignore stored shapes from a future schema
-    // rather than corrupting the user's saved views by partial parsing.
-    if (parsed?.version !== VERSION || !Array.isArray(parsed.views)) return null;
-    return parsed;
+    return window.localStorage.getItem(pinnedKey(listKey));
   } catch {
     return null;
   }
 }
 
-function write<T>(storageKey: string, value: Stored<T>) {
+function writePinned(listKey: string, id: string | null) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(storageKey, JSON.stringify(value));
+    if (id === null) window.localStorage.removeItem(pinnedKey(listKey));
+    else window.localStorage.setItem(pinnedKey(listKey), id);
   } catch {
-    // Quota exceeded or storage unavailable — silently ignore; saved
-    // views are convenience, not correctness.
+    /* quota / disabled — ignore */
   }
 }
 
 function shallowEqualObject(a: unknown, b: unknown): boolean {
-  // Filter states are flat string/boolean/number records, so a stringify
-  // comparison is sufficient and avoids pulling in a deep-equal dep.
-  // Key order matters here — callers should construct view state with
-  // a stable key order (which they do, since the state object literal
-  // shape is fixed in each page).
+  // Saved view state blobs are flat string/boolean/number/array records
+  // with stable key order (the page constructs them from a fixed object
+  // literal), so a stringify compare is sufficient and avoids a deep-
+  // equal dep.
   try {
     return JSON.stringify(a) === JSON.stringify(b);
   } catch {
@@ -59,93 +71,136 @@ function shallowEqualObject(a: unknown, b: unknown): boolean {
 }
 
 export interface UseSavedViewsOptions<T> {
-  /** Unique localStorage key per page, e.g. "wfcrm.views.individuals". */
-  storageKey: string;
-  /** The page's current filter state. */
+  /** Page identifier, e.g. "individuals", "funders". */
+  listKey: string;
+  /** The page's current filter+sort state. */
   current: T;
-  /** Apply a saved view back into the page's filter state. */
+  /** Apply a saved view back into the page's state. */
   apply: (state: T) => void;
   /**
    * Whether `current` represents the page's default (no filters). Used
-   * to decide whether to show a "modified" badge on the Default chip
-   * and to disable the "Save as…" affordance on the empty state.
+   * to gate auto-apply on mount and to disable the "Save as…" affordance
+   * on the empty state.
    */
   isDefault: (state: T) => boolean;
 }
 
 export interface UseSavedViewsResult<T> {
   views: SavedView<T>[];
+  isLoading: boolean;
   /** id of the saved view whose state matches `current`, or null. */
   activeId: string | null;
   /**
+   * The user's last-pinned view id (the one they actually clicked /
+   * just saved), regardless of whether `current` still matches it.
+   * Used by the bar to find the "originally applied" view when the
+   * filters have since been edited away from it.
+   */
+  pinnedId: string | null;
+  /**
    * True when an active view existed (was applied) and the user has
-   * since changed the filters. Useful for showing an "update view"
-   * affordance.
+   * since changed the filters. Drives the "Update view" affordance.
    */
   isModified: boolean;
-  /** Save the current filter state as a new view. */
-  saveAs: (name: string) => SavedView<T>;
-  /** Overwrite the currently-active view with the current state. */
-  updateActive: () => void;
+  /** DB id of the currently signed-in user (for ownership checks). */
+  currentUserId: string | null;
+  /** Save the current state as a new view. */
+  saveAs: (name: string, visibility: SavedViewVisibility) => Promise<void>;
+  /** Overwrite the currently-pinned view with the current state. */
+  updateActive: () => Promise<void>;
   /** Delete a view by id. */
-  remove: (id: string) => void;
+  remove: (id: string) => Promise<void>;
   /** Apply a view by id. */
   applyView: (id: string) => void;
-  /** Mark the default state active (clears the lastActiveId). */
+  /** Mark the default state active (clears pinned). */
   clearActive: () => void;
 }
 
 export function useSavedViews<T extends object>({
-  storageKey,
+  listKey,
   current,
   apply,
   isDefault,
 }: UseSavedViewsOptions<T>): UseSavedViewsResult<T> {
-  const [views, setViews] = useState<SavedView<T>[]>(() => read<T>(storageKey)?.views ?? []);
-  // The view the user explicitly applied / saved most recently. We
-  // track it separately from "the view whose state matches current"
-  // (activeId below) so the user gets an "update view" affordance even
-  // after they make changes that no longer match the saved state.
-  const [pinnedId, setPinnedId] = useState<string | null>(
-    () => read<T>(storageKey)?.lastActiveId ?? null,
+  const queryClient = useQueryClient();
+  const listQueryKey = useMemo(
+    () => getListSavedViewsQueryKey({ listKey }),
+    [listKey],
+  );
+  const invalidate = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: listQueryKey }),
+    [queryClient, listQueryKey],
   );
 
-  // On mount, if we have a pinned view from a previous session, apply
-  // it once so the user lands back where they left off. We only do this
-  // if the page is currently in its default state — otherwise we'd
-  // clobber filter values the page may have initialized from elsewhere
-  // (URL params, props, etc.).
+  const { data, isLoading, isSuccess } = useListSavedViews({ listKey });
+  const { data: me } = useGetCurrentUser();
+  const currentUserId = me?.id ?? null;
+
+  const createMut = useCreateSavedView({
+    mutation: { onSuccess: () => invalidate() },
+  });
+  const updateMut = useUpdateSavedView({
+    mutation: { onSuccess: () => invalidate() },
+  });
+  const deleteMut = useDeleteSavedView({
+    mutation: { onSuccess: () => invalidate() },
+  });
+
+  // Project the API response into the page-typed shape. The server
+  // stores `state` as opaque jsonb so we cast it to T at the boundary.
+  const views = useMemo<SavedView<T>[]>(
+    () =>
+      (data?.data ?? []).map((v) => ({
+        id: v.id,
+        name: v.name,
+        visibility: v.visibility,
+        creatorUserId: v.creatorUserId,
+        state: v.state as T,
+      })),
+    [data],
+  );
+
+  const [pinnedId, setPinnedId] = useState<string | null>(() =>
+    readPinned(listKey),
+  );
+
+  // Auto-apply pinned view once per mount, but only if the page is
+  // currently in its default state. We wait for the views list to
+  // succeed — gating on isLoading alone would treat a network error as
+  // "list is empty" and wrongly clear a valid pinned id.
   const didAutoApplyRef = useRef(false);
   useEffect(() => {
     if (didAutoApplyRef.current) return;
+    if (!isSuccess) return;
     didAutoApplyRef.current = true;
     if (!pinnedId) return;
-    const stored = read<T>(storageKey);
-    const v = stored?.views.find((x) => x.id === pinnedId);
+    const v = views.find((x) => x.id === pinnedId);
     if (v && isDefault(current)) {
       apply(v.state);
+    } else if (!v) {
+      // Pinned id refers to a view that no longer exists (deleted on
+      // another device). Clear the dangling pointer. Safe to do here
+      // because we only enter this branch on a successful response.
+      writePinned(listKey, null);
+      setPinnedId(null);
     }
-    // Intentionally empty deps — first-mount-only. Including `current`
-    // or `apply` would create an infinite re-apply loop.
+    // Intentionally empty deps beyond `isSuccess` — first-mount-only.
+    // Including current/apply would create an infinite re-apply loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isSuccess]);
 
-  const persist = useCallback(
-    (next: { views?: SavedView<T>[]; pinnedId?: string | null }) => {
-      const v = next.views ?? views;
-      const p = next.pinnedId === undefined ? pinnedId : next.pinnedId;
-      write<T>(storageKey, { version: VERSION, views: v, lastActiveId: p });
-      if (next.views) setViews(v);
-      if (next.pinnedId !== undefined) setPinnedId(p);
+  const setPinned = useCallback(
+    (id: string | null) => {
+      writePinned(listKey, id);
+      setPinnedId(id);
     },
-    [storageKey, views, pinnedId],
+    [listKey],
   );
 
   const activeId = useMemo(() => {
-    // "Active" = a saved view whose state matches what's currently
-    // applied. Prefer the pinned id if its state still matches; fall
-    // back to any matching view (so renames / reordering don't break
-    // the badge).
+    // Prefer the pinned id if its state still matches the page, so
+    // pinning sticks across re-renders. Fall back to any matching view
+    // so renames / saving from another tab still light up correctly.
     if (pinnedId) {
       const v = views.find((x) => x.id === pinnedId);
       if (v && shallowEqualObject(v.state, current)) return pinnedId;
@@ -157,38 +212,44 @@ export function useSavedViews<T extends object>({
   const isModified = pinnedId !== null && activeId === null;
 
   const saveAs = useCallback(
-    (name: string): SavedView<T> => {
-      const v: SavedView<T> = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        name: name.trim() || "Untitled view",
-        // Clone so subsequent mutations to `current` don't bleed into
-        // saved storage.
-        state: JSON.parse(JSON.stringify(current)) as T,
-      };
-      persist({ views: [...views, v], pinnedId: v.id });
-      return v;
+    async (name: string, visibility: SavedViewVisibility) => {
+      const trimmed = name.trim() || "Untitled view";
+      // Clone so subsequent mutations to `current` don't bleed into the
+      // payload before the request lands.
+      const state = JSON.parse(JSON.stringify(current)) as T;
+      const created = await createMut.mutateAsync({
+        data: {
+          listKey,
+          name: trimmed,
+          visibility,
+          state: state as unknown as { [key: string]: unknown },
+        },
+      });
+      setPinned(created.id);
     },
-    [views, current, persist],
+    [createMut, current, listKey, setPinned],
   );
 
-  const updateActive = useCallback(() => {
+  const updateActive = useCallback(async () => {
     if (!pinnedId) return;
-    const next = views.map((v) =>
-      v.id === pinnedId
-        ? { ...v, state: JSON.parse(JSON.stringify(current)) as T }
-        : v,
-    );
-    persist({ views: next });
-  }, [views, pinnedId, current, persist]);
+    const v = views.find((x) => x.id === pinnedId);
+    // Block silently if the user doesn't own this view — the UI should
+    // hide the button in that case, but defend in depth so a stale
+    // render can't fire a 403.
+    if (!v || v.creatorUserId !== currentUserId) return;
+    const state = JSON.parse(JSON.stringify(current)) as T;
+    await updateMut.mutateAsync({
+      id: pinnedId,
+      data: { state: state as unknown as { [key: string]: unknown } },
+    });
+  }, [pinnedId, views, currentUserId, current, updateMut]);
 
   const remove = useCallback(
-    (id: string) => {
-      persist({
-        views: views.filter((v) => v.id !== id),
-        pinnedId: pinnedId === id ? null : pinnedId,
-      });
+    async (id: string) => {
+      await deleteMut.mutateAsync({ id });
+      if (pinnedId === id) setPinned(null);
     },
-    [views, pinnedId, persist],
+    [deleteMut, pinnedId, setPinned],
   );
 
   const applyView = useCallback(
@@ -196,19 +257,22 @@ export function useSavedViews<T extends object>({
       const v = views.find((x) => x.id === id);
       if (!v) return;
       apply(v.state);
-      persist({ pinnedId: id });
+      setPinned(id);
     },
-    [views, apply, persist],
+    [views, apply, setPinned],
   );
 
   const clearActive = useCallback(() => {
-    persist({ pinnedId: null });
-  }, [persist]);
+    setPinned(null);
+  }, [setPinned]);
 
   return {
     views,
+    isLoading,
     activeId,
+    pinnedId,
     isModified,
+    currentUserId,
     saveAs,
     updateActive,
     remove,

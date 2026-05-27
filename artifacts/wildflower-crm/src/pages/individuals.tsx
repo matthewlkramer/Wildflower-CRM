@@ -10,6 +10,9 @@ import {
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { useSavedViews } from "@/hooks/use-saved-views";
+import { SavedViewsBar } from "@/components/saved-views-bar";
+import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { PEOPLE_BULK_FIELDS } from "@/lib/bulk-fields";
@@ -148,6 +151,53 @@ export default function Individuals() {
     capacityTiers.length > 0 ||
     owners.length > 0;
 
+  // ─── Saved views ─────────────────────────────────────────────────
+  // The persisted view captures filters + sort but deliberately omits
+  // `page` (saving "page 7" makes no sense after the underlying data
+  // shifts) and column widths (pure presentation).
+  type IndividualsView = {
+    search: string;
+    deceasedSel: string[];
+    capacityTiers: string[];
+    owners: string[];
+    sort: SortState;
+  };
+  const currentView: IndividualsView = {
+    search,
+    deceasedSel,
+    capacityTiers,
+    owners,
+    sort: ts.sort,
+  };
+  const clearAll = () => {
+    setSearch("");
+    setDeceasedSel([]);
+    setCapacityTiers([]);
+    setOwners([]);
+    ts.setSort({ key: null, dir: "asc" });
+    setPage(1);
+    selection.clear();
+  };
+  const viewsCtrl = useSavedViews<IndividualsView>({
+    listKey: "individuals",
+    current: currentView,
+    apply: (s) => {
+      setSearch(s.search ?? "");
+      setDeceasedSel(s.deceasedSel ?? []);
+      setCapacityTiers(s.capacityTiers ?? []);
+      setOwners(s.owners ?? []);
+      ts.setSort(s.sort ?? { key: null, dir: "asc" });
+      setPage(1);
+      selection.clear();
+    },
+    isDefault: (s) =>
+      !s.search &&
+      (s.deceasedSel?.length ?? 0) === 0 &&
+      (s.capacityTiers?.length ?? 0) === 0 &&
+      (s.owners?.length ?? 0) === 0 &&
+      (s.sort?.key ?? null) === null,
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
@@ -161,6 +211,12 @@ export default function Individuals() {
         </div>
         <CreatePersonDialog />
       </div>
+
+      <SavedViewsBar
+        controller={viewsCtrl}
+        canSave={hasActiveFilters || ts.sort.key !== null}
+        onClearAll={clearAll}
+      />
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="grow min-w-[200px]">

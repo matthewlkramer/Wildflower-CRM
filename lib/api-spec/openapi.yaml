@@ -38,6 +38,7 @@ tags:
   - { name: notes }
   - { name: tasks }
   - { name: meeting-notes }
+  - { name: saved-views }
   - { name: storage }
 
 paths:
@@ -1107,6 +1108,45 @@ paths:
         "201": { description: Task created from action item, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Saved views (per-list-page filter+sort presets) ───────────────────────
+  /saved-views:
+    get:
+      operationId: listSavedViews
+      tags: [saved-views]
+      description: "Returns team views (created by anyone) plus the caller's own individual views, for the given list page."
+      parameters:
+        - { name: listKey, in: query, required: true, schema: { type: string }, description: "Page identifier, e.g. 'individuals', 'funders'." }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SavedViewList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      operationId: createSavedView
+      tags: [saved-views]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateSavedViewBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/SavedView" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /saved-views/{id}:
+    patch:
+      operationId: updateSavedView
+      tags: [saved-views]
+      description: "Only the creator may update the view; otherwise 403."
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateSavedViewBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SavedView" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Forbidden }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteSavedView
+      tags: [saved-views]
+      description: "Only the creator may delete the view; otherwise 403."
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "204": { description: Deleted }
+        "403": { description: Forbidden }
 
   # ─── Email messages (synced Gmail, read-only + privacy toggle) ────────────
   /email-messages:
@@ -3222,6 +3262,44 @@ components:
         index:           { type: integer, description: "Zero-based index into actionItems[]." }
         assigneeUserId:  { type: string, description: "Optional override; the extracted assigneeName is free-text and may not map to a user." }
         dueDate:         { type: string, format: date }
+
+    # ─── Saved views ───────────────────────────────────────────────────────────
+    SavedViewVisibility:
+      type: string
+      enum: [team, individual]
+      description: "team = shared with everyone (creator-edit-only); individual = private to creator."
+    SavedView:
+      type: object
+      required: [id, listKey, name, visibility, state, creatorUserId, createdAt, updatedAt]
+      properties:
+        id:             { type: string }
+        listKey:        { type: string }
+        name:           { type: string }
+        visibility:     { $ref: "#/components/schemas/SavedViewVisibility" }
+        state:          { type: object, additionalProperties: true, description: "Opaque page-specific state blob: filters + sort." }
+        creatorUserId:  { type: string }
+        createdAt:      { type: string, format: date-time }
+        updatedAt:      { type: string, format: date-time }
+    SavedViewList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/SavedView" } }
+    CreateSavedViewBody:
+      type: object
+      required: [listKey, name, visibility, state]
+      properties:
+        listKey:    { type: string }
+        name:       { type: string }
+        visibility: { $ref: "#/components/schemas/SavedViewVisibility" }
+        state:      { type: object, additionalProperties: true }
+    UpdateSavedViewBody:
+      type: object
+      description: "Only the creator may PATCH. All fields optional; at least one required."
+      properties:
+        name:       { type: string }
+        visibility: { $ref: "#/components/schemas/SavedViewVisibility" }
+        state:      { type: object, additionalProperties: true }
 
     # ─── Bulk record updates ───────────────────────────────────────────────────
     BulkUpdateResult:

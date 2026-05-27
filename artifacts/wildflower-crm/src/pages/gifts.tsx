@@ -12,6 +12,9 @@ import {
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { useSavedViews } from "@/hooks/use-saved-views";
+import { SavedViewsBar } from "@/components/saved-views-bar";
+import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
@@ -119,6 +122,41 @@ export default function Gifts() {
     [rows, ts.sort, userNames],
   );
 
+  // ─── Saved views ─────────────────────────────────────────────────
+  type GiftsView = {
+    search: string;
+    types: string[];
+    owners: string[];
+    sort: SortState;
+  };
+  const currentView: GiftsView = { search, types, owners, sort: ts.sort };
+  const clearAll = () => {
+    setSearch("");
+    setTypes([]);
+    setOwners([]);
+    ts.setSort({ key: null, dir: "asc" });
+    setPage(1);
+    selection.clear();
+  };
+  const viewsCtrl = useSavedViews<GiftsView>({
+    listKey: "gifts",
+    current: currentView,
+    apply: (s) => {
+      setSearch(s.search ?? "");
+      setTypes(s.types ?? []);
+      setOwners(s.owners ?? []);
+      ts.setSort(s.sort ?? { key: null, dir: "asc" });
+      setPage(1);
+      selection.clear();
+    },
+    isDefault: (s) =>
+      !s.search &&
+      (s.types?.length ?? 0) === 0 &&
+      (s.owners?.length ?? 0) === 0 &&
+      (s.sort?.key ?? null) === null,
+  });
+  const hasActiveFilters = !!search || types.length > 0 || owners.length > 0;
+
   return (
     <div className="space-y-6">
       <div>
@@ -127,6 +165,12 @@ export default function Gifts() {
           {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
         </p>
       </div>
+
+      <SavedViewsBar
+        controller={viewsCtrl}
+        canSave={hasActiveFilters || ts.sort.key !== null}
+        onClearAll={clearAll}
+      />
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="grow min-w-[200px]">
