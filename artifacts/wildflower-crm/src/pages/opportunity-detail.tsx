@@ -14,6 +14,7 @@ import {
   type OpportunityType,
   type OpportunityConditional,
 } from "@workspace/api-client-react";
+import { PledgeAllocationsEditor } from "@/components/allocation-editors";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { NotesPanel } from "@/components/notes-panel";
 import { TasksPanel } from "@/components/tasks-panel";
@@ -446,25 +447,10 @@ function OppView({
       <Card>
         <CardHeader><CardTitle>Allocations</CardTitle></CardHeader>
         <CardContent>
-          {opp.allocations && opp.allocations.length > 0 ? (
-            <ul className="space-y-2 text-sm">
-              {opp.allocations.map((a) => {
-                const entityLabel = a.entityId
-                  ? (entityNameById.get(a.entityId) ?? a.entityId)
-                  : null;
-                return (
-                  <li key={a.id} className="flex items-center justify-between gap-2" data-testid={`row-opp-alloc-${a.id}`}>
-                    <span className="truncate">
-                      {formatEnum(a.intendedUsage) || "—"}
-                      {entityLabel ? ` • ${entityLabel}` : ""}
-                      {a.grantYear ? ` • ${a.grantYear}` : ""}
-                    </span>
-                    <span className="font-medium whitespace-nowrap">{formatCurrency(a.subAmount)}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (<p className="text-sm text-muted-foreground">No allocations.</p>)}
+          <PledgeAllocationsEditor
+            pledgeOrOpportunityId={opp.id}
+            allocations={opp.allocations ?? []}
+          />
         </CardContent>
       </Card>
 

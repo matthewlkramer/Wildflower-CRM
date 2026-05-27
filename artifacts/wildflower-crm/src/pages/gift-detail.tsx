@@ -12,6 +12,7 @@ import {
   type GiftPaymentMethod,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { GiftAllocationsEditor } from "@/components/allocation-editors";
 import { NotesPanel } from "@/components/notes-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import {
@@ -314,20 +315,10 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       <Card>
         <CardHeader><CardTitle>Allocations</CardTitle></CardHeader>
         <CardContent>
-          {gift.allocations && gift.allocations.length > 0 ? (
-            <ul className="space-y-2 text-sm">
-              {gift.allocations.map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-2" data-testid={`row-gift-alloc-${a.id}`}>
-                  <span className="truncate">
-                    {formatEnum(a.intendedUsage) || "—"}
-                    {a.grantYear ? ` • ${a.grantYear}` : ""}
-                    {a.schoolRecipientId ? ` • school ${a.schoolRecipientId}` : ""}
-                  </span>
-                  <span className="font-medium whitespace-nowrap">{formatCurrency(a.subAmount)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (<p className="text-sm text-muted-foreground">No allocations.</p>)}
+          <GiftAllocationsEditor
+            giftId={gift.id}
+            allocations={gift.allocations ?? []}
+          />
         </CardContent>
       </Card>
 
