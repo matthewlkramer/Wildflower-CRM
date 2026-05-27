@@ -64,6 +64,21 @@ const SUBTYPES: FundingEntitySubtype[] = [
   "platform",
 ];
 
+// Subtypes excluded from the default Subtype filter. Fundraising users
+// almost never care about these in day-to-day list views; they can still
+// opt in by toggling them on (or clicking Clear and reselecting).
+const DEFAULT_EXCLUDED_SUBTYPES: FundingEntitySubtype[] = [
+  "nonprofit",
+  "education_forprofit",
+  "corporation",
+  "daf_platform",
+  "platform",
+  "capital_provider",
+];
+const DEFAULT_SUBTYPES: FundingEntitySubtype[] = SUBTYPES.filter(
+  (s) => !DEFAULT_EXCLUDED_SUBTYPES.includes(s),
+);
+
 const ACTIVE_STATUSES: ActiveStatus[] = ["active", "defunct", "spenddown"];
 const DEFAULT_ACTIVE_STATUSES: ActiveStatus[] = ["active", "spenddown"];
 const CONNECTION_STATUSES: ConnectionStatus[] = [
@@ -79,7 +94,7 @@ export default function FundingEntities() {
   // detail restores the same filtered view.
   const [search, setSearch] = usePersistedState<string>("wf.list.funders.search", "");
   const debouncedSearch = useDebounce(search, 250);
-  const [subtypes, setSubtypes] = usePersistedState<string[]>("wf.list.funders.subtypes", []);
+  const [subtypes, setSubtypes] = usePersistedState<string[]>("wf.list.funders.subtypes", DEFAULT_SUBTYPES);
   const [activeStatuses, setActiveStatuses] = usePersistedState<string[]>("wf.list.funders.activeStatuses", DEFAULT_ACTIVE_STATUSES);
   const [connectionStatuses, setConnectionStatuses] = usePersistedState<string[]>("wf.list.funders.connectionStatuses", []);
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.funders.owners", []);
@@ -145,9 +160,12 @@ export default function FundingEntities() {
   const sortedDefaultActiveStatuses = [...DEFAULT_ACTIVE_STATUSES].sort().join(",");
   const sameDefaultActiveStatuses =
     [...activeStatuses].sort().join(",") === sortedDefaultActiveStatuses;
+  const sortedDefaultSubtypes = [...DEFAULT_SUBTYPES].sort().join(",");
+  const sameDefaultSubtypes =
+    [...subtypes].sort().join(",") === sortedDefaultSubtypes;
   const hasActiveFilters =
     !!search ||
-    subtypes.length > 0 ||
+    !sameDefaultSubtypes ||
     !sameDefaultActiveStatuses ||
     connectionStatuses.length > 0 ||
     owners.length > 0;
@@ -214,7 +232,7 @@ export default function FundingEntities() {
             size="sm"
             onClick={() => {
               setSearch("");
-              setSubtypes([]);
+              setSubtypes(DEFAULT_SUBTYPES);
               setActiveStatuses(DEFAULT_ACTIVE_STATUSES);
               setConnectionStatuses([]);
               setOwners([]);
