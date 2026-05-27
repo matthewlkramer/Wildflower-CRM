@@ -283,6 +283,9 @@ export default function Opportunities({
                 <SortableTH colKey="ask" align="right" {...ts}>Ask</SortableTH>
               )}
               <SortableTH colKey="awarded" align="right" {...ts}>Awarded</SortableTH>
+              {isPledgeView && (
+                <SortableTH colKey="paid" align="right" {...ts}>Paid</SortableTH>
+              )}
               <SortableTH colKey="entities" sortable={false} {...ts}>Entities</SortableTH>
               {!isPledgeView && (
                 <SortableTH colKey="fy" {...ts}>FY</SortableTH>
@@ -293,15 +296,15 @@ export default function Opportunities({
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={isPledgeView ? 10 : 11} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={isPledgeView ? 10 : 11} className="text-center h-24 text-destructive">
+                <TableCell colSpan={11} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load opportunities."}
                 </TableCell>
               </TableRow>
             ) : sortedRows.length === 0 ? (
-              <TableRow><TableCell colSpan={isPledgeView ? 10 : 11} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
               sortedRows.map((o) => {
                 const coveredFys = (o.coveredFiscalYears ?? []).map((y) => y.toUpperCase());
@@ -345,6 +348,9 @@ export default function Opportunities({
                       <TableCell className="text-right tabular-nums">{formatCurrency(o.askAmount)}</TableCell>
                     )}
                     <TableCell className="text-right tabular-nums">{formatCurrency(o.awardedAmount)}</TableCell>
+                    {isPledgeView && (
+                      <TableCell className="text-right tabular-nums">{formatCurrency(o.paidAmount)}</TableCell>
+                    )}
                     <TableCell className="text-xs text-muted-foreground max-w-[200px]">
                       {entities.length === 0 ? "—" : entities.join(", ")}
                     </TableCell>

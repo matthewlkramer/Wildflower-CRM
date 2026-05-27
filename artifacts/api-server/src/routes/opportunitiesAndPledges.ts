@@ -64,6 +64,15 @@ const donorJoinSelect = {
     WHERE pa.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}
       AND pa.entity_id IS NOT NULL
   )`.as("entity_ids"),
+  // Total received against this pledge — SUM(amount) of every
+  // gifts_and_payments row whose payment_on_pledge_id points at this
+  // opp. Returned as a numeric string ("0" when no payments). Lets the
+  // pledges UI render a Paid column without one fetch per row.
+  paidAmount: sql<string>`(
+    SELECT COALESCE(SUM(gp.amount), 0)::text
+    FROM gifts_and_payments gp
+    WHERE gp.payment_on_pledge_id = ${opportunitiesAndPledges.id}
+  )`.as("paid_amount"),
 };
 
 import {
@@ -77,6 +86,7 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
+import { maybeAdvancePledgeStage } from "../lib/pledgeStage";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -229,6 +239,13 @@ router.post(
         });
         return issues.length ? issues.map((i) => i.message).join("; ") : null;
       },
+      // After a successful bulk write, recompute auto-advance for each
+      // updated row — bulk patches commonly flip status to 'won' or set
+      // stage='written_commitment', either of which can make an
+      // already-paid pledge newly eligible to flip to 'cash_in'.
+      afterApply: async (id) => {
+        await maybeAdvancePledgeStage(id);
+      },
       // Reconcile pledge_allocations rows so the opportunity's
       // covered FYs match the requested set. Replace = wipe existing
       // allocations and recreate one minimal row per FY (DESTRUCTIVE
@@ -312,6 +329,10 @@ router.patch(
       .where(eq(opportunitiesAndPledges.id, id))
       .returning();
     if (!row) return notFound(res, "opportunity");
+    // The patch may have lowered awardedAmount, flipped status to 'won',
+    // or set stage to 'written_commitment' — any of which can make an
+    // already-paid pledge newly eligible for auto-advance.
+    await maybeAdvancePledgeStage(id);
     res.json(row);
   }),
 );

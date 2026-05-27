@@ -2221,6 +2221,11 @@ components:
         householdId:                { type: string, nullable: true }
         askAmount:                  { type: string, nullable: true }
         awardedAmount:              { type: string, nullable: true }
+        # Server-computed: SUM(gifts_and_payments.amount) for payments
+        # whose payment_on_pledge_id = this opp. "0" when no payments
+        # exist. Primarily meaningful for pledges (status='won') so the
+        # UI can show a Paid column and a paid-vs-awarded comparison.
+        paidAmount:                 { type: string, readOnly: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
         conditional:                { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true }
         conditions:                 { type: string, nullable: true }

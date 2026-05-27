@@ -2931,6 +2931,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       householdId: zod.string().nullish(),
       askAmount: zod.string().nullish(),
       awardedAmount: zod.string().nullish(),
+      paidAmount: zod.string().optional(),
       type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
       conditional: zod
         .enum([
@@ -3047,6 +3048,7 @@ export const GetOpportunityOrPledgeResponse = zod
     householdId: zod.string().nullish(),
     askAmount: zod.string().nullish(),
     awardedAmount: zod.string().nullish(),
+    paidAmount: zod.string().optional(),
     type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
     conditional: zod
       .enum([
@@ -3263,6 +3265,7 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   householdId: zod.string().nullish(),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
+  paidAmount: zod.string().optional(),
   type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
   conditional: zod
     .enum([

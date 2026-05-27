@@ -1163,6 +1163,7 @@ export interface OpportunityOrPledge {
   householdId?: string | null;
   askAmount?: string | null;
   awardedAmount?: string | null;
+  readonly paidAmount?: string;
   type?: OpportunityType | null;
   conditional?: OpportunityConditional | null;
   conditions?: string | null;

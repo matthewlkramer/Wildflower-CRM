@@ -76,6 +76,15 @@ export interface BulkUpdateConfig<Row, P extends object> {
   validateRow?: RowValidator<Row, Partial<P>>;
   /** See ExtraApply. */
   extraApply?: ExtraApply<P>;
+  /**
+   * Optional post-commit per-row hook. Runs AFTER the outer transaction
+   * commits, once per successfully-updated id, and outside the
+   * savepoint. Use for derived-state recomputation (e.g. auto-advance
+   * pledge stage when the patch may have made it newly eligible).
+   * Errors are swallowed (logged via req.log if available) so a
+   * post-hook failure doesn't undo an already-committed batch.
+   */
+  afterApply?: (id: string) => Promise<void>;
 }
 
 interface BulkFailure {
@@ -212,6 +221,21 @@ export async function executeBulkUpdate<Row extends Record<string, unknown>, P e
       failedIds: failed.map((f) => f.id),
     });
   });
+
+  // Post-commit per-row hooks. Run sequentially so we don't fan out
+  // concurrent writes from a single bulk op; errors are isolated per row.
+  if (cfg.afterApply) {
+    for (const id of succeededIds) {
+      try {
+        await cfg.afterApply(id);
+      } catch (e) {
+        // Swallow — the row update already committed. Surface via the
+        // request logger when present.
+        const log = (req as unknown as { log?: { error?: (...args: unknown[]) => void } }).log;
+        log?.error?.({ err: e, id, entity: cfg.entity }, "bulk afterApply hook failed");
+      }
+    }
+  }
 
   res.json({
     requested: uniqueIds.length,
