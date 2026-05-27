@@ -191,7 +191,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/funding-entities/:id"><ProtectedRoute component={FundingEntityDetail} /></Route>
           
           <Route path="/pipeline"><ProtectedRoute component={Pipeline} /></Route>
-          <Route path="/opportunities"><ProtectedRoute component={Opportunities} /></Route>
+          <Route path="/opportunities"><ProtectedRoute component={() => <Opportunities defaultStatus="open" />} /></Route>
           <Route path="/opportunities/:id"><ProtectedRoute component={OpportunityDetail} /></Route>
           
           <Route path="/pledges"><ProtectedRoute component={Pledges} /></Route>

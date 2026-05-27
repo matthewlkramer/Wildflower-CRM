@@ -65,6 +65,7 @@ const SUBTYPES: FundingEntitySubtype[] = [
 ];
 
 const ACTIVE_STATUSES: ActiveStatus[] = ["active", "defunct", "spenddown"];
+const DEFAULT_ACTIVE_STATUSES: ActiveStatus[] = ["active", "spenddown"];
 const CONNECTION_STATUSES: ConnectionStatus[] = [
   "connected",
   "have_a_connector",
@@ -79,7 +80,7 @@ export default function FundingEntities() {
   const [search, setSearch] = usePersistedState<string>("wf.list.funders.search", "");
   const debouncedSearch = useDebounce(search, 250);
   const [subtypes, setSubtypes] = usePersistedState<string[]>("wf.list.funders.subtypes", []);
-  const [activeStatuses, setActiveStatuses] = usePersistedState<string[]>("wf.list.funders.activeStatuses", []);
+  const [activeStatuses, setActiveStatuses] = usePersistedState<string[]>("wf.list.funders.activeStatuses", DEFAULT_ACTIVE_STATUSES);
   const [connectionStatuses, setConnectionStatuses] = usePersistedState<string[]>("wf.list.funders.connectionStatuses", []);
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.funders.owners", []);
   const [page, setPage] = usePersistedState<number>("wf.list.funders.page", 1);
@@ -141,10 +142,13 @@ export default function FundingEntities() {
     [rows, ts.sort, userNames],
   );
 
+  const sortedDefaultActiveStatuses = [...DEFAULT_ACTIVE_STATUSES].sort().join(",");
+  const sameDefaultActiveStatuses =
+    [...activeStatuses].sort().join(",") === sortedDefaultActiveStatuses;
   const hasActiveFilters =
     !!search ||
     subtypes.length > 0 ||
-    activeStatuses.length > 0 ||
+    !sameDefaultActiveStatuses ||
     connectionStatuses.length > 0 ||
     owners.length > 0;
 
@@ -211,7 +215,7 @@ export default function FundingEntities() {
             onClick={() => {
               setSearch("");
               setSubtypes([]);
-              setActiveStatuses([]);
+              setActiveStatuses(DEFAULT_ACTIVE_STATUSES);
               setConnectionStatuses([]);
               setOwners([]);
               setPage(1);
