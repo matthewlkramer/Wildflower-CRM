@@ -20,6 +20,7 @@ import { NotesPanel } from "@/components/notes-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { GrantLetterUpload } from "@/components/grant-letter-upload";
+import { ReportingDeadlinesDialog } from "@/components/reporting-deadlines-dialog";
 import {
   InlineEditBoolean,
   InlineEditCurrency,
@@ -118,15 +119,23 @@ function OppView({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const isPledge = entityLabel === "Pledge";
+  const [reportingDialogOpen, setReportingDialogOpen] = useState(false);
 
   const update = useUpdateOpportunityOrPledge({
     mutation: {
-      onSuccess: async () => {
+      onSuccess: async (response) => {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: getGetOpportunityOrPledgeQueryKey(opp.id) }),
           queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() }),
         ]);
         toast({ title: `${entityLabel} updated` });
+        // The server sets `promptForReportingDeadlines` on the PATCH
+        // response only when status flipped into pledge/cash_in AND
+        // there are zero existing reporting_deadline tasks on this opp.
+        // Treat the flag as transient — opening the dialog is the
+        // entire UX; ignored if the user dismisses.
+        const prompt = response?.promptForReportingDeadlines;
+        if (prompt) setReportingDialogOpen(true);
       },
       onError: (err: unknown) => {
         toast({
@@ -588,6 +597,13 @@ function OppView({
       <div className="text-xs text-muted-foreground">
         Created {formatDate(opp.createdAt)} • Updated {formatDate(opp.updatedAt)}
       </div>
+
+      <ReportingDeadlinesDialog
+        opportunityId={opp.id}
+        funderName={funderName ?? null}
+        open={reportingDialogOpen}
+        onOpenChange={setReportingDialogOpen}
+      />
     </div>
   );
 }

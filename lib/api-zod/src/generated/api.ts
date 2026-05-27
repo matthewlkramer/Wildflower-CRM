@@ -21,6 +21,7 @@ export const ListEmailProposalsQueryParams = zod.object({
       "bounce_soft",
       "signature_update",
       "grant_opportunity",
+      "thank_you_acknowledgment",
     ])
     .optional(),
   status: zod.enum(["pending", "applied", "rejected", "ignored"]).optional(),
@@ -53,6 +54,7 @@ export const ListEmailProposalsResponse = zod.object({
         "bounce_soft",
         "signature_update",
         "grant_opportunity",
+        "thank_you_acknowledgment",
       ]),
       status: zod.enum(["pending", "applied", "rejected", "ignored"]),
       sourceMessageId: zod.string().nullish(),
@@ -116,6 +118,7 @@ export const GetEmailProposalSummaryResponse = zod.object({
         "bounce_soft",
         "signature_update",
         "grant_opportunity",
+        "thank_you_acknowledgment",
       ]),
       pending: zod.number(),
     }),
@@ -139,6 +142,7 @@ export const AcceptEmailProposalResponse = zod.object({
     "bounce_soft",
     "signature_update",
     "grant_opportunity",
+    "thank_you_acknowledgment",
   ]),
   status: zod.enum(["pending", "applied", "rejected", "ignored"]),
   sourceMessageId: zod.string().nullish(),
@@ -199,6 +203,7 @@ export const RejectEmailProposalResponse = zod.object({
     "bounce_soft",
     "signature_update",
     "grant_opportunity",
+    "thank_you_acknowledgment",
   ]),
   status: zod.enum(["pending", "applied", "rejected", "ignored"]),
   sourceMessageId: zod.string().nullish(),
@@ -3009,6 +3014,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       entityIds: zod.array(zod.string()).nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
+      promptForReportingDeadlines: zod.boolean().optional(),
     }),
   ),
   pagination: zod.object({
@@ -3146,6 +3152,7 @@ export const GetOpportunityOrPledgeResponse = zod
     entityIds: zod.array(zod.string()).nullish(),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
+    promptForReportingDeadlines: zod.boolean().optional(),
   })
   .and(
     zod.object({
@@ -3229,6 +3236,35 @@ export const GetOpportunityOrPledgeResponse = zod
             ownerUserId: zod.string().nullish(),
             designatedToSchool: zod.boolean(),
             tags: zod.string().nullish(),
+            thankYouSentAt: zod
+              .string()
+              .date()
+              .nullish()
+              .describe(
+                "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time.",
+              ),
+            thankYouEmailMessageId: zod
+              .string()
+              .nullish()
+              .describe(
+                "FK to the email_messages row that was identified as the thank-you. Read-only; set via \/link-thank-you-email or the thank_you_acknowledgment proposal accept.",
+              ),
+            thankYouAttachments: zod
+              .array(
+                zod.object({
+                  id: zod.string(),
+                  filename: zod.string().nullish(),
+                  mimeType: zod.string().nullish(),
+                  sizeBytes: zod.number().nullish(),
+                  downloadUrl: zod
+                    .string()
+                    .describe("API path that streams the file. Auth-gated."),
+                }),
+              )
+              .nullish()
+              .describe(
+                "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
+              ),
             funderName: zod.string().nullish(),
             householdName: zod.string().nullish(),
             individualGiverPersonName: zod.string().nullish(),
@@ -3383,6 +3419,7 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   entityIds: zod.array(zod.string()).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
+  promptForReportingDeadlines: zod.boolean().optional(),
 });
 
 export const DeleteOpportunityOrPledgeParams = zod.object({
@@ -3652,6 +3689,35 @@ export const ListGiftsAndPaymentsResponse = zod.object({
       ownerUserId: zod.string().nullish(),
       designatedToSchool: zod.boolean(),
       tags: zod.string().nullish(),
+      thankYouSentAt: zod
+        .string()
+        .date()
+        .nullish()
+        .describe(
+          "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time.",
+        ),
+      thankYouEmailMessageId: zod
+        .string()
+        .nullish()
+        .describe(
+          "FK to the email_messages row that was identified as the thank-you. Read-only; set via \/link-thank-you-email or the thank_you_acknowledgment proposal accept.",
+        ),
+      thankYouAttachments: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            filename: zod.string().nullish(),
+            mimeType: zod.string().nullish(),
+            sizeBytes: zod.number().nullish(),
+            downloadUrl: zod
+              .string()
+              .describe("API path that streams the file. Auth-gated."),
+          }),
+        )
+        .nullish()
+        .describe(
+          "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
+        ),
       funderName: zod.string().nullish(),
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
@@ -3768,6 +3834,35 @@ export const GetGiftOrPaymentResponse = zod
     ownerUserId: zod.string().nullish(),
     designatedToSchool: zod.boolean(),
     tags: zod.string().nullish(),
+    thankYouSentAt: zod
+      .string()
+      .date()
+      .nullish()
+      .describe(
+        "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time.",
+      ),
+    thankYouEmailMessageId: zod
+      .string()
+      .nullish()
+      .describe(
+        "FK to the email_messages row that was identified as the thank-you. Read-only; set via \/link-thank-you-email or the thank_you_acknowledgment proposal accept.",
+      ),
+    thankYouAttachments: zod
+      .array(
+        zod.object({
+          id: zod.string(),
+          filename: zod.string().nullish(),
+          mimeType: zod.string().nullish(),
+          sizeBytes: zod.number().nullish(),
+          downloadUrl: zod
+            .string()
+            .describe("API path that streams the file. Auth-gated."),
+        }),
+      )
+      .nullish()
+      .describe(
+        "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
+      ),
     funderName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
@@ -3915,6 +4010,35 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   ownerUserId: zod.string().nullish(),
   designatedToSchool: zod.boolean(),
   tags: zod.string().nullish(),
+  thankYouSentAt: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time.",
+    ),
+  thankYouEmailMessageId: zod
+    .string()
+    .nullish()
+    .describe(
+      "FK to the email_messages row that was identified as the thank-you. Read-only; set via \/link-thank-you-email or the thank_you_acknowledgment proposal accept.",
+    ),
+  thankYouAttachments: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        filename: zod.string().nullish(),
+        mimeType: zod.string().nullish(),
+        sizeBytes: zod.number().nullish(),
+        downloadUrl: zod
+          .string()
+          .describe("API path that streams the file. Auth-gated."),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
+    ),
   funderName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -3939,6 +4063,184 @@ export const UpdateGiftOrPaymentResponse = zod.object({
 });
 
 export const DeleteGiftOrPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * Recent outbound emails from the caller's mailbox to any contact
+of the gift's funder, within 90 days of the gift's dateReceived.
+Each result is flagged `autoSuggested: true` when it matches the
+thank-you heuristic (subject contains 'thank', has ≥1 document
+attachment, sent within 30 days of dateReceived).
+
+ */
+export const ListCandidateThankYouEmailsParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ListCandidateThankYouEmailsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      emailMessageId: zod.string(),
+      gmailMessageId: zod.string().nullish(),
+      subject: zod.string().nullish(),
+      fromEmail: zod.string().nullish(),
+      toEmails: zod.array(zod.string()).nullish(),
+      sentAt: zod.string().datetime({}),
+      snippet: zod.string().nullish(),
+      hasDocumentAttachment: zod.boolean(),
+      documentAttachmentCount: zod.number().optional(),
+      autoSuggested: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when this candidate matches the 30-day + 'thank' + has-document-attachment heuristic.",
+        ),
+    }),
+  ),
+});
+
+export const LinkThankYouEmailParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const LinkThankYouEmailBody = zod.object({
+  emailMessageId: zod.string(),
+});
+
+export const LinkThankYouEmailResponse = zod
+  .object({
+    id: zod.string(),
+    legacyGiftId: zod.string().nullish(),
+    name: zod.string().nullish(),
+    details: zod.string().nullish(),
+    dateReceived: zod.string().date().nullish(),
+    paymentMethod: zod
+      .enum([
+        "ach",
+        "check",
+        "wire",
+        "stock",
+        "donor_box",
+        "daf_ach",
+        "daf_check",
+        "daf_bill_com",
+      ])
+      .nullish(),
+    amount: zod.string().nullish(),
+    funderId: zod.string().nullish(),
+    individualGiverPersonId: zod.string().nullish(),
+    householdId: zod.string().nullish(),
+    type: zod
+      .enum([
+        "standard_gift",
+        "pledge_payment",
+        "directed_gift",
+        "loan_fund_investment",
+        "matching_gift",
+      ])
+      .nullish(),
+    paymentOnPledgeId: zod.string().nullish(),
+    advisorPersonId: zod.string().nullish(),
+    grantYear: zod.string().nullish(),
+    giftBeingMatchedId: zod.string().nullish(),
+    primaryContactPersonId: zod.string().nullish(),
+    paymentIntermediaryId: zod.string().nullish(),
+    ownerUserId: zod.string().nullish(),
+    designatedToSchool: zod.boolean(),
+    tags: zod.string().nullish(),
+    thankYouSentAt: zod
+      .string()
+      .date()
+      .nullish()
+      .describe(
+        "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time.",
+      ),
+    thankYouEmailMessageId: zod
+      .string()
+      .nullish()
+      .describe(
+        "FK to the email_messages row that was identified as the thank-you. Read-only; set via \/link-thank-you-email or the thank_you_acknowledgment proposal accept.",
+      ),
+    thankYouAttachments: zod
+      .array(
+        zod.object({
+          id: zod.string(),
+          filename: zod.string().nullish(),
+          mimeType: zod.string().nullish(),
+          sizeBytes: zod.number().nullish(),
+          downloadUrl: zod
+            .string()
+            .describe("API path that streams the file. Auth-gated."),
+        }),
+      )
+      .nullish()
+      .describe(
+        "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
+      ),
+    funderName: zod.string().nullish(),
+    householdName: zod.string().nullish(),
+    individualGiverPersonName: zod.string().nullish(),
+    funderIsPriority: zod.boolean().nullish(),
+    individualGiverPersonIsPriority: zod.boolean().nullish(),
+    entityIds: zod
+      .array(zod.string())
+      .nullish()
+      .describe("Distinct entity_id values from gift_allocations."),
+    displayUsages: zod
+      .array(zod.string())
+      .nullish()
+      .describe(
+        "Distinct display_usage values from gift_allocations (server-computed labels).",
+      ),
+    grantYears: zod
+      .array(zod.string())
+      .nullish()
+      .describe("Distinct grant_year values from gift_allocations."),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
+  })
+  .and(
+    zod.object({
+      allocations: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            giftId: zod.string().nullish(),
+            subAmount: zod.string().nullish(),
+            grantYear: zod.string().nullish(),
+            entityId: zod.string().nullish(),
+            formalRegionalRestriction: zod.boolean(),
+            intendedUsage: zod
+              .enum([
+                "gen_ops",
+                "growth",
+                "school_startup",
+                "teacher_training",
+                "project",
+              ])
+              .nullish(),
+            fundableProjectId: zod.string().nullish(),
+            formalFundUseRestriction: zod.boolean(),
+            schoolRecipientId: zod.string().nullish(),
+            spendingStart: zod.string().date().nullish(),
+            spendingEnd: zod.string().date().nullish(),
+            regionIds: zod.array(zod.string()).nullish(),
+            displayUsage: zod
+              .string()
+              .nullish()
+              .describe(
+                "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only.",
+              ),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
+          }),
+        )
+        .optional(),
+    }),
+  );
+
+export const UnlinkThankYouEmailParams = zod.object({
   id: zod.coerce.string(),
 });
 
@@ -4352,6 +4654,9 @@ export const ListTasksQueryParams = zod.object({
   mentionUserId: zod.coerce.string().optional(),
   assigneeUserId: zod.coerce.string().optional(),
   createdByUserId: zod.coerce.string().optional(),
+  kind: zod
+    .array(zod.enum(["general", "reporting_deadline", "thank_you_followup"]))
+    .optional(),
   status: zod
     .array(zod.enum(["open", "waiting", "done", "cancelled"]))
     .optional(),
@@ -4380,6 +4685,7 @@ export const ListTasksResponse = zod.object({
       title: zod.string(),
       description: zod.string().nullish(),
       dueDate: zod.string().date().nullish(),
+      kind: zod.enum(["general", "reporting_deadline", "thank_you_followup"]),
       status: zod.enum(["open", "waiting", "done", "cancelled"]),
       completedAt: zod.string().datetime({}).nullish(),
       assigneeUserId: zod.string().nullish(),
@@ -4405,6 +4711,9 @@ export const CreateTaskBody = zod.object({
   title: zod.string(),
   description: zod.string().optional(),
   dueDate: zod.string().date().optional(),
+  kind: zod
+    .enum(["general", "reporting_deadline", "thank_you_followup"])
+    .optional(),
   status: zod.enum(["open", "waiting", "done", "cancelled"]).optional(),
   assigneeUserId: zod.string().optional(),
   personIds: zod.array(zod.string()).optional(),
@@ -4424,6 +4733,7 @@ export const GetTaskResponse = zod.object({
   title: zod.string(),
   description: zod.string().nullish(),
   dueDate: zod.string().date().nullish(),
+  kind: zod.enum(["general", "reporting_deadline", "thank_you_followup"]),
   status: zod.enum(["open", "waiting", "done", "cancelled"]),
   completedAt: zod.string().datetime({}).nullish(),
   assigneeUserId: zod.string().nullish(),
@@ -4446,6 +4756,9 @@ export const UpdateTaskBody = zod.object({
   title: zod.string().optional(),
   description: zod.string().nullish(),
   dueDate: zod.string().date().nullish(),
+  kind: zod
+    .enum(["general", "reporting_deadline", "thank_you_followup"])
+    .optional(),
   status: zod.enum(["open", "waiting", "done", "cancelled"]).optional(),
   assigneeUserId: zod.string().nullish(),
   personIds: zod.array(zod.string()).nullish(),
@@ -4461,6 +4774,7 @@ export const UpdateTaskResponse = zod.object({
   title: zod.string(),
   description: zod.string().nullish(),
   dueDate: zod.string().date().nullish(),
+  kind: zod.enum(["general", "reporting_deadline", "thank_you_followup"]),
   status: zod.enum(["open", "waiting", "done", "cancelled"]),
   completedAt: zod.string().datetime({}).nullish(),
   assigneeUserId: zod.string().nullish(),

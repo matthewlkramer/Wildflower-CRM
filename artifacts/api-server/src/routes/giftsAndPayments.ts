@@ -1,7 +1,18 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
-import { giftsAndPayments, giftAllocations, funders, households, people } from "@workspace/db/schema";
-import { and, count, desc, eq, getTableColumns, ilike, sql, type SQL } from "drizzle-orm";
+import {
+  giftsAndPayments,
+  giftAllocations,
+  funders,
+  households,
+  people,
+  emailMessages,
+  emailAttachments,
+  emails,
+  peopleEntityRoles,
+} from "@workspace/db/schema";
+import { and, count, desc, eq, getTableColumns, gte, ilike, lte, sql, type SQL } from "drizzle-orm";
+import { getAppUser } from "../lib/appRequest";
 
 // See opportunitiesAndPledges.ts for rationale — same denormalized
 // donor display names joined from funders / households / people, plus
@@ -109,21 +120,49 @@ router.get(
   }),
 );
 
+async function buildGiftDetail(id: string) {
+  const row = await db
+    .select(donorJoinSelect)
+    .from(giftsAndPayments)
+    .leftJoin(funders, eq(funders.id, giftsAndPayments.funderId))
+    .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
+    .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
+    .where(eq(giftsAndPayments.id, id))
+    .then((r) => r[0]);
+  if (!row) return null;
+  const allocations = await db.select().from(giftAllocations).where(eq(giftAllocations.giftId, id));
+  let thankYouAttachments: Array<{
+    id: string;
+    filename: string | null;
+    mimeType: string | null;
+    sizeBytes: number | null;
+    downloadUrl: string;
+  }> | null = null;
+  if (row.thankYouEmailMessageId) {
+    const atts = await db
+      .select({
+        id: emailAttachments.id,
+        filename: emailAttachments.filename,
+        mimeType: emailAttachments.mimeType,
+        sizeBytes: emailAttachments.sizeBytes,
+      })
+      .from(emailAttachments)
+      .where(eq(emailAttachments.emailMessageId, row.thankYouEmailMessageId));
+    thankYouAttachments = atts.map((a) => ({
+      ...a,
+      downloadUrl: `/api/email-attachments/${a.id}/download`,
+    }));
+  }
+  return { ...row, allocations, thankYouAttachments };
+}
+
 router.get(
   "/gifts-and-payments/:id",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const row = await db
-      .select(donorJoinSelect)
-      .from(giftsAndPayments)
-      .leftJoin(funders, eq(funders.id, giftsAndPayments.funderId))
-      .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
-      .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
-      .where(eq(giftsAndPayments.id, id))
-      .then((r) => r[0]);
-    if (!row) return notFound(res, "gift");
-    const allocations = await db.select().from(giftAllocations).where(eq(giftAllocations.giftId, id));
-    res.json({ ...row, allocations });
+    const detail = await buildGiftDetail(id);
+    if (!detail) return notFound(res, "gift");
+    res.json(detail);
   }),
 );
 
@@ -280,6 +319,204 @@ router.delete(
       .then((r) => r[0]);
     await db.delete(giftsAndPayments).where(eq(giftsAndPayments.id, id));
     await applyDerivedOppFieldsMany(existing?.paymentOnPledgeId);
+    res.status(204).end();
+  }),
+);
+
+// ──────────────────────────────────────────────────────────────────
+// Thank-you email linking
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * Document mime check duplicated here from emailIntelligence.ts to
+ * keep the routes module decoupled from the intel pipeline. Kept in
+ * sync intentionally — both serve the same heuristic.
+ */
+function isDocumentMime(mime: string | null): boolean {
+  if (!mime) return false;
+  const m = mime.toLowerCase();
+  if (m === "application/pdf") return true;
+  if (m === "application/rtf" || m === "text/rtf") return true;
+  if (m === "application/msword") return true;
+  if (m === "application/vnd.ms-excel") return true;
+  if (m === "application/vnd.ms-powerpoint") return true;
+  if (m.startsWith("application/vnd.openxmlformats-officedocument")) return true;
+  if (m.startsWith("application/vnd.oasis.opendocument")) return true;
+  return false;
+}
+
+router.get(
+  "/gifts-and-payments/:id/candidate-thank-you-emails",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) return res.status(401).json({ error: "unauthorized" });
+    const id = paramId(req);
+    const gift = await db
+      .select({
+        id: giftsAndPayments.id,
+        funderId: giftsAndPayments.funderId,
+        dateReceived: giftsAndPayments.dateReceived,
+      })
+      .from(giftsAndPayments)
+      .where(eq(giftsAndPayments.id, id))
+      .then((r) => r[0]);
+    if (!gift) return notFound(res, "gift");
+
+    // Only funder-attached gifts have an obvious "thank the funder"
+    // contact set. Household/individual gifts can use the manual link
+    // path against the user's own search; we don't enumerate
+    // candidates for them.
+    if (!gift.funderId || !gift.dateReceived) {
+      return res.json({ data: [] });
+    }
+
+    // 90-day window centered loosely on dateReceived — the auto-suggest
+    // heuristic uses 30 days, but the picker is wider so the reviewer
+    // can grab a delayed send-out if needed.
+    const giftDate = new Date(`${gift.dateReceived}T00:00:00Z`);
+    const winStart = new Date(giftDate.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const winEnd = new Date(giftDate.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+    // Resolve funder contacts: any email row directly on the funder,
+    // OR any email row of a person currently in a people_entity_role
+    // for this funder.
+    const contactRows = await db
+      .selectDistinct({ email: sql<string>`lower(${emails.email})` })
+      .from(emails)
+      .leftJoin(peopleEntityRoles, and(
+        eq(peopleEntityRoles.personId, emails.personId),
+        eq(peopleEntityRoles.current, "current"),
+        eq(peopleEntityRoles.funderId, gift.funderId),
+      ))
+      .where(
+        sql`${emails.funderId} = ${gift.funderId} OR ${peopleEntityRoles.id} IS NOT NULL`,
+      );
+    const contactEmails = contactRows.map((r) => r.email).filter(Boolean);
+    if (contactEmails.length === 0) return res.json({ data: [] });
+
+    // Pull recent outbound mail from this mailbox to any of those
+    // contacts. We over-fetch and filter in JS because Postgres array
+    // overlap on toEmails would skip case-insensitive matching.
+    const rows = await db
+      .select({
+        id: emailMessages.id,
+        gmailMessageId: emailMessages.gmailMessageId,
+        subject: emailMessages.subject,
+        fromEmail: emailMessages.fromEmail,
+        toEmails: emailMessages.toEmails,
+        sentAt: emailMessages.sentAt,
+        snippet: emailMessages.snippet,
+      })
+      .from(emailMessages)
+      .where(and(
+        eq(emailMessages.mailboxUserId, user.id),
+        eq(emailMessages.direction, "sent"),
+        gte(emailMessages.sentAt, winStart),
+        lte(emailMessages.sentAt, winEnd),
+      ))
+      .orderBy(desc(emailMessages.sentAt))
+      .limit(200);
+
+    const contactSet = new Set(contactEmails);
+    const matching = rows.filter((r) =>
+      (r.toEmails ?? []).some((t) => t && contactSet.has(t.toLowerCase())),
+    );
+    if (matching.length === 0) return res.json({ data: [] });
+
+    // Annotate each with its document-attachment count in one query.
+    const msgIds = matching.map((m) => m.id);
+    const atts = await db
+      .select({
+        emailMessageId: emailAttachments.emailMessageId,
+        mimeType: emailAttachments.mimeType,
+      })
+      .from(emailAttachments)
+      .where(sql`${emailAttachments.emailMessageId} = ANY(${msgIds}::text[])`);
+    const docCountByMsg = new Map<string, number>();
+    for (const a of atts) {
+      if (isDocumentMime(a.mimeType)) {
+        docCountByMsg.set(a.emailMessageId, (docCountByMsg.get(a.emailMessageId) ?? 0) + 1);
+      }
+    }
+
+    const data = matching.map((m) => {
+      const docCount = docCountByMsg.get(m.id) ?? 0;
+      const subjectMatch = !!m.subject && /\bthank/i.test(m.subject);
+      const dateMatch = gift.dateReceived
+        ? Math.abs(m.sentAt.getTime() - giftDate.getTime()) <= 30 * 24 * 60 * 60 * 1000
+        : false;
+      return {
+        emailMessageId: m.id,
+        gmailMessageId: m.gmailMessageId,
+        subject: m.subject,
+        fromEmail: m.fromEmail,
+        toEmails: m.toEmails,
+        sentAt: m.sentAt.toISOString(),
+        snippet: m.snippet,
+        hasDocumentAttachment: docCount > 0,
+        documentAttachmentCount: docCount,
+        autoSuggested: docCount > 0 && subjectMatch && dateMatch,
+      };
+    });
+    res.json({ data });
+  }),
+);
+
+router.post(
+  "/gifts-and-payments/:id/link-thank-you-email",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) return res.status(401).json({ error: "unauthorized" });
+    const id = paramId(req);
+    const body = (req.body ?? {}) as { emailMessageId?: unknown };
+    if (typeof body.emailMessageId !== "string" || !body.emailMessageId) {
+      return res.status(400).json({
+        error: "validation_error",
+        message: "emailMessageId is required.",
+      });
+    }
+    const emailMessageId = body.emailMessageId;
+    // Scope the message lookup to the caller's mailbox so a user can't
+    // link an arbitrary message-id they happen to know.
+    const msg = await db
+      .select({ id: emailMessages.id, sentAt: emailMessages.sentAt })
+      .from(emailMessages)
+      .where(and(
+        eq(emailMessages.id, emailMessageId),
+        eq(emailMessages.mailboxUserId, user.id),
+      ))
+      .then((r) => r[0]);
+    if (!msg) return notFound(res, "email message");
+    const [updated] = await db
+      .update(giftsAndPayments)
+      .set({
+        thankYouSentAt: msg.sentAt.toISOString().slice(0, 10),
+        thankYouEmailMessageId: msg.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(giftsAndPayments.id, id))
+      .returning();
+    if (!updated) return notFound(res, "gift");
+    const detail = await buildGiftDetail(id);
+    if (!detail) return notFound(res, "gift");
+    return res.json(detail);
+  }),
+);
+
+router.delete(
+  "/gifts-and-payments/:id/link-thank-you-email",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const [updated] = await db
+      .update(giftsAndPayments)
+      .set({
+        thankYouSentAt: null,
+        thankYouEmailMessageId: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(giftsAndPayments.id, id))
+      .returning({ id: giftsAndPayments.id });
+    if (!updated) return notFound(res, "gift");
     res.status(204).end();
   }),
 );

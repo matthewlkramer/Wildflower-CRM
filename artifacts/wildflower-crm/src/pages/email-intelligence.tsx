@@ -28,7 +28,8 @@ type Kind =
   | "bounce_invalid"
   | "bounce_soft"
   | "signature_update"
-  | "grant_opportunity";
+  | "grant_opportunity"
+  | "thank_you_acknowledgment";
 
 const KIND_TABS: { value: Kind; label: string }[] = [
   { value: "linkedin_job_change", label: "Job changes" },
@@ -37,6 +38,7 @@ const KIND_TABS: { value: Kind; label: string }[] = [
   { value: "bounce_soft", label: "Soft bounces" },
   { value: "signature_update", label: "Signature updates" },
   { value: "grant_opportunity", label: "Grant opportunities" },
+  { value: "thank_you_acknowledgment", label: "Thank-you acks" },
 ];
 
 const UNRECOGNIZED_TAB = "unrecognized";
@@ -381,6 +383,14 @@ function summarizeProposal(p: {
       if (deadline) parts.push(`(due ${deadline})`);
       return parts.join(" ");
     }
+    case "thank_you_acknowledgment": {
+      const funder = (payload.funderName as string | undefined) ?? p.subjectName;
+      const amount = payload.giftAmount as number | undefined;
+      const parts = ["Thank-you ack"];
+      if (funder) parts.push(`— ${funder}`);
+      if (amount) parts.push(`($${amount.toLocaleString()})`);
+      return parts.join(" ");
+    }
   }
 }
 
@@ -466,6 +476,15 @@ function ProposalDetail({
         </div>
       );
     }
+    case "thank_you_acknowledgment":
+      return (
+        <div className="space-y-1">
+          {cell("Gift", payload.giftId)}
+          {cell("Funder", payload.funderName)}
+          {cell("Amount", payload.giftAmount)}
+          {cell("Attachments", Array.isArray(payload.attachmentIds) ? (payload.attachmentIds as unknown[]).length : undefined)}
+        </div>
+      );
     case "signature_update": {
       const parsed = (payload.parsed ?? {}) as Record<string, unknown>;
       return (

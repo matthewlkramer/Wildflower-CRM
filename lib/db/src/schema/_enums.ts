@@ -294,6 +294,14 @@ export const emailProposalKindEnum = pgEnum("email_proposal_kind", [
   "bounce_soft",
   "signature_update",
   "grant_opportunity",
+  // Outbound staff email that looks like a thank-you acknowledgment for
+  // a specific gift (subject contains "thank", recipient is a funder
+  // contact, sent within 30d of the gift, carries ≥1 document attachment).
+  // Accept handler stamps gifts_and_payments.thank_you_sent_at +
+  // thank_you_email_message_id; reviewer can also override the
+  // candidate gift inside the dialog. Payload: { giftId, fromEmail,
+  // toEmail, subject, sentAt, attachmentIds[] }.
+  "thank_you_acknowledgment",
 ]);
 
 // Lifecycle of an email_proposals row. `pending` is the review queue;
@@ -321,6 +329,19 @@ export const peopleEntityRoleConnectionEnum = pgEnum(
     "elected_official",
   ],
 );
+
+// Task type. `general` is the historical default — a manual to-do.
+// `reporting_deadline` is created from the "report deadlines" prompt
+// that fires when an opportunity flips to pledge/cash_in; the
+// reporting-deadlines dashboard filters on this kind so the
+// org-wide grant-reporting view stays separate from per-user task
+// noise. `thank_you_followup` is reserved for the future "gift had
+// no linked thank-you within N days" nudge (not used in v1).
+export const taskKindEnum = pgEnum("task_kind", [
+  "general",
+  "reporting_deadline",
+  "thank_you_followup",
+]);
 
 export const taskStatusEnum = pgEnum("task_status", [
   "open",

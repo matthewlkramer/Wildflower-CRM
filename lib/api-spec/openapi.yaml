@@ -862,6 +862,35 @@ paths:
       tags: [gifts-and-payments]
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses: { "204": { description: Deleted } }
+  /gifts-and-payments/{id}/candidate-thank-you-emails:
+    get:
+      operationId: listCandidateThankYouEmails
+      tags: [gifts-and-payments]
+      description: |
+        Recent outbound emails from the caller's mailbox to any contact
+        of the gift's funder, within 90 days of the gift's dateReceived.
+        Each result is flagged `autoSuggested: true` when it matches the
+        thank-you heuristic (subject contains 'thank', has ≥1 document
+        attachment, sent within 30 days of dateReceived).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CandidateThankYouEmailList" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /gifts-and-payments/{id}/link-thank-you-email:
+    post:
+      operationId: linkThankYouEmail
+      tags: [gifts-and-payments]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/LinkThankYouEmailBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPaymentDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: unlinkThankYouEmail
+      tags: [gifts-and-payments]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
 
   # ─── Gift allocations ──────────────────────────────────────────────────────
   /gift-allocations:
@@ -1014,6 +1043,11 @@ paths:
         - { name: mentionUserId, in: query, schema: { type: string } }
         - { name: assigneeUserId, in: query, schema: { type: string } }
         - { name: createdByUserId, in: query, schema: { type: string } }
+        - name: kind
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/TaskKind" } }
         - name: status
           in: query
           style: form
@@ -2534,6 +2568,13 @@ components:
         entityIds:                  { type: array, items: { type: string }, nullable: true, readOnly: true }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
+        # PATCH-response only. True when this update flipped status into
+        # pledge or cash_in for the first time AND no reporting_deadline
+        # task exists yet for the opportunity. Frontend opens a one-shot
+        # dialog asking the reviewer to record reporting deadlines.
+        promptForReportingDeadlines:
+          type: boolean
+          readOnly: true
     OpportunityOrPledgeDetail:
       allOf:
         - { $ref: "#/components/schemas/OpportunityOrPledge" }
@@ -2691,6 +2732,14 @@ components:
         ownerUserId:                      { type: string, nullable: true }
         designatedToSchool:         { type: boolean }
         tags:                       { type: string, nullable: true }
+        thankYouSentAt:             { type: string, format: date, nullable: true, description: "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time." }
+        thankYouEmailMessageId:     { type: string, nullable: true, description: "FK to the email_messages row that was identified as the thank-you. Read-only; set via /link-thank-you-email or the thank_you_acknowledgment proposal accept." }
+        thankYouAttachments:
+          type: array
+          nullable: true
+          readOnly: true
+          description: "Document attachments on the linked thank-you email (PDF / DOCX / etc.). Populated only on the detail endpoint."
+          items: { $ref: "#/components/schemas/ThankYouAttachment" }
         # Denormalized display names, joined server-side. See
         # OpportunityOrPledge for rationale.
         funderName:                 { type: string, nullable: true }
@@ -2761,6 +2810,39 @@ components:
         ownerUserId:                      { type: string, nullable: true }
         designatedToSchool:         { type: boolean }
         tags:                       { type: string, nullable: true }
+    ThankYouAttachment:
+      type: object
+      required: [id, downloadUrl]
+      properties:
+        id:        { type: string }
+        filename:  { type: string, nullable: true }
+        mimeType:  { type: string, nullable: true }
+        sizeBytes: { type: integer, nullable: true }
+        downloadUrl: { type: string, description: "API path that streams the file. Auth-gated." }
+    CandidateThankYouEmail:
+      type: object
+      required: [emailMessageId, sentAt, hasDocumentAttachment]
+      properties:
+        emailMessageId:        { type: string }
+        gmailMessageId:        { type: string, nullable: true }
+        subject:               { type: string, nullable: true }
+        fromEmail:             { type: string, nullable: true }
+        toEmails:              { type: array, items: { type: string }, nullable: true }
+        sentAt:                { type: string, format: date-time }
+        snippet:               { type: string, nullable: true }
+        hasDocumentAttachment: { type: boolean }
+        documentAttachmentCount: { type: integer }
+        autoSuggested:         { type: boolean, description: "True when this candidate matches the 30-day + 'thank' + has-document-attachment heuristic." }
+    CandidateThankYouEmailList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/CandidateThankYouEmail" } }
+    LinkThankYouEmailBody:
+      type: object
+      required: [emailMessageId]
+      properties:
+        emailMessageId: { type: string }
 
     # ─── Gift allocations ──────────────────────────────────────────────────────
     GiftAllocation:
@@ -3065,7 +3147,7 @@ components:
     # ─── Email intelligence ───────────────────────────────────────────────────
     EmailProposalKind:
       type: string
-      enum: [linkedin_job_change, auto_responder_move, bounce_invalid, bounce_soft, signature_update, grant_opportunity]
+      enum: [linkedin_job_change, auto_responder_move, bounce_invalid, bounce_soft, signature_update, grant_opportunity, thank_you_acknowledgment]
     EmailProposalStatus:
       type: string
       enum: [pending, applied, rejected, ignored]
@@ -3226,14 +3308,18 @@ components:
     TaskStatus:
       type: string
       enum: [open, waiting, done, cancelled]
+    TaskKind:
+      type: string
+      enum: [general, reporting_deadline, thank_you_followup]
     Task:
       type: object
-      required: [id, title, status, createdByUserId, createdAt, updatedAt]
+      required: [id, title, status, kind, createdByUserId, createdAt, updatedAt]
       properties:
         id:               { type: string }
         title:            { type: string }
         description:      { type: string, nullable: true }
         dueDate:          { type: string, format: date, nullable: true }
+        kind:             { $ref: "#/components/schemas/TaskKind" }
         status:           { $ref: "#/components/schemas/TaskStatus" }
         completedAt:      { type: string, format: date-time, nullable: true }
         assigneeUserId:   { type: string, nullable: true }
@@ -3259,6 +3345,7 @@ components:
         title:           { type: string }
         description:     { type: string }
         dueDate:         { type: string, format: date }
+        kind:            { $ref: "#/components/schemas/TaskKind" }
         status:          { $ref: "#/components/schemas/TaskStatus" }
         assigneeUserId:  { type: string }
         personIds:       { type: array, items: { type: string } }
@@ -3273,6 +3360,7 @@ components:
         title:           { type: string }
         description:     { type: string, nullable: true }
         dueDate:         { type: string, format: date, nullable: true }
+        kind:            { $ref: "#/components/schemas/TaskKind" }
         status:          { $ref: "#/components/schemas/TaskStatus" }
         assigneeUserId:  { type: string, nullable: true }
         personIds:       { type: array, items: { type: string }, nullable: true }

@@ -15,6 +15,7 @@ import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { GiftAllocationsEditor } from "@/components/allocation-editors";
 import { NotesPanel } from "@/components/notes-panel";
 import { TasksPanel } from "@/components/tasks-panel";
+import { ThankYouPanel } from "@/components/thank-you-panel";
 import {
   InlineEditBoolean,
   InlineEditCurrency,
@@ -354,6 +355,8 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
           </div>
         </CardContent>
       </Card>
+
+      <ThankYouPanel gift={gift} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <NotesPanel giftId={gift.id} />

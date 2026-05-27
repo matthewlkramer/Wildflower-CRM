@@ -90,6 +90,18 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   }),
   designatedToSchool: boolean("designated_to_school").default(false).notNull(),
   tags: text("tags"),
+  // Set when an outbound staff email is linked as the thank-you note for
+  // this gift — either via the email-intelligence proposal accept flow
+  // or via the manual "Link thank-you email" button on the gift detail
+  // page. `thankYouSentAt` is denormalised from emailMessages.sentAt at
+  // link time so the gifts list can sort/filter by acknowledgment date
+  // without joining email_messages. Both go back to null on unlink.
+  thankYouSentAt: date("thank_you_sent_at"),
+  // SET NULL: if the source email message is ever purged from the sync
+  // store, keep the thankYouSentAt date but drop the now-stale pointer.
+  // The link is updateable from the gift page so a wrong auto-link
+  // can be relinked to the correct message.
+  thankYouEmailMessageId: text("thank_you_email_message_id"),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -105,6 +117,8 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
   index("gifts_and_payments_owner_user_id_idx").on(t.ownerUserId),
   index("gifts_and_payments_grant_year_idx").on(t.grantYear),
+  index("gifts_and_payments_thank_you_email_msg_idx").on(t.thankYouEmailMessageId),
+  index("gifts_and_payments_thank_you_sent_at_idx").on(t.thankYouSentAt),
   // Donor exclusivity: exactly one of funder / individual-giver / household.
   check(
     "gifts_and_payments_donor_xor",

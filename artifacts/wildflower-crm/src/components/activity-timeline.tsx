@@ -85,6 +85,7 @@ const PROPOSAL_KIND_LABEL: Record<EmailProposalKind, string> = {
   auto_responder_move: "Auto-responder · moved",
   signature_update: "Signature drift",
   grant_opportunity: "Grant opportunity",
+  thank_you_acknowledgment: "Thank-you acknowledgment",
 };
 
 function InteractionIcon({ kind }: { kind: InteractionKind }) {

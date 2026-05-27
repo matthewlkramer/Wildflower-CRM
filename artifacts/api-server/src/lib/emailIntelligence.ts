@@ -5,9 +5,10 @@ import {
   funders,
   peopleEntityRoles,
   emails,
+  giftsAndPayments,
   type NewEmailProposal,
 } from "@workspace/db/schema";
-import { and, eq, ilike, sql } from "drizzle-orm";
+import { and, eq, gte, ilike, lte, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
 import { proposeActionsForProposal } from "./proposeActions";
@@ -610,3 +611,162 @@ async function isPersonAlreadyAtCompany(
 // Re-export free-mail check so the unrecognized-correspondent route
 // can share the same definition.
 export { isFreeMailDomain };
+
+// ──────────────────────────────────────────────────────────────────
+// Thank-you acknowledgment detector (outbound path)
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * Document mime types worth treating as "the grant receipt / thank-you
+ * letter the funder actually wants on file". Filters out inline
+ * images, calendar invites, etc. Kept intentionally permissive — the
+ * reviewer can always reject a false positive in the inbox.
+ */
+function isDocumentMime(mime: string | null | undefined): boolean {
+  if (!mime) return false;
+  const m = mime.toLowerCase();
+  if (m === "application/pdf") return true;
+  if (m === "application/rtf" || m === "text/rtf") return true;
+  if (m === "application/msword") return true;
+  if (m === "application/vnd.ms-excel") return true;
+  if (m === "application/vnd.ms-powerpoint") return true;
+  if (m.startsWith("application/vnd.openxmlformats-officedocument")) return true;
+  if (m.startsWith("application/vnd.oasis.opendocument")) return true;
+  return false;
+}
+
+export function hasThankInSubject(subject: string | null | undefined): boolean {
+  return !!subject && /\bthank/i.test(subject);
+}
+
+export function countDocumentAttachments(
+  parts: { mimeType?: string | null; filename?: string | null }[],
+): number {
+  return parts.filter((p) => isDocumentMime(p.mimeType)).length;
+}
+
+/**
+ * Outbound-path intel hook. Mirrors processIntelForMatched but runs
+ * on direction='sent' messages only (the matched-path function ignores
+ * outbound entirely so signature / auto-responder parsing isn't
+ * misapplied to staff). Today the only signal is the thank-you
+ * acknowledgment heuristic; future outbound signals can land here.
+ *
+ * Best-effort — failures are warned and swallowed so a detector bug
+ * never propagates back into the gmail sync loop.
+ */
+export async function processIntelForOutbound(args: {
+  mailboxUserId: string;
+  messageRowId: string;
+  fromEmail: string | null;
+  toEmails: string[] | null;
+  subject: string | null;
+  sentAt: Date;
+  attachmentMimeTypes: string[];
+}): Promise<void> {
+  try {
+    await detectThankYou(args);
+  } catch (err) {
+    logger.warn(
+      { err, mailboxUserId: args.mailboxUserId, messageRowId: args.messageRowId },
+      "Email intelligence (outbound) failed",
+    );
+  }
+}
+
+async function detectThankYou(args: {
+  mailboxUserId: string;
+  messageRowId: string;
+  fromEmail: string | null;
+  toEmails: string[] | null;
+  subject: string | null;
+  sentAt: Date;
+  attachmentMimeTypes: string[];
+}): Promise<void> {
+  if (!hasThankInSubject(args.subject)) return;
+  const docCount = args.attachmentMimeTypes.filter(isDocumentMime).length;
+  if (docCount < 1) return;
+  const recipients = (args.toEmails ?? [])
+    .map((r) => r?.toLowerCase().trim())
+    .filter((r): r is string => !!r);
+  if (recipients.length === 0) return;
+
+  // Resolve every recipient to a funder id, either directly (funder-
+  // level email row) or via people_entity_roles where current='current'.
+  // Returns the de-duped union.
+  const funderRows = await db.execute<{ funder_id: string }>(sql`
+    SELECT DISTINCT funder_id FROM (
+      SELECT e.funder_id
+      FROM emails e
+      WHERE lower(e.email) = ANY(${recipients}::text[])
+        AND e.funder_id IS NOT NULL
+      UNION
+      SELECT per.funder_id
+      FROM emails e
+      JOIN people_entity_roles per ON per.person_id = e.person_id
+      WHERE lower(e.email) = ANY(${recipients}::text[])
+        AND e.person_id IS NOT NULL
+        AND per.current = 'current'
+        AND per.funder_id IS NOT NULL
+    ) t
+  `);
+  const funderIds = funderRows.rows.map((r) => r.funder_id).filter(Boolean);
+  if (funderIds.length === 0) return;
+
+  // Find candidate gifts to those funders within ±30 days of the
+  // outbound email. Most often there is one and we link it directly;
+  // when several match we emit one proposal per gift and let the
+  // reviewer pick the right one — payload.giftId is the suggestion,
+  // not the only option.
+  const windowStart = new Date(args.sentAt.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const windowEnd = new Date(args.sentAt.getTime() + 1 * 24 * 60 * 60 * 1000);
+  const startDate = windowStart.toISOString().slice(0, 10);
+  const endDate = windowEnd.toISOString().slice(0, 10);
+  const candidateGifts = await db
+    .select({
+      id: giftsAndPayments.id,
+      funderId: giftsAndPayments.funderId,
+      amount: giftsAndPayments.amount,
+      dateReceived: giftsAndPayments.dateReceived,
+      thankYouEmailMessageId: giftsAndPayments.thankYouEmailMessageId,
+    })
+    .from(giftsAndPayments)
+    .where(
+      and(
+        sql`${giftsAndPayments.funderId} = ANY(${funderIds}::text[])`,
+        gte(giftsAndPayments.dateReceived, startDate),
+        lte(giftsAndPayments.dateReceived, endDate),
+      ),
+    );
+  // Skip gifts that already have a thank-you linked — re-proposing the
+  // same gift after acceptance would just create review noise.
+  const unlinked = candidateGifts.filter((g) => !g.thankYouEmailMessageId);
+  if (unlinked.length === 0) return;
+
+  for (const gift of unlinked) {
+    await upsertProposal({
+      mailboxUserId: args.mailboxUserId,
+      kind: "thank_you_acknowledgment",
+      // One pending proposal per (gift, message). If the user rejects
+      // it we want a re-sync of the same email NOT to re-emit; the
+      // partial unique index (status='pending') already enforces that.
+      dedupeKey: `thankyou:${gift.id}:${args.messageRowId}`,
+      sourceMessageId: args.messageRowId,
+      targetFunderId: gift.funderId,
+      subjectEmail: recipients[0] ?? null,
+      subjectDomain: domainOf(recipients[0] ?? null),
+      subjectName: null,
+      payload: {
+        giftId: gift.id,
+        funderId: gift.funderId,
+        giftAmount: gift.amount,
+        giftDateReceived: gift.dateReceived,
+        fromEmail: args.fromEmail,
+        toEmails: args.toEmails,
+        subject: args.subject,
+        sentAt: args.sentAt.toISOString(),
+        documentAttachmentCount: docCount,
+      },
+    });
+  }
+}

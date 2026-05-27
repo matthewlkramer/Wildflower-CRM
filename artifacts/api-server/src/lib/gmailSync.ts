@@ -29,6 +29,7 @@ import { matchEmails, isMatchEmpty, type EmailMatchResult } from "./emailMatcher
 import { uploadAttachment } from "./emailAttachmentStore";
 import {
   processIntelForMatched,
+  processIntelForOutbound,
   processIntelForUnmatched,
   shouldFetchFullForIntel,
 } from "./emailIntelligence";
@@ -684,6 +685,32 @@ async function processOneMessage(
         { err: e, userId: grant.userId, gmailId, messageRowId },
         "Email intelligence (matched) failed; message stored, intel skipped",
       );
+    }
+
+    // Outbound intel — currently just thank-you acknowledgment
+    // detection. Gated on wasNewMessage so a re-sync of the same
+    // outbound thread doesn't re-emit proposals; the proposals table
+    // also dedupes on (mailbox, dedupeKey) where status='pending'.
+    if (direction === "sent") {
+      try {
+        await processIntelForOutbound({
+          mailboxUserId: grant.userId,
+          messageRowId,
+          fromEmail: fromFull[0] ?? null,
+          toEmails: toFull,
+          subject,
+          sentAt,
+          // Pre-DB attachment metadata — we don't need IDs at detect
+          // time, only mime types to decide if there's a document worth
+          // treating as the receipt / letter.
+          attachmentMimeTypes: parts.attachments.map((a) => a.mimeType),
+        });
+      } catch (e) {
+        logger.warn(
+          { err: e, userId: grant.userId, gmailId, messageRowId },
+          "Email intelligence (outbound) failed; message stored, intel skipped",
+        );
+      }
     }
   }
 

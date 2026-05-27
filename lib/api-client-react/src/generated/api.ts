@@ -32,6 +32,7 @@ import type {
   CalendarEvent,
   CalendarEventList,
   CalendarSyncRunResponse,
+  CandidateThankYouEmailList,
   CreateAddressBody,
   CreateCorrespondentIgnoreBody,
   CreateEmailBody,
@@ -90,6 +91,7 @@ import type {
   HouseholdList,
   Interaction,
   InteractionList,
+  LinkThankYouEmailBody,
   ListAddressesParams,
   ListCalendarEventsParams,
   ListEmailMessagesParams,
@@ -6615,6 +6617,260 @@ export const useDeleteGiftOrPayment = <
   TContext
 > => {
   return useMutation(getDeleteGiftOrPaymentMutationOptions(options));
+};
+
+/**
+ * Recent outbound emails from the caller's mailbox to any contact
+of the gift's funder, within 90 days of the gift's dateReceived.
+Each result is flagged `autoSuggested: true` when it matches the
+thank-you heuristic (subject contains 'thank', has ≥1 document
+attachment, sent within 30 days of dateReceived).
+
+ */
+export const getListCandidateThankYouEmailsUrl = (id: string) => {
+  return `/api/gifts-and-payments/${id}/candidate-thank-you-emails`;
+};
+
+export const listCandidateThankYouEmails = async (
+  id: string,
+  options?: RequestInit,
+): Promise<CandidateThankYouEmailList> => {
+  return customFetch<CandidateThankYouEmailList>(
+    getListCandidateThankYouEmailsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListCandidateThankYouEmailsQueryKey = (id: string) => {
+  return [`/api/gifts-and-payments/${id}/candidate-thank-you-emails`] as const;
+};
+
+export const getListCandidateThankYouEmailsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCandidateThankYouEmails>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCandidateThankYouEmails>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListCandidateThankYouEmailsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCandidateThankYouEmails>>
+  > = ({ signal }) =>
+    listCandidateThankYouEmails(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCandidateThankYouEmails>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCandidateThankYouEmailsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCandidateThankYouEmails>>
+>;
+export type ListCandidateThankYouEmailsQueryError = ErrorType<NotFoundResponse>;
+
+export function useListCandidateThankYouEmails<
+  TData = Awaited<ReturnType<typeof listCandidateThankYouEmails>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCandidateThankYouEmails>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCandidateThankYouEmailsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getLinkThankYouEmailUrl = (id: string) => {
+  return `/api/gifts-and-payments/${id}/link-thank-you-email`;
+};
+
+export const linkThankYouEmail = async (
+  id: string,
+  linkThankYouEmailBody: LinkThankYouEmailBody,
+  options?: RequestInit,
+): Promise<GiftOrPaymentDetail> => {
+  return customFetch<GiftOrPaymentDetail>(getLinkThankYouEmailUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(linkThankYouEmailBody),
+  });
+};
+
+export const getLinkThankYouEmailMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof linkThankYouEmail>>,
+    TError,
+    { id: string; data: BodyType<LinkThankYouEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof linkThankYouEmail>>,
+  TError,
+  { id: string; data: BodyType<LinkThankYouEmailBody> },
+  TContext
+> => {
+  const mutationKey = ["linkThankYouEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof linkThankYouEmail>>,
+    { id: string; data: BodyType<LinkThankYouEmailBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return linkThankYouEmail(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LinkThankYouEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof linkThankYouEmail>>
+>;
+export type LinkThankYouEmailMutationBody = BodyType<LinkThankYouEmailBody>;
+export type LinkThankYouEmailMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useLinkThankYouEmail = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof linkThankYouEmail>>,
+    TError,
+    { id: string; data: BodyType<LinkThankYouEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof linkThankYouEmail>>,
+  TError,
+  { id: string; data: BodyType<LinkThankYouEmailBody> },
+  TContext
+> => {
+  return useMutation(getLinkThankYouEmailMutationOptions(options));
+};
+
+export const getUnlinkThankYouEmailUrl = (id: string) => {
+  return `/api/gifts-and-payments/${id}/link-thank-you-email`;
+};
+
+export const unlinkThankYouEmail = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUnlinkThankYouEmailUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getUnlinkThankYouEmailMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unlinkThankYouEmail>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unlinkThankYouEmail>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unlinkThankYouEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unlinkThankYouEmail>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unlinkThankYouEmail(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnlinkThankYouEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unlinkThankYouEmail>>
+>;
+
+export type UnlinkThankYouEmailMutationError = ErrorType<unknown>;
+
+export const useUnlinkThankYouEmail = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unlinkThankYouEmail>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unlinkThankYouEmail>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnlinkThankYouEmailMutationOptions(options));
 };
 
 export const getListGiftAllocationsUrl = (

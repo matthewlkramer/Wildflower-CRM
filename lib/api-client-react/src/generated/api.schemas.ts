@@ -1212,6 +1212,7 @@ export interface OpportunityOrPledge {
   readonly entityIds?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
+  readonly promptForReportingDeadlines?: boolean;
 }
 
 export interface PledgeAllocation {
@@ -1229,6 +1230,15 @@ export interface PledgeAllocation {
   regionIds?: string[] | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ThankYouAttachment {
+  id: string;
+  filename?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  /** API path that streams the file. Auth-gated. */
+  downloadUrl: string;
 }
 
 export interface GiftOrPayment {
@@ -1252,6 +1262,12 @@ export interface GiftOrPayment {
   ownerUserId?: string | null;
   designatedToSchool: boolean;
   tags?: string | null;
+  /** Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time. */
+  thankYouSentAt?: string | null;
+  /** FK to the email_messages row that was identified as the thank-you. Read-only; set via /link-thank-you-email or the thank_you_acknowledgment proposal accept. */
+  thankYouEmailMessageId?: string | null;
+  /** Document attachments on the linked thank-you email (PDF / DOCX / etc.). Populated only on the detail endpoint. */
+  readonly thankYouAttachments?: readonly ThankYouAttachment[] | null;
   funderName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
@@ -1445,6 +1461,28 @@ export interface UpdateGiftOrPaymentBody {
   ownerUserId?: string | null;
   designatedToSchool?: boolean;
   tags?: string | null;
+}
+
+export interface CandidateThankYouEmail {
+  emailMessageId: string;
+  gmailMessageId?: string | null;
+  subject?: string | null;
+  fromEmail?: string | null;
+  toEmails?: string[] | null;
+  sentAt: string;
+  snippet?: string | null;
+  hasDocumentAttachment: boolean;
+  documentAttachmentCount?: number;
+  /** True when this candidate matches the 30-day + 'thank' + has-document-attachment heuristic. */
+  autoSuggested?: boolean;
+}
+
+export interface CandidateThankYouEmailList {
+  data: CandidateThankYouEmail[];
+}
+
+export interface LinkThankYouEmailBody {
+  emailMessageId: string;
 }
 
 export interface GiftAllocationList {
@@ -1741,6 +1779,7 @@ export const EmailProposalKind = {
   bounce_soft: "bounce_soft",
   signature_update: "signature_update",
   grant_opportunity: "grant_opportunity",
+  thank_you_acknowledgment: "thank_you_acknowledgment",
 } as const;
 
 export type EmailProposalStatus =
@@ -1918,11 +1957,20 @@ export const TaskStatus = {
   cancelled: "cancelled",
 } as const;
 
+export type TaskKind = (typeof TaskKind)[keyof typeof TaskKind];
+
+export const TaskKind = {
+  general: "general",
+  reporting_deadline: "reporting_deadline",
+  thank_you_followup: "thank_you_followup",
+} as const;
+
 export interface Task {
   id: string;
   title: string;
   description?: string | null;
   dueDate?: string | null;
+  kind: TaskKind;
   status: TaskStatus;
   completedAt?: string | null;
   assigneeUserId?: string | null;
@@ -1946,6 +1994,7 @@ export interface CreateTaskBody {
   title: string;
   description?: string;
   dueDate?: string;
+  kind?: TaskKind;
   status?: TaskStatus;
   assigneeUserId?: string;
   personIds?: string[];
@@ -1960,6 +2009,7 @@ export interface UpdateTaskBody {
   title?: string;
   description?: string | null;
   dueDate?: string | null;
+  kind?: TaskKind;
   status?: TaskStatus;
   assigneeUserId?: string | null;
   personIds?: string[] | null;
@@ -2675,6 +2725,7 @@ export type ListTasksParams = {
   mentionUserId?: string;
   assigneeUserId?: string;
   createdByUserId?: string;
+  kind?: TaskKind[];
   status?: TaskStatus[];
   /**
    * Inclusive upper bound on due_date.

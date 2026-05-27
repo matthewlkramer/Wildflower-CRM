@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
-import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, funders, households, people } from "@workspace/db/schema";
+import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, funders, households, people, tasks } from "@workspace/db/schema";
 import { alias } from "drizzle-orm/pg-core";
 import { and, count, desc, eq, exists, getTableColumns, ilike, inArray, sql, type SQL } from "drizzle-orm";
 
@@ -369,7 +369,31 @@ router.patch(
       .from(opportunitiesAndPledges)
       .where(eq(opportunitiesAndPledges.id, id))
       .then((r) => r[0]);
-    res.json(final ?? row);
+
+    // Reporting-deadline prompt side-channel: when this PATCH flips
+    // status into a state with grant-reporting obligations (pledge or
+    // cash_in) AND no reporting_deadline tasks exist yet for this
+    // opp, surface a flag so the frontend can open the "set deadlines"
+    // dialog. Idempotent — once the user creates the first
+    // reporting_deadline task the flag goes away on subsequent
+    // PATCHes.
+    let promptForReportingDeadlines = false;
+    const newStatus = (final ?? row).status;
+    const becameReportable =
+      (newStatus === "pledge" || newStatus === "cash_in") &&
+      existing.status !== newStatus;
+    if (becameReportable) {
+      const [{ value: existingCount } = { value: 0 }] = await db
+        .select({ value: count() })
+        .from(tasks)
+        .where(and(
+          eq(tasks.kind, "reporting_deadline"),
+          sql`${tasks.opportunityIds} @> ARRAY[${id}]::text[]`,
+        ));
+      if (Number(existingCount) === 0) promptForReportingDeadlines = true;
+    }
+
+    res.json({ ...(final ?? row), promptForReportingDeadlines });
   }),
 );
 

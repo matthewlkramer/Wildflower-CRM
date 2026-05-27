@@ -34,7 +34,7 @@ import {
 const router: IRouter = Router();
 router.use(requireAuth);
 
-const TASKS_ARRAY_PARAMS = ["status"] as const;
+const TASKS_ARRAY_PARAMS = ["status", "kind"] as const;
 
 router.get(
   "/tasks",
@@ -53,6 +53,7 @@ router.get(
       if (orClause) filters.push(orClause);
     }
     if (q.status && q.status.length > 0) filters.push(inArray(tasks.status, q.status));
+    if (q.kind && q.kind.length > 0) filters.push(inArray(tasks.kind, q.kind));
     if (q.assigneeUserId) filters.push(eq(tasks.assigneeUserId, q.assigneeUserId));
     if (q.createdByUserId) filters.push(eq(tasks.createdByUserId, q.createdByUserId));
     if (q.dueBefore) filters.push(lte(tasks.dueDate, q.dueBefore));

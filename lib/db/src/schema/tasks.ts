@@ -5,7 +5,7 @@ import {
   timestamp,
   date,
 } from "drizzle-orm/pg-core";
-import { taskStatusEnum } from "./_enums";
+import { taskKindEnum, taskStatusEnum } from "./_enums";
 import { users } from "./users";
 
 /**
@@ -28,6 +28,10 @@ export const tasks = pgTable(
     title: text("title").notNull(),
     description: text("description"),
     dueDate: date("due_date"),
+    // What kind of task this is. `reporting_deadline` rows feed the
+    // /reporting-deadlines dashboard; everything else surfaces in the
+    // per-entity task panels.
+    kind: taskKindEnum("kind").notNull().default("general"),
     status: taskStatusEnum("status").notNull().default("open"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     assigneeUserId: text("assignee_user_id").references(() => users.id, {
@@ -53,6 +57,7 @@ export const tasks = pgTable(
     index("tasks_assignee_user_id_idx").on(t.assigneeUserId),
     index("tasks_created_by_user_id_idx").on(t.createdByUserId),
     index("tasks_status_idx").on(t.status),
+    index("tasks_kind_idx").on(t.kind),
     index("tasks_due_date_idx").on(t.dueDate),
     index("tasks_person_ids_gin_idx").using("gin", t.personIds),
     index("tasks_funder_ids_gin_idx").using("gin", t.funderIds),

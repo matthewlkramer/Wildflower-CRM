@@ -20,6 +20,7 @@ import {
   parsePagination,
 } from "../lib/helpers";
 import { applyAction, validateAction, type ApplyActionResult } from "../lib/applyProposalActions";
+import { emailMessages, giftsAndPayments } from "@workspace/db/schema";
 
 /**
  * Email-intelligence proposal queue.
@@ -158,6 +159,64 @@ router.post(
         .returning();
       if (!claimed) return undefined;
       const proposal = claimed;
+
+      // ── Thank-you acknowledgment: no ProposedAction dispatcher.
+      // The detector stores the gift id in payload.giftId; accept
+      // stamps the link onto gifts_and_payments and exits.
+      // The detector resolves the funder/gift from outbound recipients
+      // and the gift list, so we do NOT honor a client override here —
+      // that would let a reviewer link an unrelated gift.
+      if (proposal.kind === "thank_you_acknowledgment") {
+        const payload = (proposal.payload ?? {}) as Record<string, unknown>;
+        const giftId = typeof payload.giftId === "string" ? payload.giftId : null;
+        if (!giftId || !proposal.sourceMessageId) {
+          const failed: ApplyActionResult = {
+            type: "thank_you_acknowledgment" as unknown as ApplyActionResult["type"],
+            status: "failed",
+            message: "Thank-you proposal missing giftId or sourceMessageId.",
+          };
+          throw new ProposalApplyError(failed, [failed]);
+        }
+        const [msg] = await tx
+          .select({ sentAt: emailMessages.sentAt })
+          .from(emailMessages)
+          .where(eq(emailMessages.id, proposal.sourceMessageId))
+          .limit(1);
+        if (!msg) {
+          const failed: ApplyActionResult = {
+            type: "thank_you_acknowledgment" as unknown as ApplyActionResult["type"],
+            status: "failed",
+            message: "Source email message no longer exists.",
+          };
+          throw new ProposalApplyError(failed, [failed]);
+        }
+        const [updated] = await tx
+          .update(giftsAndPayments)
+          .set({
+            thankYouSentAt: msg.sentAt.toISOString().slice(0, 10),
+            thankYouEmailMessageId: proposal.sourceMessageId,
+            updatedAt: new Date(),
+          })
+          .where(eq(giftsAndPayments.id, giftId))
+          .returning({ id: giftsAndPayments.id });
+        if (!updated) {
+          const failed: ApplyActionResult = {
+            type: "thank_you_acknowledgment" as unknown as ApplyActionResult["type"],
+            status: "failed",
+            message: `Gift ${giftId} not found.`,
+          };
+          throw new ProposalApplyError(failed, [failed]);
+        }
+        return {
+          proposal,
+          applyResults: [{
+            type: "thank_you_acknowledgment" as unknown as ApplyActionResult["type"],
+            status: "applied",
+            message: `Linked thank-you email to gift ${giftId}.`,
+            createdId: giftId,
+          }],
+        };
+      }
 
       const rawActions = Array.isArray(proposal.proposedActions)
         ? (proposal.proposedActions as unknown[])
