@@ -5131,7 +5131,7 @@ export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
       .date()
       .nullish()
       .describe(
-        "Required by the closed_requires_completion_date CHECK when bulk-setting status to a closed value (won\/lost\/dormant) and the rows do not already have one.",
+        "Optional close date when bulk-setting status to won\/lost. Left null is allowed; the closed_requires_completion_date CHECK has been removed to support historical cleanup workflows.",
       ),
     coveredFiscalYears: zod
       .array(zod.string())

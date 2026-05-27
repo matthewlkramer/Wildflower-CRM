@@ -3065,7 +3065,7 @@ components:
         status:      { allOf: [ { $ref: "#/components/schemas/OpportunityStatus" } ], nullable: true }
         stage:       { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true }
         type:        { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
-        actualCompletionDate: { type: string, format: date, nullable: true, description: "Required by the closed_requires_completion_date CHECK when bulk-setting status to a closed value (won/lost/dormant) and the rows do not already have one." }
+        actualCompletionDate: { type: string, format: date, nullable: true, description: "Optional close date when bulk-setting status to won/lost. Left null is allowed; the closed_requires_completion_date CHECK has been removed to support historical cleanup workflows." }
         coveredFiscalYears:
           type: array
           items: { type: string }

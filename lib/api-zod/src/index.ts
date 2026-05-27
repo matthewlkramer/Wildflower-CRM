@@ -11,8 +11,10 @@ import {
  *
  * These mirror DB CHECK constraints so the API can return 400 instead of 500:
  *   - donor_xor: exactly one of funderId / individualGiverPersonId / householdId
- *   - closed_requires_completion_date (opps only):
- *     status in ('won','lost') => actualCompletionDate set
+ *
+ * (Previously also enforced `closed_requires_completion_date` — that DB CHECK
+ * and the matching invariant were dropped to support data-cleanup workflows
+ * where historical opps are bulk-marked won/lost without a known close date.)
  *
  * For PATCH routes, callers must validate the MERGED post-update state
  * (`{ ...existingRow, ...body }`), not the body alone — a partial PATCH can
@@ -21,8 +23,6 @@ import {
 
 export const DONOR_XOR_MESSAGE =
   "Exactly one of funderId, individualGiverPersonId, or householdId must be set (donor XOR).";
-export const CLOSED_REQUIRES_DATE_MESSAGE =
-  "actualCompletionDate is required when status is 'won' or 'lost'.";
 
 export interface DonorState {
   funderId?: string | null;
@@ -58,15 +58,6 @@ export function validateOppInvariants(
   const issues: InvariantIssue[] = [];
   if (donorCount(state) !== 1) {
     issues.push({ path: "funderId", message: DONOR_XOR_MESSAGE });
-  }
-  if (
-    (state.status === "won" || state.status === "lost") &&
-    !state.actualCompletionDate
-  ) {
-    issues.push({
-      path: "actualCompletionDate",
-      message: CLOSED_REQUIRES_DATE_MESSAGE,
-    });
   }
   return issues;
 }

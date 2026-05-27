@@ -2021,7 +2021,7 @@ export interface BulkUpdateOpportunitiesPatch {
   status?: OpportunityStatus | null;
   stage?: OpportunityStage | null;
   type?: OpportunityType | null;
-  /** Required by the closed_requires_completion_date CHECK when bulk-setting status to a closed value (won/lost/dormant) and the rows do not already have one. */
+  /** Optional close date when bulk-setting status to won/lost. Left null is allowed; the closed_requires_completion_date CHECK has been removed to support historical cleanup workflows. */
   actualCompletionDate?: string | null;
   /** Set of fiscal-year slugs (e.g. 'fy2026') to attach to each opportunity via pledge_allocations. Combined with coveredFiscalYearsMode. */
   coveredFiscalYears?: string[];
