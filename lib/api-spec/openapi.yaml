@@ -85,6 +85,9 @@ paths:
       operationId: rejectEmailProposal
       tags: [email-proposals]
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/RejectEmailProposalBody" } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposal" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -3177,6 +3180,10 @@ components:
         updatedAt:          { type: string, format: date-time }
         resolvedAt:         { type: string, format: date-time, nullable: true }
         resolvedByUserId:   { type: string, nullable: true }
+        # Free-text reviewer feedback captured on accept/reject. Used
+        # downstream for prompt tuning — pair with `payload` and
+        # `status` to see what the LLM proposed vs. what the human said.
+        reviewerNote:       { type: string, nullable: true }
     ProposedAction:
       type: object
       required: [type, reason]
@@ -3236,8 +3243,19 @@ components:
       # what's relevant. e.g. signature_update may receive {applyTitle:true,
       # applyPhone:false} to opt into individual field copies; auto_responder_move
       # may receive {newPrimaryFunderId} to override the parsed company guess.
+      # `reviewerNote` is recognized for every kind and stored on the
+      # proposal row for prompt-tuning feedback.
       type: object
       additionalProperties: true
+      properties:
+        reviewerNote: { type: string, nullable: true }
+    RejectEmailProposalBody:
+      # Optional reviewer feedback captured at reject time. The whole
+      # body is optional so existing clients that POST with no body keep
+      # working unchanged.
+      type: object
+      properties:
+        reviewerNote: { type: string, nullable: true }
     UnrecognizedCorrespondent:
       type: object
       required: [emailAddress, threadCount, firstSeenAt, lastSeenAt]

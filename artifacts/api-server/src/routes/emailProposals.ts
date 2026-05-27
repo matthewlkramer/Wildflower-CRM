@@ -133,6 +133,13 @@ router.post(
     // accept handlers themselves read only the keys they care about.
     const body = parseOrBadRequest(AcceptEmailProposalBody, req.body ?? {}, res);
     if (!body) return;
+    // `reviewerNote` is a top-level optional field on every accept body
+    // for prompt-tuning feedback. Trim & ignore empty strings so the
+    // column stays NULL when the reviewer didn't write anything.
+    const reviewerNoteRaw = (body as Record<string, unknown>).reviewerNote;
+    const reviewerNote = typeof reviewerNoteRaw === "string" && reviewerNoteRaw.trim()
+      ? reviewerNoteRaw.trim()
+      : null;
 
     // Atomic state-transition: claim the proposal by flipping status
     // pending → applied inside the same transaction that runs the
@@ -147,6 +154,7 @@ router.post(
           status: "applied",
           resolvedAt: new Date(),
           resolvedByUserId: user.id,
+          reviewerNote,
           updatedAt: new Date(),
         })
         .where(
@@ -329,12 +337,18 @@ router.post(
       res.status(401).json({ error: "unauthorized" });
       return;
     }
+    // Body is optional — clients that POST nothing still work.
+    const rawNote = (req.body as Record<string, unknown> | undefined)?.reviewerNote;
+    const reviewerNote = typeof rawNote === "string" && rawNote.trim()
+      ? rawNote.trim()
+      : null;
     const [row] = await db
       .update(emailProposals)
       .set({
         status: "rejected",
         resolvedAt: new Date(),
         resolvedByUserId: user.id,
+        reviewerNote,
         updatedAt: new Date(),
       })
       .where(

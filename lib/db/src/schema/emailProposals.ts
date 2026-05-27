@@ -97,6 +97,11 @@ export const emailProposals = pgTable(
     resolvedByUserId: text("resolved_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    // Optional free-text reviewer feedback captured when the user
+    // accepts or (more usefully) rejects a proposal. Lives on the same
+    // row as the verdict so prompt-tuning can join {payload, verdict,
+    // note} without extra tables. Nullable; UI defaults to empty.
+    reviewerNote: text("reviewer_note"),
   },
   (t) => [
     // Dedupe only suppresses while a proposal is still pending. Once a

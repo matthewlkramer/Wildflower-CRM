@@ -20,6 +20,16 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
 type Kind =
@@ -152,11 +162,23 @@ function ProposalList({ kind }: { kind: Kind }) {
         }),
     },
   });
+  // Dismiss opens a small dialog that captures an optional reviewer
+  // note (free-text "why was this wrong?"). The note is stored on the
+  // proposal row alongside the verdict so prompt-tuning can later join
+  // {payload, status, reviewerNote} without an extra table. Submitting
+  // with an empty note is allowed — the note is purely opt-in.
+  const [rejectTarget, setRejectTarget] = useState<{
+    id: string;
+    summary: string;
+  } | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
   const reject = useRejectEmailProposal({
     mutation: {
       onSuccess: () => {
         invalidate();
         toast({ title: "Dismissed" });
+        setRejectTarget(null);
+        setRejectNote("");
       },
       onError: (e) =>
         toast({
@@ -214,7 +236,10 @@ function ProposalList({ kind }: { kind: Kind }) {
                 size="sm"
                 variant="outline"
                 disabled={reject.isPending}
-                onClick={() => reject.mutate({ id: p.id })}
+                onClick={() => {
+                  setRejectNote("");
+                  setRejectTarget({ id: p.id, summary: summarizeProposal(p) });
+                }}
                 data-testid={`btn-reject-${p.id}`}
               >
                 Dismiss
@@ -239,6 +264,69 @@ function ProposalList({ kind }: { kind: Kind }) {
           </CardContent>
         </Card>
       ))}
+      <Dialog
+        open={rejectTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRejectTarget(null);
+            setRejectNote("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dismiss proposal</DialogTitle>
+            <DialogDescription>
+              Optional — tell us why the suggestion was wrong. This goes
+              into prompt-tuning logs. Leave blank to dismiss without a
+              note.
+            </DialogDescription>
+          </DialogHeader>
+          {rejectTarget ? (
+            <div className="space-y-3">
+              <div className="text-sm font-medium truncate">
+                {rejectTarget.summary}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="reviewer-note">Reviewer note</Label>
+                <Textarea
+                  id="reviewer-note"
+                  value={rejectNote}
+                  onChange={(e) => setRejectNote(e.target.value)}
+                  rows={4}
+                  placeholder="e.g. Wrong person — same name, different city"
+                  data-testid="input-reviewer-note"
+                />
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRejectTarget(null);
+                setRejectNote("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={reject.isPending || !rejectTarget}
+              onClick={() => {
+                if (!rejectTarget) return;
+                const note = rejectNote.trim();
+                reject.mutate({
+                  id: rejectTarget.id,
+                  data: note ? { reviewerNote: note } : {},
+                });
+              }}
+              data-testid="btn-confirm-reject"
+            >
+              Dismiss
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

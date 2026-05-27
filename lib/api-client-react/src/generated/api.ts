@@ -146,6 +146,7 @@ import type {
   PromoteActionItemBody,
   Region,
   RegionList,
+  RejectEmailProposalBody,
   RequestUploadUrl200,
   RequestUploadUrlBody,
   SavedView,
@@ -447,11 +448,14 @@ export const getRejectEmailProposalUrl = (id: string) => {
 
 export const rejectEmailProposal = async (
   id: string,
+  rejectEmailProposalBody?: RejectEmailProposalBody,
   options?: RequestInit,
 ): Promise<EmailProposal> => {
   return customFetch<EmailProposal>(getRejectEmailProposalUrl(id), {
     ...options,
     method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(rejectEmailProposalBody),
   });
 };
 
@@ -462,14 +466,14 @@ export const getRejectEmailProposalMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof rejectEmailProposal>>,
     TError,
-    { id: string },
+    { id: string; data: BodyType<RejectEmailProposalBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof rejectEmailProposal>>,
   TError,
-  { id: string },
+  { id: string; data: BodyType<RejectEmailProposalBody> },
   TContext
 > => {
   const mutationKey = ["rejectEmailProposal"];
@@ -483,11 +487,11 @@ export const getRejectEmailProposalMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof rejectEmailProposal>>,
-    { id: string }
+    { id: string; data: BodyType<RejectEmailProposalBody> }
   > = (props) => {
-    const { id } = props ?? {};
+    const { id, data } = props ?? {};
 
-    return rejectEmailProposal(id, requestOptions);
+    return rejectEmailProposal(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -496,7 +500,7 @@ export const getRejectEmailProposalMutationOptions = <
 export type RejectEmailProposalMutationResult = NonNullable<
   Awaited<ReturnType<typeof rejectEmailProposal>>
 >;
-
+export type RejectEmailProposalMutationBody = BodyType<RejectEmailProposalBody>;
 export type RejectEmailProposalMutationError = ErrorType<NotFoundResponse>;
 
 export const useRejectEmailProposal = <
@@ -506,14 +510,14 @@ export const useRejectEmailProposal = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof rejectEmailProposal>>,
     TError,
-    { id: string },
+    { id: string; data: BodyType<RejectEmailProposalBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof rejectEmailProposal>>,
   TError,
-  { id: string },
+  { id: string; data: BodyType<RejectEmailProposalBody> },
   TContext
 > => {
   return useMutation(getRejectEmailProposalMutationOptions(options));

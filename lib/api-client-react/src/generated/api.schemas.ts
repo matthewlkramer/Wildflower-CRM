@@ -1852,6 +1852,7 @@ export interface EmailProposal {
   updatedAt: string;
   resolvedAt?: string | null;
   resolvedByUserId?: string | null;
+  reviewerNote?: string | null;
 }
 
 export interface EmailProposalList {
@@ -1888,7 +1889,12 @@ export interface EmailProposalActionFailed {
 }
 
 export interface AcceptEmailProposalBody {
+  reviewerNote?: string | null;
   [key: string]: unknown;
+}
+
+export interface RejectEmailProposalBody {
+  reviewerNote?: string | null;
 }
 
 export interface UnrecognizedCorrespondent {

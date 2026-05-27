@@ -99,6 +99,7 @@ export const ListEmailProposalsResponse = zod.object({
       updatedAt: zod.string().datetime({}),
       resolvedAt: zod.string().datetime({}).nullish(),
       resolvedByUserId: zod.string().nullish(),
+      reviewerNote: zod.string().nullish(),
     }),
   ),
   pagination: zod.object({
@@ -130,7 +131,9 @@ export const AcceptEmailProposalParams = zod.object({
   id: zod.coerce.string(),
 });
 
-export const AcceptEmailProposalBody = zod.record(zod.string(), zod.unknown());
+export const AcceptEmailProposalBody = zod.object({
+  reviewerNote: zod.string().nullish(),
+});
 
 export const AcceptEmailProposalResponse = zod.object({
   id: zod.string(),
@@ -187,10 +190,15 @@ export const AcceptEmailProposalResponse = zod.object({
   updatedAt: zod.string().datetime({}),
   resolvedAt: zod.string().datetime({}).nullish(),
   resolvedByUserId: zod.string().nullish(),
+  reviewerNote: zod.string().nullish(),
 });
 
 export const RejectEmailProposalParams = zod.object({
   id: zod.coerce.string(),
+});
+
+export const RejectEmailProposalBody = zod.object({
+  reviewerNote: zod.string().nullish(),
 });
 
 export const RejectEmailProposalResponse = zod.object({
@@ -248,6 +256,7 @@ export const RejectEmailProposalResponse = zod.object({
   updatedAt: zod.string().datetime({}),
   resolvedAt: zod.string().datetime({}).nullish(),
   resolvedByUserId: zod.string().nullish(),
+  reviewerNote: zod.string().nullish(),
 });
 
 export const listUnrecognizedCorrespondentsQueryDaysDefault = 60;
