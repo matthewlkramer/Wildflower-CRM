@@ -262,7 +262,22 @@ function OppView({
                       "—"
                     )
                   }
-                  onSave={(next) => patch({ status: next })}
+                  onSave={(next) => {
+                    // Convenience: when closing a single opp that has no
+                    // completion date yet, default to today so the user
+                    // doesn't have to set it manually. The bulk-edit path
+                    // intentionally does NOT do this (cleanup of historical
+                    // rows shouldn't invent a fake date).
+                    const closed =
+                      next === "won" || next === "lost" || next === "dormant";
+                    const body: UpdateOpportunityOrPledgeBody = { status: next };
+                    if (closed && !opp.actualCompletionDate) {
+                      body.actualCompletionDate = new Date()
+                        .toISOString()
+                        .slice(0, 10);
+                    }
+                    return patch(body);
+                  }}
                 />
               )}
             </Row>
