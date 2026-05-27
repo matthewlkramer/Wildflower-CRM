@@ -67,4 +67,9 @@ Stage 1 rewrote the DB schema and seeded it from Airtable. Stage 2 has now lande
 ### Known follow-ups (non-blocking)
 
 - **FY boundary uses UTC.** `currentFiscalYear` in `/dashboard-summary` is computed from `getUTCMonth/getUTCFullYear`. Around midnight on Jun 30 / Jul 1 it can flip up to a day early/late depending on the org's local timezone. Worth pinning to America/Chicago (or whichever timezone Wildflower books in) before next fiscal year-end.
-- **Tests.** No automated API or component tests yet for the new analytics endpoints or for the donor-xor invariants. Worth adding a small fixture suite before further schema churn.
+
+### Stage 3 — status
+
+- **Grant-letter upload UI** — `POST /api/storage/uploads/request-url` (Clerk-gated) issues a presigned GCS URL; client uploads directly to GCS then PATCHes the opp with `grantLetterUrl` (`/api/storage/objects/<id>`) + `grantLetterFilename`. Server-side `applyDerivedOppFields` flips `wasPledge` sticky-true on the next read. Component: `artifacts/wildflower-crm/src/components/grant-letter-upload.tsx`. Routes copied from the object-storage skill template into `artifacts/api-server/src/routes/storage.ts`.
+- **Tests** — vitest configured on `@workspace/api-server` (`pnpm --filter @workspace/api-server run test`). Coverage: `deriveOppFields` derivation matrix + dormant/lost stickiness + wasPledge stickiness (`src/__tests__/derive-opp-fields.test.ts`), donor-xor invariants (`src/__tests__/donor-xor.test.ts`). `pledgeStage.ts` was refactored so `deriveOppFields` is a pure function reusable by tests + the DB-touching `applyDerivedOppFields` wrapper.
+- **Backfill** — `pnpm --filter @workspace/api-server run backfill:derived-opps` (`src/scripts/backfill-derived-opp-fields.ts`) iterates every opportunity id and calls `applyDerivedOppFields`. Idempotent.

@@ -2595,3 +2595,24 @@ Omit to include all entities.
  */
   entityId?: string;
 };
+
+export type RequestUploadUrlBody = {
+  /** @minLength 1 */
+  name: string;
+  /** @minimum 1 */
+  size: number;
+  /** @minLength 1 */
+  contentType: string;
+};
+
+export type RequestUploadUrl200Metadata = {
+  name?: string;
+  size?: number;
+  contentType?: string;
+};
+
+export type RequestUploadUrl200 = {
+  uploadURL: string;
+  objectPath: string;
+  metadata?: RequestUploadUrl200Metadata;
+};

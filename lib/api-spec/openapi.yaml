@@ -37,6 +37,7 @@ tags:
   - { name: correspondents }
   - { name: notes }
   - { name: tasks }
+  - { name: storage }
 
 paths:
   # ─── Email intelligence proposals ──────────────────────────────────────────
@@ -1307,6 +1308,41 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateGiftsBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /storage/uploads/request-url:
+    post:
+      tags: [storage]
+      operationId: requestUploadUrl
+      summary: Request a presigned URL for file upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, size, contentType]
+              properties:
+                name: { type: string, minLength: 1 }
+                size: { type: integer, minimum: 1 }
+                contentType: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Presigned upload URL generated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [uploadURL, objectPath]
+                properties:
+                  uploadURL: { type: string, format: uri }
+                  objectPath: { type: string }
+                  metadata:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      size: { type: integer }
+                      contentType: { type: string }
         "400": { $ref: "#/components/responses/BadRequest" }
 
 components:

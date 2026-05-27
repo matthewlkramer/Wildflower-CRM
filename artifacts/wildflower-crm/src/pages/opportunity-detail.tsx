@@ -19,6 +19,7 @@ import { ActivityTimeline } from "@/components/activity-timeline";
 import { NotesPanel } from "@/components/notes-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { GrantLetterUpload } from "@/components/grant-letter-upload";
 import {
   InlineEditBoolean,
   InlineEditCurrency,
@@ -367,46 +368,24 @@ function OppView({
             </Row>
             <Row label="Grant letter">
               {/*
-                Manual URL field for now — drop-zone upload is a
-                planned follow-up that will POST to the API server's
-                object-storage helper and then PATCH this row.
+                File upload via presigned URL → /api/storage/objects/<id>.
                 Setting a URL also flips was_pledge sticky-true on
                 the server side (see applyDerivedOppFields).
               */}
-              <InlineEditText
-                label="Grant letter URL"
-                testIdBase="opp-grant-letter-url"
-                value={opp.grantLetterUrl ?? null}
-                placeholder="https://…"
-                display={
-                  opp.grantLetterUrl ? (
-                    <a
-                      href={opp.grantLetterUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      {opp.grantLetterFilename ?? "View letter"}
-                    </a>
-                  ) : (
-                    "—"
-                  )
+              <GrantLetterUpload
+                url={opp.grantLetterUrl ?? null}
+                filename={opp.grantLetterFilename ?? null}
+                onUploaded={(next) =>
+                  patch({
+                    grantLetterUrl: next.grantLetterUrl,
+                    grantLetterFilename: next.grantLetterFilename,
+                  })
                 }
-                onSave={(next) => patch({ grantLetterUrl: next })}
+                onCleared={() =>
+                  patch({ grantLetterUrl: null, grantLetterFilename: null })
+                }
               />
             </Row>
-            {opp.grantLetterUrl && (
-              <Row label="Grant letter filename">
-                <InlineEditText
-                  label="Grant letter filename"
-                  testIdBase="opp-grant-letter-filename"
-                  value={opp.grantLetterFilename ?? null}
-                  placeholder="award_letter.pdf"
-                  display={opp.grantLetterFilename ?? "—"}
-                  onSave={(next) => patch({ grantLetterFilename: next })}
-                />
-              </Row>
-            )}
             <Row label="Owner">
               <InlineEditUserPicker
                 testIdBase="opp-owner"

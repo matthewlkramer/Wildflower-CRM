@@ -31,6 +31,7 @@ import emailProposalsRouter from "./emailProposals";
 import correspondentsRouter from "./correspondents";
 import notesRouter from "./notes";
 import tasksRouter from "./tasks";
+import storageRouter from "./storage";
 
 const router: IRouter = Router();
 
@@ -66,5 +67,6 @@ router.use(emailProposalsRouter);
 router.use(correspondentsRouter);
 router.use(notesRouter);
 router.use(tasksRouter);
+router.use(storageRouter);
 
 export default router;

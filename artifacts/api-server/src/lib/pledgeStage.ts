@@ -10,6 +10,61 @@ const PLEDGE_STAGES = new Set([
   "written_commitment",
 ]);
 
+export interface DeriveInput {
+  stage: string | null;
+  status: string | null;
+  wasPledge: boolean | null;
+  grantLetterUrl: string | null;
+  awardedAmount: string | number | null;
+  paidAmount: string | number;
+}
+
+export interface DeriveOutput {
+  stage: string | null;
+  status: string | null;
+  wasPledge: boolean;
+}
+
+/**
+ * Pure derivation of (status, stage, wasPledge) from current row state +
+ * total paid against the pledge. Mirrors the logic in applyDerivedOppFields
+ * so it can be unit-tested without touching the DB.
+ */
+export function deriveOppFields(input: DeriveInput): DeriveOutput {
+  const paidNum = Number(input.paidAmount ?? 0);
+  const awardedNum = Number(input.awardedAmount ?? 0);
+  const fullyPaid = awardedNum > 0 && paidNum >= awardedNum;
+
+  let wasPledge = input.wasPledge ?? false;
+  if (
+    !wasPledge &&
+    ((input.stage && PLEDGE_STAGES.has(input.stage)) || !!input.grantLetterUrl)
+  ) {
+    wasPledge = true;
+  }
+
+  let status = input.status;
+  if (status !== "dormant" && status !== "lost") {
+    if (fullyPaid || input.stage === "cash_in") {
+      status = "cash_in";
+    } else if (
+      input.stage === "verbal_commitment" ||
+      input.stage === "written_commitment"
+    ) {
+      status = "pledge";
+    } else {
+      status = "open";
+    }
+  }
+
+  let stage = input.stage;
+  if (fullyPaid && stage === "written_commitment") {
+    stage = "cash_in";
+  }
+
+  return { status, stage, wasPledge };
+}
+
 /**
  * Recompute the derived fields on a single opportunity/pledge row.
  *
@@ -49,39 +104,14 @@ export async function applyDerivedOppFields(
     .from(giftsAndPayments)
     .where(eq(giftsAndPayments.paymentOnPledgeId, id));
 
-  const paidNum = Number(paid);
-  const awardedNum = Number(row.awardedAmount ?? 0);
-  const fullyPaid = awardedNum > 0 && paidNum >= awardedNum;
-
-  // was_pledge: sticky-true
-  let wasPledge = row.wasPledge;
-  if (
-    !wasPledge &&
-    ((row.stage && PLEDGE_STAGES.has(row.stage)) || !!row.grantLetterUrl)
-  ) {
-    wasPledge = true;
-  }
-
-  // status: derive unless current is sticky (dormant/lost)
-  let status = row.status;
-  if (status !== "dormant" && status !== "lost") {
-    if (fullyPaid || row.stage === "cash_in") {
-      status = "cash_in";
-    } else if (
-      row.stage === "verbal_commitment" ||
-      row.stage === "written_commitment"
-    ) {
-      status = "pledge";
-    } else {
-      status = "open";
-    }
-  }
-
-  // stage: only the written_commitment→cash_in auto-advance
-  let stage = row.stage;
-  if (fullyPaid && stage === "written_commitment") {
-    stage = "cash_in";
-  }
+  const { status, stage, wasPledge } = deriveOppFields({
+    stage: row.stage,
+    status: row.status,
+    wasPledge: row.wasPledge,
+    grantLetterUrl: row.grantLetterUrl,
+    awardedAmount: row.awardedAmount,
+    paidAmount: paid,
+  });
 
   if (
     status !== row.status ||
@@ -90,7 +120,12 @@ export async function applyDerivedOppFields(
   ) {
     await db
       .update(opportunitiesAndPledges)
-      .set({ status, wasPledge, stage, updatedAt: new Date() })
+      .set({
+        status: status as typeof row.status,
+        wasPledge,
+        stage: stage as typeof row.stage,
+        updatedAt: new Date(),
+      })
       .where(eq(opportunitiesAndPledges.id, id));
   }
 }
