@@ -132,9 +132,11 @@ export default function Opportunities({
   // produce distinct keys / refetches).
   const effectiveStatuses = [...statuses].sort();
 
+  const ts = useTableState("opportunities");
+  const sortActive = ts.sort.key !== null;
   const params: ListOpportunitiesAndPledgesParams = {
-    limit: PAGE_SIZE,
-    page,
+    limit: sortActive ? 10000 : PAGE_SIZE,
+    page: sortActive ? 1 : page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(pledgeView ? { pledgeView } : {}),
     ...(effectiveStatuses.length > 0
@@ -155,7 +157,6 @@ export default function Opportunities({
 
   const rows = data?.data ?? [];
 
-  const ts = useTableState("opportunities");
   const userNames = useUserNameMap();
   const STAGE_ORDER: Record<string, number> = {
     cold_lead: 1, warm_lead: 2, in_conversation: 3, convince: 4,
@@ -188,6 +189,12 @@ export default function Opportunities({
   );
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pagedRows = useMemo(() => {
+    if (!sortActive) return sortedRows;
+    const maxPage = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
+    const safePage = Math.min(Math.max(1, page), maxPage);
+    return sortedRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  }, [sortActive, sortedRows, page]);
 
   const isPledgeView = pledgeView === "pledges";
 
@@ -347,10 +354,10 @@ export default function Opportunities({
               <TableHead className="w-8">
                 <Checkbox
                   checked={
-                    sortedRows.length > 0 &&
-                    sortedRows.every((r) => selection.isSelected(r.id))
+                    pagedRows.length > 0 &&
+                    pagedRows.every((r) => selection.isSelected(r.id))
                   }
-                  onCheckedChange={() => selection.toggleVisible(sortedRows.map((r) => r.id))}
+                  onCheckedChange={() => selection.toggleVisible(pagedRows.map((r) => r.id))}
                   aria-label="Select all opportunities on this page"
                   data-testid="checkbox-select-all-opps"
                 />
@@ -387,10 +394,10 @@ export default function Opportunities({
                   {error instanceof Error ? error.message : "Failed to load opportunities."}
                 </TableCell>
               </TableRow>
-            ) : sortedRows.length === 0 ? (
+            ) : pagedRows.length === 0 ? (
               <TableRow><TableCell colSpan={11} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
-              sortedRows.map((o) => {
+              pagedRows.map((o) => {
                 const coveredFys = (o.coveredFiscalYears ?? []).map((y) => y.toUpperCase());
                 const entities = (o.entityIds ?? []).map(
                   (id) => entityNameById.get(id) ?? id,

@@ -2377,7 +2377,7 @@ export type ListEmailProposalsParams = {
   funderId?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2404,7 +2404,7 @@ export type ListRegionsParams = {
   search?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2419,7 +2419,7 @@ export type ListSchoolsParams = {
   search?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2455,7 +2455,7 @@ export type ListFundersParams = {
   priority?: Priority[];
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2469,7 +2469,7 @@ export type ListOrganizationsParams = {
   type?: OrganizationType;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2483,7 +2483,7 @@ export type ListPaymentIntermediariesParams = {
   type?: PaymentIntermediaryType;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2497,7 +2497,7 @@ export type ListHouseholdsParams = {
   active?: boolean;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2516,7 +2516,7 @@ export type ListPeopleParams = {
   ownerUserId?: string[];
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2533,7 +2533,7 @@ export type ListPeopleEntityRolesParams = {
   householdId?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2550,7 +2550,7 @@ export type ListEmailsParams = {
   householdId?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2563,7 +2563,7 @@ export type ListPhoneNumbersParams = {
   personId?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2580,7 +2580,7 @@ export type ListAddressesParams = {
   householdId?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2628,7 +2628,7 @@ years.
   fiscalYear?: string[];
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2649,7 +2649,7 @@ export type ListPledgeAllocationsParams = {
   pledgeOrOpportunityId?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2683,7 +2683,7 @@ fiscal years.
   fiscalYear?: string[];
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2696,7 +2696,7 @@ export type ListGiftAllocationsParams = {
   giftId?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2714,7 +2714,7 @@ export type ListInteractionsParams = {
   kind?: InteractionKind[];
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2737,7 +2737,7 @@ export type ListNotesParams = {
   authorUserId?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2768,7 +2768,7 @@ export type ListTasksParams = {
   dueAfter?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2784,7 +2784,7 @@ export type ListMeetingNotesParams = {
   creatorUserId?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2830,7 +2830,7 @@ export type ListEmailMessagesParams = {
   householdId?: string;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**
@@ -2859,7 +2859,7 @@ export type ListCalendarEventsParams = {
   order?: ListCalendarEventsOrder;
   /**
    * @minimum 1
-   * @maximum 1000
+   * @maximum 10000
    */
   limit?: LimitParameter;
   /**

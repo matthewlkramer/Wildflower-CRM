@@ -75,9 +75,11 @@ export default function Gifts() {
   // selected entities. Mirrors the dashboard and opportunities pages.
   const { selected: globalEntityIds } = useEntityFilter();
 
+  const ts = useTableState("gifts");
+  const sortActive = ts.sort.key !== null;
   const params: ListGiftsAndPaymentsParams = {
-    limit: PAGE_SIZE,
-    page,
+    limit: sortActive ? 10000 : PAGE_SIZE,
+    page: sortActive ? 1 : page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as GiftType[] } : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
@@ -91,7 +93,6 @@ export default function Gifts() {
     query: { queryKey: getListGiftsAndPaymentsQueryKey(params) },
   });
 
-  const ts = useTableState("gifts");
   const userNames = useUserNameMap();
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey(), staleTime: 5 * 60_000 },
@@ -124,6 +125,12 @@ export default function Gifts() {
       ),
     [rows, ts.sort, userNames],
   );
+  const pagedRows = useMemo(() => {
+    if (!sortActive) return sortedRows;
+    const maxPage = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
+    const safePage = Math.min(Math.max(1, page), maxPage);
+    return sortedRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  }, [sortActive, sortedRows, page]);
 
   // ─── Saved views ─────────────────────────────────────────────────
   type GiftsView = {
@@ -232,10 +239,10 @@ export default function Gifts() {
               <TableHead className="w-8">
                 <Checkbox
                   checked={
-                    sortedRows.length > 0 &&
-                    sortedRows.every((r) => selection.isSelected(r.id))
+                    pagedRows.length > 0 &&
+                    pagedRows.every((r) => selection.isSelected(r.id))
                   }
-                  onCheckedChange={() => selection.toggleVisible(sortedRows.map((r) => r.id))}
+                  onCheckedChange={() => selection.toggleVisible(pagedRows.map((r) => r.id))}
                   aria-label="Select all gifts on this page"
                   data-testid="checkbox-select-all-gifts"
                 />
@@ -260,10 +267,10 @@ export default function Gifts() {
                   {error instanceof Error ? error.message : "Failed to load gifts."}
                 </TableCell>
               </TableRow>
-            ) : sortedRows.length === 0 ? (
+            ) : pagedRows.length === 0 ? (
               <TableRow><TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">No gifts match these filters.</TableCell></TableRow>
             ) : (
-              sortedRows.map((g) => {
+              pagedRows.map((g) => {
                 const entities = (g.entityIds ?? []).map(
                   (id) => entityNameById.get(id) ?? id,
                 );

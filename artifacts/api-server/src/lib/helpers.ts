@@ -19,7 +19,7 @@ export function paramId(req: Request): string {
 export function parsePagination(
   query: { limit?: number; page?: number } | undefined,
 ): { limit: number; page: number; offset: number } {
-  const limit = Math.min(Math.max(query?.limit ?? 50, 1), 1000);
+  const limit = Math.min(Math.max(query?.limit ?? 50, 1), 10000);
   const page = Math.max(query?.page ?? 1, 1);
   return { limit, page, offset: (page - 1) * limit };
 }
