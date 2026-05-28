@@ -2441,18 +2441,19 @@ export type ListFiscalYearEntityGoalsParams = {
 
 export type ListFundersParams = {
   search?: string;
-  subtype?: FundingEntitySubtype[];
-  activeStatus?: ActiveStatus[];
-  connectionStatus?: ConnectionStatus[];
+  subtype?: string[];
+  activeStatus?: string[];
+  connectionStatus?: string[];
   enthusiasm?: Enthusiasm;
-  capacityRating?: CapacityRating[];
+  capacityRating?: string[];
   ownerUserId?: string[];
   /**
  * Filter to funders whose `priority` tier is in the given set
 (top/high/medium/low). Multi-value: repeat or comma-separate.
+Accepts the literal `__blank__` to match rows with no priority set.
 
  */
-  priority?: Priority[];
+  priority?: string[];
   /**
    * @minimum 1
    * @maximum 10000
@@ -2510,9 +2511,24 @@ export type ListPeopleParams = {
   search?: string;
   deceased?: boolean;
   regionId?: string;
-  capacityRating?: CapacityRating[];
-  connectionStatus?: ConnectionStatus[];
+  /**
+ * Capacity-rating slugs (see CapacityRating). Accepts the
+literal `__blank__` to match rows with no capacity rating set.
+
+ */
+  capacityRating?: string[];
+  /**
+ * Connection-status slugs (see ConnectionStatus). Accepts the
+literal `__blank__` to match rows with no connection status set.
+
+ */
+  connectionStatus?: string[];
   enthusiasm?: Enthusiasm;
+  /**
+ * Owner user-id values. Accepts the literal `__blank__` to match
+rows with no owner assigned.
+
+ */
   ownerUserId?: string[];
   /**
    * @minimum 1
@@ -2591,8 +2607,8 @@ export type ListAddressesParams = {
 
 export type ListOpportunitiesAndPledgesParams = {
   search?: string;
-  status?: OpportunityStatus[];
-  stage?: OpportunityStage[];
+  status?: string[];
+  stage?: string[];
   /**
  * Convenience filter encoding the page split:
   pledges       — wasPledge=true OR stage ∈ (conditional, verbal,
@@ -2607,7 +2623,7 @@ Omit to include all rows.
    * Filter strictly on the was_pledge column.
    */
   wasPledge?: boolean;
-  type?: OpportunityType[];
+  type?: string[];
   funderId?: string;
   householdId?: string;
   individualGiverPersonId?: string;
@@ -2660,7 +2676,7 @@ export type ListPledgeAllocationsParams = {
 
 export type ListGiftsAndPaymentsParams = {
   search?: string;
-  type?: GiftType[];
+  type?: string[];
   funderId?: string;
   householdId?: string;
   individualGiverPersonId?: string;

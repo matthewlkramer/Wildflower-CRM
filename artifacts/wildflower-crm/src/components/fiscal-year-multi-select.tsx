@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChevronDown } from "lucide-react";
+import { BLANK_VALUE, BLANK_LABEL } from "@/components/multi-filter-select";
 
 // Multi-select dropdown for the `fiscalYear` filter. Options are pulled
 // from the fiscal-years table (slugs like `fy2026`). Sorted newest →
@@ -13,10 +14,16 @@ export function FiscalYearMultiSelect({
   selected,
   onChange,
   testId = "select-fiscal-year",
+  includeBlank = true,
 }: {
   selected: string[];
   onChange: (v: string[]) => void;
   testId?: string;
+  /**
+   * When true (default) prepends a "(Blank)" option that matches
+   * opps/gifts with no allocation rows at all.
+   */
+  includeBlank?: boolean;
 }) {
   const { data: allFys } = useListFiscalYears();
   const [open, setOpen] = useState(false);
@@ -41,11 +48,15 @@ export function FiscalYearMultiSelect({
     else onChange([...selected, id]);
   };
 
+  const labelFor = (id: string): string => {
+    if (id === BLANK_VALUE) return BLANK_LABEL;
+    return allFys?.find((r) => r.id === id)?.label ?? id;
+  };
   const label =
     selected.length === 0
       ? "Any"
       : selected.length === 1
-        ? (allFys?.find((r) => r.id === selected[0])?.label ?? selected[0])
+        ? labelFor(selected[0]!)
         : `${selected.length} selected`;
 
   return (
@@ -68,6 +79,19 @@ export function FiscalYearMultiSelect({
         </PopoverTrigger>
         <PopoverContent className="w-[220px] p-2" align="start">
           <div className="max-h-[300px] overflow-y-auto space-y-1">
+            {includeBlank && (
+              <label
+                key={BLANK_VALUE}
+                className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted cursor-pointer text-sm"
+                data-testid={`option-fy-${BLANK_VALUE}`}
+              >
+                <Checkbox
+                  checked={selected.includes(BLANK_VALUE)}
+                  onCheckedChange={() => toggle(BLANK_VALUE)}
+                />
+                <span>{BLANK_LABEL}</span>
+              </label>
+            )}
             {options.length === 0 ? (
               <div className="text-sm text-muted-foreground px-2 py-1">
                 Loading…

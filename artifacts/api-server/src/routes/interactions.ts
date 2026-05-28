@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { interactions } from "@workspace/db/schema";
-import { and, desc, count, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, count, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   ListInteractionsQueryParams,
   CreateInteractionBody,
@@ -16,6 +16,7 @@ import {
   paramId,
   parseOrBadRequest,
   parsePagination,
+  splitBlank,
 } from "../lib/helpers";
 
 const router: IRouter = Router();
@@ -44,7 +45,12 @@ router.get(
       if (orClause) filters.push(orClause);
     }
     if (q.kind && q.kind.length > 0) filters.push(inArray(interactions.kind, q.kind));
-    if (q.ownerUserId && q.ownerUserId.length > 0) filters.push(inArray(interactions.ownerUserId, q.ownerUserId));
+    {
+      const f = splitBlank(q.ownerUserId as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(interactions.ownerUserId), inArray(interactions.ownerUserId, f.values))!);
+      else if (f.wantsBlank) filters.push(isNull(interactions.ownerUserId));
+      else if (f.values.length > 0) filters.push(inArray(interactions.ownerUserId, f.values));
+    }
     // Array containment — same `@>` slug-array pattern used elsewhere in the
     // codebase (see people.regionIds). Cheap thanks to the GIN indexes.
     if (q.personId) {

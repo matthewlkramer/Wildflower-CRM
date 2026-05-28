@@ -11,7 +11,7 @@ import {
   emails,
   peopleEntityRoles,
 } from "@workspace/db/schema";
-import { and, count, desc, eq, getTableColumns, gte, ilike, lte, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { getAppUser } from "../lib/appRequest";
 
 // See opportunitiesAndPledges.ts for rationale — same denormalized
@@ -57,7 +57,7 @@ import {
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { inArray } from "drizzle-orm";
@@ -87,13 +87,23 @@ router.get(
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.search) filters.push(ilike(giftsAndPayments.name, `%${q.search}%`));
-    if (q.type && q.type.length > 0) filters.push(inArray(giftsAndPayments.type, q.type));
+    {
+      const f = splitBlank(q.type as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(giftsAndPayments.type), inArray(giftsAndPayments.type, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(giftsAndPayments.type));
+      else if (f.values.length > 0) filters.push(inArray(giftsAndPayments.type, f.values as never[]));
+    }
     if (q.funderId) filters.push(eq(giftsAndPayments.funderId, q.funderId));
     if (q.householdId) filters.push(eq(giftsAndPayments.householdId, q.householdId));
     if (q.individualGiverPersonId) filters.push(eq(giftsAndPayments.individualGiverPersonId, q.individualGiverPersonId));
     if (q.paymentOnPledgeId) filters.push(eq(giftsAndPayments.paymentOnPledgeId, q.paymentOnPledgeId));
     if (q.paymentMethod) filters.push(eq(giftsAndPayments.paymentMethod, q.paymentMethod));
-    if (q.ownerUserId && q.ownerUserId.length > 0) filters.push(inArray(giftsAndPayments.ownerUserId, q.ownerUserId));
+    {
+      const f = splitBlank(q.ownerUserId as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(giftsAndPayments.ownerUserId), inArray(giftsAndPayments.ownerUserId, f.values))!);
+      else if (f.wantsBlank) filters.push(isNull(giftsAndPayments.ownerUserId));
+      else if (f.values.length > 0) filters.push(inArray(giftsAndPayments.ownerUserId, f.values));
+    }
     // Entity filter — EXISTS on gift_allocations so we don't fan rows out
     // when a single gift has multiple allocations. Driven by the global
     // entity filter in the header.
@@ -102,10 +112,25 @@ router.get(
         sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.entityId, q.entityId)})`,
       );
     }
-    if (q.fiscalYear && q.fiscalYear.length > 0) {
-      filters.push(
-        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.grantYear, q.fiscalYear)})`,
-      );
+    // Fiscal-year filter — supports the "(Blank)" sentinel meaning "no
+    // allocations". Real values continue to use EXISTS so gifts with
+    // multiple allocations don't fan out into duplicate rows.
+    {
+      const fyRaw = (q.fiscalYear as string[] | undefined) ?? [];
+      const { wantsBlank, values: fyValues } = splitBlank(fyRaw);
+      if (fyValues.length > 0 && wantsBlank) {
+        filters.push(
+          sql`(EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.grantYear, fyValues)}) OR NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id}))`,
+        );
+      } else if (fyValues.length > 0) {
+        filters.push(
+          sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.grantYear, fyValues)})`,
+        );
+      } else if (wantsBlank) {
+        filters.push(
+          sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id})`,
+        );
+      }
     }
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([

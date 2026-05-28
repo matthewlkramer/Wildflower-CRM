@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { funders, peopleEntityRoles, emails, addresses } from "@workspace/db/schema";
-import { and, asc, count, eq, getTableColumns, ilike, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, getTableColumns, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   ListFundersQueryParams,
   CreateFunderBody,
@@ -9,7 +9,7 @@ import {
   BulkUpdateFundersBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
@@ -74,13 +74,44 @@ router.get(
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.search) filters.push(ilike(funders.name, `%${q.search}%`));
-    if (q.subtype && q.subtype.length > 0) filters.push(inArray(funders.fundingEntitySubtype, q.subtype));
-    if (q.activeStatus && q.activeStatus.length > 0) filters.push(inArray(funders.activeStatus, q.activeStatus));
-    if (q.connectionStatus && q.connectionStatus.length > 0) filters.push(inArray(funders.connectionStatus, q.connectionStatus));
+    // Each filter folds the "__blank__" sentinel into an IS NULL OR-clause.
+    {
+      const f = splitBlank(q.subtype as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(funders.fundingEntitySubtype), inArray(funders.fundingEntitySubtype, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(funders.fundingEntitySubtype));
+      else if (f.values.length > 0) filters.push(inArray(funders.fundingEntitySubtype, f.values as never[]));
+    }
+    {
+      const f = splitBlank(q.activeStatus as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(funders.activeStatus), inArray(funders.activeStatus, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(funders.activeStatus));
+      else if (f.values.length > 0) filters.push(inArray(funders.activeStatus, f.values as never[]));
+    }
+    {
+      const f = splitBlank(q.connectionStatus as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(funders.connectionStatus), inArray(funders.connectionStatus, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(funders.connectionStatus));
+      else if (f.values.length > 0) filters.push(inArray(funders.connectionStatus, f.values as never[]));
+    }
     if (q.enthusiasm) filters.push(eq(funders.enthusiasm, q.enthusiasm));
-    if (q.capacityRating && q.capacityRating.length > 0) filters.push(inArray(funders.capacityRating, q.capacityRating));
-    if (q.ownerUserId && q.ownerUserId.length > 0) filters.push(inArray(funders.ownerUserId, q.ownerUserId));
-    if (q.priority && q.priority.length > 0) filters.push(inArray(funders.priority, q.priority));
+    {
+      const f = splitBlank(q.capacityRating as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(funders.capacityRating), inArray(funders.capacityRating, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(funders.capacityRating));
+      else if (f.values.length > 0) filters.push(inArray(funders.capacityRating, f.values as never[]));
+    }
+    {
+      const f = splitBlank(q.ownerUserId as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(funders.ownerUserId), inArray(funders.ownerUserId, f.values))!);
+      else if (f.wantsBlank) filters.push(isNull(funders.ownerUserId));
+      else if (f.values.length > 0) filters.push(inArray(funders.ownerUserId, f.values));
+    }
+    {
+      const f = splitBlank(q.priority as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(funders.priority), inArray(funders.priority, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(funders.priority));
+      else if (f.values.length > 0) filters.push(inArray(funders.priority, f.values as never[]));
+    }
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

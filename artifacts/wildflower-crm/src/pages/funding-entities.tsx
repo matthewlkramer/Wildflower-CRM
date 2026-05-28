@@ -294,6 +294,7 @@ export default function FundingEntities() {
           onChange={(v) => { setSubtypes(v); setPage(1); selection.clear(); }}
           options={SUBTYPES}
           testId="select-subtype"
+          includeBlank
         />
         <MultiFilterSelect
           label="Active status"
@@ -301,6 +302,7 @@ export default function FundingEntities() {
           onChange={(v) => { setActiveStatuses(v); setPage(1); selection.clear(); }}
           options={ACTIVE_STATUSES}
           testId="select-active-status"
+          includeBlank
         />
         <MultiFilterSelect
           label="Connection"
@@ -308,6 +310,7 @@ export default function FundingEntities() {
           onChange={(v) => { setConnectionStatuses(v); setPage(1); selection.clear(); }}
           options={CONNECTION_STATUSES}
           testId="select-connection-status"
+          includeBlank
         />
         <MultiFilterSelect
           label="Priority"
@@ -315,6 +318,7 @@ export default function FundingEntities() {
           onChange={(v) => { setPriorities(v); setPage(1); selection.clear(); }}
           options={PRIORITIES}
           testId="select-priority"
+          includeBlank
         />
         <OwnerMultiFilter
           selected={owners}

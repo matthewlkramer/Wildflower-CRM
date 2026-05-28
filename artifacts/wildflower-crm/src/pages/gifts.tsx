@@ -203,6 +203,7 @@ export default function Gifts() {
           onChange={(v) => { setTypes(v); setPage(1); selection.clear(); }}
           options={TYPES}
           testId="select-gift-type"
+          includeBlank
         />
         <OwnerMultiFilter
           selected={owners}

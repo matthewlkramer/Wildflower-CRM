@@ -259,6 +259,7 @@ export default function Individuals() {
           onChange={(v) => { setCapacityTiers(v); setPage(1); selection.clear(); }}
           options={CAPACITY_TIERS.map((t) => ({ value: t, label: formatCapacity(t) ?? t }))}
           testId="select-capacity"
+          includeBlank
         />
         <OwnerMultiFilter
           selected={owners}

@@ -88,6 +88,36 @@ export function parseBoolQuery(
  * Pass an array of `param` names; returns a shallow-cloned `req.query`
  * with each named param coerced to `string[]`.
  */
+/**
+ * Sentinel value sent by the frontend filter dropdowns to mean
+ * "match rows where this column is null". Mirrors the BLANK_VALUE
+ * constant in `multi-filter-select.tsx`.
+ */
+export const BLANK_VALUE = "__blank__";
+
+/**
+ * Result type for splitBlank — callers branch on `wantsBlank` to
+ * decide whether to OR an `IS NULL` clause onto an `IN (...)` filter.
+ */
+export type BlankSplit = {
+  wantsBlank: boolean;
+  values: string[];
+};
+
+/**
+ * Split a filter array into the `__blank__` sentinel + the remaining
+ * real values. Used by route handlers to fold "(Blank)" into the
+ * SQL where-clause without leaking the sentinel into `inArray`.
+ */
+export function splitBlank(values: string[] | undefined): BlankSplit {
+  if (!values || values.length === 0) {
+    return { wantsBlank: false, values: [] };
+  }
+  const wantsBlank = values.includes(BLANK_VALUE);
+  const real = wantsBlank ? values.filter((v) => v !== BLANK_VALUE) : values;
+  return { wantsBlank, values: real };
+}
+
 export function normalizeArrayQuery(
   query: Record<string, unknown>,
   params: readonly string[],

@@ -14,6 +14,15 @@ export type MultiFilterOption = {
   label: string;
 };
 
+/**
+ * Sentinel value used in any filter `selected` array to mean
+ * "rows where this column is null/empty". Sent to the API verbatim;
+ * server-side helpers translate it to `IS NULL` (or `NOT EXISTS` for
+ * EXISTS-style filters like fiscalYear).
+ */
+export const BLANK_VALUE = "__blank__";
+export const BLANK_LABEL = "(Blank)";
+
 type Props = {
   label: string;
   selected: string[];
@@ -22,6 +31,12 @@ type Props = {
   options: readonly string[] | readonly MultiFilterOption[];
   testId: string;
   width?: string;
+  /**
+   * When true, prepends a synthetic "(Blank)" option whose value is
+   * `BLANK_VALUE`. Use on filters that target nullable columns so users
+   * can find rows where the column is unset.
+   */
+  includeBlank?: boolean;
 };
 
 /**
@@ -38,15 +53,19 @@ export function MultiFilterSelect({
   options,
   testId,
   width = "w-[200px]",
+  includeBlank = false,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const normalized: MultiFilterOption[] =
+  const baseNormalized: MultiFilterOption[] =
     typeof options[0] === "string" || options.length === 0
       ? (options as readonly string[]).map((v) => ({
           value: v,
           label: formatEnum(v) ?? v,
         }))
       : (options as readonly MultiFilterOption[]).slice();
+  const normalized: MultiFilterOption[] = includeBlank
+    ? [{ value: BLANK_VALUE, label: BLANK_LABEL }, ...baseNormalized]
+    : baseNormalized;
 
   const toggle = (v: string) => {
     if (selected.includes(v)) onChange(selected.filter((x) => x !== v));

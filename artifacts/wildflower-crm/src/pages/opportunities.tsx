@@ -303,6 +303,7 @@ export default function Opportunities({
           onChange={(v) => { setStatuses(v); setPage(1); selection.clear(); }}
           options={STATUSES}
           testId="select-opp-status"
+          includeBlank
         />
         <MultiFilterSelect
           label="Stage"
@@ -310,6 +311,7 @@ export default function Opportunities({
           onChange={(v) => { setStages(v); setPage(1); selection.clear(); }}
           options={STAGES}
           testId="select-opp-stage"
+          includeBlank
         />
         <MultiFilterSelect
           label="Type"
@@ -317,6 +319,7 @@ export default function Opportunities({
           onChange={(v) => { setTypes(v); setPage(1); selection.clear(); }}
           options={TYPES}
           testId="select-opp-type"
+          includeBlank
         />
         <FiscalYearMultiSelect
           selected={fiscalYears}

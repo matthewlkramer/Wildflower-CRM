@@ -4,6 +4,7 @@ import {
   getListUsersQueryKey,
 } from "@workspace/api-client-react";
 import {
+  BLANK_VALUE,
   MultiFilterSelect,
   type MultiFilterOption,
 } from "@/components/multi-filter-select";
@@ -22,11 +23,14 @@ export function OwnerMultiFilter({
   onChange,
   testId,
   label = "Owner",
+  includeBlank = true,
 }: {
   selected: string[];
   onChange: (next: string[]) => void;
   testId: string;
   label?: string;
+  /** Default true — owner_user_id is nullable on every entity that uses it. */
+  includeBlank?: boolean;
 }) {
   const { data } = useListUsers({
     query: { queryKey: getListUsersQueryKey(), staleTime: 60_000 },
@@ -41,7 +45,11 @@ export function OwnerMultiFilter({
     // If the currently selected list includes an id we don't know about
     // (archived owner), surface it pinned at the top so the dropdown
     // reflects current state rather than silently dropping the chip.
+    // Skip the (Blank) sentinel — it's rendered by MultiFilterSelect
+    // itself via `includeBlank` and must not be pinned as an "archived"
+    // owner row (would create a duplicate option/key collision).
     for (const id of selected) {
+      if (id === BLANK_VALUE) continue;
       if (!opts.some((o) => o.value === id)) {
         opts.unshift({ value: id, label: `${id} (archived)` });
       }
@@ -56,6 +64,7 @@ export function OwnerMultiFilter({
       onChange={onChange}
       options={options}
       testId={testId}
+      includeBlank={includeBlank}
     />
   );
 }

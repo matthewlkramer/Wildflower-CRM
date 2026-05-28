@@ -2,7 +2,7 @@ import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, funders, households, people, tasks } from "@workspace/db/schema";
 import { alias } from "drizzle-orm/pg-core";
-import { and, count, desc, eq, exists, getTableColumns, ilike, inArray, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, exists, getTableColumns, ilike, inArray, isNull, notExists, or, sql, type SQL } from "drizzle-orm";
 
 // Second `people` alias so we can join *both* the individual giver
 // (via individual_giver_person_id) and the primary contact (via
@@ -84,7 +84,7 @@ import {
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { applyDerivedOppFields, canonicalWinProbability } from "../lib/pledgeStage";
 
@@ -131,13 +131,33 @@ router.get(
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.search) filters.push(ilike(opportunitiesAndPledges.name, `%${q.search}%`));
-    if (q.status && q.status.length > 0) filters.push(inArray(opportunitiesAndPledges.status, q.status));
-    if (q.stage && q.stage.length > 0) filters.push(inArray(opportunitiesAndPledges.stage, q.stage));
-    if (q.type && q.type.length > 0) filters.push(inArray(opportunitiesAndPledges.type, q.type));
+    {
+      const f = splitBlank(q.status as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(opportunitiesAndPledges.status), inArray(opportunitiesAndPledges.status, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.status));
+      else if (f.values.length > 0) filters.push(inArray(opportunitiesAndPledges.status, f.values as never[]));
+    }
+    {
+      const f = splitBlank(q.stage as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(opportunitiesAndPledges.stage), inArray(opportunitiesAndPledges.stage, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.stage));
+      else if (f.values.length > 0) filters.push(inArray(opportunitiesAndPledges.stage, f.values as never[]));
+    }
+    {
+      const f = splitBlank(q.type as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(opportunitiesAndPledges.type), inArray(opportunitiesAndPledges.type, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.type));
+      else if (f.values.length > 0) filters.push(inArray(opportunitiesAndPledges.type, f.values as never[]));
+    }
     if (q.funderId) filters.push(eq(opportunitiesAndPledges.funderId, q.funderId));
     if (q.householdId) filters.push(eq(opportunitiesAndPledges.householdId, q.householdId));
     if (q.individualGiverPersonId) filters.push(eq(opportunitiesAndPledges.individualGiverPersonId, q.individualGiverPersonId));
-    if (q.ownerUserId && q.ownerUserId.length > 0) filters.push(inArray(opportunitiesAndPledges.ownerUserId, q.ownerUserId));
+    {
+      const f = splitBlank(q.ownerUserId as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(opportunitiesAndPledges.ownerUserId), inArray(opportunitiesAndPledges.ownerUserId, f.values))!);
+      else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.ownerUserId));
+      else if (f.values.length > 0) filters.push(inArray(opportunitiesAndPledges.ownerUserId, f.values));
+    }
     if (typeof q.wasPledge === "boolean") filters.push(eq(opportunitiesAndPledges.wasPledge, q.wasPledge));
     // Convenience filter that encodes the page split. Translates to a
     // boolean OR on (was_pledge, stage ∈ pledge stages). See the
@@ -161,21 +181,38 @@ router.get(
     // one pledge_allocation row whose grant_year is in the selected set.
     // Use EXISTS rather than a JOIN so we don't fan rows out (one opp
     // with three allocations should still count once).
-    const fiscalYearSelected = q.fiscalYear ?? [];
-    if (fiscalYearSelected.length > 0) {
-      filters.push(
-        exists(
-          db
-            .select({ one: sql`1` })
-            .from(pledgeAllocations)
-            .where(
-              and(
-                eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id),
-                inArray(pledgeAllocations.grantYear, fiscalYearSelected),
-              ),
-            ),
-        ),
-      );
+    // Fiscal-year filter — supports the "(Blank)" sentinel which matches
+    // opportunities with no pledge_allocation rows at all. Real fiscal years
+    // continue to use the EXISTS pattern so multi-allocation opps don't fan
+    // out into duplicate rows.
+    {
+      const fyRaw = (q.fiscalYear as string[] | undefined) ?? [];
+      const { wantsBlank, values: fyValues } = splitBlank(fyRaw);
+      const existsClause =
+        fyValues.length > 0
+          ? exists(
+              db
+                .select({ one: sql`1` })
+                .from(pledgeAllocations)
+                .where(
+                  and(
+                    eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id),
+                    inArray(pledgeAllocations.grantYear, fyValues),
+                  ),
+                ),
+            )
+          : undefined;
+      const noAllocClause = wantsBlank
+        ? notExists(
+            db
+              .select({ one: sql`1` })
+              .from(pledgeAllocations)
+              .where(eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id)),
+          )
+        : undefined;
+      if (existsClause && noAllocClause) filters.push(or(existsClause, noAllocClause)!);
+      else if (existsClause) filters.push(existsClause);
+      else if (noAllocClause) filters.push(noAllocClause);
     }
     // Entity filter — same EXISTS pattern as fiscalYear. Matches opps
     // that have at least one pledge_allocation row pinned to one of

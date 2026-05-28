@@ -708,55 +708,19 @@ export const listFundersQueryPageDefault = 1;
 
 export const ListFundersQueryParams = zod.object({
   search: zod.coerce.string().optional(),
-  subtype: zod
-    .array(
-      zod.enum([
-        "family_foundation",
-        "institutional_foundation",
-        "corporate_foundation",
-        "community_foundation",
-        "bank_foundation",
-        "family_office_trust",
-        "intermediary",
-        "government",
-        "nonprofit",
-        "corporation",
-        "capital_provider",
-        "philanthropic_advisor",
-        "cdfi",
-        "education_forprofit",
-        "competition",
-        "public_private",
-        "daf_platform",
-        "platform",
-      ]),
-    )
-    .optional(),
-  activeStatus: zod
-    .array(zod.enum(["active", "defunct", "spenddown"]))
-    .optional(),
-  connectionStatus: zod
-    .array(zod.enum(["connected", "have_a_connector", "no_connection"]))
-    .optional(),
+  subtype: zod.array(zod.coerce.string()).optional(),
+  activeStatus: zod.array(zod.coerce.string()).optional(),
+  connectionStatus: zod.array(zod.coerce.string()).optional(),
   enthusiasm: zod
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .optional(),
-  capacityRating: zod
-    .array(
-      zod.enum([
-        "tier_10k_50k",
-        "tier_50k_250k",
-        "tier_250k_1m",
-        "tier_1m_plus",
-      ]),
-    )
-    .optional(),
+  capacityRating: zod.array(zod.coerce.string()).optional(),
   ownerUserId: zod.array(zod.coerce.string()).optional(),
   priority: zod
-    .array(zod.enum(["top", "high", "medium", "low"]))
+    .array(zod.coerce.string())
     .optional()
     .describe(
-      "Filter to funders whose `priority` tier is in the given set\n(top\/high\/medium\/low). Multi-value: repeat or comma-separate.\n",
+      "Filter to funders whose `priority` tier is in the given set\n(top\/high\/medium\/low). Multi-value: repeat or comma-separate.\nAccepts the literal `__blank__` to match rows with no priority set.\n",
     ),
   limit: zod.coerce
     .number()
@@ -2035,22 +1999,26 @@ export const ListPeopleQueryParams = zod.object({
   deceased: zod.coerce.boolean().optional(),
   regionId: zod.coerce.string().optional(),
   capacityRating: zod
-    .array(
-      zod.enum([
-        "tier_10k_50k",
-        "tier_50k_250k",
-        "tier_250k_1m",
-        "tier_1m_plus",
-      ]),
-    )
-    .optional(),
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Capacity-rating slugs (see CapacityRating). Accepts the\nliteral `__blank__` to match rows with no capacity rating set.\n",
+    ),
   connectionStatus: zod
-    .array(zod.enum(["connected", "have_a_connector", "no_connection"]))
-    .optional(),
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Connection-status slugs (see ConnectionStatus). Accepts the\nliteral `__blank__` to match rows with no connection status set.\n",
+    ),
   enthusiasm: zod
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .optional(),
-  ownerUserId: zod.array(zod.coerce.string()).optional(),
+  ownerUserId: zod
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Owner user-id values. Accepts the literal `__blank__` to match\nrows with no owner assigned.\n",
+    ),
   limit: zod.coerce
     .number()
     .min(1)
@@ -2938,30 +2906,8 @@ export const listOpportunitiesAndPledgesQueryPageDefault = 1;
 
 export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   search: zod.coerce.string().optional(),
-  status: zod
-    .array(
-      zod
-        .enum(["open", "pledge", "cash_in", "dormant", "lost"])
-        .describe(
-          "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
-        ),
-    )
-    .optional(),
-  stage: zod
-    .array(
-      zod.enum([
-        "cold_lead",
-        "warm_lead",
-        "in_conversation",
-        "convince",
-        "conditional_commitment",
-        "probable_renewal",
-        "verbal_commitment",
-        "written_commitment",
-        "cash_in",
-      ]),
-    )
-    .optional(),
+  status: zod.array(zod.coerce.string()).optional(),
+  stage: zod.array(zod.coerce.string()).optional(),
   pledgeView: zod
     .enum(["pledges", "opportunities"])
     .optional()
@@ -2972,9 +2918,7 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
     .boolean()
     .optional()
     .describe("Filter strictly on the was_pledge column."),
-  type: zod
-    .array(zod.enum(["solicitation", "renewal", "open_application"]))
-    .optional(),
+  type: zod.array(zod.coerce.string()).optional(),
   funderId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   individualGiverPersonId: zod.coerce.string().optional(),
@@ -3669,17 +3613,7 @@ export const listGiftsAndPaymentsQueryPageDefault = 1;
 
 export const ListGiftsAndPaymentsQueryParams = zod.object({
   search: zod.coerce.string().optional(),
-  type: zod
-    .array(
-      zod.enum([
-        "standard_gift",
-        "pledge_payment",
-        "directed_gift",
-        "loan_fund_investment",
-        "matching_gift",
-      ]),
-    )
-    .optional(),
+  type: zod.array(zod.coerce.string()).optional(),
   funderId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   individualGiverPersonId: zod.coerce.string().optional(),

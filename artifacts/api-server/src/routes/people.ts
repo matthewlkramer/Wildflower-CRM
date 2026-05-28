@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { people, peopleEntityRoles, emails, phoneNumbers, addresses } from "@workspace/db/schema";
-import { and, asc, count, eq, getTableColumns, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, getTableColumns, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   ListPeopleQueryParams,
   CreatePersonBody,
@@ -9,7 +9,7 @@ import {
   BulkUpdatePeopleBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
@@ -106,10 +106,31 @@ router.get(
     const deceased = parseBoolQuery(req, "deceased");
     if (deceased !== undefined) filters.push(eq(people.deceased, deceased));
     if (q.regionId) filters.push(eq(people.currentHomeRegionId, q.regionId));
-    if (q.capacityRating && q.capacityRating.length > 0) filters.push(inArray(people.capacityRating, q.capacityRating));
-    if (q.connectionStatus && q.connectionStatus.length > 0) filters.push(inArray(people.connectionStatus, q.connectionStatus));
+    const capacityFilter = splitBlank(q.capacityRating);
+    if (capacityFilter.wantsBlank && capacityFilter.values.length > 0) {
+      filters.push(or(isNull(people.capacityRating), inArray(people.capacityRating, capacityFilter.values as never[]))!);
+    } else if (capacityFilter.wantsBlank) {
+      filters.push(isNull(people.capacityRating));
+    } else if (capacityFilter.values.length > 0) {
+      filters.push(inArray(people.capacityRating, capacityFilter.values as never[]));
+    }
+    const connectionFilter = splitBlank(q.connectionStatus);
+    if (connectionFilter.wantsBlank && connectionFilter.values.length > 0) {
+      filters.push(or(isNull(people.connectionStatus), inArray(people.connectionStatus, connectionFilter.values as never[]))!);
+    } else if (connectionFilter.wantsBlank) {
+      filters.push(isNull(people.connectionStatus));
+    } else if (connectionFilter.values.length > 0) {
+      filters.push(inArray(people.connectionStatus, connectionFilter.values as never[]));
+    }
     if (q.enthusiasm) filters.push(eq(people.enthusiasm, q.enthusiasm));
-    if (q.ownerUserId && q.ownerUserId.length > 0) filters.push(inArray(people.ownerUserId, q.ownerUserId));
+    const ownerFilter = splitBlank(q.ownerUserId);
+    if (ownerFilter.wantsBlank && ownerFilter.values.length > 0) {
+      filters.push(or(isNull(people.ownerUserId), inArray(people.ownerUserId, ownerFilter.values))!);
+    } else if (ownerFilter.wantsBlank) {
+      filters.push(isNull(people.ownerUserId));
+    } else if (ownerFilter.values.length > 0) {
+      filters.push(inArray(people.ownerUserId, ownerFilter.values));
+    }
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

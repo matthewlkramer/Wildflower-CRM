@@ -181,6 +181,7 @@ export default function Pipeline() {
           onChange={setTypes}
           options={TYPES}
           testId="select-pipeline-type"
+          includeBlank
         />
         <FiscalYearMultiSelect
           selected={fiscalYears}

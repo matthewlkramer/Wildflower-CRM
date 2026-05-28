@@ -274,27 +274,30 @@ paths:
       tags: [funders]
       parameters:
         - { name: search, in: query, schema: { type: string } }
+        # Filter params on nullable columns accept the literal `__blank__`
+        # to match rows where the column is NULL. Item type is plain string
+        # (not the enum ref) so the sentinel passes generated zod validation.
         - name: subtype
           in: query
           style: form
           explode: false
-          schema: { type: array, items: { $ref: "#/components/schemas/FundingEntitySubtype" } }
+          schema: { type: array, items: { type: string } }
         - name: activeStatus
           in: query
           style: form
           explode: false
-          schema: { type: array, items: { $ref: "#/components/schemas/ActiveStatus" } }
+          schema: { type: array, items: { type: string } }
         - name: connectionStatus
           in: query
           style: form
           explode: false
-          schema: { type: array, items: { $ref: "#/components/schemas/ConnectionStatus" } }
+          schema: { type: array, items: { type: string } }
         - { name: enthusiasm, in: query, schema: { $ref: "#/components/schemas/Enthusiasm" } }
         - name: capacityRating
           in: query
           style: form
           explode: false
-          schema: { type: array, items: { $ref: "#/components/schemas/CapacityRating" } }
+          schema: { type: array, items: { type: string } }
         - name: ownerUserId
           in: query
           style: form
@@ -305,9 +308,10 @@ paths:
           description: |
             Filter to funders whose `priority` tier is in the given set
             (top/high/medium/low). Multi-value: repeat or comma-separate.
+            Accepts the literal `__blank__` to match rows with no priority set.
           style: form
           explode: false
-          schema: { type: array, items: { $ref: "#/components/schemas/Priority" } }
+          schema: { type: array, items: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -479,17 +483,26 @@ paths:
         - { name: regionId, in: query, schema: { type: string } }
         - name: capacityRating
           in: query
+          description: |
+            Capacity-rating slugs (see CapacityRating). Accepts the
+            literal `__blank__` to match rows with no capacity rating set.
           style: form
           explode: false
-          schema: { type: array, items: { $ref: "#/components/schemas/CapacityRating" } }
+          schema: { type: array, items: { type: string } }
         - name: connectionStatus
           in: query
+          description: |
+            Connection-status slugs (see ConnectionStatus). Accepts the
+            literal `__blank__` to match rows with no connection status set.
           style: form
           explode: false
-          schema: { type: array, items: { $ref: "#/components/schemas/ConnectionStatus" } }
+          schema: { type: array, items: { type: string } }
         - { name: enthusiasm, in: query, schema: { $ref: "#/components/schemas/Enthusiasm" } }
         - name: ownerUserId
           in: query
+          description: |
+            Owner user-id values. Accepts the literal `__blank__` to match
+            rows with no owner assigned.
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
@@ -682,16 +695,19 @@ paths:
       tags: [opportunities-and-pledges]
       parameters:
         - { name: search, in: query, schema: { type: string } }
+        # Filter params on nullable enum columns accept the literal
+        # `__blank__` to match rows where the column is NULL. Item type is
+        # plain string so the sentinel passes generated zod validation.
         - name: status
           in: query
           style: form
           explode: false
-          schema: { type: array, items: { $ref: "#/components/schemas/OpportunityStatus" } }
+          schema: { type: array, items: { type: string } }
         - name: stage
           in: query
           style: form
           explode: false
-          schema: { type: array, items: { $ref: "#/components/schemas/OpportunityStage" } }
+          schema: { type: array, items: { type: string } }
         - name: pledgeView
           in: query
           required: false
@@ -712,7 +728,7 @@ paths:
           in: query
           style: form
           explode: false
-          schema: { type: array, items: { $ref: "#/components/schemas/OpportunityType" } }
+          schema: { type: array, items: { type: string } }
         - { name: funderId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
@@ -820,7 +836,7 @@ paths:
           in: query
           style: form
           explode: false
-          schema: { type: array, items: { $ref: "#/components/schemas/GiftType" } }
+          schema: { type: array, items: { type: string } }
         - { name: funderId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
