@@ -94,13 +94,13 @@ export default function Opportunities({
   const [search, setSearch] = usePersistedState<string>(`${persistNs}.search`, "");
   const debouncedSearch = useDebounce(search, 250);
   // All enum filters are multi-select. Status defaults to:
-  //   pledges view       → everything except cash_in (committed but not yet paid)
+  //   pledges view       → [open, pledge] (active commitments; dormant + lost hidden)
   //   opportunities view → [open] only (active funnel)
   //   unscoped           → no default
   const defaultStatusArr: OpportunityStatus[] =
     defaultStatuses ??
     (pledgeView === "pledges"
-      ? ["open", "pledge", "dormant", "lost"]
+      ? ["open", "pledge"]
       : pledgeView === "opportunities"
         ? ["open"]
         : []);
