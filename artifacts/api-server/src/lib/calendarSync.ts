@@ -22,8 +22,11 @@ import { matchEmails, isMatchEmpty } from "./emailMatcher";
  *
  * Modes (gated on `state.bootstrap_completed_at`):
  *
- *   1. Bootstrap — `events.list?timeMin=<30d ago>&orderBy=startTime`,
- *      paginated. Capped at BOOTSTRAP_MAX_PAGES_PER_RUN; pending
+ *   1. Bootstrap — `events.list` over the entire calendar history
+ *      (no `timeMin`), paginated. We want every meeting the user has
+ *      ever attended in the CRM interactions log, so the bootstrap
+ *      sweep is intentionally unbounded. Capped at
+ *      BOOTSTRAP_MAX_PAGES_PER_RUN per run; pending
  *      pageToken goes into `bootstrap_page_token`. When fully
  *      drained we write the final response's `nextSyncToken` into
  *      `sync_token` and flip `bootstrap_completed_at`.
@@ -57,7 +60,6 @@ import { matchEmails, isMatchEmpty } from "./emailMatcher";
  * the failed deltas until the token is consumed cleanly.
  */
 
-const BOOTSTRAP_WINDOW_DAYS = 30;
 const BOOTSTRAP_PAGE_SIZE = 250;
 const BOOTSTRAP_MAX_PAGES_PER_RUN = 4;
 const INCR_MAX_PAGES_PER_RUN = 10;
@@ -183,9 +185,15 @@ async function runBootstrapPass(
   state: CalendarSyncState,
   report: CalendarSyncReport,
 ): Promise<void> {
-  const timeMin = new Date(
-    Date.now() - BOOTSTRAP_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
+  // Anchor at the Unix epoch so we fetch the entire calendar history.
+  // We can't simply omit `timeMin` — with `singleEvents=true` (which
+  // we need to flatten recurring masters into instances), Google
+  // requires `timeMin` + `orderBy=startTime` for stable pagination;
+  // without them the API rejects subsequent page tokens with
+  // "Invalid page token value." Page caps + the in-process scheduler
+  // drain large calendars over multiple runs without blowing Google
+  // quota.
+  const BOOTSTRAP_TIME_MIN = "1970-01-01T00:00:00Z";
   let pageToken: string | null = state.bootstrapPageToken ?? null;
   let pagesProcessed = 0;
   let drained = false;
@@ -194,7 +202,7 @@ async function runBootstrapPass(
   while (pagesProcessed < BOOTSTRAP_MAX_PAGES_PER_RUN) {
     const currentPageToken: string | null = pageToken;
     const page = await listEvents(grant.accessToken, state.gcalCalendarId, {
-      timeMin,
+      timeMin: BOOTSTRAP_TIME_MIN,
       pageToken: currentPageToken,
       maxResults: BOOTSTRAP_PAGE_SIZE,
     });

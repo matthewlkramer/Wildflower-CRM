@@ -39,7 +39,11 @@ import {
  *
  * Two modes, gated on `state.bootstrap_completed_at`:
  *
- *   1. Bootstrap — page through `users.messages.list?q=newer_than:30d`.
+ *   1. Bootstrap — page through `users.messages.list` with an empty
+ *      query, i.e. the entire mailbox (Gmail excludes Spam/Trash by
+ *      default which is what we want). The CRM interactions log
+ *      needs the user's full email history, so the bootstrap sweep
+ *      is intentionally unbounded.
  *      Capped at BOOTSTRAP_MAX_PAGES_PER_RUN per trigger so a single
  *      run can't monopolise the worker. The page token is stashed in
  *      `state.bootstrap_page_token`; when Gmail stops returning a
