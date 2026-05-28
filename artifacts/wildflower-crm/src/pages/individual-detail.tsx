@@ -14,6 +14,10 @@ import {
   type Priority,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import {
+  EmailsEditor,
+  PhoneNumbersEditor,
+} from "@/components/contact-info-editor";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { NotesPanel } from "@/components/notes-panel";
 import { TasksPanel } from "@/components/tasks-panel";
@@ -514,43 +518,12 @@ function PersonView({ person }: { person: PersonDetail }) {
             <CardTitle>Contact info</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <div className="text-xs font-medium text-muted-foreground mb-1">Emails</div>
-              {person.emails && person.emails.length > 0 ? (
-                <ul className="space-y-1 text-sm">
-                  {person.emails.map((e) => (
-                    <li key={e.id} className="flex items-center justify-between gap-2">
-                      <span className="truncate">{e.email}</span>
-                      <span className="text-muted-foreground text-xs">
-                        {e.isPreferred ? "preferred • " : ""}
-                        {formatEnum(e.validity)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">No emails.</p>
-              )}
-            </div>
+            <EmailsEditor personId={person.id} emails={person.emails} />
             <Separator />
-            <div>
-              <div className="text-xs font-medium text-muted-foreground mb-1">Phone numbers</div>
-              {person.phoneNumbers && person.phoneNumbers.length > 0 ? (
-                <ul className="space-y-1 text-sm">
-                  {person.phoneNumbers.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between gap-2">
-                      <span className="truncate">{p.phoneNumber}</span>
-                      <span className="text-muted-foreground text-xs">
-                        {p.isPreferred ? "preferred • " : ""}
-                        {formatEnum(p.validity)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">No phone numbers.</p>
-              )}
-            </div>
+            <PhoneNumbersEditor
+              personId={person.id}
+              phoneNumbers={person.phoneNumbers}
+            />
             <Separator />
             <div>
               <div className="text-xs font-medium text-muted-foreground mb-1">Addresses</div>
