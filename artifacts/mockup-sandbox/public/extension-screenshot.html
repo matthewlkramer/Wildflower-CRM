@@ -1,0 +1,251 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Wildflower Tracking — Chrome Web Store screenshot</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1280px; height: 800px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 50%, #ffffff 100%);
+    overflow: hidden;
+    display: flex;
+  }
+
+  /* LEFT — marketing copy */
+  .left {
+    width: 480px; padding: 80px 56px; box-sizing: border-box;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #dcfce7; color: #166534; font-size: 12px; font-weight: 600;
+    padding: 6px 12px; border-radius: 999px; align-self: flex-start;
+    margin-bottom: 24px;
+  }
+  .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #16a34a; }
+  h1 {
+    font-size: 44px; line-height: 1.05; margin: 0 0 20px 0; color: #0f172a; letter-spacing: -1.2px; font-weight: 700;
+  }
+  h1 em { color: #16a34a; font-style: normal; }
+  .lede { font-size: 17px; color: #475569; margin: 0 0 32px 0; line-height: 1.5; }
+  .features { display: flex; flex-direction: column; gap: 14px; }
+  .feature { display: flex; align-items: flex-start; gap: 12px; }
+  .feature .check {
+    width: 22px; height: 22px; border-radius: 50%; background: #16a34a; color: #fff;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 13px; font-weight: 700;
+  }
+  .feature .text { font-size: 14px; color: #1e293b; line-height: 1.4; padding-top: 1px; }
+  .feature .text b { color: #0f172a; }
+
+  /* RIGHT — Gmail preview with popup */
+  .right {
+    flex: 1; position: relative; padding: 56px 56px 56px 0;
+  }
+  .gmail-window {
+    width: 100%; height: 100%;
+    background: #fff; border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18), 0 6px 16px rgba(15, 23, 42, 0.08);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    border: 1px solid #e5e7eb;
+  }
+  .traffic { display: flex; gap: 7px; padding: 14px 18px; border-bottom: 1px solid #f1f5f9; }
+  .traffic span { width: 11px; height: 11px; border-radius: 50%; background: #ef4444; }
+  .traffic span:nth-child(2) { background: #f59e0b; }
+  .traffic span:nth-child(3) { background: #10b981; }
+
+  .topbar {
+    height: 52px;
+    background: #fff; display: flex; align-items: center; gap: 14px;
+    padding: 0 18px; border-bottom: 1px solid #f1f5f9; position: relative;
+  }
+  .gmail-logo { font-size: 18px; color: #5f6368; font-weight: 400; }
+  .search {
+    flex: 0 1 320px; height: 32px; background: #eaf1fb; border-radius: 8px;
+    display: flex; align-items: center; padding: 0 14px; color: #5f6368; font-size: 12px;
+  }
+  .spacer { flex: 1; }
+  .puzzle {
+    width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: #f1f5f9; position: relative;
+  }
+  .puzzle .ring {
+    position: absolute; inset: -4px; border-radius: 50%; border: 2px solid #16a34a;
+  }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; background: #16a34a; color: #fff;
+            display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; }
+
+  .body-area { flex: 1; display: flex; min-height: 0; }
+  .sidebar { width: 150px; padding: 14px 0; }
+  .compose {
+    background: #c2e7ff; color: #001d35; font-weight: 500; font-size: 12px;
+    border-radius: 14px; padding: 10px 16px; display: inline-flex; align-items: center; gap: 8px;
+    margin: 0 14px 16px 14px;
+  }
+  .nav-item { padding: 5px 14px; font-size: 13px; color: #1f1f1f; border-radius: 0 14px 14px 0; margin-right: 14px; }
+  .nav-item.active { background: #d3e3fd; font-weight: 600; }
+
+  .mail-list { flex: 1; min-width: 0; overflow: hidden; border-left: 1px solid #f1f5f9; }
+  .row {
+    height: 42px; padding: 0 16px; display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid #f5f7fa; font-size: 12px;
+  }
+  .row .sender { width: 130px; font-weight: 600; color: #202124; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .subject { flex: 1; color: #202124; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .subject .snippet { color: #5f6368; font-weight: 400; }
+  .row .time { color: #5f6368; font-size: 11px; white-space: nowrap; }
+  .row .pixel-badge {
+    background: #dcfce7; color: #166534; font-size: 10px; font-weight: 600;
+    padding: 2px 7px; border-radius: 999px; display: inline-flex; align-items: center; gap: 4px;
+    margin-left: 6px; vertical-align: 1px;
+  }
+  .row .pixel-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: #16a34a; }
+  .row.unread { background: #f5f9ff; }
+
+  /* The popup, anchored top-right under the puzzle-piece icon */
+  .popup-anchor {
+    position: absolute; top: 110px; right: 80px;
+    width: 290px;
+    background: #fff; border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.22), 0 4px 12px rgba(0,0,0,0.10);
+    border: 1px solid #e5e7eb;
+    padding: 20px;
+    z-index: 5;
+  }
+  .popup-anchor::before {
+    content: ""; position: absolute; top: -8px; right: 28px;
+    width: 16px; height: 16px; background: #fff; transform: rotate(45deg);
+    border-left: 1px solid #e5e7eb; border-top: 1px solid #e5e7eb;
+  }
+  .popup-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .popup-logo {
+    background: #16a34a; width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; font-weight: 700;
+  }
+  .popup-title { font-weight: 700; font-size: 14px; color: #111827; }
+  .popup-sub { font-size: 11px; color: #6b7280; }
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;
+  }
+  .toggle-label { font-size: 13px; font-weight: 500; color: #111827; }
+  .toggle-help  { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .switch { width: 44px; height: 24px; border-radius: 12px; background: #10b981; position: relative; }
+  .switch .knob {
+    position: absolute; top: 3px; left: 23px; width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  }
+  .popup-footer { margin-top: 12px; font-size: 11px; color: #9ca3af; text-align: center; }
+</style>
+</head>
+<body>
+
+  <div class="left">
+    <div class="badge"><span class="dot"></span>Gmail · Wildflower CRM</div>
+    <h1>Know <em>exactly</em> when funders open your email.</h1>
+    <p class="lede">A one-click tracking pixel for Gmail, wired straight into your fundraising pipeline.</p>
+    <div class="features">
+      <div class="feature">
+        <div class="check">✓</div>
+        <div class="text"><b>Real-time open notifications</b> on every email you send from Gmail.</div>
+      </div>
+      <div class="feature">
+        <div class="check">✓</div>
+        <div class="text"><b>Auto-links opens to the right contact</b> in Wildflower CRM.</div>
+      </div>
+      <div class="feature">
+        <div class="check">✓</div>
+        <div class="text"><b>One toggle to turn tracking on or off</b> from the compose toolbar.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="gmail-window">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <div class="topbar">
+        <div class="gmail-logo">Gmail</div>
+        <div class="search">Search mail</div>
+        <div class="spacer"></div>
+        <div class="puzzle">
+          <div class="ring"></div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="#5f6368"><path d="M20 11.5h-2v-3h-3a1.5 1.5 0 0 0-3 0H9v3H6a1.5 1.5 0 0 0 0 3v3h3a1.5 1.5 0 0 0 3 0h3v-3h2a1.5 1.5 0 0 0 0-3z"/></svg>
+        </div>
+        <div class="avatar">A</div>
+      </div>
+      <div class="body-area">
+        <div class="sidebar">
+          <div class="compose">✎ Compose</div>
+          <div class="nav-item active">Inbox</div>
+          <div class="nav-item">Starred</div>
+          <div class="nav-item">Sent</div>
+          <div class="nav-item">Drafts</div>
+        </div>
+        <div class="mail-list">
+          <div class="row unread">
+            <div class="sender">Ada Wilkerson</div>
+            <div class="subject">Re: Q3 grant follow-up <span class="snippet">— Thanks for sending over the proposal…</span><span class="pixel-badge"><span class="dot"></span>Opened · 2m</span></div>
+            <div class="time">9:42 AM</div>
+          </div>
+          <div class="row unread">
+            <div class="sender">Maya Brooks</div>
+            <div class="subject">Site visit recap <span class="snippet">— Wanted to circle back on the Austin visit…</span><span class="pixel-badge"><span class="dot"></span>Opened · 14m</span></div>
+            <div class="time">9:08 AM</div>
+          </div>
+          <div class="row">
+            <div class="sender">Jordan Riley</div>
+            <div class="subject">Pledge confirmation <span class="snippet">— Attaching the signed letter for FY26…</span></div>
+            <div class="time">8:51 AM</div>
+          </div>
+          <div class="row">
+            <div class="sender">Priya Natarajan</div>
+            <div class="subject">Intro to new program officer <span class="snippet">— Looping in Sam, taking over the portfolio…</span><span class="pixel-badge"><span class="dot"></span>Opened · 1h</span></div>
+            <div class="time">8:14 AM</div>
+          </div>
+          <div class="row">
+            <div class="sender">Wildflower CRM</div>
+            <div class="subject">Weekly digest: 14 opens, 3 replies <span class="snippet">— Your tracked outreach is performing…</span></div>
+            <div class="time">7:30 AM</div>
+          </div>
+          <div class="row">
+            <div class="sender">Carlos Mendez</div>
+            <div class="subject">Re: Board update <span class="snippet">— Numbers look great, one-pager for the…</span></div>
+            <div class="time">Yesterday</div>
+          </div>
+          <div class="row">
+            <div class="sender">Helen Tanaka</div>
+            <div class="subject">Foundation reporting deadline <span class="snippet">— Friendly reminder the interim report…</span></div>
+            <div class="time">Yesterday</div>
+          </div>
+          <div class="row">
+            <div class="sender">Devon Park</div>
+            <div class="subject">Thank you note <span class="snippet">— On behalf of the team, thank you for the…</span><span class="pixel-badge"><span class="dot"></span>Opened · 3h</span></div>
+            <div class="time">Yesterday</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="popup-anchor">
+      <div class="popup-header">
+        <div class="popup-logo">W</div>
+        <div>
+          <div class="popup-title">Wildflower Tracking</div>
+          <div class="popup-sub">Email open tracker</div>
+        </div>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Auto-track emails</div>
+          <div class="toggle-help">Embed pixel on send</div>
+        </div>
+        <div class="switch"><div class="knob"></div></div>
+      </div>
+      <div class="popup-footer">Toggle also available in compose toolbar</div>
+    </div>
+  </div>
+
+</body>
+</html>

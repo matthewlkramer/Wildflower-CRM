@@ -42,3 +42,9 @@ id = "Wn1KvsdWczrS4kw_ISH_x"
 uri = "file://tools/magio-extension/WORKSPACE_DEPLOY.md"
 type = "text"
 title = "Google Workspace force-install instructions"
+
+[[outputs]]
+id = "bOIopGPiiEPToF2h8BIjx"
+uri = "file://tools/magio-extension/build/screenshots/01-gmail-overview.jpg"
+type = "image"
+title = "Chrome Web Store screenshot (1280×800)"
