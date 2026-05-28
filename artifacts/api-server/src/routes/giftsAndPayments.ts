@@ -62,7 +62,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { inArray } from "drizzle-orm";
 
-const GIFTS_ARRAY_PARAMS = ["type", "ownerUserId", "entityId"] as const;
+const GIFTS_ARRAY_PARAMS = ["type", "ownerUserId", "entityId", "fiscalYear"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -100,6 +100,11 @@ router.get(
     if (q.entityId && q.entityId.length > 0) {
       filters.push(
         sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.entityId, q.entityId)})`,
+      );
+    }
+    if (q.fiscalYear && q.fiscalYear.length > 0) {
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.grantYear, q.fiscalYear)})`,
       );
     }
     const where = filters.length ? and(...filters) : undefined;

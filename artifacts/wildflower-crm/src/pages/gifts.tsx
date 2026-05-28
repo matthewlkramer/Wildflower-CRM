@@ -33,6 +33,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
+import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
 import {
   Pagination,
   PaginationContent,
@@ -63,6 +64,7 @@ export default function Gifts() {
   const debouncedSearch = useDebounce(search, 250);
   const [types, setTypes] = usePersistedState<string[]>("wf.list.gifts.types", []);
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.gifts.owners", []);
+  const [fiscalYears, setFiscalYears] = usePersistedState<string[]>("wf.list.gifts.fiscalYears", []);
   const [page, setPage] = usePersistedState<number>("wf.list.gifts.page", 1);
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -79,6 +81,7 @@ export default function Gifts() {
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as GiftType[] } : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
+    ...(fiscalYears.length > 0 ? { fiscalYear: [...fiscalYears].sort() } : {}),
     ...(globalEntityIds.length > 0
       ? { entityId: [...globalEntityIds].sort() }
       : {}),
@@ -127,13 +130,15 @@ export default function Gifts() {
     search: string;
     types: string[];
     owners: string[];
+    fiscalYears: string[];
     sort: SortState;
   };
-  const currentView: GiftsView = { search, types, owners, sort: ts.sort };
+  const currentView: GiftsView = { search, types, owners, fiscalYears, sort: ts.sort };
   const clearAll = () => {
     setSearch("");
     setTypes([]);
     setOwners([]);
+    setFiscalYears([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -145,6 +150,7 @@ export default function Gifts() {
       setSearch(s.search ?? "");
       setTypes(s.types ?? []);
       setOwners(s.owners ?? []);
+      setFiscalYears(s.fiscalYears ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setPage(1);
       selection.clear();
@@ -153,9 +159,11 @@ export default function Gifts() {
       !s.search &&
       (s.types?.length ?? 0) === 0 &&
       (s.owners?.length ?? 0) === 0 &&
+      (s.fiscalYears?.length ?? 0) === 0 &&
       (s.sort?.key ?? null) === null,
   });
-  const hasActiveFilters = !!search || types.length > 0 || owners.length > 0;
+  const hasActiveFilters =
+    !!search || types.length > 0 || owners.length > 0 || fiscalYears.length > 0;
 
   return (
     <div className="space-y-6">
@@ -194,7 +202,12 @@ export default function Gifts() {
           onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
           testId="select-gift-owner"
         />
-        {(search || types.length > 0 || owners.length > 0) && (
+        <FiscalYearMultiSelect
+          selected={fiscalYears}
+          onChange={(v) => { setFiscalYears(v); setPage(1); selection.clear(); }}
+          testId="select-gift-fiscal-year"
+        />
+        {(search || types.length > 0 || owners.length > 0 || fiscalYears.length > 0) && (
           <Button
             variant="ghost"
             size="sm"
@@ -202,6 +215,7 @@ export default function Gifts() {
               setSearch("");
               setTypes([]);
               setOwners([]);
+              setFiscalYears([]);
               setPage(1);
               selection.clear();
             }}

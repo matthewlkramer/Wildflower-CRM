@@ -3685,6 +3685,12 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
     .describe(
       "Filter to gifts that have at least one gift_allocation with `entity_id`\nin the given set. Comma-separated form supported.\n",
     ),
+  fiscalYear: zod
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Filter to gifts that have at least one gift_allocation with\n`grant_year` in the given set (e.g. `fy2026`). Multi-value:\nrepeat the param or comma-separate. Omit to include all\nfiscal years.\n",
+    ),
   limit: zod.coerce
     .number()
     .min(1)

@@ -2676,6 +2676,14 @@ in the given set. Comma-separated form supported.
  */
   entityId?: string[];
   /**
+ * Filter to gifts that have at least one gift_allocation with
+`grant_year` in the given set (e.g. `fy2026`). Multi-value:
+repeat the param or comma-separate. Omit to include all
+fiscal years.
+
+ */
+  fiscalYear?: string[];
+  /**
    * @minimum 1
    * @maximum 1000
    */
