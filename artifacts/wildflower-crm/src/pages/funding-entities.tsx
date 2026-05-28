@@ -135,6 +135,7 @@ export default function FundingEntities() {
   };
   const PRIORITY_ORDER: Record<string, number> = { top: 4, high: 3, medium: 2, low: 1 };
   const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
+  const ALIGNMENT_ORDER: Record<string, number> = { high: 3, medium: 2, low: 1 };
   const sortedRows = useMemo(
     () =>
       sortRows(
@@ -150,6 +151,8 @@ export default function FundingEntities() {
             r.capacityRating ? (CAPACITY_ORDER[r.capacityRating] ?? 0) : null,
           priorityTier: (r) =>
             r.priority ? (PRIORITY_ORDER[r.priority] ?? 0) : null,
+          strategicAlignment: (r) =>
+            r.strategicAlignment ? (ALIGNMENT_ORDER[r.strategicAlignment] ?? 0) : null,
           primaryContact: (r) => r.primaryContactPersonName?.toLowerCase() ?? null,
           lifetimeGiving: (r) =>
             r.lifetimeGiving != null ? Number(r.lifetimeGiving) : null,
@@ -334,6 +337,7 @@ export default function FundingEntities() {
               <SortableTH colKey="active" {...ts}>Active</SortableTH>
               <SortableTH colKey="connection" {...ts}>Connection</SortableTH>
               <SortableTH colKey="enthusiasm" {...ts}>Enthusiasm</SortableTH>
+              <SortableTH colKey="strategicAlignment" {...ts}>Strategic alignment</SortableTH>
               <SortableTH colKey="capacity" {...ts}>Capacity</SortableTH>
               <SortableTH colKey="primaryContact" {...ts}>Primary contact</SortableTH>
               <SortableTH colKey="lifetimeGiving" align="right" {...ts}>Lifetime giving</SortableTH>
@@ -345,7 +349,7 @@ export default function FundingEntities() {
             {isLoading ? (
               <TableRow>
                 <TableCell
-                  colSpan={13}
+                  colSpan={14}
                   className="text-center h-24 text-muted-foreground"
                 >
                   Loading…
@@ -354,7 +358,7 @@ export default function FundingEntities() {
             ) : isError ? (
               <TableRow>
                 <TableCell
-                  colSpan={13}
+                  colSpan={14}
                   className="text-center h-24 text-destructive"
                 >
                   {error instanceof Error
@@ -365,7 +369,7 @@ export default function FundingEntities() {
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={13}
+                  colSpan={14}
                   className="text-center h-24 text-muted-foreground"
                 >
                   No funders match these filters.
@@ -423,6 +427,7 @@ export default function FundingEntities() {
                     </TableCell>
                     <TableCell>{formatEnum(f.connectionStatus)}</TableCell>
                     <TableCell>{formatEnum(f.enthusiasm)}</TableCell>
+                    <TableCell>{formatEnum(f.strategicAlignment)}</TableCell>
                     <TableCell>{formatCapacity(f.capacityRating)}</TableCell>
                     <TableCell>
                       {f.primaryContactPersonId ? (
