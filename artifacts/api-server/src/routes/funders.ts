@@ -157,6 +157,7 @@ router.post(
         "enthusiasm",
         "priority",
         "fundingEntitySubtype",
+        "nationalPriorities",
       ],
     });
   }),

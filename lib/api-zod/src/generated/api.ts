@@ -6019,6 +6019,7 @@ export const BulkUpdateFundersBody = zod.object({
         "platform",
       ])
       .nullish(),
+    nationalPriorities: zod.boolean().nullish(),
   }),
 });
 

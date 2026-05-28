@@ -2246,6 +2246,7 @@ export interface BulkUpdateFundersPatch {
   enthusiasm?: Enthusiasm | null;
   priority?: Priority | null;
   fundingEntitySubtype?: FundingEntitySubtype | null;
+  nationalPriorities?: boolean | null;
 }
 
 export interface BulkUpdateFundersBody {

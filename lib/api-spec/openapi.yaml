@@ -3626,6 +3626,7 @@ components:
         enthusiasm:           { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
         priority:             { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
         fundingEntitySubtype: { allOf: [ { $ref: "#/components/schemas/FundingEntitySubtype" } ], nullable: true }
+        nationalPriorities:   { type: boolean, nullable: true }
     BulkUpdateFundersBody:
       type: object
       required: [ids, patch]

@@ -117,6 +117,13 @@ export const FUNDERS_BULK_FIELDS: ReadonlyArray<BulkField> = [
     ],
   },
   {
+    kind: "boolean",
+    key: "nationalPriorities",
+    label: "National?",
+    trueLabel: "National",
+    falseLabel: "Narrower geographies",
+  },
+  {
     kind: "enum",
     key: "fundingEntitySubtype",
     label: "Funder subtype",
