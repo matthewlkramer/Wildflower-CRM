@@ -6,9 +6,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ChevronDown } from "lucide-react";
 
 // Multi-select dropdown for the `fiscalYear` filter. Options are pulled
-// from the fiscal-years table (slugs like `fy2026`, plus the special
-// `future` slug). Sorted with "Future" pinned at the top, then newest →
-// oldest FY, clipped to 2016..currentFY+3.
+// from the fiscal-years table (slugs like `fy2026`). Sorted newest →
+// oldest, clipped to 2016..currentFY+3. The legacy `future` sentinel is
+// excluded from this picker.
 export function FiscalYearMultiSelect({
   selected,
   onChange,
@@ -27,17 +27,12 @@ export function FiscalYearMultiSelect({
     const currentFyEnd =
       new Date().getUTCMonth() >= 6 ? currentYear + 1 : currentYear;
     const visible = rows.filter((r) => {
-      if (r.id === "future") return true;
       const m = /^fy(\d{4})$/.exec(r.id);
       if (!m) return false;
       const yr = Number(m[1]);
       return yr >= 2016 && yr <= currentFyEnd + 3;
     });
-    visible.sort((a, b) => {
-      if (a.id === "future") return -1;
-      if (b.id === "future") return 1;
-      return b.id.localeCompare(a.id);
-    });
+    visible.sort((a, b) => b.id.localeCompare(a.id));
     return visible;
   }, [allFys]);
 

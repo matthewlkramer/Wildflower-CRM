@@ -61,14 +61,11 @@ export default function Projections() {
         entSeen.add(r.entityId ?? UNBUCKETED);
       }
 
-      // Order fiscal years by their slug ("fyNNNN", plus "future"/"__unbucketed__"
-      // pinned to the end).
+      // Order fiscal years by their slug ("fyNNNN"); the __unbucketed__
+      // sentinel is pinned to the end.
       const fyRows = Array.from(fySeen).sort((a, b) => {
-        const aFuture = a === "future" || a === UNBUCKETED;
-        const bFuture = b === "future" || b === UNBUCKETED;
-        if (aFuture && !bFuture) return 1;
-        if (!aFuture && bFuture) return -1;
-        if (aFuture && bFuture) return a.localeCompare(b);
+        if (a === UNBUCKETED && b !== UNBUCKETED) return 1;
+        if (b === UNBUCKETED && a !== UNBUCKETED) return -1;
         return a.localeCompare(b);
       });
 

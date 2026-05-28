@@ -6,9 +6,9 @@
 // retired. Hide them from dropdowns by default behind a "Show retired
 // entities" toggle. (Manage via the /admin page.)
 //
-// Fiscal years: the table is seeded fy2014..fy2050 + a "future" sentinel.
-// Default-visible window is "last 3 + current + next" (5 FYs). Everything
-// older — and the "future" sentinel — sits behind a "Show all" toggle.
+// Fiscal years: the table is seeded fy2014..fy2050. Default-visible window
+// is "last 3 + current + next" (5 FYs). Everything older sits behind a
+// "Show all" toggle. The legacy `future` sentinel is excluded entirely.
 
 export function partitionEntities<T extends { id: string; active: boolean }>(
   items: ReadonlyArray<T>,
@@ -29,8 +29,9 @@ export function currentFyEndYear(now: Date = new Date()): number {
   return m >= 6 ? y + 1 : y;
 }
 
-// Last 3 + current + next = 5-year visible window. The "future" sentinel and
-// any FY older than (current - 3) end up in the collapsed group.
+// Last 3 + current + next = 5-year visible window. Any FY older than
+// (current - 3) ends up in the collapsed group; the legacy "future"
+// sentinel never matches and is hidden.
 export function isDefaultVisibleFy(id: string, now: Date = new Date()): boolean {
   const m = /^fy(\d{4})$/.exec(id);
   if (!m) return false;

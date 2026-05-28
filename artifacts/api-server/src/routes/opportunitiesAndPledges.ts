@@ -118,7 +118,7 @@ router.get(
       req.query as Record<string, unknown>,
       OPP_ARRAY_PARAMS,
     );
-    // Fiscal-year slugs are stored lowercase (`fy2026`, `future`). Preserve
+    // Fiscal-year slugs are stored lowercase (`fy2026`). Preserve
     // the prior route behavior of accepting manually-typed uppercase values
     // by lowercasing here, after the comma-form split.
     if (Array.isArray(normalizedQuery.fiscalYear)) {
