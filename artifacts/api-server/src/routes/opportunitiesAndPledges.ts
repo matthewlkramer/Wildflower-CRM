@@ -86,7 +86,7 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { applyDerivedOppFields } from "../lib/pledgeStage";
+import { applyDerivedOppFields, canonicalWinProbability } from "../lib/pledgeStage";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -320,7 +320,21 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateOpportunityOrPledgeBodyRefined, req.body, res);
     if (!body) return;
-    const [row] = await db.insert(opportunitiesAndPledges).values({ id: newId(), ...body }).returning();
+    // Stamp canonical win_probability on insert when caller provided a
+    // stage/status but no explicit win_probability — same rule as the
+    // PATCH path. Explicit winProbability in the body always wins.
+    const writeValues: typeof body & { winProbability?: string | null } = { ...body };
+    if (
+      (body.stage !== undefined || body.status !== undefined) &&
+      body.winProbability === undefined
+    ) {
+      const wp = canonicalWinProbability(body.status ?? null, body.stage ?? null);
+      if (wp !== null) writeValues.winProbability = wp;
+    }
+    const [row] = await db
+      .insert(opportunitiesAndPledges)
+      .values({ id: newId(), ...writeValues })
+      .returning();
     if (row) await applyDerivedOppFields(row.id);
     const final = row
       ? (await db.select().from(opportunitiesAndPledges).where(eq(opportunitiesAndPledges.id, row.id)).then((r) => r[0])) ?? row
@@ -354,15 +368,31 @@ router.patch(
     });
     if (issues.length) return respondInvariantFailure(res, issues);
 
+    // Canonical-win-probability rule: whenever the PATCH touches stage
+    // or status, re-derive win_probability from the new (status, stage)
+    // pair — overwriting any past user override. If the same PATCH
+    // also explicitly sets winProbability, let the explicit value win
+    // (atomic override + stage change on the same edit).
+    const stageOrStatusInBody =
+      body.stage !== undefined || body.status !== undefined;
+    const writeData: typeof body & { winProbability?: string | null } = {
+      ...body,
+    };
+    if (stageOrStatusInBody && body.winProbability === undefined) {
+      const wp = canonicalWinProbability(merged.status, merged.stage);
+      if (wp !== null) writeData.winProbability = wp;
+    }
+
     const [row] = await db
       .update(opportunitiesAndPledges)
-      .set({ ...body, updatedAt: new Date() })
+      .set({ ...writeData, updatedAt: new Date() })
       .where(eq(opportunitiesAndPledges.id, id))
       .returning();
     if (!row) return notFound(res, "opportunity");
     // The patch may have changed stage, awardedAmount, or status — any
     // of which can flip was_pledge sticky-true, change the derived
-    // status, or trigger the written_commitment→cash_in auto-advance.
+    // status, or trigger the written_commitment→cash_in auto-advance
+    // (which itself re-canonicalises win_probability inside the helper).
     await applyDerivedOppFields(id);
     const final = await db
       .select()

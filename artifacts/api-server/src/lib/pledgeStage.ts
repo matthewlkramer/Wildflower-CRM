@@ -10,6 +10,48 @@ const PLEDGE_STAGES = new Set([
   "written_commitment",
 ]);
 
+// Canonical win-probability mapping. Status takes precedence over stage
+// for the four "terminal-ish" statuses (pledge/cash_in/dormant/lost);
+// for 'open' (or null), we fall through to the stage table. Values are
+// stored as numeric strings to match the DB column type (NUMERIC(5,4)).
+const STATUS_WIN_PROBABILITY: Record<string, string> = {
+  pledge: "0.9000",
+  cash_in: "1.0000",
+  dormant: "0.0000",
+  lost: "0.0000",
+};
+
+const STAGE_WIN_PROBABILITY: Record<string, string> = {
+  cold_lead: "0.0500",
+  warm_lead: "0.1000",
+  in_conversation: "0.2500",
+  convince: "0.5000",
+  conditional_commitment: "0.7500",
+  probable_renewal: "0.8000",
+  verbal_commitment: "0.9000",
+  written_commitment: "0.9500",
+  cash_in: "1.0000",
+};
+
+/**
+ * Canonical default win-probability (0–1, as a numeric string) for a
+ * given (status, stage). Status overrides stage for pledge / cash_in /
+ * dormant / lost; otherwise the stage drives it. Returns null if
+ * nothing matches (e.g. both inputs null).
+ */
+export function canonicalWinProbability(
+  status: string | null | undefined,
+  stage: string | null | undefined,
+): string | null {
+  if (status && status in STATUS_WIN_PROBABILITY) {
+    return STATUS_WIN_PROBABILITY[status]!;
+  }
+  if (stage && stage in STAGE_WIN_PROBABILITY) {
+    return STAGE_WIN_PROBABILITY[stage]!;
+  }
+  return null;
+}
+
 export interface DeriveInput {
   stage: string | null;
   status: string | null;
@@ -113,17 +155,24 @@ export async function applyDerivedOppFields(
     paidAmount: paid,
   });
 
-  if (
-    status !== row.status ||
-    wasPledge !== row.wasPledge ||
-    stage !== row.stage
-  ) {
+  const statusOrStageChanged = status !== row.status || stage !== row.stage;
+  if (statusOrStageChanged || wasPledge !== row.wasPledge) {
+    // When derivation flips status or stage (e.g. written_commitment
+    // auto-advances to cash_in on full payment), also recompute
+    // win_probability to the canonical default. We intentionally
+    // overwrite any prior user override — same rule as the explicit
+    // PATCH path: a status/stage change always re-canonicalises the
+    // probability.
+    const winProbability = statusOrStageChanged
+      ? canonicalWinProbability(status, stage) ?? row.winProbability
+      : row.winProbability;
     await db
       .update(opportunitiesAndPledges)
       .set({
         status: status as typeof row.status,
         wasPledge,
         stage: stage as typeof row.stage,
+        winProbability,
         updatedAt: new Date(),
       })
       .where(eq(opportunitiesAndPledges.id, id));
