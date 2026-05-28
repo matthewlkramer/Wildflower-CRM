@@ -2,7 +2,7 @@
   "name": "wildflower-tracking-extension",
   "displayName": "Wildflower Foundation CRM",
   "version": "1.0.0",
-  "description": "Wildflower Foundation CRM extension tool. Tracks email opens for messages sent from Gmail and links them back to contacts in the Wildflower Fundraising CRM.",
+  "description": "Tracks email opens for Gmail messages and links them to contacts in the Wildflower Fundraising CRM.",
   "author": "Wildflower Schools (vendored from Magio by Deepak Silaych)",
   "scripts": {
     "dev": "plasmo dev",
