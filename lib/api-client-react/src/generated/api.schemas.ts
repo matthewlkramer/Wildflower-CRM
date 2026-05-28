@@ -2456,6 +2456,12 @@ export type ListFundersParams = {
   capacityRating?: CapacityRating[];
   ownerUserId?: string[];
   /**
+ * Filter to funders whose `priority` tier is in the given set
+(top/high/medium/low). Multi-value: repeat or comma-separate.
+
+ */
+  priority?: Priority[];
+  /**
    * @minimum 1
    * @maximum 1000
    */

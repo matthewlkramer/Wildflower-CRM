@@ -300,6 +300,14 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
+        - name: priority
+          in: query
+          description: |
+            Filter to funders whose `priority` tier is in the given set
+            (top/high/medium/low). Multi-value: repeat or comma-separate.
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/Priority" } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:

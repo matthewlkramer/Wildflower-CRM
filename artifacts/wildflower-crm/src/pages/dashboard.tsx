@@ -5,9 +5,12 @@ import {
   useGetCurrentUser,
   useListTasks,
   useListNotes,
+  useListFunders,
   getListTasksQueryKey,
   getListNotesQueryKey,
+  getListFundersQueryKey,
   type TaskStatus,
+  type ListFundersParams,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -198,6 +201,8 @@ export default function Dashboard() {
 
       <UpcomingMeetingsCard />
 
+      <TopPrioritiesRow />
+
       <MyTasksAndMentionsRow />
 
       <EmailProposalsCard />
@@ -228,6 +233,57 @@ export default function Dashboard() {
           </Card>
         </Link>
       </div>
+    </div>
+  );
+}
+
+function TopPrioritiesRow() {
+  const { data: me } = useGetCurrentUser();
+  const userId = me?.id;
+  const teamParams: ListFundersParams = { priority: ["top"], limit: 100 };
+  const mineParams: ListFundersParams = userId
+    ? { priority: ["top"], ownerUserId: [userId], limit: 100 }
+    : { priority: ["top"], limit: 0 };
+  const { data: teamData } = useListFunders(teamParams, {
+    query: { queryKey: getListFundersQueryKey(teamParams) },
+  });
+  const { data: mineData } = useListFunders(mineParams, {
+    query: { enabled: !!userId, queryKey: getListFundersQueryKey(mineParams) },
+  });
+  const team = teamData?.data ?? [];
+  const mine = mineData?.data ?? [];
+  const renderList = (rows: typeof team, emptyMsg: string) =>
+    rows.length === 0 ? (
+      <p className="text-sm text-muted-foreground">{emptyMsg}</p>
+    ) : (
+      <ul className="space-y-1">
+        {rows.map((f) => (
+          <li key={f.id} className="text-sm border rounded-md p-2 hover:bg-muted/50 transition-colors">
+            <Link href={`/funding-entities/${f.id}`} className="block truncate" data-testid={`dash-top-priority-${f.id}`}>
+              {f.name}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    );
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Card data-testid="card-my-top-priorities">
+        <CardHeader>
+          <CardTitle className="text-lg">My top priorities</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {renderList(mine, "No top-priority funders assigned to you.")}
+        </CardContent>
+      </Card>
+      <Card data-testid="card-team-top-priorities">
+        <CardHeader>
+          <CardTitle className="text-lg">Team top priorities</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {renderList(team, "No top-priority funders.")}
+        </CardContent>
+      </Card>
     </div>
   );
 }

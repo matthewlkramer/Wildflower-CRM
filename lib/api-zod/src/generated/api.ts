@@ -752,6 +752,12 @@ export const ListFundersQueryParams = zod.object({
     )
     .optional(),
   ownerUserId: zod.array(zod.coerce.string()).optional(),
+  priority: zod
+    .array(zod.enum(["top", "high", "medium", "low"]))
+    .optional()
+    .describe(
+      "Filter to funders whose `priority` tier is in the given set\n(top\/high\/medium\/low). Multi-value: repeat or comma-separate.\n",
+    ),
   limit: zod.coerce
     .number()
     .min(1)
