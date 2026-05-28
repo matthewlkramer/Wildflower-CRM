@@ -283,19 +283,21 @@ function ProposalList({ kind }: { kind: Kind }) {
             </DialogDescription>
           </DialogHeader>
           {rejectTarget ? (
-            <div className="space-y-3">
-              <div className="text-sm font-medium truncate">
+            <div className="space-y-3 min-w-0">
+              <div className="text-sm font-medium truncate min-w-0">
                 {rejectTarget.summary}
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label htmlFor="reviewer-note">Reviewer note</Label>
                 <Textarea
                   id="reviewer-note"
                   value={rejectNote}
                   onChange={(e) => setRejectNote(e.target.value)}
                   rows={4}
+                  cols={1}
                   placeholder="e.g. Wrong person — same name, different city"
                   data-testid="input-reviewer-note"
+                  className="w-full resize-y"
                 />
               </div>
             </div>
