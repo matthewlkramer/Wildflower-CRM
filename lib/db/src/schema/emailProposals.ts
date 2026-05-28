@@ -74,6 +74,13 @@ export const emailProposals = pgTable(
     subjectEmail: text("subject_email"),
     subjectName: text("subject_name"),
     subjectDomain: text("subject_domain"),
+    // When the source Gmail message was SENT (from the message's Date /
+    // internalDate), as opposed to `createdAt` which is when our sync
+    // pass first persisted the proposal. The review UI shows this so a
+    // reviewer sees when the email actually arrived, not when we synced
+    // it. Nullable: some legacy rows / messages without a parseable
+    // Date header fall back to `createdAt` at render time.
+    emailSentAt: timestamp("email_sent_at", { withTimezone: true }),
     payload: jsonb("payload").notNull().default({}),
     // AI-proposed structured actions to execute when the user accepts
     // this proposal. Populated asynchronously by `proposeActionsForProposal`

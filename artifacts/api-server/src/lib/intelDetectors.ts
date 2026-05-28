@@ -328,6 +328,17 @@ export function parseAutoResponderMove(
   if (!text) return null;
   const head = text.slice(0, 1200);
 
+  // Plain out-of-office / vacation auto-replies are noise: the person
+  // is still at the org, just temporarily away. Bail when the message
+  // reads like an OOO AND carries none of the "I left / I moved on"
+  // departure signals. (We still continue if a departure phrase is
+  // present, since some people word a permanent departure as an OOO.)
+  const oooRe =
+    /\b(out\s+of\s+(?:the\s+)?office|on\s+(?:vacation|holiday|leave|pto|annual\s+leave|parental\s+leave|maternity\s+leave|paternity\s+leave|sabbatical)|away\s+from\s+(?:my\s+)?(?:desk|email|the\s+office)|currently\s+(?:traveling|travelling|away)|will\s+be\s+(?:out|away)|limited\s+access\s+to\s+(?:my\s+)?email|return(?:ing)?\s+(?:on|to\s+the\s+office))\b/i;
+  const departureRe =
+    /\b(no\s+longer\s+(?:work|employed|with|at)|has\s+left|have\s+left|I\s+have\s+left|moved\s+on|new\s+(?:role|position|job|opportunity|chapter)|joined|accepted\s+a\s+(?:new\s+)?(?:role|position)|departed|resigned|last\s+day)\b/i;
+  if (oooRe.test(head) && !departureRe.test(head)) return null;
+
   let leftCompany: string | null = null;
   let newCompany: string | null = null;
   let newEmail: string | null = null;
@@ -352,7 +363,11 @@ export function parseAutoResponderMove(
   );
   if (emailMatch) newEmail = emailMatch[1].toLowerCase().replace(/[.,;:>]+$/g, "");
 
-  if (!leftCompany && !newCompany && !newEmail) return null;
+  // Only surface a genuine MOVE: the person must have either left an
+  // org or joined/started somewhere new. A bare forwarding address
+  // ("for urgent matters email my colleague at x@co.com") on its own is
+  // NOT a move — those frequently appear in OOO replies.
+  if (!leftCompany && !newCompany) return null;
   const snippet = head.replace(/\s+/g, " ").trim().slice(0, 280);
   return { leftCompany, newCompany, newEmail, quotedSnippet: snippet };
 }
@@ -383,6 +398,24 @@ export interface SignatureParse {
  *
  * Returns null if we can't find at least one of title / phone / company.
  */
+// Validates that a candidate substring is actually phone-shaped, not a
+// year range, ZIP+4, account/order number, Zoom meeting id, etc.
+// Real phone numbers carry 10 (US) up to 15 (E.164) digits. Without a
+// phone label on the line we additionally require a separator / "+" /
+// "(" so a bare long digit run can't masquerade as a phone.
+function looksLikePhone(raw: string, hasLabel: boolean): boolean {
+  const trimmed = raw.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length < 10 || digits.length > 15) return false;
+  // All-identical or trivially sequential digit runs aren't phones.
+  if (/^(\d)\1+$/.test(digits)) return false;
+  if (!hasLabel) {
+    const hasShape = /[()\-.\s]/.test(trimmed) || trimmed.startsWith("+");
+    if (!hasShape) return false;
+  }
+  return true;
+}
+
 export function parseEmailSignature(
   bodyText: string | null,
   bodyHtml: string | null,
@@ -432,7 +465,15 @@ export function parseEmailSignature(
 
   const titleTokens = /\b(CEO|COO|CFO|CTO|CIO|CMO|President|Vice\s+President|VP|Director|Manager|Head\s+of|Partner|Founder|Co-?Founder|Owner|Principal|Lead|Officer|Counsel|Coordinator|Associate|Analyst|Consultant|Advisor|Strategist|Engineer|Trustee|Chair(?:person)?|Executive)\b/i;
   const orgTokens = /\b(Inc\.?|LLC|Ltd\.?|Foundation|Trust|Fund|Partners|Capital|Group|Holdings?|Family\s+Office|Philanthropies|Philanthropy|Schools?|University|College|Institute|Association|Society|Bank|Bancorp|Charity|Charitable)\b/;
-  const phoneRe = /(?:\+?\d[\d\s().-]{7,}\d)/;
+  // Phone label that, when present on a line, lets us accept a plain
+  // 10–15 digit run as a phone even without separators.
+  const phoneLabelRe = /\b(phone|tel|telephone|mobile|cell|office|direct|fax|call|ph|mob)\b|(?:^|\s)(?:o|m|c|p|d|f|t)\s*[:.]\s*(?=.*\d)/i;
+  // Candidate phone substring: optional +country, optional (area),
+  // then digit groups joined by space / dot / hyphen. Requires at
+  // least one separator so we don't latch onto bare ID/account/Zoom
+  // numbers. The label path below covers separator-less real numbers.
+  const phoneRe =
+    /(?:\+?\d{1,3}[\s.\-]?)?(?:\(\d{2,4}\)\s?)?\d{2,4}(?:[\s.\-]\d{2,4}){1,4}(?:\s*(?:x|ext\.?)\s*\d{1,5})?/i;
   const emailRe = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 
   let title: string | null = null;
@@ -446,9 +487,16 @@ export function parseEmailSignature(
       if (m) email = m[0].toLowerCase();
     }
     if (!phone) {
+      const hasLabel = phoneLabelRe.test(line);
       const m = line.match(phoneRe);
-      // Avoid grabbing dates / years
-      if (m && /\d{3}.*\d{3}/.test(m[0])) phone = m[0].trim();
+      if (m && looksLikePhone(m[0], hasLabel)) {
+        phone = m[0].trim();
+      } else if (hasLabel) {
+        // Labelled line ("Mobile: 5551234567") — accept a bare 10–15
+        // digit run that the separator-requiring regex above skipped.
+        const bare = line.match(/\+?\d[\d\s().\-]{8,}\d/);
+        if (bare && looksLikePhone(bare[0], true)) phone = bare[0].trim();
+      }
     }
     if (!title && line.length <= 90 && titleTokens.test(line)) {
       // Strip leading bullet / icon chars
@@ -515,6 +563,83 @@ const NON_GRANT_EVENT_RE =
 // reply / forwarded message, not a real opportunity description.
 const QUOTED_TAIL_FIRST_LINE_RE =
   /^(?:>|_{3,}|-{3,}|={3,}|\*{3,}|#{3,}|<https?:|Forwarded\s+message|Begin\s+forwarded\s+message|On\s+.{1,80}\s+wrote:|From:\s|Sent\s+from\s+my)/i;
+
+// Grant WINNER / recipient announcements. These celebrate awards
+// already made — not a new opportunity to apply for. We suppress them
+// entirely (subject-level) and per-block. Deliberately phrased to
+// catch past-tense / "meet our grantees" language without snaring
+// future-tense opportunity copy like "grants will be awarded to
+// selected applicants".
+const GRANT_WINNER_RE =
+  /\b(congratulations\s+to|winners?\s+(?:are|have\s+been|announced|named|selected)|recipients?\s+(?:are|have\s+been|announced|named|selected)|grantees?\s+(?:are|have\s+been|announced|named|selected)|meet\s+(?:our|the)\s+(?:\d{4}\s+)?(?:grantees|recipients|winners|fellows|cohort|awardees)|proud\s+to\s+announce\s+(?:our|the|this\s+year'?s)\s+(?:\d{4}\s+)?(?:grantees|recipients|winners|awardees|fellows|cohort)|(?:has|have)\s+been\s+awarded|awarded\s+grants?\s+to|recipients?\s+of\s+(?:our|the|this))\b/i;
+
+// Future-facing "you can still apply" language. Used to gate the winner
+// suppression: a winner announcement is only allowed through when it ALSO
+// advertises an OPEN round. Deliberately narrower than GRANT_BODY_HINTS_RE
+// (which matches "grant award"/"grant cycle" — phrasing winner emails carry
+// naturally) so that a pure "congrats to our grantees" blast can't slip past
+// just by mentioning the word "grant".
+const GRANT_OPEN_OPPORTUNITY_RE =
+  /\b(now\s+accepting|accepting\s+applications|applications?\s+(?:are\s+)?(?:now\s+)?open|now\s+open\s+for\s+applications|open\s+for\s+applications|apply\s+(?:now|today|by|here|online)|deadline\s+to\s+apply|call\s+for\s+(?:proposals?|applications?)|request\s+for\s+proposals?|RFP|letter\s+of\s+(?:inquiry|interest)|LOI|submit\s+(?:your\s+)?(?:application|proposal|LOI))\b/i;
+
+// RFPs whose intent is to HIRE a vendor / contractor / consultant to
+// perform work FOR the sender — i.e. the sender is the buyer, not a
+// funder. Wildflower is a grant SEEKER, so vendor-procurement RFPs are
+// noise. (RFP/RFQ/RFB keywords alone qualify a grant subject, so we
+// must explicitly carve these out.)
+const VENDOR_RFP_RE =
+  /\b(seeking\s+(?:a\s+)?(?:vendor|contractor|consultant|firm|agency|bidder|proposer)|proposals?\s+from\s+(?:qualified\s+)?(?:vendors|contractors|consultants|firms|agencies|bidders|proposers)|scope\s+of\s+work|statement\s+of\s+work|invitation\s+to\s+bid|request\s+for\s+(?:qualifications|bids?|quotations?)|procurement|submit\s+(?:a\s+)?bid|to\s+provide\s+(?:services|goods|consulting))\b/i;
+
+// Promo / newsletter / event-registration / sponsorship copy. These
+// are marketing, not open grants. Used as an extra skip filter (the
+// event regex above already covers webinars / conferences themselves;
+// this targets the "register / buy tickets / sponsor us" call-to-action
+// variants and pure promotional blasts).
+const PROMO_REGISTRATION_RE =
+  /\b(register\s+(?:now|today|here|online)|registration\s+(?:is\s+)?(?:now\s+)?open|reserve\s+your\s+(?:seat|spot|place)|early\s+bird|save\s+the\s+date|buy\s+(?:tickets|your\s+ticket)|tickets?\s+(?:are\s+)?(?:now\s+)?(?:available|on\s+sale)|sponsorship\s+opportunit|become\s+a\s+sponsor|exhibitor|sign\s+up\s+(?:now|today)|limited\s+(?:seats|spots))\b/i;
+
+const DEADLINE_MONTHS: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+// Parse a deadline string into a UTC Date ONLY when it carries an
+// explicit 4- or 2-digit year. Bare "Dec 15" returns null so we never
+// guess the year (and therefore never suppress on a guess).
+function parseDeadlineDate(s: string): Date | null {
+  const str = s.trim();
+  let m = str.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  m = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (m) {
+    let y = +m[3];
+    if (y < 100) y += 2000;
+    return new Date(Date.UTC(y, +m[1] - 1, +m[2]));
+  }
+  m = str.match(/([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/);
+  if (m) {
+    const mon = DEADLINE_MONTHS[m[1].toLowerCase().slice(0, 3)];
+    if (mon === undefined) return null;
+    return new Date(Date.UTC(+m[3], mon, +m[2]));
+  }
+  return null;
+}
+
+// True only when the deadline carried an explicit year AND falls
+// strictly before the reference day. Unknown / yearless deadlines are
+// never treated as passed (conservative — we'd rather surface a maybe
+// than hide a live opportunity).
+function deadlineHasPassed(deadline: string | null, reference: Date): boolean {
+  if (!deadline) return false;
+  const parsed = parseDeadlineDate(deadline);
+  if (!parsed) return false;
+  const refDay = Date.UTC(
+    reference.getUTCFullYear(),
+    reference.getUTCMonth(),
+    reference.getUTCDate(),
+  );
+  return parsed.getTime() < refDay;
+}
 
 /**
  * Heuristic: does this sender/subject look like a grants newsletter
@@ -593,11 +718,17 @@ export function extractGrantOpportunities(
   bodyText: string | null,
   bodyHtml: string | null,
   fromEmail: string | null,
+  emailSentAt?: Date | null,
 ): GrantOpportunity[] {
   const text = (bodyText && bodyText.trim().length > 0
     ? bodyText
     : stripHtml(bodyHtml ?? "")) ?? "";
   if (!text && !subject) return [];
+
+  // Reference date for "has this deadline already passed?" checks. Use
+  // the email's SENT date when known so backfilled / late-synced mail
+  // is judged against when it actually arrived, not today.
+  const reference = emailSentAt ?? new Date();
 
   // Event / webinar / demo / bootcamp invites are not grant
   // opportunities, even when they show up in a digest that DOES carry
@@ -608,6 +739,28 @@ export function extractGrantOpportunities(
   if (
     subject &&
     NON_GRANT_EVENT_RE.test(subject) &&
+    !GRANT_SUBJECT_RE.test(subject)
+  ) {
+    return [];
+  }
+
+  // Subject-level suppression of whole emails that are clearly not new
+  // grant opportunities: winner/recipient announcements, vendor-hiring
+  // RFPs, and promo/registration/sponsorship blasts. We only bail on
+  // the WINNER signal when the subject doesn't ALSO advertise a fresh
+  // round (some funders announce winners + next cycle in one subject);
+  // vendor + promo signals are unambiguous enough to bail outright.
+  if (
+    subject &&
+    GRANT_WINNER_RE.test(subject) &&
+    !GRANT_OPEN_OPPORTUNITY_RE.test(subject)
+  ) {
+    return [];
+  }
+  if (subject && VENDOR_RFP_RE.test(subject)) return [];
+  if (
+    subject &&
+    PROMO_REGISTRATION_RE.test(subject) &&
     !GRANT_SUBJECT_RE.test(subject)
   ) {
     return [];
@@ -634,6 +787,19 @@ export function extractGrantOpportunities(
     // RFPs and webinars in the same email. We don't want the webinar
     // entries to land as grant proposals.
     if (NON_GRANT_EVENT_RE.test(block) && !GRANT_BODY_HINTS_RE.test(block)) {
+      return;
+    }
+
+    // Per-block winner-announcement filter: a digest may pair a fresh
+    // RFP with a "congratulations to our 2026 grantees" blurb. Drop the
+    // winner blocks; keep the genuine opportunity blocks.
+    if (GRANT_WINNER_RE.test(block) && !GRANT_OPEN_OPPORTUNITY_RE.test(block)) {
+      return;
+    }
+    // Vendor-procurement RFP block — sender is hiring, not funding.
+    if (VENDOR_RFP_RE.test(block)) return;
+    // Promo / registration / sponsorship block with no real grant hint.
+    if (PROMO_REGISTRATION_RE.test(block) && !GRANT_BODY_HINTS_RE.test(block)) {
       return;
     }
 
@@ -678,6 +844,11 @@ export function extractGrantOpportunities(
       new RegExp(`(?:deadline|due(?:\\s+(?:by|date))?|apply\\s+by|submit\\s+by|closes?(?:\\s+on)?)[^\\n]{0,40}?(${DEADLINE_RE.source})`, "i"),
     );
     const deadline = deadlineMatch ? deadlineMatch[1].trim() : null;
+
+    // Suppress opportunities whose application deadline (when it
+    // carried an explicit year) has already passed relative to when the
+    // email was sent. Yearless deadlines are never treated as passed.
+    if (deadlineHasPassed(deadline, reference)) return;
 
     const amountMatch = block.match(AMOUNT_RE);
     const amount = amountMatch ? amountMatch[0].trim() : null;

@@ -131,10 +131,20 @@ export type ProposedAction =
 const ACTION_TOOL_SCHEMA = {
   name: "propose_actions",
   description:
-    "Return the structured CRM mutations the reviewer should consider for this email-intelligence proposal. Return an empty array if no actions are warranted — that's a valid response.",
+    "Return the structured CRM mutations the reviewer should consider for this email-intelligence proposal. Return an empty array if no actions are warranted — that's a valid response. Separately, set `suppress` when the proposal is noise that the reviewer should never have to see at all.",
   input_schema: {
     type: "object",
     properties: {
+      suppress: {
+        type: "object",
+        description:
+          "Set shouldSuppress=true ONLY when this proposal is clearly noise the reviewer should not have to triage — e.g. a grant WINNER/recipient announcement (not a new opportunity), a promo/newsletter/event-registration/sponsorship blast, an RFP to hire a vendor/contractor (sender is buying, not funding), an opportunity whose application deadline has already passed, a plain out-of-office auto-reply (person still at the org), or a signature whose name clearly belongs to someone other than the highlighted CRM person. Be conservative: when in doubt, do NOT suppress.",
+        required: ["shouldSuppress", "reason"],
+        properties: {
+          shouldSuppress: { type: "boolean" },
+          reason: { type: "string", description: "Short justification, under 140 chars." },
+        },
+      },
       actions: {
         type: "array",
         items: {
@@ -358,6 +368,11 @@ function buildSystemPrompt(): string {
     "• For bounce messages: emit `mark_email_invalid` only for hard bounces. Soft bounces are review-only — return an empty actions array.",
     "• For grant opportunities: emit one `create_grant_opportunity` per distinct RFP / grant program named, with funderId only if the funder appears in context. Use cold_lead unless the message indicates an active invitation (then warm_lead). Don't invent ask amounts — only set askAmount if the message states one.",
     "",
+    "Suppression (separate from actions):",
+    "• Set `suppress.shouldSuppress=true` when the WHOLE proposal is noise the reviewer should never see. Concretely: grant WINNER / recipient announcements (celebrating awards already made, not a new opening); promo / newsletter / event-registration / sponsorship blasts; an RFP to hire a vendor/contractor/consultant (the sender is buying services, not offering grant funding); a grant whose application DEADLINE has already passed relative to the EMAIL SENT DATE shown below; a plain out-of-office / vacation auto-reply where the person is still at their org (only a genuine departure or new-job move is worth surfacing); a signature_update whose parsed name clearly belongs to a different person than the highlighted CRM person.",
+    "• When you suppress, you should normally also return an empty actions array.",
+    "• Be conservative: suppression hides the item from the reviewer entirely, so when in doubt, leave shouldSuppress=false and let the reviewer decide.",
+    "",
     "Return an empty actions array when no automatic mutation is warranted — that is a valid and often correct answer.",
   ].join("\n");
 }
@@ -374,6 +389,9 @@ function buildUserPrompt(args: {
   const lines: string[] = [];
   lines.push(`PROPOSAL KIND: ${proposal.kind}`);
   lines.push(`PROPOSAL SUBJECT: ${proposal.subjectName ?? proposal.subjectEmail ?? "(none)"}`);
+  lines.push(
+    `EMAIL SENT DATE: ${proposal.emailSentAt ? new Date(proposal.emailSentAt).toISOString().slice(0, 10) : "(unknown)"}`,
+  );
   lines.push("");
   lines.push("PROPOSAL PAYLOAD (what the detector parsed):");
   lines.push(JSON.stringify(proposal.payload, null, 2));
@@ -519,15 +537,25 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
     });
 
     let actions: ProposedAction[] = [];
+    let suppress: { shouldSuppress?: boolean; reason?: string } | null = null;
     for (const block of response.content) {
       if (block.type === "tool_use" && block.name === "propose_actions") {
-        const raw = (block.input as { actions?: unknown }).actions;
-        if (Array.isArray(raw)) {
-          actions = raw as ProposedAction[];
+        const input = block.input as { actions?: unknown; suppress?: unknown };
+        if (Array.isArray(input.actions)) {
+          actions = input.actions as ProposedAction[];
+        }
+        if (input.suppress && typeof input.suppress === "object") {
+          suppress = input.suppress as { shouldSuppress?: boolean; reason?: string };
         }
         break;
       }
     }
+
+    // When the model judges the whole proposal to be noise, auto-ignore
+    // it so the reviewer never has to triage it — but only for rows the
+    // reviewer hasn't already acted on (still 'pending'). We never flip
+    // an accepted/applied row back to ignored.
+    const shouldIgnore = suppress?.shouldSuppress === true;
 
     await db
       .update(emailProposals)
@@ -536,9 +564,23 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
         actionsAnalyzedAt: new Date(),
         actionsModel: MODEL,
         actionsError: null,
+        ...(shouldIgnore
+          ? {
+              status: "ignored" as const,
+              resolvedAt: new Date(),
+              reviewerNote: `Auto-suppressed: ${
+                suppress?.reason ?? "non-actionable noise"
+              }`.slice(0, 500),
+            }
+          : {}),
         updatedAt: new Date(),
       })
-      .where(eq(emailProposals.id, proposalId));
+      .where(
+        and(
+          eq(emailProposals.id, proposalId),
+          shouldIgnore ? eq(emailProposals.status, "pending") : sql`true`,
+        ),
+      );
 
     return { ranAI: true, actions };
   } catch (err) {

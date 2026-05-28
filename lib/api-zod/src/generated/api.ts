@@ -64,6 +64,7 @@ export const ListEmailProposalsResponse = zod.object({
       subjectEmail: zod.string().nullish(),
       subjectName: zod.string().nullish(),
       subjectDomain: zod.string().nullish(),
+      emailSentAt: zod.string().datetime({}).nullish(),
       payload: zod.record(zod.string(), zod.unknown()),
       proposedActions: zod
         .array(
@@ -155,6 +156,7 @@ export const AcceptEmailProposalResponse = zod.object({
   subjectEmail: zod.string().nullish(),
   subjectName: zod.string().nullish(),
   subjectDomain: zod.string().nullish(),
+  emailSentAt: zod.string().datetime({}).nullish(),
   payload: zod.record(zod.string(), zod.unknown()),
   proposedActions: zod
     .array(
@@ -221,6 +223,7 @@ export const RejectEmailProposalResponse = zod.object({
   subjectEmail: zod.string().nullish(),
   subjectName: zod.string().nullish(),
   subjectDomain: zod.string().nullish(),
+  emailSentAt: zod.string().datetime({}).nullish(),
   payload: zod.record(zod.string(), zod.unknown()),
   proposedActions: zod
     .array(

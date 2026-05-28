@@ -66,6 +66,7 @@ export async function processIntelForUnmatched(args: {
   subject: string | null;
   bodyText: string | null;
   bodyHtml: string | null;
+  emailSentAt: Date | null;
 }): Promise<void> {
   try {
     if (isLinkedInNotificationSender(args.fromEmail)) {
@@ -98,6 +99,7 @@ export async function processIntelForMatched(args: {
   direction: "sent" | "received";
   matchedPersonIds: string[] | null;
   ownerEmail: string | null;
+  emailSentAt: Date | null;
 }): Promise<void> {
   // We only mine inbound replies — signature / auto-responder data
   // only makes sense when the message is FROM the CRM contact, not
@@ -126,6 +128,7 @@ export async function processIntelForMatched(args: {
         subject: args.subject,
         bodyText: args.bodyText,
         bodyHtml: args.bodyHtml,
+        emailSentAt: args.emailSentAt,
       });
       // Don't return — a grant digest from a CRM contact still
       // might have an auto-responder or signature payload worth
@@ -177,26 +180,25 @@ async function handleLinkedIn(args: {
   subject: string | null;
   bodyText: string | null;
   bodyHtml: string | null;
+  emailSentAt: Date | null;
 }): Promise<void> {
   const items = extractLinkedInJobChanges(args.bodyText, args.bodyHtml, args.subject);
   if (items.length === 0) return;
 
   for (const it of items) {
     const personId = await findPersonByName(it.personName);
-    // We surface even unmatched LinkedIn items so the reviewer can
-    // decide to create the person — this is one of the most valuable
-    // ways the panel finds new prospects. Confidence is encoded in
-    // payload.matchConfidence.
-    const matchConfidence: "matched" | "ambiguous" | "none" =
-      personId === null ? "none" : personId === "ambiguous" ? "ambiguous" : "matched";
+    // Only surface LinkedIn job changes for people already on file in
+    // the CRM. The reviewer doesn't want to triage job-change signals
+    // for strangers — an unmatched (or ambiguously-matched) name is
+    // noise, not a prospect signal. Skip anything we can't pin to
+    // exactly one existing person.
     const resolvedPersonId = personId && personId !== "ambiguous" ? personId : null;
+    if (!resolvedPersonId) continue;
 
     // Skip if the person's current primary funder already matches the
     // detected new company — no signal to surface.
-    if (resolvedPersonId) {
-      const alreadyCurrent = await isPersonAlreadyAtCompany(resolvedPersonId, it.newCompany);
-      if (alreadyCurrent) continue;
-    }
+    const alreadyCurrent = await isPersonAlreadyAtCompany(resolvedPersonId, it.newCompany);
+    if (alreadyCurrent) continue;
 
     await upsertProposal({
       mailboxUserId: args.mailboxUserId,
@@ -206,12 +208,13 @@ async function handleLinkedIn(args: {
       subjectName: it.personName,
       subjectDomain: null,
       subjectEmail: null,
+      emailSentAt: args.emailSentAt,
       payload: {
         personName: it.personName,
         newTitle: it.newTitle,
         newCompany: it.newCompany,
         sourceLine: it.sourceLine,
-        matchConfidence,
+        matchConfidence: "matched",
         gmailMessageId: args.gmailMessageId,
       },
     });
@@ -224,6 +227,7 @@ async function handleBounce(args: {
   subject: string | null;
   bodyText: string | null;
   bodyHtml: string | null;
+  emailSentAt: Date | null;
 }): Promise<void> {
   const parsed = parseBounce(args.subject, args.bodyText, args.bodyHtml);
   if (!parsed) return;
@@ -256,6 +260,7 @@ async function handleBounce(args: {
     subjectEmail: parsed.recipient,
     subjectDomain: domainOf(parsed.recipient),
     subjectName: null,
+    emailSentAt: args.emailSentAt,
     payload: {
       recipient: parsed.recipient,
       smtpCode: parsed.smtpCode,
@@ -273,12 +278,14 @@ async function handleGrants(args: {
   subject: string | null;
   bodyText: string | null;
   bodyHtml: string | null;
+  emailSentAt: Date | null;
 }): Promise<void> {
   const items = extractGrantOpportunities(
     args.subject,
     args.bodyText,
     args.bodyHtml,
     args.fromEmail,
+    args.emailSentAt,
   );
   if (items.length === 0) return;
 
@@ -365,6 +372,7 @@ async function handleGrants(args: {
       subjectName: it.funderName,
       subjectDomain: domainOf(args.fromEmail),
       subjectEmail: args.fromEmail?.toLowerCase() ?? null,
+      emailSentAt: args.emailSentAt,
       payload: {
         title: it.title,
         funderName: it.funderName,
@@ -386,6 +394,7 @@ async function handleAutoResponder(args: {
   subject: string | null;
   bodyText: string | null;
   bodyHtml: string | null;
+  emailSentAt: Date | null;
 }): Promise<void> {
   if (!args.fromEmail) return;
   const move = parseAutoResponderMove(args.bodyText, args.bodyHtml);
@@ -417,6 +426,7 @@ async function handleAutoResponder(args: {
     subjectEmail: args.fromEmail.toLowerCase(),
     subjectName: null,
     subjectDomain: domainOf(args.fromEmail),
+    emailSentAt: args.emailSentAt,
     payload: { ...move, fromEmail: args.fromEmail },
   });
 }
@@ -429,6 +439,7 @@ async function handleSignature(
     bodyText: string | null;
     bodyHtml: string | null;
     ownerEmail: string | null;
+    emailSentAt: Date | null;
   },
   personId: string,
 ): Promise<void> {
@@ -460,6 +471,15 @@ async function handleSignature(
     .limit(1)
     .then((r) => r[0]);
   if (!person) return;
+
+  // Name-attribution guard: if the signature carries its OWN name and
+  // that name clearly isn't the CRM person we resolved the sender to,
+  // the parser almost certainly grabbed a signature belonging to
+  // someone else in the thread (a forwarded/quoted participant). Drop
+  // it rather than copy a stranger's title/phone onto our person.
+  if (sig.name && person.fullName && !namesPlausiblyMatch(sig.name, person.fullName)) {
+    return;
+  }
 
   // Compare detected company against any current peopleEntityRoles
   // funder for this person. If the sig company already matches, we
@@ -498,6 +518,7 @@ async function handleSignature(
     subjectEmail: args.fromEmail?.toLowerCase() ?? null,
     subjectName: person.fullName ?? sig.name,
     subjectDomain: domainOf(args.fromEmail),
+    emailSentAt: args.emailSentAt,
     payload: {
       parsed: sig,
       companyDrift,
@@ -521,6 +542,7 @@ async function upsertProposal(args: {
   subjectEmail?: string | null;
   subjectName?: string | null;
   subjectDomain?: string | null;
+  emailSentAt?: Date | null;
   payload: Record<string, unknown>;
 }): Promise<void> {
   const id = newId();
@@ -538,6 +560,7 @@ async function upsertProposal(args: {
       subjectEmail: args.subjectEmail ?? null,
       subjectName: args.subjectName ?? null,
       subjectDomain: args.subjectDomain ?? null,
+      emailSentAt: args.emailSentAt ?? null,
       payload: args.payload,
     })
     .onConflictDoNothing({
@@ -583,6 +606,41 @@ async function findPersonByName(
   if (rows.length === 0) return null;
   if (rows.length === 1) return rows[0].id;
   return "ambiguous";
+}
+
+// Loose name comparison for the signature attribution guard. Two
+// names "plausibly match" when they share their first AND last token
+// (case-insensitive, punctuation-stripped), so "Beth Smith" still
+// matches "Beth A. Smith" but "Daniel Glass" does NOT match
+// "Elizabeth Badillo Moorman". Deliberately permissive — we only use
+// this to REJECT obvious cross-person mismatches, not to confirm
+// matches, so a false "match" just lets the existing domain guards do
+// their job.
+const NAME_SUFFIXES = new Set([
+  "jr", "sr", "ii", "iii", "iv", "v", "phd", "md", "esq", "mba", "rn", "do",
+]);
+
+function namesPlausiblyMatch(a: string, b: string): boolean {
+  const toks = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, " ")
+      .split(/\s+/)
+      .filter((t) => t.length > 1)
+      .filter((t) => !NAME_SUFFIXES.has(t));
+  const at = toks(a);
+  const bt = toks(b);
+  if (at.length === 0 || bt.length === 0) return true; // can't judge
+  const aFirst = at[0];
+  const aLast = at[at.length - 1];
+  const bFirst = bt[0];
+  const bLast = bt[bt.length - 1];
+  const lastMatch = aLast === bLast;
+  const firstMatch =
+    aFirst === bFirst ||
+    aFirst.startsWith(bFirst) ||
+    bFirst.startsWith(aFirst); // nickname/initial tolerance
+  return lastMatch && firstMatch;
 }
 
 async function isPersonAlreadyAtCompany(
@@ -756,6 +814,7 @@ async function detectThankYou(args: {
       subjectEmail: recipients[0] ?? null,
       subjectDomain: domainOf(recipients[0] ?? null),
       subjectName: null,
+      emailSentAt: args.sentAt,
       payload: {
         giftId: gift.id,
         funderId: gift.funderId,

@@ -3206,6 +3206,12 @@ components:
         subjectEmail:       { type: string, nullable: true }
         subjectName:        { type: string, nullable: true }
         subjectDomain:      { type: string, nullable: true }
+        # When the source Gmail message was SENT (from its Date /
+        # internalDate), as opposed to createdAt (when our sync first
+        # persisted the proposal). The review UI shows this so reviewers
+        # see when the email actually arrived. Nullable: legacy rows /
+        # messages without a parseable Date fall back to createdAt.
+        emailSentAt:        { type: string, format: date-time, nullable: true }
         payload:            { type: object, additionalProperties: true }
         proposedActions:    { type: array, items: { $ref: "#/components/schemas/ProposedAction" } }
         actionsAnalyzedAt:  { type: string, format: date-time, nullable: true }

@@ -504,6 +504,7 @@ async function processOneMessage(
           subject,
           bodyText: partsForIntel.bodyText,
           bodyHtml: partsForIntel.bodyHtml,
+          emailSentAt: sentAt,
         });
       } catch (e) {
         // Classify the failure to avoid the two failure modes at the
@@ -677,6 +678,7 @@ async function processOneMessage(
         direction,
         matchedPersonIds: match.personIds,
         ownerEmail: grant.googleEmail,
+        emailSentAt: sentAt,
       });
     } catch (e) {
       // Matched-path intel is best-effort: the message row is already

@@ -1852,6 +1852,7 @@ export interface EmailProposal {
   subjectEmail?: string | null;
   subjectName?: string | null;
   subjectDomain?: string | null;
+  emailSentAt?: string | null;
   payload: EmailProposalPayload;
   proposedActions?: ProposedAction[];
   actionsAnalyzedAt?: string | null;

@@ -229,7 +229,7 @@ function ProposalList({ kind }: { kind: Kind }) {
                 {summarizeProposal(p)}
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                {new Date(p.createdAt).toLocaleString()}
+                {new Date(p.emailSentAt ?? p.createdAt).toLocaleString()}
               </p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">

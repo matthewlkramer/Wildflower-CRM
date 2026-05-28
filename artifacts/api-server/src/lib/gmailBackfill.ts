@@ -367,6 +367,7 @@ async function promoteSkipToMatched(
       direction,
       matchedPersonIds: match.personIds,
       ownerEmail: grant.googleEmail,
+      emailSentAt: sentAt,
     });
   }
 
@@ -470,6 +471,7 @@ async function phaseB(
       bodyHtml: string | null;
       direction: "sent" | "received";
       matchedPersonIds: string[] | null;
+      sentAt: Date | null;
     }> = await db
       .select({
         id: emailMessages.id,
@@ -479,6 +481,7 @@ async function phaseB(
         bodyHtml: emailMessages.bodyHtml,
         direction: emailMessages.direction,
         matchedPersonIds: emailMessages.matchedPersonIds,
+        sentAt: emailMessages.sentAt,
       })
       .from(emailMessages)
       .where(
@@ -509,6 +512,7 @@ async function phaseB(
           direction: row.direction,
           matchedPersonIds: row.matchedPersonIds,
           ownerEmail,
+          emailSentAt: row.sentAt,
         });
         report.phaseB.ranIntel++;
       } catch (err) {
@@ -570,6 +574,9 @@ async function phaseC(
           "full",
         );
         const parts = extractMessageParts(full.payload);
+        const sentAt = full.internalDate
+          ? new Date(Number(full.internalDate))
+          : null;
         await processIntelForUnmatched({
           mailboxUserId: grant.userId,
           gmailMessageId: row.gmailMessageId,
@@ -577,6 +584,7 @@ async function phaseC(
           subject: row.subject,
           bodyText: parts.bodyText,
           bodyHtml: parts.bodyHtml,
+          emailSentAt: sentAt,
         });
         report.phaseC.ranIntel++;
       } catch (err) {
