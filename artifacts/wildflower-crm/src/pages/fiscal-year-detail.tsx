@@ -12,7 +12,7 @@ import {
   type FiscalYearOpenRow,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort, formatEnum, abbreviateUsStates } from "@/lib/format";
-import { partitionEntities, partitionFiscalYears } from "@/lib/dropdownVisibility";
+import { partitionFiscalYears } from "@/lib/dropdownVisibility";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -29,8 +29,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DonorCell } from "@/components/donor-cell";
+import { useEntityFilter } from "@/lib/entity-filter-context";
 
 type Metric = "received" | "open-asks" | "weighted-asks";
 
@@ -40,6 +40,9 @@ const METRIC_LABELS: Record<Metric, string> = {
   "weighted-asks": "Weighted asks",
 };
 
+// Fallback when no entity is in the global filter. Matches the previous
+// page default; in normal flow users arrive here from the dashboard with
+// the header entity filter already narrowed to a single entity.
 const DEFAULT_ENTITY_ID = "wildflower_foundation";
 
 function parseMetric(s: string | null): Metric {
@@ -73,8 +76,16 @@ export default function FiscalYearDetail() {
   const search = useSearch();
   const sp = new URLSearchParams(search);
   const metric = parseMetric(sp.get("metric"));
-  // Entity defaults to Wildflower Foundation; user can override via URL or dropdown.
-  const entityId = (sp.get("entity") ?? DEFAULT_ENTITY_ID).trim() || DEFAULT_ENTITY_ID;
+
+  // Entity is sourced from the global header filter. The page-local entity
+  // dropdown was removed because it duplicated the header. When the header
+  // filter is empty (all entities) or has >1 entity selected, we fall back
+  // to Wildflower Foundation — the dashboard already prevents drilldown
+  // when multiple entities are selected, so the multi-entity case is
+  // defensive only.
+  const { selected: selectedEntityIds } = useEntityFilter();
+  const entityId =
+    selectedEntityIds.length === 1 ? selectedEntityIds[0] : DEFAULT_ENTITY_ID;
 
   const breakdownParams = { entityId };
   const breakdownQ = useGetFiscalYearBreakdown(fyId, breakdownParams, {
@@ -87,6 +98,8 @@ export default function FiscalYearDetail() {
   const fyListQ = useListFiscalYears({
     query: { queryKey: getListFiscalYearsQueryKey(), staleTime: 5 * 60_000 },
   });
+  // Entities list is still loaded so we can resolve the selected entity's
+  // display name for the page subtitle.
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey(), staleTime: 5 * 60_000 },
   });
@@ -98,58 +111,36 @@ export default function FiscalYearDetail() {
     rows.sort((a, b) => b.id.localeCompare(a.id));
     return rows;
   }, [fyListQ.data]);
-  const entityOptions = useMemo(
-    () => (entitiesQ.data ?? []).map((e) => ({ id: e.id, name: e.name, active: e.active })),
-    [entitiesQ.data],
-  );
 
-  // Default-visible window: recent FYs (last 3 + current + next) and
-  // non-retired entities. Older FYs / retired entities sit behind an
-  // expand toggle. Auto-expand if the current selection is in the hidden
-  // set so the user can still see / change their selection in the list.
+  // Default-visible window: recent FYs (last 3 + current + next). Older FYs
+  // sit behind an expand toggle. Auto-expand if the current selection is in
+  // the hidden set so the user can still see / change their selection.
   const { recent: recentFyOptions, older: olderFyOptions } = useMemo(
     () => partitionFiscalYears(fyOptions),
     [fyOptions],
   );
-  const { active: activeEntityOptions, retired: retiredEntityOptions } = useMemo(
-    () => partitionEntities(entityOptions),
-    [entityOptions],
-  );
   const fyHidden = olderFyOptions.some((f) => f.id === fyId);
-  const entityHidden = retiredEntityOptions.some((e) => e.id === entityId);
   const [showAllFy, setShowAllFy] = useState(false);
-  const [showRetiredEntities, setShowRetiredEntities] = useState(false);
-  // Force-expand whenever the current selection lives in the hidden bucket
-  // so the user can still see (and change away from) their selection in the
-  // list. Derived rather than effect-backed so it survives the initial
-  // render where async option lists haven't loaded yet — no timing race.
   const effectiveShowAllFy = showAllFy || fyHidden;
-  const effectiveShowRetiredEntities = showRetiredEntities || entityHidden;
   const visibleFyOptions = effectiveShowAllFy
     ? [...recentFyOptions, ...olderFyOptions]
     : recentFyOptions;
-  const visibleEntityOptions = effectiveShowRetiredEntities
-    ? [...activeEntityOptions, ...retiredEntityOptions]
-    : activeEntityOptions;
 
-  const updateQuery = (mut: (sp: URLSearchParams) => void, opts?: { replace?: boolean }) => {
+  const setMetric = (m: Metric) => {
     const next = new URLSearchParams(search);
-    mut(next);
-    navigate(`/fiscal-year/${fyId}?${next.toString()}`, { replace: opts?.replace });
+    next.set("metric", m);
+    navigate(`/fiscal-year/${fyId}?${next.toString()}`, { replace: true });
   };
-  const setMetric = (m: Metric) => updateQuery((p) => p.set("metric", m), { replace: true });
-  const setEntity = (e: string) => updateQuery((p) => p.set("entity", e));
   const setFy = (newFyId: string) => {
     if (newFyId === fyId) return;
     const next = new URLSearchParams(search);
     next.set("metric", metric);
-    next.set("entity", entityId);
     navigate(`/fiscal-year/${newFyId}?${next.toString()}`);
   };
 
   const fyLabel = data?.fiscalYear.label ?? fyId;
   const selectedEntityName =
-    entityOptions.find((e) => e.id === entityId)?.name ?? entityId;
+    (entitiesQ.data ?? []).find((e) => e.id === entityId)?.name ?? entityId;
 
   return (
     <div className="space-y-6">
@@ -164,8 +155,8 @@ export default function FiscalYearDetail() {
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           Supporting detail behind the dashboard money tiles. Filtered to{" "}
-          <span className="font-medium">{selectedEntityName}</span>. Switch the
-          fiscal year, entity, or metric to see different rows.
+          <span className="font-medium">{selectedEntityName}</span> (change the
+          entity from the header filter). Click a tile below to switch metric.
         </p>
       </div>
 
@@ -206,54 +197,31 @@ export default function FiscalYearDetail() {
             </button>
           ) : null}
         </div>
-
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide ml-2">
-          Entity
-        </label>
-        <div className="flex flex-col items-start gap-0.5">
-          <Select value={entityId} onValueChange={setEntity}>
-            <SelectTrigger className="w-64" data-testid="select-entity">
-              <SelectValue placeholder={selectedEntityName} />
-            </SelectTrigger>
-            <SelectContent>
-              {visibleEntityOptions.map((e) => (
-                <SelectItem key={e.id} value={e.id} data-testid={`select-entity-option-${e.id}`}>
-                  {e.name}
-                </SelectItem>
-              ))}
-              {!entityOptions.find((e) => e.id === entityId) ? (
-                <SelectItem value={entityId}>{selectedEntityName}</SelectItem>
-              ) : null}
-            </SelectContent>
-          </Select>
-          {retiredEntityOptions.length > 0 && !entityHidden ? (
-            <button
-              type="button"
-              data-testid="select-entity-toggle"
-              onClick={() => setShowRetiredEntities((s) => !s)}
-              className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline px-1"
-            >
-              {effectiveShowRetiredEntities
-                ? "Hide retired entities"
-                : `Show retired entities (+${retiredEntityOptions.length})`}
-            </button>
-          ) : null}
-        </div>
-
-        <Tabs value={metric} onValueChange={(v) => setMetric(v as Metric)}>
-          <TabsList>
-            <TabsTrigger value="received" data-testid="tab-received">Received</TabsTrigger>
-            <TabsTrigger value="open-asks" data-testid="tab-open-asks">Open asks</TabsTrigger>
-            <TabsTrigger value="weighted-asks" data-testid="tab-weighted-asks">Weighted asks</TabsTrigger>
-          </TabsList>
-        </Tabs>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <SummaryTile label={`Goal ${fyLabel}`} value={fmt(data?.goal ?? null)} testId="tile-detail-goal" />
-        <SummaryTile label={`Received ${fyLabel}`} value={fmt(data?.received.total)} testId="tile-detail-received" highlight={metric === "received"} />
-        <SummaryTile label={`Open asks ${fyLabel}`} value={fmt(data?.openPipeline.totalAsk)} testId="tile-detail-open" highlight={metric === "open-asks"} />
-        <SummaryTile label={`Weighted asks ${fyLabel}`} value={fmt(data?.openPipeline.totalWeighted)} testId="tile-detail-weighted" highlight={metric === "weighted-asks"} />
+        <SummaryTile
+          label={`Received ${fyLabel}`}
+          value={fmt(data?.received.total)}
+          testId="tile-detail-received"
+          highlight={metric === "received"}
+          onClick={() => setMetric("received")}
+        />
+        <SummaryTile
+          label={`Open asks ${fyLabel}`}
+          value={fmt(data?.openPipeline.totalAsk)}
+          testId="tile-detail-open"
+          highlight={metric === "open-asks"}
+          onClick={() => setMetric("open-asks")}
+        />
+        <SummaryTile
+          label={`Weighted asks ${fyLabel}`}
+          value={fmt(data?.openPipeline.totalWeighted)}
+          testId="tile-detail-weighted"
+          highlight={metric === "weighted-asks"}
+          onClick={() => setMetric("weighted-asks")}
+        />
       </div>
 
       {breakdownQ.isError ? (
@@ -282,10 +250,28 @@ export default function FiscalYearDetail() {
 }
 
 function SummaryTile({
-  label, value, testId, highlight,
-}: { label: string; value: string; testId: string; highlight?: boolean }) {
-  return (
-    <Card data-testid={testId} className={highlight ? "ring-2 ring-primary" : undefined}>
+  label, value, testId, highlight, onClick,
+}: {
+  label: string;
+  value: string;
+  testId: string;
+  highlight?: boolean;
+  onClick?: () => void;
+}) {
+  // Tiles double as the metric picker: click swaps which detail table
+  // (Received vs Open asks vs Weighted asks) is shown below. Goal has no
+  // drilldown table so it's rendered as a plain (non-clickable) card.
+  const clickable = Boolean(onClick);
+  const card = (
+    <Card
+      data-testid={testId}
+      className={[
+        highlight ? "ring-2 ring-primary" : undefined,
+        clickable ? "transition hover:bg-muted/40 hover:shadow-sm" : undefined,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <CardHeader className="pb-2">
         <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           {label}
@@ -295,6 +281,17 @@ function SummaryTile({
         <p className="text-2xl font-serif font-bold text-foreground">{value}</p>
       </CardContent>
     </Card>
+  );
+  if (!clickable) return card;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={highlight}
+      className="text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
+    >
+      {card}
+    </button>
   );
 }
 
