@@ -58,13 +58,37 @@ function writePinned(listKey: string, id: string | null) {
   }
 }
 
+// Drop keys whose value is `null` or `undefined` from a plain object,
+// recursively. Lets us treat a saved-view blob that predates a newly-
+// added field (e.g. `columns`) as equal to a fresh one that includes
+// the field set to its canonical default (`null`). Arrays / scalars
+// pass through unchanged so empty arrays still differ from absent keys.
+function stripNulls(value: unknown): unknown {
+  if (value === null || value === undefined) return undefined;
+  if (Array.isArray(value)) return value.map(stripNulls);
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    const entries = Object.entries(value as Record<string, unknown>).sort(
+      ([a], [b]) => a.localeCompare(b),
+    );
+    for (const [k, v] of entries) {
+      const cleaned = stripNulls(v);
+      if (cleaned !== undefined) out[k] = cleaned;
+    }
+    return out;
+  }
+  return value;
+}
+
 function shallowEqualObject(a: unknown, b: unknown): boolean {
-  // Saved view state blobs are flat string/boolean/number/array records
-  // with stable key order (the page constructs them from a fixed object
-  // literal), so a stringify compare is sufficient and avoids a deep-
-  // equal dep.
+  // Saved-view state blobs are flat string/boolean/number/array records.
+  // We strip null/undefined and sort keys before serializing so:
+  //   - adding an optional field (default null) to the view shape doesn't
+  //     invalidate older saved views that lack it;
+  //   - subtle key-ordering differences between client and server-round-
+  //     tripped blobs don't surface as spurious "modified" indicators.
   try {
-    return JSON.stringify(a) === JSON.stringify(b);
+    return JSON.stringify(stripNulls(a)) === JSON.stringify(stripNulls(b));
   } catch {
     return false;
   }

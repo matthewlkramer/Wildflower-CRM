@@ -10,11 +10,14 @@ import {
   type OpportunityStatus,
   type OpportunityStage,
   type OpportunityType,
+  type OpportunityOrPledge,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
 import { SavedViewsBar } from "@/components/saved-views-bar";
+import { ColumnsMenu } from "@/components/columns-menu";
+import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
 import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
@@ -64,6 +67,124 @@ const TYPES: OpportunityType[] = ["solicitation", "renewal", "open_application"]
 
 const PAGE_SIZE = 50;
 
+type ColCtx = {
+  isPledgeView: boolean;
+  basePath: string;
+  userNames: Map<string, string>;
+  entityNameById: Map<string, string>;
+};
+
+// Single registry covers both pledge and opportunity views. The view
+// toggle only flips `defaultVisible` on columns that conceptually belong
+// to one side (Ask + Projected close lean toward opportunities; Paid
+// leans toward pledges). Users can still surface any column on either
+// view via the columns menu — the data fields exist on every row.
+function buildColumns(ctx: ColCtx): ColumnDef<OpportunityOrPledge>[] {
+  return [
+    {
+      key: "name",
+      label: "Name",
+      required: true,
+      tdClassName: "font-medium",
+      cell: (o) => (
+        <Link href={`${ctx.basePath}/${o.id}`} className="block w-full">
+          {o.name ?? `Untitled ${o.id}`}
+        </Link>
+      ),
+    },
+    {
+      key: "donor",
+      label: "Donor",
+      cell: (o) => (
+        <DonorCell
+          funderId={o.funderId}
+          funderName={o.funderName}
+          funderPriority={o.funderPriority}
+          householdId={o.householdId}
+          householdName={o.householdName}
+          individualGiverPersonId={o.individualGiverPersonId}
+          individualGiverPersonName={o.individualGiverPersonName}
+          individualGiverPersonPriority={o.individualGiverPersonPriority}
+        />
+      ),
+    },
+    {
+      key: "stage",
+      label: "Stage",
+      cell: (o) => formatEnum(o.stage),
+    },
+    {
+      key: "status",
+      label: "Status",
+      cell: (o) =>
+        o.status ? (
+          <Badge variant={o.status === "cash_in" || o.status === "pledge" ? "default" : "outline"}>
+            {formatEnum(o.status)}
+          </Badge>
+        ) : (
+          "—"
+        ),
+    },
+    {
+      key: "ask",
+      label: "Ask",
+      align: "right",
+      tdClassName: "text-right tabular-nums",
+      defaultVisible: !ctx.isPledgeView,
+      cell: (o) => formatCurrency(o.askAmount),
+    },
+    {
+      key: "awarded",
+      label: "Awarded",
+      align: "right",
+      tdClassName: "text-right tabular-nums",
+      cell: (o) => formatCurrency(o.awardedAmount),
+    },
+    {
+      key: "paid",
+      label: "Paid",
+      align: "right",
+      tdClassName: "text-right tabular-nums",
+      defaultVisible: ctx.isPledgeView,
+      cell: (o) => formatCurrency(o.paidAmount),
+    },
+    {
+      key: "entities",
+      label: "Entities",
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (o) => {
+        const entities = (o.entityIds ?? []).map(
+          (id) => ctx.entityNameById.get(id) ?? id,
+        );
+        return entities.length === 0 ? "—" : entities.join(", ");
+      },
+    },
+    {
+      key: "coveredFys",
+      label: "Covered FYs",
+      tdClassName: "text-xs text-muted-foreground",
+      cell: (o) => {
+        const coveredFys = (o.coveredFiscalYears ?? []).map((y) => y.toUpperCase());
+        return coveredFys.length === 0 ? "—" : coveredFys.join(", ");
+      },
+    },
+    {
+      key: "projectedClose",
+      label: "Projected close",
+      defaultVisible: !ctx.isPledgeView,
+      cell: (o) => formatDateShort(o.projectedCloseDate),
+    },
+    {
+      key: "owner",
+      label: "Owner",
+      tdClassName: "text-sm text-muted-foreground",
+      cell: (o) =>
+        o.ownerUserId ? (ctx.userNames.get(o.ownerUserId) ?? o.ownerUserId) : "—",
+    },
+  ];
+}
+
 type Props = {
   title?: string;
   /**
@@ -110,6 +231,10 @@ export default function Opportunities({
   const [fiscalYears, setFiscalYears] = usePersistedState<string[]>(`${persistNs}.fiscalYears`, []);
   const [owners, setOwners] = usePersistedState<string[]>(`${persistNs}.owners`, []);
   const [page, setPage] = usePersistedState<number>(`${persistNs}.page`, 1);
+  const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
+    `${persistNs}.columns`,
+    null,
+  );
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdateOpportunitiesAndPledges();
@@ -156,8 +281,24 @@ export default function Opportunities({
   });
 
   const rows = data?.data ?? [];
-
+  const isPledgeView = pledgeView === "pledges";
   const userNames = useUserNameMap();
+  const registry = useMemo(
+    () =>
+      buildColumns({
+        isPledgeView,
+        basePath,
+        userNames,
+        entityNameById,
+      }),
+    [isPledgeView, basePath, userNames, entityNameById],
+  );
+  const visibleCols = useMemo(
+    () => resolveColumns(registry, columnsState),
+    [registry, columnsState],
+  );
+  const colSpan = visibleCols.length + 1;
+
   const STAGE_ORDER: Record<string, number> = {
     cold_lead: 1, warm_lead: 2, in_conversation: 3, convince: 4,
     conditional_commitment: 5, probable_renewal: 6, verbal_commitment: 7,
@@ -174,9 +315,14 @@ export default function Opportunities({
           stage: (r) => (r.stage ? (STAGE_ORDER[r.stage] ?? 0) : null),
           status: (r) => r.status ?? null,
           ask: (r) => (r.askAmount != null ? Number(r.askAmount) : null),
+          paid: (r) => (r.paidAmount != null ? Number(r.paidAmount) : null),
           coveredFys: (r) => (r.coveredFiscalYears ?? []).join(",") || null,
-          awarded: (r) => (r.awardedAmount != null ? Number(r.awardedAmount) : null),
+          // Legacy alias: prior to the columns-config refactor the
+          // non-pledge view's FY header sorted on `fy`. Keep the
+          // accessor so users with that key persisted in localStorage
+          // continue to get sorted rows after the upgrade.
           fy: (r) => (r.coveredFiscalYears ?? []).join(",") || null,
+          awarded: (r) => (r.awardedAmount != null ? Number(r.awardedAmount) : null),
           projectedClose: (r) => r.projectedCloseDate ?? null,
           owner: (r) =>
             r.ownerUserId
@@ -195,8 +341,6 @@ export default function Opportunities({
     const safePage = Math.min(Math.max(1, page), maxPage);
     return sortedRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   }, [sortActive, sortedRows, page]);
-
-  const isPledgeView = pledgeView === "pledges";
 
   // Determine "is anything filtered beyond default?" for the Clear button.
   const sameDefaultStatus =
@@ -221,6 +365,7 @@ export default function Opportunities({
     fiscalYears: string[];
     owners: string[];
     sort: SortState;
+    columns: ColumnsState | null;
   };
   const savedViewsListKey = `opportunities:${pledgeView ?? "all"}`;
   const currentView: OppsView = {
@@ -231,6 +376,7 @@ export default function Opportunities({
     fiscalYears,
     owners,
     sort: ts.sort,
+    columns: columnsState,
   };
   const clearAll = () => {
     setSearch("");
@@ -254,6 +400,7 @@ export default function Opportunities({
       setFiscalYears(s.fiscalYears ?? []);
       setOwners(s.owners ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
+      setColumnsState(s.columns ?? null);
       setPage(1);
       selection.clear();
     },
@@ -267,7 +414,8 @@ export default function Opportunities({
         (s.types?.length ?? 0) === 0 &&
         (s.fiscalYears?.length ?? 0) === 0 &&
         (s.owners?.length ?? 0) === 0 &&
-        (s.sort?.key ?? null) === null
+        (s.sort?.key ?? null) === null &&
+        (s.columns ?? null) === null
       );
     },
   });
@@ -283,7 +431,7 @@ export default function Opportunities({
 
       <SavedViewsBar
         controller={viewsCtrl}
-        canSave={hasActiveFilters || ts.sort.key !== null}
+        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null}
         onClearAll={clearAll}
       />
 
@@ -348,6 +496,14 @@ export default function Opportunities({
             Clear
           </Button>
         )}
+
+        <div className="ml-auto">
+          <ColumnsMenu
+            registry={registry}
+            state={columnsState}
+            onChange={setColumnsState}
+          />
+        </div>
       </div>
 
       <div className="rounded-md border bg-card overflow-x-auto">
@@ -365,105 +521,49 @@ export default function Opportunities({
                   data-testid="checkbox-select-all-opps"
                 />
               </TableHead>
-              <SortableTH colKey="name" {...ts}>Name</SortableTH>
-              <SortableTH colKey="donor" {...ts}>Donor</SortableTH>
-              <SortableTH colKey="stage" {...ts}>Stage</SortableTH>
-              <SortableTH colKey="status" {...ts}>Status</SortableTH>
-              {isPledgeView ? (
-                <SortableTH colKey="coveredFys" {...ts}>Covered FYs</SortableTH>
-              ) : (
-                <SortableTH colKey="ask" align="right" {...ts}>Ask</SortableTH>
-              )}
-              <SortableTH colKey="awarded" align="right" {...ts}>Awarded</SortableTH>
-              {isPledgeView && (
-                <SortableTH colKey="paid" align="right" {...ts}>Paid</SortableTH>
-              )}
-              <SortableTH colKey="entities" sortable={false} {...ts}>Entities</SortableTH>
-              {!isPledgeView && (
-                <SortableTH colKey="fy" {...ts}>FY</SortableTH>
-              )}
-              {!isPledgeView && (
-                <SortableTH colKey="projectedClose" {...ts}>Projected close</SortableTH>
-              )}
-              <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
+              {visibleCols.map((c) => (
+                <SortableTH
+                  key={c.key}
+                  colKey={c.sortKey ?? c.key}
+                  sortable={c.sortable}
+                  align={c.align}
+                  className={c.thClassName}
+                  {...ts}
+                >
+                  {c.header ?? c.label}
+                </SortableTH>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={11} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center h-24 text-destructive">
+                <TableCell colSpan={colSpan} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load opportunities."}
                 </TableCell>
               </TableRow>
             ) : pagedRows.length === 0 ? (
-              <TableRow><TableCell colSpan={11} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
-              pagedRows.map((o) => {
-                const coveredFys = (o.coveredFiscalYears ?? []).map((y) => y.toUpperCase());
-                const entities = (o.entityIds ?? []).map(
-                  (id) => entityNameById.get(id) ?? id,
-                );
-                return (
-                  <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-opp-${o.id}`}>
-                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selection.isSelected(o.id)}
-                        onCheckedChange={() => selection.toggle(o.id)}
-                        aria-label={`Select ${o.name ?? o.id}`}
-                        data-testid={`checkbox-select-${o.id}`}
-                      />
+              pagedRows.map((o) => (
+                <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-opp-${o.id}`}>
+                  <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selection.isSelected(o.id)}
+                      onCheckedChange={() => selection.toggle(o.id)}
+                      aria-label={`Select ${o.name ?? o.id}`}
+                      data-testid={`checkbox-select-${o.id}`}
+                    />
+                  </TableCell>
+                  {visibleCols.map((c) => (
+                    <TableCell key={c.key} className={c.tdClassName}>
+                      {c.cell(o)}
                     </TableCell>
-                    <TableCell className="font-medium">
-                      <Link href={`${basePath}/${o.id}`} className="block w-full">{o.name ?? `Untitled ${o.id}`}</Link>
-                    </TableCell>
-                    <TableCell>
-                      <DonorCell
-                        funderId={o.funderId}
-                        funderName={o.funderName}
-                        funderPriority={o.funderPriority}
-                        householdId={o.householdId}
-                        householdName={o.householdName}
-                        individualGiverPersonId={o.individualGiverPersonId}
-                        individualGiverPersonName={o.individualGiverPersonName}
-                        individualGiverPersonPriority={o.individualGiverPersonPriority}
-                      />
-                    </TableCell>
-                    <TableCell>{formatEnum(o.stage)}</TableCell>
-                    <TableCell>
-                      {o.status ? <Badge variant={o.status === "cash_in" || o.status === "pledge" ? "default" : "outline"}>{formatEnum(o.status)}</Badge> : "—"}
-                    </TableCell>
-                    {isPledgeView ? (
-                      <TableCell className="text-xs text-muted-foreground">
-                        {coveredFys.length === 0 ? "—" : coveredFys.join(", ")}
-                      </TableCell>
-                    ) : (
-                      <TableCell className="text-right tabular-nums">{formatCurrency(o.askAmount)}</TableCell>
-                    )}
-                    <TableCell className="text-right tabular-nums">{formatCurrency(o.awardedAmount)}</TableCell>
-                    {isPledgeView && (
-                      <TableCell className="text-right tabular-nums">{formatCurrency(o.paidAmount)}</TableCell>
-                    )}
-                    <TableCell className="text-xs text-muted-foreground max-w-[200px]">
-                      {entities.length === 0 ? "—" : entities.join(", ")}
-                    </TableCell>
-                    {!isPledgeView && (
-                      <TableCell className="text-xs text-muted-foreground">
-                        {coveredFys.length === 0 ? "—" : coveredFys.join(", ")}
-                      </TableCell>
-                    )}
-                    {!isPledgeView && (
-                      <TableCell>{formatDateShort(o.projectedCloseDate)}</TableCell>
-                    )}
-                    <TableCell className="text-sm text-muted-foreground">
-                      {o.ownerUserId
-                        ? (userNames.get(o.ownerUserId) ?? o.ownerUserId)
-                        : "—"}
-                    </TableCell>
-                  </TableRow>
-                );
-              })
+                  ))}
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>
@@ -510,4 +610,3 @@ export default function Opportunities({
     </div>
   );
 }
-

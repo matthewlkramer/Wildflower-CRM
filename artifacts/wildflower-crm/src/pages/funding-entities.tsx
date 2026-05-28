@@ -10,11 +10,14 @@ import {
   type ConnectionStatus,
   type ActiveStatus,
   type Priority,
+  type Funder,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
 import { SavedViewsBar } from "@/components/saved-views-bar";
+import { ColumnsMenu } from "@/components/columns-menu";
+import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
 import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
@@ -93,6 +96,125 @@ const CONNECTION_STATUSES: ConnectionStatus[] = [
 const PRIORITIES: Priority[] = ["top", "high", "medium", "low"];
 
 const PAGE_SIZE = 50;
+const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
+
+type ColCtx = {
+  userNames: Map<string, string>;
+};
+
+function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
+  return [
+    {
+      key: "priority",
+      label: "Priority star",
+      header: <span className="sr-only">Priority</span>,
+      thClassName: "w-8 pr-0",
+      tdClassName: "w-8 pr-0",
+      cell: (f) => <PriorityStar priority={f.priority} />,
+    },
+    {
+      key: "name",
+      label: "Name",
+      required: true,
+      tdClassName: "font-medium",
+      cell: (f) => (
+        <Link href={`/funding-entities/${f.id}`} className="block w-full">
+          {formatFunderNameShort(f.name)}
+        </Link>
+      ),
+    },
+    {
+      key: "priorityTier",
+      label: "Priority tier",
+      cell: (f) =>
+        f.priority ? (
+          <Badge variant="outline">{PRIORITY_LABEL[f.priority] ?? f.priority}</Badge>
+        ) : (
+          "—"
+        ),
+    },
+    {
+      key: "subtype",
+      label: "Subtype",
+      cell: (f) => formatEnum(f.fundingEntitySubtype),
+    },
+    {
+      key: "active",
+      label: "Active",
+      cell: (f) =>
+        f.activeStatus ? (
+          <Badge variant={f.activeStatus === "active" ? "default" : "outline"}>
+            {formatEnum(f.activeStatus)}
+          </Badge>
+        ) : (
+          "—"
+        ),
+    },
+    {
+      key: "connection",
+      label: "Connection",
+      cell: (f) => formatEnum(f.connectionStatus),
+    },
+    {
+      key: "enthusiasm",
+      label: "Enthusiasm",
+      cell: (f) => formatEnum(f.enthusiasm),
+    },
+    {
+      key: "strategicAlignment",
+      label: "Strategic alignment",
+      cell: (f) => formatEnum(f.strategicAlignment),
+    },
+    {
+      key: "capacity",
+      label: "Capacity",
+      cell: (f) => formatCapacity(f.capacityRating),
+    },
+    {
+      key: "primaryContact",
+      label: "Primary contact",
+      cell: (f) =>
+        f.primaryContactPersonId ? (
+          <Link
+            href={`/individuals/${f.primaryContactPersonId}`}
+            className="hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {f.primaryContactPersonName ?? f.primaryContactPersonId}
+          </Link>
+        ) : (
+          "—"
+        ),
+    },
+    {
+      key: "lifetimeGiving",
+      label: "Lifetime giving",
+      align: "right",
+      tdClassName: "text-right tabular-nums",
+      cell: (f) => {
+        const hasGiving = f.lifetimeGiving != null && Number(f.lifetimeGiving) > 0;
+        return hasGiving ? formatCurrency(f.lifetimeGiving) : "—";
+      },
+    },
+    {
+      key: "openAsks",
+      label: "Open asks",
+      align: "right",
+      tdClassName: "text-right tabular-nums",
+      cell: (f) => {
+        const openAsks = f.openOpportunityCount ?? 0;
+        return openAsks > 0 ? openAsks : "—";
+      },
+    },
+    {
+      key: "owner",
+      label: "Owner",
+      tdClassName: "text-sm text-muted-foreground",
+      cell: (f) =>
+        f.ownerUserId ? (ctx.userNames.get(f.ownerUserId) ?? f.ownerUserId) : "—",
+    },
+  ];
+}
 
 export default function FundingEntities() {
   // Filter state persists per-tab so back-navigation from a funder
@@ -105,6 +227,10 @@ export default function FundingEntities() {
   const [priorities, setPriorities] = usePersistedState<string[]>("wf.list.funders.priorities", []);
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.funders.owners", []);
   const [page, setPage] = usePersistedState<number>("wf.list.funders.page", 1);
+  const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
+    "wf.list.funders.columns",
+    null,
+  );
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdateFunders();
@@ -137,11 +263,17 @@ export default function FundingEntities() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const userNames = useUserNameMap();
+  const registry = useMemo(() => buildColumns({ userNames }), [userNames]);
+  const visibleCols = useMemo(
+    () => resolveColumns(registry, columnsState),
+    [registry, columnsState],
+  );
+  const colSpan = visibleCols.length + 1;
+
   const CAPACITY_ORDER: Record<string, number> = {
     tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
   };
   const PRIORITY_ORDER: Record<string, number> = { top: 4, high: 3, medium: 2, low: 1 };
-  const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
   const ALIGNMENT_ORDER: Record<string, number> = { high: 3, medium: 2, low: 1 };
   const sortedRows = useMemo(
     () =>
@@ -203,6 +335,7 @@ export default function FundingEntities() {
     priorities: string[];
     owners: string[];
     sort: SortState;
+    columns: ColumnsState | null;
   };
   const currentView: FundersView = {
     search,
@@ -212,6 +345,7 @@ export default function FundingEntities() {
     priorities,
     owners,
     sort: ts.sort,
+    columns: columnsState,
   };
   const clearAll = () => {
     setSearch("");
@@ -235,6 +369,7 @@ export default function FundingEntities() {
       setPriorities(s.priorities ?? []);
       setOwners(s.owners ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
+      setColumnsState(s.columns ?? null);
       setPage(1);
       selection.clear();
     },
@@ -248,7 +383,8 @@ export default function FundingEntities() {
         (s.connectionStatuses?.length ?? 0) === 0 &&
         (s.priorities?.length ?? 0) === 0 &&
         (s.owners?.length ?? 0) === 0 &&
-        (s.sort?.key ?? null) === null
+        (s.sort?.key ?? null) === null &&
+        (s.columns ?? null) === null
       );
     },
   });
@@ -269,7 +405,7 @@ export default function FundingEntities() {
 
       <SavedViewsBar
         controller={viewsCtrl}
-        canSave={hasActiveFilters || ts.sort.key !== null}
+        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null}
         onClearAll={clearAll}
       />
 
@@ -344,6 +480,14 @@ export default function FundingEntities() {
             Clear
           </Button>
         )}
+
+        <div className="ml-auto">
+          <ColumnsMenu
+            registry={registry}
+            state={columnsState}
+            onChange={setColumnsState}
+          />
+        </div>
       </div>
 
       <div className="rounded-md border bg-card overflow-hidden">
@@ -361,132 +505,61 @@ export default function FundingEntities() {
                   data-testid="checkbox-select-all-funders"
                 />
               </TableHead>
-              <SortableTH colKey="priority" {...ts}><span className="sr-only">Priority</span></SortableTH>
-              <SortableTH colKey="name" {...ts}>Name</SortableTH>
-              <SortableTH colKey="priorityTier" {...ts}>Priority tier</SortableTH>
-              <SortableTH colKey="subtype" {...ts}>Subtype</SortableTH>
-              <SortableTH colKey="active" {...ts}>Active</SortableTH>
-              <SortableTH colKey="connection" {...ts}>Connection</SortableTH>
-              <SortableTH colKey="enthusiasm" {...ts}>Enthusiasm</SortableTH>
-              <SortableTH colKey="strategicAlignment" {...ts}>Strategic alignment</SortableTH>
-              <SortableTH colKey="capacity" {...ts}>Capacity</SortableTH>
-              <SortableTH colKey="primaryContact" {...ts}>Primary contact</SortableTH>
-              <SortableTH colKey="lifetimeGiving" align="right" {...ts}>Lifetime giving</SortableTH>
-              <SortableTH colKey="openAsks" align="right" {...ts}>Open asks</SortableTH>
-              <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
+              {visibleCols.map((c) => (
+                <SortableTH
+                  key={c.key}
+                  colKey={c.sortKey ?? c.key}
+                  sortable={c.sortable}
+                  align={c.align}
+                  className={c.thClassName}
+                  {...ts}
+                >
+                  {c.header ?? c.label}
+                </SortableTH>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell
-                  colSpan={14}
-                  className="text-center h-24 text-muted-foreground"
-                >
+                <TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">
                   Loading…
                 </TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell
-                  colSpan={14}
-                  className="text-center h-24 text-destructive"
-                >
-                  {error instanceof Error
-                    ? error.message
-                    : "Failed to load funders."}
+                <TableCell colSpan={colSpan} className="text-center h-24 text-destructive">
+                  {error instanceof Error ? error.message : "Failed to load funders."}
                 </TableCell>
               </TableRow>
             ) : pagedRows.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={14}
-                  className="text-center h-24 text-muted-foreground"
-                >
+                <TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">
                   No funders match these filters.
                 </TableCell>
               </TableRow>
             ) : (
-              pagedRows.map((f) => {
-                const hasGiving = f.lifetimeGiving != null && Number(f.lifetimeGiving) > 0;
-                const openAsks = f.openOpportunityCount ?? 0;
-                return (
-                  <TableRow
-                    key={f.id}
-                    className="cursor-pointer hover:bg-muted/50 transition-colors"
-                    data-testid={`row-funder-${f.id}`}
-                  >
-                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selection.isSelected(f.id)}
-                        onCheckedChange={() => selection.toggle(f.id)}
-                        aria-label={`Select ${f.name}`}
-                        data-testid={`checkbox-select-${f.id}`}
-                      />
+              pagedRows.map((f) => (
+                <TableRow
+                  key={f.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  data-testid={`row-funder-${f.id}`}
+                >
+                  <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selection.isSelected(f.id)}
+                      onCheckedChange={() => selection.toggle(f.id)}
+                      aria-label={`Select ${f.name}`}
+                      data-testid={`checkbox-select-${f.id}`}
+                    />
+                  </TableCell>
+                  {visibleCols.map((c) => (
+                    <TableCell key={c.key} className={c.tdClassName}>
+                      {c.cell(f)}
                     </TableCell>
-                    <TableCell className="w-8 pr-0">
-                      <PriorityStar priority={f.priority} />
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      <Link
-                        href={`/funding-entities/${f.id}`}
-                        className="block w-full"
-                      >
-                        {formatFunderNameShort(f.name)}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      {f.priority ? (
-                        <Badge variant="outline">{PRIORITY_LABEL[f.priority] ?? f.priority}</Badge>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>{formatEnum(f.fundingEntitySubtype)}</TableCell>
-                    <TableCell>
-                      {f.activeStatus ? (
-                        <Badge
-                          variant={
-                            f.activeStatus === "active" ? "default" : "outline"
-                          }
-                        >
-                          {formatEnum(f.activeStatus)}
-                        </Badge>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>{formatEnum(f.connectionStatus)}</TableCell>
-                    <TableCell>{formatEnum(f.enthusiasm)}</TableCell>
-                    <TableCell>{formatEnum(f.strategicAlignment)}</TableCell>
-                    <TableCell>{formatCapacity(f.capacityRating)}</TableCell>
-                    <TableCell>
-                      {f.primaryContactPersonId ? (
-                        <Link
-                          href={`/individuals/${f.primaryContactPersonId}`}
-                          className="hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {f.primaryContactPersonName ?? f.primaryContactPersonId}
-                        </Link>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {hasGiving ? formatCurrency(f.lifetimeGiving) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {openAsks > 0 ? openAsks : "—"}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {f.ownerUserId
-                        ? (userNames.get(f.ownerUserId) ?? f.ownerUserId)
-                        : "—"}
-                    </TableCell>
-                  </TableRow>
-                );
-              })
+                  ))}
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>

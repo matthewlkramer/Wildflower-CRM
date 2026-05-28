@@ -7,11 +7,14 @@ import {
   useBulkUpdatePeople,
   type ListPeopleParams,
   type CapacityRating,
+  type Person,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
 import { SavedViewsBar } from "@/components/saved-views-bar";
+import { ColumnsMenu } from "@/components/columns-menu";
+import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
 import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
@@ -72,9 +75,116 @@ const DECEASED_OPTIONS: MultiFilterOption[] = [
   { value: "false", label: "Living" },
   { value: "true", label: "Deceased" },
 ];
-const COL_SPAN = 13;
-const PRIORITY_ORDER: Record<string, number> = { top: 4, high: 3, medium: 2, low: 1 };
 const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
+
+// Lookups the column cell renderers close over. Bundled into a single
+// context object so `buildColumns` stays a pure function of its inputs
+// (easier to memoize, easier to read).
+type ColCtx = {
+  regionNames: Map<string, string>;
+  userNames: Map<string, string>;
+};
+
+function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
+  return [
+    {
+      key: "priority",
+      label: "Priority star",
+      header: <span className="sr-only">Priority</span>,
+      thClassName: "w-8 pr-0",
+      tdClassName: "w-8 pr-0",
+      cell: (p) => <PriorityStar priority={p.priority} />,
+    },
+    {
+      key: "name",
+      label: "Name",
+      required: true,
+      tdClassName: "font-medium",
+      cell: (p) => (
+        <Link href={`/individuals/${p.id}`} className="block w-full">
+          {personDisplayName(p)}
+        </Link>
+      ),
+    },
+    {
+      key: "priorityTier",
+      label: "Priority tier",
+      cell: (p) =>
+        p.priority ? (
+          <Badge variant="outline">{PRIORITY_LABEL[p.priority] ?? p.priority}</Badge>
+        ) : (
+          "—"
+        ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      cell: (p) => (p.deceased ? <Badge variant="outline">Deceased</Badge> : "—"),
+    },
+    {
+      key: "region",
+      label: "Region",
+      cell: (p) =>
+        p.currentHomeRegionId
+          ? (ctx.regionNames.get(p.currentHomeRegionId) ?? p.currentHomeRegionId)
+          : "—",
+    },
+    {
+      key: "capacity",
+      label: "Capacity",
+      cell: (p) => formatCapacity(p.capacityRating),
+    },
+    {
+      key: "lastContacted",
+      label: "Last contacted",
+      cell: (p) => formatDateShort(p.lastContacted),
+    },
+    {
+      key: "lifetimeGiving",
+      label: "Lifetime giving",
+      align: "right",
+      tdClassName: "text-right tabular-nums",
+      cell: (p) => {
+        const giving = p.lifetimeGiving;
+        const hasGiving = giving != null && Number(giving) > 0;
+        return hasGiving ? formatCurrency(giving) : "—";
+      },
+    },
+    {
+      key: "lastGift",
+      label: "Last gift",
+      cell: (p) => formatDateShort(p.mostRecentGiftDate),
+    },
+    {
+      key: "openAsks",
+      label: "Open asks",
+      align: "right",
+      tdClassName: "text-right tabular-nums",
+      cell: (p) => {
+        const openAsks = p.openOpportunityCount ?? 0;
+        return openAsks > 0 ? openAsks : "—";
+      },
+    },
+    {
+      key: "activeFunders",
+      label: "Active funders",
+      tdClassName: "text-xs text-muted-foreground max-w-[240px]",
+      cell: (p) => {
+        const funders = p.activeFunderNames ?? [];
+        return funders.length === 0 ? "—" : funders.map(formatFunderNameShort).join(", ");
+      },
+    },
+    {
+      key: "owner",
+      label: "Owner",
+      tdClassName: "text-sm text-muted-foreground",
+      cell: (p) =>
+        p.ownerUserId
+          ? (ctx.userNames.get(p.ownerUserId) ?? p.ownerUserId)
+          : "—",
+    },
+  ];
+}
 
 export default function Individuals() {
   // Filter state persists per-tab so back-navigation from a person
@@ -85,6 +195,13 @@ export default function Individuals() {
   const [capacityTiers, setCapacityTiers] = usePersistedState<string[]>("wf.list.people.capacity", []);
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.people.owners", []);
   const [page, setPage] = usePersistedState<number>("wf.list.people.page", 1);
+  // Column customization: null = use registry defaults. Shape is
+  // round-tripped through saved views, so changes here also persist
+  // per-view when the user saves one.
+  const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
+    "wf.list.people.columns",
+    null,
+  );
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdatePeople();
@@ -115,9 +232,20 @@ export default function Individuals() {
   const regionNames = useRegionNameMap();
   const userNames = useUserNameMap();
 
+  const registry = useMemo(
+    () => buildColumns({ regionNames, userNames }),
+    [regionNames, userNames],
+  );
+  const visibleCols = useMemo(
+    () => resolveColumns(registry, columnsState),
+    [registry, columnsState],
+  );
+  const colSpan = visibleCols.length + 1; // +1 for the checkbox column
+
   const CAPACITY_ORDER: Record<string, number> = {
     tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
   };
+  const PRIORITY_ORDER: Record<string, number> = { top: 4, high: 3, medium: 2, low: 1 };
   const sortedRows = useMemo(
     () =>
       sortRows(
@@ -165,15 +293,17 @@ export default function Individuals() {
     owners.length > 0;
 
   // ─── Saved views ─────────────────────────────────────────────────
-  // The persisted view captures filters + sort but deliberately omits
-  // `page` (saving "page 7" makes no sense after the underlying data
-  // shifts) and column widths (pure presentation).
+  // The persisted view captures filters + sort + the user's column
+  // config but deliberately omits `page` (saving "page 7" makes no
+  // sense after the underlying data shifts) and column widths
+  // (presentation, not data).
   type IndividualsView = {
     search: string;
     deceasedSel: string[];
     capacityTiers: string[];
     owners: string[];
     sort: SortState;
+    columns: ColumnsState | null;
   };
   const currentView: IndividualsView = {
     search,
@@ -181,6 +311,7 @@ export default function Individuals() {
     capacityTiers,
     owners,
     sort: ts.sort,
+    columns: columnsState,
   };
   const clearAll = () => {
     setSearch("");
@@ -190,6 +321,9 @@ export default function Individuals() {
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
+    // Clearing only resets filters + sort; we deliberately leave the
+    // user's column config alone since it's a presentation preference
+    // they tend to set once and forget.
   };
   const viewsCtrl = useSavedViews<IndividualsView>({
     listKey: "individuals",
@@ -200,6 +334,10 @@ export default function Individuals() {
       setCapacityTiers(s.capacityTiers ?? []);
       setOwners(s.owners ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
+      // Backwards-compat: views saved before this feature have no
+      // `columns` field. Treat them as "default columns" so applying
+      // doesn't accidentally hide anything.
+      setColumnsState(s.columns ?? null);
       setPage(1);
       selection.clear();
     },
@@ -208,7 +346,8 @@ export default function Individuals() {
       (s.deceasedSel?.length ?? 0) === 0 &&
       (s.capacityTiers?.length ?? 0) === 0 &&
       (s.owners?.length ?? 0) === 0 &&
-      (s.sort?.key ?? null) === null,
+      (s.sort?.key ?? null) === null &&
+      (s.columns ?? null) === null,
   });
 
   return (
@@ -227,7 +366,7 @@ export default function Individuals() {
 
       <SavedViewsBar
         controller={viewsCtrl}
-        canSave={hasActiveFilters || ts.sort.key !== null}
+        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null}
         onClearAll={clearAll}
       />
 
@@ -283,6 +422,14 @@ export default function Individuals() {
             Clear
           </Button>
         )}
+
+        <div className="ml-auto">
+          <ColumnsMenu
+            registry={registry}
+            state={columnsState}
+            onChange={setColumnsState}
+          />
+        </div>
       </div>
 
       <div className="rounded-md border bg-card overflow-x-auto">
@@ -300,104 +447,61 @@ export default function Individuals() {
                   data-testid="checkbox-select-all-people"
                 />
               </TableHead>
-              <SortableTH colKey="priority" {...ts}><span className="sr-only">Priority</span></SortableTH>
-              <SortableTH colKey="name" {...ts}>Name</SortableTH>
-              <SortableTH colKey="priorityTier" {...ts}>Priority tier</SortableTH>
-              <SortableTH colKey="status" {...ts}>Status</SortableTH>
-              <SortableTH colKey="region" {...ts}>Region</SortableTH>
-              <SortableTH colKey="capacity" {...ts}>Capacity</SortableTH>
-              <SortableTH colKey="lastContacted" {...ts}>Last contacted</SortableTH>
-              <SortableTH colKey="lifetimeGiving" align="right" {...ts}>Lifetime giving</SortableTH>
-              <SortableTH colKey="lastGift" {...ts}>Last gift</SortableTH>
-              <SortableTH colKey="openAsks" align="right" {...ts}>Open asks</SortableTH>
-              <SortableTH colKey="activeFunders" {...ts}>Active funders</SortableTH>
-              <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
+              {visibleCols.map((c) => (
+                <SortableTH
+                  key={c.key}
+                  colKey={c.sortKey ?? c.key}
+                  sortable={c.sortable}
+                  align={c.align}
+                  className={c.thClassName}
+                  {...ts}
+                >
+                  {c.header ?? c.label}
+                </SortableTH>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">
+                <TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">
                   Loading…
                 </TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={COL_SPAN} className="text-center h-24 text-destructive">
+                <TableCell colSpan={colSpan} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load people."}
                 </TableCell>
               </TableRow>
             ) : pagedRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">
+                <TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">
                   No people match these filters.
                 </TableCell>
               </TableRow>
             ) : (
-              pagedRows.map((p) => {
-                const giving = p.lifetimeGiving;
-                const hasGiving = giving != null && Number(giving) > 0;
-                const openAsks = p.openOpportunityCount ?? 0;
-                const funders = p.activeFunderNames ?? [];
-                return (
-                  <TableRow
-                    key={p.id}
-                    className="cursor-pointer hover:bg-muted/50 transition-colors"
-                    data-testid={`row-person-${p.id}`}
-                  >
-                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selection.isSelected(p.id)}
-                        onCheckedChange={() => selection.toggle(p.id)}
-                        aria-label={`Select ${personDisplayName(p)}`}
-                        data-testid={`checkbox-select-${p.id}`}
-                      />
+              pagedRows.map((p) => (
+                <TableRow
+                  key={p.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  data-testid={`row-person-${p.id}`}
+                >
+                  <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selection.isSelected(p.id)}
+                      onCheckedChange={() => selection.toggle(p.id)}
+                      aria-label={`Select ${personDisplayName(p)}`}
+                      data-testid={`checkbox-select-${p.id}`}
+                    />
+                  </TableCell>
+                  {visibleCols.map((c) => (
+                    <TableCell key={c.key} className={c.tdClassName}>
+                      {c.cell(p)}
                     </TableCell>
-                    <TableCell className="w-8 pr-0">
-                      <PriorityStar priority={p.priority} />
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      <Link href={`/individuals/${p.id}`} className="block w-full">
-                        {personDisplayName(p)}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      {p.priority ? (
-                        <Badge variant="outline">{PRIORITY_LABEL[p.priority] ?? p.priority}</Badge>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {p.deceased ? <Badge variant="outline">Deceased</Badge> : "—"}
-                    </TableCell>
-                    <TableCell>
-                      {p.currentHomeRegionId
-                        ? (regionNames.get(p.currentHomeRegionId) ?? p.currentHomeRegionId)
-                        : "—"}
-                    </TableCell>
-                    <TableCell>{formatCapacity(p.capacityRating)}</TableCell>
-                    <TableCell>{formatDateShort(p.lastContacted)}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {hasGiving ? formatCurrency(giving) : "—"}
-                    </TableCell>
-                    <TableCell>{formatDateShort(p.mostRecentGiftDate)}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {openAsks > 0 ? openAsks : "—"}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[240px]">
-                      {funders.length === 0
-                        ? "—"
-                        : funders.map(formatFunderNameShort).join(", ")}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {p.ownerUserId
-                        ? (userNames.get(p.ownerUserId) ?? p.ownerUserId)
-                        : "—"}
-                    </TableCell>
-                  </TableRow>
-                );
-              })
+                  ))}
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>

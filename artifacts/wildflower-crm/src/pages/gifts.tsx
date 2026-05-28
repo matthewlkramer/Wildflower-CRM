@@ -7,6 +7,7 @@ import {
   useBulkUpdateGiftsAndPayments,
   type ListGiftsAndPaymentsParams,
   type GiftType,
+  type GiftOrPayment,
   useListEntities,
   getListEntitiesQueryKey,
 } from "@workspace/api-client-react";
@@ -14,6 +15,8 @@ import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
 import { SavedViewsBar } from "@/components/saved-views-bar";
+import { ColumnsMenu } from "@/components/columns-menu";
+import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
 import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
@@ -55,7 +58,99 @@ const TYPES: GiftType[] = [
 ];
 
 const PAGE_SIZE = 50;
-const COL_SPAN = 10;
+
+type ColCtx = {
+  userNames: Map<string, string>;
+  entityNameById: Map<string, string>;
+};
+
+function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
+  return [
+    {
+      key: "name",
+      label: "Name",
+      required: true,
+      tdClassName: "font-medium",
+      cell: (g) => (
+        <Link href={`/gifts/${g.id}`} className="block w-full">
+          {g.name ?? `Gift ${g.id}`}
+        </Link>
+      ),
+    },
+    {
+      key: "donor",
+      label: "Donor",
+      cell: (g) => (
+        <DonorCell
+          funderId={g.funderId}
+          funderName={g.funderName}
+          funderPriority={g.funderPriority}
+          householdId={g.householdId}
+          householdName={g.householdName}
+          individualGiverPersonId={g.individualGiverPersonId}
+          individualGiverPersonName={g.individualGiverPersonName}
+          individualGiverPersonPriority={g.individualGiverPersonPriority}
+        />
+      ),
+    },
+    {
+      key: "dateReceived",
+      label: "Date received",
+      cell: (g) => formatDateShort(g.dateReceived),
+    },
+    {
+      key: "type",
+      label: "Type",
+      cell: (g) => formatEnum(g.type),
+    },
+    {
+      key: "amount",
+      label: "Amount",
+      align: "right",
+      tdClassName: "text-right tabular-nums",
+      cell: (g) => formatCurrency(g.amount),
+    },
+    {
+      key: "entities",
+      label: "Entities",
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (g) => {
+        const entities = (g.entityIds ?? []).map(
+          (id) => ctx.entityNameById.get(id) ?? id,
+        );
+        return entities.length === 0 ? "—" : entities.join(", ");
+      },
+    },
+    {
+      key: "usages",
+      label: "Usages",
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[240px]",
+      cell: (g) => {
+        const usages = g.displayUsages ?? [];
+        return usages.length === 0 ? "—" : usages.join("; ");
+      },
+    },
+    {
+      key: "grantYears",
+      label: "Grant years",
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground",
+      cell: (g) => {
+        const grantYears = (g.grantYears ?? []).map((y) => y.toUpperCase());
+        return grantYears.length === 0 ? "—" : grantYears.join(", ");
+      },
+    },
+    {
+      key: "owner",
+      label: "Owner",
+      tdClassName: "text-sm text-muted-foreground",
+      cell: (g) =>
+        g.ownerUserId ? (ctx.userNames.get(g.ownerUserId) ?? g.ownerUserId) : "—",
+    },
+  ];
+}
 
 export default function Gifts() {
   // Filter state is persisted per-tab so back-navigation from a gift
@@ -66,6 +161,10 @@ export default function Gifts() {
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.gifts.owners", []);
   const [fiscalYears, setFiscalYears] = usePersistedState<string[]>("wf.list.gifts.fiscalYears", []);
   const [page, setPage] = usePersistedState<number>("wf.list.gifts.page", 1);
+  const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
+    "wf.list.gifts.columns",
+    null,
+  );
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdateGiftsAndPayments();
@@ -97,9 +196,20 @@ export default function Gifts() {
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey(), staleTime: 5 * 60_000 },
   });
-  const entityNameById = new Map<string, string>(
-    (entitiesQ.data ?? []).map((e) => [e.id, e.name]),
+  const entityNameById = useMemo(
+    () => new Map<string, string>((entitiesQ.data ?? []).map((e) => [e.id, e.name])),
+    [entitiesQ.data],
   );
+
+  const registry = useMemo(
+    () => buildColumns({ userNames, entityNameById }),
+    [userNames, entityNameById],
+  );
+  const visibleCols = useMemo(
+    () => resolveColumns(registry, columnsState),
+    [registry, columnsState],
+  );
+  const colSpan = visibleCols.length + 1;
 
   const rows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
@@ -139,8 +249,16 @@ export default function Gifts() {
     owners: string[];
     fiscalYears: string[];
     sort: SortState;
+    columns: ColumnsState | null;
   };
-  const currentView: GiftsView = { search, types, owners, fiscalYears, sort: ts.sort };
+  const currentView: GiftsView = {
+    search,
+    types,
+    owners,
+    fiscalYears,
+    sort: ts.sort,
+    columns: columnsState,
+  };
   const clearAll = () => {
     setSearch("");
     setTypes([]);
@@ -159,6 +277,7 @@ export default function Gifts() {
       setOwners(s.owners ?? []);
       setFiscalYears(s.fiscalYears ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
+      setColumnsState(s.columns ?? null);
       setPage(1);
       selection.clear();
     },
@@ -167,7 +286,8 @@ export default function Gifts() {
       (s.types?.length ?? 0) === 0 &&
       (s.owners?.length ?? 0) === 0 &&
       (s.fiscalYears?.length ?? 0) === 0 &&
-      (s.sort?.key ?? null) === null,
+      (s.sort?.key ?? null) === null &&
+      (s.columns ?? null) === null,
   });
   const hasActiveFilters =
     !!search || types.length > 0 || owners.length > 0 || fiscalYears.length > 0;
@@ -183,7 +303,7 @@ export default function Gifts() {
 
       <SavedViewsBar
         controller={viewsCtrl}
-        canSave={hasActiveFilters || ts.sort.key !== null}
+        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null}
         onClearAll={clearAll}
       />
 
@@ -231,6 +351,14 @@ export default function Gifts() {
             Clear
           </Button>
         )}
+
+        <div className="ml-auto">
+          <ColumnsMenu
+            registry={registry}
+            state={columnsState}
+            onChange={setColumnsState}
+          />
+        </div>
       </div>
 
       <div className="rounded-md border bg-card overflow-x-auto">
@@ -248,80 +376,49 @@ export default function Gifts() {
                   data-testid="checkbox-select-all-gifts"
                 />
               </TableHead>
-              <SortableTH colKey="name" {...ts}>Name</SortableTH>
-              <SortableTH colKey="donor" {...ts}>Donor</SortableTH>
-              <SortableTH colKey="dateReceived" {...ts}>Date received</SortableTH>
-              <SortableTH colKey="type" {...ts}>Type</SortableTH>
-              <SortableTH colKey="amount" align="right" {...ts}>Amount</SortableTH>
-              <SortableTH colKey="entities" sortable={false} {...ts}>Entities</SortableTH>
-              <SortableTH colKey="usages" sortable={false} {...ts}>Usages</SortableTH>
-              <SortableTH colKey="grantYears" sortable={false} {...ts}>Grant years</SortableTH>
-              <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
+              {visibleCols.map((c) => (
+                <SortableTH
+                  key={c.key}
+                  colKey={c.sortKey ?? c.key}
+                  sortable={c.sortable}
+                  align={c.align}
+                  className={c.thClassName}
+                  {...ts}
+                >
+                  {c.header ?? c.label}
+                </SortableTH>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={COL_SPAN} className="text-center h-24 text-destructive">
+                <TableCell colSpan={colSpan} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load gifts."}
                 </TableCell>
               </TableRow>
             ) : pagedRows.length === 0 ? (
-              <TableRow><TableCell colSpan={COL_SPAN} className="text-center h-24 text-muted-foreground">No gifts match these filters.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">No gifts match these filters.</TableCell></TableRow>
             ) : (
-              pagedRows.map((g) => {
-                const entities = (g.entityIds ?? []).map(
-                  (id) => entityNameById.get(id) ?? id,
-                );
-                const usages = g.displayUsages ?? [];
-                const grantYears = (g.grantYears ?? []).map((y) => y.toUpperCase());
-                return (
-                  <TableRow key={g.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-gift-${g.id}`}>
-                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selection.isSelected(g.id)}
-                        onCheckedChange={() => selection.toggle(g.id)}
-                        aria-label={`Select ${g.name ?? g.id}`}
-                        data-testid={`checkbox-select-${g.id}`}
-                      />
+              pagedRows.map((g) => (
+                <TableRow key={g.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-gift-${g.id}`}>
+                  <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selection.isSelected(g.id)}
+                      onCheckedChange={() => selection.toggle(g.id)}
+                      aria-label={`Select ${g.name ?? g.id}`}
+                      data-testid={`checkbox-select-${g.id}`}
+                    />
+                  </TableCell>
+                  {visibleCols.map((c) => (
+                    <TableCell key={c.key} className={c.tdClassName}>
+                      {c.cell(g)}
                     </TableCell>
-                    <TableCell className="font-medium">
-                      <Link href={`/gifts/${g.id}`} className="block w-full">{g.name ?? `Gift ${g.id}`}</Link>
-                    </TableCell>
-                    <TableCell>
-                      <DonorCell
-                        funderId={g.funderId}
-                        funderName={g.funderName}
-                        funderPriority={g.funderPriority}
-                        householdId={g.householdId}
-                        householdName={g.householdName}
-                        individualGiverPersonId={g.individualGiverPersonId}
-                        individualGiverPersonName={g.individualGiverPersonName}
-                        individualGiverPersonPriority={g.individualGiverPersonPriority}
-                      />
-                    </TableCell>
-                    <TableCell>{formatDateShort(g.dateReceived)}</TableCell>
-                    <TableCell>{formatEnum(g.type)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(g.amount)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[200px]">
-                      {entities.length === 0 ? "—" : entities.join(", ")}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[240px]">
-                      {usages.length === 0 ? "—" : usages.join("; ")}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {grantYears.length === 0 ? "—" : grantYears.join(", ")}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {g.ownerUserId
-                        ? (userNames.get(g.ownerUserId) ?? g.ownerUserId)
-                        : "—"}
-                    </TableCell>
-                  </TableRow>
-                );
-              })
+                  ))}
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>
