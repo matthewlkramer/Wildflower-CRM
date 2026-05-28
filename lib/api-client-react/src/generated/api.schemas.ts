@@ -511,7 +511,7 @@ export interface DashboardFiscalYear {
  * Per-fiscal-year fundraising metrics. All money values are decimal strings
 (PostgreSQL numeric) to preserve precision — format with `formatCurrency`
 on the client. `goal` is nullable because not every FY has a goal seeded
-(e.g. far-future years or the "future" sentinel).
+(e.g. far-future years).
 
  */
 export interface FiscalYearMetrics {
@@ -2622,9 +2622,9 @@ with `entity_id` in the given set. Comma-separated form supported.
   entityId?: string[];
   /**
  * Filter to opportunities that have at least one pledge_allocation
-with `grant_year` in the given set. Accepts `future` and any
-`fiscal_years.id` slug (e.g. `fy2026`). Multi-value: repeat the
-param or comma-separate. Omit to include all fiscal years.
+with `grant_year` in the given set (e.g. `fy2026`). Multi-value:
+repeat the param or comma-separate. Omit to include all fiscal
+years.
 
  */
   fiscalYear?: string[];

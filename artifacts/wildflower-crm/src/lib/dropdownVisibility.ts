@@ -30,7 +30,7 @@ export function currentFyEndYear(now: Date = new Date()): number {
 }
 
 // Last 3 + current + next = 5-year visible window. Any FY older than
-// (current - 3) ends up in the collapsed group; the legacy "future"
+// (current - 3) ends up in the collapsed group; the legacy unbucketed
 // sentinel never matches and is hidden.
 export function isDefaultVisibleFy(id: string, now: Date = new Date()): boolean {
   const m = /^fy(\d{4})$/.exec(id);

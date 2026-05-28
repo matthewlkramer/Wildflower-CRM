@@ -2981,7 +2981,7 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
     .array(zod.coerce.string())
     .optional()
     .describe(
-      "Filter to opportunities that have at least one pledge_allocation\nwith `grant_year` in the given set. Accepts `future` and any\n`fiscal_years.id` slug (e.g. `fy2026`). Multi-value: repeat the\nparam or comma-separate. Omit to include all fiscal years.\n",
+      "Filter to opportunities that have at least one pledge_allocation\nwith `grant_year` in the given set (e.g. `fy2026`). Multi-value:\nrepeat the param or comma-separate. Omit to include all fiscal\nyears.\n",
     ),
   limit: zod.coerce
     .number()
@@ -5810,7 +5810,7 @@ export const GetDashboardSummaryResponse = zod.object({
             ),
         })
         .describe(
-          'Per-fiscal-year fundraising metrics. All money values are decimal strings\n(PostgreSQL numeric) to preserve precision — format with `formatCurrency`\non the client. `goal` is nullable because not every FY has a goal seeded\n(e.g. far-future years or the \"future\" sentinel).\n',
+          "Per-fiscal-year fundraising metrics. All money values are decimal strings\n(PostgreSQL numeric) to preserve precision — format with `formatCurrency`\non the client. `goal` is nullable because not every FY has a goal seeded\n(e.g. far-future years).\n",
         ),
     )
     .describe(
