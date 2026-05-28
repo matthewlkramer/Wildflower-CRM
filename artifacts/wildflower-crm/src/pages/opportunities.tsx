@@ -372,7 +372,9 @@ export default function Opportunities({
               {!isPledgeView && (
                 <SortableTH colKey="fy" {...ts}>FY</SortableTH>
               )}
-              <SortableTH colKey="projectedClose" {...ts}>Projected close</SortableTH>
+              {!isPledgeView && (
+                <SortableTH colKey="projectedClose" {...ts}>Projected close</SortableTH>
+              )}
               <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
             </TableRow>
           </TableHeader>
@@ -441,7 +443,9 @@ export default function Opportunities({
                         {coveredFys.length === 0 ? "—" : coveredFys.join(", ")}
                       </TableCell>
                     )}
-                    <TableCell>{formatDateShort(o.projectedCloseDate)}</TableCell>
+                    {!isPledgeView && (
+                      <TableCell>{formatDateShort(o.projectedCloseDate)}</TableCell>
+                    )}
                     <TableCell className="text-sm text-muted-foreground">
                       {o.ownerUserId
                         ? (userNames.get(o.ownerUserId) ?? o.ownerUserId)
