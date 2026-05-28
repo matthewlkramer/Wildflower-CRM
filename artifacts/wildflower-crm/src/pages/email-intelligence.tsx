@@ -155,6 +155,7 @@ function ProposalList({ kind }: { kind: Kind }) {
       onSuccess: () => {
         invalidate();
         toast({ title: "Accepted" });
+        closeNoteDialog();
       },
       onError: (e) =>
         toast({
@@ -164,24 +165,29 @@ function ProposalList({ kind }: { kind: Kind }) {
         }),
     },
   });
-  // Dismiss opens a small dialog that captures an optional reviewer
-  // note (free-text "why was this wrong?"). The note is stored on the
-  // proposal row alongside the verdict so prompt-tuning can later join
-  // {payload, status, reviewerNote} without an extra table. Submitting
-  // with an empty note is allowed — the note is purely opt-in.
-  const [rejectTarget, setRejectTarget] = useState<{
+  // Accept/Dismiss both open a small dialog that captures an optional
+  // reviewer note (free-text "why was this right/wrong?"). The note is
+  // stored on the proposal row alongside the verdict so prompt-tuning
+  // can later join {payload, status, reviewerNote} without an extra
+  // table. Submitting with an empty note is allowed — the note is
+  // purely opt-in.
+  const [noteTarget, setNoteTarget] = useState<{
     id: string;
     summary: string;
+    mode: "accept" | "reject";
   } | null>(null);
-  const [rejectNote, setRejectNote] = useState("");
+  const [reviewerNote, setReviewerNote] = useState("");
   const [viewEmailId, setViewEmailId] = useState<string | null>(null);
+  const closeNoteDialog = () => {
+    setNoteTarget(null);
+    setReviewerNote("");
+  };
   const reject = useRejectEmailProposal({
     mutation: {
       onSuccess: () => {
         invalidate();
         toast({ title: "Dismissed" });
-        setRejectTarget(null);
-        setRejectNote("");
+        closeNoteDialog();
       },
       onError: (e) =>
         toast({
@@ -251,8 +257,12 @@ function ProposalList({ kind }: { kind: Kind }) {
                 variant="outline"
                 disabled={reject.isPending}
                 onClick={() => {
-                  setRejectNote("");
-                  setRejectTarget({ id: p.id, summary: summarizeProposal(p) });
+                  setReviewerNote("");
+                  setNoteTarget({
+                    id: p.id,
+                    summary: summarizeProposal(p),
+                    mode: "reject",
+                  });
                 }}
                 data-testid={`btn-reject-${p.id}`}
               >
@@ -261,7 +271,14 @@ function ProposalList({ kind }: { kind: Kind }) {
               <Button
                 size="sm"
                 disabled={accept.isPending}
-                onClick={() => accept.mutate({ id: p.id, data: {} })}
+                onClick={() => {
+                  setReviewerNote("");
+                  setNoteTarget({
+                    id: p.id,
+                    summary: summarizeProposal(p),
+                    mode: "accept",
+                  });
+                }}
                 data-testid={`btn-accept-${p.id}`}
               >
                 Accept
@@ -279,37 +296,42 @@ function ProposalList({ kind }: { kind: Kind }) {
         </Card>
       ))}
       <Dialog
-        open={rejectTarget !== null}
+        open={noteTarget !== null}
         onOpenChange={(open) => {
-          if (!open) {
-            setRejectTarget(null);
-            setRejectNote("");
-          }
+          if (!open) closeNoteDialog();
         }}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Dismiss proposal</DialogTitle>
+            <DialogTitle>
+              {noteTarget?.mode === "accept"
+                ? "Accept proposal"
+                : "Dismiss proposal"}
+            </DialogTitle>
             <DialogDescription>
-              Optional — tell us why the suggestion was wrong. This goes
-              into prompt-tuning logs. Leave blank to dismiss without a
-              note.
+              {noteTarget?.mode === "accept"
+                ? "Optional — anything notable about why this one was right? Goes into prompt-tuning logs. Leave blank to accept without a note."
+                : "Optional — tell us why the suggestion was wrong. This goes into prompt-tuning logs. Leave blank to dismiss without a note."}
             </DialogDescription>
           </DialogHeader>
-          {rejectTarget ? (
+          {noteTarget ? (
             <div className="space-y-3 min-w-0">
               <div className="text-sm font-medium truncate min-w-0">
-                {rejectTarget.summary}
+                {noteTarget.summary}
               </div>
               <div className="space-y-1.5 min-w-0">
                 <Label htmlFor="reviewer-note">Reviewer note</Label>
                 <Textarea
                   id="reviewer-note"
-                  value={rejectNote}
-                  onChange={(e) => setRejectNote(e.target.value)}
+                  value={reviewerNote}
+                  onChange={(e) => setReviewerNote(e.target.value)}
                   rows={4}
                   cols={1}
-                  placeholder="e.g. Wrong person — same name, different city"
+                  placeholder={
+                    noteTarget.mode === "accept"
+                      ? "e.g. Good catch — funder name normalized correctly"
+                      : "e.g. Wrong person — same name, different city"
+                  }
                   data-testid="input-reviewer-note"
                   className="w-full resize-y"
                 />
@@ -317,28 +339,33 @@ function ProposalList({ kind }: { kind: Kind }) {
             </div>
           ) : null}
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setRejectTarget(null);
-                setRejectNote("");
-              }}
-            >
+            <Button variant="outline" onClick={closeNoteDialog}>
               Cancel
             </Button>
             <Button
-              disabled={reject.isPending || !rejectTarget}
+              disabled={
+                !noteTarget ||
+                (noteTarget.mode === "accept"
+                  ? accept.isPending
+                  : reject.isPending)
+              }
               onClick={() => {
-                if (!rejectTarget) return;
-                const note = rejectNote.trim();
-                reject.mutate({
-                  id: rejectTarget.id,
-                  data: note ? { reviewerNote: note } : {},
-                });
+                if (!noteTarget) return;
+                const note = reviewerNote.trim();
+                const data = note ? { reviewerNote: note } : {};
+                if (noteTarget.mode === "accept") {
+                  accept.mutate({ id: noteTarget.id, data });
+                } else {
+                  reject.mutate({ id: noteTarget.id, data });
+                }
               }}
-              data-testid="btn-confirm-reject"
+              data-testid={
+                noteTarget?.mode === "accept"
+                  ? "btn-confirm-accept"
+                  : "btn-confirm-reject"
+              }
             >
-              Dismiss
+              {noteTarget?.mode === "accept" ? "Accept" : "Dismiss"}
             </Button>
           </DialogFooter>
         </DialogContent>
