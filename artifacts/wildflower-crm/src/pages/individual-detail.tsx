@@ -11,6 +11,7 @@ import {
   type Pronouns,
   type ConnectionStatus,
   type Enthusiasm,
+  type Priority,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { ActivityTimeline } from "@/components/activity-timeline";
@@ -85,6 +86,13 @@ const ENTHUSIASM_OPTIONS = [
   { value: "neutral", label: "Neutral" },
   { value: "unsupportive", label: "Unsupportive" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<Enthusiasm>>;
+
+const PRIORITY_OPTIONS = [
+  { value: "top", label: "Top" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+] as const satisfies ReadonlyArray<InlineSelectOption<Priority>>;
 import { useToast } from "@/hooks/use-toast";
 import { personDisplayName } from "@/lib/person";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -253,6 +261,24 @@ function PersonView({ person }: { person: PersonDetail }) {
                 options={ENTHUSIASM_OPTIONS}
                 display={formatEnum(person.enthusiasm)}
                 onSave={(next) => patch({ enthusiasm: next })}
+              />
+            </Row>
+            <Row label="Priority">
+              <InlineEditSelect
+                label="Priority"
+                testIdBase="person-priority"
+                value={person.priority ?? null}
+                options={PRIORITY_OPTIONS}
+                display={
+                  person.priority ? (
+                    <Badge variant={person.priority === "top" ? "default" : "outline"}>
+                      {formatEnum(person.priority)}
+                    </Badge>
+                  ) : (
+                    "—"
+                  )
+                }
+                onSave={(next) => patch({ priority: next })}
               />
             </Row>
           </CardContent>

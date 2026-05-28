@@ -15,6 +15,7 @@ import {
   type FundingEntitySubtype,
   type NumberOfEmployees,
   type CapacityRating,
+  type Priority,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { ActivityTimeline } from "@/components/activity-timeline";
@@ -112,6 +113,13 @@ const CAPACITY_OPTIONS = [
   { value: "tier_250k_1m", label: "$250k–$1M" },
   { value: "tier_1m_plus", label: "$1M+" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<CapacityRating>>;
+
+const PRIORITY_OPTIONS = [
+  { value: "top", label: "Top" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+] as const satisfies ReadonlyArray<InlineSelectOption<Priority>>;
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -247,6 +255,24 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                 options={ALIGNMENT_OPTIONS}
                 display={formatEnum(funder.strategicAlignment)}
                 onSave={(next) => patch({ strategicAlignment: next })}
+              />
+            </Row>
+            <Row label="Priority">
+              <InlineEditSelect
+                label="Priority"
+                testIdBase="funder-priority"
+                value={funder.priority ?? null}
+                options={PRIORITY_OPTIONS}
+                display={
+                  funder.priority ? (
+                    <Badge variant={funder.priority === "top" ? "default" : "outline"}>
+                      {formatEnum(funder.priority)}
+                    </Badge>
+                  ) : (
+                    "—"
+                  )
+                }
+                onSave={(next) => patch({ priority: next })}
               />
             </Row>
             <Row label="National priorities">

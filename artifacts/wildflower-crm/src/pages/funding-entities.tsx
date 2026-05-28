@@ -9,6 +9,7 @@ import {
   type FundingEntitySubtype,
   type ConnectionStatus,
   type ActiveStatus,
+  type Priority,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
@@ -89,6 +90,7 @@ const CONNECTION_STATUSES: ConnectionStatus[] = [
   "have_a_connector",
   "no_connection",
 ];
+const PRIORITIES: Priority[] = ["top", "high", "medium", "low"];
 
 const PAGE_SIZE = 50;
 
@@ -100,6 +102,7 @@ export default function FundingEntities() {
   const [subtypes, setSubtypes] = usePersistedState<string[]>("wf.list.funders.subtypes", DEFAULT_SUBTYPES);
   const [activeStatuses, setActiveStatuses] = usePersistedState<string[]>("wf.list.funders.activeStatuses", DEFAULT_ACTIVE_STATUSES);
   const [connectionStatuses, setConnectionStatuses] = usePersistedState<string[]>("wf.list.funders.connectionStatuses", []);
+  const [priorities, setPriorities] = usePersistedState<string[]>("wf.list.funders.priorities", []);
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.funders.owners", []);
   const [page, setPage] = usePersistedState<number>("wf.list.funders.page", 1);
   const selection = useRowSelection();
@@ -116,6 +119,9 @@ export default function FundingEntities() {
       : {}),
     ...(connectionStatuses.length > 0
       ? { connectionStatus: [...connectionStatuses].sort() as ConnectionStatus[] }
+      : {}),
+    ...(priorities.length > 0
+      ? { priority: [...priorities].sort() as Priority[] }
       : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
   };
@@ -178,6 +184,7 @@ export default function FundingEntities() {
     !sameDefaultSubtypes ||
     !sameDefaultActiveStatuses ||
     connectionStatuses.length > 0 ||
+    priorities.length > 0 ||
     owners.length > 0;
 
   // ─── Saved views ─────────────────────────────────────────────────
@@ -186,6 +193,7 @@ export default function FundingEntities() {
     subtypes: string[];
     activeStatuses: string[];
     connectionStatuses: string[];
+    priorities: string[];
     owners: string[];
     sort: SortState;
   };
@@ -194,6 +202,7 @@ export default function FundingEntities() {
     subtypes,
     activeStatuses,
     connectionStatuses,
+    priorities,
     owners,
     sort: ts.sort,
   };
@@ -202,6 +211,7 @@ export default function FundingEntities() {
     setSubtypes(DEFAULT_SUBTYPES);
     setActiveStatuses(DEFAULT_ACTIVE_STATUSES);
     setConnectionStatuses([]);
+    setPriorities([]);
     setOwners([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
@@ -215,6 +225,7 @@ export default function FundingEntities() {
       setSubtypes(s.subtypes ?? DEFAULT_SUBTYPES);
       setActiveStatuses(s.activeStatuses ?? DEFAULT_ACTIVE_STATUSES);
       setConnectionStatuses(s.connectionStatuses ?? []);
+      setPriorities(s.priorities ?? []);
       setOwners(s.owners ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setPage(1);
@@ -228,6 +239,7 @@ export default function FundingEntities() {
         sortedSubtypes === sortedDefaultSubtypes &&
         sortedActiveStatuses === sortedDefaultActiveStatuses &&
         (s.connectionStatuses?.length ?? 0) === 0 &&
+        (s.priorities?.length ?? 0) === 0 &&
         (s.owners?.length ?? 0) === 0 &&
         (s.sort?.key ?? null) === null
       );
@@ -290,6 +302,13 @@ export default function FundingEntities() {
           options={CONNECTION_STATUSES}
           testId="select-connection-status"
         />
+        <MultiFilterSelect
+          label="Priority"
+          selected={priorities}
+          onChange={(v) => { setPriorities(v); setPage(1); selection.clear(); }}
+          options={PRIORITIES}
+          testId="select-priority"
+        />
         <OwnerMultiFilter
           selected={owners}
           onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
@@ -305,6 +324,7 @@ export default function FundingEntities() {
               setSubtypes(DEFAULT_SUBTYPES);
               setActiveStatuses(DEFAULT_ACTIVE_STATUSES);
               setConnectionStatuses([]);
+              setPriorities([]);
               setOwners([]);
               setPage(1);
               selection.clear();
