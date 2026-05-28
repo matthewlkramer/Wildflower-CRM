@@ -122,7 +122,7 @@ export default function Individuals() {
       sortRows(
         rows,
         {
-          priority: (r) => (r.isPriority ? 1 : 0),
+          priority: (r) => (r.priority === "top" ? 1 : 0),
           name: (r) => personDisplayName(r).toLowerCase(),
           status: (r) => (r.deceased ? 1 : 0),
           region: (r) =>
@@ -344,7 +344,7 @@ export default function Individuals() {
                       />
                     </TableCell>
                     <TableCell className="w-8 pr-0">
-                      <PriorityStar kind="person" id={p.id} isPriority={p.isPriority} />
+                      <PriorityStar priority={p.priority} />
                     </TableCell>
                     <TableCell className="font-medium">
                       <Link href={`/individuals/${p.id}`} className="block w-full">

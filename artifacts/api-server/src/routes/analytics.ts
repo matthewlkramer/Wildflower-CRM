@@ -290,8 +290,8 @@ router.get(
           householdName: households.name,
           individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
           individualGiverPersonName: personDisplayNameSql,
-          funderIsPriority: funders.isPriority,
-          individualGiverPersonIsPriority: people.isPriority,
+          funderPriority: funders.priority,
+          individualGiverPersonPriority: people.priority,
         })
         .from(giftAllocations)
         .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
@@ -325,8 +325,8 @@ router.get(
           householdName: households.name,
           individualGiverPersonId: opportunitiesAndPledges.individualGiverPersonId,
           individualGiverPersonName: personDisplayNameSql,
-          funderIsPriority: funders.isPriority,
-          individualGiverPersonIsPriority: people.isPriority,
+          funderPriority: funders.priority,
+          individualGiverPersonPriority: people.priority,
         })
         .from(pledgeAllocations)
         .innerJoin(

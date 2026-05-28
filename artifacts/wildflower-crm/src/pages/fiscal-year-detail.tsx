@@ -343,12 +343,12 @@ function ReceivedTable({
                     <DonorCell
                       funderId={r.funderId}
                       funderName={r.funderName}
-                      funderIsPriority={r.funderIsPriority}
+                      funderPriority={r.funderPriority}
                       householdId={r.householdId}
                       householdName={r.householdName}
                       individualGiverPersonId={r.individualGiverPersonId}
                       individualGiverPersonName={r.individualGiverPersonName}
-                      individualGiverPersonIsPriority={r.individualGiverPersonIsPriority}
+                      individualGiverPersonPriority={r.individualGiverPersonPriority}
                     />
                   </TableCell>
                   <TableCell className="text-muted-foreground">{r.displayUsage ? abbreviateUsStates(r.displayUsage) : "—"}</TableCell>
@@ -428,12 +428,12 @@ function OpenTable({
                     <DonorCell
                       funderId={r.funderId}
                       funderName={r.funderName}
-                      funderIsPriority={r.funderIsPriority}
+                      funderPriority={r.funderPriority}
                       householdId={r.householdId}
                       householdName={r.householdName}
                       individualGiverPersonId={r.individualGiverPersonId}
                       individualGiverPersonName={r.individualGiverPersonName}
-                      individualGiverPersonIsPriority={r.individualGiverPersonIsPriority}
+                      individualGiverPersonPriority={r.individualGiverPersonPriority}
                     />
                   </TableCell>
                   <TableCell>

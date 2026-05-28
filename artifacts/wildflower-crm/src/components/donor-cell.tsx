@@ -1,16 +1,17 @@
 import { Link } from "wouter";
+import type { Priority } from "@workspace/api-client-react";
 import { formatFunderNameShort } from "@/lib/format";
 import { PriorityStar } from "@/components/priority-star";
 
 type Props = {
   funderId?: string | null;
   funderName?: string | null;
-  funderIsPriority?: boolean | null;
+  funderPriority?: Priority | null;
   householdId?: string | null;
   householdName?: string | null;
   individualGiverPersonId?: string | null;
   individualGiverPersonName?: string | null;
-  individualGiverPersonIsPriority?: boolean | null;
+  individualGiverPersonPriority?: Priority | null;
 };
 
 /**
@@ -24,17 +25,17 @@ type Props = {
 export function DonorCell({
   funderId,
   funderName,
-  funderIsPriority,
+  funderPriority,
   householdId,
   householdName,
   individualGiverPersonId,
   individualGiverPersonName,
-  individualGiverPersonIsPriority,
+  individualGiverPersonPriority,
 }: Props) {
   if (funderId) {
     return (
       <span className="inline-flex items-center gap-1">
-        <PriorityStar kind="funder" id={funderId} isPriority={funderIsPriority} readOnly size="sm" />
+        <PriorityStar priority={funderPriority} size="sm" />
         <Link
           href={`/funding-entities/${funderId}`}
           className="hover:underline"
@@ -59,13 +60,7 @@ export function DonorCell({
   if (individualGiverPersonId) {
     return (
       <span className="inline-flex items-center gap-1">
-        <PriorityStar
-          kind="person"
-          id={individualGiverPersonId}
-          isPriority={individualGiverPersonIsPriority}
-          readOnly
-          size="sm"
-        />
+        <PriorityStar priority={individualGiverPersonPriority} size="sm" />
         <Link
           href={`/individuals/${individualGiverPersonId}`}
           className="hover:underline"

@@ -152,7 +152,6 @@ router.post(
         "ownerUserId",
         "currentHomeRegionId",
         "capacityRating",
-        "isPriority",
         "priority",
         "deceased",
       ],

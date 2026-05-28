@@ -26,12 +26,12 @@ const donorJoinSelect = {
       NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
     )
   `.as("individual_giver_person_name"),
-  // Denormalized top-priority flags so the donor cell can render a
-  // star without an extra fetch. NULL when the corresponding ID isn't
-  // set (xor — only one of funder / household / person is non-null
-  // per row).
-  funderIsPriority: funders.isPriority,
-  individualGiverPersonIsPriority: people.isPriority,
+  // Denormalized priority tier so the donor cell can render a star
+  // (when priority === 'top') without an extra fetch. NULL when the
+  // corresponding ID isn't set (xor — only one of funder / household /
+  // person is non-null per row).
+  funderPriority: funders.priority,
+  individualGiverPersonPriority: people.priority,
   primaryContactPersonName: sql<string | null>`
     COALESCE(
       NULLIF(TRIM(${primaryContact.fullName}), ''),

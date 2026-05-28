@@ -572,8 +572,8 @@ export interface FiscalYearReceivedRow {
   householdName?: string | null;
   individualGiverPersonId?: string | null;
   individualGiverPersonName?: string | null;
-  readonly funderIsPriority?: boolean | null;
-  readonly individualGiverPersonIsPriority?: boolean | null;
+  readonly funderPriority?: Priority | null;
+  readonly individualGiverPersonPriority?: Priority | null;
 }
 
 /**
@@ -601,8 +601,8 @@ export interface FiscalYearOpenRow {
   householdName?: string | null;
   individualGiverPersonId?: string | null;
   individualGiverPersonName?: string | null;
-  readonly funderIsPriority?: boolean | null;
-  readonly individualGiverPersonIsPriority?: boolean | null;
+  readonly funderPriority?: Priority | null;
+  readonly individualGiverPersonPriority?: Priority | null;
 }
 
 export type FiscalYearBreakdownReceived = {
@@ -664,9 +664,7 @@ export interface Funder {
   instagram?: string | null;
   youtube?: string | null;
   crunchbase?: string | null;
-  /** Top-priority flag surfaced as a star on the funders table and on opportunities/gifts where this funder is the donor. */
-  isPriority?: boolean;
-  /** Solicitation priority tier (top/high/medium/low). Independent of isPriority. */
+  /** Solicitation priority tier (top/high/medium/low). The 'top' band is surfaced as a star on the funders table and on opportunities/gifts where this funder is the donor. */
   priority?: Priority | null;
   /** people_entity_roles row with primary_contact=true for this funder, if any. */
   readonly primaryContactPersonId?: string | null;
@@ -772,7 +770,6 @@ export interface CreateFunderBody {
   instagram?: string;
   youtube?: string;
   crunchbase?: string;
-  isPriority?: boolean;
   priority?: Priority;
 }
 
@@ -807,7 +804,6 @@ export interface UpdateFunderBody {
   instagram?: string | null;
   youtube?: string | null;
   crunchbase?: string | null;
-  isPriority?: boolean;
   priority?: Priority | null;
 }
 
@@ -961,9 +957,7 @@ export interface Person {
   capacityRating?: CapacityRating | null;
   connectionStatus?: ConnectionStatus | null;
   enthusiasm?: Enthusiasm | null;
-  /** Top-priority flag surfaced as a star on the individuals table and on opportunities/gifts where this person is the individual giver. */
-  isPriority?: boolean;
-  /** Solicitation priority tier (top/high/medium/low). Independent of isPriority. */
+  /** Solicitation priority tier (top/high/medium/low). The 'top' band is surfaced as a star on the individuals table and on opportunities/gifts where this person is the individual giver. */
   priority?: Priority | null;
   /** Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string. */
   readonly lifetimeGiving?: string | null;
@@ -1034,7 +1028,6 @@ export interface CreatePersonBody {
   capacityRating?: CapacityRating;
   connectionStatus?: ConnectionStatus;
   enthusiasm?: Enthusiasm;
-  isPriority?: boolean;
   priority?: Priority;
 }
 
@@ -1072,7 +1065,6 @@ export interface UpdatePersonBody {
   capacityRating?: CapacityRating | null;
   connectionStatus?: ConnectionStatus | null;
   enthusiasm?: Enthusiasm | null;
-  isPriority?: boolean;
   priority?: Priority | null;
 }
 
@@ -1221,8 +1213,8 @@ export interface OpportunityOrPledge {
   funderName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
-  readonly funderIsPriority?: boolean | null;
-  readonly individualGiverPersonIsPriority?: boolean | null;
+  readonly funderPriority?: Priority | null;
+  readonly individualGiverPersonPriority?: Priority | null;
   readonly primaryContactPersonName?: string | null;
   readonly fiscalYear?: string | null;
   readonly coveredFiscalYears?: readonly string[] | null;
@@ -1288,8 +1280,8 @@ export interface GiftOrPayment {
   funderName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
-  readonly funderIsPriority?: boolean | null;
-  readonly individualGiverPersonIsPriority?: boolean | null;
+  readonly funderPriority?: Priority | null;
+  readonly individualGiverPersonPriority?: Priority | null;
   /** Distinct entity_id values from gift_allocations. */
   readonly entityIds?: readonly string[] | null;
   /** Distinct display_usage values from gift_allocations (server-computed labels). */
@@ -2231,7 +2223,6 @@ export interface BulkUpdatePeoplePatch {
   ownerUserId?: string | null;
   currentHomeRegionId?: string | null;
   capacityRating?: CapacityRating | null;
-  isPriority?: boolean;
   priority?: Priority | null;
   deceased?: boolean;
 }
@@ -2251,7 +2242,6 @@ export interface BulkUpdateFundersPatch {
   connectionStatus?: ConnectionStatus | null;
   capacityRating?: CapacityRating | null;
   enthusiasm?: Enthusiasm | null;
-  isPriority?: boolean;
   priority?: Priority | null;
   fundingEntitySubtype?: FundingEntitySubtype | null;
 }

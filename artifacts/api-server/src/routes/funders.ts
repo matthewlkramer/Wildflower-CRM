@@ -124,7 +124,6 @@ router.post(
         "connectionStatus",
         "capacityRating",
         "enthusiasm",
-        "isPriority",
         "priority",
         "fundingEntitySubtype",
       ],

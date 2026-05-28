@@ -412,12 +412,12 @@ export default function Opportunities({
                       <DonorCell
                         funderId={o.funderId}
                         funderName={o.funderName}
-                        funderIsPriority={o.funderIsPriority}
+                        funderPriority={o.funderPriority}
                         householdId={o.householdId}
                         householdName={o.householdName}
                         individualGiverPersonId={o.individualGiverPersonId}
                         individualGiverPersonName={o.individualGiverPersonName}
-                        individualGiverPersonIsPriority={o.individualGiverPersonIsPriority}
+                        individualGiverPersonPriority={o.individualGiverPersonPriority}
                       />
                     </TableCell>
                     <TableCell>{formatEnum(o.stage)}</TableCell>

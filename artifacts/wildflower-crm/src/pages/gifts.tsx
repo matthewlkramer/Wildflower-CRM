@@ -286,12 +286,12 @@ export default function Gifts() {
                       <DonorCell
                         funderId={g.funderId}
                         funderName={g.funderName}
-                        funderIsPriority={g.funderIsPriority}
+                        funderPriority={g.funderPriority}
                         householdId={g.householdId}
                         householdName={g.householdName}
                         individualGiverPersonId={g.individualGiverPersonId}
                         individualGiverPersonName={g.individualGiverPersonName}
-                        individualGiverPersonIsPriority={g.individualGiverPersonIsPriority}
+                        individualGiverPersonPriority={g.individualGiverPersonPriority}
                       />
                     </TableCell>
                     <TableCell>{formatDateShort(g.dateReceived)}</TableCell>

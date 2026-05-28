@@ -71,21 +71,15 @@ export const funders = pgTable("funders", {
     (): AnyPgColumn => funders.id,
     { onDelete: "set null" },
   ),
-  // Top-priority flag surfaced as a star icon on the funders table
-  // and inline next to the funder name wherever it appears as a donor
-  // (opportunities, gifts). Independent of activeStatus / enthusiasm /
-  // capacityRating so the team can pin a short hand-curated list.
-  isPriority: boolean("is_priority").default(false).notNull(),
-  // Solicitation priority tier (top/high/medium/low). Independent of
-  // isPriority — isPriority is a binary "pinned" flag, while this is
-  // a graduated band the team uses to rank ask-readiness.
+  // Solicitation priority tier (top/high/medium/low). The "top" band
+  // is surfaced as a star icon on the funders table and inline next to
+  // the funder name wherever it appears as a donor (opportunities, gifts).
   priority: priorityEnum("priority"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("funders_owner_user_id_idx").on(t.ownerUserId),
   index("funders_parent_funder_id_idx").on(t.parentFunderId),
-  index("funders_is_priority_idx").on(t.isPriority).where(sql`is_priority = true`),
   index("funders_priority_idx").on(t.priority),
   index("funders_region_ids_gin_idx").using("gin", t.regionIds),
   index("funders_interests_thematic_gin_idx").using("gin", t.interestsThematic),

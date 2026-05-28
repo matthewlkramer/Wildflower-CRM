@@ -34,13 +34,6 @@ export const PEOPLE_BULK_FIELDS: ReadonlyArray<BulkField> = [
     ],
   },
   {
-    kind: "boolean",
-    key: "isPriority",
-    label: "Priority",
-    trueLabel: "Priority",
-    falseLabel: "Not priority",
-  },
-  {
     kind: "enum",
     key: "priority",
     label: "Priority tier",
@@ -110,13 +103,6 @@ export const FUNDERS_BULK_FIELDS: ReadonlyArray<BulkField> = [
       { value: "neutral", label: "Neutral" },
       { value: "unsupportive", label: "Unsupportive" },
     ],
-  },
-  {
-    kind: "boolean",
-    key: "isPriority",
-    label: "Priority",
-    trueLabel: "Priority",
-    falseLabel: "Not priority",
   },
   {
     kind: "enum",

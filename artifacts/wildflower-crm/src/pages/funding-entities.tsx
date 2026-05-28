@@ -141,7 +141,7 @@ export default function FundingEntities() {
       sortRows(
         rows,
         {
-          priority: (r) => (r.isPriority ? 1 : 0),
+          priority: (r) => (r.priority === "top" ? 1 : 0),
           name: (r) => formatFunderNameShort(r.name).toLowerCase(),
           subtype: (r) => r.fundingEntitySubtype ?? null,
           active: (r) => r.activeStatus ?? null,
@@ -394,7 +394,7 @@ export default function FundingEntities() {
                       />
                     </TableCell>
                     <TableCell className="w-8 pr-0">
-                      <PriorityStar kind="funder" id={f.id} isPriority={f.isPriority} />
+                      <PriorityStar priority={f.priority} />
                     </TableCell>
                     <TableCell className="font-medium">
                       <Link
