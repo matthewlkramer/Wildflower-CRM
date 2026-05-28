@@ -31,6 +31,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { EmailDetailDialog } from "@/components/email-detail-dialog";
+import { Mail } from "lucide-react";
 
 type Kind =
   | "linkedin_job_change"
@@ -172,6 +174,7 @@ function ProposalList({ kind }: { kind: Kind }) {
     summary: string;
   } | null>(null);
   const [rejectNote, setRejectNote] = useState("");
+  const [viewEmailId, setViewEmailId] = useState<string | null>(null);
   const reject = useRejectEmailProposal({
     mutation: {
       onSuccess: () => {
@@ -231,6 +234,17 @@ function ProposalList({ kind }: { kind: Kind }) {
                 >
                   View person
                 </Link>
+              ) : null}
+              {p.sourceMessageId ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setViewEmailId(p.sourceMessageId ?? null)}
+                  data-testid={`btn-view-email-${p.id}`}
+                >
+                  <Mail className="h-3.5 w-3.5 mr-1" />
+                  View email
+                </Button>
               ) : null}
               <Button
                 size="sm"
@@ -329,6 +343,10 @@ function ProposalList({ kind }: { kind: Kind }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <EmailDetailDialog
+        emailId={viewEmailId}
+        onClose={() => setViewEmailId(null)}
+      />
     </div>
   );
 }
