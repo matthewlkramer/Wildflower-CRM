@@ -38,8 +38,37 @@ const backfillInFlight = new Set<string>();
  */
 
 const TICK_MS = 10_000;
-const SYNC_INTERVAL_MS = 15 * 60_000;
+const BUSINESS_HOURS_INTERVAL_MS = 15 * 60_000;
+const OFF_HOURS_INTERVAL_MS = 60 * 60_000;
 const JITTER_MS = 5 * 60_000;
+
+/**
+ * Steady-state sync cadence is time-of-day aware (America/Chicago, the
+ * timezone Wildflower works in):
+ *   - Mon–Fri 06:00–17:59 CT → every 15 min (fast, business hours)
+ *   - All other times (nights, weekends) → every 60 min
+ *
+ * Bootstrap mode (per-source) ignores this and uses BOOTSTRAP_RETRY_MS
+ * so a freshly-connected mailbox can drain its 30-day backfill in
+ * minutes regardless of the time of day.
+ */
+function currentSyncIntervalMs(now: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    weekday: "short",
+    hour: "numeric",
+    hour12: false,
+  }).formatToParts(new Date(now));
+  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
+  const hourStr = parts.find((p) => p.type === "hour")?.value ?? "0";
+  // Intl can emit "24" for midnight in some locales; normalize.
+  const hour = Number(hourStr) % 24;
+  const isWeekday = weekday !== "Sat" && weekday !== "Sun";
+  const isBusinessHour = hour >= 6 && hour < 18;
+  return isWeekday && isBusinessHour
+    ? BUSINESS_HOURS_INTERVAL_MS
+    : OFF_HOURS_INTERVAL_MS;
+}
 // While a mailbox/calendar is still in its initial bootstrap, we want
 // it to drain back-to-back instead of waiting the steady-state 15 min
 // between page batches. The per-source workers cap pages-per-run, so
@@ -114,6 +143,7 @@ export async function tick(now: number = Date.now()): Promise<void> {
         ),
       );
 
+    const syncIntervalMs = currentSyncIntervalMs(now);
     for (const r of rows) {
       const jitter = userJitter(r.userId);
       // We compute due time per-source. A new sync runs when EITHER
@@ -121,16 +151,16 @@ export async function tick(now: number = Date.now()): Promise<void> {
       // they share the same Google grant and rate limits.
       //
       // While bootstrap is still in progress for a source, skip the
-      // steady-state 15-min interval + jitter and fall back to a
-      // short fixed retry. The per-source workers cap pages-per-run
-      // so this just means a fresh connection drains its 30-day
-      // backfill quickly; once `bootstrap_completed_at` flips, the
-      // normal cadence kicks back in.
+      // steady-state interval + jitter and fall back to a short fixed
+      // retry. The per-source workers cap pages-per-run so this just
+      // means a fresh connection drains its 30-day backfill quickly;
+      // once `bootstrap_completed_at` flips, the normal cadence
+      // (business-hours vs off-hours) kicks back in.
       const emailIntervalMs = r.emailBootstrapDone
-        ? SYNC_INTERVAL_MS + jitter
+        ? syncIntervalMs + jitter
         : BOOTSTRAP_RETRY_MS;
       const calIntervalMs = r.calendarBootstrapDone
-        ? SYNC_INTERVAL_MS + jitter
+        ? syncIntervalMs + jitter
         : BOOTSTRAP_RETRY_MS;
       const emailDue =
         now >= (r.lastEmailSyncedAt?.getTime() ?? 0) + emailIntervalMs;
@@ -229,7 +259,13 @@ export function startSyncScheduler(): void {
   }
   if (timer) return;
   logger.info(
-    { tickMs: TICK_MS, syncIntervalMs: SYNC_INTERVAL_MS, jitterMs: JITTER_MS },
+    {
+      tickMs: TICK_MS,
+      businessHoursIntervalMs: BUSINESS_HOURS_INTERVAL_MS,
+      offHoursIntervalMs: OFF_HOURS_INTERVAL_MS,
+      jitterMs: JITTER_MS,
+      timeZone: "America/Chicago",
+    },
     "Starting sync scheduler",
   );
   timer = setInterval(() => {
