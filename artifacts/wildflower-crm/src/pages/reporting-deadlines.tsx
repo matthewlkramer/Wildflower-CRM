@@ -5,63 +5,70 @@ import {
   useUpdateTask,
   getListTasksQueryKey,
   type Task,
+  type TaskStatus,
+  type TaskKind,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useUserNameMap } from "@/components/user-picker";
+import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { formatDate } from "@/lib/format";
 import { CheckCircle2, Clock, FileClock } from "lucide-react";
 
 /**
- * Cross-team view of every open reporting_deadline task. Groups by
- * assignee so each grant manager can see what's on their plate at a
- * glance; unassigned rows bubble to the top so they don't slip through
- * the cracks. Sorted within each group by due date (nulls last).
- *
- * This page deliberately doesn't paginate — reporting deadlines are
- * low-volume by nature (a few per active grant). If volume grows we
- * can add status / due-window filters before paging.
+ * Cross-team view of every reporting_deadline task, sorted by due date
+ * (soonest → latest, nulls last). Default filter hides completed
+ * (status=done / cancelled); toggle to include them.
  */
+const INCOMPLETE_STATUSES: TaskStatus[] = ["open", "waiting"];
+const ALL_STATUSES: TaskStatus[] = ["open", "waiting", "done", "cancelled"];
+
 export default function ReportingDeadlinesPage() {
-  const { data, isLoading, isError, error } = useListTasks({
-    kind: ["reporting_deadline"],
-    status: ["open", "waiting"],
-    limit: 200,
-  });
+  const [showCompleted, setShowCompleted] = usePersistedState<boolean>(
+    "wf.list.reporting-deadlines.showCompleted",
+    false,
+  );
+  // Owner filter — multi-select on assigneeUserId. The /tasks endpoint
+  // only takes a single assigneeUserId, so we pull the full set (limit
+  // 500 is well above the reporting-deadline volume) and filter client
+  // side. The sentinel "__unassigned__" matches rows with no assignee.
+  const [owners, setOwners] = usePersistedState<string[]>(
+    "wf.list.reporting-deadlines.owners",
+    [],
+  );
+  const params = {
+    kind: ["reporting_deadline"] as TaskKind[],
+    status: showCompleted ? ALL_STATUSES : INCOMPLETE_STATUSES,
+    limit: 500,
+  };
+  const { data, isLoading, isError, error } = useListTasks(params);
   const userNames = useUserNameMap();
 
   const tasks = data?.data ?? [];
-  const grouped = useMemo(() => {
-    const byAssignee = new Map<string | null, Task[]>();
-    for (const t of tasks) {
-      const key = t.assigneeUserId ?? null;
-      const arr = byAssignee.get(key) ?? [];
-      arr.push(t);
-      byAssignee.set(key, arr);
-    }
-    // Sort each bucket by dueDate ascending, nulls last.
-    for (const arr of byAssignee.values()) {
-      arr.sort((a, b) => {
-        if (!a.dueDate && !b.dueDate) return 0;
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return a.dueDate.localeCompare(b.dueDate);
-      });
-    }
-    const entries = Array.from(byAssignee.entries());
-    // Unassigned first, then assignees alphabetically.
-    entries.sort(([a], [b]) => {
-      if (a === null) return -1;
-      if (b === null) return 1;
-      const na = userNames.get(a) ?? a;
-      const nb = userNames.get(b) ?? b;
-      return na.localeCompare(nb);
+  const filtered = useMemo(() => {
+    if (owners.length === 0) return tasks;
+    const includeUnassigned = owners.includes("__unassigned__");
+    const ownerSet = new Set(owners.filter((o) => o !== "__unassigned__"));
+    return tasks.filter((t) => {
+      if (t.assigneeUserId === null || t.assigneeUserId === undefined) {
+        return includeUnassigned;
+      }
+      return ownerSet.has(t.assigneeUserId);
     });
-    return entries;
-  }, [tasks, userNames]);
+  }, [tasks, owners]);
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return a.dueDate.localeCompare(b.dueDate);
+    });
+  }, [filtered]);
 
   return (
     <div className="space-y-6">
@@ -72,9 +79,40 @@ export default function ReportingDeadlinesPage() {
             Reporting deadlines
           </h1>
           <p className="text-sm text-muted-foreground">
-            Open reporting deadlines across the team, grouped by who owns them.
+            All reporting deadlines across the team, soonest first.
           </p>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4">
+        <label
+          className="inline-flex items-center gap-2 text-sm cursor-pointer select-none"
+          data-testid="toggle-show-completed"
+        >
+          <Checkbox
+            checked={showCompleted}
+            onCheckedChange={(v) => setShowCompleted(v === true)}
+          />
+          Show completed
+        </label>
+        <OwnerMultiFilter
+          selected={owners}
+          onChange={setOwners}
+          testId="filter-reporting-deadlines-owner"
+          label="Assignee"
+        />
+        {(owners.length > 0 || showCompleted) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setOwners([]);
+              setShowCompleted(false);
+            }}
+          >
+            Clear
+          </Button>
+        )}
       </div>
 
       {isLoading && (
@@ -85,59 +123,36 @@ export default function ReportingDeadlinesPage() {
           {error instanceof Error ? error.message : "Failed to load."}
         </div>
       )}
-      {!isLoading && tasks.length === 0 && (
+      {!isLoading && sorted.length === 0 && (
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            No open reporting deadlines. New ones are created when an
-            opportunity becomes a pledge or cash-in.
+            {showCompleted
+              ? "No reporting deadlines yet."
+              : "No open reporting deadlines. New ones are created when an opportunity becomes a pledge or cash-in."}
           </CardContent>
         </Card>
       )}
 
-      <div className="space-y-6">
-        {grouped.map(([assigneeId, items]) => (
-          <AssigneeGroup
-            key={assigneeId ?? "__unassigned__"}
-            assigneeId={assigneeId}
-            assigneeName={assigneeId ? (userNames.get(assigneeId) ?? assigneeId) : "Unassigned"}
-            tasks={items}
-          />
-        ))}
-      </div>
+      {sorted.length > 0 && (
+        <Card>
+          <CardContent className="divide-y py-0">
+            {sorted.map((t) => (
+              <DeadlineRow key={t.id} task={t} userNames={userNames} />
+            ))}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
-function AssigneeGroup({
-  assigneeId,
-  assigneeName,
-  tasks,
+function DeadlineRow({
+  task,
+  userNames,
 }: {
-  assigneeId: string | null;
-  assigneeName: string;
-  tasks: Task[];
+  task: Task;
+  userNames: Map<string, string>;
 }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg flex items-center gap-2">
-          {assigneeName}
-          <Badge variant="secondary">{tasks.length}</Badge>
-          {assigneeId === null && (
-            <Badge variant="destructive" className="text-xs">Needs owner</Badge>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="divide-y -mt-2">
-        {tasks.map((t) => (
-          <DeadlineRow key={t.id} task={t} />
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function DeadlineRow({ task }: { task: Task }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const updateMut = useUpdateTask({
@@ -159,6 +174,10 @@ function DeadlineRow({ task }: { task: Task }) {
   const due = task.dueDate ? new Date(`${task.dueDate}T00:00:00Z`) : null;
   const overdue = !!due && due.getTime() < now.getTime();
   const soon = !!due && !overdue && due.getTime() - now.getTime() < 14 * 24 * 60 * 60 * 1000;
+  const done = task.status === "done" || task.status === "cancelled";
+  const assigneeName = task.assigneeUserId
+    ? (userNames.get(task.assigneeUserId) ?? task.assigneeUserId)
+    : "Unassigned";
 
   return (
     <div
@@ -168,20 +187,34 @@ function DeadlineRow({ task }: { task: Task }) {
       <Clock
         className={
           "h-4 w-4 mt-1 shrink-0 " +
-          (overdue ? "text-destructive" : soon ? "text-amber-500" : "text-muted-foreground")
+          (done
+            ? "text-muted-foreground"
+            : overdue
+            ? "text-destructive"
+            : soon
+            ? "text-amber-500"
+            : "text-muted-foreground")
         }
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium">{task.title}</span>
+          <span className={"font-medium " + (done ? "line-through text-muted-foreground" : "")}>
+            {task.title}
+          </span>
           {task.status === "waiting" && (
             <Badge variant="outline" className="text-xs">Waiting</Badge>
           )}
-          {overdue && <Badge variant="destructive" className="text-xs">Overdue</Badge>}
-          {soon && <Badge className="text-xs">Due soon</Badge>}
+          {task.status === "done" && (
+            <Badge variant="secondary" className="text-xs">Done</Badge>
+          )}
+          {task.status === "cancelled" && (
+            <Badge variant="outline" className="text-xs">Cancelled</Badge>
+          )}
+          {!done && overdue && <Badge variant="destructive" className="text-xs">Overdue</Badge>}
+          {!done && soon && <Badge className="text-xs">Due soon</Badge>}
         </div>
         <div className="text-xs text-muted-foreground mt-0.5">
-          Due {formatDate(task.dueDate)}
+          Due {formatDate(task.dueDate)} · {assigneeName}
           {oppId && (
             <>
               {" · "}
@@ -197,16 +230,18 @@ function DeadlineRow({ task }: { task: Task }) {
           </div>
         )}
       </div>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => updateMut.mutate({ id: task.id, data: { status: "done" } })}
-        disabled={updateMut.isPending}
-        data-testid={`button-complete-deadline-${task.id}`}
-      >
-        <CheckCircle2 className="h-4 w-4 mr-1" />
-        Done
-      </Button>
+      {!done && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => updateMut.mutate({ id: task.id, data: { status: "done" } })}
+          disabled={updateMut.isPending}
+          data-testid={`button-complete-deadline-${task.id}`}
+        >
+          <CheckCircle2 className="h-4 w-4 mr-1" />
+          Done
+        </Button>
+      )}
     </div>
   );
 }
