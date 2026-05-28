@@ -1054,6 +1054,12 @@ export const GetFunderResponse = zod
             id: zod.string(),
             personId: zod.string(),
             personName: zod.string().nullish(),
+            personEmail: zod
+              .string()
+              .nullish()
+              .describe(
+                "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
+              ),
             entityType: zod.enum([
               "funder",
               "non_funding_organization",
@@ -1474,6 +1480,12 @@ export const GetOrganizationResponse = zod
             id: zod.string(),
             personId: zod.string(),
             personName: zod.string().nullish(),
+            personEmail: zod
+              .string()
+              .nullish()
+              .describe(
+                "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
+              ),
             entityType: zod.enum([
               "funder",
               "non_funding_organization",
@@ -1696,6 +1708,12 @@ export const GetPaymentIntermediaryResponse = zod
             id: zod.string(),
             personId: zod.string(),
             personName: zod.string().nullish(),
+            personEmail: zod
+              .string()
+              .nullish()
+              .describe(
+                "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
+              ),
             entityType: zod.enum([
               "funder",
               "non_funding_organization",
@@ -1889,6 +1907,12 @@ export const GetHouseholdResponse = zod
             id: zod.string(),
             personId: zod.string(),
             personName: zod.string().nullish(),
+            personEmail: zod
+              .string()
+              .nullish()
+              .describe(
+                "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
+              ),
             entityType: zod.enum([
               "funder",
               "non_funding_organization",
@@ -2259,6 +2283,12 @@ export const GetPersonResponse = zod
             id: zod.string(),
             personId: zod.string(),
             personName: zod.string().nullish(),
+            personEmail: zod
+              .string()
+              .nullish()
+              .describe(
+                "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
+              ),
             entityType: zod.enum([
               "funder",
               "non_funding_organization",
@@ -2505,6 +2535,12 @@ export const ListPeopleEntityRolesResponse = zod.object({
       id: zod.string(),
       personId: zod.string(),
       personName: zod.string().nullish(),
+      personEmail: zod
+        .string()
+        .nullish()
+        .describe(
+          "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
+        ),
       entityType: zod.enum([
         "funder",
         "non_funding_organization",
@@ -2600,6 +2636,12 @@ export const UpdatePeopleEntityRoleResponse = zod.object({
   id: zod.string(),
   personId: zod.string(),
   personName: zod.string().nullish(),
+  personEmail: zod
+    .string()
+    .nullish()
+    .describe(
+      "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
+    ),
   entityType: zod.enum([
     "funder",
     "non_funding_organization",

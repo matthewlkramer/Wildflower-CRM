@@ -545,12 +545,23 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                     data-testid={`row-funder-person-${p.id}`}
                   >
                     <div className="min-w-0 flex-1">
-                      <Link
-                        href={`/individuals/${p.personId}`}
-                        className="text-primary hover:underline truncate block"
-                      >
-                        {p.personName ?? `Person ${p.personId}`}
-                      </Link>
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <Link
+                          href={`/individuals/${p.personId}`}
+                          className="text-primary hover:underline truncate"
+                        >
+                          {p.personName ?? `Person ${p.personId}`}
+                        </Link>
+                        {p.personEmail ? (
+                          <a
+                            href={`mailto:${p.personEmail}`}
+                            className="text-muted-foreground text-xs hover:underline truncate"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {p.personEmail}
+                          </a>
+                        ) : null}
+                      </div>
                       {p.externalTitleOrRole ? (
                         <div className="text-muted-foreground text-xs truncate">
                           {p.externalTitleOrRole}

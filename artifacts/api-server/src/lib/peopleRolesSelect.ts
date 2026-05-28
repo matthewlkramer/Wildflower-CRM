@@ -1,4 +1,4 @@
-import { peopleEntityRoles, people } from "@workspace/db/schema";
+import { peopleEntityRoles, people, emails } from "@workspace/db/schema";
 import { eq, getTableColumns, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 
@@ -7,12 +7,24 @@ import { db } from "@workspace/db";
 // pattern used in funders/people primary-contact subqueries:
 // prefer full_name, fall back to first+last, NULL if neither has
 // non-whitespace content.
+//
+// personEmail: correlated subquery picking the preferred email for
+// the linked person (is_preferred DESC), falling back to any email
+// on the person (created_at ASC for a stable choice). NULL if the
+// person has no emails.
 export const peopleEntityRolesSelect = {
   ...getTableColumns(peopleEntityRoles),
   personName: sql<string | null>`COALESCE(
     NULLIF(TRIM(${people.fullName}), ''),
     NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
   )`.as("person_name"),
+  personEmail: sql<string | null>`(
+    SELECT ${emails.email}
+    FROM ${emails}
+    WHERE ${emails.personId} = ${peopleEntityRoles.personId}
+    ORDER BY ${emails.isPreferred} DESC, ${emails.createdAt} ASC
+    LIMIT 1
+  )`.as("person_email"),
 };
 
 export function peopleEntityRolesQuery() {

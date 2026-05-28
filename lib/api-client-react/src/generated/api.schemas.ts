@@ -681,6 +681,8 @@ export interface PeopleEntityRole {
   id: string;
   personId: string;
   personName?: string | null;
+  /** Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file. */
+  readonly personEmail?: string | null;
   entityType: EntityRoleType;
   funderId?: string | null;
   organizationId?: string | null;

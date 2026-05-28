@@ -2336,6 +2336,7 @@ components:
         id:                    { type: string }
         personId:              { type: string }
         personName:            { type: string, nullable: true }
+        personEmail:           { type: string, nullable: true, readOnly: true, description: "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file." }
         entityType:            { $ref: "#/components/schemas/EntityRoleType" }
         funderId:              { type: string, nullable: true }
         organizationId:        { type: string, nullable: true }
