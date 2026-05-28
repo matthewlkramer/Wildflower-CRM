@@ -157,7 +157,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
     },
     {
       key: "nationalPriority",
-      label: "National priority",
+      label: "National?",
       cell: (f) =>
         f.nationalPriorities == null ? (
           "—"
