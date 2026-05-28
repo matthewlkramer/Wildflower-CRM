@@ -17,6 +17,7 @@ import {
   enthusiasmEnum,
   strategicAlignmentEnum,
   activeStatusEnum,
+  priorityEnum,
 } from "./_enums";
 import { users } from "./users";
 
@@ -75,12 +76,17 @@ export const funders = pgTable("funders", {
   // (opportunities, gifts). Independent of activeStatus / enthusiasm /
   // capacityRating so the team can pin a short hand-curated list.
   isPriority: boolean("is_priority").default(false).notNull(),
+  // Solicitation priority tier (top/high/medium/low). Independent of
+  // isPriority — isPriority is a binary "pinned" flag, while this is
+  // a graduated band the team uses to rank ask-readiness.
+  priority: priorityEnum("priority"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("funders_owner_user_id_idx").on(t.ownerUserId),
   index("funders_parent_funder_id_idx").on(t.parentFunderId),
   index("funders_is_priority_idx").on(t.isPriority).where(sql`is_priority = true`),
+  index("funders_priority_idx").on(t.priority),
   index("funders_region_ids_gin_idx").using("gin", t.regionIds),
   index("funders_interests_thematic_gin_idx").using("gin", t.interestsThematic),
   index("funders_interests_ages_gin_idx").using("gin", t.interestsAges),

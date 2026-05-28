@@ -211,6 +211,15 @@ export const Enthusiasm = {
   unsupportive: "unsupportive",
 } as const;
 
+export type Priority = (typeof Priority)[keyof typeof Priority];
+
+export const Priority = {
+  top: "top",
+  high: "high",
+  medium: "medium",
+  low: "low",
+} as const;
+
 export type StrategicAlignment =
   (typeof StrategicAlignment)[keyof typeof StrategicAlignment];
 
@@ -657,6 +666,8 @@ export interface Funder {
   crunchbase?: string | null;
   /** Top-priority flag surfaced as a star on the funders table and on opportunities/gifts where this funder is the donor. */
   isPriority?: boolean;
+  /** Solicitation priority tier (top/high/medium/low). Independent of isPriority. */
+  priority?: Priority | null;
   /** people_entity_roles row with primary_contact=true for this funder, if any. */
   readonly primaryContactPersonId?: string | null;
   readonly primaryContactPersonName?: string | null;
@@ -762,6 +773,7 @@ export interface CreateFunderBody {
   youtube?: string;
   crunchbase?: string;
   isPriority?: boolean;
+  priority?: Priority;
 }
 
 export interface UpdateFunderBody {
@@ -796,6 +808,7 @@ export interface UpdateFunderBody {
   youtube?: string | null;
   crunchbase?: string | null;
   isPriority?: boolean;
+  priority?: Priority | null;
 }
 
 export interface Organization {
@@ -950,6 +963,8 @@ export interface Person {
   enthusiasm?: Enthusiasm | null;
   /** Top-priority flag surfaced as a star on the individuals table and on opportunities/gifts where this person is the individual giver. */
   isPriority?: boolean;
+  /** Solicitation priority tier (top/high/medium/low). Independent of isPriority. */
+  priority?: Priority | null;
   /** Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string. */
   readonly lifetimeGiving?: string | null;
   /** Most recent date_received across direct individual gifts and gifts to households the person belongs to. */
@@ -1020,6 +1035,7 @@ export interface CreatePersonBody {
   connectionStatus?: ConnectionStatus;
   enthusiasm?: Enthusiasm;
   isPriority?: boolean;
+  priority?: Priority;
 }
 
 export interface UpdatePersonBody {
@@ -1057,6 +1073,7 @@ export interface UpdatePersonBody {
   connectionStatus?: ConnectionStatus | null;
   enthusiasm?: Enthusiasm | null;
   isPriority?: boolean;
+  priority?: Priority | null;
 }
 
 export interface PeopleEntityRoleList {
@@ -2215,6 +2232,7 @@ export interface BulkUpdatePeoplePatch {
   currentHomeRegionId?: string | null;
   capacityRating?: CapacityRating | null;
   isPriority?: boolean;
+  priority?: Priority | null;
   deceased?: boolean;
 }
 
@@ -2234,6 +2252,7 @@ export interface BulkUpdateFundersPatch {
   capacityRating?: CapacityRating | null;
   enthusiasm?: Enthusiasm | null;
   isPriority?: boolean;
+  priority?: Priority | null;
   fundingEntitySubtype?: FundingEntitySubtype | null;
 }
 

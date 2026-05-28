@@ -837,6 +837,12 @@ export const ListFundersResponse = zod.object({
         .describe(
           "Top-priority flag surfaced as a star on the funders table and on opportunities\/gifts where this funder is the donor.",
         ),
+      priority: zod
+        .enum(["top", "high", "medium", "low"])
+        .nullish()
+        .describe(
+          "Solicitation priority tier (top\/high\/medium\/low). Independent of isPriority.",
+        ),
       primaryContactPersonId: zod
         .string()
         .nullish()
@@ -936,6 +942,7 @@ export const CreateFunderBody = zod.object({
   youtube: zod.string().optional(),
   crunchbase: zod.string().optional(),
   isPriority: zod.boolean().optional(),
+  priority: zod.enum(["top", "high", "medium", "low"]).optional(),
 });
 
 export const GetFunderParams = zod.object({
@@ -1017,6 +1024,12 @@ export const GetFunderResponse = zod
       .optional()
       .describe(
         "Top-priority flag surfaced as a star on the funders table and on opportunities\/gifts where this funder is the donor.",
+      ),
+    priority: zod
+      .enum(["top", "high", "medium", "low"])
+      .nullish()
+      .describe(
+        "Solicitation priority tier (top\/high\/medium\/low). Independent of isPriority.",
       ),
     primaryContactPersonId: zod
       .string()
@@ -1193,6 +1206,7 @@ export const UpdateFunderBody = zod.object({
   youtube: zod.string().nullish(),
   crunchbase: zod.string().nullish(),
   isPriority: zod.boolean().optional(),
+  priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
 });
 
 export const UpdateFunderResponse = zod.object({
@@ -1269,6 +1283,12 @@ export const UpdateFunderResponse = zod.object({
     .optional()
     .describe(
       "Top-priority flag surfaced as a star on the funders table and on opportunities\/gifts where this funder is the donor.",
+    ),
+  priority: zod
+    .enum(["top", "high", "medium", "low"])
+    .nullish()
+    .describe(
+      "Solicitation priority tier (top\/high\/medium\/low). Independent of isPriority.",
     ),
   primaryContactPersonId: zod
     .string()
@@ -2081,6 +2101,12 @@ export const ListPeopleResponse = zod.object({
         .describe(
           "Top-priority flag surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.",
         ),
+      priority: zod
+        .enum(["top", "high", "medium", "low"])
+        .nullish()
+        .describe(
+          "Solicitation priority tier (top\/high\/medium\/low). Independent of isPriority.",
+        ),
       lifetimeGiving: zod
         .string()
         .nullish()
@@ -2160,6 +2186,7 @@ export const CreatePersonBody = zod.object({
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .optional(),
   isPriority: zod.boolean().optional(),
+  priority: zod.enum(["top", "high", "medium", "low"]).optional(),
 });
 
 export const GetPersonParams = zod.object({
@@ -2216,6 +2243,12 @@ export const GetPersonResponse = zod
       .optional()
       .describe(
         "Top-priority flag surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.",
+      ),
+    priority: zod
+      .enum(["top", "high", "medium", "low"])
+      .nullish()
+      .describe(
+        "Solicitation priority tier (top\/high\/medium\/low). Independent of isPriority.",
       ),
     lifetimeGiving: zod
       .string()
@@ -2386,6 +2419,7 @@ export const UpdatePersonBody = zod.object({
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .nullish(),
   isPriority: zod.boolean().optional(),
+  priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
 });
 
 export const UpdatePersonResponse = zod.object({
@@ -2437,6 +2471,12 @@ export const UpdatePersonResponse = zod.object({
     .optional()
     .describe(
       "Top-priority flag surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.",
+    ),
+  priority: zod
+    .enum(["top", "high", "medium", "low"])
+    .nullish()
+    .describe(
+      "Solicitation priority tier (top\/high\/medium\/low). Independent of isPriority.",
     ),
   lifetimeGiving: zod
     .string()
@@ -5948,6 +5988,7 @@ export const BulkUpdatePeopleBody = zod.object({
         .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
         .nullish(),
       isPriority: zod.boolean().optional(),
+      priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
       deceased: zod.boolean().optional(),
     })
     .describe(
@@ -5983,6 +6024,7 @@ export const BulkUpdateFundersBody = zod.object({
       .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
       .nullish(),
     isPriority: zod.boolean().optional(),
+    priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
     fundingEntitySubtype: zod
       .enum([
         "family_foundation",

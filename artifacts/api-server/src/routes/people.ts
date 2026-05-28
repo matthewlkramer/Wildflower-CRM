@@ -153,6 +153,7 @@ router.post(
         "currentHomeRegionId",
         "capacityRating",
         "isPriority",
+        "priority",
         "deceased",
       ],
     });

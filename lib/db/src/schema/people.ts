@@ -14,6 +14,7 @@ import {
   connectionStatusEnum,
   enthusiasmEnum,
   pronounsEnum,
+  priorityEnum,
 } from "./_enums";
 import { users } from "./users";
 import { regions } from "./regions";
@@ -85,6 +86,10 @@ export const people = pgTable("people", {
   // as a donor (opportunities, gifts). See funders.isPriority for the
   // matching field on the funder side.
   isPriority: boolean("is_priority").default(false).notNull(),
+  // Solicitation priority tier (top/high/medium/low). Independent of
+  // isPriority — isPriority is a binary "pinned" flag, while this is
+  // a graduated band the team uses to rank ask-readiness.
+  priority: priorityEnum("priority"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -92,6 +97,7 @@ export const people = pgTable("people", {
   index("people_owner_user_id_idx").on(t.ownerUserId),
   index("people_assistant_person_id_idx").on(t.assistantPersonId),
   index("people_is_priority_idx").on(t.isPriority).where(sql`is_priority = true`),
+  index("people_priority_idx").on(t.priority),
   index("people_region_ids_gin_idx").using("gin", t.regionIds),
   index("people_interests_thematic_gin_idx").using("gin", t.interestsThematic),
   index("people_interests_ages_gin_idx").using("gin", t.interestsAges),

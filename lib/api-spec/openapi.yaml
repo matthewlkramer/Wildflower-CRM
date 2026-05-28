@@ -1620,6 +1620,7 @@ components:
     CapacityRating: { type: string, enum: [tier_10k_50k, tier_50k_250k, tier_250k_1m, tier_1m_plus] }
     ConnectionStatus: { type: string, enum: [connected, have_a_connector, no_connection] }
     Enthusiasm: { type: string, enum: [advocate, supportive, warm, neutral, unsupportive] }
+    Priority: { type: string, enum: [top, high, medium, low] }
     StrategicAlignment: { type: string, enum: [high, medium, low] }
     ActiveStatus: { type: string, enum: [active, defunct, spenddown] }
     OrganizationType: { type: string, enum: [advocacy_membership_lobbyist, authorizer, cmo, capital_provider, government, corporation, education_vendor, elected_official, higher_ed, investor, law_firm, media, nonprofit, philanthropic_advisor, real_estate, school, school_district, school_network, small_business_consulting, tribal] }
@@ -1943,6 +1944,7 @@ components:
         youtube:               { type: string, nullable: true }
         crunchbase:            { type: string, nullable: true }
         isPriority:            { type: boolean, description: "Top-priority flag surfaced as a star on the funders table and on opportunities/gifts where this funder is the donor." }
+        priority:              { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, description: "Solicitation priority tier (top/high/medium/low). Independent of isPriority." }
         # Server-computed aggregates for the funders list view.
         primaryContactPersonId:   { type: string, nullable: true, readOnly: true, description: "people_entity_roles row with primary_contact=true for this funder, if any." }
         primaryContactPersonName: { type: string, nullable: true, readOnly: true }
@@ -1999,6 +2001,7 @@ components:
         youtube:               { type: string }
         crunchbase:            { type: string }
         isPriority:            { type: boolean }
+        priority:              { $ref: "#/components/schemas/Priority" }
     UpdateFunderBody:
       type: object
       properties:
@@ -2033,6 +2036,7 @@ components:
         youtube:               { type: string, nullable: true }
         crunchbase:            { type: string, nullable: true }
         isPriority:            { type: boolean }
+        priority:              { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
 
     # ─── Organizations ─────────────────────────────────────────────────────────
     Organization:
@@ -2208,6 +2212,7 @@ components:
         connectionStatus:         { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
         enthusiasm:               { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
         isPriority:               { type: boolean, description: "Top-priority flag surfaced as a star on the individuals table and on opportunities/gifts where this person is the individual giver." }
+        priority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, description: "Solicitation priority tier (top/high/medium/low). Independent of isPriority." }
         # Server-computed aggregates for the individuals list view. NOT
         # writable; computed per-request by the list-people query. Per
         # replit.md: lifetime giving is direct individual gifts + all
@@ -2270,6 +2275,7 @@ components:
         connectionStatus:         { $ref: "#/components/schemas/ConnectionStatus" }
         enthusiasm:               { $ref: "#/components/schemas/Enthusiasm" }
         isPriority:               { type: boolean }
+        priority:                 { $ref: "#/components/schemas/Priority" }
     UpdatePersonBody:
       type: object
       properties:
@@ -2307,6 +2313,7 @@ components:
         connectionStatus:         { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
         enthusiasm:               { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
         isPriority:               { type: boolean }
+        priority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
 
     # ─── People-entity-roles ───────────────────────────────────────────────────
     PeopleEntityRole:
@@ -3572,6 +3579,7 @@ components:
         currentHomeRegionId: { type: string, nullable: true }
         capacityRating:      { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         isPriority:          { type: boolean }
+        priority:            { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
         deceased:            { type: boolean }
     BulkUpdatePeopleBody:
       type: object
@@ -3588,6 +3596,7 @@ components:
         capacityRating:       { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         enthusiasm:           { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
         isPriority:           { type: boolean }
+        priority:             { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
         fundingEntitySubtype: { allOf: [ { $ref: "#/components/schemas/FundingEntitySubtype" } ], nullable: true }
     BulkUpdateFundersBody:
       type: object

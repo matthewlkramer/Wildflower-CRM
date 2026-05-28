@@ -41,6 +41,18 @@ export const PEOPLE_BULK_FIELDS: ReadonlyArray<BulkField> = [
     falseLabel: "Not priority",
   },
   {
+    kind: "enum",
+    key: "priority",
+    label: "Priority tier",
+    nullable: true,
+    options: [
+      { value: "top", label: "Top" },
+      { value: "high", label: "High" },
+      { value: "medium", label: "Medium" },
+      { value: "low", label: "Low" },
+    ],
+  },
+  {
     kind: "boolean",
     key: "deceased",
     label: "Deceased",
@@ -105,6 +117,18 @@ export const FUNDERS_BULK_FIELDS: ReadonlyArray<BulkField> = [
     label: "Priority",
     trueLabel: "Priority",
     falseLabel: "Not priority",
+  },
+  {
+    kind: "enum",
+    key: "priority",
+    label: "Priority tier",
+    nullable: true,
+    options: [
+      { value: "top", label: "Top" },
+      { value: "high", label: "High" },
+      { value: "medium", label: "Medium" },
+      { value: "low", label: "Low" },
+    ],
   },
   {
     kind: "enum",

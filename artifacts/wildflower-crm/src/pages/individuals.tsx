@@ -72,7 +72,9 @@ const DECEASED_OPTIONS: MultiFilterOption[] = [
   { value: "false", label: "Living" },
   { value: "true", label: "Deceased" },
 ];
-const COL_SPAN = 12;
+const COL_SPAN = 13;
+const PRIORITY_ORDER: Record<string, number> = { top: 4, high: 3, medium: 2, low: 1 };
+const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
 
 export default function Individuals() {
   // Filter state persists per-tab so back-navigation from a person
@@ -129,6 +131,8 @@ export default function Individuals() {
               : null,
           capacity: (r) =>
             r.capacityRating ? (CAPACITY_ORDER[r.capacityRating] ?? 0) : null,
+          priorityTier: (r) =>
+            r.priority ? (PRIORITY_ORDER[r.priority] ?? 0) : null,
           lastContacted: (r) => r.lastContacted ?? null,
           lifetimeGiving: (r) =>
             r.lifetimeGiving != null ? Number(r.lifetimeGiving) : null,
@@ -288,6 +292,7 @@ export default function Individuals() {
               </TableHead>
               <SortableTH colKey="priority" {...ts}><span className="sr-only">Priority</span></SortableTH>
               <SortableTH colKey="name" {...ts}>Name</SortableTH>
+              <SortableTH colKey="priorityTier" {...ts}>Priority tier</SortableTH>
               <SortableTH colKey="status" {...ts}>Status</SortableTH>
               <SortableTH colKey="region" {...ts}>Region</SortableTH>
               <SortableTH colKey="capacity" {...ts}>Capacity</SortableTH>
@@ -345,6 +350,13 @@ export default function Individuals() {
                       <Link href={`/individuals/${p.id}`} className="block w-full">
                         {personDisplayName(p)}
                       </Link>
+                    </TableCell>
+                    <TableCell>
+                      {p.priority ? (
+                        <Badge variant="outline">{PRIORITY_LABEL[p.priority] ?? p.priority}</Badge>
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                     <TableCell>
                       {p.deceased ? <Badge variant="outline">Deceased</Badge> : "—"}

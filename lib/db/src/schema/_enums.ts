@@ -133,6 +133,13 @@ export const connectionStatusEnum = pgEnum("connection_status", [
   "no_connection",
 ]);
 
+export const priorityEnum = pgEnum("priority", [
+  "top",
+  "high",
+  "medium",
+  "low",
+]);
+
 export const enthusiasmEnum = pgEnum("enthusiasm", [
   "advocate",
   "supportive",

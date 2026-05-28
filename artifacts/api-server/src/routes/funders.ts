@@ -124,6 +124,7 @@ router.post(
         "capacityRating",
         "enthusiasm",
         "isPriority",
+        "priority",
         "fundingEntitySubtype",
       ],
     });
