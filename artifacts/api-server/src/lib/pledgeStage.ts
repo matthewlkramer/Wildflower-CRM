@@ -22,14 +22,14 @@ const STATUS_WIN_PROBABILITY: Record<string, string> = {
 };
 
 const STAGE_WIN_PROBABILITY: Record<string, string> = {
-  cold_lead: "0.0500",
-  warm_lead: "0.1000",
-  in_conversation: "0.2500",
-  convince: "0.5000",
+  cold_lead: "0.0000",
+  warm_lead: "0.0500",
+  in_conversation: "0.2000",
+  convince: "0.4000",
   conditional_commitment: "0.7500",
-  probable_renewal: "0.8000",
+  probable_renewal: "0.7500",
   verbal_commitment: "0.9000",
-  written_commitment: "0.9500",
+  written_commitment: "0.9000",
   cash_in: "1.0000",
 };
 
