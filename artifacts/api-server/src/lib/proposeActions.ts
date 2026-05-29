@@ -94,6 +94,49 @@ export type ProposedAction =
       reason: string;
     }
   | {
+      // Like create_person_with_per, but the missing entity is the
+      // EMPLOYER, not the person. Use when an existing person works at a
+      // NON-FUNDER organization (charter school, school network,
+      // nonprofit, company, …) that isn't in the CRM yet. Creates the
+      // org in the `organizations` table (never `funders`) and attaches
+      // the role in one step.
+      type: "create_org_with_per";
+      personId: string;
+      organizationName: string;
+      organizationType?:
+        | "advocacy_membership_lobbyist"
+        | "authorizer"
+        | "cmo"
+        | "capital_provider"
+        | "government"
+        | "corporation"
+        | "education_vendor"
+        | "elected_official"
+        | "higher_ed"
+        | "investor"
+        | "law_firm"
+        | "media"
+        | "nonprofit"
+        | "philanthropic_advisor"
+        | "real_estate"
+        | "school"
+        | "school_district"
+        | "school_network"
+        | "small_business_consulting"
+        | "tribal";
+      emailDomain?: string;
+      connection?:
+        | "employee"
+        | "principal"
+        | "board_member"
+        | "partner"
+        | "professor"
+        | "donor_advisor"
+        | "elected_official";
+      externalTitleOrRole?: string;
+      reason: string;
+    }
+  | {
       type: "add_email";
       personId: string;
       emailAddress: string;
@@ -200,6 +243,24 @@ const ACTION_TOOL_SCHEMA = {
                 emailAddress: { type: "string" },
                 funderId: { type: "string" },
                 organizationId: { type: "string" },
+                connection: { type: "string", enum: ["employee", "principal", "board_member", "partner", "professor", "donor_advisor", "elected_official"] },
+                externalTitleOrRole: { type: "string" },
+                reason: { type: "string" },
+              },
+            },
+            {
+              type: "object",
+              required: ["type", "personId", "organizationName", "reason"],
+              properties: {
+                type: { const: "create_org_with_per" },
+                personId: { type: "string", description: "Existing person ID this new role attaches to." },
+                organizationName: { type: "string", description: "Name of the NON-FUNDER organization to create (charter school, school network, nonprofit, company, etc.). Goes in the organizations table, never funders." },
+                organizationType: {
+                  type: "string",
+                  enum: ["advocacy_membership_lobbyist", "authorizer", "cmo", "capital_provider", "government", "corporation", "education_vendor", "elected_official", "higher_ed", "investor", "law_firm", "media", "nonprofit", "philanthropic_advisor", "real_estate", "school", "school_district", "school_network", "small_business_consulting", "tribal"],
+                  description: "Best-fit org type when clear. A single charter school → school; a charter school network / CMO → cmo or school_network; a school district → school_district.",
+                },
+                emailDomain: { type: "string", description: "The org's email domain if evident from the sender address (e.g. phoenixcharteracademy.org)." },
                 connection: { type: "string", enum: ["employee", "principal", "board_member", "partner", "professor", "donor_advisor", "elected_official"] },
                 externalTitleOrRole: { type: "string" },
                 reason: { type: "string" },
@@ -442,16 +503,17 @@ function buildSystemPrompt(): string {
     "Your job: call the `propose_actions` tool exactly once, returning the concrete CRM mutations the reviewer should consider applying.",
     "",
     "Rules:",
-    "• Only use IDs that appear verbatim in the CRM CONTEXT block. Never invent IDs. If the right entity isn't in the context, omit the action.",
+    "• Only use IDs that appear verbatim in the CRM CONTEXT block. Never invent IDs.",
+    "• When the person's EMPLOYER named in the message is NOT in context: if it is a philanthropic FUNDER, omit the action (don't invent a funder). But if it is a NON-FUNDER organization (a charter school, school network / CMO, school district, nonprofit, company, etc.), use `create_org_with_per` to create that organization in the organizations table (NEVER the funders table) AND attach the role in one step. Set organizationType to the best-fit enum value when the kind of org is clear (single charter school → school; charter network / CMO → cmo or school_network; district → school_district) and set emailDomain from the sender's address when evident. NEVER emit a bare `create_per` that lacks an entity id — either resolve the id from context, use create_org_with_per for a new non-funder org, or omit.",
     "• Be conservative. If the signal is ambiguous or contradicts current CRM state without strong evidence, return fewer actions or an empty list. The reviewer prefers missing a change over a wrong one.",
     "• Use the email message body (quoted at the bottom) as the source of truth for what the sender actually said. Don't generalize beyond it.",
     "• `reason` on each action should quote or paraphrase the specific phrase in the message that justifies the change. Keep it under 140 chars.",
-    "• For LinkedIn job changes: typical pattern is one `deactivate_per` for the role they're leaving + one `create_per` for the new role at the new company (only if the new company resolves to a funder/organization id in context). If the message names a replacement, add `create_person_with_per` for that successor.",
+    "• For LinkedIn job changes: typical pattern is one `deactivate_per` for the role they're leaving + one `create_per` for the new role at the new company when that company resolves to a funder/organization id in context — otherwise, for a new NON-FUNDER employer, use `create_org_with_per`. If the message names a replacement, add `create_person_with_per` for that successor.",
     "• For auto-responder 'I've moved' messages: deactivate the old role if a new company is named, create the new role if it resolves to a known entity, add the new email if one is given (with setPrimary=true if they say it's their new primary).",
     "• For signature_update proposals: the payload.parsed object holds {name,title,company,phone,email}. Cross-check EACH parsed field against the CRM CONTEXT and emit an action ONLY for fields that are genuinely NEW or changed. Never restate the status quo. Specifically:",
     "    – email: if it already appears under 'Emails on file' (case-insensitive), emit nothing for it.",
     "    – phone: compare digits only (ignore spaces/dashes/parens/country code) against 'Phones on file'. If a matching number is already on file, emit nothing. If it is genuinely new, emit `set_phone` with the person's id.",
-    "    – title/role: if the person already has a CURRENT role at that company with that same title, emit nothing. If they have a CURRENT role at that company but its title is empty or different and the message shows a new title, emit `update_per_title` using that role's id — do NOT emit create_per for a role they already hold. Only use create_per when it is a genuinely different/new entity the person isn't already attached to.",
+    "    – title/role: if the person already has a CURRENT role at that company with that same title, emit nothing. If they have a CURRENT role at that company but its title is empty or different and the message shows a new title, emit `update_per_title` using that role's id — do NOT emit create_per for a role they already hold. Only use create_per when it is a genuinely different/new entity the person isn't already attached to AND that entity's id is in context; if the entity is a non-funder employer not yet in the CRM, use create_org_with_per instead.",
     "    – company: treat it as changed ONLY if it doesn't match the name of ANY current role entity in context. The detector sometimes mis-parses a sentence fragment as a company — if the parsed company looks like prose or references Wildflower (the user's own org), ignore it entirely.",
     "• Never emit `create_per` for a role the person already holds (same entity, current). If only the title differs, use `update_per_title`. Don't contradict yourself: if your reason says the person already has the role, emit no action for it.",
     "• For bounce messages: emit `mark_email_invalid` only for hard bounces. Soft bounces are review-only — return an empty actions array. Only mark an address invalid if it appears verbatim under the matched person's 'Emails on file' — never invalidate an address that isn't in the CRM context.",

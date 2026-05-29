@@ -470,6 +470,11 @@ function describeAction(a: ProposedActionView): string {
       const email = s("emailAddress") ? ` (${s("emailAddress")})` : "";
       return `Create person ${s("firstName") ?? ""} ${s("lastName") ?? ""}${email}${where}${role}`;
     }
+    case "create_org_with_per": {
+      const role = s("externalTitleOrRole") ? ` as "${s("externalTitleOrRole")}"` : "";
+      const kind = s("organizationType") ? ` (${s("organizationType")})` : "";
+      return `Create organization "${s("organizationName") ?? "?"}"${kind} and add role${role}`;
+    }
     case "add_email":
       return `Add email ${s("emailAddress")} to person${b("setPrimary") ? " (and make it primary)" : ""}`;
     case "set_primary_email":
