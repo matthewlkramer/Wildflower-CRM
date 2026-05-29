@@ -4,6 +4,9 @@ import {
   useListEntities,
   useCreateEntity,
   useUpdateEntity,
+  useListFundableProjects,
+  useCreateFundableProject,
+  useUpdateFundableProject,
   useListFiscalYears,
   useListFiscalYearEntityGoals,
   useUpsertFiscalYearEntityGoal,
@@ -11,11 +14,12 @@ import {
   useAdminListGoogleSync,
   useAdminResyncGoogleUser,
   getListEntitiesQueryKey,
+  getListFundableProjectsQueryKey,
   getListFiscalYearEntityGoalsQueryKey,
   getGetDashboardSummaryQueryKey,
   getAdminListGoogleSyncQueryKey,
 } from "@workspace/api-client-react";
-import type { Entity, FiscalYearEntityGoal, FiscalYear } from "@workspace/api-client-react";
+import type { Entity, FundableProject, FiscalYearEntityGoal, FiscalYear } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,12 +69,16 @@ export default function Admin() {
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey(), staleTime: 30_000 },
   });
+  const projectsQ = useListFundableProjects({
+    query: { queryKey: getListFundableProjectsQueryKey(), staleTime: 30_000 },
+  });
   const fyListQ = useListFiscalYears();
   const goalsQ = useListFiscalYearEntityGoals(undefined, {
     query: { queryKey: getListFiscalYearEntityGoalsQueryKey(), staleTime: 30_000 },
   });
 
   const entities = entitiesQ.data ?? [];
+  const projects = projectsQ.data ?? [];
   const fyList = fyListQ.data ?? [];
   const goals = goalsQ.data ?? [];
 
@@ -86,6 +94,7 @@ export default function Admin() {
       </div>
 
       <EntitiesSection entities={entities} loading={entitiesQ.isLoading} />
+      <FundableProjectsSection projects={projects} loading={projectsQ.isLoading} />
       <GoalsSection entities={entities} fyList={fyList} goals={goals} loading={goalsQ.isLoading || fyListQ.isLoading} />
       <AdminSyncSection />
       <p className="text-xs text-muted-foreground">
@@ -470,6 +479,236 @@ function EntityRow({ entity }: { entity: Entity }) {
             disabled={update.isPending}
             data-testid={`entity-active-${entity.id}`}
             aria-label={entity.active ? "Mark retired" : "Mark active"}
+          />
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ── Fundable projects section ────────────────────────────────────────────────
+
+function FundableProjectsSection({ projects, loading }: { projects: FundableProject[]; loading: boolean }) {
+  return (
+    <Card data-testid="admin-fundable-projects-section">
+      <CardHeader>
+        <CardTitle>Fundable projects</CardTitle>
+        <CardDescription>
+          Add new fundable projects (e.g. SSJ, MDD, Charter Growth) or mark
+          existing ones as retired. The id is a permanent slug saved on gift and
+          pledge allocations — pick carefully and use lowercase letters, digits,
+          and underscores only.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <NewFundableProjectForm />
+        <FundableProjectsTable projects={projects} loading={loading} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function NewFundableProjectForm() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [id, setId] = useState("");
+  const [name, setName] = useState("");
+  const [active, setActive] = useState(true);
+
+  const create = useCreateFundableProject({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: getListFundableProjectsQueryKey() });
+        toast({ title: "Fundable project created" });
+        setId("");
+        setName("");
+        setActive(true);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Create failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const idError = id !== "" && !SLUG_RE.test(id)
+    ? "Use lowercase letters, digits, and underscores only."
+    : null;
+  const canSubmit = id.trim() !== "" && name.trim() !== "" && !idError && !create.isPending;
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    create.mutate({ data: { id: id.trim(), name: name.trim(), active } });
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-3" data-testid="new-fundable-project-form">
+      <h3 className="text-sm font-semibold">Add fundable project</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] gap-3 items-end">
+        <div className="space-y-1">
+          <Label htmlFor="new-fundable-project-id">Id (slug)</Label>
+          <Input
+            id="new-fundable-project-id"
+            data-testid="new-fundable-project-id"
+            value={id}
+            onChange={(e) => setId(e.target.value)}
+            placeholder="e.g. charter_growth"
+            autoComplete="off"
+          />
+          {idError ? <p className="text-xs text-destructive">{idError}</p> : null}
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="new-fundable-project-name">Name</Label>
+          <Input
+            id="new-fundable-project-name"
+            data-testid="new-fundable-project-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Display name"
+            autoComplete="off"
+          />
+        </div>
+        <div className="flex items-center gap-2 pb-2">
+          <Switch
+            id="new-fundable-project-active"
+            data-testid="new-fundable-project-active"
+            checked={active}
+            onCheckedChange={setActive}
+          />
+          <Label htmlFor="new-fundable-project-active" className="cursor-pointer">
+            Active
+          </Label>
+        </div>
+        <Button type="submit" disabled={!canSubmit} data-testid="new-fundable-project-submit">
+          {create.isPending ? "Adding…" : "Add project"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function FundableProjectsTable({ projects, loading }: { projects: FundableProject[]; loading: boolean }) {
+  // Active first, then retired, alphabetical within each.
+  const sorted = useMemo(() => {
+    const copy = [...projects];
+    copy.sort((a, b) => {
+      if (a.active !== b.active) return a.active ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    return copy;
+  }, [projects]);
+
+  if (loading) {
+    return <p className="text-sm text-muted-foreground">Loading fundable projects…</p>;
+  }
+  if (sorted.length === 0) {
+    return <p className="text-sm text-muted-foreground">No fundable projects yet.</p>;
+  }
+
+  return (
+    <Table data-testid="fundable-projects-table">
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-[28%]">Id</TableHead>
+          <TableHead>Name</TableHead>
+          <TableHead className="w-[140px] text-right">Active</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sorted.map((p) => (
+          <FundableProjectRow key={p.id} project={p} />
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function FundableProjectRow({ project }: { project: FundableProject }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(project.name);
+
+  const update = useUpdateFundableProject({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: getListFundableProjectsQueryKey() });
+        toast({ title: "Fundable project updated" });
+        setEditingName(false);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const commitName = () => {
+    const trimmed = nameDraft.trim();
+    if (trimmed === "" || trimmed === project.name) {
+      setNameDraft(project.name);
+      setEditingName(false);
+      return;
+    }
+    update.mutate({ id: project.id, data: { name: trimmed } });
+  };
+
+  const toggleActive = (next: boolean) => {
+    update.mutate({ id: project.id, data: { active: next } });
+  };
+
+  return (
+    <TableRow data-testid={`fundable-project-row-${project.id}`}>
+      <TableCell className="font-mono text-xs text-muted-foreground">{project.id}</TableCell>
+      <TableCell>
+        {editingName ? (
+          <Input
+            autoFocus
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitName();
+              if (e.key === "Escape") {
+                setNameDraft(project.name);
+                setEditingName(false);
+              }
+            }}
+            data-testid={`fundable-project-name-input-${project.id}`}
+            className="h-8"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setNameDraft(project.name);
+              setEditingName(true);
+            }}
+            className="text-left hover:underline underline-offset-2"
+            data-testid={`fundable-project-name-${project.id}`}
+          >
+            {project.name}
+          </button>
+        )}
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex items-center justify-end gap-2">
+          <span className={`text-xs ${project.active ? "text-muted-foreground" : "text-amber-700 font-medium"}`}>
+            {project.active ? "Active" : "Retired"}
+          </span>
+          <Switch
+            checked={project.active}
+            onCheckedChange={toggleActive}
+            disabled={update.isPending}
+            data-testid={`fundable-project-active-${project.id}`}
+            aria-label={project.active ? "Mark retired" : "Mark active"}
           />
         </div>
       </TableCell>

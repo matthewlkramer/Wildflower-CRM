@@ -9,6 +9,7 @@ import {
   useUpdateGiftAllocation,
   useDeleteGiftAllocation,
   useListEntities,
+  useListFundableProjects,
   getGetOpportunityOrPledgeQueryKey,
   getGetGiftOrPaymentQueryKey,
   type PledgeAllocation,
@@ -59,6 +60,50 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-muted-foreground pt-1">{label}</span>
       <div className="min-w-0">{children}</div>
     </div>
+  );
+}
+
+// Dropdown for the allocation's fundable project. Shows active projects plus the
+// currently-selected one even if it has since been retired, so an existing
+// selection never silently disappears. Clearing it saves null.
+function FundableProjectField({
+  value,
+  testIdBase,
+  onSave,
+}: {
+  value: string | null;
+  testIdBase: string;
+  onSave: (next: string | null) => unknown;
+}) {
+  const { data } = useListFundableProjects();
+  const projects = data ?? [];
+  const nameById = new Map(projects.map((p) => [p.id, p.name]));
+
+  const options: InlineSelectOption<string>[] = projects
+    .filter((p) => p.active || p.id === value)
+    .map((p) => ({
+      value: p.id,
+      label: p.active ? p.name : `${p.name} (retired)`,
+    }));
+  // Selected project missing entirely from the list (e.g. deleted) — keep its id
+  // visible so the field doesn't blank out.
+  if (value && !options.some((o) => o.value === value)) {
+    options.push({ value, label: value });
+  }
+
+  const display = value ? (nameById.get(value) ?? value) : "—";
+
+  return (
+    <Field label="Fundable project">
+      <InlineEditSelect
+        label="Fundable project"
+        testIdBase={`${testIdBase}-project`}
+        value={value}
+        options={options}
+        display={display}
+        onSave={onSave}
+      />
+    </Field>
   );
 }
 
@@ -296,16 +341,11 @@ function PledgeAllocationRow({
           allowNull={false}
         />
       </Field>
-      <Field label="Fundable project">
-        <InlineEditText
-          label="Fundable project"
-          testIdBase={`${tid}-project`}
-          value={alloc.fundableProjectId ?? null}
-          placeholder="Project ID"
-          display={alloc.fundableProjectId ?? "—"}
-          onSave={(next) => patch({ fundableProjectId: next })}
-        />
-      </Field>
+      <FundableProjectField
+        value={alloc.fundableProjectId ?? null}
+        testIdBase={tid}
+        onSave={(next) => patch({ fundableProjectId: next })}
+      />
       <Field label="Conditions">
         <InlineEditText
           label="Conditions"
@@ -556,16 +596,11 @@ function GiftAllocationRow({
           onSave={(next) => patch({ schoolRecipientId: next })}
         />
       </Field>
-      <Field label="Fundable project">
-        <InlineEditText
-          label="Fundable project"
-          testIdBase={`${tid}-project`}
-          value={alloc.fundableProjectId ?? null}
-          placeholder="Project ID"
-          display={alloc.fundableProjectId ?? "—"}
-          onSave={(next) => patch({ fundableProjectId: next })}
-        />
-      </Field>
+      <FundableProjectField
+        value={alloc.fundableProjectId ?? null}
+        testIdBase={tid}
+        onSave={(next) => patch({ fundableProjectId: next })}
+      />
       <Field label="Regional restriction">
         <InlineEditBoolean
           label="Regional restriction"

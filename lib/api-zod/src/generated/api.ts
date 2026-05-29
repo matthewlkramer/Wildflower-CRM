@@ -694,6 +694,48 @@ export const ListFundableProjectsResponse = zod.array(
   ListFundableProjectsResponseItem,
 );
 
+export const CreateFundableProjectBody = zod.object({
+  id: zod.string().describe("Slug-style key, e.g. ssj. Must be unique."),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  active: zod
+    .boolean()
+    .optional()
+    .describe("Defaults to true. Set false to mark retired."),
+});
+
+export const GetFundableProjectParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetFundableProjectResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  active: zod.boolean(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UpdateFundableProjectParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateFundableProjectBody = zod.object({
+  name: zod.string().optional(),
+  description: zod.string().nullish(),
+  active: zod.boolean().optional(),
+});
+
+export const UpdateFundableProjectResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  active: zod.boolean(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
 export const ListFiscalYearsResponseItem = zod.object({
   id: zod.string(),
   label: zod.string(),

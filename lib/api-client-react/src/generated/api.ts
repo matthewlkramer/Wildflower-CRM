@@ -37,6 +37,7 @@ import type {
   CreateCorrespondentIgnoreBody,
   CreateEmailBody,
   CreateEntityBody,
+  CreateFundableProjectBody,
   CreateFunderBody,
   CreateGiftAllocationBody,
   CreateGiftOrPaymentBody,
@@ -167,6 +168,7 @@ import type {
   UpdateEmailBody,
   UpdateEmailMessagePrivacyBody,
   UpdateEntityBody,
+  UpdateFundableProjectBody,
   UpdateFunderBody,
   UpdateGiftAllocationBody,
   UpdateGiftOrPaymentBody,
@@ -1987,6 +1989,252 @@ export function useListFundableProjects<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getCreateFundableProjectUrl = () => {
+  return `/api/fundable-projects`;
+};
+
+export const createFundableProject = async (
+  createFundableProjectBody: CreateFundableProjectBody,
+  options?: RequestInit,
+): Promise<FundableProject> => {
+  return customFetch<FundableProject>(getCreateFundableProjectUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createFundableProjectBody),
+  });
+};
+
+export const getCreateFundableProjectMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createFundableProject>>,
+    TError,
+    { data: BodyType<CreateFundableProjectBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createFundableProject>>,
+  TError,
+  { data: BodyType<CreateFundableProjectBody> },
+  TContext
+> => {
+  const mutationKey = ["createFundableProject"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createFundableProject>>,
+    { data: BodyType<CreateFundableProjectBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createFundableProject(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateFundableProjectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createFundableProject>>
+>;
+export type CreateFundableProjectMutationBody =
+  BodyType<CreateFundableProjectBody>;
+export type CreateFundableProjectMutationError =
+  ErrorType<BadRequestResponse | void>;
+
+export const useCreateFundableProject = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createFundableProject>>,
+    TError,
+    { data: BodyType<CreateFundableProjectBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createFundableProject>>,
+  TError,
+  { data: BodyType<CreateFundableProjectBody> },
+  TContext
+> => {
+  return useMutation(getCreateFundableProjectMutationOptions(options));
+};
+
+export const getGetFundableProjectUrl = (id: string) => {
+  return `/api/fundable-projects/${id}`;
+};
+
+export const getFundableProject = async (
+  id: string,
+  options?: RequestInit,
+): Promise<FundableProject> => {
+  return customFetch<FundableProject>(getGetFundableProjectUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetFundableProjectQueryKey = (id: string) => {
+  return [`/api/fundable-projects/${id}`] as const;
+};
+
+export const getGetFundableProjectQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFundableProject>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFundableProject>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetFundableProjectQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getFundableProject>>
+  > = ({ signal }) => getFundableProject(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFundableProject>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFundableProjectQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFundableProject>>
+>;
+export type GetFundableProjectQueryError = ErrorType<NotFoundResponse>;
+
+export function useGetFundableProject<
+  TData = Awaited<ReturnType<typeof getFundableProject>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFundableProject>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFundableProjectQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateFundableProjectUrl = (id: string) => {
+  return `/api/fundable-projects/${id}`;
+};
+
+export const updateFundableProject = async (
+  id: string,
+  updateFundableProjectBody: UpdateFundableProjectBody,
+  options?: RequestInit,
+): Promise<FundableProject> => {
+  return customFetch<FundableProject>(getUpdateFundableProjectUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateFundableProjectBody),
+  });
+};
+
+export const getUpdateFundableProjectMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFundableProject>>,
+    TError,
+    { id: string; data: BodyType<UpdateFundableProjectBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateFundableProject>>,
+  TError,
+  { id: string; data: BodyType<UpdateFundableProjectBody> },
+  TContext
+> => {
+  const mutationKey = ["updateFundableProject"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateFundableProject>>,
+    { id: string; data: BodyType<UpdateFundableProjectBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateFundableProject(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateFundableProjectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateFundableProject>>
+>;
+export type UpdateFundableProjectMutationBody =
+  BodyType<UpdateFundableProjectBody>;
+export type UpdateFundableProjectMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useUpdateFundableProject = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFundableProject>>,
+    TError,
+    { id: string; data: BodyType<UpdateFundableProjectBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateFundableProject>>,
+  TError,
+  { id: string; data: BodyType<UpdateFundableProjectBody> },
+  TContext
+> => {
+  return useMutation(getUpdateFundableProjectMutationOptions(options));
+};
 
 export const getListFiscalYearsUrl = () => {
   return `/api/fiscal-years`;

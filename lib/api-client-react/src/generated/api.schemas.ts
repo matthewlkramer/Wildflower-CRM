@@ -478,6 +478,21 @@ export interface FundableProject {
   updatedAt: string;
 }
 
+export interface CreateFundableProjectBody {
+  /** Slug-style key, e.g. ssj. Must be unique. */
+  id: string;
+  name: string;
+  description?: string | null;
+  /** Defaults to true. Set false to mark retired. */
+  active?: boolean;
+}
+
+export interface UpdateFundableProjectBody {
+  name?: string;
+  description?: string | null;
+  active?: boolean;
+}
+
 export interface FiscalYear {
   id: string;
   label: string;

@@ -258,6 +258,31 @@ paths:
       tags: [fundable-projects]
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FundableProject" } } } } }
+    post:
+      operationId: createFundableProject
+      tags: [fundable-projects]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateFundableProjectBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/FundableProject" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Conflict (id already exists) }
+  /fundable-projects/{id}:
+    get:
+      operationId: getFundableProject
+      tags: [fundable-projects]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FundableProject" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateFundableProject
+      tags: [fundable-projects]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateFundableProjectBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FundableProject" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Fiscal years ──────────────────────────────────────────────────────────
   /fiscal-years:
@@ -1796,6 +1821,20 @@ components:
         active:      { type: boolean }
         createdAt:   { type: string, format: date-time }
         updatedAt:   { type: string, format: date-time }
+    CreateFundableProjectBody:
+      type: object
+      required: [id, name]
+      properties:
+        id:          { type: string, description: "Slug-style key, e.g. ssj. Must be unique." }
+        name:        { type: string }
+        description: { type: string, nullable: true }
+        active:      { type: boolean, description: "Defaults to true. Set false to mark retired." }
+    UpdateFundableProjectBody:
+      type: object
+      properties:
+        name:        { type: string }
+        description: { type: string, nullable: true }
+        active:      { type: boolean }
     FiscalYear:
       type: object
       required: [id, label, createdAt, updatedAt]
