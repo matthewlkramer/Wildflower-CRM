@@ -65,9 +65,10 @@ function regionDisplayPathLabel(r: Region): string {
  *   - multi_state_region → "Great Lakes Region"
  *   - metro_area         → "Greater Boston, MA"
  *   - city               → "Boston, MA"            (skips the metro level)
+ *   - region_within_state→ "Southern California, CA" (skips parent metro/multi-state)
  *   - neighborhood       → "Back Bay, Boston, MA"
  * State names are abbreviated when they appear as a suffix; cities, metros,
- * and states never include a multi-state region name.
+ * regions-within-state, and states never include a multi-state region name.
  *
  * `byId` is the full id→region lookup so the helper can resolve ancestors
  * (state, and city for neighborhoods). When it's omitted, or when a US-style
@@ -85,7 +86,8 @@ export function regionDisplayName(
     case "multi_state_region":
       return r.name;
     case "metro_area":
-    case "city": {
+    case "city":
+    case "region_within_state": {
       const abbr = stateAbbrFor(r, byId);
       return abbr ? `${r.name}, ${abbr}` : regionDisplayPathLabel(r);
     }
