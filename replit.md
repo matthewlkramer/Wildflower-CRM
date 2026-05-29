@@ -54,6 +54,8 @@ Full per-table schema reference, primary-contact rules, intended-usage rules, sl
 
 Clerk middleware auto-provisions users on first sign-in (`requireAuth` middleware in API server). All API routes require authentication.
 
+**Testing note (Clerk + Cloudflare captcha):** The Cloudflare/Clerk captcha that sometimes appears during sign-in CAN be circumvented in e2e tests. Use the testing skill's `runTest` with `testClerkAuth: true` to establish a programmatic Clerk session (use an `@wildflowerschools.org` email). The programmatic session is already authenticated, so the test plan should never touch the Clerk sign-in/sign-up UI or the captcha — just navigate directly to the target path. If a captcha/UI form ever appears mid-run, treat it as noise and navigate straight to the destination; do NOT mark the run as blocked over it (retry if a transient captcha trips it up).
+
 ## Stage 2 — status
 
 Stage 1 rewrote the DB schema and seeded it from Airtable. Stage 2 has now landed:
