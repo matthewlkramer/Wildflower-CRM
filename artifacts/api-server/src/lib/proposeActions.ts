@@ -492,6 +492,90 @@ async function findOrganizationCandidates(
     .map((r) => ({ id: r.id, name: r.name }));
 }
 
+// Rewrite create_org_with_per actions whose named employer already
+// exists in the CRM into a plain create_per against that existing
+// entity, so we never propose a duplicate. A funder match takes
+// precedence over an organization match (a "Fund"/"Foundation" the model
+// mislabeled as a non-funder org is still a funder). Matching is
+// case-insensitive exact on the trimmed name; % / _ are escaped so org
+// names can't act as LIKE wildcards. Anything with no match keeps its
+// create_org_with_per action unchanged.
+// Heuristic for names that read as a philanthropic funder rather than an
+// operating organization. Used only as a last resort: when a
+// create_org_with_per name matches no existing funder OR organization, a
+// funder-looking name is dropped instead of being created as an org, so
+// we never fabricate a funder (or a bogus org standing in for one) from a
+// signature. Word-boundary matched so "Fund" doesn't fire on "Foundational".
+export function looksLikeFunderName(name: string): boolean {
+  return /\b(fund|foundation|trust|endowment|philanthrop\w*|charitable|family office|grantmak\w*)\b/i.test(
+    name,
+  );
+}
+
+async function reconcileCreateOrgWithPer(
+  actions: ProposedAction[],
+): Promise<ProposedAction[]> {
+  const escapeLike = (s: string) => s.replace(/([%_\\])/g, "\\$1");
+  const out: ProposedAction[] = [];
+  for (const action of actions) {
+    if (action.type !== "create_org_with_per") {
+      out.push(action);
+      continue;
+    }
+    const name = action.organizationName?.trim();
+    if (!name) {
+      out.push(action);
+      continue;
+    }
+    const pattern = escapeLike(name);
+    const [funderMatch] = await db
+      .select({ id: funders.id })
+      .from(funders)
+      .where(ilike(funders.name, pattern))
+      .limit(1);
+    if (funderMatch) {
+      out.push({
+        type: "create_per",
+        personId: action.personId,
+        funderId: funderMatch.id,
+        connection: action.connection,
+        externalTitleOrRole: action.externalTitleOrRole,
+        reason: `${action.reason} (linked to existing funder "${name}" already in CRM)`,
+      });
+      continue;
+    }
+    const [orgMatch] = await db
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(ilike(organizations.name, pattern))
+      .limit(1);
+    if (orgMatch) {
+      out.push({
+        type: "create_per",
+        personId: action.personId,
+        organizationId: orgMatch.id,
+        connection: action.connection,
+        externalTitleOrRole: action.externalTitleOrRole,
+        reason: `${action.reason} (linked to existing organization "${name}" already in CRM)`,
+      });
+      continue;
+    }
+    // No existing funder or organization of that name. If the name reads
+    // like a philanthropic funder, drop it rather than fabricate an org
+    // (and we never auto-create funders from a signature). Otherwise keep
+    // the create_org_with_per to create the new non-funder organization.
+    if (looksLikeFunderName(name)) {
+      logger.info(
+        { proposalAction: action.type, organizationName: name },
+        "reconcile: dropped create_org_with_per for funder-looking name not in CRM",
+      );
+      continue;
+    }
+    out.push(action);
+  }
+  return out;
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Prompt builder
 // ──────────────────────────────────────────────────────────────────
@@ -504,7 +588,7 @@ function buildSystemPrompt(): string {
     "",
     "Rules:",
     "• Only use IDs that appear verbatim in the CRM CONTEXT block. Never invent IDs.",
-    "• When the person's EMPLOYER named in the message is NOT in context: if it is a philanthropic FUNDER, omit the action (don't invent a funder). But if it is a NON-FUNDER organization (a charter school, school network / CMO, school district, nonprofit, company, etc.), use `create_org_with_per` to create that organization in the organizations table (NEVER the funders table) AND attach the role in one step. Set organizationType to the best-fit enum value when the kind of org is clear (single charter school → school; charter network / CMO → cmo or school_network; district → school_district) and set emailDomain from the sender's address when evident. NEVER emit a bare `create_per` that lacks an entity id — either resolve the id from context, use create_org_with_per for a new non-funder org, or omit.",
+    "• When the person's EMPLOYER named in the message is NOT in context, emit `create_org_with_per` with the organization's name, your best-guess organizationType, and emailDomain when evident. The system then reconciles it deterministically: if a funder or organization of that name already exists it links the role to that existing entity instead of creating a duplicate, and if the name is a philanthropic FUNDER that isn't in the CRM it drops the action (we never invent funders). So you do NOT need to know what already exists — just surface the employer. Pick organizationType from the best-fit enum when the kind of org is clear (single charter school → school; charter network / CMO → cmo or school_network; district → school_district; law firm → law_firm; operating nonprofit → nonprofit). Note that names containing Fund, Foundation, Trust, Endowment, Philanthropies, Charitable, or Family Office are typically funders, not operating orgs. NEVER emit a bare `create_per` that lacks an entity id — either resolve the id from context, use create_org_with_per, or omit.",
     "• Be conservative. If the signal is ambiguous or contradicts current CRM state without strong evidence, return fewer actions or an empty list. The reviewer prefers missing a change over a wrong one.",
     "• Use the email message body (quoted at the bottom) as the source of truth for what the sender actually said. Don't generalize beyond it.",
     "• `reason` on each action should quote or paraphrase the specific phrase in the message that justifies the change. Keep it under 140 chars.",
@@ -746,6 +830,17 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
         break;
       }
     }
+
+    // Deterministically reconcile any create_org_with_per against entities
+    // already in the CRM. The model only sees the entities we put in its
+    // context, so it can propose creating an org for an employer that
+    // already exists — most importantly a philanthropic FUNDER (e.g.
+    // "Colorado Schools Fund" is a funder, not a non-funder org). For each
+    // create_org_with_per we look the named entity up by case-insensitive
+    // exact name: a funder match wins (rewrite to create_per on funderId),
+    // otherwise an organization match (rewrite to create_per on
+    // organizationId). No match keeps the create-org action as proposed.
+    actions = await reconcileCreateOrgWithPer(actions);
 
     // Belt-and-suspenders: deterministically drop any grant opportunity
     // whose application deadline is already in the past relative to
