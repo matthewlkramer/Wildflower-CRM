@@ -403,25 +403,6 @@ function OppView({
                 onSave={(next) => patch({ ownerUserId: next })}
               />
             </Row>
-            <Row label="Fiscal year">
-              <span className="text-muted-foreground">
-                {opp.fiscalYear ?? "—"}
-              </span>
-            </Row>
-            <Row label="Covered FYs">
-              <span className="text-muted-foreground">
-                {opp.coveredFiscalYears && opp.coveredFiscalYears.length > 0
-                  ? opp.coveredFiscalYears.join(", ")
-                  : "—"}
-              </span>
-            </Row>
-            <Row label="Entities">
-              {entityLabels.length === 0 ? (
-                <span className="text-muted-foreground">—</span>
-              ) : (
-                entityLabels.join(", ")
-              )}
-            </Row>
           </CardContent>
         </Card>
 
@@ -461,6 +442,9 @@ function OppView({
                 onSave={(next) => patch({ projectedCloseDate: next })}
               />
             </Row>
+            <DerivedRow label="Fiscal year" hint="derived from close date">
+              {opp.fiscalYear ?? "—"}
+            </DerivedRow>
             <Row label="Actual completion">
               <InlineEditDate
                 label="Actual completion date"
@@ -519,7 +503,17 @@ function OppView({
 
       <Card>
         <CardHeader><CardTitle>Allocations</CardTitle></CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="space-y-2 text-sm">
+            <DerivedRow label="Covered FYs" hint="derived from allocations">
+              {opp.coveredFiscalYears && opp.coveredFiscalYears.length > 0
+                ? opp.coveredFiscalYears.join(", ")
+                : "—"}
+            </DerivedRow>
+            <DerivedRow label="Entities" hint="derived from allocations">
+              {entityLabels.length === 0 ? "—" : entityLabels.join(", ")}
+            </DerivedRow>
+          </div>
           <PledgeAllocationsEditor
             pledgeOrOpportunityId={opp.id}
             allocations={opp.allocations ?? []}
@@ -714,6 +708,26 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex items-baseline justify-between gap-2">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span className="text-right">{children}</span>
+    </div>
+  );
+}
+
+function DerivedRow({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="flex flex-col">
+        <span className="text-xs font-medium text-muted-foreground">{label}</span>
+        <span className="text-[10px] italic text-muted-foreground/70">{hint}</span>
+      </span>
+      <span className="text-right text-muted-foreground">{children}</span>
     </div>
   );
 }
