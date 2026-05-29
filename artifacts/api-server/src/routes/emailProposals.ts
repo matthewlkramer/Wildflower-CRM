@@ -226,9 +226,39 @@ router.post(
         };
       }
 
-      const rawActions = Array.isArray(proposal.proposedActions)
+      const allActions = Array.isArray(proposal.proposedActions)
         ? (proposal.proposedActions as unknown[])
         : [];
+      // Optional per-action selection from the reviewer. When the field
+      // is omitted entirely we apply ALL actions (backward compatible
+      // with older clients). When present we apply only the chosen
+      // indexes — an empty array means "apply nothing but still resolve
+      // the proposal". Indexes are validated to be in-range integers.
+      const selection = (body as Record<string, unknown>).selectedActionIndexes;
+      let rawActions: unknown[];
+      if (selection === undefined || selection === null) {
+        rawActions = allActions;
+      } else if (Array.isArray(selection)) {
+        const seen = new Set<number>();
+        for (const idx of selection) {
+          if (
+            typeof idx !== "number" ||
+            !Number.isInteger(idx) ||
+            idx < 0 ||
+            idx >= allActions.length
+          ) {
+            throw new ProposalSelectionError(
+              `Invalid selectedActionIndexes entry: ${JSON.stringify(idx)}.`,
+            );
+          }
+          seen.add(idx);
+        }
+        rawActions = [...seen].sort((a, b) => a - b).map((i) => allActions[i]);
+      } else {
+        throw new ProposalSelectionError(
+          "selectedActionIndexes must be an array of integers.",
+        );
+      }
       const applyResults: ApplyActionResult[] = [];
       for (const raw of rawActions) {
         const validated = validateAction(raw);
@@ -269,6 +299,7 @@ router.post(
       return { proposal, applyResults };
     }).catch((err) => {
       if (err instanceof ProposalApplyError) return { error: err };
+      if (err instanceof ProposalSelectionError) return { selectionError: err };
       throw err;
     });
 
@@ -305,6 +336,13 @@ router.post(
       });
       return;
     }
+    if ("selectionError" in outcome && outcome.selectionError) {
+      res.status(400).json({
+        error: "invalid_action_selection",
+        message: outcome.selectionError.message,
+      });
+      return;
+    }
     if ("error" in outcome) {
       const { failed, partial } = outcome.error;
       res.status(422).json({
@@ -328,6 +366,11 @@ class ProposalApplyError extends Error {
     this.partial = partial;
   }
 }
+
+// Thrown when the reviewer's selectedActionIndexes payload is malformed
+// (non-integer, out-of-range, or not an array). Surfaced as a 400 so a
+// bad client request isn't mistaken for a server fault.
+class ProposalSelectionError extends Error {}
 
 router.post(
   "/email-proposals/:id/reject",

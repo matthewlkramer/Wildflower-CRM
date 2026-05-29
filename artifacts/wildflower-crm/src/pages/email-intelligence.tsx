@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { EmailDetailDialog } from "@/components/email-detail-dialog";
 import { Mail, Check, X, MessageSquarePlus } from "lucide-react";
@@ -183,9 +184,49 @@ function ProposalList({ kind }: { kind: Kind }) {
     id: string;
     summary: string;
     mode: "accept" | "reject";
+    selection?: number[];
   } | null>(null);
   const [reviewerNote, setReviewerNote] = useState("");
   const [viewEmailId, setViewEmailId] = useState<string | null>(null);
+  // Per-proposal checkbox state: which action indexes are still checked.
+  // Absent entry means "all checked" (the default). Unchecking an action
+  // creates an explicit Set for that proposal id.
+  const [selections, setSelections] = useState<Record<string, Set<number>>>(
+    {},
+  );
+  const proposalActions = (p: { proposedActions?: unknown }) =>
+    (Array.isArray(p.proposedActions)
+      ? (p.proposedActions as ProposedActionView[])
+      : []);
+  const checkedFor = (p: { id: string; proposedActions?: unknown }) => {
+    const actions = proposalActions(p);
+    return selections[p.id] ?? new Set(actions.map((_, i) => i));
+  };
+  const toggleAction = (
+    p: { id: string; proposedActions?: unknown },
+    idx: number,
+  ) => {
+    setSelections((prev) => {
+      const actions = proposalActions(p);
+      const base = prev[p.id] ?? new Set(actions.map((_, i) => i));
+      const next = new Set(base);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return { ...prev, [p.id]: next };
+    });
+  };
+  // Build the accept payload selection. When the client has no actions
+  // loaded yet, omit the field entirely so the server applies all
+  // (backward compatible). Otherwise send the explicit checked subset —
+  // an empty array means "apply nothing but still resolve".
+  const selectionFor = (p: {
+    id: string;
+    proposedActions?: unknown;
+  }): number[] | undefined => {
+    const actions = proposalActions(p);
+    if (actions.length === 0) return undefined;
+    return [...checkedFor(p)].sort((a, b) => a - b);
+  };
   const closeNoteDialog = () => {
     setNoteTarget(null);
     setReviewerNote("");
@@ -299,7 +340,13 @@ function ProposalList({ kind }: { kind: Kind }) {
                 variant="outline"
                 className="h-8 w-8 text-green-600 hover:text-green-700"
                 disabled={accept.isPending}
-                onClick={() => accept.mutate({ id: p.id, data: {} })}
+                onClick={() => {
+                  const sel = selectionFor(p);
+                  accept.mutate({
+                    id: p.id,
+                    data: sel ? { selectedActionIndexes: sel } : {},
+                  });
+                }}
                 title="Accept"
                 aria-label="Accept"
                 data-testid={`btn-accept-${p.id}`}
@@ -317,6 +364,7 @@ function ProposalList({ kind }: { kind: Kind }) {
                     id: p.id,
                     summary: summarizeProposal(p),
                     mode: "accept",
+                    selection: selectionFor(p),
                   });
                 }}
                 title="Accept + Feedback"
@@ -333,9 +381,12 @@ function ProposalList({ kind }: { kind: Kind }) {
           <CardContent>
             <ProposalDetail kind={kind} payload={p.payload ?? {}} />
             <ProposedActionsBlock
+              proposalId={p.id}
               actions={(p.proposedActions ?? []) as ProposedActionView[]}
               analyzedAt={p.actionsAnalyzedAt ?? null}
               error={p.actionsError ?? null}
+              checked={checkedFor(p)}
+              onToggle={(idx) => toggleAction(p, idx)}
             />
           </CardContent>
         </Card>
@@ -397,11 +448,21 @@ function ProposalList({ kind }: { kind: Kind }) {
               onClick={() => {
                 if (!noteTarget) return;
                 const note = reviewerNote.trim();
-                const data = note ? { reviewerNote: note } : {};
                 if (noteTarget.mode === "accept") {
-                  accept.mutate({ id: noteTarget.id, data });
+                  accept.mutate({
+                    id: noteTarget.id,
+                    data: {
+                      ...(note ? { reviewerNote: note } : {}),
+                      ...(noteTarget.selection !== undefined
+                        ? { selectedActionIndexes: noteTarget.selection }
+                        : {}),
+                    },
+                  });
                 } else {
-                  reject.mutate({ id: noteTarget.id, data });
+                  reject.mutate({
+                    id: noteTarget.id,
+                    data: note ? { reviewerNote: note } : {},
+                  });
                 }
               }}
               data-testid={
@@ -430,13 +491,19 @@ type ProposedActionView = {
 };
 
 function ProposedActionsBlock({
+  proposalId,
   actions,
   analyzedAt,
   error,
+  checked,
+  onToggle,
 }: {
+  proposalId: string;
   actions: ProposedActionView[];
   analyzedAt: string | null;
   error: string | null;
+  checked: Set<number>;
+  onToggle: (idx: number) => void;
 }) {
   if (error) {
     return (
@@ -470,13 +537,26 @@ function ProposedActionsBlock({
       </div>
       <ul className="space-y-1.5">
         {actions.map((a, i) => (
-          <li key={i} className="text-sm">
-            <span className="font-medium">{describeAction(a)}</span>
-            {a.reason ? (
-              <div className="text-xs text-muted-foreground italic mt-0.5">
-                — {a.reason}
-              </div>
-            ) : null}
+          <li key={i} className="flex items-start gap-2 text-sm">
+            <Checkbox
+              id={`action-${proposalId}-${i}`}
+              checked={checked.has(i)}
+              onCheckedChange={() => onToggle(i)}
+              className="mt-0.5"
+              aria-label={`Apply: ${describeAction(a)}`}
+              data-testid={`checkbox-action-${proposalId}-${i}`}
+            />
+            <label
+              htmlFor={`action-${proposalId}-${i}`}
+              className="min-w-0 cursor-pointer"
+            >
+              <span className="font-medium">{describeAction(a)}</span>
+              {a.reason ? (
+                <div className="text-xs text-muted-foreground italic mt-0.5">
+                  — {a.reason}
+                </div>
+              ) : null}
+            </label>
           </li>
         ))}
       </ul>

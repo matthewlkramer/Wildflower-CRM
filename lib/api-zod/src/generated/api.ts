@@ -134,6 +134,7 @@ export const AcceptEmailProposalParams = zod.object({
 
 export const AcceptEmailProposalBody = zod.object({
   reviewerNote: zod.string().nullish(),
+  selectedActionIndexes: zod.array(zod.number()).nullish(),
 });
 
 export const AcceptEmailProposalResponse = zod.object({

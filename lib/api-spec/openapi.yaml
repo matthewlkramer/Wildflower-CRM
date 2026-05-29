@@ -3341,6 +3341,17 @@ components:
       additionalProperties: true
       properties:
         reviewerNote: { type: string, nullable: true }
+        selectedActionIndexes:
+          # Optional subset of the stored proposedActions to apply, by
+          # zero-based index into the proposal's proposedActions array.
+          # Omit the field entirely to apply ALL actions (backward
+          # compatible with older clients). An empty array applies no
+          # actions but still marks the proposal resolved/applied.
+          # Ignored by the thank_you_acknowledgment branch, which has no
+          # proposedActions list.
+          type: array
+          nullable: true
+          items: { type: integer }
     RejectEmailProposalBody:
       # Optional reviewer feedback captured at reject time. The whole
       # body is optional so existing clients that POST with no body keep

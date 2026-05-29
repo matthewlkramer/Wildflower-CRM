@@ -1919,6 +1919,7 @@ export interface EmailProposalActionFailed {
 
 export interface AcceptEmailProposalBody {
   reviewerNote?: string | null;
+  selectedActionIndexes?: number[] | null;
   [key: string]: unknown;
 }
 
