@@ -65,6 +65,18 @@ const massachusetts = region({
   parentRegionId: "new_england",
 });
 
+// A region_within_state sits between the state and its metros/cities,
+// e.g. "Western Massachusetts" inside Massachusetts. Its displayPath
+// still threads through the New England multi_state_region wrapper.
+const westernMass = region({
+  id: "united_states__massachusetts__western_massachusetts",
+  name: "Western Massachusetts",
+  displayPath:
+    "United States, New England, Massachusetts, Western Massachusetts",
+  type: "region_within_state",
+  parentRegionId: "united_states__massachusetts",
+});
+
 const greaterBoston = region({
   id: "united_states__massachusetts__greater_boston",
   name: "Greater Boston",
@@ -123,6 +135,7 @@ const allRegions = [
   minnesota,
   newEngland,
   massachusetts,
+  westernMass,
   greaterBoston,
   boston,
   roxbury,
@@ -162,6 +175,12 @@ describe("regionDisplayName — type-aware labels", () => {
     expect(regionDisplayName(greatLakes, byId)).toBe("Great Lakes Region");
     expect(regionDisplayName(newEngland, byId)).toBe("New England");
   });
+
+  it("renders a region within a state as 'Name, ST'", () => {
+    expect(regionDisplayName(westernMass, byId)).toBe(
+      "Western Massachusetts, MA",
+    );
+  });
 });
 
 describe("regionDisplayName — non-US fallback", () => {
@@ -184,6 +203,10 @@ describe("regionDisplayName — multi-state name never leaks", () => {
       "Great Lakes Region",
     );
     expect(regionDisplayName(massachusetts, byId)).not.toContain("New England");
+  });
+
+  it("omits the multi-state region from region-within-state labels", () => {
+    expect(regionDisplayName(westernMass, byId)).not.toContain("New England");
   });
 
   it("omits the multi-state region from metro labels", () => {

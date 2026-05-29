@@ -61,12 +61,12 @@ function regionDisplayPathLabel(r: Region): string {
 /**
  * Type-aware region label. Formatting depends on the region's `type` so it
  * reads naturally instead of dumping the full geographic path:
- *   - state              → "Minnesota"
- *   - multi_state_region → "Great Lakes Region"
- *   - metro_area         → "Greater Boston, MA"
- *   - city               → "Boston, MA"            (skips the metro level)
- *   - region_within_state→ "Southern California, CA" (skips parent metro/multi-state)
- *   - neighborhood       → "Back Bay, Boston, MA"
+ *   - state               → "Minnesota"
+ *   - multi_state_region  → "Great Lakes Region"
+ *   - region_within_state → "Western Massachusetts, MA" (skips parent metro/multi-state)
+ *   - metro_area          → "Greater Boston, MA"
+ *   - city                → "Boston, MA"            (skips the metro level)
+ *   - neighborhood        → "Back Bay, Boston, MA"
  * State names are abbreviated when they appear as a suffix; cities, metros,
  * regions-within-state, and states never include a multi-state region name.
  *
@@ -85,9 +85,9 @@ export function regionDisplayName(
       return r.name;
     case "multi_state_region":
       return r.name;
+    case "region_within_state":
     case "metro_area":
-    case "city":
-    case "region_within_state": {
+    case "city": {
       const abbr = stateAbbrFor(r, byId);
       return abbr ? `${r.name}, ${abbr}` : regionDisplayPathLabel(r);
     }
