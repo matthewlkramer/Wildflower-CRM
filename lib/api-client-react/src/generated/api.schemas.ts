@@ -984,6 +984,8 @@ export interface Person {
   readonly openOpportunityCount?: number | null;
   /** Names of funders the person currently holds a role at (people_entity_roles.current='current'). */
   readonly activeFunderNames?: readonly string[] | null;
+  /** Names of non-funding organizations the person currently holds a role at (people_entity_roles.current='current'). */
+  readonly activeOrganizationNames?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
 }

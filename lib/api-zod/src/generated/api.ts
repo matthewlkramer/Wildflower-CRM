@@ -2155,6 +2155,12 @@ export const ListPeopleResponse = zod.object({
         .describe(
           "Names of funders the person currently holds a role at (people_entity_roles.current='current').",
         ),
+      activeOrganizationNames: zod
+        .array(zod.string())
+        .nullish()
+        .describe(
+          "Names of non-funding organizations the person currently holds a role at (people_entity_roles.current='current').",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -2290,6 +2296,12 @@ export const GetPersonResponse = zod
       .nullish()
       .describe(
         "Names of funders the person currently holds a role at (people_entity_roles.current='current').",
+      ),
+    activeOrganizationNames: zod
+      .array(zod.string())
+      .nullish()
+      .describe(
+        "Names of non-funding organizations the person currently holds a role at (people_entity_roles.current='current').",
       ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
@@ -2517,6 +2529,12 @@ export const UpdatePersonResponse = zod.object({
     .nullish()
     .describe(
       "Names of funders the person currently holds a role at (people_entity_roles.current='current').",
+    ),
+  activeOrganizationNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of non-funding organizations the person currently holds a role at (people_entity_roles.current='current').",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),

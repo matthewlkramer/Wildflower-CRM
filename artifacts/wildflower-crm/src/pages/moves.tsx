@@ -28,6 +28,13 @@ const PRIORITIES: Priority[] = ["top", "high", "medium", "low"];
 const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
 const PRIORITY_ORDER: Record<string, number> = { top: 4, high: 3, medium: 2, low: 1 };
 
+function affiliationNames(p: {
+  activeFunderNames?: readonly string[] | null;
+  activeOrganizationNames?: readonly string[] | null;
+}): string[] {
+  return [...(p.activeFunderNames ?? []), ...(p.activeOrganizationNames ?? [])];
+}
+
 export default function Moves() {
   const [owners, setOwners] = useState<string[]>([]);
   const [priorities, setPriorities] = useState<string[]>([]);
@@ -75,6 +82,7 @@ export default function Moves() {
             r.currentHomeRegionId
               ? (regionNames.get(r.currentHomeRegionId) ?? r.currentHomeRegionId)
               : null,
+          affiliation: (r) => affiliationNames(r).join(", ").toLowerCase() || null,
         },
         ts.sort,
       ),
@@ -119,19 +127,20 @@ export default function Moves() {
               <SortableTH colKey="priority" {...ts}>Priority</SortableTH>
               <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
               <SortableTH colKey="region" {...ts}>Region</SortableTH>
+              <SortableTH colKey="affiliation" {...ts}>Funder / Organization</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center h-24 text-destructive">
+                <TableCell colSpan={7} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load people."}
                 </TableCell>
               </TableRow>
             ) : sortedRows.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">No people found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">No people found.</TableCell></TableRow>
             ) : (
               sortedRows.map((p) => (
                 <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-move-${p.id}`}>
@@ -161,6 +170,11 @@ export default function Moves() {
                   <TableCell>
                     {p.currentHomeRegionId
                       ? (regionNames.get(p.currentHomeRegionId) ?? p.currentHomeRegionId)
+                      : "—"}
+                  </TableCell>
+                  <TableCell>
+                    {affiliationNames(p).length > 0
+                      ? affiliationNames(p).join(", ")
                       : "—"}
                   </TableCell>
                 </TableRow>
