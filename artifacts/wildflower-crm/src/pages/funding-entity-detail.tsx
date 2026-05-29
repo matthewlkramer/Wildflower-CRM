@@ -640,7 +640,7 @@ function FunderView({ funder }: { funder: FunderDetail }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Notes</CardTitle>
+          <CardTitle>Other details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
           <Row label="Other names">
@@ -686,6 +686,11 @@ function FunderView({ funder }: { funder: FunderDetail }) {
         </CardContent>
       </Card>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <NotesPanel funderId={funder.id} />
+        <TasksPanel funderId={funder.id} />
+      </div>
+
       <LinkedOpportunitiesCard
         scope={{ funderId: funder.id }}
         title="Pledges"
@@ -708,11 +713,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       <div className="text-xs text-muted-foreground">
         Created {formatDate(funder.createdAt)} • Updated{" "}
         {formatDate(funder.updatedAt)}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <NotesPanel funderId={funder.id} />
-        <TasksPanel funderId={funder.id} />
       </div>
     </div>
   );
