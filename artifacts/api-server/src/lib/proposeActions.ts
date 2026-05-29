@@ -530,7 +530,20 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
     const response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 8192,
-      system: buildSystemPrompt(),
+      // Prompt caching: a single cache breakpoint on the system block
+      // caches everything before it in the request (the ~2.3k-token tool
+      // schema + this ~0.9k-token system prompt). Both are byte-identical
+      // on every call, so during bootstrapping batches we pay the full
+      // input rate once per ~5-minute window and a ~90%-discounted "cache
+      // read" rate thereafter. The per-proposal user prompt stays
+      // uncached (it changes every call).
+      system: [
+        {
+          type: "text",
+          text: buildSystemPrompt(),
+          cache_control: { type: "ephemeral" },
+        },
+      ],
       tools: [ACTION_TOOL_SCHEMA as unknown as Parameters<typeof anthropic.messages.create>[0]["tools"] extends (infer U)[] | undefined ? U : never],
       tool_choice: { type: "tool", name: "propose_actions" },
       messages: [{ role: "user", content: userPrompt }],
