@@ -1,0 +1,453 @@
+Yes. The current tool is directionally strong: closed action vocabulary, prompt caching, reviewer-first conservatism, and an atomic claim pattern. But I would tighten it in four places:
+
+Validate Claude’s proposed actions locally before saving them.
+Add organization candidates, not just funder candidates.
+Make auto-suppression safer.
+Fix the retry / in-flight sentinel behavior.
+
+The file currently asks Claude for structured CRM mutations and stores them directly as proposedActions; the comment says the downstream dispatcher re-validates IDs, but this module can still save invalid or low-confidence actions into the review queue. It also searches only funders for candidate matches, even though actions can target organizationId too.
+
+Most important issue: failed rows may not actually retry
+
+Your catch block records actionsAnalyzedAt: new Date() on error. But the claim guard only processes rows where actionsAnalyzedAt IS NULL. That means a timeout/error is treated as “analyzed,” even though the comment says phase-D can retry it later.
+
+Change this
+await db
+  .update(emailProposals)
+  .set({
+    actionsAnalyzedAt: new Date(),
+    actionsModel: MODEL,
+    actionsError: msg.slice(0, 1000),
+    updatedAt: new Date(),
+  })
+  .where(eq(emailProposals.id, proposalId));
+To this
+await db
+  .update(emailProposals)
+  .set({
+    actionsAnalyzedAt: null,
+    actionsModel: MODEL,
+    actionsError: msg.slice(0, 1000),
+    updatedAt: new Date(),
+  })
+  .where(eq(emailProposals.id, proposalId));
+
+That preserves the error but allows the row to be picked up again.
+
+Second important issue: suppression update can leave sentinel rows stuck
+
+This block:
+
+.where(
+  and(
+    eq(emailProposals.id, proposalId),
+    shouldIgnore ? eq(emailProposals.status, "pending") : sql`true`,
+  ),
+);
+
+If shouldIgnore === true but the proposal status is no longer pending, the update affects zero rows. That means the row may remain stuck with the epoch sentinel.
+
+Use two updates instead: one always records the analysis; the second conditionally auto-ignores only pending rows.
+
+await db
+  .update(emailProposals)
+  .set({
+    proposedActions: actions,
+    actionsAnalyzedAt: new Date(),
+    actionsModel: MODEL,
+    actionsError: null,
+    updatedAt: new Date(),
+  })
+  .where(eq(emailProposals.id, proposalId));
+
+if (shouldIgnore) {
+  await db
+    .update(emailProposals)
+    .set({
+      status: "ignored" as const,
+      resolvedAt: new Date(),
+      reviewerNote: `Auto-suppressed: ${
+        suppress?.reason ?? "non-actionable noise"
+      }`.slice(0, 500),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(emailProposals.id, proposalId),
+        eq(emailProposals.status, "pending"),
+      ),
+    );
+}
+Add local validation before saving actions
+
+Claude’s tool schema ensures shape, but not CRM correctness. I would add a sanitizeProposedActions() step after parsing the tool response and before saving.
+
+Add this helper
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function exactlyOne(values: unknown[]): boolean {
+  return values.filter((v) => typeof v === "string" && v.trim().length > 0).length === 1;
+}
+
+function truncateReason(reason: string | undefined): string {
+  return (reason || "AI-proposed CRM update").slice(0, 140);
+}
+
+function sanitizeProposedActions(args: {
+  rawActions: ProposedAction[];
+  personContext: PersonContext | null;
+  funderTargetId: string | null;
+  funderCandidates: FunderCandidate[];
+  organizationCandidates?: { id: string; name: string }[];
+}): ProposedAction[] {
+  const {
+    rawActions,
+    personContext,
+    funderTargetId,
+    funderCandidates,
+    organizationCandidates = [],
+  } = args;
+
+  const allowedPersonIds = new Set<string>();
+  const allowedPerIds = new Set<string>();
+  const allowedEmailIds = new Set<string>();
+  const existingEmails = new Set<string>();
+  const allowedFunderIds = new Set<string>();
+  const allowedOrganizationIds = new Set<string>();
+
+  if (personContext) {
+    allowedPersonIds.add(personContext.id);
+
+    for (const e of personContext.emails) {
+      allowedEmailIds.add(e.id);
+      existingEmails.add(normalizeEmail(e.email));
+    }
+
+    for (const r of personContext.roles) {
+      allowedPerIds.add(r.id);
+      if (r.funderId) allowedFunderIds.add(r.funderId);
+      if (r.organizationId) allowedOrganizationIds.add(r.organizationId);
+    }
+  }
+
+  if (funderTargetId) allowedFunderIds.add(funderTargetId);
+  for (const f of funderCandidates) allowedFunderIds.add(f.id);
+  for (const o of organizationCandidates) allowedOrganizationIds.add(o.id);
+
+  const clean: ProposedAction[] = [];
+
+  for (const action of rawActions) {
+    const reason = truncateReason(action.reason);
+
+    switch (action.type) {
+      case "deactivate_per": {
+        if (!allowedPerIds.has(action.perId)) break;
+        clean.push({ ...action, reason });
+        break;
+      }
+
+      case "create_per": {
+        if (!allowedPersonIds.has(action.personId)) break;
+
+        const hasExactlyOneEntity = exactlyOne([
+          action.funderId,
+          action.organizationId,
+          action.paymentIntermediaryId,
+          action.householdId,
+        ]);
+
+        if (!hasExactlyOneEntity) break;
+        if (action.funderId && !allowedFunderIds.has(action.funderId)) break;
+        if (action.organizationId && !allowedOrganizationIds.has(action.organizationId)) break;
+
+        clean.push({ ...action, reason });
+        break;
+      }
+
+      case "create_person_with_per": {
+        const hasExactlyOneEntity = exactlyOne([
+          action.funderId,
+          action.organizationId,
+        ]);
+
+        if (!hasExactlyOneEntity) break;
+        if (action.funderId && !allowedFunderIds.has(action.funderId)) break;
+        if (action.organizationId && !allowedOrganizationIds.has(action.organizationId)) break;
+
+        if (!action.firstName.trim() || !action.lastName.trim()) break;
+
+        clean.push({
+          ...action,
+          emailAddress: action.emailAddress
+            ? normalizeEmail(action.emailAddress)
+            : undefined,
+          reason,
+        });
+        break;
+      }
+
+      case "add_email": {
+        if (!allowedPersonIds.has(action.personId)) break;
+
+        const emailAddress = normalizeEmail(action.emailAddress);
+        if (!emailAddress.includes("@")) break;
+        if (existingEmails.has(emailAddress)) break;
+
+        clean.push({
+          ...action,
+          emailAddress,
+          reason,
+        });
+        break;
+      }
+
+      case "set_primary_email": {
+        const hasExistingEmailId =
+          action.emailId && allowedEmailIds.has(action.emailId);
+
+        const hasPersonEmailTuple =
+          action.personId &&
+          action.emailAddress &&
+          allowedPersonIds.has(action.personId) &&
+          existingEmails.has(normalizeEmail(action.emailAddress));
+
+        if (!hasExistingEmailId && !hasPersonEmailTuple) break;
+
+        clean.push({
+          ...action,
+          emailAddress: action.emailAddress
+            ? normalizeEmail(action.emailAddress)
+            : undefined,
+          reason,
+        });
+        break;
+      }
+
+      case "mark_email_invalid": {
+        const emailAddress = normalizeEmail(action.emailAddress);
+
+        // Prevent the model from invalidating arbitrary emails not already
+        // associated with the matched person.
+        if (personContext && !existingEmails.has(emailAddress)) break;
+
+        clean.push({
+          ...action,
+          emailAddress,
+          reason,
+        });
+        break;
+      }
+
+      case "create_grant_opportunity": {
+        if (action.funderId && !allowedFunderIds.has(action.funderId)) break;
+
+        clean.push({
+          ...action,
+          title: action.title.trim().slice(0, 250),
+          reason,
+        });
+        break;
+      }
+    }
+  }
+
+  return clean;
+}
+
+Then replace:
+
+actions = input.actions as ProposedAction[];
+
+with:
+
+const rawActions = input.actions as ProposedAction[];
+
+actions = sanitizeProposedActions({
+  rawActions,
+  personContext,
+  funderTargetId,
+  funderCandidates,
+  organizationCandidates,
+});
+Add organization candidates
+
+Your action schema allows organizationId, but the context loader only searches funders. That will make Claude omit useful role changes when the new employer is a non-funder organization.
+
+Add this type:
+
+interface OrganizationCandidate {
+  id: string;
+  name: string;
+}
+
+Add this function:
+
+async function findOrganizationCandidates(
+  name: string | null | undefined,
+): Promise<OrganizationCandidate[]> {
+  if (!name || name.trim().length < 3) return [];
+
+  const term = name.trim();
+
+  const rows = await db
+    .select({ id: organizations.id, name: organizations.name })
+    .from(organizations)
+    .where(
+      or(
+        ilike(organizations.name, term),
+        ilike(organizations.name, `%${term}%`),
+      ),
+    )
+    .limit(5);
+
+  return rows
+    .filter((r): r is { id: string; name: string } => r.name !== null)
+    .map((r) => ({ id: r.id, name: r.name }));
+}
+
+In proposeActionsForProposal, after candidateNames:
+
+const [funderCandidatesNested, organizationCandidatesNested] = await Promise.all([
+  Promise.all(candidateNames.slice(0, 2).map((n) => findFunderCandidates(n))),
+  Promise.all(candidateNames.slice(0, 2).map((n) => findOrganizationCandidates(n))),
+]);
+
+const dedupedFundersById = new Map<string, FunderCandidate>();
+for (const list of funderCandidatesNested) {
+  for (const c of list) dedupedFundersById.set(c.id, c);
+}
+if (funderTargetId) dedupedFundersById.delete(funderTargetId);
+const funderCandidates = Array.from(dedupedFundersById.values()).slice(0, 8);
+
+const dedupedOrganizationsById = new Map<string, OrganizationCandidate>();
+for (const list of organizationCandidatesNested) {
+  for (const c of list) dedupedOrganizationsById.set(c.id, c);
+}
+const organizationCandidates = Array.from(dedupedOrganizationsById.values()).slice(0, 8);
+
+Then pass organizationCandidates into buildUserPrompt() and sanitizeProposedActions().
+
+Update the prompt builder args:
+
+function buildUserPrompt(args: {
+  proposal: EmailProposal;
+  personContext: PersonContext | null;
+  funderCandidates: FunderCandidate[];
+  organizationCandidates: OrganizationCandidate[];
+  funderTargetId: string | null;
+  funderTargetName: string | null;
+  messageBody: string | null;
+}): string {
+
+And add this block after funder candidates:
+
+if (organizationCandidates.length > 0) {
+  lines.push(`Organization candidates by name lookup:`);
+  for (const o of organizationCandidates) {
+    lines.push(`  - id=${o.id} ${o.name}`);
+  }
+}
+Tighten suppression
+
+Auto-suppression is high-impact because it hides items from the reviewer. I would add a local guard so that suppression only applies for proposal kinds where suppression is safe.
+
+const SUPPRESSIBLE_KINDS = new Set([
+  "grant_opportunity",
+  "auto_responder",
+  "signature_update",
+  "bounce",
+]);
+
+function canAutoSuppress(proposal: EmailProposal, actions: ProposedAction[]): boolean {
+  if (!SUPPRESSIBLE_KINDS.has(String(proposal.kind))) return false;
+
+  // If the model found a concrete CRM mutation, do not hide the proposal.
+  if (actions.length > 0) return false;
+
+  return true;
+}
+
+Then change:
+
+const shouldIgnore = suppress?.shouldSuppress === true;
+
+to:
+
+const shouldIgnore =
+  suppress?.shouldSuppress === true &&
+  canAutoSuppress(proposal, actions);
+
+This prevents a model response from both proposing a meaningful CRM action and hiding the item.
+
+Improve the user prompt with explicit “available IDs”
+
+Right now, IDs are embedded in prose. Claude can usually follow that, but a compact allowlist is better.
+
+Add near the end of the CRM context block:
+
+const allowedIds: Record<string, string[]> = {
+  personIds: personContext ? [personContext.id] : [],
+  emailIds: personContext ? personContext.emails.map((e) => e.id) : [],
+  perIds: personContext ? personContext.roles.map((r) => r.id) : [],
+  funderIds: [
+    ...(funderTargetId ? [funderTargetId] : []),
+    ...funderCandidates.map((f) => f.id),
+  ],
+  organizationIds: organizationCandidates.map((o) => o.id),
+};
+
+lines.push("");
+lines.push("ALLOWED IDS:");
+lines.push(JSON.stringify(allowedIds, null, 2));
+
+Then add this rule to the system prompt:
+
+"• Treat the ALLOWED IDS block as authoritative. If an action requires an ID not listed there, omit that action.",
+Recommended prompt additions
+
+I would add these rules:
+
+"• Never emit both `add_email` and `set_primary_email` for the same new email. Use `add_email` with setPrimary=true instead.",
+"• Do not mark an email invalid unless the bounced address exactly matches an email address in CRM context.",
+"• Do not create a new person from a signature block unless the signature name matches the sender or the message clearly says this person is a replacement/contact.",
+"• For job-change signals, do not deactivate a current role unless the message indicates the person left, moved, joined a new organization, retired, or is no longer reachable at the prior organization.",
+"• Prefer no action over creating duplicate roles. If the same current role already exists, return an empty actions array.",
+
+These will reduce noisy proposals.
+
+Smaller cleanup
+
+Remove this at the bottom:
+
+void and;
+
+and is already used in the claim and update guards, so this is unnecessary.
+
+Also, findFunderCandidates() says “two-pass,” but it is currently one query with two or() branches. I would either change the comment or actually do two-pass ranking. The current code is fine functionally, but the comment is misleading.
+
+Highest-value patch summary
+
+Implement these first:
+
+// 1. Validate model output before saving.
+actions = sanitizeProposedActions({
+  rawActions,
+  personContext,
+  funderTargetId,
+  funderCandidates,
+  organizationCandidates,
+});
+
+// 2. Always record analysis results, then separately auto-ignore pending rows.
+await saveAnalysisResult(...);
+if (shouldIgnore) await autoIgnoreIfStillPending(...);
+
+// 3. On error, set actionsAnalyzedAt back to null so retry works.
+actionsAnalyzedAt: null
+
+// 4. Add organization candidate lookup.
+findOrganizationCandidates(...)
+
+That combination should make the tool meaningfully safer without changing the overall architecture.

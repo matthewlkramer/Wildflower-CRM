@@ -402,6 +402,35 @@ async function findFunderCandidates(name: string | null | undefined): Promise<Fu
     .map((r) => ({ id: r.id, name: r.name }));
 }
 
+interface OrganizationCandidate {
+  id: string;
+  name: string;
+}
+
+// Mirror of findFunderCandidates for non-funding organizations. The
+// action schema lets create_per / create_person_with_per target an
+// organizationId, but without this lookup the model never sees a valid
+// org id and so can't propose a role change to a non-funder employer.
+async function findOrganizationCandidates(
+  name: string | null | undefined,
+): Promise<OrganizationCandidate[]> {
+  if (!name || name.trim().length < 3) return [];
+  const term = name.trim().toLowerCase();
+  const rows = await db
+    .select({ id: organizations.id, name: organizations.name })
+    .from(organizations)
+    .where(
+      or(
+        ilike(organizations.name, term),
+        ilike(organizations.name, `%${term}%`),
+      ),
+    )
+    .limit(5);
+  return rows
+    .filter((r): r is { id: string; name: string } => r.name !== null)
+    .map((r) => ({ id: r.id, name: r.name }));
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Prompt builder
 // ──────────────────────────────────────────────────────────────────
@@ -425,7 +454,8 @@ function buildSystemPrompt(): string {
     "    – title/role: if the person already has a CURRENT role at that company with that same title, emit nothing. If they have a CURRENT role at that company but its title is empty or different and the message shows a new title, emit `update_per_title` using that role's id — do NOT emit create_per for a role they already hold. Only use create_per when it is a genuinely different/new entity the person isn't already attached to.",
     "    – company: treat it as changed ONLY if it doesn't match the name of ANY current role entity in context. The detector sometimes mis-parses a sentence fragment as a company — if the parsed company looks like prose or references Wildflower (the user's own org), ignore it entirely.",
     "• Never emit `create_per` for a role the person already holds (same entity, current). If only the title differs, use `update_per_title`. Don't contradict yourself: if your reason says the person already has the role, emit no action for it.",
-    "• For bounce messages: emit `mark_email_invalid` only for hard bounces. Soft bounces are review-only — return an empty actions array.",
+    "• For bounce messages: emit `mark_email_invalid` only for hard bounces. Soft bounces are review-only — return an empty actions array. Only mark an address invalid if it appears verbatim under the matched person's 'Emails on file' — never invalidate an address that isn't in the CRM context.",
+    "• Never emit both `add_email` and `set_primary_email` for the same new address — use a single `add_email` with setPrimary=true instead.",
     "• For grant opportunities: emit one `create_grant_opportunity` per distinct RFP / grant program named, with funderId only if the funder appears in context. Use cold_lead unless the message indicates an active invitation (then warm_lead). Don't invent ask amounts — only set askAmount if the message states one. NEVER create a grant opportunity whose application deadline is already in the past relative to TODAY'S DATE shown below — skip it entirely.",
     "",
     "Suppression (separate from actions):",
@@ -441,11 +471,12 @@ function buildUserPrompt(args: {
   proposal: EmailProposal;
   personContext: PersonContext | null;
   funderCandidates: FunderCandidate[];
+  organizationCandidates: OrganizationCandidate[];
   funderTargetId: string | null;
   funderTargetName: string | null;
   messageBody: string | null;
 }): string {
-  const { proposal, personContext, funderCandidates, funderTargetId, funderTargetName, messageBody } = args;
+  const { proposal, personContext, funderCandidates, organizationCandidates, funderTargetId, funderTargetName, messageBody } = args;
   const lines: string[] = [];
   lines.push(`PROPOSAL KIND: ${proposal.kind}`);
   lines.push(`PROPOSAL SUBJECT: ${proposal.subjectName ?? proposal.subjectEmail ?? "(none)"}`);
@@ -491,6 +522,12 @@ function buildUserPrompt(args: {
     lines.push(`Funder candidates by name lookup:`);
     for (const f of funderCandidates) {
       lines.push(`  - id=${f.id} ${f.name}`);
+    }
+  }
+  if (organizationCandidates.length > 0) {
+    lines.push(`Organization candidates by name lookup (non-funder employers):`);
+    for (const o of organizationCandidates) {
+      lines.push(`  - id=${o.id} ${o.name}`);
     }
   }
   if (messageBody) {
@@ -571,15 +608,22 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
       payload.funderName,
       proposal.subjectName,
     ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
-    const funderCandidatesNested = await Promise.all(
-      candidateNames.slice(0, 2).map((n) => findFunderCandidates(n)),
-    );
+    const [funderCandidatesNested, organizationCandidatesNested] = await Promise.all([
+      Promise.all(candidateNames.slice(0, 2).map((n) => findFunderCandidates(n))),
+      Promise.all(candidateNames.slice(0, 2).map((n) => findOrganizationCandidates(n))),
+    ]);
     const dedupedById = new Map<string, FunderCandidate>();
     for (const list of funderCandidatesNested) {
       for (const c of list) dedupedById.set(c.id, c);
     }
     if (funderTargetId) dedupedById.delete(funderTargetId);
     const funderCandidates = Array.from(dedupedById.values()).slice(0, 8);
+
+    const dedupedOrgsById = new Map<string, OrganizationCandidate>();
+    for (const list of organizationCandidatesNested) {
+      for (const c of list) dedupedOrgsById.set(c.id, c);
+    }
+    const organizationCandidates = Array.from(dedupedOrgsById.values()).slice(0, 8);
 
     // Pull the source message body for prompt context. Some payloads
     // already include a snippet (grant_opportunity, signature) so we
@@ -590,6 +634,7 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
       proposal,
       personContext,
       funderCandidates,
+      organizationCandidates,
       funderTargetId,
       funderTargetName,
       messageBody,
@@ -651,11 +696,18 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
     });
 
     // When the model judges the whole proposal to be noise, auto-ignore
-    // it so the reviewer never has to triage it — but only for rows the
-    // reviewer hasn't already acted on (still 'pending'). We never flip
-    // an accepted/applied row back to ignored.
-    const shouldIgnore = suppress?.shouldSuppress === true;
+    // it so the reviewer never has to triage it. Guard: never suppress a
+    // proposal that also carries concrete CRM mutations — if there's
+    // something for the reviewer to apply, the item must stay visible.
+    const shouldIgnore = suppress?.shouldSuppress === true && actions.length === 0;
 
+    // Two writes, deliberately not combined: the first ALWAYS records the
+    // analysis result (clearing the in-flight epoch sentinel), so the row
+    // can never get stuck "in flight". The second conditionally
+    // auto-ignores, but only for rows still 'pending' — we never flip an
+    // accepted/applied row (a reviewer may have acted while the AI was in
+    // flight) back to ignored. Folding these into one guarded UPDATE would
+    // match zero rows in that race and leave the analysis unrecorded.
     await db
       .update(emailProposals)
       .set({
@@ -663,23 +715,28 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
         actionsAnalyzedAt: new Date(),
         actionsModel: MODEL,
         actionsError: null,
-        ...(shouldIgnore
-          ? {
-              status: "ignored" as const,
-              resolvedAt: new Date(),
-              reviewerNote: `Auto-suppressed: ${
-                suppress?.reason ?? "non-actionable noise"
-              }`.slice(0, 500),
-            }
-          : {}),
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(emailProposals.id, proposalId),
-          shouldIgnore ? eq(emailProposals.status, "pending") : sql`true`,
-        ),
-      );
+      .where(eq(emailProposals.id, proposalId));
+
+    if (shouldIgnore) {
+      await db
+        .update(emailProposals)
+        .set({
+          status: "ignored" as const,
+          resolvedAt: new Date(),
+          reviewerNote: `Auto-suppressed: ${
+            suppress?.reason ?? "non-actionable noise"
+          }`.slice(0, 500),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(emailProposals.id, proposalId),
+            eq(emailProposals.status, "pending"),
+          ),
+        );
+    }
 
     return { ranAI: true, actions };
   } catch (err) {
