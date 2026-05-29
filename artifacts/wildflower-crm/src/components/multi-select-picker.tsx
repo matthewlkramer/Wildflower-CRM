@@ -26,7 +26,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
-import { regionDisplayName } from "@/components/region-picker";
+import { regionDisplayName, buildRegionIndex } from "@/components/region-picker";
 import { formatEnum } from "@/lib/format";
 
 type SaveResult = unknown | Promise<unknown>;
@@ -459,9 +459,11 @@ export function InlineEditMultiRegionPicker({
     },
   });
   const options: ReadonlyArray<MultiSelectOption> = useMemo(() => {
-    const opts: MultiSelectOption[] = (data?.data ?? []).map((r) => ({
+    const regions = data?.data ?? [];
+    const byId = buildRegionIndex(regions);
+    const opts: MultiSelectOption[] = regions.map((r) => ({
       value: r.id,
-      label: regionDisplayName(r),
+      label: regionDisplayName(r, byId),
     }));
     opts.sort((a, b) => a.label.localeCompare(b.label));
     // Defensive: pin unknown ids so re-saving doesn't silently drop them.

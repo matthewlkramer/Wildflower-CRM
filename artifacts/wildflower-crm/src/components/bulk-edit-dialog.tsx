@@ -11,7 +11,7 @@ import {
   getListEntitiesQueryKey,
 } from "@workspace/api-client-react";
 import { userDisplayName } from "@/components/user-picker";
-import { regionDisplayName } from "@/components/region-picker";
+import { regionDisplayName, buildRegionIndex } from "@/components/region-picker";
 import {
   Dialog,
   DialogContent,
@@ -187,13 +187,13 @@ export function BulkEditDialog({
       enabled: open,
     },
   });
-  const regionOptions = useMemo(
-    () =>
-      (regionsData?.data ?? [])
-        .map((r) => ({ value: r.id, label: regionDisplayName(r) }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
-    [regionsData],
-  );
+  const regionOptions = useMemo(() => {
+    const regions = regionsData?.data ?? [];
+    const byId = buildRegionIndex(regions);
+    return regions
+      .map((r) => ({ value: r.id, label: regionDisplayName(r, byId) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [regionsData]);
 
   // Allocation-table option sets — only fetched when actually needed.
   const { data: fyData } = useListFiscalYears({
