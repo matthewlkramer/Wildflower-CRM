@@ -5,7 +5,7 @@ import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { setAppUser } from "../lib/appRequest";
-import { resolveClerkEmail } from "../lib/resolveClerkEmail";
+import { fetchClerkIdentity } from "../lib/clerkIdentity";
 
 export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
@@ -22,13 +22,17 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
       .then((rows) => rows[0]);
 
     if (!user) {
-      // Clerk does not put `email` in session claims by default, so this
-      // is almost always undefined. resolveClerkEmail falls back to a
-      // backend lookup by clerk id so the seeded-row adoption branch below
-      // can actually fire for real sign-ins (otherwise everyone got a
-      // fresh blank `<clerkId>@unknown.com` row that owns nothing).
-      const claimEmail = auth.sessionClaims?.email as string | undefined;
-      const email = await resolveClerkEmail(auth.userId, claimEmail);
+      const claimEmail =
+        (auth.sessionClaims?.email as string | undefined)?.trim() || undefined;
+
+      // Capture real identity (email + name) from the Clerk backend during
+      // first-login provisioning. Critically, when the session token has no
+      // `email` claim this is how we avoid inserting a nameless
+      // `<clerkId>@unknown.com` placeholder that then pollutes every owner
+      // picker. Provisioning only happens once per user, so the extra Clerk
+      // lookup is not on the hot path.
+      const identity = await fetchClerkIdentity(auth.userId);
+      const email = claimEmail ?? identity?.email ?? undefined;
 
       // First-login adoption: if a pre-seeded user row exists with the same
       // email (typical for placeholder rows backfilled from legacy `owner`
@@ -52,7 +56,15 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
           }
           user = await db
             .update(users)
-            .set({ clerkId: auth.userId, updatedAt: new Date() })
+            .set({
+              clerkId: auth.userId,
+              // Fill in any missing identity fields from Clerk, but don't
+              // clobber a name the row already has.
+              firstName: existing.firstName ?? identity?.firstName ?? null,
+              lastName: existing.lastName ?? identity?.lastName ?? null,
+              displayName: existing.displayName ?? identity?.displayName ?? null,
+              updatedAt: new Date(),
+            })
             .where(eq(users.id, existing.id))
             .returning()
             .then((rows) => rows[0]);
@@ -80,6 +92,9 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
             id: nanoid(),
             clerkId: auth.userId,
             email: email ?? `${auth.userId}@unknown.com`,
+            firstName: identity?.firstName ?? null,
+            lastName: identity?.lastName ?? null,
+            displayName: identity?.displayName ?? null,
             role: "team_member",
           })
           .onConflictDoUpdate({

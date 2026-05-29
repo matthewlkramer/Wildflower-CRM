@@ -8,7 +8,7 @@ import {
   MultiFilterSelect,
   type MultiFilterOption,
 } from "@/components/multi-filter-select";
-import { userDisplayName } from "@/components/user-picker";
+import { hasUsableIdentity, userDisplayName } from "@/components/user-picker";
 
 /**
  * Multi-select dropdown for filtering by `owner_user_id`. Sources
@@ -37,10 +37,12 @@ export function OwnerMultiFilter({
   });
 
   const options: MultiFilterOption[] = useMemo(() => {
-    const opts: MultiFilterOption[] = (data ?? []).map((u) => ({
-      value: u.id,
-      label: userDisplayName(u),
-    }));
+    const opts: MultiFilterOption[] = (data ?? [])
+      .filter(hasUsableIdentity)
+      .map((u) => ({
+        value: u.id,
+        label: userDisplayName(u),
+      }));
     opts.sort((a, b) => a.label.localeCompare(b.label));
     // If the currently selected list includes an id we don't know about
     // (archived owner), surface it pinned at the top so the dropdown

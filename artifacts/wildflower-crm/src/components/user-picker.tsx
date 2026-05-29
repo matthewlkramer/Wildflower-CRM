@@ -17,6 +17,20 @@ export function userDisplayName(u: User): string {
   return u.email;
 }
 
+/**
+ * Whether a user row has a usable identity to show as an assignable owner.
+ * Mirrors the server-side guard in routes/users.ts: a leftover
+ * `<clerkId>@unknown.com` placeholder with no name is junk and must never
+ * appear as a selectable owner. Real email OR any name makes it usable.
+ */
+export function hasUsableIdentity(u: User): boolean {
+  const hasName = Boolean(
+    u.displayName?.trim() || u.firstName?.trim() || u.lastName?.trim(),
+  );
+  const placeholderEmail = /@unknown\.com$/i.test(u.email ?? "");
+  return hasName || !placeholderEmail;
+}
+
 export function useUserNameMap(): Map<string, string> {
   const { data } = useListUsers({
     query: { queryKey: getListUsersQueryKey(), staleTime: 60_000 },
@@ -55,10 +69,12 @@ export function InlineEditUserPicker({
   });
 
   const options: ReadonlyArray<InlineSelectOption<string>> = useMemo(() => {
-    const opts: InlineSelectOption<string>[] = (data ?? []).map((u) => ({
-      value: u.id,
-      label: userDisplayName(u),
-    }));
+    const opts: InlineSelectOption<string>[] = (data ?? [])
+      .filter(hasUsableIdentity)
+      .map((u) => ({
+        value: u.id,
+        label: userDisplayName(u),
+      }));
     opts.sort((a, b) => a.label.localeCompare(b.label));
     // If the current value isn't in the active users list (e.g. an
     // archived owner), surface it as an option (pinned at the top) so the

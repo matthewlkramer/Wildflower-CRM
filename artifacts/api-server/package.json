@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "backfill:derived-opps": "tsx src/scripts/backfill-derived-opp-fields.ts",
-    "reconcile:unknown-users": "tsx src/scripts/reconcile-unknown-users.ts"
+    "reconcile:unknown-users": "tsx src/scripts/reconcile-unknown-users.ts",
+    "backfill:user-identities": "tsx src/scripts/backfill-user-identities.ts"
   },
   "dependencies": {
     "@clerk/express": "^2.1.4",

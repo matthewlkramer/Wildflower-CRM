@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
-import { asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, like, not, or } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound, paramId, parseOrBadRequest } from "../lib/helpers";
 import { getAppUser } from "../lib/appRequest";
@@ -18,10 +18,25 @@ router.get(
   "/users",
   asyncHandler(async (req, res) => {
     const includeArchived = req.query.includeArchived === "true";
+    // Safety net for owner pickers: exclude accounts with no usable identity —
+    // a leftover `<clerkId>@unknown.com` placeholder with no name. These are
+    // never assignable owners. A row counts as usable if it has any name OR a
+    // real (non-placeholder) email. Applied only to the default (picker) path;
+    // the admin archive screen (?includeArchived=true) still sees everything.
+    const hasUsableIdentity = or(
+      not(like(users.email, "%@unknown.com")),
+      isNotNull(users.firstName),
+      isNotNull(users.lastName),
+      isNotNull(users.displayName),
+    );
     const rows = await db
       .select()
       .from(users)
-      .where(includeArchived ? undefined : isNull(users.archivedAt))
+      .where(
+        includeArchived
+          ? undefined
+          : and(isNull(users.archivedAt), hasUsableIdentity),
+      )
       .orderBy(asc(users.email));
     res.json(rows);
   }),
