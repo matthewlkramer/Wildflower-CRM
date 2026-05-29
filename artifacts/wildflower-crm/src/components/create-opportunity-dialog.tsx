@@ -274,6 +274,9 @@ export function CreateOpportunityDialog({
               }
               data-testid="input-new-opportunity-close"
             />
+            <p className="text-xs text-muted-foreground">
+              Determines the fiscal year automatically.
+            </p>
           </div>
 
           <DialogFooter>
