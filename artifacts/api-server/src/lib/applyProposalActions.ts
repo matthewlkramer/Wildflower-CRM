@@ -86,6 +86,14 @@ export function validateAction(raw: unknown): { ok: true; action: ProposedAction
         return { ok: false, message: "create_org_with_per has invalid field type." };
       }
       break;
+    case "create_funder_with_per":
+      if (!stringField("personId") || !stringField("funderName")) {
+        return { ok: false, message: "create_funder_with_per needs personId + funderName." };
+      }
+      if (!optString("emailDomain") || !optString("connection") || !optString("externalTitleOrRole")) {
+        return { ok: false, message: "create_funder_with_per has invalid field type." };
+      }
+      break;
     case "add_email":
       if (!stringField("personId") || !stringField("emailAddress")) {
         return { ok: false, message: "add_email needs personId + emailAddress." };
@@ -152,6 +160,8 @@ export async function applyAction(
         return await applyCreatePersonWithPer(tx, action, ctx);
       case "create_org_with_per":
         return await applyCreateOrgWithPer(tx, action, ctx);
+      case "create_funder_with_per":
+        return await applyCreateFunderWithPer(tx, action, ctx);
       case "add_email":
         return await applyAddEmail(tx, action);
       case "set_primary_email":
@@ -381,7 +391,7 @@ async function applyCreateOrgWithPer(
   const [existingOrg] = await tx
     .select({ id: organizations.id })
     .from(organizations)
-    .where(ilike(organizations.name, a.organizationName))
+    .where(sql`lower(${organizations.name}) = lower(${a.organizationName})`)
     .limit(1);
 
   let organizationId: string = existingOrg?.id ?? "";
@@ -434,6 +444,78 @@ async function applyCreateOrgWithPer(
     message: createdOrg
       ? `Created organization "${a.organizationName}" + role (${roleId}).`
       : `Linked to existing organization; role ${roleId}.`,
+  };
+}
+
+async function applyCreateFunderWithPer(
+  tx: Tx,
+  a: Extract<ProposedAction, { type: "create_funder_with_per" }>,
+  ctx: { mailboxUserId: string },
+): Promise<ApplyActionResult> {
+  // Person must still exist (could have been deleted between proposal
+  // creation and accept).
+  const [personOk] = await tx
+    .select({ id: people.id })
+    .from(people)
+    .where(eq(people.id, a.personId))
+    .limit(1);
+  if (!personOk) {
+    return { type: a.type, status: "failed", message: `Person ${a.personId} not found.` };
+  }
+
+  // Reuse an existing funder with the same name (case-insensitive) instead
+  // of creating a duplicate — one may have been added since the proposal
+  // was generated.
+  const [existingFunder] = await tx
+    .select({ id: funders.id })
+    .from(funders)
+    .where(sql`lower(${funders.name}) = lower(${a.funderName})`)
+    .limit(1);
+
+  let funderId: string = existingFunder?.id ?? "";
+  let createdFunder = false;
+  if (!funderId) {
+    funderId = newId();
+    await tx.insert(funders).values({
+      id: funderId,
+      name: a.funderName,
+      emailDomain: a.emailDomain ?? null,
+      ownerUserId: ctx.mailboxUserId,
+    });
+    createdFunder = true;
+  }
+
+  // Don't create a duplicate current role for the same (person, funder).
+  const existingRole = await findExistingCurrentPer(tx, a.personId, "funder", funderId);
+  if (existingRole) {
+    return {
+      type: a.type,
+      status: createdFunder ? "applied" : "skipped",
+      createdId: funderId,
+      message: createdFunder
+        ? `Funder created (${funderId}); role already existed.`
+        : `Role already exists (${existingRole}).`,
+    };
+  }
+
+  const roleId = newId();
+  await tx.insert(peopleEntityRoles).values({
+    id: roleId,
+    personId: a.personId,
+    entityType: "funder",
+    funderId,
+    connection: a.connection ?? null,
+    externalTitleOrRole: a.externalTitleOrRole ?? null,
+    current: "current",
+    primaryContact: false,
+  });
+  return {
+    type: a.type,
+    status: "applied",
+    createdId: funderId,
+    message: createdFunder
+      ? `Created funder "${a.funderName}" + role (${roleId}).`
+      : `Linked to existing funder; role ${roleId}.`,
   };
 }
 

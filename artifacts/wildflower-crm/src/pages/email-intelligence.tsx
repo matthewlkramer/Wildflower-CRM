@@ -475,6 +475,10 @@ function describeAction(a: ProposedActionView): string {
       const kind = s("organizationType") ? ` (${s("organizationType")})` : "";
       return `Create organization "${s("organizationName") ?? "?"}"${kind} and add role${role}`;
     }
+    case "create_funder_with_per": {
+      const role = s("externalTitleOrRole") ? ` as "${s("externalTitleOrRole")}"` : "";
+      return `Create funder "${s("funderName") ?? "?"}" and add role${role}`;
+    }
     case "add_email":
       return `Add email ${s("emailAddress")} to person${b("setPrimary") ? " (and make it primary)" : ""}`;
     case "set_primary_email":

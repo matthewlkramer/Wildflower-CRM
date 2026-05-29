@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyAction, validateAction } from "../lib/applyProposalActions";
-import type { ProposedAction } from "../lib/proposeActions";
+import { looksLikeFunderName, type ProposedAction } from "../lib/proposeActions";
 
 // A tx stub that throws if touched — the no-entity-FK create_per path
 // must short-circuit before issuing any DB query.
@@ -56,5 +56,56 @@ describe("validateAction: create_org_with_per", () => {
     });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.message).toMatch(/organizationName/);
+  });
+});
+
+describe("validateAction: create_funder_with_per", () => {
+  it("accepts a well-formed create_funder_with_per", () => {
+    const res = validateAction({
+      type: "create_funder_with_per",
+      personId: "recPerson",
+      funderName: "Colorado Schools Fund",
+      emailDomain: "coloradoschoolsfund.org",
+      connection: "employee",
+      externalTitleOrRole: "Executive Assistant",
+      reason: "Funder not yet in CRM; proposing for review.",
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  it("rejects when funderName is missing", () => {
+    const res = validateAction({
+      type: "create_funder_with_per",
+      personId: "recPerson",
+      reason: "missing funder name",
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.message).toMatch(/funderName/);
+  });
+});
+
+describe("looksLikeFunderName", () => {
+  it("matches names that read as a philanthropic funder", () => {
+    for (const n of [
+      "Colorado Schools Fund",
+      "Walton Family Foundation",
+      "The Smith Charitable Trust",
+      "Acme Endowment",
+      "Bezos Family Office",
+      "Doe Philanthropies",
+    ]) {
+      expect(looksLikeFunderName(n)).toBe(true);
+    }
+  });
+
+  it("does not match operating organizations", () => {
+    for (const n of [
+      "Phoenix Charter Academy Network",
+      "Olea Montessori",
+      "The Anti-Discrimination Attorney PLLC",
+      "Foundational Learning Inc", // 'Foundational' must not trip the 'foundation' rule
+    ]) {
+      expect(looksLikeFunderName(n)).toBe(false);
+    }
   });
 });

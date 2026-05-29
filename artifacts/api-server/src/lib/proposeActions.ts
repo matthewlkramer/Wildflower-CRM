@@ -137,6 +137,29 @@ export type ProposedAction =
       reason: string;
     }
   | {
+      // Like create_org_with_per, but the missing employer is a
+      // philanthropic FUNDER not yet in the CRM. Creates the funder in
+      // the `funders` table (not organizations) and attaches the role.
+      // This action is NOT emitted by the model directly — it is produced
+      // by reconcileCreateOrgWithPer when a funder-looking employer
+      // matches no existing funder/org — so a reviewer can approve
+      // creating the new funder. (Nothing is created until accept.)
+      type: "create_funder_with_per";
+      personId: string;
+      funderName: string;
+      emailDomain?: string;
+      connection?:
+        | "employee"
+        | "principal"
+        | "board_member"
+        | "partner"
+        | "professor"
+        | "donor_advisor"
+        | "elected_official";
+      externalTitleOrRole?: string;
+      reason: string;
+    }
+  | {
       type: "add_email";
       personId: string;
       emailAddress: string;
@@ -561,14 +584,21 @@ async function reconcileCreateOrgWithPer(
       continue;
     }
     // No existing funder or organization of that name. If the name reads
-    // like a philanthropic funder, drop it rather than fabricate an org
-    // (and we never auto-create funders from a signature). Otherwise keep
-    // the create_org_with_per to create the new non-funder organization.
+    // like a philanthropic funder, surface it as a reviewable "create new
+    // funder" action instead of creating an org for it (and we never
+    // auto-create funders — this only applies once a reviewer accepts).
+    // Otherwise keep the create_org_with_per to create the new non-funder
+    // organization.
     if (looksLikeFunderName(name)) {
-      logger.info(
-        { proposalAction: action.type, organizationName: name },
-        "reconcile: dropped create_org_with_per for funder-looking name not in CRM",
-      );
+      out.push({
+        type: "create_funder_with_per",
+        personId: action.personId,
+        funderName: name,
+        emailDomain: action.emailDomain,
+        connection: action.connection,
+        externalTitleOrRole: action.externalTitleOrRole,
+        reason: `${action.reason} (no existing funder of this name in CRM; proposing a new funder for review)`,
+      });
       continue;
     }
     out.push(action);
@@ -588,7 +618,7 @@ function buildSystemPrompt(): string {
     "",
     "Rules:",
     "• Only use IDs that appear verbatim in the CRM CONTEXT block. Never invent IDs.",
-    "• When the person's EMPLOYER named in the message is NOT in context, emit `create_org_with_per` with the organization's name, your best-guess organizationType, and emailDomain when evident. The system then reconciles it deterministically: if a funder or organization of that name already exists it links the role to that existing entity instead of creating a duplicate, and if the name is a philanthropic FUNDER that isn't in the CRM it drops the action (we never invent funders). So you do NOT need to know what already exists — just surface the employer. Pick organizationType from the best-fit enum when the kind of org is clear (single charter school → school; charter network / CMO → cmo or school_network; district → school_district; law firm → law_firm; operating nonprofit → nonprofit). Note that names containing Fund, Foundation, Trust, Endowment, Philanthropies, Charitable, or Family Office are typically funders, not operating orgs. NEVER emit a bare `create_per` that lacks an entity id — either resolve the id from context, use create_org_with_per, or omit.",
+    "• When the person's EMPLOYER named in the message is NOT in context, emit `create_org_with_per` with the organization's name, your best-guess organizationType, and emailDomain when evident. The system then reconciles it deterministically: if a funder or organization of that name already exists it links the role to that existing entity instead of creating a duplicate; and if the name reads like a philanthropic FUNDER that isn't in the CRM it turns into a reviewable \"create new funder\" proposal (nothing is created until a reviewer approves). So you do NOT need to know what already exists — just surface the employer. Pick organizationType from the best-fit enum when the kind of org is clear (single charter school → school; charter network / CMO → cmo or school_network; district → school_district; law firm → law_firm; operating nonprofit → nonprofit). Note that names containing Fund, Foundation, Trust, Endowment, Philanthropies, Charitable, or Family Office are typically funders, not operating orgs. NEVER emit a bare `create_per` that lacks an entity id — either resolve the id from context, use create_org_with_per, or omit.",
     "• Be conservative. If the signal is ambiguous or contradicts current CRM state without strong evidence, return fewer actions or an empty list. The reviewer prefers missing a change over a wrong one.",
     "• Use the email message body (quoted at the bottom) as the source of truth for what the sender actually said. Don't generalize beyond it.",
     "• `reason` on each action should quote or paraphrase the specific phrase in the message that justifies the change. Keep it under 140 chars.",
