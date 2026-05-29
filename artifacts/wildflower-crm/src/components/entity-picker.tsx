@@ -771,3 +771,106 @@ export function InlineEditDonor({
     </div>
   );
 }
+
+/* ──────────────────────────────────────────────────────────────────────── */
+/* Donor picker for create forms — controlled, no inline-edit chrome         */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+export function donorTypeFromValue(v: DonorValue): DonorType | null {
+  return currentDonorType(v);
+}
+
+export function donorIdFromValue(
+  v: DonorValue,
+  t: DonorType | null,
+): string | null {
+  return donorIdForType(v, t);
+}
+
+export function donorBodyFor(
+  t: DonorType | null,
+  id: string | null,
+): DonorSaveBody {
+  return buildDonorBody(t, id);
+}
+
+/**
+ * A donor selector for use inside create/edit forms (as opposed to the
+ * inline-edit row that {@link InlineEditDonor} renders). Fully controlled:
+ * the parent owns `type` + `id` and gets both back via `onChange`. Switching
+ * type clears the picked id so the donor_xor invariant can never be violated.
+ */
+export function DonorFieldPicker({
+  type,
+  id,
+  onChange,
+  testIdBase,
+  individualLabel = "Individual",
+  disabled,
+}: {
+  type: DonorType;
+  id: string | null;
+  onChange: (type: DonorType, id: string | null) => void;
+  testIdBase?: string;
+  individualLabel?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-2 min-w-0">
+      <div className="flex gap-1">
+        {(["funder", "individual", "household"] as const).map((t) => (
+          <Button
+            key={t}
+            type="button"
+            size="sm"
+            variant={type === t ? "default" : "outline"}
+            className="h-7 px-2 text-xs"
+            disabled={disabled}
+            onClick={() => {
+              if (t !== type) onChange(t, null);
+            }}
+            data-testid={
+              testIdBase ? `button-${testIdBase}-type-${t}` : undefined
+            }
+          >
+            {t === "individual" ? individualLabel : DONOR_TYPE_LABEL[t]}
+          </Button>
+        ))}
+      </div>
+      {type === "funder" ? (
+        <EntityCombobox
+          useSearch={useFunderSearch}
+          useResolve={useFunderName}
+          value={id}
+          onChange={(next) => onChange("funder", next)}
+          allowNull={false}
+          placeholder="Search funders…"
+          disabled={disabled}
+          testId={testIdBase ? `select-${testIdBase}` : undefined}
+        />
+      ) : type === "individual" ? (
+        <EntityCombobox
+          useSearch={usePersonSearch}
+          useResolve={usePersonName}
+          value={id}
+          onChange={(next) => onChange("individual", next)}
+          allowNull={false}
+          placeholder="Search people…"
+          disabled={disabled}
+          testId={testIdBase ? `select-${testIdBase}` : undefined}
+        />
+      ) : (
+        <EntityCombobox
+          useSearch={useHouseholdSearch}
+          useResolve={useHouseholdName}
+          value={id}
+          onChange={(next) => onChange("household", next)}
+          allowNull={false}
+          placeholder="Search households…"
+          disabled={disabled}
+          testId={testIdBase ? `select-${testIdBase}` : undefined}
+        />
+      )}
+    </div>
+  );
+}

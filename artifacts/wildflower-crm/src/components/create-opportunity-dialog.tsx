@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import {
   useCreateOpportunityOrPledge,
@@ -10,6 +10,11 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import type { LinkedRecordsScope } from "@/components/linked-records";
+import {
+  DonorFieldPicker,
+  donorBodyFor,
+  type DonorType,
+} from "@/components/entity-picker";
 import {
   Dialog,
   DialogContent,
@@ -49,14 +54,18 @@ const TYPE_OPTIONS: { value: OpportunityType; label: string }[] = [
 ];
 
 /**
- * Maps a donor-scoping object to the XOR donor field on the create body.
- * Exactly one of funderId / householdId / individualGiverPersonId is set,
- * mirroring the donor XOR invariant enforced by the API/DB.
+ * Maps a donor-scoping object to an initial (type, id) pair for the donor
+ * picker. Exactly one of funderId / householdId / individualGiverPersonId is
+ * set on the scope, mirroring the donor XOR invariant enforced by the API/DB.
  */
-function donorFields(scope: LinkedRecordsScope): Partial<CreateOpportunityOrPledgeBody> {
-  if ("funderId" in scope) return { funderId: scope.funderId };
-  if ("householdId" in scope) return { householdId: scope.householdId };
-  return { individualGiverPersonId: scope.individualGiverPersonId };
+function donorFromScope(scope: LinkedRecordsScope): {
+  type: DonorType;
+  id: string;
+} {
+  if ("funderId" in scope) return { type: "funder", id: scope.funderId };
+  if ("householdId" in scope)
+    return { type: "household", id: scope.householdId };
+  return { type: "individual", id: scope.individualGiverPersonId };
 }
 
 type FormState = {
@@ -86,10 +95,30 @@ export function CreateOpportunityDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const initialDonor = donorFromScope(scope);
+  const [donorType, setDonorType] = useState<DonorType>(initialDonor.type);
+  const [donorId, setDonorId] = useState<string | null>(initialDonor.id);
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const isPledge = mode === "pledge";
+
+  function resetDonor() {
+    const d = donorFromScope(scope);
+    setDonorType(d.type);
+    setDonorId(d.id);
+  }
+
+  // Re-seed the donor default from the page scope each time the dialog
+  // opens (and if the scope changes while open). The component can stay
+  // mounted across donor navigations, so initializing from scope only on
+  // mount would leave a stale default — this keeps the donor's own page
+  // as the default every launch.
+  const scopeKey = JSON.stringify(scope);
+  useEffect(() => {
+    if (open) resetDonor();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, scopeKey]);
 
   const create = useCreateOpportunityOrPledge({
     mutation: {
@@ -100,6 +129,7 @@ export function CreateOpportunityDialog({
         toast({ title: isPledge ? "Pledge created" : "Opportunity created" });
         setOpen(false);
         setForm(EMPTY_FORM);
+        resetDonor();
         if (created?.id) {
           navigate(
             isPledge ? `/pledges/${created.id}` : `/opportunities/${created.id}`,
@@ -121,18 +151,24 @@ export function CreateOpportunityDialog({
   function resetAndClose(next: boolean) {
     if (create.isPending) return;
     setOpen(next);
-    if (!next) setForm(EMPTY_FORM);
+    if (!next) {
+      setForm(EMPTY_FORM);
+      resetDonor();
+    }
   }
 
   function submit() {
-    if (!trimmedName) return;
+    if (!trimmedName || !donorId) return;
     const ask = form.askAmount.trim();
     const awarded = form.awardedAmount.trim();
     const closeDate = form.projectedCloseDate.trim();
+    const donor = donorBodyFor(donorType, donorId);
     create.mutate({
       data: {
         name: trimmedName,
-        ...donorFields(scope),
+        funderId: donor.funderId ?? undefined,
+        individualGiverPersonId: donor.individualGiverPersonId ?? undefined,
+        householdId: donor.householdId ?? undefined,
         ...(isPledge ? { wasPledge: true } : {}),
         ...(form.stage ? { stage: form.stage } : {}),
         ...(form.type ? { type: form.type } : {}),
@@ -179,6 +215,24 @@ export function CreateOpportunityDialog({
               required
               data-testid="input-new-opportunity-name"
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Donor</Label>
+            <DonorFieldPicker
+              type={donorType}
+              id={donorId}
+              onChange={(t, id) => {
+                setDonorType(t);
+                setDonorId(id);
+              }}
+              testIdBase="new-opportunity-donor"
+              disabled={create.isPending}
+            />
+            <p className="text-xs text-muted-foreground">
+              Defaults to this record; pick a different funder, household, or
+              individual to file it elsewhere.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -290,7 +344,7 @@ export function CreateOpportunityDialog({
             </Button>
             <Button
               type="submit"
-              disabled={!trimmedName || create.isPending}
+              disabled={!trimmedName || !donorId || create.isPending}
               data-testid="button-create-opportunity"
             >
               {create.isPending ? "Creating…" : "Create"}
