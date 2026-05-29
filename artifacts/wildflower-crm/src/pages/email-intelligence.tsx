@@ -476,6 +476,10 @@ function describeAction(a: ProposedActionView): string {
       if (s("deadline")) parts.push(`due ${s("deadline")}`);
       return parts.join(", ");
     }
+    case "set_phone":
+      return `Add phone ${s("phoneNumber")}${s("phoneType") ? ` (${s("phoneType")})` : ""} to person${b("setPrimary") ? " (and make it primary)" : ""}`;
+    case "update_per_title":
+      return `Update role title to "${s("externalTitleOrRole")}" (role id ${s("perId") ?? "?"})`;
     default:
       return a.type;
   }

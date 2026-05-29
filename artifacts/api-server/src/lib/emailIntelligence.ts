@@ -3,6 +3,7 @@ import {
   emailProposals,
   people,
   funders,
+  organizations,
   peopleEntityRoles,
   emails,
   giftsAndPayments,
@@ -486,21 +487,29 @@ async function handleSignature(
   // don't have a "drift" to surface.
   let companyDrift = false;
   if (sig.company) {
-    const currentFunderNames = await db
-      .select({ name: funders.name })
+    // Compare the parsed company against the name of EVERY current role
+    // entity — funder OR non-funding organization. The old check only
+    // joined funders, so anyone whose current role is an organization
+    // (e.g. American Montessori Society) was always flagged as "company
+    // changed" even when the signature matched their org exactly.
+    const currentEntityRows = await db
+      .select({ funderName: funders.name, orgName: organizations.name })
       .from(peopleEntityRoles)
-      .innerJoin(funders, eq(funders.id, peopleEntityRoles.funderId))
+      .leftJoin(funders, eq(funders.id, peopleEntityRoles.funderId))
+      .leftJoin(organizations, eq(organizations.id, peopleEntityRoles.organizationId))
       .where(
         and(
           eq(peopleEntityRoles.personId, personId),
           eq(peopleEntityRoles.current, "current"),
         ),
       );
+    const currentNames = currentEntityRows
+      .map((r) => r.funderName ?? r.orgName)
+      .filter((n): n is string => !!n);
     const sigLower = sig.company.toLowerCase();
-    const matched = currentFunderNames.some(
-      (f) =>
-        f.name &&
-        (f.name.toLowerCase().includes(sigLower) || sigLower.includes(f.name.toLowerCase())),
+    const matched = currentNames.some(
+      (name) =>
+        name.toLowerCase().includes(sigLower) || sigLower.includes(name.toLowerCase()),
     );
     if (!matched) companyDrift = true;
   }

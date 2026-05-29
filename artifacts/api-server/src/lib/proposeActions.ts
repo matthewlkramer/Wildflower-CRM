@@ -6,10 +6,12 @@ import {
   organizations,
   people,
   peopleEntityRoles,
+  phoneNumbers,
   type EmailProposal,
 } from "@workspace/db/schema";
 import { and, eq, ilike, or, sql } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { deadlineHasPassed } from "./intelDetectors";
 import { logger } from "./logger";
 
 /**
@@ -123,6 +125,21 @@ export type ProposedAction =
       deadline?: string; // ISO yyyy-mm-dd
       stage?: "cold_lead" | "warm_lead";
       reason: string;
+    }
+  | {
+      type: "set_phone";
+      personId: string;
+      phoneNumber: string;
+      phoneType?: "work" | "mobile" | "home" | "other";
+      setPrimary?: boolean;
+      reason: string;
+    }
+  | {
+      type: "update_per_title";
+      // Existing people_entity_roles row to set externalTitleOrRole on.
+      perId: string;
+      externalTitleOrRole: string;
+      reason: string;
     };
 
 // JSON schema mirror for Claude's input_schema. Keep tightly aligned
@@ -234,6 +251,28 @@ const ACTION_TOOL_SCHEMA = {
                 reason: { type: "string" },
               },
             },
+            {
+              type: "object",
+              required: ["type", "personId", "phoneNumber", "reason"],
+              properties: {
+                type: { const: "set_phone" },
+                personId: { type: "string", description: "Existing person ID to attach the phone to." },
+                phoneNumber: { type: "string", description: "The phone number as written in the signature." },
+                phoneType: { type: "string", enum: ["work", "mobile", "home", "other"] },
+                setPrimary: { type: "boolean" },
+                reason: { type: "string" },
+              },
+            },
+            {
+              type: "object",
+              required: ["type", "perId", "externalTitleOrRole", "reason"],
+              properties: {
+                type: { const: "update_per_title" },
+                perId: { type: "string", description: "ID of the existing people_entity_roles row whose title/role to update." },
+                externalTitleOrRole: { type: "string", description: "The new title/role text." },
+                reason: { type: "string" },
+              },
+            },
           ],
         },
       },
@@ -252,6 +291,7 @@ interface PersonContext {
   id: string;
   fullName: string | null;
   emails: { id: string; email: string; type: string | null; isPreferred: boolean; validity: string }[];
+  phones: { id: string; phoneNumber: string; type: string | null; isPreferred: boolean }[];
   roles: {
     id: string;
     entityType: string;
@@ -271,7 +311,7 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
     .where(eq(people.id, personId))
     .limit(1);
   if (!p) return null;
-  const [emailRows, roleRows] = await Promise.all([
+  const [emailRows, phoneRows, roleRows] = await Promise.all([
     db
       .select({
         id: emailsTable.id,
@@ -282,6 +322,15 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
       })
       .from(emailsTable)
       .where(eq(emailsTable.personId, personId)),
+    db
+      .select({
+        id: phoneNumbers.id,
+        phoneNumber: phoneNumbers.phoneNumber,
+        type: phoneNumbers.type,
+        isPreferred: phoneNumbers.isPreferred,
+      })
+      .from(phoneNumbers)
+      .where(eq(phoneNumbers.personId, personId)),
     db
       .select({
         id: peopleEntityRoles.id,
@@ -308,6 +357,12 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
       type: e.type,
       isPreferred: e.isPreferred,
       validity: e.validity,
+    })),
+    phones: phoneRows.map((ph) => ({
+      id: ph.id,
+      phoneNumber: ph.phoneNumber,
+      type: ph.type,
+      isPreferred: ph.isPreferred,
     })),
     roles: roleRows.map((r) => ({
       id: r.id,
@@ -364,12 +419,17 @@ function buildSystemPrompt(): string {
     "• `reason` on each action should quote or paraphrase the specific phrase in the message that justifies the change. Keep it under 140 chars.",
     "• For LinkedIn job changes: typical pattern is one `deactivate_per` for the role they're leaving + one `create_per` for the new role at the new company (only if the new company resolves to a funder/organization id in context). If the message names a replacement, add `create_person_with_per` for that successor.",
     "• For auto-responder 'I've moved' messages: deactivate the old role if a new company is named, create the new role if it resolves to a known entity, add the new email if one is given (with setPrimary=true if they say it's their new primary).",
-    "• For signature updates: only emit actions for fields that genuinely differ from current CRM state. Don't restate the status quo.",
+    "• For signature_update proposals: the payload.parsed object holds {name,title,company,phone,email}. Cross-check EACH parsed field against the CRM CONTEXT and emit an action ONLY for fields that are genuinely NEW or changed. Never restate the status quo. Specifically:",
+    "    – email: if it already appears under 'Emails on file' (case-insensitive), emit nothing for it.",
+    "    – phone: compare digits only (ignore spaces/dashes/parens/country code) against 'Phones on file'. If a matching number is already on file, emit nothing. If it is genuinely new, emit `set_phone` with the person's id.",
+    "    – title/role: if the person already has a CURRENT role at that company with that same title, emit nothing. If they have a CURRENT role at that company but its title is empty or different and the message shows a new title, emit `update_per_title` using that role's id — do NOT emit create_per for a role they already hold. Only use create_per when it is a genuinely different/new entity the person isn't already attached to.",
+    "    – company: treat it as changed ONLY if it doesn't match the name of ANY current role entity in context. The detector sometimes mis-parses a sentence fragment as a company — if the parsed company looks like prose or references Wildflower (the user's own org), ignore it entirely.",
+    "• Never emit `create_per` for a role the person already holds (same entity, current). If only the title differs, use `update_per_title`. Don't contradict yourself: if your reason says the person already has the role, emit no action for it.",
     "• For bounce messages: emit `mark_email_invalid` only for hard bounces. Soft bounces are review-only — return an empty actions array.",
-    "• For grant opportunities: emit one `create_grant_opportunity` per distinct RFP / grant program named, with funderId only if the funder appears in context. Use cold_lead unless the message indicates an active invitation (then warm_lead). Don't invent ask amounts — only set askAmount if the message states one.",
+    "• For grant opportunities: emit one `create_grant_opportunity` per distinct RFP / grant program named, with funderId only if the funder appears in context. Use cold_lead unless the message indicates an active invitation (then warm_lead). Don't invent ask amounts — only set askAmount if the message states one. NEVER create a grant opportunity whose application deadline is already in the past relative to TODAY'S DATE shown below — skip it entirely.",
     "",
     "Suppression (separate from actions):",
-    "• Set `suppress.shouldSuppress=true` when the WHOLE proposal is noise the reviewer should never see. Concretely: grant WINNER / recipient announcements (celebrating awards already made, not a new opening); promo / newsletter / event-registration / sponsorship blasts; an RFP to hire a vendor/contractor/consultant (the sender is buying services, not offering grant funding); a grant whose application DEADLINE has already passed relative to the EMAIL SENT DATE shown below; a plain out-of-office / vacation auto-reply where the person is still at their org (only a genuine departure or new-job move is worth surfacing); a signature_update whose parsed name clearly belongs to a different person than the highlighted CRM person.",
+    "• Set `suppress.shouldSuppress=true` when the WHOLE proposal is noise the reviewer should never see. Concretely: grant WINNER / recipient announcements (celebrating awards already made, not a new opening); promo / newsletter / event-registration / sponsorship blasts; an RFP to hire a vendor/contractor/consultant (the sender is buying services, not offering grant funding); a grant whose application DEADLINE has already passed relative to TODAY'S DATE shown below; a plain out-of-office / vacation auto-reply where the person is still at their org (only a genuine departure or new-job move is worth surfacing); a signature_update whose parsed name clearly belongs to a different person than the highlighted CRM person; a signature_update where every parsed field (email / phone / title / company) already matches the CRM state so there is nothing new for the reviewer to do.",
     "• When you suppress, you should normally also return an empty actions array.",
     "• Be conservative: suppression hides the item from the reviewer entirely, so when in doubt, leave shouldSuppress=false and let the reviewer decide.",
     "",
@@ -392,6 +452,7 @@ function buildUserPrompt(args: {
   lines.push(
     `EMAIL SENT DATE: ${proposal.emailSentAt ? new Date(proposal.emailSentAt).toISOString().slice(0, 10) : "(unknown)"}`,
   );
+  lines.push(`TODAY'S DATE: ${new Date().toISOString().slice(0, 10)}`);
   lines.push("");
   lines.push("PROPOSAL PAYLOAD (what the detector parsed):");
   lines.push(JSON.stringify(proposal.payload, null, 2));
@@ -404,6 +465,13 @@ function buildUserPrompt(args: {
     for (const e of personContext.emails) {
       lines.push(
         `    - id=${e.id} ${e.email}${e.isPreferred ? " [PRIMARY]" : ""} type=${e.type ?? "?"} validity=${e.validity}`,
+      );
+    }
+    lines.push(`  Phones on file:`);
+    if (personContext.phones.length === 0) lines.push("    (none)");
+    for (const ph of personContext.phones) {
+      lines.push(
+        `    - id=${ph.id} ${ph.phoneNumber}${ph.isPreferred ? " [PRIMARY]" : ""} type=${ph.type ?? "?"}`,
       );
     }
     lines.push(`  Entity roles:`);
@@ -571,6 +639,16 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
         break;
       }
     }
+
+    // Belt-and-suspenders: deterministically drop any grant opportunity
+    // whose application deadline is already in the past relative to
+    // today, regardless of what the model returned. Yearless / unparseable
+    // deadlines are kept (we never guess a year).
+    const now = new Date();
+    actions = actions.filter((a) => {
+      if (a.type !== "create_grant_opportunity") return true;
+      return !deadlineHasPassed(a.deadline ?? null, now);
+    });
 
     // When the model judges the whole proposal to be noise, auto-ignore
     // it so the reviewer never has to triage it — but only for rows the

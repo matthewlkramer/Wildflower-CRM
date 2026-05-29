@@ -475,6 +475,12 @@ export function parseEmailSignature(
   const phoneRe =
     /(?:\+?\d{1,3}[\s.\-]?)?(?:\(\d{2,4}\)\s?)?\d{2,4}(?:[\s.\-]\d{2,4}){1,4}(?:\s*(?:x|ext\.?)\s*\d{1,5})?/i;
   const emailRe = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+  // Words that mark a line as prose / CTA / self-reference rather than
+  // a real company name. "wildflower" is the mailbox owner's own org —
+  // a correspondent's employer is never Wildflower, so a parsed
+  // "company" mentioning it is a mis-parse.
+  const companyProseRe =
+    /\b(membership|for all|on behalf|please|thank|regards|sincerely|looking forward|sent from|wildflower)\b/i;
 
   let title: string | null = null;
   let company: string | null = null;
@@ -502,7 +508,21 @@ export function parseEmailSignature(
       // Strip leading bullet / icon chars
       title = line.replace(/^[\W_]+/, "").trim();
     }
-    if (!company && line.length <= 120 && orgTokens.test(line) && !titleTokens.test(line)) {
+    if (
+      !company &&
+      line.length <= 120 &&
+      orgTokens.test(line) &&
+      !titleTokens.test(line) &&
+      // Reject lines that merely contain an org token but are really
+      // prose / a call-to-action / a reference to the mailbox owner's
+      // own org ("…membership for all Wildflower Schools"). These
+      // produced bogus "company changed" drift for senders whose true
+      // employer was elsewhere.
+      !companyProseRe.test(line) &&
+      // A real company line is a handful of (mostly capitalized) words,
+      // not a sentence. Cap the wordy ones out.
+      line.split(/\s+/).filter((w) => /[a-z]/i.test(w)).length <= 7
+    ) {
       company = line.replace(/^[\W_]+/, "").trim();
     }
   }
@@ -629,7 +649,7 @@ function parseDeadlineDate(s: string): Date | null {
 // strictly before the reference day. Unknown / yearless deadlines are
 // never treated as passed (conservative — we'd rather surface a maybe
 // than hide a live opportunity).
-function deadlineHasPassed(deadline: string | null, reference: Date): boolean {
+export function deadlineHasPassed(deadline: string | null, reference: Date): boolean {
   if (!deadline) return false;
   const parsed = parseDeadlineDate(deadline);
   if (!parsed) return false;
@@ -725,10 +745,14 @@ export function extractGrantOpportunities(
     : stripHtml(bodyHtml ?? "")) ?? "";
   if (!text && !subject) return [];
 
-  // Reference date for "has this deadline already passed?" checks. Use
-  // the email's SENT date when known so backfilled / late-synced mail
-  // is judged against when it actually arrived, not today.
-  const reference = emailSentAt ?? new Date();
+  // Reference date for "has this deadline already passed?" checks. We
+  // judge against TODAY (not the email's sent date): a grant whose
+  // application deadline is already in the past relative to now is a
+  // dead lead the reviewer shouldn't have to triage, even if it was
+  // still open when the (possibly backfilled / late-synced) email
+  // first arrived.
+  void emailSentAt;
+  const reference = new Date();
 
   // Event / webinar / demo / bootcamp invites are not grant
   // opportunities, even when they show up in a digest that DOES carry

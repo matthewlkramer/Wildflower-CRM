@@ -6,6 +6,7 @@ import {
   paymentIntermediaries,
   people,
   peopleEntityRoles,
+  phoneNumbers,
   pledgeAllocations,
   households,
 } from "@workspace/db/schema";
@@ -102,6 +103,19 @@ export function validateAction(raw: unknown): { ok: true; action: ProposedAction
         return { ok: false, message: "create_grant_opportunity has invalid field type." };
       }
       break;
+    case "set_phone":
+      if (!stringField("personId") || !stringField("phoneNumber")) {
+        return { ok: false, message: "set_phone needs personId + phoneNumber." };
+      }
+      if (!optString("phoneType") || !optBool("setPrimary")) {
+        return { ok: false, message: "set_phone has invalid field type." };
+      }
+      break;
+    case "update_per_title":
+      if (!stringField("perId") || !stringField("externalTitleOrRole")) {
+        return { ok: false, message: "update_per_title needs perId + externalTitleOrRole." };
+      }
+      break;
     default:
       return { ok: false, message: `Unknown action type "${t}".` };
   }
@@ -136,6 +150,10 @@ export async function applyAction(
         return await applyMarkEmailInvalid(tx, action);
       case "create_grant_opportunity":
         return await applyCreateGrantOpportunity(tx, action, ctx);
+      case "set_phone":
+        return await applySetPhone(tx, action);
+      case "update_per_title":
+        return await applyUpdatePerTitle(tx, action);
     }
   } catch (err) {
     return {
@@ -474,6 +492,95 @@ async function applyCreateGrantOpportunity(
     status: "working",
   });
   return { type: a.type, status: "applied", createdId: oppId };
+}
+
+async function applySetPhone(
+  tx: Tx,
+  a: Extract<ProposedAction, { type: "set_phone" }>,
+): Promise<ApplyActionResult> {
+  // Confirm the person still exists.
+  const [personOk] = await tx
+    .select({ id: people.id })
+    .from(people)
+    .where(eq(people.id, a.personId))
+    .limit(1);
+  if (!personOk) {
+    return { type: a.type, status: "failed", message: `Person ${a.personId} not found.` };
+  }
+
+  // Dedup on digits only (ignore formatting / country-code prefix) so
+  // "+1 (555) 123-4567" doesn't get re-added next to "555-123-4567".
+  const incomingDigits = a.phoneNumber.replace(/\D/g, "");
+  const existingRows = await tx
+    .select({ id: phoneNumbers.id, phoneNumber: phoneNumbers.phoneNumber })
+    .from(phoneNumbers)
+    .where(eq(phoneNumbers.personId, a.personId));
+  const dupe = existingRows.find((r: { id: string; phoneNumber: string }) => {
+    const d = r.phoneNumber.replace(/\D/g, "");
+    return d.length > 0 && (d === incomingDigits || d.endsWith(incomingDigits) || incomingDigits.endsWith(d));
+  });
+  if (dupe) {
+    if (a.setPrimary) {
+      await tx
+        .update(phoneNumbers)
+        .set({ isPreferred: false, updatedAt: new Date() })
+        .where(eq(phoneNumbers.personId, a.personId));
+      await tx
+        .update(phoneNumbers)
+        .set({ isPreferred: true, updatedAt: new Date() })
+        .where(eq(phoneNumbers.id, dupe.id));
+      return { type: a.type, status: "applied", message: "Existing phone promoted to primary.", createdId: dupe.id };
+    }
+    return { type: a.type, status: "skipped", message: "Phone already on file for this person." };
+  }
+
+  if (a.setPrimary) {
+    await tx
+      .update(phoneNumbers)
+      .set({ isPreferred: false, updatedAt: new Date() })
+      .where(eq(phoneNumbers.personId, a.personId));
+  }
+  const id = newId();
+  await tx.insert(phoneNumbers).values({
+    id,
+    personId: a.personId,
+    phoneNumber: a.phoneNumber,
+    type: a.phoneType ?? "work",
+    isPreferred: a.setPrimary ?? false,
+    validity: "unknown",
+  });
+  return { type: a.type, status: "applied", createdId: id };
+}
+
+async function applyUpdatePerTitle(
+  tx: Tx,
+  a: Extract<ProposedAction, { type: "update_per_title" }>,
+): Promise<ApplyActionResult> {
+  const [per] = await tx
+    .select({
+      id: peopleEntityRoles.id,
+      externalTitleOrRole: peopleEntityRoles.externalTitleOrRole,
+      current: peopleEntityRoles.current,
+    })
+    .from(peopleEntityRoles)
+    .where(eq(peopleEntityRoles.id, a.perId))
+    .limit(1);
+  if (!per) {
+    return { type: a.type, status: "failed", message: `Role ${a.perId} not found.` };
+  }
+  // Never rewrite a historical role's title — title updates only make
+  // sense for the role the person currently holds.
+  if (per.current !== "current") {
+    return { type: a.type, status: "skipped", message: "Role is not current; title left unchanged." };
+  }
+  if ((per.externalTitleOrRole ?? "") === a.externalTitleOrRole) {
+    return { type: a.type, status: "skipped", message: "Title already matches." };
+  }
+  await tx
+    .update(peopleEntityRoles)
+    .set({ externalTitleOrRole: a.externalTitleOrRole, updatedAt: new Date() })
+    .where(eq(peopleEntityRoles.id, a.perId));
+  return { type: a.type, status: "applied", createdId: a.perId };
 }
 
 // ──────────────────────────────────────────────────────────────────

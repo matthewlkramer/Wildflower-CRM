@@ -122,6 +122,18 @@ router.get(
           SELECT 1 FROM emails e WHERE LOWER(e.email) = c.email_address
         )
         AND NOT EXISTS (
+          -- Same distinctive local-part already on file against a real
+          -- person — e.g. josephina@yassprize.org is on file, so
+          -- josephina@edreform.com is the same human writing from a
+          -- second address, not a brand-new lead. Gated on length >= 6
+          -- so short / generic handles (joe, info, team) can't collapse
+          -- unrelated people together.
+          SELECT 1 FROM emails e2
+          WHERE e2.person_id IS NOT NULL
+            AND length(split_part(c.email_address, '@', 1)) >= 6
+            AND LOWER(split_part(e2.email, '@', 1)) = split_part(c.email_address, '@', 1)
+        )
+        AND NOT EXISTS (
           SELECT 1 FROM correspondent_ignore i
           WHERE i.mailbox_user_id = ${mailboxUserId}
             AND i.email_lower = c.email_address
