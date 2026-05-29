@@ -32,7 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { EmailDetailDialog } from "@/components/email-detail-dialog";
-import { Mail } from "lucide-react";
+import { Mail, Check, X, MessageSquarePlus } from "lucide-react";
 
 type Kind =
   | "linkedin_job_change"
@@ -240,7 +240,7 @@ function ProposalList({ kind }: { kind: Kind }) {
                 {new Date(p.emailSentAt ?? p.createdAt).toLocaleString()}
               </p>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex flex-wrap items-center justify-end gap-2 flex-shrink-0">
               {p.targetPersonId ? (
                 <Link
                   href={`/individuals/${p.targetPersonId}`}
@@ -261,8 +261,21 @@ function ProposalList({ kind }: { kind: Kind }) {
                 </Button>
               ) : null}
               <Button
-                size="sm"
+                size="icon"
                 variant="outline"
+                className="h-8 w-8 text-red-600 hover:text-red-700"
+                disabled={reject.isPending}
+                onClick={() => reject.mutate({ id: p.id, data: {} })}
+                title="Dismiss"
+                aria-label="Dismiss"
+                data-testid={`btn-reject-${p.id}`}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-8 w-8 text-red-600 hover:text-red-700"
                 disabled={reject.isPending}
                 onClick={() => {
                   setReviewerNote("");
@@ -272,12 +285,31 @@ function ProposalList({ kind }: { kind: Kind }) {
                     mode: "reject",
                   });
                 }}
-                data-testid={`btn-reject-${p.id}`}
+                title="Dismiss + Feedback"
+                aria-label="Dismiss with feedback"
+                data-testid={`btn-reject-feedback-${p.id}`}
               >
-                Dismiss
+                <span className="relative inline-flex">
+                  <X className="h-4 w-4" />
+                  <MessageSquarePlus className="h-3 w-3 absolute -bottom-1 -right-1.5" />
+                </span>
               </Button>
               <Button
-                size="sm"
+                size="icon"
+                variant="outline"
+                className="h-8 w-8 text-green-600 hover:text-green-700"
+                disabled={accept.isPending}
+                onClick={() => accept.mutate({ id: p.id, data: {} })}
+                title="Accept"
+                aria-label="Accept"
+                data-testid={`btn-accept-${p.id}`}
+              >
+                <Check className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-8 w-8 text-green-600 hover:text-green-700"
                 disabled={accept.isPending}
                 onClick={() => {
                   setReviewerNote("");
@@ -287,9 +319,14 @@ function ProposalList({ kind }: { kind: Kind }) {
                     mode: "accept",
                   });
                 }}
-                data-testid={`btn-accept-${p.id}`}
+                title="Accept + Feedback"
+                aria-label="Accept with feedback"
+                data-testid={`btn-accept-feedback-${p.id}`}
               >
-                Accept
+                <span className="relative inline-flex">
+                  <Check className="h-4 w-4" />
+                  <MessageSquarePlus className="h-3 w-3 absolute -bottom-1 -right-1.5" />
+                </span>
               </Button>
             </div>
           </CardHeader>
