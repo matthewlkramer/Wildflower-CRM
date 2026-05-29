@@ -5,6 +5,7 @@ import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { setAppUser } from "../lib/appRequest";
+import { resolveClerkEmail } from "../lib/resolveClerkEmail";
 
 export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
@@ -21,7 +22,13 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
       .then((rows) => rows[0]);
 
     if (!user) {
-      const email = auth.sessionClaims?.email as string | undefined;
+      // Clerk does not put `email` in session claims by default, so this
+      // is almost always undefined. resolveClerkEmail falls back to a
+      // backend lookup by clerk id so the seeded-row adoption branch below
+      // can actually fire for real sign-ins (otherwise everyone got a
+      // fresh blank `<clerkId>@unknown.com` row that owns nothing).
+      const claimEmail = auth.sessionClaims?.email as string | undefined;
+      const email = await resolveClerkEmail(auth.userId, claimEmail);
 
       // First-login adoption: if a pre-seeded user row exists with the same
       // email (typical for placeholder rows backfilled from legacy `owner`

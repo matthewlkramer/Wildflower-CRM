@@ -9,7 +9,8 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "backfill:derived-opps": "tsx src/scripts/backfill-derived-opp-fields.ts"
+    "backfill:derived-opps": "tsx src/scripts/backfill-derived-opp-fields.ts",
+    "reconcile:unknown-users": "tsx src/scripts/reconcile-unknown-users.ts"
   },
   "dependencies": {
     "@clerk/express": "^2.1.4",
