@@ -154,6 +154,14 @@ function ProposalList({ kind }: { kind: Kind }) {
     mutation: {
       onSuccess: () => {
         invalidate();
+        // Accepting applies arbitrary CRM mutations (set_phone,
+        // update_per_title, create_per, add_email, create_grant_opportunity,
+        // …) that can touch people, roles, funders, organizations,
+        // households, opportunities or gifts. Rather than enumerate every
+        // affected query key, refetch all active queries so the impacted
+        // record pages (e.g. the person whose phone/title just changed)
+        // reflect the change immediately instead of serving stale cache.
+        void qc.invalidateQueries();
         toast({ title: "Accepted" });
         closeNoteDialog();
       },
