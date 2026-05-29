@@ -369,6 +369,56 @@ async function applyCreatePersonWithPer(
   };
 }
 
+// Attach a current role to an entity that ALREADY exists (no entity
+// insert), deduping the (person, entity) current role. Used by the
+// cross-table dedupe branches so an org/funder action that turns out to
+// match the other table lands on the right entity.
+async function attachRoleToEntity(
+  tx: Tx,
+  args: {
+    type: ProposedAction["type"];
+    personId: string;
+    entityType: "funder" | "non_funding_organization";
+    entityIdColumn: "funderId" | "organizationId";
+    entityId: string;
+    connection?: string;
+    externalTitleOrRole?: string;
+    entityLabel: string;
+  },
+): Promise<ApplyActionResult> {
+  const existingRole = await findExistingCurrentPer(
+    tx,
+    args.personId,
+    args.entityType,
+    args.entityId,
+  );
+  if (existingRole) {
+    return {
+      type: args.type,
+      status: "skipped",
+      createdId: args.entityId,
+      message: `Role already exists (${existingRole}).`,
+    };
+  }
+  const roleId = newId();
+  await tx.insert(peopleEntityRoles).values({
+    id: roleId,
+    personId: args.personId,
+    entityType: args.entityType,
+    [args.entityIdColumn]: args.entityId,
+    connection: args.connection ?? null,
+    externalTitleOrRole: args.externalTitleOrRole ?? null,
+    current: "current",
+    primaryContact: false,
+  });
+  return {
+    type: args.type,
+    status: "applied",
+    createdId: args.entityId,
+    message: `Linked to ${args.entityLabel}; role ${roleId}.`,
+  };
+}
+
 async function applyCreateOrgWithPer(
   tx: Tx,
   a: Extract<ProposedAction, { type: "create_org_with_per" }>,
@@ -383,6 +433,28 @@ async function applyCreateOrgWithPer(
     .limit(1);
   if (!personOk) {
     return { type: a.type, status: "failed", message: `Person ${a.personId} not found.` };
+  }
+
+  // Cross-table dedupe (funder wins, mirroring reconcileCreateOrgWithPer):
+  // if a FUNDER of this name already exists, the employer is really that
+  // funder — attach the role there instead of creating a duplicate org.
+  // Guards against CRM state drift between proposal generation and accept.
+  const [crossFunder] = await tx
+    .select({ id: funders.id })
+    .from(funders)
+    .where(sql`lower(${funders.name}) = lower(${a.organizationName})`)
+    .limit(1);
+  if (crossFunder) {
+    return attachRoleToEntity(tx, {
+      type: a.type,
+      personId: a.personId,
+      entityType: "funder",
+      entityIdColumn: "funderId",
+      entityId: crossFunder.id,
+      connection: a.connection,
+      externalTitleOrRole: a.externalTitleOrRole,
+      entityLabel: `existing funder "${a.organizationName}"`,
+    });
   }
 
   // Reuse an existing org with the same name (case-insensitive) instead
@@ -471,6 +543,30 @@ async function applyCreateFunderWithPer(
     .from(funders)
     .where(sql`lower(${funders.name}) = lower(${a.funderName})`)
     .limit(1);
+
+  // Cross-table dedupe (funder wins, then org): if no funder matched but
+  // an ORGANIZATION of this name already exists, attach the role there
+  // rather than minting a duplicate entity. Guards against CRM state drift
+  // between proposal generation and accept.
+  if (!existingFunder) {
+    const [crossOrg] = await tx
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(sql`lower(${organizations.name}) = lower(${a.funderName})`)
+      .limit(1);
+    if (crossOrg) {
+      return attachRoleToEntity(tx, {
+        type: a.type,
+        personId: a.personId,
+        entityType: "non_funding_organization",
+        entityIdColumn: "organizationId",
+        entityId: crossOrg.id,
+        connection: a.connection,
+        externalTitleOrRole: a.externalTitleOrRole,
+        entityLabel: `existing organization "${a.funderName}"`,
+      });
+    }
+  }
 
   let funderId: string = existingFunder?.id ?? "";
   let createdFunder = false;
