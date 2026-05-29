@@ -2064,6 +2064,12 @@ export const ListPeopleQueryParams = zod.object({
     .describe(
       "Owner user-id values. Accepts the literal `__blank__` to match\nrows with no owner assigned.\n",
     ),
+  priority: zod
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Filter to people whose `priority` tier is in the given set\n(top\/high\/medium\/low). Multi-value: repeat or comma-separate.\nAccepts the literal `__blank__` to match rows with no priority set.\n",
+    ),
   limit: zod.coerce
     .number()
     .min(1)

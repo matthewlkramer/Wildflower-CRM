@@ -14,7 +14,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
-const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus", "ownerUserId"] as const;
+const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus", "ownerUserId", "priority"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -130,6 +130,14 @@ router.get(
       filters.push(isNull(people.ownerUserId));
     } else if (ownerFilter.values.length > 0) {
       filters.push(inArray(people.ownerUserId, ownerFilter.values));
+    }
+    const priorityFilter = splitBlank(q.priority);
+    if (priorityFilter.wantsBlank && priorityFilter.values.length > 0) {
+      filters.push(or(isNull(people.priority), inArray(people.priority, priorityFilter.values as never[]))!);
+    } else if (priorityFilter.wantsBlank) {
+      filters.push(isNull(people.priority));
+    } else if (priorityFilter.values.length > 0) {
+      filters.push(inArray(people.priority, priorityFilter.values as never[]));
     }
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([

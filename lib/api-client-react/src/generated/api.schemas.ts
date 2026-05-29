@@ -2550,6 +2550,13 @@ rows with no owner assigned.
  */
   ownerUserId?: string[];
   /**
+ * Filter to people whose `priority` tier is in the given set
+(top/high/medium/low). Multi-value: repeat or comma-separate.
+Accepts the literal `__blank__` to match rows with no priority set.
+
+ */
+  priority?: string[];
+  /**
    * @minimum 1
    * @maximum 10000
    */

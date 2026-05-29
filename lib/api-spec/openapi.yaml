@@ -531,6 +531,15 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
+        - name: priority
+          in: query
+          description: |
+            Filter to people whose `priority` tier is in the given set
+            (top/high/medium/low). Multi-value: repeat or comma-separate.
+            Accepts the literal `__blank__` to match rows with no priority set.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:

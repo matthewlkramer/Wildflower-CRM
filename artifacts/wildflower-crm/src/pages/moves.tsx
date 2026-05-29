@@ -1,11 +1,19 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
-import { useListPeople } from "@workspace/api-client-react";
+import {
+  useListPeople,
+  getListPeopleQueryKey,
+  type ListPeopleParams,
+  type Priority,
+} from "@workspace/api-client-react";
 import { personDisplayName } from "@/lib/person";
 import { formatDateShort } from "@/lib/format";
 import { useUserNameMap } from "@/components/user-picker";
 import { useRegionNameMap } from "@/components/region-picker";
+import { Badge } from "@/components/ui/badge";
+import { MultiFilterSelect } from "@/components/multi-filter-select";
+import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import {
   Table,
   TableBody,
@@ -16,12 +24,24 @@ import {
 } from "@/components/ui/table";
 
 const FETCH_LIMIT = 200;
+const PRIORITIES: Priority[] = ["top", "high", "medium", "low"];
+const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
+const PRIORITY_ORDER: Record<string, number> = { top: 4, high: 3, medium: 2, low: 1 };
 
 export default function Moves() {
-  const { data, isLoading, isError, error } = useListPeople({
+  const [owners, setOwners] = useState<string[]>([]);
+  const [priorities, setPriorities] = useState<string[]>([]);
+
+  const params: ListPeopleParams = {
     deceased: false,
     limit: FETCH_LIMIT,
     page: 1,
+    ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
+    ...(priorities.length > 0 ? { priority: [...priorities].sort() as Priority[] } : {}),
+  };
+
+  const { data, isLoading, isError, error } = useListPeople(params, {
+    query: { queryKey: getListPeopleQueryKey(params) },
   });
 
   const rows = useMemo(() => {
@@ -48,6 +68,7 @@ export default function Moves() {
           name: (r) => personDisplayName(r).toLowerCase(),
           lastContacted: (r) => r.lastContacted ?? null,
           interactions: (r) => r.interactionCount ?? null,
+          priority: (r) => (r.priority ? (PRIORITY_ORDER[r.priority] ?? 0) : null),
           owner: (r) =>
             r.ownerUserId ? (userNames.get(r.ownerUserId) ?? r.ownerUserId) : null,
           region: (r) =>
@@ -72,6 +93,22 @@ export default function Moves() {
         </p>
       </div>
 
+      <div className="flex flex-wrap items-end gap-3">
+        <OwnerMultiFilter
+          selected={owners}
+          onChange={setOwners}
+          testId="select-move-owner"
+        />
+        <MultiFilterSelect
+          label="Priority"
+          selected={priorities}
+          onChange={setPriorities}
+          options={PRIORITIES}
+          testId="select-move-priority"
+          includeBlank
+        />
+      </div>
+
       <div className="rounded-md border bg-card overflow-hidden">
         <Table>
           <TableHeader>
@@ -79,21 +116,22 @@ export default function Moves() {
               <SortableTH colKey="name" {...ts}>Name</SortableTH>
               <SortableTH colKey="lastContacted" {...ts}>Last contacted</SortableTH>
               <SortableTH colKey="interactions" align="right" {...ts}>Interactions</SortableTH>
+              <SortableTH colKey="priority" {...ts}>Priority</SortableTH>
               <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
               <SortableTH colKey="region" {...ts}>Region</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24 text-destructive">
+                <TableCell colSpan={6} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load people."}
                 </TableCell>
               </TableRow>
             ) : sortedRows.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center h-24 text-muted-foreground">No people found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">No people found.</TableCell></TableRow>
             ) : (
               sortedRows.map((p) => (
                 <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-move-${p.id}`}>
@@ -108,6 +146,13 @@ export default function Moves() {
                     )}
                   </TableCell>
                   <TableCell className="text-right">{p.interactionCount ?? "—"}</TableCell>
+                  <TableCell>
+                    {p.priority ? (
+                      <Badge variant="outline">{PRIORITY_LABEL[p.priority] ?? p.priority}</Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
                   <TableCell>
                     {p.ownerUserId
                       ? (userNames.get(p.ownerUserId) ?? p.ownerUserId)
