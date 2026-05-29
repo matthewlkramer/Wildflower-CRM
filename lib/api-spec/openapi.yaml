@@ -3694,6 +3694,9 @@ components:
           type: string
           enum: [replace, append]
           description: "replace = wipe gift_allocations rows whose grant_year is set (DESTRUCTIVE) and recreate one minimal row per FY. append = add allocations only for FYs not already present."
+        intendedUsage:
+          allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ]
+          description: "Sets the intended usage on every gift_allocations row of each gift. Existing allocation rows are updated to this value; if a gift has no allocations, one is created carrying this usage."
     BulkUpdateGiftsBody:
       type: object
       required: [ids, patch]

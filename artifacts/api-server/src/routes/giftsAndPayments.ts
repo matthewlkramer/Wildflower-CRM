@@ -10,6 +10,7 @@ import {
   emailAttachments,
   emails,
   peopleEntityRoles,
+  type NewGiftAllocation,
 } from "@workspace/db/schema";
 import { and, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { getAppUser } from "../lib/appRequest";
@@ -206,7 +207,13 @@ router.post(
       allowedFields: ["ownerUserId", "type"],
       // Allocation-set reconciliation fields — managed via extraApply
       // rather than as columns on gifts_and_payments.
-      virtualFields: ["entityIds", "entityIdsMode", "grantYears", "grantYearsMode"],
+      virtualFields: [
+        "entityIds",
+        "entityIdsMode",
+        "grantYears",
+        "grantYearsMode",
+        "intendedUsage",
+      ],
       // Reconcile gift_allocations to match the requested entityIds /
       // grantYears sets. Each virtual field is independent and only
       // touches allocation rows where that column is set; replace
@@ -219,6 +226,7 @@ router.post(
           entityIdsMode?: string;
           grantYears?: string[];
           grantYearsMode?: string;
+          intendedUsage?: NewGiftAllocation["intendedUsage"];
         };
         if (v.entityIds) {
           const mode = v.entityIdsMode === "append" ? "append" : "replace";
@@ -279,6 +287,28 @@ router.post(
               id: newId(),
               giftId: id,
               grantYear: fy,
+            });
+          }
+        }
+        // Intended usage applies to ALL of the gift's allocation rows.
+        // Update every existing row to the chosen value; if the gift has
+        // no allocation rows at all, create a single one carrying it so
+        // the value is recorded.
+        if (v.intendedUsage) {
+          const existing = await tx
+            .select({ id: giftAllocations.id })
+            .from(giftAllocations)
+            .where(eq(giftAllocations.giftId, id));
+          if (existing.length > 0) {
+            await tx
+              .update(giftAllocations)
+              .set({ intendedUsage: v.intendedUsage, updatedAt: new Date() })
+              .where(eq(giftAllocations.giftId, id));
+          } else {
+            await tx.insert(giftAllocations).values({
+              id: newId(),
+              giftId: id,
+              intendedUsage: v.intendedUsage,
             });
           }
         }

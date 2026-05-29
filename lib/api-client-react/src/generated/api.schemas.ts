@@ -2340,6 +2340,8 @@ export interface BulkUpdateGiftsPatch {
   grantYears?: string[];
   /** replace = wipe gift_allocations rows whose grant_year is set (DESTRUCTIVE) and recreate one minimal row per FY. append = add allocations only for FYs not already present. */
   grantYearsMode?: BulkUpdateGiftsPatchGrantYearsMode;
+  /** Sets the intended usage on every gift_allocations row of each gift. Existing allocation rows are updated to this value; if a gift has no allocations, one is created carrying this usage. */
+  intendedUsage?: IntendedUsage;
 }
 
 export interface BulkUpdateGiftsBody {

@@ -6160,6 +6160,18 @@ export const BulkUpdateGiftsAndPaymentsBody = zod.object({
       .describe(
         "replace = wipe gift_allocations rows whose grant_year is set (DESTRUCTIVE) and recreate one minimal row per FY. append = add allocations only for FYs not already present.",
       ),
+    intendedUsage: zod
+      .enum([
+        "gen_ops",
+        "growth",
+        "school_startup",
+        "teacher_training",
+        "project",
+      ])
+      .optional()
+      .describe(
+        "Sets the intended usage on every gift_allocations row of each gift. Existing allocation rows are updated to this value; if a gift has no allocations, one is created carrying this usage.",
+      ),
   }),
 });
 
