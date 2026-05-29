@@ -203,7 +203,20 @@ async function applyCreatePer(
     ["payment_intermediary", a.paymentIntermediaryId],
     ["household", a.householdId],
   ].filter(([, v]) => !!v) as [string, string][];
-  if (setKeys.length !== 1) {
+  if (setKeys.length === 0) {
+    // The AI proposed creating a personnel role but couldn't tie it to
+    // a funder/organization in the CRM (the entity FK is optional in
+    // the tool schema). A role row can't exist without an entity, so
+    // there's nothing to apply — skip it (don't hard-fail) so the rest
+    // of the card's actions (e.g. set_phone) still go through.
+    return {
+      type: a.type,
+      status: "skipped",
+      message:
+        "No matching organization on file, so the role wasn't created. Link the organization first, then add the role manually.",
+    };
+  }
+  if (setKeys.length > 1) {
     return {
       type: a.type,
       status: "failed",
