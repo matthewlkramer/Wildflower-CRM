@@ -547,6 +547,14 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
       tools: [ACTION_TOOL_SCHEMA as unknown as Parameters<typeof anthropic.messages.create>[0]["tools"] extends (infer U)[] | undefined ? U : never],
       tool_choice: { type: "tool", name: "propose_actions" },
       messages: [{ role: "user", content: userPrompt }],
+    }, {
+      // Bound each call so an occasional stalled request on the
+      // integration proxy can't freeze a sequential sweep (or hold an
+      // inline fire-and-forget) for the SDK's 10-minute default. On
+      // timeout the SDK retries (default maxRetries=2) and, if still
+      // unresolved, throws — recorded on the row's actions_error so the
+      // phase-D retry pass can pick it up later.
+      timeout: 60000,
     });
 
     let actions: ProposedAction[] = [];

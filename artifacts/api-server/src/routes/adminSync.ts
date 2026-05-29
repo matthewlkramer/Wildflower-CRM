@@ -14,6 +14,7 @@ import { syncUserGmail } from "../lib/gmailSync";
 import { syncUserCalendar } from "../lib/calendarSync";
 import { withSyncLock } from "../lib/syncLock";
 import { backfillIntelForUser } from "../lib/gmailBackfill";
+import { analyzePendingForUser } from "../lib/analyzePending";
 import { logger } from "../lib/logger";
 
 /**
@@ -185,6 +186,33 @@ router.post(
       logger.error({ err, userId: targetUserId }, "Backfill route: failed");
     });
     res.status(202).json({ ok: true, message: "Backfill started" });
+  }),
+);
+
+/**
+ * Gmail-free AI analysis sweep: re-run action-proposal over the user's
+ * pending, not-yet-analyzed proposals. Use after archiving + re-detection
+ * to fill in AI suggestions without a full mailbox re-pull. Fire-and-
+ * forget (202); progress is in the server logs ("analyze-pending
+ * progress"). Each row's AI call is bounded by the per-call timeout in
+ * proposeActionsForProposal, so a stalled request can't freeze the sweep.
+ */
+router.post(
+  "/admin/email-intel/:id/analyze-pending",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const targetUserId = paramId(req);
+    void analyzePendingForUser(targetUserId)
+      .then((r) =>
+        logger.info({ userId: targetUserId, ...r }, "analyze-pending complete"),
+      )
+      .catch((err) => {
+        logger.error(
+          { err, userId: targetUserId },
+          "analyze-pending route: failed",
+        );
+      });
+    res.status(202).json({ ok: true, message: "Analysis started" });
   }),
 );
 

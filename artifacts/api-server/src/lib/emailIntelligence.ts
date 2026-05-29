@@ -581,7 +581,12 @@ async function upsertProposal(args: {
   // a re-emit of the same signal doesn't re-spend tokens. Errors are
   // swallowed inside proposeActionsForProposal — they only land in
   // the row's `actionsError` column, never in the sync loop.
-  if (inserted.length > 0) {
+  // Operational escape hatch: bulk reprocessing jobs set
+  // SKIP_INLINE_ACTION_PROPOSAL=1 so detection doesn't fan out
+  // hundreds of unthrottled concurrent AI calls. Those jobs run a
+  // sequential phase-D sweep afterwards instead. Defaults to the
+  // normal inline behavior when unset.
+  if (inserted.length > 0 && process.env.SKIP_INLINE_ACTION_PROPOSAL !== "1") {
     const newProposalId = inserted[0].id;
     void proposeActionsForProposal(newProposalId).catch((err) => {
       logger.warn({ err, proposalId: newProposalId }, "proposeActionsForProposal threw");

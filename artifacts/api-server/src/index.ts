@@ -3,6 +3,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startSyncScheduler } from "./lib/syncScheduler";
 import { backfillIntelForUser } from "./lib/gmailBackfill";
+import { analyzePendingForUser } from "./lib/analyzePending";
 
 const rawPort = process.env["PORT"];
 
@@ -47,6 +48,42 @@ app.listen(port, (err) => {
       }
     } catch (err) {
       logger.warn({ err, triggerPath }, "Failed to read backfill trigger");
+    }
+  }
+
+  // One-time AI analysis sweep over a user's pending, not-yet-analyzed
+  // proposals (Gmail-free phase D). Same trigger-file + restart pattern
+  // as the backfill above: write a userId to /tmp/analyze-pending/trigger
+  // and restart. Runs in-process for the same reasons the backfill does —
+  // standalone tsx scripts die after ~10 rows and contend with the
+  // scheduler's inline AI over the shared proxy. The file is consumed on
+  // read so a later restart won't re-run.
+  const analyzeTriggerPath = "/tmp/analyze-pending/trigger";
+  if (existsSync(analyzeTriggerPath)) {
+    try {
+      const analyzeUser = readFileSync(analyzeTriggerPath, "utf8").trim();
+      unlinkSync(analyzeTriggerPath);
+      if (analyzeUser) {
+        logger.info(
+          { userId: analyzeUser },
+          "Analyze-pending trigger file found — starting in-process sweep",
+        );
+        void analyzePendingForUser(analyzeUser)
+          .then((r) =>
+            logger.info({ userId: analyzeUser, ...r }, "analyze-pending complete"),
+          )
+          .catch((err) => {
+            logger.error(
+              { err, userId: analyzeUser },
+              "In-process analyze-pending: failed",
+            );
+          });
+      }
+    } catch (err) {
+      logger.warn(
+        { err, triggerPath: analyzeTriggerPath },
+        "Failed to read analyze-pending trigger",
+      );
     }
   }
 });
