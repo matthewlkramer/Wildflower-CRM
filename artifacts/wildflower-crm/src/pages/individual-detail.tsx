@@ -552,7 +552,7 @@ function PersonView({ person }: { person: PersonDetail }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Notes</CardTitle>
+          <CardTitle>Other details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
           <Row label="Tags">

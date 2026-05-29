@@ -543,7 +543,7 @@ function OppView({
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Other details</CardTitle></CardHeader>
         <CardContent className="space-y-4 text-sm">
           <EditableNote
             label="Conditions"
