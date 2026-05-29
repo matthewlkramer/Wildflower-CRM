@@ -9,6 +9,8 @@ import {
   getListFiscalYearsQueryKey,
   useListEntities,
   getListEntitiesQueryKey,
+  useListFundableProjects,
+  getListFundableProjectsQueryKey,
 } from "@workspace/api-client-react";
 import { userDisplayName } from "@/components/user-picker";
 import { regionDisplayName, buildRegionIndex } from "@/components/region-picker";
@@ -68,6 +70,19 @@ export type BulkField =
       options: ReadonlyArray<{ value: string; label: string; destructive?: boolean }>;
     }
   | {
+      // Intended-usage enum coupled with a fundable-project picker that
+      // only appears (and is required) when the "project" usage value is
+      // chosen. The chosen project id is written under `projectKey`.
+      kind: "intended-usage";
+      key: string;
+      /** Patch key carrying the chosen fundable project id. */
+      projectKey: string;
+      label: string;
+      /** Label for the dependent project picker row. */
+      projectLabel: string;
+      options: ReadonlyArray<{ value: string; label: string }>;
+    }
+  | {
       kind: "boolean";
       key: string;
       label: string;
@@ -103,10 +118,11 @@ type FieldDraft = {
   bool: boolean; // for kind === "boolean"
   values: string[]; // for kind === "string-array"
   mode: "replace" | "append"; // for kind === "string-array"
+  projectValue: string; // for kind === "intended-usage" (fundable project id)
 };
 
 function blankDraft(): FieldDraft {
-  return { enabled: false, value: "", bool: false, values: [], mode: "append" };
+  return { enabled: false, value: "", bool: false, values: [], mode: "append", projectValue: "" };
 }
 
 export interface BulkEditDialogProps {
@@ -166,6 +182,7 @@ export function BulkEditDialog({
 
   const needsFy = fields.some((f) => f.kind === "string-array" && f.source === "fiscalYears");
   const needsEntities = fields.some((f) => f.kind === "string-array" && f.source === "entities");
+  const needsFundableProjects = fields.some((f) => f.kind === "intended-usage");
 
   // Used for owner/region select options inside the dialog.
   const { data: usersData } = useListUsers({
@@ -226,6 +243,25 @@ export function BulkEditDialog({
     [entitiesData],
   );
 
+  // Fundable projects — only fetched when an intended-usage field is
+  // present. Active projects only (retired ones can't be newly assigned
+  // in bulk), sorted by name.
+  const { data: fundableProjectsData } = useListFundableProjects({
+    query: {
+      queryKey: getListFundableProjectsQueryKey(),
+      staleTime: 5 * 60_000,
+      enabled: open && needsFundableProjects,
+    },
+  });
+  const fundableProjectOptions = useMemo(
+    () =>
+      (fundableProjectsData ?? [])
+        .filter((p) => p.active)
+        .map((p) => ({ value: p.id, label: p.name }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [fundableProjectsData],
+  );
+
   function optionsFor(source: "fiscalYears" | "entities") {
     return source === "fiscalYears" ? fyOptions : entityOptions;
   }
@@ -272,6 +308,24 @@ export function BulkEditDialog({
                 reasons.push(`${f.label} → ${opt.label}`);
               }
             }
+          }
+          break;
+        }
+        case "intended-usage": {
+          if (!d.value) {
+            return { error: `Please pick a value for ${f.label} or untick it.` };
+          }
+          patch[f.key] = d.value;
+          if (d.value === "project") {
+            if (!d.projectValue) {
+              return {
+                error: `Please pick a ${f.projectLabel.toLowerCase()} for ${f.label} = Project, or choose a different usage.`,
+              };
+            }
+            patch[f.projectKey] = d.projectValue;
+          } else {
+            // Non-project usage clears any fundable project link.
+            patch[f.projectKey] = null;
           }
           break;
         }
@@ -436,6 +490,58 @@ export function BulkEditDialog({
               ))}
             </SelectContent>
           </Select>
+        );
+        break;
+      }
+      case "intended-usage": {
+        control = (
+          <div className="space-y-2">
+            <Select
+              value={d.value || undefined}
+              onValueChange={(v) => patchDraft(f.key, { value: v })}
+              disabled={!d.enabled}
+            >
+              <SelectTrigger
+                id={id}
+                className="w-full"
+                data-testid={`bulk-select-${f.key}`}
+              >
+                <SelectValue placeholder="Pick a value…" />
+              </SelectTrigger>
+              <SelectContent>
+                {f.options.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {d.enabled && d.value === "project" && (
+              <Select
+                value={d.projectValue || undefined}
+                onValueChange={(v) => patchDraft(f.key, { projectValue: v })}
+              >
+                <SelectTrigger
+                  className="w-full"
+                  data-testid={`bulk-select-${f.projectKey}`}
+                >
+                  <SelectValue placeholder={`Pick a ${f.projectLabel.toLowerCase()}…`} />
+                </SelectTrigger>
+                <SelectContent>
+                  {fundableProjectOptions.length === 0 && (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                      No active projects
+                    </div>
+                  )}
+                  {fundableProjectOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         );
         break;
       }

@@ -2313,6 +2313,8 @@ export interface BulkUpdateOpportunitiesPatch {
   coveredFiscalYearsMode?: BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode;
   /** Sets the intended usage on every pledge_allocations row of each opportunity. Existing allocation rows are updated to this value; if an opportunity has no allocations, one is created carrying this usage. */
   intendedUsage?: IntendedUsage;
+  /** Fundable project to link on every pledge_allocations row, applied alongside intendedUsage. Only honored when intendedUsage = 'project'; for any other usage the allocations' fundable_project_id is cleared to null. */
+  fundableProjectId?: string | null;
 }
 
 export interface BulkUpdateOpportunitiesBody {
@@ -2359,6 +2361,8 @@ export interface BulkUpdateGiftsPatch {
   grantYearsMode?: BulkUpdateGiftsPatchGrantYearsMode;
   /** Sets the intended usage on every gift_allocations row of each gift. Existing allocation rows are updated to this value; if a gift has no allocations, one is created carrying this usage. */
   intendedUsage?: IntendedUsage;
+  /** Fundable project to link on every gift_allocations row, applied alongside intendedUsage. Only honored when intendedUsage = 'project'; for any other usage the allocations' fundable_project_id is cleared to null. */
+  fundableProjectId?: string | null;
 }
 
 export interface BulkUpdateGiftsBody {

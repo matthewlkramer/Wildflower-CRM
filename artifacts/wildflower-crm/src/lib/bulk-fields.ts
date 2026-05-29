@@ -219,9 +219,11 @@ export const OPPORTUNITIES_BULK_FIELDS: ReadonlyArray<BulkField> = [
     source: "fiscalYears",
   },
   {
-    kind: "enum",
+    kind: "intended-usage",
     key: "intendedUsage",
+    projectKey: "fundableProjectId",
     label: "Intended usage",
+    projectLabel: "Fundable project",
     options: [
       { value: "gen_ops", label: "Gen ops" },
       { value: "growth", label: "Growth" },
@@ -262,9 +264,11 @@ export const GIFTS_BULK_FIELDS: ReadonlyArray<BulkField> = [
     source: "fiscalYears",
   },
   {
-    kind: "enum",
+    kind: "intended-usage",
     key: "intendedUsage",
+    projectKey: "fundableProjectId",
     label: "Intended usage",
+    projectLabel: "Fundable project",
     options: [
       { value: "gen_ops", label: "Gen ops" },
       { value: "growth", label: "Growth" },

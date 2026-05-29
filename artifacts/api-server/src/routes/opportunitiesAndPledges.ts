@@ -286,7 +286,7 @@ router.post(
       // Allocation-table reconciliation fields — not columns on
       // opportunities_and_pledges, so they go through extraApply and
       // are excluded from the column SET.
-      virtualFields: ["coveredFiscalYears", "coveredFiscalYearsMode", "intendedUsage"],
+      virtualFields: ["coveredFiscalYears", "coveredFiscalYearsMode", "intendedUsage", "fundableProjectId"],
       // Donor xor is preserved (no donor fields in this patch). The
       // closed_requires_completion_date CHECK was dropped from the DB
       // schema (see opportunitiesAndPledges.ts) so won/lost no longer
@@ -320,6 +320,7 @@ router.post(
           coveredFiscalYears?: string[];
           coveredFiscalYearsMode?: string;
           intendedUsage?: NewPledgeAllocation["intendedUsage"];
+          fundableProjectId?: string | null;
         };
         const fys = v.coveredFiscalYears;
         if (fys) {
@@ -352,8 +353,13 @@ router.post(
         // Intended usage applies to ALL of the opportunity's allocation
         // rows. Update every existing row to the chosen value; if the opp
         // has no allocation rows at all, create a single one carrying it
-        // so the value is recorded. Mirrors the gifts route.
+        // so the value is recorded. Mirrors the gifts route. The fundable
+        // project link is only meaningful for usage = 'project': set it on
+        // every row in that case, and clear it (null) for any other usage
+        // so stale links don't linger.
         if (v.intendedUsage) {
+          const fundableProjectId =
+            v.intendedUsage === "project" ? (v.fundableProjectId ?? null) : null;
           const existing = await tx
             .select({ id: pledgeAllocations.id })
             .from(pledgeAllocations)
@@ -361,13 +367,18 @@ router.post(
           if (existing.length > 0) {
             await tx
               .update(pledgeAllocations)
-              .set({ intendedUsage: v.intendedUsage, updatedAt: new Date() })
+              .set({
+                intendedUsage: v.intendedUsage,
+                fundableProjectId,
+                updatedAt: new Date(),
+              })
               .where(eq(pledgeAllocations.pledgeOrOpportunityId, id));
           } else {
             await tx.insert(pledgeAllocations).values({
               id: newId(),
               pledgeOrOpportunityId: id,
               intendedUsage: v.intendedUsage,
+              fundableProjectId,
             });
           }
         }

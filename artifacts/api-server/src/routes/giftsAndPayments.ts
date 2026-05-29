@@ -213,6 +213,7 @@ router.post(
         "grantYears",
         "grantYearsMode",
         "intendedUsage",
+        "fundableProjectId",
       ],
       // Reconcile gift_allocations to match the requested entityIds /
       // grantYears sets. Each virtual field is independent and only
@@ -227,6 +228,7 @@ router.post(
           grantYears?: string[];
           grantYearsMode?: string;
           intendedUsage?: NewGiftAllocation["intendedUsage"];
+          fundableProjectId?: string | null;
         };
         if (v.entityIds) {
           const mode = v.entityIdsMode === "append" ? "append" : "replace";
@@ -293,8 +295,13 @@ router.post(
         // Intended usage applies to ALL of the gift's allocation rows.
         // Update every existing row to the chosen value; if the gift has
         // no allocation rows at all, create a single one carrying it so
-        // the value is recorded.
+        // the value is recorded. The fundable project link is only
+        // meaningful for usage = 'project': set it on every row in that
+        // case, and clear it (null) for any other usage so stale links
+        // don't linger.
         if (v.intendedUsage) {
+          const fundableProjectId =
+            v.intendedUsage === "project" ? (v.fundableProjectId ?? null) : null;
           const existing = await tx
             .select({ id: giftAllocations.id })
             .from(giftAllocations)
@@ -302,13 +309,18 @@ router.post(
           if (existing.length > 0) {
             await tx
               .update(giftAllocations)
-              .set({ intendedUsage: v.intendedUsage, updatedAt: new Date() })
+              .set({
+                intendedUsage: v.intendedUsage,
+                fundableProjectId,
+                updatedAt: new Date(),
+              })
               .where(eq(giftAllocations.giftId, id));
           } else {
             await tx.insert(giftAllocations).values({
               id: newId(),
               giftId: id,
               intendedUsage: v.intendedUsage,
+              fundableProjectId,
             });
           }
         }
