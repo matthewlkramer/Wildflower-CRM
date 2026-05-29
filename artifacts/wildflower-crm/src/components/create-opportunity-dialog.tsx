@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import {
-  useCreateGiftOrPayment,
-  getListGiftsAndPaymentsQueryKey,
-  type CreateGiftOrPaymentBody,
+  useCreateOpportunityOrPledge,
+  getListOpportunitiesAndPledgesQueryKey,
+  type CreateOpportunityOrPledgeBody,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -26,33 +26,40 @@ import { Label } from "@/components/ui/label";
  * Exactly one of funderId / householdId / individualGiverPersonId is set,
  * mirroring the donor XOR invariant enforced by the API/DB.
  */
-function donorFields(scope: LinkedRecordsScope): Partial<CreateGiftOrPaymentBody> {
+function donorFields(scope: LinkedRecordsScope): Partial<CreateOpportunityOrPledgeBody> {
   if ("funderId" in scope) return { funderId: scope.funderId };
   if ("householdId" in scope) return { householdId: scope.householdId };
   return { individualGiverPersonId: scope.individualGiverPersonId };
 }
 
-export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
+export function CreateOpportunityDialog({
+  scope,
+  mode,
+}: {
+  scope: LinkedRecordsScope;
+  mode: "opportunity" | "pledge";
+}) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [amount, setAmount] = useState("");
-  const [dateReceived, setDateReceived] = useState("");
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const isPledge = mode === "pledge";
 
-  const create = useCreateGiftOrPayment({
+  const create = useCreateOpportunityOrPledge({
     mutation: {
       onSuccess: async (created) => {
         await queryClient.invalidateQueries({
-          queryKey: getListGiftsAndPaymentsQueryKey(),
+          queryKey: getListOpportunitiesAndPledgesQueryKey(),
         });
-        toast({ title: "Gift created" });
+        toast({ title: isPledge ? "Pledge created" : "Opportunity created" });
         setOpen(false);
         setName("");
-        setAmount("");
-        setDateReceived("");
-        if (created?.id) navigate(`/gifts/${created.id}`);
+        if (created?.id) {
+          navigate(
+            isPledge ? `/pledges/${created.id}` : `/opportunities/${created.id}`,
+          );
+        }
       },
       onError: (err: unknown) => {
         toast({
@@ -74,13 +81,17 @@ export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
       }}
     >
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" data-testid="button-new-gift">
-          New gift
+        <Button
+          size="sm"
+          variant="outline"
+          data-testid={isPledge ? "button-new-pledge" : "button-new-opportunity"}
+        >
+          {isPledge ? "New pledge" : "New opportunity"}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New gift</DialogTitle>
+          <DialogTitle>{isPledge ? "New pledge" : "New opportunity"}</DialogTitle>
           <DialogDescription>
             You can fill in the rest of the details after creating it.
           </DialogDescription>
@@ -89,51 +100,25 @@ export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
           onSubmit={(e) => {
             e.preventDefault();
             if (!trimmed) return;
-            const amt = amount.trim();
-            const date = dateReceived.trim();
             create.mutate({
               data: {
                 name: trimmed,
                 ...donorFields(scope),
-                ...(amt ? { amount: amt } : {}),
-                ...(date ? { dateReceived: date } : {}),
+                ...(isPledge ? { wasPledge: true } : {}),
               },
             });
           }}
           className="space-y-3"
         >
           <div className="space-y-1.5">
-            <Label htmlFor="new-gift-name">Name</Label>
+            <Label htmlFor="new-opportunity-name">Name</Label>
             <Input
-              id="new-gift-name"
+              id="new-opportunity-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoFocus
               required
-              data-testid="input-new-gift-name"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="new-gift-amount">Amount</Label>
-            <Input
-              id="new-gift-amount"
-              type="number"
-              step="0.01"
-              min="0"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="Optional"
-              data-testid="input-new-gift-amount"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="new-gift-date">Date received</Label>
-            <Input
-              id="new-gift-date"
-              type="date"
-              value={dateReceived}
-              onChange={(e) => setDateReceived(e.target.value)}
-              data-testid="input-new-gift-date"
+              data-testid="input-new-opportunity-name"
             />
           </div>
           <DialogFooter>
@@ -148,7 +133,7 @@ export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
             <Button
               type="submit"
               disabled={!trimmed || create.isPending}
-              data-testid="button-create-gift"
+              data-testid="button-create-opportunity"
             >
               {create.isPending ? "Creating…" : "Create"}
             </Button>

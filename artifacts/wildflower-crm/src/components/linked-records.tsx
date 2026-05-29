@@ -10,6 +10,8 @@ import {
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { GiftFormDialog } from "@/components/gift-form-dialog";
+import { CreateOpportunityDialog } from "@/components/create-opportunity-dialog";
 import {
   Table,
   TableBody,
@@ -62,9 +64,12 @@ export function LinkedGiftsCard({ scope }: { scope: LinkedRecordsScope }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <CardTitle>Gifts &amp; payments</CardTitle>
-        <span className="text-xs text-muted-foreground">
-          {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground">
+            {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
+          </span>
+          <GiftFormDialog scope={scope} />
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {isError ? (
@@ -155,9 +160,15 @@ export function LinkedOpportunitiesCard({
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <CardTitle>{title}</CardTitle>
-        <span className="text-xs text-muted-foreground">
-          {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground">
+            {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
+          </span>
+          <CreateOpportunityDialog
+            scope={scope}
+            mode={isPledgeView ? "pledge" : "opportunity"}
+          />
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {isError ? (
