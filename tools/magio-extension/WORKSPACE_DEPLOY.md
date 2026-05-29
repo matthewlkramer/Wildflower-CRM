@@ -28,9 +28,18 @@ Just add or remove the user from the `wildflower-crm-users` group in admin.googl
 ## Publishing updates
 
 1. Bump the `version` field in `tools/magio-extension/package.json`.
-2. Run `pnpm build` and zip the `build/chrome-mv3-prod/` folder.
+2. Build **against the production CRM domain** and package the zip:
+   ```bash
+   cd tools/magio-extension
+   PLASMO_PUBLIC_API_URL=https://wfcrm.replit.app pnpm build
+   PLASMO_PUBLIC_API_URL=https://wfcrm.replit.app pnpm package
+   # zip lands at build/chrome-mv3-prod.zip (rename as desired)
+   ```
+   Skipping `PLASMO_PUBLIC_API_URL` makes the build fall back to `http://localhost:3000`, which breaks all tracking on recipients' machines.
 3. Upload the new zip to the Chrome Web Store developer dashboard for this item.
 4. Submit for review. Once approved (usually <24h for an update to an existing unlisted item), Chrome will auto-update for all 10 users within ~24h, no admin action required.
+
+The current uploadable build is **v1.0.1**, pointed at `https://wfcrm.replit.app`, at `tools/magio-extension/build/wildflower-tracking-extension.zip`.
 
 ## Troubleshooting
 
