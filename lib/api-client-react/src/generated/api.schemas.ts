@@ -2311,6 +2311,8 @@ export interface BulkUpdateOpportunitiesPatch {
   coveredFiscalYears?: string[];
   /** replace = wipe existing pledge_allocations on each opp and recreate one minimal row per FY (DESTRUCTIVE: loses subAmount/intendedUsage on those rows). append = add allocations only for FYs not already present. */
   coveredFiscalYearsMode?: BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode;
+  /** Sets the intended usage on every pledge_allocations row of each opportunity. Existing allocation rows are updated to this value; if an opportunity has no allocations, one is created carrying this usage. */
+  intendedUsage?: IntendedUsage;
 }
 
 export interface BulkUpdateOpportunitiesBody {

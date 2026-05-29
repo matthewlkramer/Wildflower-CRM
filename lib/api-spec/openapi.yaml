@@ -3715,6 +3715,9 @@ components:
           type: string
           enum: [replace, append]
           description: "replace = wipe existing pledge_allocations on each opp and recreate one minimal row per FY (DESTRUCTIVE: loses subAmount/intendedUsage on those rows). append = add allocations only for FYs not already present."
+        intendedUsage:
+          allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ]
+          description: "Sets the intended usage on every pledge_allocations row of each opportunity. Existing allocation rows are updated to this value; if an opportunity has no allocations, one is created carrying this usage."
     BulkUpdateOpportunitiesBody:
       type: object
       required: [ids, patch]

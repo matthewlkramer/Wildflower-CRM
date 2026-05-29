@@ -218,6 +218,18 @@ export const OPPORTUNITIES_BULK_FIELDS: ReadonlyArray<BulkField> = [
     label: "Covered fiscal years",
     source: "fiscalYears",
   },
+  {
+    kind: "enum",
+    key: "intendedUsage",
+    label: "Intended usage",
+    options: [
+      { value: "gen_ops", label: "Gen ops" },
+      { value: "growth", label: "Growth" },
+      { value: "school_startup", label: "School startup" },
+      { value: "teacher_training", label: "Teacher training" },
+      { value: "project", label: "Project" },
+    ],
+  },
 ];
 
 export const GIFTS_BULK_FIELDS: ReadonlyArray<BulkField> = [

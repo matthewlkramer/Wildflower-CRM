@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
-import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, funders, households, people, tasks } from "@workspace/db/schema";
+import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, funders, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
 import { alias } from "drizzle-orm/pg-core";
 import { and, count, desc, eq, exists, getTableColumns, ilike, inArray, isNull, notExists, or, sql, type SQL } from "drizzle-orm";
 
@@ -283,10 +283,10 @@ router.post(
       table: opportunitiesAndPledges,
       bodySchema: BulkUpdateOpportunitiesAndPledgesBody,
       allowedFields: ["ownerUserId", "status", "stage", "type", "wasPledge", "isConditional", "actualCompletionDate"],
-      // Allocation-table reconciliation field — not a column on
-      // opportunities_and_pledges, so it goes through extraApply and
-      // is excluded from the column SET.
-      virtualFields: ["coveredFiscalYears", "coveredFiscalYearsMode"],
+      // Allocation-table reconciliation fields — not columns on
+      // opportunities_and_pledges, so they go through extraApply and
+      // are excluded from the column SET.
+      virtualFields: ["coveredFiscalYears", "coveredFiscalYearsMode", "intendedUsage"],
       // Donor xor is preserved (no donor fields in this patch). The
       // closed_requires_completion_date CHECK was dropped from the DB
       // schema (see opportunitiesAndPledges.ts) so won/lost no longer
@@ -316,36 +316,60 @@ router.post(
       // — loses subAmount/intendedUsage/etc on those rows). Append =
       // insert allocations only for FYs not already represented.
       extraApply: async (tx, id, vp) => {
-        const fys = (vp as { coveredFiscalYears?: string[] }).coveredFiscalYears;
-        if (!fys) return;
-        const mode =
-          (vp as { coveredFiscalYearsMode?: string }).coveredFiscalYearsMode ===
-          "append"
-            ? "append"
-            : "replace";
-        if (mode === "replace") {
-          await tx
-            .delete(pledgeAllocations)
-            .where(eq(pledgeAllocations.pledgeOrOpportunityId, id));
+        const v = vp as {
+          coveredFiscalYears?: string[];
+          coveredFiscalYearsMode?: string;
+          intendedUsage?: NewPledgeAllocation["intendedUsage"];
+        };
+        const fys = v.coveredFiscalYears;
+        if (fys) {
+          const mode = v.coveredFiscalYearsMode === "append" ? "append" : "replace";
+          if (mode === "replace") {
+            await tx
+              .delete(pledgeAllocations)
+              .where(eq(pledgeAllocations.pledgeOrOpportunityId, id));
+          }
+          const existingFys =
+            mode === "append"
+              ? (
+                  await tx
+                    .select({ y: pledgeAllocations.grantYear })
+                    .from(pledgeAllocations)
+                    .where(eq(pledgeAllocations.pledgeOrOpportunityId, id))
+                )
+                  .map((r: { y: string | null }) => r.y)
+                  .filter((y: string | null): y is string => !!y)
+              : [];
+          const toInsert = fys.filter((fy) => !existingFys.includes(fy));
+          for (const fy of toInsert) {
+            await tx.insert(pledgeAllocations).values({
+              id: newId(),
+              pledgeOrOpportunityId: id,
+              grantYear: fy,
+            });
+          }
         }
-        const existingFys =
-          mode === "append"
-            ? (
-                await tx
-                  .select({ y: pledgeAllocations.grantYear })
-                  .from(pledgeAllocations)
-                  .where(eq(pledgeAllocations.pledgeOrOpportunityId, id))
-              )
-                .map((r: { y: string | null }) => r.y)
-                .filter((y: string | null): y is string => !!y)
-            : [];
-        const toInsert = fys.filter((fy) => !existingFys.includes(fy));
-        for (const fy of toInsert) {
-          await tx.insert(pledgeAllocations).values({
-            id: newId(),
-            pledgeOrOpportunityId: id,
-            grantYear: fy,
-          });
+        // Intended usage applies to ALL of the opportunity's allocation
+        // rows. Update every existing row to the chosen value; if the opp
+        // has no allocation rows at all, create a single one carrying it
+        // so the value is recorded. Mirrors the gifts route.
+        if (v.intendedUsage) {
+          const existing = await tx
+            .select({ id: pledgeAllocations.id })
+            .from(pledgeAllocations)
+            .where(eq(pledgeAllocations.pledgeOrOpportunityId, id));
+          if (existing.length > 0) {
+            await tx
+              .update(pledgeAllocations)
+              .set({ intendedUsage: v.intendedUsage, updatedAt: new Date() })
+              .where(eq(pledgeAllocations.pledgeOrOpportunityId, id));
+          } else {
+            await tx.insert(pledgeAllocations).values({
+              id: newId(),
+              pledgeOrOpportunityId: id,
+              intendedUsage: v.intendedUsage,
+            });
+          }
         }
       },
     });

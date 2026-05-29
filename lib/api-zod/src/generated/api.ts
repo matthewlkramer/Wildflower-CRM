@@ -6155,6 +6155,18 @@ export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
       .describe(
         "replace = wipe existing pledge_allocations on each opp and recreate one minimal row per FY (DESTRUCTIVE: loses subAmount\/intendedUsage on those rows). append = add allocations only for FYs not already present.",
       ),
+    intendedUsage: zod
+      .enum([
+        "gen_ops",
+        "growth",
+        "school_startup",
+        "teacher_training",
+        "project",
+      ])
+      .optional()
+      .describe(
+        "Sets the intended usage on every pledge_allocations row of each opportunity. Existing allocation rows are updated to this value; if an opportunity has no allocations, one is created carrying this usage.",
+      ),
   }),
 });
 
