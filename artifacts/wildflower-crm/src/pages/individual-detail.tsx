@@ -104,6 +104,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { DerivedRow } from "@/components/derived-row";
 
 export default function IndividualDetail() {
   const [, params] = useRoute("/individuals/:id");
@@ -293,8 +294,12 @@ function PersonView({ person }: { person: PersonDetail }) {
             <CardTitle className="text-lg">Engagement</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row label="Last contacted">{formatDate(person.lastContacted)}</Row>
-            <Row label="Interactions">{person.interactionCount ?? "—"}</Row>
+            <DerivedRow label="Last contacted" hint="derived from interactions">
+              {formatDate(person.lastContacted)}
+            </DerivedRow>
+            <DerivedRow label="Interactions" hint="derived from interactions">
+              {person.interactionCount ?? "—"}
+            </DerivedRow>
             <Row label="Owner">
               <InlineEditUserPicker testIdBase="person-owner"
                 value={person.ownerUserId ?? null}

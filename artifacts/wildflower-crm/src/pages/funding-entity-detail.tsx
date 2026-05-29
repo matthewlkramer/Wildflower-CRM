@@ -126,6 +126,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { DerivedRow } from "@/components/derived-row";
 
 export default function FundingEntityDetail() {
   const [, params] = useRoute("/funding-entities/:id");
@@ -393,7 +394,9 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                 onSave={(next) => patch({ orgEmail: next })}
               />
             </Row>
-            <Row label="Domain">{funder.emailDomain ?? "—"}</Row>
+            <DerivedRow label="Domain" hint="derived from email">
+              {funder.emailDomain ?? "—"}
+            </DerivedRow>
             <Row label="LinkedIn">
               <InlineEditText
                 label="LinkedIn"

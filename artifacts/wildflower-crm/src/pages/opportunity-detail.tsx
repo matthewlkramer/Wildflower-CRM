@@ -79,6 +79,7 @@ const CONDITIONAL_OPTIONS = [
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DerivedRow } from "@/components/derived-row";
 
 type Props = {
   routePattern?: string;
@@ -708,26 +709,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex items-baseline justify-between gap-2">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span className="text-right">{children}</span>
-    </div>
-  );
-}
-
-function DerivedRow({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="flex flex-col">
-        <span className="text-xs font-medium text-muted-foreground">{label}</span>
-        <span className="text-[10px] italic text-muted-foreground/70">{hint}</span>
-      </span>
-      <span className="text-right text-muted-foreground">{children}</span>
     </div>
   );
 }
