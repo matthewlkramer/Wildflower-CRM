@@ -3,13 +3,15 @@ import {
   emailProposals,
   emails as emailsTable,
   funders,
+  households,
   organizations,
+  paymentIntermediaries,
   people,
   peopleEntityRoles,
   phoneNumbers,
   type EmailProposal,
 } from "@workspace/db/schema";
-import { and, eq, ilike, or, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { deadlineHasPassed } from "./intelDetectors";
 import { logger } from "./logger";
@@ -64,6 +66,10 @@ export type ProposedAction =
       organizationId?: string;
       paymentIntermediaryId?: string;
       householdId?: string;
+      // Display-only: human-readable name of the linked entity, set by
+      // reconcileCreateOrgWithPer so the review UI can show the entity
+      // name instead of a raw id. Not used when applying.
+      entityName?: string;
       connection?:
         | "employee"
         | "principal"
@@ -561,6 +567,7 @@ async function reconcileCreateOrgWithPer(
         type: "create_per",
         personId: action.personId,
         funderId: funderMatch.id,
+        entityName: name,
         connection: action.connection,
         externalTitleOrRole: action.externalTitleOrRole,
         reason: `${action.reason} (linked to existing funder "${name}" already in CRM)`,
@@ -577,6 +584,7 @@ async function reconcileCreateOrgWithPer(
         type: "create_per",
         personId: action.personId,
         organizationId: orgMatch.id,
+        entityName: name,
         connection: action.connection,
         externalTitleOrRole: action.externalTitleOrRole,
         reason: `${action.reason} (linked to existing organization "${name}" already in CRM)`,
@@ -604,6 +612,61 @@ async function reconcileCreateOrgWithPer(
     out.push(action);
   }
   return out;
+}
+
+// Fill the display-only `entityName` on every create_per that links an
+// existing funder / organization / payment intermediary / household by id,
+// so the review UI shows the entity name instead of a raw record id.
+// Batched one query per entity type. Ids that no longer resolve are left
+// without a name (the UI falls back to the id).
+async function enrichCreatePerEntityNames(
+  actions: ProposedAction[],
+): Promise<ProposedAction[]> {
+  const creates = actions.filter(
+    (a): a is Extract<ProposedAction, { type: "create_per" }> =>
+      a.type === "create_per",
+  );
+  if (creates.length === 0) return actions;
+
+  const ids = {
+    funder: new Set<string>(),
+    organization: new Set<string>(),
+    paymentIntermediary: new Set<string>(),
+    household: new Set<string>(),
+  };
+  for (const a of creates) {
+    if (a.funderId) ids.funder.add(a.funderId);
+    else if (a.organizationId) ids.organization.add(a.organizationId);
+    else if (a.paymentIntermediaryId) ids.paymentIntermediary.add(a.paymentIntermediaryId);
+    else if (a.householdId) ids.household.add(a.householdId);
+  }
+
+  const nameOf = new Map<string, string>();
+  const load = async (
+    set: Set<string>,
+    table: typeof funders | typeof organizations | typeof paymentIntermediaries | typeof households,
+  ) => {
+    if (set.size === 0) return;
+    const rows = await db
+      .select({ id: table.id, name: table.name })
+      .from(table)
+      .where(inArray(table.id, [...set]));
+    for (const r of rows) if (r.name) nameOf.set(r.id, r.name);
+  };
+  await Promise.all([
+    load(ids.funder, funders),
+    load(ids.organization, organizations),
+    load(ids.paymentIntermediary, paymentIntermediaries),
+    load(ids.household, households),
+  ]);
+
+  return actions.map((a) => {
+    if (a.type !== "create_per") return a;
+    const id =
+      a.funderId ?? a.organizationId ?? a.paymentIntermediaryId ?? a.householdId;
+    const name = id ? nameOf.get(id) : undefined;
+    return name ? { ...a, entityName: name } : a;
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -871,6 +934,13 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
     // otherwise an organization match (rewrite to create_per on
     // organizationId). No match keeps the create-org action as proposed.
     actions = await reconcileCreateOrgWithPer(actions);
+
+    // Resolve a human-readable entityName for every create_per that links
+    // an existing funder/org/intermediary/household by id, so the review UI
+    // can show the entity name instead of a raw record id. Covers both
+    // model-emitted create_per (ids drawn from context) and the
+    // reconciler-rewritten ones.
+    actions = await enrichCreatePerEntityNames(actions);
 
     // Belt-and-suspenders: deterministically drop any grant opportunity
     // whose application deadline is already in the past relative to

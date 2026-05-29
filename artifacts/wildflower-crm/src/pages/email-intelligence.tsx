@@ -455,11 +455,12 @@ function describeAction(a: ProposedActionView): string {
     case "deactivate_per":
       return `Mark current role inactive (role id ${s("perId") ?? "?"})`;
     case "create_per": {
+      const named = s("entityName");
       const where =
-        s("funderId") ? `funder ${s("funderId")}` :
-        s("organizationId") ? `organization ${s("organizationId")}` :
-        s("paymentIntermediaryId") ? `payment intermediary ${s("paymentIntermediaryId")}` :
-        s("householdId") ? `household ${s("householdId")}` : "(entity?)";
+        s("funderId") ? `funder ${named ? `"${named}"` : s("funderId")}` :
+        s("organizationId") ? `organization ${named ? `"${named}"` : s("organizationId")}` :
+        s("paymentIntermediaryId") ? `payment intermediary ${named ? `"${named}"` : s("paymentIntermediaryId")}` :
+        s("householdId") ? `household ${named ? `"${named}"` : s("householdId")}` : "(entity?)";
       return `Add new role at ${where}${s("externalTitleOrRole") ? ` as "${s("externalTitleOrRole")}"` : ""}`;
     }
     case "create_person_with_per": {
