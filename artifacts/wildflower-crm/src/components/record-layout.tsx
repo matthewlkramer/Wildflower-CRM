@@ -348,12 +348,14 @@ export function AffiliationRow({
   role,
   status,
   primary,
+  hideStatusBadge,
 }: {
   name: ReactNode;
   href?: string;
   role?: ReactNode;
   status?: "active" | "past";
   primary?: boolean;
+  hideStatusBadge?: boolean;
 }) {
   const past = status === "past";
   const nameNode = href ? (
@@ -387,7 +389,7 @@ export function AffiliationRow({
             Primary
           </Badge>
         ) : null}
-        {status ? (
+        {status && !hideStatusBadge ? (
           past ? (
             <Badge variant="outline" className="text-[10px]">
               Past

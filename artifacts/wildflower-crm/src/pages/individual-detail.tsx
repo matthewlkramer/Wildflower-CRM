@@ -1017,22 +1017,16 @@ function RoleRow({ role: r }: { role: PeopleEntityRole }) {
       data-testid={`row-person-role-${r.id}`}
     >
       <span className="truncate">
-        {r.externalTitleOrRole ?? formatEnum(r.entityType)}
-        {entityLabel ? (
-          <>
-            {" @ "}
-            {entityHref ? (
-              <Link href={entityHref} className="text-primary hover:underline">
-                {entityLabel}
-              </Link>
-            ) : (
-              entityLabel
-            )}
-          </>
-        ) : null}
+        {entityHref ? (
+          <Link href={entityHref} className="text-primary hover:underline">
+            {entityLabel ?? formatEnum(r.entityType)}
+          </Link>
+        ) : (
+          (entityLabel ?? formatEnum(r.entityType))
+        )}
       </span>
       <span className="text-muted-foreground text-xs whitespace-nowrap">
-        {formatEnum(r.connection)}
+        {r.externalTitleOrRole ?? formatEnum(r.connection)}
         {r.current && r.current !== "current"
           ? ` (${formatEnum(r.current)})`
           : ""}
@@ -1170,6 +1164,7 @@ function HouseholdMembers({
           role={m.externalTitleOrRole ?? formatEnum(m.connection)}
           status={m.current === "current" ? "active" : "past"}
           primary={m.primaryContact}
+          hideStatusBadge
         />
       ))}
     </>
@@ -1258,6 +1253,7 @@ function ColleagueMembers({
             role={roleLine}
             status={isCurrent ? "active" : "past"}
             primary={m.primaryContact}
+            hideStatusBadge
           />
         );
       })}
