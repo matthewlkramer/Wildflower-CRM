@@ -76,7 +76,7 @@ export function RecordLayout({
         </div>
 
         {highlights.length > 0 ? (
-          <div className="mt-4 grid grid-cols-2 divide-x divide-y border-t sm:grid-cols-3 lg:grid-cols-5 lg:divide-y-0">
+          <div className="mt-4 grid grid-cols-2 divide-x divide-y border-t sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
             {highlights.map((h, i) => (
               <div key={i} className="px-5 py-3">
                 <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
