@@ -29,6 +29,7 @@ import {
   PhoneNumbersEditor,
 } from "@/components/contact-info-editor";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
+import { PinnedMediaCard } from "@/components/media-mentions-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import {
   LinkedGiftsCard,
@@ -775,6 +776,7 @@ function PersonView({ person }: { person: PersonDetail }) {
       }
       right={
         <>
+          <PinnedMediaCard personId={person.id} />
           <LinkedOpportunitiesCard
             scope={{ individualGiverPersonId: person.id }}
             title="Open opportunities"

@@ -5,6 +5,7 @@ import {
   CreateOpportunityOrPledgeBody,
   CreateGiftOrPaymentBody,
   CreateMeetingNoteBody,
+  CreateMediaMentionBody,
 } from "./generated/api";
 
 /**
@@ -158,5 +159,62 @@ export const CreateMeetingNoteBodyRefined =
           message: "Provide either transcript or summary, not both.",
         });
       }
+    },
+  );
+
+/**
+ * Media-mention field invariants that OpenAPI/zod schemas can't express:
+ *   - aiSummary must be <= 100 words (product requirement for AI summaries)
+ *   - url must be an absolute http(s) URL — blocks javascript:/data: links that
+ *     would otherwise be rendered into an <a href> as a stored-XSS vector.
+ * Mirrors the route-level validation pattern used for opps/gifts/meeting notes.
+ * PATCH routes must validate the MERGED post-update state.
+ */
+export const MEDIA_AI_SUMMARY_MAX_WORDS = 100;
+export const MEDIA_AI_SUMMARY_MESSAGE = `AI summary must be ${MEDIA_AI_SUMMARY_MAX_WORDS} words or fewer.`;
+export const MEDIA_URL_MESSAGE = "URL must be an absolute http(s) URL.";
+
+export interface MediaMentionFieldState {
+  aiSummary?: string | null;
+  url?: string | null;
+}
+
+function wordCount(s: string): number {
+  const trimmed = s.trim();
+  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
+}
+
+// Cross-environment (no DOM/node URL global): require an absolute http(s)
+// scheme. Rejects javascript:/data:/mailto: etc. so a stored value is always
+// safe to drop into an <a href>. Trim first so a leading-whitespace value
+// (which browsers strip before resolving the scheme) can't sneak past.
+export function isHttpUrl(value: string): boolean {
+  return /^https?:\/\/\S+$/i.test(value.trim());
+}
+
+export function validateMediaMentionInvariants(
+  state: MediaMentionFieldState,
+): InvariantIssue[] {
+  const issues: InvariantIssue[] = [];
+  if (
+    state.aiSummary != null &&
+    wordCount(state.aiSummary) > MEDIA_AI_SUMMARY_MAX_WORDS
+  ) {
+    issues.push({ path: "aiSummary", message: MEDIA_AI_SUMMARY_MESSAGE });
+  }
+  if (
+    state.url != null &&
+    state.url.length > 0 &&
+    !isHttpUrl(state.url)
+  ) {
+    issues.push({ path: "url", message: MEDIA_URL_MESSAGE });
+  }
+  return issues;
+}
+
+export const CreateMediaMentionBodyRefined =
+  CreateMediaMentionBody.superRefine(
+    (b: z.infer<typeof CreateMediaMentionBody>, ctx) => {
+      issuesToZodCtx(validateMediaMentionInvariants(b), ctx);
     },
   );

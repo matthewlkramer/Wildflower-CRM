@@ -4799,6 +4799,112 @@ export const DeleteNoteParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const listMediaMentionsQueryLimitDefault = 50;
+export const listMediaMentionsQueryLimitMax = 10000;
+
+export const listMediaMentionsQueryPageDefault = 1;
+
+export const ListMediaMentionsQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  personId: zod.coerce.string().optional(),
+  funderId: zod.coerce.string().optional(),
+  pinned: zod.coerce
+    .boolean()
+    .optional()
+    .describe("Filter to pinned (true) or unpinned (false) mentions."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listMediaMentionsQueryLimitMax)
+    .default(listMediaMentionsQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listMediaMentionsQueryPageDefault),
+});
+
+export const ListMediaMentionsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      publicationName: zod.string(),
+      author: zod.string().nullish(),
+      publicationDate: zod.string().date().nullish(),
+      url: zod.string(),
+      aiSummary: zod.string().nullish(),
+      pinned: zod.boolean(),
+      personIds: zod.array(zod.string()).nullish(),
+      funderIds: zod.array(zod.string()).nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const CreateMediaMentionBody = zod.object({
+  publicationName: zod.string().min(1),
+  author: zod.string().optional(),
+  publicationDate: zod.string().date().optional(),
+  url: zod.string().min(1),
+  aiSummary: zod.string().optional(),
+  pinned: zod.boolean().optional(),
+  personIds: zod.array(zod.string()).optional(),
+  funderIds: zod.array(zod.string()).optional(),
+});
+
+export const GetMediaMentionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetMediaMentionResponse = zod.object({
+  id: zod.string(),
+  publicationName: zod.string(),
+  author: zod.string().nullish(),
+  publicationDate: zod.string().date().nullish(),
+  url: zod.string(),
+  aiSummary: zod.string().nullish(),
+  pinned: zod.boolean(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UpdateMediaMentionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateMediaMentionBody = zod.object({
+  publicationName: zod.string().min(1).optional(),
+  author: zod.string().nullish(),
+  publicationDate: zod.string().date().nullish(),
+  url: zod.string().min(1).optional(),
+  aiSummary: zod.string().nullish(),
+  pinned: zod.boolean().optional(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+});
+
+export const UpdateMediaMentionResponse = zod.object({
+  id: zod.string(),
+  publicationName: zod.string(),
+  author: zod.string().nullish(),
+  publicationDate: zod.string().date().nullish(),
+  url: zod.string(),
+  aiSummary: zod.string().nullish(),
+  pinned: zod.boolean(),
+  personIds: zod.array(zod.string()).nullish(),
+  funderIds: zod.array(zod.string()).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const DeleteMediaMentionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
 export const listTasksQueryLimitDefault = 50;
 export const listTasksQueryLimitMax = 10000;
 

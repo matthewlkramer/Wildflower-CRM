@@ -1,5 +1,7 @@
 - [wildflower-crm detail routes](wildflower-crm-routes.md) — funders live at /funding-entities, not /funders; pledge detail inherits opportunity.
 - [wildflower-crm activity feed scoping](wildflower-activity-feed-scoping.md) — keep notes/tasks scope separate from donor-relationship scope; API list filters AND together.
+- [api-server runs a built bundle](wildflower-api-server-build.md) — schema/DB drift (e.g. "column X does not exist" 500) may be a stale build; restart rebuilds, check newest log.
+- [api-zod must stay env-neutral](api-zod-cross-env.md) — imported by server AND browser; no URL/node/DOM globals; validate via pure regex + superRefine, PATCH re-validates merged state.
 - [wildflower email/calendar HTML entities](wildflower-html-entities.md) — Gmail/Calendar/Airtable text is HTML-escaped; decode at render via decodeHtmlEntities, not user-authored content.
 - [Donor XOR across split pickers](wildflower-donor-xor-pickers.md) — per-type donor pickers must send all 3 FK fields (null the rest) + allowNull=false to keep exactly-one invariant.
 - [e2e test users pollute owner filter](wildflower-test-user-pollution.md) — testClerkAuth sign-ins auto-provision "Test Dev"/"Test Admin" user rows that clutter the owner dropdown; expected to recur after e2e runs.

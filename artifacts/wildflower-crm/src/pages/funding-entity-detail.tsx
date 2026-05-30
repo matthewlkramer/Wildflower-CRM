@@ -21,6 +21,7 @@ import {
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
+import { PinnedMediaCard } from "@/components/media-mentions-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import {
   LinkedGiftsCard,
@@ -758,6 +759,7 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       }
       right={
         <>
+          <PinnedMediaCard funderId={funder.id} />
           <LinkedOpportunitiesCard
             scope={{ funderId: funder.id }}
             title="Open opportunities"

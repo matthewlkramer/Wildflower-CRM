@@ -9,6 +9,7 @@ import {
   useListMeetingNotes,
   useListNotes,
   useListTasks,
+  useListMediaMentions,
   useCreateNote,
   useDeleteNote,
   useUpdateTask,
@@ -20,6 +21,7 @@ import {
   getListMeetingNotesQueryKey,
   getListNotesQueryKey,
   getListTasksQueryKey,
+  getListMediaMentionsQueryKey,
   type Interaction,
   type EmailMessage,
   type CalendarEvent,
@@ -30,6 +32,7 @@ import {
   type Note,
   type Task,
   type TaskStatus,
+  type MediaMention,
 } from "@workspace/api-client-react";
 import {
   AddMeetingNoteDialog,
@@ -38,6 +41,7 @@ import {
 } from "@/components/meeting-notes-panel";
 import { AddNoteDialog } from "@/components/notes-panel";
 import { AddTaskDialog } from "@/components/tasks-panel";
+import { MediaMentionRow } from "@/components/media-mentions-panel";
 import {
   Card,
   CardContent,
@@ -112,7 +116,8 @@ type Item =
   | { source: "email"; at: string; row: EmailMessage }
   | { source: "calendar"; at: string; row: CalendarEvent }
   | { source: "intel"; at: string; row: EmailProposal }
-  | { source: "meeting"; at: string; row: MeetingNote };
+  | { source: "meeting"; at: string; row: MeetingNote }
+  | { source: "media"; at: string; row: MediaMention };
 
 type Source = Item["source"];
 
@@ -124,6 +129,7 @@ const SOURCE_LABEL: Record<Source, string> = {
   calendar: "Calendar",
   intel: "Intel",
   meeting: "Meetings",
+  media: "Media",
 };
 
 const INTERACTION_LABEL: Record<InteractionKind, string> = {
@@ -271,6 +277,16 @@ export function UnifiedActivityFeed({
     },
   });
 
+  // Media mentions only ever link to a person or funder.
+  const mediaEnabled = !!(personId || funderId);
+  const mediaParams = { personId, funderId, limit };
+  const media = useListMediaMentions(mediaParams, {
+    query: {
+      enabled: mediaEnabled,
+      queryKey: getListMediaMentionsQueryKey(mediaParams),
+    },
+  });
+
   const userMap = useUserNameMap();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -385,6 +401,11 @@ export function UnifiedActivityFeed({
         at: r.meetingDate,
         row: r,
       })),
+      ...(media.data?.data ?? []).map<Item>((r) => ({
+        source: "media",
+        at: r.publicationDate ?? r.createdAt,
+        row: r,
+      })),
     ];
     merged.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
     return merged;
@@ -396,6 +417,7 @@ export function UnifiedActivityFeed({
     cals.data,
     proposals.data,
     meetings.data,
+    media.data,
     hideTasks,
   ]);
 
@@ -415,7 +437,8 @@ export function UnifiedActivityFeed({
         emails.isLoading ||
         cals.isLoading ||
         meetings.isLoading)) ||
-    (proposalsEnabled && proposals.isLoading);
+    (proposalsEnabled && proposals.isLoading) ||
+    (mediaEnabled && media.isLoading);
 
   const counts = useMemo(() => {
     const c: Record<Source, number> = {
@@ -426,6 +449,7 @@ export function UnifiedActivityFeed({
       calendar: relationScoped ? (cals.data?.pagination.total ?? 0) : 0,
       intel: proposalsEnabled ? (proposals.data?.pagination.total ?? 0) : 0,
       meeting: relationScoped ? (meetings.data?.pagination.total ?? 0) : 0,
+      media: mediaEnabled ? (media.data?.pagination.total ?? 0) : 0,
     };
     return c;
   }, [
@@ -436,8 +460,10 @@ export function UnifiedActivityFeed({
     cals.data,
     proposals.data,
     meetings.data,
+    media.data,
     relationScoped,
     proposalsEnabled,
+    mediaEnabled,
     hideTasks,
   ]);
 
@@ -448,7 +474,8 @@ export function UnifiedActivityFeed({
     counts.email +
     counts.calendar +
     counts.intel +
-    counts.meeting;
+    counts.meeting +
+    counts.media;
 
   const hasMore = (() => {
     const overCap = (n: number) => n > limit;
@@ -484,6 +511,9 @@ export function UnifiedActivityFeed({
       : []),
     ...(proposalsEnabled
       ? [{ key: "intel" as const, label: SOURCE_LABEL.intel, count: counts.intel }]
+      : []),
+    ...(mediaEnabled
+      ? [{ key: "media" as const, label: SOURCE_LABEL.media, count: counts.media }]
       : []),
   ];
 
@@ -878,6 +908,18 @@ export function UnifiedActivityFeed({
               if (it.source === "meeting") {
                 return (
                   <MeetingNoteRow key={`mtg-${it.row.id}`} note={it.row} />
+                );
+              }
+              if (it.source === "media") {
+                const r = it.row;
+                return (
+                  <li
+                    key={`media-${r.id}`}
+                    className="rounded-md border p-3"
+                    data-testid={`media-row-${r.id}`}
+                  >
+                    <MediaMentionRow row={r} />
+                  </li>
                 );
               }
               // source === "intel"

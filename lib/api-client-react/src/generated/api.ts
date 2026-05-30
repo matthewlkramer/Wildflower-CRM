@@ -104,6 +104,7 @@ import type {
   ListGiftsAndPaymentsParams,
   ListHouseholdsParams,
   ListInteractionsParams,
+  ListMediaMentionsParams,
   ListMeetingNotesParams,
   ListNotesParams,
   ListOpportunitiesAndPledgesParams,
@@ -120,6 +121,10 @@ import type {
   ListTrackedEmailsByContactParams,
   ListTrackedEmailsParams,
   ListUnrecognizedCorrespondentsParams,
+  MediaMention,
+  MediaMentionInput,
+  MediaMentionList,
+  MediaMentionUpdate,
   MeetingNote,
   MeetingNoteList,
   NotFoundResponse,
@@ -8268,6 +8273,417 @@ export const useDeleteNote = <
   TContext
 > => {
   return useMutation(getDeleteNoteMutationOptions(options));
+};
+
+export const getListMediaMentionsUrl = (params?: ListMediaMentionsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/media-mentions?${stringifiedParams}`
+    : `/api/media-mentions`;
+};
+
+export const listMediaMentions = async (
+  params?: ListMediaMentionsParams,
+  options?: RequestInit,
+): Promise<MediaMentionList> => {
+  return customFetch<MediaMentionList>(getListMediaMentionsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListMediaMentionsQueryKey = (
+  params?: ListMediaMentionsParams,
+) => {
+  return [`/api/media-mentions`, ...(params ? [params] : [])] as const;
+};
+
+export const getListMediaMentionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMediaMentions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListMediaMentionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMediaMentions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListMediaMentionsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listMediaMentions>>
+  > = ({ signal }) => listMediaMentions(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listMediaMentions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListMediaMentionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMediaMentions>>
+>;
+export type ListMediaMentionsQueryError = ErrorType<unknown>;
+
+export function useListMediaMentions<
+  TData = Awaited<ReturnType<typeof listMediaMentions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListMediaMentionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMediaMentions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListMediaMentionsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateMediaMentionUrl = () => {
+  return `/api/media-mentions`;
+};
+
+export const createMediaMention = async (
+  mediaMentionInput: MediaMentionInput,
+  options?: RequestInit,
+): Promise<MediaMention> => {
+  return customFetch<MediaMention>(getCreateMediaMentionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(mediaMentionInput),
+  });
+};
+
+export const getCreateMediaMentionMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createMediaMention>>,
+    TError,
+    { data: BodyType<MediaMentionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createMediaMention>>,
+  TError,
+  { data: BodyType<MediaMentionInput> },
+  TContext
+> => {
+  const mutationKey = ["createMediaMention"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createMediaMention>>,
+    { data: BodyType<MediaMentionInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createMediaMention(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateMediaMentionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createMediaMention>>
+>;
+export type CreateMediaMentionMutationBody = BodyType<MediaMentionInput>;
+export type CreateMediaMentionMutationError = ErrorType<BadRequestResponse>;
+
+export const useCreateMediaMention = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createMediaMention>>,
+    TError,
+    { data: BodyType<MediaMentionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createMediaMention>>,
+  TError,
+  { data: BodyType<MediaMentionInput> },
+  TContext
+> => {
+  return useMutation(getCreateMediaMentionMutationOptions(options));
+};
+
+export const getGetMediaMentionUrl = (id: string) => {
+  return `/api/media-mentions/${id}`;
+};
+
+export const getMediaMention = async (
+  id: string,
+  options?: RequestInit,
+): Promise<MediaMention> => {
+  return customFetch<MediaMention>(getGetMediaMentionUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMediaMentionQueryKey = (id: string) => {
+  return [`/api/media-mentions/${id}`] as const;
+};
+
+export const getGetMediaMentionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMediaMention>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMediaMention>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMediaMentionQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMediaMention>>> = ({
+    signal,
+  }) => getMediaMention(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMediaMention>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMediaMentionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMediaMention>>
+>;
+export type GetMediaMentionQueryError = ErrorType<NotFoundResponse>;
+
+export function useGetMediaMention<
+  TData = Awaited<ReturnType<typeof getMediaMention>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMediaMention>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMediaMentionQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateMediaMentionUrl = (id: string) => {
+  return `/api/media-mentions/${id}`;
+};
+
+export const updateMediaMention = async (
+  id: string,
+  mediaMentionUpdate: MediaMentionUpdate,
+  options?: RequestInit,
+): Promise<MediaMention> => {
+  return customFetch<MediaMention>(getUpdateMediaMentionUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(mediaMentionUpdate),
+  });
+};
+
+export const getUpdateMediaMentionMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateMediaMention>>,
+    TError,
+    { id: string; data: BodyType<MediaMentionUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateMediaMention>>,
+  TError,
+  { id: string; data: BodyType<MediaMentionUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateMediaMention"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateMediaMention>>,
+    { id: string; data: BodyType<MediaMentionUpdate> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateMediaMention(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateMediaMentionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateMediaMention>>
+>;
+export type UpdateMediaMentionMutationBody = BodyType<MediaMentionUpdate>;
+export type UpdateMediaMentionMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useUpdateMediaMention = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateMediaMention>>,
+    TError,
+    { id: string; data: BodyType<MediaMentionUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateMediaMention>>,
+  TError,
+  { id: string; data: BodyType<MediaMentionUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateMediaMentionMutationOptions(options));
+};
+
+export const getDeleteMediaMentionUrl = (id: string) => {
+  return `/api/media-mentions/${id}`;
+};
+
+export const deleteMediaMention = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteMediaMentionUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteMediaMentionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteMediaMention>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteMediaMention>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteMediaMention"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteMediaMention>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteMediaMention(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteMediaMentionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteMediaMention>>
+>;
+
+export type DeleteMediaMentionMutationError = ErrorType<unknown>;
+
+export const useDeleteMediaMention = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteMediaMention>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteMediaMention>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteMediaMentionMutationOptions(options));
 };
 
 export const getListTasksUrl = (params?: ListTasksParams) => {

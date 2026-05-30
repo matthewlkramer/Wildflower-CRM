@@ -30,6 +30,7 @@ export * from "./calendarSyncState";
 export * from "./emailProposals";
 export * from "./correspondentIgnore";
 export * from "./notes";
+export * from "./mediaMentions";
 export * from "./tasks";
 export * from "./meetingNotes";
 export * from "./bulkOperations";

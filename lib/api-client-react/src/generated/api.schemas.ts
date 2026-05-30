@@ -1999,6 +1999,51 @@ export interface UpdateNoteBody {
   mentionUserIds?: string[] | null;
 }
 
+export interface MediaMention {
+  id: string;
+  publicationName: string;
+  author?: string | null;
+  publicationDate?: string | null;
+  url: string;
+  aiSummary?: string | null;
+  pinned: boolean;
+  personIds?: string[] | null;
+  funderIds?: string[] | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MediaMentionList {
+  data: MediaMention[];
+  pagination: Pagination;
+}
+
+export interface MediaMentionInput {
+  /** @minLength 1 */
+  publicationName: string;
+  author?: string;
+  publicationDate?: string;
+  /** @minLength 1 */
+  url: string;
+  aiSummary?: string;
+  pinned?: boolean;
+  personIds?: string[];
+  funderIds?: string[];
+}
+
+export interface MediaMentionUpdate {
+  /** @minLength 1 */
+  publicationName?: string;
+  author?: string | null;
+  publicationDate?: string | null;
+  /** @minLength 1 */
+  url?: string;
+  aiSummary?: string | null;
+  pinned?: boolean;
+  personIds?: string[] | null;
+  funderIds?: string[] | null;
+}
+
 export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
 
 export const TaskStatus = {
@@ -2804,6 +2849,25 @@ export type ListNotesParams = {
    */
   mentionUserId?: string;
   authorUserId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
+
+export type ListMediaMentionsParams = {
+  search?: string;
+  personId?: string;
+  funderId?: string;
+  /**
+   * Filter to pinned (true) or unpinned (false) mentions.
+   */
+  pinned?: boolean;
   /**
    * @minimum 1
    * @maximum 10000

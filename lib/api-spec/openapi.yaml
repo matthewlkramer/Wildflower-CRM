@@ -40,6 +40,7 @@ tags:
   - { name: meeting-notes }
   - { name: saved-views }
   - { name: storage }
+  - { name: media-mentions }
 
 paths:
   # ─── Email intelligence proposals ──────────────────────────────────────────
@@ -1098,6 +1099,50 @@ paths:
     delete:
       operationId: deleteNote
       tags: [notes]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Media mentions ─────────────────────────────────────────────────────────
+  /media-mentions:
+    get:
+      operationId: listMediaMentions
+      tags: [media-mentions]
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: personId, in: query, schema: { type: string } }
+        - { name: funderId, in: query, schema: { type: string } }
+        - { name: pinned, in: query, schema: { type: boolean }, description: "Filter to pinned (true) or unpinned (false) mentions." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MediaMentionList" } } } }
+    post:
+      operationId: createMediaMention
+      tags: [media-mentions]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MediaMentionInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/MediaMention" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /media-mentions/{id}:
+    get:
+      operationId: getMediaMention
+      tags: [media-mentions]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MediaMention" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateMediaMention
+      tags: [media-mentions]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MediaMentionUpdate" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MediaMention" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteMediaMention
+      tags: [media-mentions]
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses: { "204": { description: Deleted } }
 
@@ -3432,6 +3477,52 @@ components:
         opportunityIds:  { type: array, items: { type: string }, nullable: true }
         giftIds:         { type: array, items: { type: string }, nullable: true }
         mentionUserIds:  { type: array, items: { type: string }, nullable: true }
+
+    # ─── Media mentions ────────────────────────────────────────────────────────
+    MediaMention:
+      type: object
+      required: [id, publicationName, url, pinned, createdAt, updatedAt]
+      properties:
+        id:              { type: string }
+        publicationName: { type: string }
+        author:          { type: string, nullable: true }
+        publicationDate: { type: string, format: date, nullable: true }
+        url:             { type: string }
+        aiSummary:       { type: string, nullable: true }
+        pinned:          { type: boolean }
+        personIds:       { type: array, items: { type: string }, nullable: true }
+        funderIds:       { type: array, items: { type: string }, nullable: true }
+        createdAt:       { type: string, format: date-time }
+        updatedAt:       { type: string, format: date-time }
+    MediaMentionList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/MediaMention" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    MediaMentionInput:
+      type: object
+      required: [publicationName, url]
+      properties:
+        publicationName: { type: string, minLength: 1 }
+        author:          { type: string }
+        publicationDate: { type: string, format: date }
+        url:             { type: string, minLength: 1 }
+        aiSummary:       { type: string }
+        pinned:          { type: boolean }
+        personIds:       { type: array, items: { type: string } }
+        funderIds:       { type: array, items: { type: string } }
+    MediaMentionUpdate:
+      type: object
+      properties:
+        publicationName: { type: string, minLength: 1 }
+        author:          { type: string, nullable: true }
+        publicationDate: { type: string, format: date, nullable: true }
+        url:             { type: string, minLength: 1 }
+        aiSummary:       { type: string, nullable: true }
+        pinned:          { type: boolean }
+        personIds:       { type: array, items: { type: string }, nullable: true }
+        funderIds:       { type: array, items: { type: string }, nullable: true }
 
     # ─── Tasks ───────────────────────────────────────────────────────────────
     TaskStatus:
