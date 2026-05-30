@@ -85,18 +85,22 @@ export function MediaPinButton({
 /** Single media mention, reused by the activity feed and the pinned card. */
 export function MediaMentionRow({ row }: { row: MediaMention }) {
   const pubDate = formatPubDate(row.publicationDate);
+  const headline = row.title?.trim() || row.publicationName;
+  const showSource = !!row.title && row.publicationName !== headline;
   return (
     <div className="space-y-1 text-sm">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <Newspaper className="h-4 w-4 shrink-0 text-muted-foreground" />
           <Badge variant="secondary">Media</Badge>
-          <span className="truncate font-medium">{row.publicationName}</span>
+          <span className="truncate font-medium">{headline}</span>
         </div>
         <MediaPinButton id={row.id} pinned={row.pinned} size="sm" />
       </div>
       <div className="text-xs text-muted-foreground">
-        {[row.author, pubDate].filter(Boolean).join(" · ") || "—"}
+        {[showSource ? row.publicationName : null, row.author, pubDate]
+          .filter(Boolean)
+          .join(" · ") || "—"}
       </div>
       {row.aiSummary ? (
         <p className="whitespace-pre-wrap text-sm">{row.aiSummary}</p>

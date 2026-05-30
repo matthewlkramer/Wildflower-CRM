@@ -2002,10 +2002,12 @@ export interface UpdateNoteBody {
 export interface MediaMention {
   id: string;
   publicationName: string;
+  title?: string | null;
   author?: string | null;
   publicationDate?: string | null;
   url: string;
   aiSummary?: string | null;
+  source?: string | null;
   pinned: boolean;
   personIds?: string[] | null;
   funderIds?: string[] | null;
@@ -2021,11 +2023,13 @@ export interface MediaMentionList {
 export interface MediaMentionInput {
   /** @minLength 1 */
   publicationName: string;
+  title?: string;
   author?: string;
   publicationDate?: string;
   /** @minLength 1 */
   url: string;
   aiSummary?: string;
+  source?: string;
   pinned?: boolean;
   personIds?: string[];
   funderIds?: string[];
@@ -2034,11 +2038,13 @@ export interface MediaMentionInput {
 export interface MediaMentionUpdate {
   /** @minLength 1 */
   publicationName?: string;
+  title?: string | null;
   author?: string | null;
   publicationDate?: string | null;
   /** @minLength 1 */
   url?: string;
   aiSummary?: string | null;
+  source?: string | null;
   pinned?: boolean;
   personIds?: string[] | null;
   funderIds?: string[] | null;

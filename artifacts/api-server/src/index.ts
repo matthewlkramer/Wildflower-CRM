@@ -2,6 +2,7 @@ import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startSyncScheduler } from "./lib/syncScheduler";
+import { startMediaIngestScheduler } from "./lib/mediaIngestScheduler";
 import { backfillIntelForUser } from "./lib/gmailBackfill";
 import { analyzePendingForUser } from "./lib/analyzePending";
 
@@ -27,6 +28,7 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
   startSyncScheduler();
+  startMediaIngestScheduler();
 
   // One-time email-intelligence backfill, triggered by writing a
   // userId to /tmp/backfill/trigger and restarting the workflow.

@@ -3485,10 +3485,12 @@ components:
       properties:
         id:              { type: string }
         publicationName: { type: string }
+        title:           { type: string, nullable: true }
         author:          { type: string, nullable: true }
         publicationDate: { type: string, format: date, nullable: true }
         url:             { type: string }
         aiSummary:       { type: string, nullable: true }
+        source:          { type: string, nullable: true }
         pinned:          { type: boolean }
         personIds:       { type: array, items: { type: string }, nullable: true }
         funderIds:       { type: array, items: { type: string }, nullable: true }
@@ -3505,10 +3507,12 @@ components:
       required: [publicationName, url]
       properties:
         publicationName: { type: string, minLength: 1 }
+        title:           { type: string }
         author:          { type: string }
         publicationDate: { type: string, format: date }
         url:             { type: string, minLength: 1 }
         aiSummary:       { type: string }
+        source:          { type: string }
         pinned:          { type: boolean }
         personIds:       { type: array, items: { type: string } }
         funderIds:       { type: array, items: { type: string } }
@@ -3516,10 +3520,12 @@ components:
       type: object
       properties:
         publicationName: { type: string, minLength: 1 }
+        title:           { type: string, nullable: true }
         author:          { type: string, nullable: true }
         publicationDate: { type: string, format: date, nullable: true }
         url:             { type: string, minLength: 1 }
         aiSummary:       { type: string, nullable: true }
+        source:          { type: string, nullable: true }
         pinned:          { type: boolean }
         personIds:       { type: array, items: { type: string }, nullable: true }
         funderIds:       { type: array, items: { type: string }, nullable: true }
