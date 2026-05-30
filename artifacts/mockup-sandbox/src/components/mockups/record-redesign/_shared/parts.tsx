@@ -384,36 +384,91 @@ export function RelatedCard({
   title,
   count,
   defaultOpen = true,
+  action,
   children,
 }: {
   title: string;
   count: number;
   defaultOpen?: boolean;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="rr-bg-card rr-border rounded-xl border shadow-sm">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-4 py-3"
-      >
-        <span className="flex items-center gap-2">
+      <div className="flex w-full items-center justify-between px-4 py-3">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-w-0 items-center gap-2"
+        >
           <span className="font-serif text-base font-semibold">{title}</span>
           <span className="rr-bg-muted rr-text-muted inline-flex min-w-5 justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums">
             {count}
           </span>
-        </span>
-        <ChevronDown
-          className={
-            "rr-text-muted h-4 w-4 transition-transform " +
-            (open ? "" : "-rotate-90")
-          }
-        />
-      </button>
+        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {action}
+          <button onClick={() => setOpen((o) => !o)} aria-label="Toggle section">
+            <ChevronDown
+              className={
+                "rr-text-muted h-4 w-4 transition-transform " +
+                (open ? "" : "-rotate-90")
+              }
+            />
+          </button>
+        </div>
+      </div>
       {open ? (
         <div className="rr-border border-t px-2 py-2">{children}</div>
       ) : null}
+    </div>
+  );
+}
+
+/* "+ New" style action used in card headers (e.g. add affiliation). */
+export function CardAction({ label }: { label: string }) {
+  return (
+    <button className="rr-text-primary inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium hover:bg-black/[0.05]">
+      <Plus className="h-3.5 w-3.5" />
+      {label}
+    </button>
+  );
+}
+
+/* Clickable affiliation/funding-entity row with active vs past status. */
+export function AffiliationRow({
+  org,
+  role,
+  status,
+  primary,
+}: {
+  org: string;
+  role?: string;
+  status: "active" | "past";
+  primary?: boolean;
+}) {
+  const past = status === "past";
+  return (
+    <div
+      className={
+        "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-black/[0.03] " +
+        (past ? "opacity-70" : "")
+      }
+    >
+      <div className="min-w-0">
+        <a className="rr-text-primary block cursor-pointer truncate text-sm font-medium hover:underline">
+          {org}
+        </a>
+        {role ? <div className="rr-text-muted truncate text-xs">{role}</div> : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {primary ? <Badge tone="outline">Primary</Badge> : null}
+        {past ? (
+          <Badge tone="outline">Past</Badge>
+        ) : (
+          <Badge tone="primary">Active</Badge>
+        )}
+      </div>
     </div>
   );
 }

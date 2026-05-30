@@ -12,6 +12,8 @@ import {
   FeedItem,
   RelatedCard,
   RelatedRow,
+  AffiliationRow,
+  CardAction,
 } from "./_shared/parts";
 
 export function IndividualRecord() {
@@ -59,22 +61,6 @@ export function IndividualRecord() {
             <TagRow label="Thematic" tags={["Education equity", "Montessori"]} />
             <TagRow label="Ages" tags={["Early childhood"]} />
             <TagRow label="Regions" tags={["Northeast"]} />
-          </FieldCard>
-
-          <FieldCard title="Affiliations" defaultOpen={false}>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate">
-                  Trustee @{" "}
-                  <span className="rr-text-primary">Whitcomb Foundation</span>
-                </span>
-                <span className="rr-text-muted text-xs">current · primary</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate">Partner @ Meridian Capital</span>
-                <span className="rr-text-muted text-xs">current</span>
-              </div>
-            </div>
           </FieldCard>
 
           <FieldCard title="Contact info" defaultOpen={false}>
@@ -138,12 +124,35 @@ export function IndividualRecord() {
       }
       right={
         <>
-          <RelatedCard title="Pledges" count={1}>
-            <RelatedRow name="FY26 Leadership gift" sub="Committed · Oct 2025" amount="$75K" tone="primary" />
+          <RelatedCard
+            title="Affiliations"
+            count={3}
+            action={<CardAction label="New" />}
+          >
+            <AffiliationRow
+              org="Whitcomb Foundation"
+              role="Trustee"
+              status="active"
+              primary
+            />
+            <AffiliationRow
+              org="Meridian Capital"
+              role="Managing Partner"
+              status="active"
+            />
+            <AffiliationRow
+              org="Greenwich Academy"
+              role="Former board chair"
+              status="past"
+            />
           </RelatedCard>
 
           <RelatedCard title="Open opportunities" count={1}>
             <RelatedRow name="FY27 3-year leadership pledge" sub="Cultivation" amount="$150K" tone="primary" />
+          </RelatedCard>
+
+          <RelatedCard title="Pledges" count={1}>
+            <RelatedRow name="FY26 Leadership gift" sub="Committed · Oct 2025" amount="$75K" tone="primary" />
           </RelatedCard>
 
           <RelatedCard title="Gifts & payments" count={5} defaultOpen={false}>

@@ -11,6 +11,8 @@ import {
   FeedItem,
   RelatedCard,
   RelatedRow,
+  AffiliationRow,
+  CardAction,
 } from "./_shared/parts";
 
 export function FunderRecord() {
@@ -129,15 +131,38 @@ export function FunderRecord() {
       }
       right={
         <>
-          <RelatedCard title="Pledges" count={2}>
-            <RelatedRow name="FY26 General operating" sub="Committed · Sep 2025" amount="$1.5M" tone="primary" />
-            <RelatedRow name="FY24 Regional expansion" sub="Fulfilled" amount="$1.0M" tone="primary" />
+          <RelatedCard
+            title="Affiliations"
+            count={3}
+            action={<CardAction label="New" />}
+          >
+            <AffiliationRow
+              org="Walton Enterprises"
+              role="Parent entity"
+              status="active"
+              primary
+            />
+            <AffiliationRow
+              org="Walton Family Charitable Support Foundation"
+              role="Sister foundation"
+              status="active"
+            />
+            <AffiliationRow
+              org="Walmart Foundation"
+              role="Former co-funder"
+              status="past"
+            />
           </RelatedCard>
 
           <RelatedCard title="Open opportunities" count={3}>
             <RelatedRow name="FY27 K-12 renewal" sub="Cultivation" amount="$2.0M" tone="primary" />
             <RelatedRow name="Rural innovation RFP" sub="Identified" amount="$2.0M" tone="primary" />
             <RelatedRow name="Capacity-building PRI" sub="Solicitation" amount="$500K" tone="primary" />
+          </RelatedCard>
+
+          <RelatedCard title="Pledges" count={2}>
+            <RelatedRow name="FY26 General operating" sub="Committed · Sep 2025" amount="$1.5M" tone="primary" />
+            <RelatedRow name="FY24 Regional expansion" sub="Fulfilled" amount="$1.0M" tone="primary" />
           </RelatedCard>
 
           <RelatedCard title="Gifts & payments" count={8} defaultOpen={false}>
