@@ -29,10 +29,10 @@ import {
   PhoneNumbersEditor,
 } from "@/components/contact-info-editor";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
+import { TasksPanel } from "@/components/tasks-panel";
 import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
-  LinkedTasksCard,
 } from "@/components/linked-records";
 import {
   RecordLayout,
@@ -757,7 +757,12 @@ function PersonView({ person }: { person: PersonDetail }) {
           </div>
         </>
       }
-      center={<UnifiedActivityFeed personId={person.id} hideTasks />}
+      center={
+        <>
+          <TasksPanel personId={person.id} />
+          <UnifiedActivityFeed personId={person.id} hideTasks />
+        </>
+      }
       right={
         <>
           <LinkedOpportunitiesCard
@@ -771,8 +776,6 @@ function PersonView({ person }: { person: PersonDetail }) {
           <PeopleCard person={person} />
 
           <OrganizationsCard roles={roles} />
-
-          <LinkedTasksCard personId={person.id} />
 
           <LinkedOpportunitiesCard
             scope={{ individualGiverPersonId: person.id }}

@@ -21,10 +21,10 @@ import {
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
+import { TasksPanel } from "@/components/tasks-panel";
 import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
-  LinkedTasksCard,
 } from "@/components/linked-records";
 import {
   RecordLayout,
@@ -739,7 +739,12 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           </div>
         </>
       }
-      center={<UnifiedActivityFeed funderId={funder.id} hideTasks />}
+      center={
+        <>
+          <TasksPanel funderId={funder.id} />
+          <UnifiedActivityFeed funderId={funder.id} hideTasks />
+        </>
+      }
       right={
         <>
           <LinkedOpportunitiesCard
@@ -792,8 +797,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           </RelatedCard>
 
           <RelatedFundersCard funder={funder} patch={patch} />
-
-          <LinkedTasksCard funderId={funder.id} />
 
           <LinkedOpportunitiesCard
             scope={{ funderId: funder.id }}

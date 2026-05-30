@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
+import { TasksPanel } from "@/components/tasks-panel";
 import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
@@ -237,7 +238,12 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
           </div>
         </>
       }
-      center={<UnifiedActivityFeed householdId={household.id} hideTasks />}
+      center={
+        <>
+          <TasksPanel householdId={household.id} />
+          <UnifiedActivityFeed householdId={household.id} hideTasks />
+        </>
+      }
       right={
         <>
           <RelatedCard title="Members" count={members.length}>
