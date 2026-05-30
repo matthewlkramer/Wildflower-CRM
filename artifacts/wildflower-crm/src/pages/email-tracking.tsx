@@ -6,6 +6,7 @@ import {
   getGetTrackedEmailQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { decodeHtmlEntities } from "@/lib/format";
 import {
   Table,
   TableBody,
@@ -71,7 +72,7 @@ function EmailDetailDialog({
     <Dialog open={!!id} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{data?.subject ?? "Tracked email"}</DialogTitle>
+          <DialogTitle>{data?.subject ? decodeHtmlEntities(data.subject) : "Tracked email"}</DialogTitle>
           <DialogDescription>
             {data
               ? `${data.totalViews} view${data.totalViews === 1 ? "" : "s"} · ${data.uniqueIps} unique IP${data.uniqueIps === 1 ? "" : "s"} · sent ${format(new Date(data.createdAt), "PPp")}`
@@ -272,7 +273,7 @@ export default function EmailTrackingPage() {
                     onClick={() => setOpenId(r.id)}
                   >
                     <TableCell className="font-medium max-w-xs truncate">
-                      {r.subject}
+                      {decodeHtmlEntities(r.subject)}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
                       {r.recipient}

@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { formatDate } from "@/lib/format";
+import { formatDate, decodeHtmlEntities } from "@/lib/format";
 import { Paperclip, Mail, Unlink2, FileText } from "lucide-react";
 
 type Props = { gift: GiftOrPaymentDetail };
@@ -232,7 +232,7 @@ function CandidateRow({
       <FileText className="h-4 w-4 text-muted-foreground mt-1 shrink-0" />
       <div className="flex-1 min-w-0 space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium truncate">{c.subject ?? "(no subject)"}</span>
+          <span className="font-medium truncate">{c.subject ? decodeHtmlEntities(c.subject) : "(no subject)"}</span>
           {c.autoSuggested && (
             <Badge variant="default" className="text-xs">Suggested</Badge>
           )}
@@ -254,7 +254,7 @@ function CandidateRow({
           Sent {formatDate(c.sentAt)}
         </div>
         {c.snippet && (
-          <div className="text-xs text-muted-foreground line-clamp-2">{c.snippet}</div>
+          <div className="text-xs text-muted-foreground line-clamp-2">{decodeHtmlEntities(c.snippet)}</div>
         )}
       </div>
       <Button

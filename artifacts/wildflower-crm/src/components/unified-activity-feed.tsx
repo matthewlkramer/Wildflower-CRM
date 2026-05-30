@@ -59,6 +59,7 @@ import { EmailDetailDialog } from "@/components/email-detail-dialog";
 import { useUserNameMap } from "@/components/user-picker";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { decodeHtmlEntities } from "@/lib/format";
 import {
   Calendar as CalendarIcon,
   Mail,
@@ -762,15 +763,17 @@ export function UnifiedActivityFeed({
                         </span>
                       ) : null}
                     </div>
-                    <div className="font-medium">{r.summary}</div>
+                    <div className="font-medium">
+                      {decodeHtmlEntities(r.summary)}
+                    </div>
                     {r.location ? (
                       <div className="text-xs text-muted-foreground">
-                        {r.location}
+                        {decodeHtmlEntities(r.location)}
                       </div>
                     ) : null}
                     {r.notes ? (
                       <p className="whitespace-pre-wrap text-muted-foreground">
-                        {r.notes}
+                        {decodeHtmlEntities(r.notes)}
                       </p>
                     ) : null}
                   </li>
@@ -801,7 +804,7 @@ export function UnifiedActivityFeed({
                       </span>
                     </div>
                     <div className="truncate font-medium">
-                      {r.subject ?? "(no subject)"}
+                      {r.subject ? decodeHtmlEntities(r.subject) : "(no subject)"}
                     </div>
                     <div className="truncate text-xs text-muted-foreground">
                       {r.fromEmail ?? "(unknown)"}
@@ -811,7 +814,7 @@ export function UnifiedActivityFeed({
                     </div>
                     {r.snippet ? (
                       <p className="line-clamp-2 text-sm text-muted-foreground">
-                        {r.snippet}
+                        {decodeHtmlEntities(r.snippet)}
                       </p>
                     ) : null}
                   </li>
@@ -851,10 +854,12 @@ export function UnifiedActivityFeed({
                         </a>
                       ) : null}
                     </div>
-                    <div className="font-medium">{r.summary ?? "(no title)"}</div>
+                    <div className="font-medium">
+                      {r.summary ? decodeHtmlEntities(r.summary) : "(no title)"}
+                    </div>
                     {r.location ? (
                       <div className="text-xs text-muted-foreground">
-                        {r.location}
+                        {decodeHtmlEntities(r.location)}
                       </div>
                     ) : null}
                     {r.attendeeEmails?.length ? (
@@ -864,7 +869,7 @@ export function UnifiedActivityFeed({
                     ) : null}
                     {r.description ? (
                       <p className="line-clamp-2 whitespace-pre-wrap text-muted-foreground">
-                        {r.description}
+                        {decodeHtmlEntities(r.description)}
                       </p>
                     ) : null}
                   </li>

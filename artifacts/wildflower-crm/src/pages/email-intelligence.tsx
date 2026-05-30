@@ -12,6 +12,7 @@ import {
   getListUnrecognizedCorrespondentsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { decodeHtmlEntities } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -744,7 +745,7 @@ function ProposalDetail({
           {cell("Source", payload.sourceDigest)}
           {payload.snippet ? (
             <p className="text-xs italic text-muted-foreground border-l-2 pl-2 mt-2">
-              "{String(payload.snippet)}"
+              "{decodeHtmlEntities(String(payload.snippet))}"
             </p>
           ) : null}
         </div>

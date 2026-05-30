@@ -1,5 +1,51 @@
 import { format, parseISO } from "date-fns";
 
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00a0",
+};
+
+/**
+ * Decode HTML entities to their literal characters for plain-text display.
+ *
+ * Gmail's API returns HTML-escaped `snippet`/`subject`/body text (and the
+ * Airtable import preserved that escaping), so values arrive containing
+ * `&#39;`, `&lt;`, `&amp;`, etc. React renders strings verbatim, so without
+ * decoding the user sees `It&#39;s` instead of `It's`. Output is rendered as
+ * text by React (never via dangerouslySetInnerHTML), so decoding is safe — a
+ * decoded `<script>` is shown as literal characters, not executed.
+ *
+ * Handles numeric (`&#39;`, `&#x27;`) and the common named entities. Unknown
+ * entities are left untouched so genuine text isn't mangled.
+ */
+export function decodeHtmlEntities(
+  input: string | null | undefined,
+): string {
+  if (!input) return input ?? "";
+  return input.replace(
+    /&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]*);/g,
+    (match, body: string) => {
+      if (body[0] === "#") {
+        const codePoint =
+          body[1] === "x" || body[1] === "X"
+            ? parseInt(body.slice(2), 16)
+            : parseInt(body.slice(1), 10);
+        if (!Number.isFinite(codePoint) || codePoint <= 0) return match;
+        try {
+          return String.fromCodePoint(codePoint);
+        } catch {
+          return match;
+        }
+      }
+      return NAMED_ENTITIES[body] ?? NAMED_ENTITIES[body.toLowerCase()] ?? match;
+    },
+  );
+}
+
 export function formatCurrency(amount: number | string | null | undefined): string {
   if (amount === null || amount === undefined || amount === "") return "—";
   const num = typeof amount === "string" ? Number(amount) : amount;

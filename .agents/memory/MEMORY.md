@@ -1,2 +1,3 @@
 - [wildflower-crm detail routes](wildflower-crm-routes.md) — funders live at /funding-entities, not /funders; pledge detail inherits opportunity.
 - [wildflower-crm activity feed scoping](wildflower-activity-feed-scoping.md) — keep notes/tasks scope separate from donor-relationship scope; API list filters AND together.
+- [wildflower email/calendar HTML entities](wildflower-html-entities.md) — Gmail/Calendar/Airtable text is HTML-escaped; decode at render via decodeHtmlEntities, not user-authored content.

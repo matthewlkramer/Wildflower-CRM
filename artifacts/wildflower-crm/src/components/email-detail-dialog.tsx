@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Lock, Paperclip, ExternalLink } from "lucide-react";
+import { decodeHtmlEntities } from "@/lib/format";
 
 interface Props {
   emailId: string | null;
@@ -65,7 +66,9 @@ export function EmailDetailDialog({ emailId, onClose }: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {data?.isPrivate ? <Lock className="h-4 w-4" /> : null}
-            <span>{data?.subject ?? "(no subject)"}</span>
+            <span>
+              {data?.subject ? decodeHtmlEntities(data.subject) : "(no subject)"}
+            </span>
           </DialogTitle>
         </DialogHeader>
         {isLoading || !data ? (
@@ -153,7 +156,7 @@ export function EmailDetailDialog({ emailId, onClose }: Props) {
                 <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
                   Summary (sender opted out of storing body)
                 </div>
-                <div>{data.aiSummary}</div>
+                <div>{decodeHtmlEntities(data.aiSummary)}</div>
               </div>
             ) : null}
 
@@ -184,7 +187,7 @@ export function EmailDetailDialog({ emailId, onClose }: Props) {
                 />
               ) : data.bodyText ? (
                 <pre className="whitespace-pre-wrap font-sans text-sm">
-                  {data.bodyText}
+                  {decodeHtmlEntities(data.bodyText)}
                 </pre>
               ) : data.aiSummary ? null : (
                 <p className="text-muted-foreground">(no body)</p>
