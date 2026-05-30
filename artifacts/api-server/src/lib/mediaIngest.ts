@@ -20,6 +20,19 @@ import { searchGdelt } from "./gdelt";
 // People at these giving-capacity tiers are worth monitoring individually.
 const MONITORED_CAPACITY_TIERS = ["tier_250k_1m", "tier_1m_plus"] as const;
 
+// Funder subtypes that are the philanthropic arm of a larger company/bank.
+// For these we search the FOUNDATION specifically, never the parent
+// corporation — searching e.g. "Wells Fargo" floods us with unrelated
+// corporate/market news instead of grant activity.
+const CORPORATE_FOUNDATION_SUBTYPES = [
+  "corporate_foundation",
+  "bank_foundation",
+] as const;
+
+// Tokens that mark a string as already naming a foundation / philanthropic
+// arm (so we don't redundantly append "Foundation").
+const FOUNDATION_MARKER = /foundation|fundaci[oó]n|\.org|philanthrop|\bfund\b/i;
+
 export interface IngestTarget {
   kind: "funder" | "person";
   id: string;
@@ -67,6 +80,46 @@ export function personDisplayName(p: {
 }
 
 /**
+ * Pure helper: derive the news-search name for a corporate/bank foundation so
+ * we search the FOUNDATION, not the parent corporation. The CRM stores these
+ * names a few ways; we normalize to the philanthropic entity:
+ *
+ *   "Wells Fargo / Wells Fargo Foundation" → "Wells Fargo Foundation"
+ *   "Old National Bank / Foundation"        → "Old National Bank Foundation"
+ *   "Google / Google.org"                   → "Google.org"
+ *   "Bank of America"                       → "Bank of America Foundation"
+ *   "3M Foundation"                         → "3M Foundation"
+ *   "Monsanto Fund"                         → "Monsanto Fund"
+ *
+ * Only applied to corporate_foundation / bank_foundation subtypes (see
+ * buildIngestTargets); every other funder keeps its name verbatim.
+ */
+export function foundationSearchName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.includes("/")) {
+    const parts = trimmed
+      .split("/")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const corp = parts[0] ?? trimmed;
+    // Prefer the last segment that already names a foundation/philanthropy.
+    const foundationPart = [...parts]
+      .reverse()
+      .find((p) => FOUNDATION_MARKER.test(p));
+    if (foundationPart) {
+      // A bare "Foundation" segment is meaningless on its own — qualify it
+      // with the corporation name (e.g. "Old National Bank Foundation").
+      if (/^foundation$/i.test(foundationPart)) return `${corp} Foundation`;
+      return foundationPart;
+    }
+    // No foundation marker anywhere — qualify the corporation.
+    return `${corp} Foundation`;
+  }
+  if (FOUNDATION_MARKER.test(trimmed)) return trimmed;
+  return `${trimmed} Foundation`;
+}
+
+/**
  * Pure helper: given an existing id array and an id, return the array with the
  * id appended if missing, or null when no change is needed. Keeps the
  * upsert-merge logic unit-testable without a DB.
@@ -82,8 +135,15 @@ export function mergeEntityId(
 
 /** Build the full target list: all funders + monitored-capacity people. */
 export async function buildIngestTargets(): Promise<IngestTarget[]> {
+  const corporateSubtypes = new Set<string>(CORPORATE_FOUNDATION_SUBTYPES);
   const [funderRows, personRows] = await Promise.all([
-    db.select({ id: funders.id, name: funders.name }).from(funders),
+    db
+      .select({
+        id: funders.id,
+        name: funders.name,
+        subtype: funders.fundingEntitySubtype,
+      })
+      .from(funders),
     db
       .select({
         id: people.id,
@@ -97,8 +157,15 @@ export async function buildIngestTargets(): Promise<IngestTarget[]> {
 
   const targets: IngestTarget[] = [];
   for (const f of funderRows) {
-    const name = f.name?.trim();
-    if (name) targets.push({ kind: "funder", id: f.id, name });
+    const raw = f.name?.trim();
+    if (!raw) continue;
+    // Corporate/bank foundations: search the foundation, not the parent
+    // corporation, to avoid drowning in unrelated company/market news.
+    const name =
+      f.subtype && corporateSubtypes.has(f.subtype)
+        ? foundationSearchName(raw)
+        : raw;
+    targets.push({ kind: "funder", id: f.id, name });
   }
   for (const p of personRows) {
     const name = personDisplayName(p);

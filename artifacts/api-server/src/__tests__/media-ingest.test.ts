@@ -4,7 +4,11 @@ import {
   gdeltDateToISO,
   parseGdeltArticles,
 } from "../lib/gdelt";
-import { mergeEntityId, personDisplayName } from "../lib/mediaIngest";
+import {
+  foundationSearchName,
+  mergeEntityId,
+  personDisplayName,
+} from "../lib/mediaIngest";
 
 describe("buildGdeltQuery", () => {
   it("phrase-quotes the name and restricts to English", () => {
@@ -107,6 +111,53 @@ describe("personDisplayName", () => {
     expect(personDisplayName({ lastName: "Public" })).toBeNull();
     expect(personDisplayName({ fullName: "   " })).toBeNull();
     expect(personDisplayName({})).toBeNull();
+  });
+});
+
+describe("foundationSearchName", () => {
+  it("takes the foundation segment from a 'Corp / Foundation' name", () => {
+    expect(foundationSearchName("Wells Fargo / Wells Fargo Foundation")).toBe(
+      "Wells Fargo Foundation",
+    );
+    expect(foundationSearchName("Amazon / Amazon Foundation")).toBe(
+      "Amazon Foundation",
+    );
+    expect(foundationSearchName("J.P. Morgan Chase / JPM Foundation")).toBe(
+      "JPM Foundation",
+    );
+  });
+
+  it("qualifies a bare 'Foundation' segment with the corporation name", () => {
+    expect(foundationSearchName("Old National Bank / Foundation")).toBe(
+      "Old National Bank Foundation",
+    );
+    expect(foundationSearchName("City First Bank of DC / Foundation")).toBe(
+      "City First Bank of DC Foundation",
+    );
+  });
+
+  it("keeps philanthropic-arm markers like .org / Fundación", () => {
+    expect(foundationSearchName("Google / Google.org")).toBe("Google.org");
+    expect(foundationSearchName("Banco Popular / Fundación Banco Popular")).toBe(
+      "Fundación Banco Popular",
+    );
+  });
+
+  it("leaves names that already name a foundation untouched", () => {
+    expect(foundationSearchName("3M Foundation")).toBe("3M Foundation");
+    expect(foundationSearchName("Monsanto Fund")).toBe("Monsanto Fund");
+    expect(foundationSearchName("Travelers Corporate Philanthropy")).toBe(
+      "Travelers Corporate Philanthropy",
+    );
+  });
+
+  it("appends 'Foundation' to a bare corporation name", () => {
+    expect(foundationSearchName("Bank of America")).toBe(
+      "Bank of America Foundation",
+    );
+    expect(foundationSearchName("Huntington National Bank")).toBe(
+      "Huntington National Bank Foundation",
+    );
   });
 });
 
