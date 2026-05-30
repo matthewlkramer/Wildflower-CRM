@@ -20,7 +20,7 @@ export function IndividualRecord() {
       backLabel="Back to individuals"
       title="Eleanor Whitcomb"
       typeBadge="Individual"
-      subtitle="Greenwich, CT · Board prospect"
+      subtitle="Greenwich, CT"
       highlights={[
         { label: "Priority", value: <Badge tone="primary">High</Badge>, accent: true },
         { label: "Capacity", value: "$100K–$250K" },
@@ -46,7 +46,6 @@ export function IndividualRecord() {
             <FieldRow label="Connection">Connected</FieldRow>
             <FieldRow label="Enthusiasm">Advocate</FieldRow>
             <FieldRow label="Capacity">$100K–$250K</FieldRow>
-            <FieldRow label="Board prospect">Yes</FieldRow>
           </FieldCard>
 
           <FieldCard title="Web">
