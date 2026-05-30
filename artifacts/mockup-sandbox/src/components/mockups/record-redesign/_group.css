@@ -1,0 +1,65 @@
+/* Wildflower CRM design tokens — mirrors artifacts/wildflower-crm/src/index.css
+   so the redesign mockup matches the live app exactly. Imported by the
+   record-redesign preview components only (do not edit the global index.css). */
+
+:root {
+  --background: 40 33% 98%;
+  --foreground: 20 20% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 20 20% 15%;
+
+  --primary: 153 43% 28%; /* Forest Green */
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 40 20% 90%;
+  --secondary-foreground: 20 20% 20%;
+
+  --muted: 40 15% 92%;
+  --muted-foreground: 20 10% 45%;
+
+  --accent: 30 40% 94%;
+  --accent-foreground: 20 20% 20%;
+
+  --destructive: 0 60% 50%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 40 15% 85%;
+  --ring: 153 43% 28%;
+  --radius: 0.5rem;
+}
+
+.rr-root {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-border: hsl(var(--border));
+
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: "Inter", system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+.rr-root .font-serif { font-family: Georgia, "Times New Roman", serif; }
+
+/* Semantic helper classes so components can use the app's token names
+   directly without relying on the sandbox's global Tailwind theme. */
+.rr-bg-card { background: hsl(var(--card)); }
+.rr-bg-background { background: hsl(var(--background)); }
+.rr-bg-muted { background: hsl(var(--muted)); }
+.rr-bg-accent { background: hsl(var(--accent)); }
+.rr-bg-primary { background: hsl(var(--primary)); }
+.rr-bg-secondary { background: hsl(var(--secondary)); }
+.rr-text-primary { color: hsl(var(--primary)); }
+.rr-text-muted { color: hsl(var(--muted-foreground)); }
+.rr-text-pfg { color: hsl(var(--primary-foreground)); }
+.rr-border { border-color: hsl(var(--border)); }
