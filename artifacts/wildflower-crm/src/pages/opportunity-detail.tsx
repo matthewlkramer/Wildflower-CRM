@@ -745,14 +745,17 @@ function OppView({
           // Activity (interactions/emails/calendar/meetings) is scoped to
           // whichever donor this opportunity is linked to — opportunities
           // don't have their own activity arrays — while notes & tasks link
-          // to the opportunity itself.
-          <UnifiedActivityFeed
-            funderId={opp.funderId ?? undefined}
-            personId={opp.individualGiverPersonId ?? undefined}
-            householdId={opp.householdId ?? undefined}
-            notesContext={{ opportunityId: opp.id }}
-            hideTasks
-          />
+          // to the opportunity itself. Tasks sit above the activity feed.
+          <>
+            <TasksPanel opportunityId={opp.id} />
+            <UnifiedActivityFeed
+              funderId={opp.funderId ?? undefined}
+              personId={opp.individualGiverPersonId ?? undefined}
+              householdId={opp.householdId ?? undefined}
+              notesContext={{ opportunityId: opp.id }}
+              hideTasks
+            />
+          </>
         }
         right={
           <>
@@ -833,8 +836,6 @@ function OppView({
                 </div>
               ) : null}
             </RelatedCard>
-
-            <TasksPanel opportunityId={opp.id} />
           </>
         }
       />

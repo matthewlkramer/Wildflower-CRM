@@ -501,15 +501,18 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       center={
         // Activity is scoped to the gift's donor (interactions/email/calendar/
         // meetings only link to a person/funder/household); notes link to the
-        // gift itself. Tasks are surfaced in the dedicated Tasks card in the
-        // right rail, so they're hidden from the feed to avoid duplication.
-        <UnifiedActivityFeed
-          funderId={gift.funderId ?? undefined}
-          personId={gift.individualGiverPersonId ?? undefined}
-          householdId={gift.householdId ?? undefined}
-          notesContext={{ giftId: gift.id }}
-          hideTasks
-        />
+        // gift itself. The Tasks card sits above the activity feed, which hides
+        // tasks to avoid duplication.
+        <>
+          <TasksPanel giftId={gift.id} />
+          <UnifiedActivityFeed
+            funderId={gift.funderId ?? undefined}
+            personId={gift.individualGiverPersonId ?? undefined}
+            householdId={gift.householdId ?? undefined}
+            notesContext={{ giftId: gift.id }}
+            hideTasks
+          />
+        </>
       }
       right={
         <>
@@ -590,8 +593,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
               </div>
             ) : null}
           </RelatedCard>
-
-          <TasksPanel giftId={gift.id} />
 
           {hasRelated ? (
             <RelatedCard title="Related">
