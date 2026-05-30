@@ -641,6 +641,7 @@ function OppView({
             personId={opp.individualGiverPersonId ?? undefined}
             householdId={opp.householdId ?? undefined}
             notesContext={{ opportunityId: opp.id }}
+            hideTasks
           />
         }
         right={

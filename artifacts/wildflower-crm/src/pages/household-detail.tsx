@@ -237,7 +237,7 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
           </div>
         </>
       }
-      center={<UnifiedActivityFeed householdId={household.id} />}
+      center={<UnifiedActivityFeed householdId={household.id} hideTasks />}
       right={
         <>
           <RelatedCard title="Members" count={members.length}>
