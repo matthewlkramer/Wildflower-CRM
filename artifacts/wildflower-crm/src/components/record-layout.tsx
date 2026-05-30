@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { ChevronLeft, ChevronDown, Plus, PanelLeft, X, EyeOff, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useSidebarCollapsed } from "@/components/sidebar-collapsed-context";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ */
@@ -44,8 +45,16 @@ export function RecordLayout({
   // into a slide-over drawer toggled by a button. On mobile it stacks; on
   // xl it's a permanent sticky column.
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // When the sidebar is collapsed to its rail, widen the cap so the record
+  // uses the freed-up horizontal space instead of just recentering.
+  const sidebarCollapsed = useSidebarCollapsed();
   return (
-    <div className="mx-auto max-w-[1400px]">
+    <div
+      className={cn(
+        "mx-auto",
+        sidebarCollapsed ? "max-w-[1600px]" : "max-w-[1400px]",
+      )}
+    >
       <Link
         href={backHref}
         className="mb-4 inline-flex items-center gap-1 text-sm text-primary hover:underline"
