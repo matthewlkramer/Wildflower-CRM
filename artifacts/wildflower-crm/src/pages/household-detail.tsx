@@ -10,9 +10,7 @@ import {
   type UpdateHouseholdBody,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
-import { ActivityTimeline } from "@/components/activity-timeline";
-import { NotesPanel } from "@/components/notes-panel";
-import { TasksPanel } from "@/components/tasks-panel";
+import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
@@ -239,13 +237,7 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
           </div>
         </>
       }
-      center={
-        <>
-          <ActivityTimeline householdId={household.id} />
-          <NotesPanel householdId={household.id} />
-          <TasksPanel householdId={household.id} />
-        </>
-      }
+      center={<UnifiedActivityFeed householdId={household.id} />}
       right={
         <>
           <RelatedCard title="Members" count={members.length}>

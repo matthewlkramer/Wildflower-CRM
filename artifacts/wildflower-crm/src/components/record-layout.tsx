@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
-import { ChevronLeft, ChevronDown, Plus } from "lucide-react";
+import { ChevronLeft, ChevronDown, Plus, PanelLeft, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ */
@@ -37,6 +38,10 @@ export function RecordLayout({
   center: ReactNode;
   right: ReactNode;
 }) {
+  // At laptop (md) widths only two lanes fit, so the details lane collapses
+  // into a slide-over drawer toggled by a button. On mobile it stacks; on
+  // xl it's a permanent sticky column.
+  const [detailsOpen, setDetailsOpen] = useState(false);
   return (
     <div className="mx-auto max-w-[1400px]">
       <Link
@@ -91,18 +96,64 @@ export function RecordLayout({
         ) : null}
       </div>
 
-      {/* 3-lane layout: details / activity / related.
-          Responsive: 3 cols (xl) → 2 cols (md, related drops under) → 1 col (mobile). */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(300px,360px)]">
-        {/* LEFT — record details */}
-        <div className="order-2 space-y-4 md:order-1 xl:order-1">{left}</div>
-        {/* CENTER — unified activity feed (widest, primary focus) */}
-        <div className="order-1 space-y-4 md:order-3 md:col-span-2 xl:order-2 xl:col-span-1">
-          {center}
-        </div>
-        {/* RIGHT — related records */}
-        <div className="order-3 space-y-4 md:order-2 xl:order-3">{right}</div>
+      {/* Laptop-only "Details" toggle — opens the left lane as a drawer. */}
+      <div className="mb-4 hidden md:flex xl:hidden">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setDetailsOpen(true)}
+          data-testid="button-open-details-drawer"
+        >
+          <PanelLeft className="mr-1.5 h-4 w-4" />
+          Details
+        </Button>
       </div>
+
+      {/* 3-lane layout: details / activity / related.
+          - mobile (default): single stacked column, activity feed first.
+          - laptop (md): two lanes (activity + related); details is a drawer.
+          - desktop (xl): three lanes; details + related are sticky and scroll
+            independently of the (taller) center feed. */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(300px,360px)]">
+        {/* LEFT — record details. Hidden at md (shown via drawer instead). */}
+        <div className="order-2 space-y-4 md:hidden xl:order-1 xl:block xl:self-start xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pr-1">
+          {left}
+        </div>
+        {/* CENTER — unified activity feed (widest, primary focus). */}
+        <div className="order-1 space-y-4 xl:order-2">{center}</div>
+        {/* RIGHT — related records. */}
+        <div className="order-3 space-y-4 xl:order-3 xl:self-start xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pr-1">
+          {right}
+        </div>
+      </div>
+
+      {/* Details drawer (laptop widths only). */}
+      {detailsOpen ? (
+        <div className="fixed inset-0 z-50 xl:hidden" role="dialog" aria-modal="true">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setDetailsOpen(false)}
+          />
+          <div className="absolute inset-y-0 left-0 w-[360px] max-w-[85vw] overflow-y-auto bg-background p-4 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <span className="font-serif text-lg font-semibold">Details</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setDetailsOpen(false)}
+                aria-label="Close details"
+                data-testid="button-close-details-drawer"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="space-y-4">{left}</div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

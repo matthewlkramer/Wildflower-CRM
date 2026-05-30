@@ -13,8 +13,7 @@ import {
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { GiftAllocationsEditor } from "@/components/allocation-editors";
-import { NotesPanel } from "@/components/notes-panel";
-import { TasksPanel } from "@/components/tasks-panel";
+import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { ThankYouPanel } from "@/components/thank-you-panel";
 import {
   InlineEditBoolean,
@@ -433,14 +432,20 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
         </>
       }
       center={
-        <>
-          <ThankYouPanel gift={gift} />
-          <NotesPanel giftId={gift.id} />
-          <TasksPanel giftId={gift.id} />
-        </>
+        // Activity is scoped to the gift's donor (interactions/email/calendar/
+        // meetings only link to a person/funder/household); notes & tasks link
+        // to the gift itself.
+        <UnifiedActivityFeed
+          funderId={gift.funderId ?? undefined}
+          personId={gift.individualGiverPersonId ?? undefined}
+          householdId={gift.householdId ?? undefined}
+          notesContext={{ giftId: gift.id }}
+        />
       }
       right={
         <>
+          <ThankYouPanel gift={gift} />
+
           <RelatedCard title="Allocations" count={allocations.length}>
             <div className="px-2 py-1">
               <GiftAllocationsEditor

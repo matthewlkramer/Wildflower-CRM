@@ -130,7 +130,7 @@ export function NotesPanel(ctx: PanelContext) {
   );
 }
 
-function AddNoteDialog({ ctx }: { ctx: PanelContext }) {
+export function AddNoteDialog({ ctx }: { ctx: PanelContext }) {
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
   const [links, setLinks] = useState<EntityLinks>(EMPTY_LINKS);

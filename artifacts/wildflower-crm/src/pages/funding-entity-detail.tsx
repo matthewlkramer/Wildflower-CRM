@@ -18,9 +18,7 @@ import {
   type Priority,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
-import { ActivityTimeline } from "@/components/activity-timeline";
-import { NotesPanel } from "@/components/notes-panel";
-import { TasksPanel } from "@/components/tasks-panel";
+import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
@@ -725,13 +723,7 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           </div>
         </>
       }
-      center={
-        <>
-          <ActivityTimeline funderId={funder.id} />
-          <NotesPanel funderId={funder.id} />
-          <TasksPanel funderId={funder.id} />
-        </>
-      }
+      center={<UnifiedActivityFeed funderId={funder.id} />}
       right={
         <>
           <RelatedCard title="People" count={people.length}>

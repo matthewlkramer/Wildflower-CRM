@@ -18,9 +18,7 @@ import {
   EmailsEditor,
   PhoneNumbersEditor,
 } from "@/components/contact-info-editor";
-import { ActivityTimeline } from "@/components/activity-timeline";
-import { NotesPanel } from "@/components/notes-panel";
-import { TasksPanel } from "@/components/tasks-panel";
+import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
@@ -679,13 +677,7 @@ function PersonView({ person }: { person: PersonDetail }) {
           </div>
         </>
       }
-      center={
-        <>
-          <ActivityTimeline personId={person.id} />
-          <NotesPanel personId={person.id} />
-          <TasksPanel personId={person.id} />
-        </>
-      }
+      center={<UnifiedActivityFeed personId={person.id} />}
       right={
         <>
           <RelatedCard title="Affiliations" count={roles.length}>

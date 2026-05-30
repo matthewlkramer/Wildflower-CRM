@@ -15,9 +15,7 @@ import {
   type OpportunityConditional,
 } from "@workspace/api-client-react";
 import { PledgeAllocationsEditor } from "@/components/allocation-editors";
-import { ActivityTimeline } from "@/components/activity-timeline";
-import { NotesPanel } from "@/components/notes-panel";
-import { TasksPanel } from "@/components/tasks-panel";
+import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { GrantLetterUpload } from "@/components/grant-letter-upload";
 import { ReportingDeadlinesDialog } from "@/components/reporting-deadlines-dialog";
@@ -651,21 +649,16 @@ function OppView({
           </>
         }
         center={
-          <>
-            {/* Activity timeline scoped to whichever donor this opportunity is
-                linked to. Opportunities don't have their own activity arrays;
-                the relevant signal is "everything we've heard from / about the
-                donor" so we just reuse the donor's timeline here. */}
-            {(opp.funderId || opp.individualGiverPersonId || opp.householdId) && (
-              <ActivityTimeline
-                funderId={opp.funderId ?? undefined}
-                personId={opp.individualGiverPersonId ?? undefined}
-                householdId={opp.householdId ?? undefined}
-              />
-            )}
-            <NotesPanel opportunityId={opp.id} />
-            <TasksPanel opportunityId={opp.id} />
-          </>
+          // Activity (interactions/emails/calendar/meetings) is scoped to
+          // whichever donor this opportunity is linked to — opportunities
+          // don't have their own activity arrays — while notes & tasks link
+          // to the opportunity itself.
+          <UnifiedActivityFeed
+            funderId={opp.funderId ?? undefined}
+            personId={opp.individualGiverPersonId ?? undefined}
+            householdId={opp.householdId ?? undefined}
+            notesContext={{ opportunityId: opp.id }}
+          />
         }
         right={
           <>

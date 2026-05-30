@@ -204,7 +204,7 @@ export function TasksPanel(ctx: PanelContext) {
   );
 }
 
-function AddTaskDialog({ ctx }: { ctx: PanelContext }) {
+export function AddTaskDialog({ ctx }: { ctx: PanelContext }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
