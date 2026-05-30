@@ -125,23 +125,51 @@ export function IndividualRecord() {
       right={
         <>
           <RelatedCard
-            title="Affiliations"
+            title="People"
             count={3}
             action={<CardAction label="New" />}
           >
             <AffiliationRow
-              org="Whitcomb Foundation"
+              name="James Whitcomb"
+              role="Spouse · Whitcomb household"
+              status="active"
+              primary
+            />
+            <AffiliationRow
+              name="Margaret Chen"
+              role="Wealth advisor"
+              status="active"
+            />
+            <AffiliationRow
+              name="Robert Hale"
+              role="Colleague · Meridian Capital"
+              status="active"
+            />
+          </RelatedCard>
+
+          <RelatedCard
+            title="Organizations"
+            count={4}
+            action={<CardAction label="New" />}
+          >
+            <AffiliationRow
+              name="Whitcomb Foundation"
               role="Trustee"
               status="active"
               primary
             />
             <AffiliationRow
-              org="Meridian Capital"
+              name="Meridian Capital"
               role="Managing Partner"
               status="active"
             />
             <AffiliationRow
-              org="Greenwich Academy"
+              name="Fidelity Charitable"
+              role="Payment intermediary"
+              status="active"
+            />
+            <AffiliationRow
+              name="Greenwich Academy"
               role="Former board chair"
               status="past"
             />
@@ -159,11 +187,6 @@ export function IndividualRecord() {
             <RelatedRow name="FY26 pledge payment" sub="Oct 12, 2025" amount="$75K" />
             <RelatedRow name="FY25 annual gift" sub="Nov 30, 2024" amount="$50K" />
             <RelatedRow name="Gala paddle raise" sub="May 4, 2024" amount="$25K" />
-          </RelatedCard>
-
-          <RelatedCard title="Household" count={3} defaultOpen={false}>
-            <RelatedRow name="Whitcomb Family" sub="Joint account · primary" tone="primary" />
-            <RelatedRow name="James Whitcomb" sub="Spouse" tone="primary" />
           </RelatedCard>
         </>
       }

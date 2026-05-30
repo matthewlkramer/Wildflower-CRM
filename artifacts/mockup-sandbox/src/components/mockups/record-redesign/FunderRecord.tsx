@@ -132,23 +132,56 @@ export function FunderRecord() {
       right={
         <>
           <RelatedCard
-            title="Affiliations"
-            count={3}
+            title="People"
+            count={4}
             action={<CardAction label="New" />}
           >
             <AffiliationRow
-              org="Walton Enterprises"
+              name="Dana Whitfield"
+              role="Program Officer"
+              status="active"
+              primary
+            />
+            <AffiliationRow
+              name="Marcus Lee"
+              role="Grants Manager"
+              status="active"
+            />
+            <AffiliationRow
+              name="Alice Walton"
+              role="Board chair · principal"
+              status="active"
+            />
+            <AffiliationRow
+              name="Greg Penner"
+              role="Former trustee"
+              status="past"
+            />
+          </RelatedCard>
+
+          <RelatedCard
+            title="Organizations"
+            count={4}
+            action={<CardAction label="New" />}
+          >
+            <AffiliationRow
+              name="Walton Enterprises"
               role="Parent entity"
               status="active"
               primary
             />
             <AffiliationRow
-              org="Walton Family Charitable Support Foundation"
+              name="Walton Family Charitable Support Foundation"
               role="Sister foundation"
               status="active"
             />
             <AffiliationRow
-              org="Walmart Foundation"
+              name="Fidelity Charitable"
+              role="Payment intermediary"
+              status="active"
+            />
+            <AffiliationRow
+              name="Walmart Foundation"
               role="Former co-funder"
               status="past"
             />
@@ -169,11 +202,6 @@ export function FunderRecord() {
             <RelatedRow name="Payment 6 of 6" sub="Mar 15, 2026" amount="$250K" />
             <RelatedRow name="Payment 5 of 6" sub="Dec 15, 2025" amount="$250K" />
             <RelatedRow name="Payment 4 of 6" sub="Sep 15, 2025" amount="$250K" />
-          </RelatedCard>
-
-          <RelatedCard title="People" count={4} defaultOpen={false}>
-            <RelatedRow name="Dana Whitfield" sub="Program Officer · primary" tone="primary" />
-            <RelatedRow name="Marcus Lee" sub="Grants Manager" tone="primary" />
           </RelatedCard>
         </>
       }

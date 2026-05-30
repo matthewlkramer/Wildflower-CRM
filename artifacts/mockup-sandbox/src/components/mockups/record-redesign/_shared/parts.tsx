@@ -435,14 +435,14 @@ export function CardAction({ label }: { label: string }) {
   );
 }
 
-/* Clickable affiliation/funding-entity row with active vs past status. */
+/* Clickable affiliation row (person or organization) with active vs past status. */
 export function AffiliationRow({
-  org,
+  name,
   role,
   status,
   primary,
 }: {
-  org: string;
+  name: string;
   role?: string;
   status: "active" | "past";
   primary?: boolean;
@@ -457,7 +457,7 @@ export function AffiliationRow({
     >
       <div className="min-w-0">
         <a className="rr-text-primary block cursor-pointer truncate text-sm font-medium hover:underline">
-          {org}
+          {name}
         </a>
         {role ? <div className="rr-text-muted truncate text-xs">{role}</div> : null}
       </div>
