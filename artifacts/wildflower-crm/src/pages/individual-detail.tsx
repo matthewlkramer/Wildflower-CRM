@@ -121,6 +121,7 @@ const PRIORITY_OPTIONS = [
 import { useToast } from "@/hooks/use-toast";
 import { personDisplayName } from "@/lib/person";
 import { Badge } from "@/components/ui/badge";
+import { PriorityTooltip } from "@/components/priority-tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -363,7 +364,12 @@ function PersonView({ person }: { person: PersonDetail }) {
 
   const highlights: Highlight[] = [
     {
-      label: "Priority",
+      label: (
+        <span className="inline-flex items-center gap-1">
+          Priority
+          <PriorityTooltip />
+        </span>
+      ),
       value: (
         <InlineEditSelect
           label="Priority"

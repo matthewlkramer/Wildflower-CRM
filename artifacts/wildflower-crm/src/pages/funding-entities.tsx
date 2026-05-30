@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CreateFunderDialog } from "@/components/create-funder-dialog";
 import { PriorityStar } from "@/components/priority-star";
+import { PriorityTooltip } from "@/components/priority-tooltip";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
@@ -126,6 +127,12 @@ function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
     {
       key: "priorityTier",
       label: "Priority tier",
+      header: (
+        <span className="inline-flex items-center gap-1">
+          Priority tier
+          <PriorityTooltip />
+        </span>
+      ),
       cell: (f) =>
         f.priority ? (
           <Badge variant="outline">{PRIORITY_LABEL[f.priority] ?? f.priority}</Badge>

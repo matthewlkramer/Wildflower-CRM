@@ -141,6 +141,7 @@ const PRIORITY_OPTIONS = [
 ] as const satisfies ReadonlyArray<InlineSelectOption<Priority>>;
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { PriorityTooltip } from "@/components/priority-tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -296,7 +297,12 @@ function FunderView({ funder }: { funder: FunderDetail }) {
 
   const highlights: Highlight[] = [
     {
-      label: "Priority",
+      label: (
+        <span className="inline-flex items-center gap-1">
+          Priority
+          <PriorityTooltip />
+        </span>
+      ),
       value: (
         <InlineEditSelect
           label="Priority"

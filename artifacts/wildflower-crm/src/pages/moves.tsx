@@ -12,6 +12,7 @@ import { formatDateShort } from "@/lib/format";
 import { useUserNameMap } from "@/components/user-picker";
 import { useRegionNameMap } from "@/components/region-picker";
 import { Badge } from "@/components/ui/badge";
+import { PriorityTooltip } from "@/components/priority-tooltip";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import {
@@ -124,7 +125,12 @@ export default function Moves() {
               <SortableTH colKey="name" {...ts}>Name</SortableTH>
               <SortableTH colKey="lastContacted" {...ts}>Last contacted</SortableTH>
               <SortableTH colKey="interactions" align="right" {...ts}>Interactions</SortableTH>
-              <SortableTH colKey="priority" {...ts}>Priority</SortableTH>
+              <SortableTH colKey="priority" {...ts}>
+                <span className="inline-flex items-center gap-1">
+                  Priority
+                  <PriorityTooltip />
+                </span>
+              </SortableTH>
               <SortableTH colKey="owner" {...ts}>Owner</SortableTH>
               <SortableTH colKey="region" {...ts}>Region</SortableTH>
               <SortableTH colKey="affiliation" {...ts}>Funder / Organization</SortableTH>

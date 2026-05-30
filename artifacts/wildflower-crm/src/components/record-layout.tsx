@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 /* ------------------------------------------------------------------ */
 
 export interface Highlight {
-  label: string;
+  label: ReactNode;
   value: ReactNode;
   accent?: boolean;
 }
