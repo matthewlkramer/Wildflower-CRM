@@ -1286,7 +1286,10 @@ BEGIN
   -- 3) Optional region suffix. The bare 'united_states' region is the
   -- implicit default country and is filtered out — it shouldn't surface in
   -- the label. Non-US regions and US-state/metro regions all still show.
-  IF p_region_ids IS NOT NULL AND array_length(p_region_ids, 1) > 0 THEN
+  -- Project usages are exempt: a project name stands alone, with no region
+  -- appended after it.
+  IF p_region_ids IS NOT NULL AND array_length(p_region_ids, 1) > 0
+     AND p_intended_usage IS DISTINCT FROM 'project' THEN
     SELECT string_agg(COALESCE(NULLIF(name, ''), id), ', ' ORDER BY name)
       INTO v_regions
       FROM regions
