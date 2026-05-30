@@ -48,7 +48,7 @@ import {
   type Highlight,
 } from "@/components/record-layout";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
+import { formatCurrency, formatDate, formatEnum, formatPercent } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 
 const STAGE_OPTIONS = [
@@ -516,44 +516,8 @@ function OppView({
                     testIdBase="opp-winprob"
                     value={opp.winProbability ?? null}
                     placeholder="e.g. 75% or 0.75"
-                    display={opp.winProbability ?? "—"}
+                    display={formatPercent(opp.winProbability)}
                     onSave={(next) => patch({ winProbability: next })}
-                  />
-                </Row>
-                <Row label="Conditional">
-                  <InlineEditSelect
-                    label="Conditional"
-                    testIdBase="opp-conditional"
-                    value={opp.conditional ?? null}
-                    options={CONDITIONAL_OPTIONS}
-                    display={formatEnum(opp.conditional) || "—"}
-                    onSave={(next) => patch({ conditional: next })}
-                  />
-                </Row>
-                <Row label="Conditions met">
-                  <InlineEditBoolean
-                    label="Conditions met"
-                    testIdBase="opp-conditions-met"
-                    value={opp.conditionsMet}
-                    allowNull={false}
-                    display={opp.conditionsMet ? "Yes" : "No"}
-                    onSave={(next) => patch({ conditionsMet: next ?? false })}
-                  />
-                </Row>
-                <Row label="Is conditional">
-                  {/*
-                    Independent boolean flag (separate from the
-                    `conditional` semantic-context enum above). Toggled
-                    manually; pre-set true on records imported with a
-                    `conditional_commitment` stage.
-                  */}
-                  <InlineEditBoolean
-                    label="Is conditional"
-                    testIdBase="opp-is-conditional"
-                    value={opp.isConditional ?? false}
-                    allowNull={false}
-                    display={opp.isConditional ? "Yes" : "No"}
-                    onSave={(next) => patch({ isConditional: next ?? false })}
                   />
                 </Row>
                 <Row label="Was pledge">
@@ -597,14 +561,57 @@ function OppView({
               </div>
             </FieldCard>
 
+            <FieldCard title="Conditions">
+              <div className="space-y-1">
+                <Row label="Conditional">
+                  <InlineEditSelect
+                    label="Conditional"
+                    testIdBase="opp-conditional"
+                    value={opp.conditional ?? null}
+                    options={CONDITIONAL_OPTIONS}
+                    display={formatEnum(opp.conditional) || "—"}
+                    onSave={(next) => patch({ conditional: next })}
+                  />
+                </Row>
+                <Row label="Is conditional">
+                  {/*
+                    Independent boolean flag (separate from the
+                    `conditional` semantic-context enum above). Toggled
+                    manually; pre-set true on records imported with a
+                    `conditional_commitment` stage.
+                  */}
+                  <InlineEditBoolean
+                    label="Is conditional"
+                    testIdBase="opp-is-conditional"
+                    value={opp.isConditional ?? false}
+                    allowNull={false}
+                    display={opp.isConditional ? "Yes" : "No"}
+                    onSave={(next) => patch({ isConditional: next ?? false })}
+                  />
+                </Row>
+                <Row label="Conditions met">
+                  <InlineEditBoolean
+                    label="Conditions met"
+                    testIdBase="opp-conditions-met"
+                    value={opp.conditionsMet}
+                    allowNull={false}
+                    display={opp.conditionsMet ? "Yes" : "No"}
+                    onSave={(next) => patch({ conditionsMet: next ?? false })}
+                  />
+                </Row>
+                <div className="pt-2">
+                  <EditableNote
+                    label="Conditions"
+                    testIdBase="opp-conditions"
+                    value={opp.conditions ?? null}
+                    onSave={(next) => patch({ conditions: next })}
+                  />
+                </div>
+              </div>
+            </FieldCard>
+
             <FieldCard title="Other details" defaultOpen={false}>
               <div className="space-y-4">
-                <EditableNote
-                  label="Conditions"
-                  testIdBase="opp-conditions"
-                  value={opp.conditions ?? null}
-                  onSave={(next) => patch({ conditions: next })}
-                />
                 <EditableNote
                   label="Payment details"
                   testIdBase="opp-payment-details"

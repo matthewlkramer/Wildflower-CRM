@@ -58,6 +58,19 @@ export function formatCurrency(amount: number | string | null | undefined): stri
 }
 
 /**
+ * Win probability is stored as a decimal string (e.g. "0.75"). Display it as
+ * a whole percent ("75%"). Returns "—" for empty/non-numeric input.
+ */
+export function formatPercent(
+  value: number | string | null | undefined,
+): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const num = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(num)) return "—";
+  return `${Math.round(num * 100)}%`;
+}
+
+/**
  * Long-form date for prose, headings, and detail-page footers.
  * "Jun 30, 2026" — pairs cleanly with surrounding sentences.
  */
