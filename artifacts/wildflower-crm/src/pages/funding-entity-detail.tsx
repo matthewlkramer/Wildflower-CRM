@@ -42,6 +42,10 @@ import {
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import {
+  InlineEditIntermediaryPicker,
+  useIntermediaryName,
+} from "@/components/entity-picker";
+import {
   InlineEditInterestsThematic,
   InlineEditInterestsAges,
   InlineEditInterestsGovModels,
@@ -764,7 +768,7 @@ function FunderView({ funder }: { funder: FunderDetail }) {
             )}
           </RelatedCard>
 
-          <RelatedFundersCard funder={funder} />
+          <RelatedFundersCard funder={funder} patch={patch} />
 
           <LinkedTasksCard funderId={funder.id} />
 
@@ -790,7 +794,13 @@ function FunderView({ funder }: { funder: FunderDetail }) {
   );
 }
 
-function RelatedFundersCard({ funder }: { funder: FunderDetail }) {
+function RelatedFundersCard({
+  funder,
+  patch,
+}: {
+  funder: FunderDetail;
+  patch: (body: UpdateFunderBody) => Promise<unknown>;
+}) {
   const childParams: ListFundersParams = {
     parentFunderId: funder.id,
     limit: 100,
@@ -808,35 +818,41 @@ function RelatedFundersCard({ funder }: { funder: FunderDetail }) {
 
   const children = childrenQ.data?.data ?? [];
   const parent = funder.parentFunderId ? (parentQ.data ?? null) : null;
-  const count = (parent ? 1 : 0) + children.length;
+  const intermediaryId = funder.paymentIntermediaryId ?? null;
+  const resolvedIntermediaryName = useIntermediaryName(intermediaryId);
+  const intermediaryName =
+    funder.paymentIntermediary?.name ?? resolvedIntermediaryName;
+  const count = (parent ? 1 : 0) + children.length + (intermediaryId ? 1 : 0);
 
   return (
     <RelatedCard title="Organizations" count={count}>
-      {count > 0 ? (
-        <div>
-          {parent ? (
-            <AffiliationRow
-              name={parent.name}
-              href={`/funding-entities/${parent.id}`}
-              role="Parent organization"
-              hideStatusBadge
-            />
-          ) : null}
-          {children.map((c) => (
-            <AffiliationRow
-              key={c.id}
-              name={c.name}
-              href={`/funding-entities/${c.id}`}
-              role="Subsidiary"
-              hideStatusBadge
-            />
-          ))}
-        </div>
-      ) : (
-        <p className="px-2 py-2 text-sm text-muted-foreground">
-          No related funding entities.
-        </p>
-      )}
+      <div>
+        {parent ? (
+          <AffiliationRow
+            name={parent.name}
+            href={`/funding-entities/${parent.id}`}
+            role="Parent organization"
+            hideStatusBadge
+          />
+        ) : null}
+        {children.map((c) => (
+          <AffiliationRow
+            key={c.id}
+            name={c.name}
+            href={`/funding-entities/${c.id}`}
+            role="Subsidiary"
+            hideStatusBadge
+          />
+        ))}
+        <InlineEditIntermediaryPicker
+          label="Payment intermediary"
+          testIdBase="funder-payment-intermediary"
+          display={intermediaryName ?? undefined}
+          value={intermediaryId}
+          onSave={(next) => patch({ paymentIntermediaryId: next })}
+          allowNull
+        />
+      </div>
     </RelatedCard>
   );
 }

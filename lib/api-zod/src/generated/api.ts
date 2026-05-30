@@ -847,6 +847,12 @@ export const ListFundersResponse = zod.object({
       interestsGovModels: zod.array(zod.string()).nullish(),
       regionIds: zod.array(zod.string()).nullish(),
       parentFunderId: zod.string().nullish(),
+      paymentIntermediaryId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Payment intermediary (e.g. a DAF) this funder gives through.",
+        ),
       x: zod.string().nullish(),
       linkedin: zod.string().nullish(),
       facebook: zod.string().nullish(),
@@ -951,6 +957,7 @@ export const CreateFunderBody = zod.object({
   interestsGovModels: zod.array(zod.string()).optional(),
   regionIds: zod.array(zod.string()).optional(),
   parentFunderId: zod.string().optional(),
+  paymentIntermediaryId: zod.string().optional(),
   x: zod.string().optional(),
   linkedin: zod.string().optional(),
   facebook: zod.string().optional(),
@@ -1028,6 +1035,10 @@ export const GetFunderResponse = zod
     interestsGovModels: zod.array(zod.string()).nullish(),
     regionIds: zod.array(zod.string()).nullish(),
     parentFunderId: zod.string().nullish(),
+    paymentIntermediaryId: zod
+      .string()
+      .nullish()
+      .describe("Payment intermediary (e.g. a DAF) this funder gives through."),
     x: zod.string().nullish(),
     linkedin: zod.string().nullish(),
     facebook: zod.string().nullish(),
@@ -1145,6 +1156,20 @@ export const GetFunderResponse = zod
           }),
         )
         .optional(),
+      paymentIntermediary: zod
+        .object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod
+            .enum(["daf", "giving_platform", "private_wealth_manager"])
+            .nullish(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
+        })
+        .nullish()
+        .describe(
+          "Resolved payment intermediary referenced by paymentIntermediaryId, if set.",
+        ),
     }),
   );
 
@@ -1214,6 +1239,7 @@ export const UpdateFunderBody = zod.object({
   interestsGovModels: zod.array(zod.string()).nullish(),
   regionIds: zod.array(zod.string()).nullish(),
   parentFunderId: zod.string().nullish(),
+  paymentIntermediaryId: zod.string().nullish(),
   x: zod.string().nullish(),
   linkedin: zod.string().nullish(),
   facebook: zod.string().nullish(),
@@ -1286,6 +1312,10 @@ export const UpdateFunderResponse = zod.object({
   interestsGovModels: zod.array(zod.string()).nullish(),
   regionIds: zod.array(zod.string()).nullish(),
   parentFunderId: zod.string().nullish(),
+  paymentIntermediaryId: zod
+    .string()
+    .nullish()
+    .describe("Payment intermediary (e.g. a DAF) this funder gives through."),
   x: zod.string().nullish(),
   linkedin: zod.string().nullish(),
   facebook: zod.string().nullish(),

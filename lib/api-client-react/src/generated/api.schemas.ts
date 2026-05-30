@@ -673,6 +673,8 @@ export interface Funder {
   interestsGovModels?: string[] | null;
   regionIds?: string[] | null;
   parentFunderId?: string | null;
+  /** Payment intermediary (e.g. a DAF) this funder gives through. */
+  paymentIntermediaryId?: string | null;
   x?: string | null;
   linkedin?: string | null;
   facebook?: string | null;
@@ -745,10 +747,20 @@ export interface Address {
   updatedAt: string;
 }
 
+export interface PaymentIntermediary {
+  id: string;
+  name: string;
+  type?: PaymentIntermediaryType | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type FunderDetail = Funder & {
   people?: PeopleEntityRole[];
   emails?: Email[];
   addresses?: Address[];
+  /** Resolved payment intermediary referenced by paymentIntermediaryId, if set. */
+  readonly paymentIntermediary?: PaymentIntermediary | null;
 };
 
 export interface FunderList {
@@ -781,6 +793,7 @@ export interface CreateFunderBody {
   interestsGovModels?: string[];
   regionIds?: string[];
   parentFunderId?: string;
+  paymentIntermediaryId?: string;
   x?: string;
   linkedin?: string;
   facebook?: string;
@@ -815,6 +828,7 @@ export interface UpdateFunderBody {
   interestsGovModels?: string[] | null;
   regionIds?: string[] | null;
   parentFunderId?: string | null;
+  paymentIntermediaryId?: string | null;
   x?: string | null;
   linkedin?: string | null;
   facebook?: string | null;
@@ -872,14 +886,6 @@ export interface UpdateOrganizationBody {
   otherNames?: string | null;
   historicalNames?: string[] | null;
   parentOrgId?: string | null;
-}
-
-export interface PaymentIntermediary {
-  id: string;
-  name: string;
-  type?: PaymentIntermediaryType | null;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export type PaymentIntermediaryDetail = PaymentIntermediary & {

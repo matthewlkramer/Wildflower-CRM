@@ -2021,6 +2021,7 @@ components:
         interestsGovModels:    { type: array, items: { type: string }, nullable: true }
         regionIds:             { type: array, items: { type: string }, nullable: true }
         parentFunderId:        { type: string, nullable: true }
+        paymentIntermediaryId: { type: string, nullable: true, description: "Payment intermediary (e.g. a DAF) this funder gives through." }
         x:                     { type: string, nullable: true }
         linkedin:              { type: string, nullable: true }
         facebook:              { type: string, nullable: true }
@@ -2043,6 +2044,7 @@ components:
             people:    { type: array, items: { $ref: "#/components/schemas/PeopleEntityRole" } }
             emails:    { type: array, items: { $ref: "#/components/schemas/Email" } }
             addresses: { type: array, items: { $ref: "#/components/schemas/Address" } }
+            paymentIntermediary: { allOf: [ { $ref: "#/components/schemas/PaymentIntermediary" } ], nullable: true, readOnly: true, description: "Resolved payment intermediary referenced by paymentIntermediaryId, if set." }
     FunderList:
       type: object
       required: [data, pagination]
@@ -2077,6 +2079,7 @@ components:
         interestsGovModels:    { type: array, items: { type: string } }
         regionIds:             { type: array, items: { type: string } }
         parentFunderId:        { type: string }
+        paymentIntermediaryId: { type: string }
         x:                     { type: string }
         linkedin:              { type: string }
         facebook:              { type: string }
@@ -2111,6 +2114,7 @@ components:
         interestsGovModels:    { type: array, items: { type: string }, nullable: true }
         regionIds:             { type: array, items: { type: string }, nullable: true }
         parentFunderId:        { type: string, nullable: true }
+        paymentIntermediaryId: { type: string, nullable: true }
         x:                     { type: string, nullable: true }
         linkedin:              { type: string, nullable: true }
         facebook:              { type: string, nullable: true }

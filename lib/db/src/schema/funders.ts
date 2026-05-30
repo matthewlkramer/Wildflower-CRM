@@ -20,6 +20,7 @@ import {
   priorityEnum,
 } from "./_enums";
 import { users } from "./users";
+import { paymentIntermediaries } from "./paymentIntermediaries";
 
 export const funders = pgTable("funders", {
   id: text("id").primaryKey(),
@@ -71,6 +72,12 @@ export const funders = pgTable("funders", {
     (): AnyPgColumn => funders.id,
     { onDelete: "set null" },
   ),
+  // Payment intermediary (e.g. a DAF) this funder gives through. SET NULL:
+  // removing the intermediary leaves the funder intact.
+  paymentIntermediaryId: text("payment_intermediary_id").references(
+    () => paymentIntermediaries.id,
+    { onDelete: "set null" },
+  ),
   // Solicitation priority tier (top/high/medium/low). The "top" band
   // is surfaced as a star icon on the funders table and inline next to
   // the funder name wherever it appears as a donor (opportunities, gifts).
@@ -80,6 +87,7 @@ export const funders = pgTable("funders", {
 }, (t) => [
   index("funders_owner_user_id_idx").on(t.ownerUserId),
   index("funders_parent_funder_id_idx").on(t.parentFunderId),
+  index("funders_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
   index("funders_priority_idx").on(t.priority),
   index("funders_region_ids_gin_idx").using("gin", t.regionIds),
   index("funders_interests_thematic_gin_idx").using("gin", t.interestsThematic),
