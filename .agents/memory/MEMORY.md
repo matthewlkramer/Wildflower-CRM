@@ -1,0 +1,1 @@
+- [wildflower-crm detail routes](wildflower-crm-routes.md) — funders live at /funding-entities, not /funders; pledge detail inherits opportunity.

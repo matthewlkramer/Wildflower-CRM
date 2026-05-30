@@ -1,4 +1,3 @@
-import { Link } from "wouter";
 import {
   useListGiftsAndPayments,
   getListGiftsAndPaymentsQueryKey,
@@ -8,18 +7,9 @@ import {
   type ListOpportunitiesAndPledgesParams,
   type OpportunityStatus,
 } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { GiftFormDialog } from "@/components/gift-form-dialog";
 import { CreateOpportunityDialog } from "@/components/create-opportunity-dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { RelatedCard, RelatedRow } from "@/components/record-layout";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 
 // Cap each card at this many rows. Donor-scoped lists rarely exceed
@@ -61,61 +51,37 @@ export function LinkedGiftsCard({ scope }: { scope: LinkedRecordsScope }) {
   const total = data?.pagination.total ?? 0;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-        <CardTitle>Gifts &amp; payments</CardTitle>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">
-            {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
-          </span>
-          <GiftFormDialog scope={scope} />
+    <RelatedCard
+      title="Gifts & payments"
+      count={isLoading ? undefined : total}
+      action={<GiftFormDialog scope={scope} />}
+    >
+      {isError ? (
+        <p className="px-2 py-2 text-sm text-destructive">
+          {error instanceof Error ? error.message : "Failed to load gifts."}
+        </p>
+      ) : isLoading ? (
+        <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="px-2 py-2 text-sm text-muted-foreground">
+          No linked gifts.
+        </p>
+      ) : (
+        <div data-testid="linked-gifts">
+          {rows.map((g) => (
+            <div key={g.id} data-testid={`row-linked-gift-${g.id}`}>
+              <RelatedRow
+                name={g.name ?? `Gift ${g.id}`}
+                href={`/gifts/${g.id}`}
+                tone="primary"
+                sub={`${formatDateShort(g.dateReceived)} · ${formatEnum(g.type)}`}
+                amount={formatCurrency(g.amount)}
+              />
+            </div>
+          ))}
         </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        {isError ? (
-          <p className="text-sm text-destructive p-4">
-            {error instanceof Error ? error.message : "Failed to load gifts."}
-          </p>
-        ) : isLoading ? null : rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground p-4">No linked gifts.</p>
-        ) : (
-          <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((g) => (
-                  <TableRow
-                    key={g.id}
-                    className="cursor-pointer hover:bg-muted/50 transition-colors"
-                    data-testid={`row-linked-gift-${g.id}`}
-                  >
-                    <TableCell className="font-medium">
-                      <Link href={`/gifts/${g.id}`} className="block w-full">
-                        {g.name ?? `Gift ${g.id}`}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {formatDateShort(g.dateReceived)}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatEnum(g.type)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(g.amount)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </RelatedCard>
   );
 }
 
@@ -157,102 +123,62 @@ export function LinkedOpportunitiesCard({
   const isPledgeView = pledgeView === "pledges";
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-        <CardTitle>{title}</CardTitle>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">
-            {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
-          </span>
-          <CreateOpportunityDialog
-            scope={scope}
-            mode={isPledgeView ? "pledge" : "opportunity"}
-          />
-        </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        {isError ? (
-          <p className="text-sm text-destructive p-4">
-            {error instanceof Error
-              ? error.message
-              : "Failed to load opportunities."}
-          </p>
-        ) : isLoading ? null : rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground p-4">{emptyLabel}</p>
-        ) : (
-          <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Status</TableHead>
-                  {isPledgeView ? (
-                    <TableHead className="text-right">Awarded</TableHead>
-                  ) : (
-                    <TableHead className="text-right">Ask</TableHead>
+    <RelatedCard
+      title={title}
+      count={isLoading ? undefined : total}
+      action={
+        <CreateOpportunityDialog
+          scope={scope}
+          mode={isPledgeView ? "pledge" : "opportunity"}
+        />
+      }
+    >
+      {isError ? (
+        <p className="px-2 py-2 text-sm text-destructive">
+          {error instanceof Error
+            ? error.message
+            : "Failed to load opportunities."}
+        </p>
+      ) : isLoading ? (
+        <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="px-2 py-2 text-sm text-muted-foreground">{emptyLabel}</p>
+      ) : (
+        <div data-testid="linked-opportunities">
+          {rows.map((o) => {
+            // Rows that belong on the Pledges page (wasPledge=true OR
+            // stage ∈ pledge stages) link through /pledges so
+            // breadcrumbs/back-links stay consistent with how the user
+            // navigated in; everything else routes through /opportunities.
+            const stageIsPledge =
+              o.stage === "conditional_commitment" ||
+              o.stage === "verbal_commitment" ||
+              o.stage === "written_commitment";
+            const href =
+              o.wasPledge || stageIsPledge
+                ? `/pledges/${o.id}`
+                : `/opportunities/${o.id}`;
+            const statusLabel = o.status ? formatEnum(o.status) : null;
+            const fy = o.fiscalYear?.toUpperCase();
+            const sub = [formatEnum(o.stage), statusLabel, fy]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <div key={o.id} data-testid={`row-linked-opp-${o.id}`}>
+                <RelatedRow
+                  name={o.name ?? `Untitled ${o.id}`}
+                  href={href}
+                  tone="primary"
+                  sub={sub}
+                  amount={formatCurrency(
+                    isPledgeView ? o.awardedAmount : o.askAmount,
                   )}
-                  <TableHead>FY</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((o) => {
-                  // Rows that belong on the Pledges page (wasPledge=true
-                  // OR stage ∈ pledge stages) link through /pledges so
-                  // breadcrumbs/back-links stay consistent with how the
-                  // user navigated in; everything else routes through
-                  // /opportunities.
-                  const stageIsPledge =
-                    o.stage === "conditional_commitment" ||
-                    o.stage === "verbal_commitment" ||
-                    o.stage === "written_commitment";
-                  const href =
-                    o.wasPledge || stageIsPledge
-                      ? `/pledges/${o.id}`
-                      : `/opportunities/${o.id}`;
-                  return (
-                    <TableRow
-                      key={o.id}
-                      className="cursor-pointer hover:bg-muted/50 transition-colors"
-                      data-testid={`row-linked-opp-${o.id}`}
-                    >
-                      <TableCell className="font-medium">
-                        <Link href={href} className="block w-full">
-                          {o.name ?? `Untitled ${o.id}`}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {formatEnum(o.stage)}
-                      </TableCell>
-                      <TableCell>
-                        {o.status ? (
-                          <Badge
-                            variant={
-                              o.status === "cash_in" || o.status === "pledge"
-                                ? "default"
-                                : "outline"
-                            }
-                          >
-                            {formatEnum(o.status)}
-                          </Badge>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatCurrency(
-                          isPledgeView ? o.awardedAmount : o.askAmount,
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {o.fiscalYear?.toUpperCase() ?? "—"}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-        )}
-      </CardContent>
-    </Card>
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </RelatedCard>
   );
 }

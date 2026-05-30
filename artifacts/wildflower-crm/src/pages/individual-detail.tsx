@@ -26,6 +26,12 @@ import {
   LinkedOpportunitiesCard,
 } from "@/components/linked-records";
 import {
+  RecordLayout,
+  FieldCard,
+  RelatedCard,
+  type Highlight,
+} from "@/components/record-layout";
+import {
   InlineEditBoolean,
   InlineEditSelect,
   InlineEditText,
@@ -99,7 +105,6 @@ const PRIORITY_OPTIONS = [
 ] as const satisfies ReadonlyArray<InlineSelectOption<Priority>>;
 import { useToast } from "@/hooks/use-toast";
 import { personDisplayName } from "@/lib/person";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -136,6 +141,7 @@ export default function IndividualDetail() {
 function PersonView({ person }: { person: PersonDetail }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const userNames = useUserNameMap();
   const ownerDisplay = person.ownerUserId
     ? (userNames.get(person.ownerUserId) ?? person.ownerUserId)
@@ -144,6 +150,9 @@ function PersonView({ person }: { person: PersonDetail }) {
   const regionDisplay = person.currentHomeRegionId
     ? (regionNames.get(person.currentHomeRegionId) ?? person.currentHomeRegionId)
     : "—";
+
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(person.fullName ?? "");
 
   const update = useUpdatePerson({
     mutation: {
@@ -164,482 +173,6 @@ function PersonView({ person }: { person: PersonDetail }) {
     },
   });
 
-  function patch(body: UpdatePersonBody) {
-    return update.mutateAsync({ id: person.id, data: body });
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/individuals" className="text-sm text-primary hover:underline">
-          ← Back to individuals
-        </Link>
-      </div>
-
-      <NameHeader person={person} />
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Basics</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Row label="Prefix">
-              <InlineEditText label="Prefix" testIdBase="person-prefix"
-                value={person.prefix ?? null} display={person.prefix ?? "—"}
-                onSave={(next) => patch({ prefix: next })} />
-            </Row>
-            <Row label="First">
-              <InlineEditText label="First name" testIdBase="person-first"
-                value={person.firstName ?? null} display={person.firstName ?? "—"}
-                onSave={(next) => patch({ firstName: next })} />
-            </Row>
-            <Row label="Middle">
-              <InlineEditText label="Middle name" testIdBase="person-middle"
-                value={person.middleName ?? null} display={person.middleName ?? "—"}
-                onSave={(next) => patch({ middleName: next })} />
-            </Row>
-            <Row label="Last">
-              <InlineEditText label="Last name" testIdBase="person-last"
-                value={person.lastName ?? null} display={person.lastName ?? "—"}
-                onSave={(next) => patch({ lastName: next })} />
-            </Row>
-            <Row label="Suffix">
-              <InlineEditText label="Suffix" testIdBase="person-suffix"
-                value={person.suffix ?? null} display={person.suffix ?? "—"}
-                onSave={(next) => patch({ suffix: next })} />
-            </Row>
-            <Row label="Nickname">
-              <InlineEditText label="Nickname" testIdBase="person-nickname"
-                value={person.nickname ?? null} display={person.nickname ?? "—"}
-                onSave={(next) => patch({ nickname: next })} />
-            </Row>
-            <Row label="Pronouns">
-              <InlineEditSelect label="Pronouns" testIdBase="person-pronouns"
-                value={person.pronouns ?? null} options={PRONOUNS_OPTIONS}
-                display={formatEnum(person.pronouns)}
-                onSave={(next) => patch({ pronouns: next })} />
-            </Row>
-            <Row label="Status">
-              <InlineEditBoolean
-                label="Deceased"
-                testIdBase="person-deceased"
-                value={person.deceased ?? null}
-                trueLabel="Deceased"
-                falseLabel="Living"
-                allowNull={false}
-                display={
-                  person.deceased == null
-                    ? "—"
-                    : person.deceased
-                      ? <Badge variant="outline">Deceased</Badge>
-                      : "Living"
-                }
-                onSave={(next) => patch({ deceased: next ?? false })}
-              />
-            </Row>
-            <Row label="Capacity">
-              <InlineEditSelect
-                label="Capacity rating"
-                testIdBase="person-capacity"
-                value={person.capacityRating ?? null}
-                options={CAPACITY_OPTIONS}
-                display={formatCapacity(person.capacityRating)}
-                onSave={(next) => patch({ capacityRating: next as PersonDetail["capacityRating"] })}
-              />
-            </Row>
-            <Row label="Connection">
-              <InlineEditSelect
-                label="Connection status"
-                testIdBase="person-connection"
-                value={person.connectionStatus ?? null}
-                options={CONNECTION_STATUS_OPTIONS}
-                display={formatEnum(person.connectionStatus)}
-                onSave={(next) => patch({ connectionStatus: next })}
-              />
-            </Row>
-            <Row label="Enthusiasm">
-              <InlineEditSelect
-                label="Enthusiasm"
-                testIdBase="person-enthusiasm"
-                value={person.enthusiasm ?? null}
-                options={ENTHUSIASM_OPTIONS}
-                display={formatEnum(person.enthusiasm)}
-                onSave={(next) => patch({ enthusiasm: next })}
-              />
-            </Row>
-            <Row label="Priority">
-              <InlineEditSelect
-                label="Priority"
-                testIdBase="person-priority"
-                value={person.priority ?? null}
-                options={PRIORITY_OPTIONS}
-                display={
-                  person.priority ? (
-                    <Badge variant={person.priority === "top" ? "default" : "outline"}>
-                      {formatEnum(person.priority)}
-                    </Badge>
-                  ) : (
-                    "—"
-                  )
-                }
-                onSave={(next) => patch({ priority: next })}
-              />
-            </Row>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Engagement</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <DerivedRow label="Last contacted" hint="derived from interactions">
-              {formatDate(person.lastContacted)}
-            </DerivedRow>
-            <DerivedRow label="Interactions" hint="derived from interactions">
-              {person.interactionCount ?? "—"}
-            </DerivedRow>
-            <Row label="Owner">
-              <InlineEditUserPicker testIdBase="person-owner"
-                value={person.ownerUserId ?? null}
-                display={ownerDisplay}
-                onSave={(next) => patch({ ownerUserId: next })} />
-            </Row>
-            <Row label="Region">
-              <InlineEditRegionPicker testIdBase="person-region"
-                value={person.currentHomeRegionId ?? null}
-                display={regionDisplay}
-                onSave={(next) => patch({ currentHomeRegionId: next })} />
-            </Row>
-            <Row label="Children at WF">
-              <InlineEditText
-                label="Children at WF"
-                testIdBase="person-children-at-wf"
-                value={person.childrenAtWf ?? null}
-                placeholder="e.g. 2"
-                display={person.childrenAtWf ?? "—"}
-                onSave={(next) => patch({ childrenAtWf: next })}
-              />
-            </Row>
-            <Row label="Newsletter">
-              <InlineEditBoolean
-                label="Newsletter subscribed"
-                testIdBase="person-newsletter"
-                value={person.newsletter ?? null}
-                trueLabel="Subscribed"
-                falseLabel="Not subscribed"
-                allowNull={false}
-                display={
-                  person.unsubscribedToNewsletter
-                    ? "Unsubscribed"
-                    : person.newsletter == null
-                      ? "—"
-                      : person.newsletter
-                        ? "Subscribed"
-                        : "Not subscribed"
-                }
-                onSave={(next) => patch({ newsletter: next ?? false })}
-              />
-            </Row>
-            <Row label="Unsubscribed">
-              <InlineEditBoolean
-                label="Unsubscribed to newsletter"
-                testIdBase="person-unsubscribed"
-                value={person.unsubscribedToNewsletter ?? null}
-                allowNull={false}
-                display={
-                  person.unsubscribedToNewsletter == null
-                    ? "—"
-                    : person.unsubscribedToNewsletter
-                      ? "Yes"
-                      : "No"
-                }
-                onSave={(next) => patch({ unsubscribedToNewsletter: next ?? false })}
-              />
-            </Row>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Web</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Row label="Website">
-              <InlineEditText label="Website" testIdBase="person-website"
-                value={person.website ?? null} placeholder="https://…"
-                display={
-                  person.website ? (
-                    <a href={person.website} target="_blank" rel="noreferrer"
-                      className="text-primary hover:underline break-all">
-                      {person.website}
-                    </a>
-                  ) : "—"
-                }
-                onSave={(next) => patch({ website: next })} />
-            </Row>
-            <Row label="LinkedIn">
-              <InlineEditText label="LinkedIn" testIdBase="person-linkedin"
-                value={person.linkedin ?? null}
-                display={
-                  person.linkedin ? (
-                    <a
-                      href={person.linkedin}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline truncate"
-                    >
-                      {formatLinkedinHandle(person.linkedin)}
-                    </a>
-                  ) : (
-                    "—"
-                  )
-                }
-                onSave={(next) => patch({ linkedin: next })} />
-            </Row>
-            <Row label="X">
-              <InlineEditText label="X" testIdBase="person-x"
-                value={person.x ?? null}
-                display={
-                  person.x ? (
-                    <a
-                      href={person.x}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline truncate"
-                    >
-                      {formatXHandle(person.x)}
-                    </a>
-                  ) : (
-                    "—"
-                  )
-                }
-                onSave={(next) => patch({ x: next })} />
-            </Row>
-            <Row label="Facebook">
-              <InlineEditText label="Facebook" testIdBase="person-facebook"
-                value={person.facebook ?? null}
-                display={
-                  person.facebook ? (
-                    <a
-                      href={person.facebook}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline truncate"
-                    >
-                      {formatFacebookHandle(person.facebook)}
-                    </a>
-                  ) : (
-                    "—"
-                  )
-                }
-                onSave={(next) => patch({ facebook: next })} />
-            </Row>
-            <Row label="Instagram">
-              <InlineEditText label="Instagram" testIdBase="person-instagram"
-                value={person.instagram ?? null}
-                display={
-                  person.instagram ? (
-                    <a
-                      href={person.instagram}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline truncate"
-                    >
-                      {formatInstagramHandle(person.instagram)}
-                    </a>
-                  ) : (
-                    "—"
-                  )
-                }
-                onSave={(next) => patch({ instagram: next })} />
-            </Row>
-            <Row label="Meeting link">
-              <InlineEditText label="Meeting link" testIdBase="person-meeting-link"
-                value={person.meetingLink ?? null} display={person.meetingLink ?? "—"}
-                onSave={(next) => patch({ meetingLink: next })} />
-            </Row>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Interests</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <TagEditRow label="Thematic">
-            <InlineEditInterestsThematic
-              testIdBase="person-interests-thematic"
-              value={person.interestsThematic ?? []}
-              onSave={(next) => patch({ interestsThematic: next })}
-            />
-          </TagEditRow>
-          <TagEditRow label="Ages">
-            <InlineEditInterestsAges
-              testIdBase="person-interests-ages"
-              value={person.interestsAges ?? []}
-              onSave={(next) => patch({ interestsAges: next })}
-            />
-          </TagEditRow>
-          <TagEditRow label="Gov models">
-            <InlineEditInterestsGovModels
-              testIdBase="person-interests-gov"
-              value={person.interestsGovModels ?? []}
-              onSave={(next) => patch({ interestsGovModels: next })}
-            />
-          </TagEditRow>
-          <TagEditRow label="Regions">
-            <InlineEditMultiRegionPicker
-              testIdBase="person-regions"
-              value={person.regionIds ?? []}
-              onSave={(next) => patch({ regionIds: next })}
-            />
-          </TagEditRow>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Affiliations</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {person.roles && person.roles.length > 0 ? (
-              <ul className="space-y-2 text-sm">
-                {person.roles.map((r) => (
-                  <RoleRow key={r.id} role={r} />
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">No affiliations.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Contact info</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <EmailsEditor personId={person.id} emails={person.emails} />
-            <Separator />
-            <PhoneNumbersEditor
-              personId={person.id}
-              phoneNumbers={person.phoneNumbers}
-            />
-            <Separator />
-            <div>
-              <div className="text-xs font-medium text-muted-foreground mb-1">Addresses</div>
-              {person.addresses && person.addresses.length > 0 ? (
-                <ul className="space-y-2 text-sm">
-                  {person.addresses.map((a) => (
-                    <li key={a.id}>
-                      {[a.street, a.cityName, a.stateCode, a.postalCode]
-                        .filter(Boolean)
-                        .join(", ") || "—"}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">No addresses.</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Other details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm">
-          <Row label="Tags">
-            <InlineEditText
-              label="Tags"
-              testIdBase="person-tags"
-              value={person.tags ?? null}
-              placeholder="Comma-separated tags"
-              display={person.tags ?? "—"}
-              onSave={(next) => patch({ tags: next })}
-            />
-          </Row>
-          <div>
-            <div className="text-xs font-medium text-muted-foreground mb-1">About</div>
-            <InlineEditTextarea
-              label="About"
-              testIdBase="person-about-me"
-              value={person.aboutMe ?? null}
-              placeholder="Add a bio…"
-              display={
-                person.aboutMe ? (
-                  <p className="whitespace-pre-wrap text-left">{person.aboutMe}</p>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )
-              }
-              onSave={(next) => patch({ aboutMe: next })}
-            />
-          </div>
-          <div>
-            <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
-            <InlineEditTextarea
-              label="Details"
-              testIdBase="person-details"
-              value={person.details ?? null}
-              placeholder="Add details…"
-              display={
-                person.details ? (
-                  <p className="whitespace-pre-wrap text-left">{person.details}</p>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )
-              }
-              onSave={(next) => patch({ details: next })}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <LinkedOpportunitiesCard
-        scope={{ individualGiverPersonId: person.id }}
-        title="Pledges"
-        pledgeView="pledges"
-        emptyLabel="No pledges from this individual."
-      />
-
-      <LinkedOpportunitiesCard
-        scope={{ individualGiverPersonId: person.id }}
-        title="Open opportunities"
-        pledgeView="opportunities"
-        status="open"
-        emptyLabel="No open opportunities."
-      />
-
-      <LinkedGiftsCard scope={{ individualGiverPersonId: person.id }} />
-
-      <ActivityTimeline personId={person.id} />
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <NotesPanel personId={person.id} />
-        <TasksPanel personId={person.id} />
-      </div>
-
-      <div className="text-xs text-muted-foreground">
-        Created {formatDate(person.createdAt)} • Updated {formatDate(person.updatedAt)}
-      </div>
-    </div>
-  );
-}
-
-function NameHeader({ person }: { person: PersonDetail }) {
-  const [editing, setEditing] = useState(false);
-  const initial = person.fullName ?? "";
-  const [value, setValue] = useState(initial);
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const [, navigate] = useLocation();
   const del = useDeletePerson({
     mutation: {
       onSuccess: async () => {
@@ -656,87 +189,538 @@ function NameHeader({ person }: { person: PersonDetail }) {
       },
     },
   });
-  const update = useUpdatePerson({
-    mutation: {
-      onSuccess: async () => {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: getGetPersonQueryKey(person.id) }),
-          queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() }),
-        ]);
-        setEditing(false);
-        toast({ title: "Person updated" });
-      },
-      onError: (err: unknown) => {
-        toast({
-          title: "Update failed",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "destructive",
-        });
-      },
-    },
-  });
 
-  if (editing) {
-    const trimmed = value.trim();
-    const dirty = trimmed !== (person.fullName ?? "");
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          className="text-2xl font-serif font-bold h-12 max-w-xl"
-          aria-label="Full name"
-          data-testid="input-person-name"
-          autoFocus
-        />
-        <Button
-          onClick={() => {
-            const body: UpdatePersonBody = { fullName: trimmed || null };
-            update.mutate({ id: person.id, data: body });
-          }}
-          disabled={!dirty || update.isPending}
-          data-testid="button-save-person-name"
-        >
-          {update.isPending ? "Saving…" : "Save"}
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => {
-            setValue(initial);
-            setEditing(false);
-          }}
-          disabled={update.isPending}
-        >
-          Cancel
-        </Button>
-      </div>
-    );
+  function patch(body: UpdatePersonBody) {
+    return update.mutateAsync({ id: person.id, data: body });
   }
 
+  async function saveName() {
+    const trimmed = nameValue.trim();
+    if (trimmed === (person.fullName ?? "")) {
+      setEditingName(false);
+      return;
+    }
+    await patch({ fullName: trimmed || null });
+    setEditingName(false);
+  }
+
+  const title = editingName ? (
+    <Input
+      value={nameValue}
+      onChange={(e) => setNameValue(e.target.value)}
+      className="h-11 max-w-md font-serif text-2xl font-bold"
+      aria-label="Full name"
+      data-testid="input-person-name"
+      autoFocus
+    />
+  ) : (
+    personDisplayName(person)
+  );
+
+  const actions = editingName ? (
+    <>
+      <Button
+        onClick={saveName}
+        disabled={update.isPending}
+        data-testid="button-save-person-name"
+      >
+        {update.isPending ? "Saving…" : "Save"}
+      </Button>
+      <Button
+        variant="ghost"
+        onClick={() => {
+          setNameValue(person.fullName ?? "");
+          setEditingName(false);
+        }}
+        disabled={update.isPending}
+      >
+        Cancel
+      </Button>
+    </>
+  ) : (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setEditingName(true)}
+        data-testid="button-edit-person-name"
+      >
+        Edit name
+      </Button>
+      <ConfirmDeleteDialog
+        title={`Delete ${personDisplayName(person)}?`}
+        description="This person record will be removed. Household memberships and links from opportunities or gifts may need to be cleaned up separately."
+        onConfirm={() => del.mutateAsync({ id: person.id })}
+        disabled={del.isPending}
+        triggerTestId="button-delete-person"
+        confirmTestId="button-confirm-delete-person"
+      />
+    </>
+  );
+
+  const highlights: Highlight[] = [
+    {
+      label: "Priority",
+      value: person.priority ? (
+        <Badge variant={person.priority === "top" ? "default" : "outline"}>
+          {formatEnum(person.priority)}
+        </Badge>
+      ) : (
+        "—"
+      ),
+      accent: true,
+    },
+    { label: "Capacity", value: formatCapacity(person.capacityRating) },
+    { label: "Enthusiasm", value: formatEnum(person.enthusiasm) },
+    { label: "Owner", value: ownerDisplay },
+    { label: "Last contacted", value: formatDate(person.lastContacted) },
+  ];
+
+  const roles = person.roles ?? [];
+
   return (
-    <div className="flex items-start justify-between gap-4">
-      <h1 className="text-3xl font-serif font-bold text-foreground">
-        {personDisplayName(person)}
-      </h1>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setEditing(true)}
-          data-testid="button-edit-person-name"
-        >
-          Edit name
-        </Button>
-        <ConfirmDeleteDialog
-          title={`Delete ${personDisplayName(person)}?`}
-          description="This person record will be removed. Household memberships and links from opportunities or gifts may need to be cleaned up separately."
-          onConfirm={() => del.mutateAsync({ id: person.id })}
-          disabled={del.isPending}
-          triggerTestId="button-delete-person"
-          confirmTestId="button-confirm-delete-person"
-        />
-      </div>
-    </div>
+    <RecordLayout
+      backHref="/individuals"
+      backLabel="Back to individuals"
+      title={title}
+      typeBadge="Individual"
+      subtitle={person.pronouns ? formatEnum(person.pronouns) : undefined}
+      actions={actions}
+      highlights={highlights}
+      left={
+        <>
+          <FieldCard title="Basics">
+            <div className="space-y-1">
+              <Row label="Prefix">
+                <InlineEditText label="Prefix" testIdBase="person-prefix"
+                  value={person.prefix ?? null} display={person.prefix ?? "—"}
+                  onSave={(next) => patch({ prefix: next })} />
+              </Row>
+              <Row label="First">
+                <InlineEditText label="First name" testIdBase="person-first"
+                  value={person.firstName ?? null} display={person.firstName ?? "—"}
+                  onSave={(next) => patch({ firstName: next })} />
+              </Row>
+              <Row label="Middle">
+                <InlineEditText label="Middle name" testIdBase="person-middle"
+                  value={person.middleName ?? null} display={person.middleName ?? "—"}
+                  onSave={(next) => patch({ middleName: next })} />
+              </Row>
+              <Row label="Last">
+                <InlineEditText label="Last name" testIdBase="person-last"
+                  value={person.lastName ?? null} display={person.lastName ?? "—"}
+                  onSave={(next) => patch({ lastName: next })} />
+              </Row>
+              <Row label="Suffix">
+                <InlineEditText label="Suffix" testIdBase="person-suffix"
+                  value={person.suffix ?? null} display={person.suffix ?? "—"}
+                  onSave={(next) => patch({ suffix: next })} />
+              </Row>
+              <Row label="Nickname">
+                <InlineEditText label="Nickname" testIdBase="person-nickname"
+                  value={person.nickname ?? null} display={person.nickname ?? "—"}
+                  onSave={(next) => patch({ nickname: next })} />
+              </Row>
+              <Row label="Pronouns">
+                <InlineEditSelect label="Pronouns" testIdBase="person-pronouns"
+                  value={person.pronouns ?? null} options={PRONOUNS_OPTIONS}
+                  display={formatEnum(person.pronouns)}
+                  onSave={(next) => patch({ pronouns: next })} />
+              </Row>
+              <Row label="Status">
+                <InlineEditBoolean
+                  label="Deceased"
+                  testIdBase="person-deceased"
+                  value={person.deceased ?? null}
+                  trueLabel="Deceased"
+                  falseLabel="Living"
+                  allowNull={false}
+                  display={
+                    person.deceased == null
+                      ? "—"
+                      : person.deceased
+                        ? <Badge variant="outline">Deceased</Badge>
+                        : "Living"
+                  }
+                  onSave={(next) => patch({ deceased: next ?? false })}
+                />
+              </Row>
+              <Row label="Capacity">
+                <InlineEditSelect
+                  label="Capacity rating"
+                  testIdBase="person-capacity"
+                  value={person.capacityRating ?? null}
+                  options={CAPACITY_OPTIONS}
+                  display={formatCapacity(person.capacityRating)}
+                  onSave={(next) => patch({ capacityRating: next as PersonDetail["capacityRating"] })}
+                />
+              </Row>
+              <Row label="Connection">
+                <InlineEditSelect
+                  label="Connection status"
+                  testIdBase="person-connection"
+                  value={person.connectionStatus ?? null}
+                  options={CONNECTION_STATUS_OPTIONS}
+                  display={formatEnum(person.connectionStatus)}
+                  onSave={(next) => patch({ connectionStatus: next })}
+                />
+              </Row>
+              <Row label="Enthusiasm">
+                <InlineEditSelect
+                  label="Enthusiasm"
+                  testIdBase="person-enthusiasm"
+                  value={person.enthusiasm ?? null}
+                  options={ENTHUSIASM_OPTIONS}
+                  display={formatEnum(person.enthusiasm)}
+                  onSave={(next) => patch({ enthusiasm: next })}
+                />
+              </Row>
+              <Row label="Priority">
+                <InlineEditSelect
+                  label="Priority"
+                  testIdBase="person-priority"
+                  value={person.priority ?? null}
+                  options={PRIORITY_OPTIONS}
+                  display={
+                    person.priority ? (
+                      <Badge variant={person.priority === "top" ? "default" : "outline"}>
+                        {formatEnum(person.priority)}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ priority: next })}
+                />
+              </Row>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Engagement">
+            <div className="space-y-1">
+              <DerivedRow label="Last contacted" hint="derived from interactions">
+                {formatDate(person.lastContacted)}
+              </DerivedRow>
+              <DerivedRow label="Interactions" hint="derived from interactions">
+                {person.interactionCount ?? "—"}
+              </DerivedRow>
+              <Row label="Owner">
+                <InlineEditUserPicker testIdBase="person-owner"
+                  value={person.ownerUserId ?? null}
+                  display={ownerDisplay}
+                  onSave={(next) => patch({ ownerUserId: next })} />
+              </Row>
+              <Row label="Region">
+                <InlineEditRegionPicker testIdBase="person-region"
+                  value={person.currentHomeRegionId ?? null}
+                  display={regionDisplay}
+                  onSave={(next) => patch({ currentHomeRegionId: next })} />
+              </Row>
+              <Row label="Children at WF">
+                <InlineEditText
+                  label="Children at WF"
+                  testIdBase="person-children-at-wf"
+                  value={person.childrenAtWf ?? null}
+                  placeholder="e.g. 2"
+                  display={person.childrenAtWf ?? "—"}
+                  onSave={(next) => patch({ childrenAtWf: next })}
+                />
+              </Row>
+              <Row label="Newsletter">
+                <InlineEditBoolean
+                  label="Newsletter subscribed"
+                  testIdBase="person-newsletter"
+                  value={person.newsletter ?? null}
+                  trueLabel="Subscribed"
+                  falseLabel="Not subscribed"
+                  allowNull={false}
+                  display={
+                    person.unsubscribedToNewsletter
+                      ? "Unsubscribed"
+                      : person.newsletter == null
+                        ? "—"
+                        : person.newsletter
+                          ? "Subscribed"
+                          : "Not subscribed"
+                  }
+                  onSave={(next) => patch({ newsletter: next ?? false })}
+                />
+              </Row>
+              <Row label="Unsubscribed">
+                <InlineEditBoolean
+                  label="Unsubscribed to newsletter"
+                  testIdBase="person-unsubscribed"
+                  value={person.unsubscribedToNewsletter ?? null}
+                  allowNull={false}
+                  display={
+                    person.unsubscribedToNewsletter == null
+                      ? "—"
+                      : person.unsubscribedToNewsletter
+                        ? "Yes"
+                        : "No"
+                  }
+                  onSave={(next) => patch({ unsubscribedToNewsletter: next ?? false })}
+                />
+              </Row>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Web">
+            <div className="space-y-1">
+              <Row label="Website">
+                <InlineEditText label="Website" testIdBase="person-website"
+                  value={person.website ?? null} placeholder="https://…"
+                  display={
+                    person.website ? (
+                      <a href={person.website} target="_blank" rel="noreferrer"
+                        className="text-primary hover:underline break-all">
+                        {person.website}
+                      </a>
+                    ) : "—"
+                  }
+                  onSave={(next) => patch({ website: next })} />
+              </Row>
+              <Row label="LinkedIn">
+                <InlineEditText label="LinkedIn" testIdBase="person-linkedin"
+                  value={person.linkedin ?? null}
+                  display={
+                    person.linkedin ? (
+                      <a
+                        href={person.linkedin}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline truncate"
+                      >
+                        {formatLinkedinHandle(person.linkedin)}
+                      </a>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ linkedin: next })} />
+              </Row>
+              <Row label="X">
+                <InlineEditText label="X" testIdBase="person-x"
+                  value={person.x ?? null}
+                  display={
+                    person.x ? (
+                      <a
+                        href={person.x}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline truncate"
+                      >
+                        {formatXHandle(person.x)}
+                      </a>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ x: next })} />
+              </Row>
+              <Row label="Facebook">
+                <InlineEditText label="Facebook" testIdBase="person-facebook"
+                  value={person.facebook ?? null}
+                  display={
+                    person.facebook ? (
+                      <a
+                        href={person.facebook}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline truncate"
+                      >
+                        {formatFacebookHandle(person.facebook)}
+                      </a>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ facebook: next })} />
+              </Row>
+              <Row label="Instagram">
+                <InlineEditText label="Instagram" testIdBase="person-instagram"
+                  value={person.instagram ?? null}
+                  display={
+                    person.instagram ? (
+                      <a
+                        href={person.instagram}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline truncate"
+                      >
+                        {formatInstagramHandle(person.instagram)}
+                      </a>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ instagram: next })} />
+              </Row>
+              <Row label="Meeting link">
+                <InlineEditText label="Meeting link" testIdBase="person-meeting-link"
+                  value={person.meetingLink ?? null} display={person.meetingLink ?? "—"}
+                  onSave={(next) => patch({ meetingLink: next })} />
+              </Row>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Interests">
+            <div className="space-y-3">
+              <TagEditRow label="Thematic">
+                <InlineEditInterestsThematic
+                  testIdBase="person-interests-thematic"
+                  value={person.interestsThematic ?? []}
+                  onSave={(next) => patch({ interestsThematic: next })}
+                />
+              </TagEditRow>
+              <TagEditRow label="Ages">
+                <InlineEditInterestsAges
+                  testIdBase="person-interests-ages"
+                  value={person.interestsAges ?? []}
+                  onSave={(next) => patch({ interestsAges: next })}
+                />
+              </TagEditRow>
+              <TagEditRow label="Gov models">
+                <InlineEditInterestsGovModels
+                  testIdBase="person-interests-gov"
+                  value={person.interestsGovModels ?? []}
+                  onSave={(next) => patch({ interestsGovModels: next })}
+                />
+              </TagEditRow>
+              <TagEditRow label="Regions">
+                <InlineEditMultiRegionPicker
+                  testIdBase="person-regions"
+                  value={person.regionIds ?? []}
+                  onSave={(next) => patch({ regionIds: next })}
+                />
+              </TagEditRow>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Contact info" defaultOpen={false}>
+            <div className="space-y-4">
+              <EmailsEditor personId={person.id} emails={person.emails} />
+              <Separator />
+              <PhoneNumbersEditor
+                personId={person.id}
+                phoneNumbers={person.phoneNumbers}
+              />
+              <Separator />
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Addresses</div>
+                {person.addresses && person.addresses.length > 0 ? (
+                  <ul className="space-y-2 text-sm">
+                    {person.addresses.map((a) => (
+                      <li key={a.id}>
+                        {[a.street, a.cityName, a.stateCode, a.postalCode]
+                          .filter(Boolean)
+                          .join(", ") || "—"}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No addresses.</p>
+                )}
+              </div>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Other details" defaultOpen={false}>
+            <div className="space-y-4">
+              <Row label="Tags">
+                <InlineEditText
+                  label="Tags"
+                  testIdBase="person-tags"
+                  value={person.tags ?? null}
+                  placeholder="Comma-separated tags"
+                  display={person.tags ?? "—"}
+                  onSave={(next) => patch({ tags: next })}
+                />
+              </Row>
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">About</div>
+                <InlineEditTextarea
+                  label="About"
+                  testIdBase="person-about-me"
+                  value={person.aboutMe ?? null}
+                  placeholder="Add a bio…"
+                  display={
+                    person.aboutMe ? (
+                      <p className="whitespace-pre-wrap text-left">{person.aboutMe}</p>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  onSave={(next) => patch({ aboutMe: next })}
+                />
+              </div>
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
+                <InlineEditTextarea
+                  label="Details"
+                  testIdBase="person-details"
+                  value={person.details ?? null}
+                  placeholder="Add details…"
+                  display={
+                    person.details ? (
+                      <p className="whitespace-pre-wrap text-left">{person.details}</p>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  onSave={(next) => patch({ details: next })}
+                />
+              </div>
+            </div>
+          </FieldCard>
+
+          <div className="px-1 text-xs text-muted-foreground">
+            Created {formatDate(person.createdAt)} • Updated {formatDate(person.updatedAt)}
+          </div>
+        </>
+      }
+      center={
+        <>
+          <ActivityTimeline personId={person.id} />
+          <NotesPanel personId={person.id} />
+          <TasksPanel personId={person.id} />
+        </>
+      }
+      right={
+        <>
+          <RelatedCard title="Affiliations" count={roles.length}>
+            {roles.length > 0 ? (
+              <ul className="space-y-1 px-2 py-1 text-sm">
+                {roles.map((r) => (
+                  <RoleRow key={r.id} role={r} />
+                ))}
+              </ul>
+            ) : (
+              <p className="px-2 py-2 text-sm text-muted-foreground">
+                No affiliations.
+              </p>
+            )}
+          </RelatedCard>
+
+          <LinkedOpportunitiesCard
+            scope={{ individualGiverPersonId: person.id }}
+            title="Pledges"
+            pledgeView="pledges"
+            emptyLabel="No pledges from this individual."
+          />
+
+          <LinkedOpportunitiesCard
+            scope={{ individualGiverPersonId: person.id }}
+            title="Open opportunities"
+            pledgeView="opportunities"
+            status="open"
+            emptyLabel="No open opportunities."
+          />
+
+          <LinkedGiftsCard scope={{ individualGiverPersonId: person.id }} />
+        </>
+      }
+    />
   );
 }
 
@@ -802,22 +786,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex items-baseline justify-between gap-2">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span className="text-right">{children}</span>
-    </div>
-  );
-}
-
-function TagRow({ label, values }: { label: string; values?: string[] | null }) {
-  if (!values || values.length === 0) return null;
-  return (
-    <div>
-      <div className="text-xs font-medium text-muted-foreground mb-1">{label}</div>
-      <div className="flex flex-wrap gap-1">
-        {values.map((v) => (
-          <Badge key={v} variant="secondary">
-            {formatEnum(v)}
-          </Badge>
-        ))}
-      </div>
     </div>
   );
 }

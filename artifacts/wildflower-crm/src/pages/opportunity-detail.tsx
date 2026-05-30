@@ -39,10 +39,16 @@ import {
   useHouseholdName,
   type DonorSaveBody,
 } from "@/components/entity-picker";
+import {
+  RecordLayout,
+  FieldCard,
+  RelatedCard,
+  RelatedRow,
+  type Highlight,
+} from "@/components/record-layout";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const STAGE_OPTIONS = [
   { value: "cold_lead", label: "Cold lead" },
@@ -119,8 +125,11 @@ function OppView({
 }: { opp: OpportunityOrPledgeDetail; backHref: string; backLabel: string; entityLabel: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const isPledge = entityLabel === "Pledge";
+  const [, navigate] = useLocation();
   const [reportingDialogOpen, setReportingDialogOpen] = useState(false);
+
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(opp.name ?? "");
 
   const update = useUpdateOpportunityOrPledge({
     mutation: {
@@ -148,12 +157,39 @@ function OppView({
     },
   });
 
+  const del = useDeleteOpportunityOrPledge({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() });
+        toast({ title: `${entityLabel} deleted` });
+        navigate(backHref);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Delete failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
   function patch(body: UpdateOpportunityOrPledgeBody) {
     return update.mutateAsync({ id: opp.id, data: body });
   }
 
+  async function saveName() {
+    const trimmed = nameValue.trim();
+    if (trimmed === (opp.name ?? "")) {
+      setEditingName(false);
+      return;
+    }
+    await patch({ name: trimmed || null });
+    setEditingName(false);
+  }
+
   // Resolve entity slugs (from pledge_allocations) to human names so
-  // the Pipeline summary + Allocations list can show real labels.
+  // the Allocations summary list can show real labels.
   const entitiesQ = useListEntities();
   const entityNameById = new Map(
     (entitiesQ.data ?? []).map((e) => [e.id, e.name]),
@@ -234,364 +270,446 @@ function OppView({
     "—"
   );
 
+  const title = editingName ? (
+    <Input
+      value={nameValue}
+      onChange={(e) => setNameValue(e.target.value)}
+      className="h-11 max-w-md font-serif text-2xl font-bold"
+      aria-label={`${entityLabel} name`}
+      data-testid="input-opp-name"
+      autoFocus
+    />
+  ) : (
+    (opp.name ?? `Untitled ${opp.id}`)
+  );
+
+  const actions = editingName ? (
+    <>
+      <Button
+        onClick={saveName}
+        disabled={update.isPending}
+        data-testid="button-save-opp-name"
+      >
+        {update.isPending ? "Saving…" : "Save"}
+      </Button>
+      <Button
+        variant="ghost"
+        onClick={() => {
+          setNameValue(opp.name ?? "");
+          setEditingName(false);
+        }}
+        disabled={update.isPending}
+      >
+        Cancel
+      </Button>
+    </>
+  ) : (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setEditingName(true)}
+        data-testid="button-edit-opp-name"
+      >
+        Edit name
+      </Button>
+      <ConfirmDeleteDialog
+        title={`Delete this ${entityLabel.toLowerCase()}?`}
+        description={`This ${entityLabel.toLowerCase()} record, along with its pledge and gift allocations, will be removed.`}
+        onConfirm={() => del.mutateAsync({ id: opp.id })}
+        disabled={del.isPending}
+        triggerTestId="button-delete-opp"
+        confirmTestId="button-confirm-delete-opp"
+      />
+    </>
+  );
+
+  const highlights: Highlight[] = [
+    {
+      label: "Status",
+      value: opp.status ? (
+        <Badge
+          variant={
+            opp.status === "cash_in" || opp.status === "pledge"
+              ? "default"
+              : "outline"
+          }
+        >
+          {formatEnum(opp.status)}
+        </Badge>
+      ) : (
+        "—"
+      ),
+    },
+    { label: "Stage", value: formatEnum(opp.stage) || "—", accent: true },
+    { label: "Ask", value: formatCurrency(opp.askAmount) },
+    { label: "Awarded", value: formatCurrency(opp.awardedAmount) },
+    { label: "Owner", value: ownerDisplay },
+  ];
+
+  const allocations = opp.allocations ?? [];
+  const payments = opp.payments ?? [];
+
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href={backHref} className="text-sm text-primary hover:underline">{backLabel}</Link>
-      </div>
-
-      <NameHeader opp={opp} entityLabel={entityLabel} backHref={backHref} />
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader><CardTitle className="text-lg">Pipeline</CardTitle></CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Row label="Stage">
-              <InlineEditSelect
-                label="Stage"
-                testIdBase="opp-stage"
-                value={opp.stage ?? null}
-                options={STAGE_OPTIONS}
-                display={formatEnum(opp.stage) || "—"}
-                onSave={(next) => patch({ stage: next })}
-              />
-            </Row>
-            <Row label="Status">
-              {/*
-                Status is normally auto-derived (open / pledge / cash_in)
-                but users can still hand-set sticky overrides (dormant /
-                lost). Surface the select on both Pledge and Opportunity
-                detail pages — the only difference between them is the
-                page filter, not the underlying record.
-              */}
-              <InlineEditSelect
-                label="Status"
-                testIdBase="opp-status"
-                value={opp.status ?? null}
-                options={STATUS_OPTIONS}
-                display={
-                  opp.status ? (
-                    <Badge
-                      variant={
-                        opp.status === "cash_in" || opp.status === "pledge"
-                          ? "default"
-                          : "outline"
+    <>
+      <RecordLayout
+        backHref={backHref}
+        backLabel={backLabel.replace(/^←\s*/, "")}
+        title={title}
+        typeBadge={entityLabel}
+        subtitle={donorDisplay}
+        actions={actions}
+        highlights={highlights}
+        left={
+          <>
+            <FieldCard title="Pipeline">
+              <div className="space-y-1">
+                <Row label="Stage">
+                  <InlineEditSelect
+                    label="Stage"
+                    testIdBase="opp-stage"
+                    value={opp.stage ?? null}
+                    options={STAGE_OPTIONS}
+                    display={formatEnum(opp.stage) || "—"}
+                    onSave={(next) => patch({ stage: next })}
+                  />
+                </Row>
+                <Row label="Status">
+                  {/*
+                    Status is normally auto-derived (open / pledge / cash_in)
+                    but users can still hand-set sticky overrides (dormant /
+                    lost). Surface the select on both Pledge and Opportunity
+                    detail pages — the only difference between them is the
+                    page filter, not the underlying record.
+                  */}
+                  <InlineEditSelect
+                    label="Status"
+                    testIdBase="opp-status"
+                    value={opp.status ?? null}
+                    options={STATUS_OPTIONS}
+                    display={
+                      opp.status ? (
+                        <Badge
+                          variant={
+                            opp.status === "cash_in" || opp.status === "pledge"
+                              ? "default"
+                              : "outline"
+                          }
+                        >
+                          {formatEnum(opp.status)}
+                        </Badge>
+                      ) : (
+                        "—"
+                      )
+                    }
+                    onSave={(next) => {
+                      // Convenience: when closing a single opp that has no
+                      // completion date yet, default to today so the user
+                      // doesn't have to set it manually. The bulk-edit path
+                      // intentionally does NOT do this (cleanup of historical
+                      // rows shouldn't invent a fake date).
+                      const closed =
+                        next === "cash_in" || next === "lost" || next === "dormant";
+                      const body: UpdateOpportunityOrPledgeBody = { status: next };
+                      if (closed && !opp.actualCompletionDate) {
+                        body.actualCompletionDate = new Date()
+                          .toISOString()
+                          .slice(0, 10);
                       }
-                    >
-                      {formatEnum(opp.status)}
-                    </Badge>
-                  ) : (
-                    "—"
-                  )
-                }
-                onSave={(next) => {
-                  // Convenience: when closing a single opp that has no
-                  // completion date yet, default to today so the user
-                  // doesn't have to set it manually. The bulk-edit path
-                  // intentionally does NOT do this (cleanup of historical
-                  // rows shouldn't invent a fake date).
-                  const closed =
-                    next === "cash_in" || next === "lost" || next === "dormant";
-                  const body: UpdateOpportunityOrPledgeBody = { status: next };
-                  if (closed && !opp.actualCompletionDate) {
-                    body.actualCompletionDate = new Date()
-                      .toISOString()
-                      .slice(0, 10);
-                  }
-                  return patch(body);
-                }}
-              />
-            </Row>
-            <Row label="Type">
-              <InlineEditSelect
-                label="Type"
-                testIdBase="opp-type"
-                value={opp.type ?? null}
-                options={TYPE_OPTIONS}
-                display={formatEnum(opp.type) || "—"}
-                onSave={(next) => patch({ type: next })}
-              />
-            </Row>
-            <Row label="Win probability">
-              <InlineEditText
-                label="Win probability"
-                testIdBase="opp-winprob"
-                value={opp.winProbability ?? null}
-                placeholder="e.g. 75% or 0.75"
-                display={opp.winProbability ?? "—"}
-                onSave={(next) => patch({ winProbability: next })}
-              />
-            </Row>
-            <Row label="Conditional">
-              <InlineEditSelect
-                label="Conditional"
-                testIdBase="opp-conditional"
-                value={opp.conditional ?? null}
-                options={CONDITIONAL_OPTIONS}
-                display={formatEnum(opp.conditional) || "—"}
-                onSave={(next) => patch({ conditional: next })}
-              />
-            </Row>
-            <Row label="Conditions met">
-              <InlineEditBoolean
-                label="Conditions met"
-                testIdBase="opp-conditions-met"
-                value={opp.conditionsMet}
-                allowNull={false}
-                display={opp.conditionsMet ? "Yes" : "No"}
-                onSave={(next) => patch({ conditionsMet: next ?? false })}
-              />
-            </Row>
-            <Row label="Is conditional">
-              {/*
-                Independent boolean flag (separate from the
-                `conditional` semantic-context enum above). Toggled
-                manually; pre-set true on records imported with a
-                `conditional_commitment` stage.
-              */}
-              <InlineEditBoolean
-                label="Is conditional"
-                testIdBase="opp-is-conditional"
-                value={opp.isConditional ?? false}
-                allowNull={false}
-                display={opp.isConditional ? "Yes" : "No"}
-                onSave={(next) => patch({ isConditional: next ?? false })}
-              />
-            </Row>
-            <Row label="Was pledge">
-              {/*
-                Sticky-true flag that pins a row to the Pledges page
-                even after stage moves backward or status flips to
-                cash_in. Auto-flipped true on stage ∈ (conditional,
-                verbal, written) or grant-letter upload; also user-
-                tickable here. Never auto-flipped back to false — only
-                the user can clear it.
-              */}
-              <InlineEditBoolean
-                label="Was pledge"
-                testIdBase="opp-was-pledge"
-                value={opp.wasPledge ?? false}
-                allowNull={false}
-                display={opp.wasPledge ? "Yes" : "No"}
-                onSave={(next) => patch({ wasPledge: next ?? false })}
-              />
-            </Row>
-            <Row label="Grant letter">
-              {/*
-                File upload via presigned URL → /api/storage/objects/<id>.
-                Setting a URL also flips was_pledge sticky-true on
-                the server side (see applyDerivedOppFields).
-              */}
-              <GrantLetterUpload
-                url={opp.grantLetterUrl ?? null}
-                filename={opp.grantLetterFilename ?? null}
-                onUploaded={(next) =>
-                  patch({
-                    grantLetterUrl: next.grantLetterUrl,
-                    grantLetterFilename: next.grantLetterFilename,
-                  })
-                }
-                onCleared={() =>
-                  patch({ grantLetterUrl: null, grantLetterFilename: null })
-                }
-              />
-            </Row>
-            <Row label="Owner">
-              <InlineEditUserPicker
-                testIdBase="opp-owner"
-                value={opp.ownerUserId ?? null}
-                display={ownerDisplay}
-                onSave={(next) => patch({ ownerUserId: next })}
-              />
-            </Row>
-          </CardContent>
-        </Card>
+                      return patch(body);
+                    }}
+                  />
+                </Row>
+                <Row label="Type">
+                  <InlineEditSelect
+                    label="Type"
+                    testIdBase="opp-type"
+                    value={opp.type ?? null}
+                    options={TYPE_OPTIONS}
+                    display={formatEnum(opp.type) || "—"}
+                    onSave={(next) => patch({ type: next })}
+                  />
+                </Row>
+                <Row label="Win probability">
+                  <InlineEditText
+                    label="Win probability"
+                    testIdBase="opp-winprob"
+                    value={opp.winProbability ?? null}
+                    placeholder="e.g. 75% or 0.75"
+                    display={opp.winProbability ?? "—"}
+                    onSave={(next) => patch({ winProbability: next })}
+                  />
+                </Row>
+                <Row label="Conditional">
+                  <InlineEditSelect
+                    label="Conditional"
+                    testIdBase="opp-conditional"
+                    value={opp.conditional ?? null}
+                    options={CONDITIONAL_OPTIONS}
+                    display={formatEnum(opp.conditional) || "—"}
+                    onSave={(next) => patch({ conditional: next })}
+                  />
+                </Row>
+                <Row label="Conditions met">
+                  <InlineEditBoolean
+                    label="Conditions met"
+                    testIdBase="opp-conditions-met"
+                    value={opp.conditionsMet}
+                    allowNull={false}
+                    display={opp.conditionsMet ? "Yes" : "No"}
+                    onSave={(next) => patch({ conditionsMet: next ?? false })}
+                  />
+                </Row>
+                <Row label="Is conditional">
+                  {/*
+                    Independent boolean flag (separate from the
+                    `conditional` semantic-context enum above). Toggled
+                    manually; pre-set true on records imported with a
+                    `conditional_commitment` stage.
+                  */}
+                  <InlineEditBoolean
+                    label="Is conditional"
+                    testIdBase="opp-is-conditional"
+                    value={opp.isConditional ?? false}
+                    allowNull={false}
+                    display={opp.isConditional ? "Yes" : "No"}
+                    onSave={(next) => patch({ isConditional: next ?? false })}
+                  />
+                </Row>
+                <Row label="Was pledge">
+                  {/*
+                    Sticky-true flag that pins a row to the Pledges page
+                    even after stage moves backward or status flips to
+                    cash_in. Auto-flipped true on stage ∈ (conditional,
+                    verbal, written) or grant-letter upload; also user-
+                    tickable here. Never auto-flipped back to false — only
+                    the user can clear it.
+                  */}
+                  <InlineEditBoolean
+                    label="Was pledge"
+                    testIdBase="opp-was-pledge"
+                    value={opp.wasPledge ?? false}
+                    allowNull={false}
+                    display={opp.wasPledge ? "Yes" : "No"}
+                    onSave={(next) => patch({ wasPledge: next ?? false })}
+                  />
+                </Row>
+                <Row label="Grant letter">
+                  {/*
+                    File upload via presigned URL → /api/storage/objects/<id>.
+                    Setting a URL also flips was_pledge sticky-true on
+                    the server side (see applyDerivedOppFields).
+                  */}
+                  <GrantLetterUpload
+                    url={opp.grantLetterUrl ?? null}
+                    filename={opp.grantLetterFilename ?? null}
+                    onUploaded={(next) =>
+                      patch({
+                        grantLetterUrl: next.grantLetterUrl,
+                        grantLetterFilename: next.grantLetterFilename,
+                      })
+                    }
+                    onCleared={() =>
+                      patch({ grantLetterUrl: null, grantLetterFilename: null })
+                    }
+                  />
+                </Row>
+                <Row label="Owner">
+                  <InlineEditUserPicker
+                    testIdBase="opp-owner"
+                    value={opp.ownerUserId ?? null}
+                    display={ownerDisplay}
+                    onSave={(next) => patch({ ownerUserId: next })}
+                  />
+                </Row>
+              </div>
+            </FieldCard>
 
-        <Card>
-          <CardHeader><CardTitle className="text-lg">Amounts</CardTitle></CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Row label="Ask">
-              <InlineEditCurrency
-                label="Ask amount"
-                testIdBase="opp-ask"
-                value={opp.askAmount ?? null}
-                display={formatCurrency(opp.askAmount)}
-                onSave={(next) => patch({ askAmount: next })}
+            <FieldCard title="Amounts">
+              <div className="space-y-1">
+                <Row label="Ask">
+                  <InlineEditCurrency
+                    label="Ask amount"
+                    testIdBase="opp-ask"
+                    value={opp.askAmount ?? null}
+                    display={formatCurrency(opp.askAmount)}
+                    onSave={(next) => patch({ askAmount: next })}
+                  />
+                </Row>
+                <Row label="Awarded">
+                  <InlineEditCurrency
+                    label="Awarded amount"
+                    testIdBase="opp-awarded"
+                    value={opp.awardedAmount ?? null}
+                    display={formatCurrency(opp.awardedAmount)}
+                    onSave={(next) => patch({ awardedAmount: next })}
+                  />
+                </Row>
+              </div>
+            </FieldCard>
+
+            <FieldCard title="Dates">
+              <div className="space-y-1">
+                <Row label="Projected close">
+                  <InlineEditDate
+                    label="Projected close date"
+                    testIdBase="opp-projected-close"
+                    value={opp.projectedCloseDate ?? null}
+                    display={formatDate(opp.projectedCloseDate)}
+                    onSave={(next) => patch({ projectedCloseDate: next })}
+                  />
+                </Row>
+                <DerivedRow label="Fiscal year" hint="derived from close date">
+                  {opp.fiscalYear ?? "—"}
+                </DerivedRow>
+                <Row label="Actual completion">
+                  <InlineEditDate
+                    label="Actual completion date"
+                    testIdBase="opp-actual-completion"
+                    value={opp.actualCompletionDate ?? null}
+                    display={formatDate(opp.actualCompletionDate)}
+                    onSave={(next) => patch({ actualCompletionDate: next })}
+                  />
+                </Row>
+                <Row label="Application deadline">
+                  <InlineEditDate
+                    label="Application deadline"
+                    testIdBase="opp-app-deadline"
+                    value={opp.applicationDeadline ?? null}
+                    display={formatDate(opp.applicationDeadline)}
+                    onSave={(next) => patch({ applicationDeadline: next })}
+                  />
+                </Row>
+              </div>
+            </FieldCard>
+
+            <FieldCard title="Donor">
+              <div className="space-y-1">
+                <Row label="Donor">
+                  <InlineEditDonor
+                    testIdBase="opp-donor"
+                    value={{
+                      funderId: opp.funderId ?? null,
+                      individualGiverPersonId: opp.individualGiverPersonId ?? null,
+                      householdId: opp.householdId ?? null,
+                    }}
+                    display={donorDisplay}
+                    onSave={(body: DonorSaveBody) => patch(body)}
+                  />
+                </Row>
+                <Row label="Advisor">
+                  <InlineEditPersonPicker
+                    testIdBase="opp-advisor"
+                    value={opp.individualAdvisorPersonId ?? null}
+                    display={advisorDisplay}
+                    onSave={(next) => patch({ individualAdvisorPersonId: next })}
+                  />
+                </Row>
+                <Row label="Primary contact">
+                  <InlineEditPersonPicker
+                    testIdBase="opp-primary-contact"
+                    value={opp.primaryContactPersonId ?? null}
+                    display={primaryContactDisplay}
+                    onSave={(next) => patch({ primaryContactPersonId: next })}
+                  />
+                </Row>
+              </div>
+            </FieldCard>
+
+            <FieldCard title="Other details" defaultOpen={false}>
+              <div className="space-y-4">
+                <EditableNote
+                  label="Conditions"
+                  testIdBase="opp-conditions"
+                  value={opp.conditions ?? null}
+                  onSave={(next) => patch({ conditions: next })}
+                />
+                <EditableNote
+                  label="Payment details"
+                  testIdBase="opp-payment-details"
+                  value={opp.paymentDetails ?? null}
+                  onSave={(next) => patch({ paymentDetails: next })}
+                />
+                <EditableNote
+                  label="Usage notes"
+                  testIdBase="opp-usage-notes"
+                  value={opp.usageNotes ?? null}
+                  onSave={(next) => patch({ usageNotes: next })}
+                />
+                <EditableNote
+                  label="Loss reason"
+                  testIdBase="opp-loss-reason"
+                  value={opp.lossReason ?? null}
+                  onSave={(next) => patch({ lossReason: next })}
+                />
+              </div>
+            </FieldCard>
+
+            <div className="px-1 text-xs text-muted-foreground">
+              Created {formatDate(opp.createdAt)} • Updated {formatDate(opp.updatedAt)}
+            </div>
+          </>
+        }
+        center={
+          <>
+            {/* Activity timeline scoped to whichever donor this opportunity is
+                linked to. Opportunities don't have their own activity arrays;
+                the relevant signal is "everything we've heard from / about the
+                donor" so we just reuse the donor's timeline here. */}
+            {(opp.funderId || opp.individualGiverPersonId || opp.householdId) && (
+              <ActivityTimeline
+                funderId={opp.funderId ?? undefined}
+                personId={opp.individualGiverPersonId ?? undefined}
+                householdId={opp.householdId ?? undefined}
               />
-            </Row>
-            <Row label="Awarded">
-              <InlineEditCurrency
-                label="Awarded amount"
-                testIdBase="opp-awarded"
-                value={opp.awardedAmount ?? null}
-                display={formatCurrency(opp.awardedAmount)}
-                onSave={(next) => patch({ awardedAmount: next })}
-              />
-            </Row>
-          </CardContent>
-        </Card>
+            )}
+            <NotesPanel opportunityId={opp.id} />
+            <TasksPanel opportunityId={opp.id} />
+          </>
+        }
+        right={
+          <>
+            <RelatedCard title="Allocations" count={allocations.length}>
+              <div className="space-y-4 px-2 py-1">
+                <div className="space-y-2 text-sm">
+                  <DerivedRow label="Covered FYs" hint="derived from allocations">
+                    {opp.coveredFiscalYears && opp.coveredFiscalYears.length > 0
+                      ? opp.coveredFiscalYears.join(", ")
+                      : "—"}
+                  </DerivedRow>
+                  <DerivedRow label="Entities" hint="derived from allocations">
+                    {entityLabels.length === 0 ? "—" : entityLabels.join(", ")}
+                  </DerivedRow>
+                </div>
+                <PledgeAllocationsEditor
+                  pledgeOrOpportunityId={opp.id}
+                  allocations={opp.allocations ?? []}
+                />
+              </div>
+            </RelatedCard>
 
-        <Card>
-          <CardHeader><CardTitle className="text-lg">Dates</CardTitle></CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Row label="Projected close">
-              <InlineEditDate
-                label="Projected close date"
-                testIdBase="opp-projected-close"
-                value={opp.projectedCloseDate ?? null}
-                display={formatDate(opp.projectedCloseDate)}
-                onSave={(next) => patch({ projectedCloseDate: next })}
-              />
-            </Row>
-            <DerivedRow label="Fiscal year" hint="derived from close date">
-              {opp.fiscalYear ?? "—"}
-            </DerivedRow>
-            <Row label="Actual completion">
-              <InlineEditDate
-                label="Actual completion date"
-                testIdBase="opp-actual-completion"
-                value={opp.actualCompletionDate ?? null}
-                display={formatDate(opp.actualCompletionDate)}
-                onSave={(next) => patch({ actualCompletionDate: next })}
-              />
-            </Row>
-            <Row label="Application deadline">
-              <InlineEditDate
-                label="Application deadline"
-                testIdBase="opp-app-deadline"
-                value={opp.applicationDeadline ?? null}
-                display={formatDate(opp.applicationDeadline)}
-                onSave={(next) => patch({ applicationDeadline: next })}
-              />
-            </Row>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader><CardTitle>Donor</CardTitle></CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <Row label="Donor">
-            <InlineEditDonor
-              testIdBase="opp-donor"
-              value={{
-                funderId: opp.funderId ?? null,
-                individualGiverPersonId: opp.individualGiverPersonId ?? null,
-                householdId: opp.householdId ?? null,
-              }}
-              display={donorDisplay}
-              onSave={(body: DonorSaveBody) => patch(body)}
-            />
-          </Row>
-          <Row label="Advisor">
-            <InlineEditPersonPicker
-              testIdBase="opp-advisor"
-              value={opp.individualAdvisorPersonId ?? null}
-              display={advisorDisplay}
-              onSave={(next) => patch({ individualAdvisorPersonId: next })}
-            />
-          </Row>
-          <Row label="Primary contact">
-            <InlineEditPersonPicker
-              testIdBase="opp-primary-contact"
-              value={opp.primaryContactPersonId ?? null}
-              display={primaryContactDisplay}
-              onSave={(next) => patch({ primaryContactPersonId: next })}
-            />
-          </Row>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Allocations</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2 text-sm">
-            <DerivedRow label="Covered FYs" hint="derived from allocations">
-              {opp.coveredFiscalYears && opp.coveredFiscalYears.length > 0
-                ? opp.coveredFiscalYears.join(", ")
-                : "—"}
-            </DerivedRow>
-            <DerivedRow label="Entities" hint="derived from allocations">
-              {entityLabels.length === 0 ? "—" : entityLabels.join(", ")}
-            </DerivedRow>
-          </div>
-          <PledgeAllocationsEditor
-            pledgeOrOpportunityId={opp.id}
-            allocations={opp.allocations ?? []}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Payments</CardTitle></CardHeader>
-        <CardContent>
-          {opp.payments && opp.payments.length > 0 ? (
-            <ul className="space-y-2 text-sm">
-              {opp.payments.map((p) => (
-                <li key={p.id} className="flex items-center justify-between gap-2" data-testid={`row-opp-payment-${p.id}`}>
-                  <Link href={`/gifts/${p.id}`} className="text-primary hover:underline truncate">
-                    {p.name ?? `Payment ${p.id}`}
-                  </Link>
-                  <span className="text-muted-foreground text-xs whitespace-nowrap">
-                    {formatDate(p.dateReceived)} • <span className="font-medium text-foreground">{formatCurrency(p.amount)}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (<p className="text-sm text-muted-foreground">No payments yet.</p>)}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Other details</CardTitle></CardHeader>
-        <CardContent className="space-y-4 text-sm">
-          <EditableNote
-            label="Conditions"
-            testIdBase="opp-conditions"
-            value={opp.conditions ?? null}
-            onSave={(next) => patch({ conditions: next })}
-          />
-          <EditableNote
-            label="Payment details"
-            testIdBase="opp-payment-details"
-            value={opp.paymentDetails ?? null}
-            onSave={(next) => patch({ paymentDetails: next })}
-          />
-          <EditableNote
-            label="Usage notes"
-            testIdBase="opp-usage-notes"
-            value={opp.usageNotes ?? null}
-            onSave={(next) => patch({ usageNotes: next })}
-          />
-          <EditableNote
-            label="Loss reason"
-            testIdBase="opp-loss-reason"
-            value={opp.lossReason ?? null}
-            onSave={(next) => patch({ lossReason: next })}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Activity timeline scoped to whichever donor this opportunity is
-          linked to. Opportunities don't have their own activity arrays;
-          the relevant signal is "everything we've heard from / about the
-          donor" so we just reuse the donor's timeline here. */}
-      {(opp.funderId || opp.individualGiverPersonId || opp.householdId) && (
-        <ActivityTimeline
-          funderId={opp.funderId ?? undefined}
-          personId={opp.individualGiverPersonId ?? undefined}
-          householdId={opp.householdId ?? undefined}
-        />
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <NotesPanel opportunityId={opp.id} />
-        <TasksPanel opportunityId={opp.id} />
-      </div>
-
-      <div className="text-xs text-muted-foreground">
-        Created {formatDate(opp.createdAt)} • Updated {formatDate(opp.updatedAt)}
-      </div>
+            <RelatedCard title="Payments" count={payments.length}>
+              {payments.length > 0 ? (
+                <div>
+                  {payments.map((p) => (
+                    <div key={p.id} data-testid={`row-opp-payment-${p.id}`}>
+                      <RelatedRow
+                        name={p.name ?? `Payment ${p.id}`}
+                        href={`/gifts/${p.id}`}
+                        tone="primary"
+                        sub={formatDate(p.dateReceived)}
+                        amount={formatCurrency(p.amount)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="px-2 py-2 text-sm text-muted-foreground">No payments yet.</p>
+              )}
+            </RelatedCard>
+          </>
+        }
+      />
 
       <ReportingDeadlinesDialog
         opportunityId={opp.id}
@@ -599,108 +717,7 @@ function OppView({
         open={reportingDialogOpen}
         onOpenChange={setReportingDialogOpen}
       />
-    </div>
-  );
-}
-
-function NameHeader({
-  opp,
-  entityLabel,
-  backHref,
-}: {
-  opp: OpportunityOrPledgeDetail;
-  entityLabel: string;
-  backHref: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const initial = opp.name ?? "";
-  const [value, setValue] = useState(initial);
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const [, navigate] = useLocation();
-  const del = useDeleteOpportunityOrPledge({
-    mutation: {
-      onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() });
-        toast({ title: `${entityLabel} deleted` });
-        navigate(backHref);
-      },
-      onError: (err: unknown) => {
-        toast({
-          title: "Delete failed",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "destructive",
-        });
-      },
-    },
-  });
-  const update = useUpdateOpportunityOrPledge({
-    mutation: {
-      onSuccess: async () => {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: getGetOpportunityOrPledgeQueryKey(opp.id) }),
-          queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() }),
-        ]);
-        setEditing(false);
-        toast({ title: `${entityLabel} updated` });
-      },
-      onError: (err: unknown) => {
-        toast({
-          title: "Update failed",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "destructive",
-        });
-      },
-    },
-  });
-
-  if (editing) {
-    const trimmed = value.trim();
-    const dirty = trimmed !== (opp.name ?? "");
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          className="text-2xl font-serif font-bold h-12 max-w-xl"
-          aria-label={`${entityLabel} name`}
-          data-testid="input-opp-name"
-          autoFocus
-        />
-        <Button
-          onClick={() => {
-            const body: UpdateOpportunityOrPledgeBody = { name: trimmed || null };
-            update.mutate({ id: opp.id, data: body });
-          }}
-          disabled={!dirty || update.isPending}
-          data-testid="button-save-opp-name"
-        >
-          {update.isPending ? "Saving…" : "Save"}
-        </Button>
-        <Button variant="ghost" onClick={() => { setValue(initial); setEditing(false); }} disabled={update.isPending}>
-          Cancel
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <h1 className="text-3xl font-serif font-bold text-foreground">{opp.name ?? `Untitled ${opp.id}`}</h1>
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => setEditing(true)} data-testid="button-edit-opp-name">
-          Edit name
-        </Button>
-        <ConfirmDeleteDialog
-          title={`Delete this ${entityLabel.toLowerCase()}?`}
-          description={`This ${entityLabel.toLowerCase()} record, along with its pledge and gift allocations, will be removed.`}
-          onConfirm={() => del.mutateAsync({ id: opp.id })}
-          disabled={del.isPending}
-          triggerTestId="button-delete-opp"
-          confirmTestId="button-confirm-delete-opp"
-        />
-      </div>
-    </div>
+    </>
   );
 }
 

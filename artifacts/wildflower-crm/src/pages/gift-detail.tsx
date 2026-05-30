@@ -36,10 +36,16 @@ import {
   useIntermediaryName,
   type DonorSaveBody,
 } from "@/components/entity-picker";
+import {
+  RecordLayout,
+  FieldCard,
+  RelatedCard,
+  RelatedRow,
+  type Highlight,
+} from "@/components/record-layout";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -86,6 +92,7 @@ export default function GiftDetail() {
 function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const userNames = useUserNameMap();
   const ownerDisplay = gift.ownerUserId
     ? (userNames.get(gift.ownerUserId) ?? gift.ownerUserId)
@@ -95,6 +102,9 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const householdName = useHouseholdName(gift.householdId ?? null);
   const advisorName = usePersonName(gift.advisorPersonId ?? null);
   const intermediaryName = useIntermediaryName(gift.paymentIntermediaryId ?? null);
+
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(gift.name ?? "");
 
   let donorDisplay: ReactNode = (
     <span className="text-muted-foreground">No donor linked.</span>
@@ -169,214 +179,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
     },
   });
 
-  function patch(body: UpdateGiftOrPaymentBody) {
-    return update.mutateAsync({ id: gift.id, data: body });
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/gifts" className="text-sm text-primary hover:underline">← Back to gifts</Link>
-      </div>
-
-      <NameHeader gift={gift} />
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader><CardTitle className="text-lg">Amount</CardTitle></CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Row label="Amount">
-              <InlineEditCurrency
-                label="Amount"
-                testIdBase="gift-amount"
-                value={gift.amount ?? null}
-                display={<span className="text-xl font-bold text-primary">{formatCurrency(gift.amount)}</span>}
-                onSave={(next) => patch({ amount: next })}
-              />
-            </Row>
-            <Row label="Received">
-              <InlineEditDate
-                label="Date received"
-                testIdBase="gift-date-received"
-                value={gift.dateReceived ?? null}
-                display={formatDate(gift.dateReceived)}
-                onSave={(next) => patch({ dateReceived: next })}
-              />
-            </Row>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle className="text-lg">Classification</CardTitle></CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Row label="Type">
-              <InlineEditSelect
-                label="Type"
-                testIdBase="gift-type"
-                value={gift.type ?? null}
-                options={GIFT_TYPE_OPTIONS}
-                display={formatEnum(gift.type) || "—"}
-                onSave={(next) => patch({ type: next })}
-              />
-            </Row>
-            <Row label="Method">
-              <InlineEditSelect
-                label="Payment method"
-                testIdBase="gift-method"
-                value={gift.paymentMethod ?? null}
-                options={PAYMENT_METHOD_OPTIONS}
-                display={formatEnum(gift.paymentMethod) || "—"}
-                onSave={(next) => patch({ paymentMethod: next })}
-              />
-            </Row>
-            <Row label="Grant year">
-              <InlineEditText
-                label="Grant year"
-                testIdBase="gift-grant-year"
-                value={gift.grantYear ?? null}
-                placeholder="e.g. 2025"
-                display={gift.grantYear ?? "—"}
-                onSave={(next) => patch({ grantYear: next })}
-              />
-            </Row>
-            <Row label="Designated to school">
-              <InlineEditBoolean
-                label="Designated to school"
-                testIdBase="gift-designated-to-school"
-                value={gift.designatedToSchool}
-                allowNull={false}
-                display={gift.designatedToSchool ? "Yes" : "No"}
-                onSave={(next) => patch({ designatedToSchool: next ?? false })}
-              />
-            </Row>
-            <Row label="Owner">
-              <InlineEditUserPicker
-                testIdBase="gift-owner"
-                value={gift.ownerUserId ?? null}
-                display={ownerDisplay}
-                onSave={(next) => patch({ ownerUserId: next })}
-              />
-            </Row>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle className="text-lg">Donor</CardTitle></CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Row label="Donor">
-              <InlineEditDonor
-                testIdBase="gift-donor"
-                value={{
-                  funderId: gift.funderId ?? null,
-                  individualGiverPersonId: gift.individualGiverPersonId ?? null,
-                  householdId: gift.householdId ?? null,
-                }}
-                display={donorDisplay}
-                onSave={(body: DonorSaveBody) => patch(body)}
-              />
-            </Row>
-            <Row label="Advisor">
-              <InlineEditPersonPicker
-                testIdBase="gift-advisor"
-                value={gift.advisorPersonId ?? null}
-                display={advisorDisplay}
-                onSave={(next) => patch({ advisorPersonId: next })}
-              />
-            </Row>
-            <Row label="Intermediary">
-              <InlineEditIntermediaryPicker
-                testIdBase="gift-intermediary"
-                value={gift.paymentIntermediaryId ?? null}
-                display={intermediaryDisplay}
-                onSave={(next) => patch({ paymentIntermediaryId: next })}
-              />
-            </Row>
-          </CardContent>
-        </Card>
-      </div>
-
-      {(gift.paymentOnPledgeId || gift.giftBeingMatchedId) && (
-        <Card>
-          <CardHeader><CardTitle>Related</CardTitle></CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            {gift.paymentOnPledgeId && (
-              <Row label="Payment on pledge">
-                <Link href={`/pledges/${gift.paymentOnPledgeId}`} className="text-primary hover:underline">{gift.paymentOnPledgeId}</Link>
-              </Row>
-            )}
-            {gift.giftBeingMatchedId && (
-              <Row label="Matching gift">
-                <Link href={`/gifts/${gift.giftBeingMatchedId}`} className="text-primary hover:underline">{gift.giftBeingMatchedId}</Link>
-              </Row>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader><CardTitle>Allocations</CardTitle></CardHeader>
-        <CardContent>
-          <GiftAllocationsEditor
-            giftId={gift.id}
-            allocations={gift.allocations ?? []}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Other details</CardTitle></CardHeader>
-        <CardContent className="space-y-4 text-sm">
-          <Row label="Tags">
-            <InlineEditText
-              label="Tags"
-              testIdBase="gift-tags"
-              value={gift.tags ?? null}
-              placeholder="Comma-separated tags"
-              display={gift.tags ?? "—"}
-              onSave={(next) => patch({ tags: next })}
-            />
-          </Row>
-          <div>
-            <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
-            <InlineEditTextarea
-              label="Details"
-              testIdBase="gift-details"
-              value={gift.details ?? null}
-              placeholder="Add details…"
-              display={
-                gift.details ? (
-                  <p className="whitespace-pre-wrap text-left">{gift.details}</p>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )
-              }
-              onSave={(next) => patch({ details: next })}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <ThankYouPanel gift={gift} />
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <NotesPanel giftId={gift.id} />
-        <TasksPanel giftId={gift.id} />
-      </div>
-
-      <div className="text-xs text-muted-foreground">
-        Created {formatDate(gift.createdAt)} • Updated {formatDate(gift.updatedAt)}
-      </div>
-    </div>
-  );
-}
-
-function NameHeader({ gift }: { gift: GiftOrPaymentDetail }) {
-  const [editing, setEditing] = useState(false);
-  const initial = gift.name ?? "";
-  const [value, setValue] = useState(initial);
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const [, navigate] = useLocation();
   const del = useDeleteGiftOrPayment({
     mutation: {
       onSuccess: async () => {
@@ -393,73 +195,286 @@ function NameHeader({ gift }: { gift: GiftOrPaymentDetail }) {
       },
     },
   });
-  const update = useUpdateGiftOrPayment({
-    mutation: {
-      onSuccess: async () => {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: getGetGiftOrPaymentQueryKey(gift.id) }),
-          queryClient.invalidateQueries({ queryKey: getListGiftsAndPaymentsQueryKey() }),
-        ]);
-        setEditing(false);
-        toast({ title: "Gift updated" });
-      },
-      onError: (err: unknown) => {
-        toast({
-          title: "Update failed",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "destructive",
-        });
-      },
-    },
-  });
 
-  if (editing) {
-    const trimmed = value.trim();
-    const dirty = trimmed !== (gift.name ?? "");
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          className="text-2xl font-serif font-bold h-12 max-w-xl"
-          aria-label="Gift name"
-          data-testid="input-gift-name"
-          autoFocus
-        />
-        <Button
-          onClick={() => {
-            const body: UpdateGiftOrPaymentBody = { name: trimmed || null };
-            update.mutate({ id: gift.id, data: body });
-          }}
-          disabled={!dirty || update.isPending}
-          data-testid="button-save-gift-name"
-        >
-          {update.isPending ? "Saving…" : "Save"}
-        </Button>
-        <Button variant="ghost" onClick={() => { setValue(initial); setEditing(false); }} disabled={update.isPending}>
-          Cancel
-        </Button>
-      </div>
-    );
+  function patch(body: UpdateGiftOrPaymentBody) {
+    return update.mutateAsync({ id: gift.id, data: body });
   }
 
+  async function saveName() {
+    const trimmed = nameValue.trim();
+    if (trimmed === (gift.name ?? "")) {
+      setEditingName(false);
+      return;
+    }
+    await patch({ name: trimmed || null });
+    setEditingName(false);
+  }
+
+  const title = editingName ? (
+    <Input
+      value={nameValue}
+      onChange={(e) => setNameValue(e.target.value)}
+      className="h-11 max-w-md font-serif text-2xl font-bold"
+      aria-label="Gift name"
+      data-testid="input-gift-name"
+      autoFocus
+    />
+  ) : (
+    (gift.name ?? `Gift ${gift.id}`)
+  );
+
+  const actions = editingName ? (
+    <>
+      <Button
+        onClick={saveName}
+        disabled={update.isPending}
+        data-testid="button-save-gift-name"
+      >
+        {update.isPending ? "Saving…" : "Save"}
+      </Button>
+      <Button
+        variant="ghost"
+        onClick={() => {
+          setNameValue(gift.name ?? "");
+          setEditingName(false);
+        }}
+        disabled={update.isPending}
+      >
+        Cancel
+      </Button>
+    </>
+  ) : (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setEditingName(true)}
+        data-testid="button-edit-gift-name"
+      >
+        Edit name
+      </Button>
+      <ConfirmDeleteDialog
+        title="Delete this gift?"
+        description="This gift or payment record and its allocations will be removed."
+        onConfirm={() => del.mutateAsync({ id: gift.id })}
+        disabled={del.isPending}
+        triggerTestId="button-delete-gift"
+        confirmTestId="button-confirm-delete-gift"
+      />
+    </>
+  );
+
+  const highlights: Highlight[] = [
+    { label: "Amount", value: formatCurrency(gift.amount), accent: true },
+    { label: "Received", value: formatDate(gift.dateReceived) },
+    { label: "Type", value: formatEnum(gift.type) || "—" },
+    { label: "Method", value: formatEnum(gift.paymentMethod) || "—" },
+    { label: "Owner", value: ownerDisplay },
+  ];
+
+  const allocations = gift.allocations ?? [];
+  const hasRelated = Boolean(gift.paymentOnPledgeId || gift.giftBeingMatchedId);
+
   return (
-    <div className="flex items-start justify-between gap-4">
-      <h1 className="text-3xl font-serif font-bold text-foreground">{gift.name ?? `Gift ${gift.id}`}</h1>
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => setEditing(true)} data-testid="button-edit-gift-name">
-          Edit name
-        </Button>
-        <ConfirmDeleteDialog
-          title="Delete this gift?"
-          description="This gift or payment record and its allocations will be removed."
-          onConfirm={() => del.mutateAsync({ id: gift.id })}
-          disabled={del.isPending}
-          triggerTestId="button-delete-gift"
-          confirmTestId="button-confirm-delete-gift"
-        />
-      </div>
-    </div>
+    <RecordLayout
+      backHref="/gifts"
+      backLabel="Back to gifts"
+      title={title}
+      typeBadge="Gift"
+      subtitle={donorDisplay}
+      actions={actions}
+      highlights={highlights}
+      left={
+        <>
+          <FieldCard title="Amount">
+            <div className="space-y-1">
+              <Row label="Amount">
+                <InlineEditCurrency
+                  label="Amount"
+                  testIdBase="gift-amount"
+                  value={gift.amount ?? null}
+                  display={<span className="text-xl font-bold text-primary">{formatCurrency(gift.amount)}</span>}
+                  onSave={(next) => patch({ amount: next })}
+                />
+              </Row>
+              <Row label="Received">
+                <InlineEditDate
+                  label="Date received"
+                  testIdBase="gift-date-received"
+                  value={gift.dateReceived ?? null}
+                  display={formatDate(gift.dateReceived)}
+                  onSave={(next) => patch({ dateReceived: next })}
+                />
+              </Row>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Classification">
+            <div className="space-y-1">
+              <Row label="Type">
+                <InlineEditSelect
+                  label="Type"
+                  testIdBase="gift-type"
+                  value={gift.type ?? null}
+                  options={GIFT_TYPE_OPTIONS}
+                  display={formatEnum(gift.type) || "—"}
+                  onSave={(next) => patch({ type: next })}
+                />
+              </Row>
+              <Row label="Method">
+                <InlineEditSelect
+                  label="Payment method"
+                  testIdBase="gift-method"
+                  value={gift.paymentMethod ?? null}
+                  options={PAYMENT_METHOD_OPTIONS}
+                  display={formatEnum(gift.paymentMethod) || "—"}
+                  onSave={(next) => patch({ paymentMethod: next })}
+                />
+              </Row>
+              <Row label="Grant year">
+                <InlineEditText
+                  label="Grant year"
+                  testIdBase="gift-grant-year"
+                  value={gift.grantYear ?? null}
+                  placeholder="e.g. 2025"
+                  display={gift.grantYear ?? "—"}
+                  onSave={(next) => patch({ grantYear: next })}
+                />
+              </Row>
+              <Row label="Designated to school">
+                <InlineEditBoolean
+                  label="Designated to school"
+                  testIdBase="gift-designated-to-school"
+                  value={gift.designatedToSchool}
+                  allowNull={false}
+                  display={gift.designatedToSchool ? "Yes" : "No"}
+                  onSave={(next) => patch({ designatedToSchool: next ?? false })}
+                />
+              </Row>
+              <Row label="Owner">
+                <InlineEditUserPicker
+                  testIdBase="gift-owner"
+                  value={gift.ownerUserId ?? null}
+                  display={ownerDisplay}
+                  onSave={(next) => patch({ ownerUserId: next })}
+                />
+              </Row>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Donor">
+            <div className="space-y-1">
+              <Row label="Donor">
+                <InlineEditDonor
+                  testIdBase="gift-donor"
+                  value={{
+                    funderId: gift.funderId ?? null,
+                    individualGiverPersonId: gift.individualGiverPersonId ?? null,
+                    householdId: gift.householdId ?? null,
+                  }}
+                  display={donorDisplay}
+                  onSave={(body: DonorSaveBody) => patch(body)}
+                />
+              </Row>
+              <Row label="Advisor">
+                <InlineEditPersonPicker
+                  testIdBase="gift-advisor"
+                  value={gift.advisorPersonId ?? null}
+                  display={advisorDisplay}
+                  onSave={(next) => patch({ advisorPersonId: next })}
+                />
+              </Row>
+              <Row label="Intermediary">
+                <InlineEditIntermediaryPicker
+                  testIdBase="gift-intermediary"
+                  value={gift.paymentIntermediaryId ?? null}
+                  display={intermediaryDisplay}
+                  onSave={(next) => patch({ paymentIntermediaryId: next })}
+                />
+              </Row>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Other details" defaultOpen={false}>
+            <div className="space-y-4">
+              <Row label="Tags">
+                <InlineEditText
+                  label="Tags"
+                  testIdBase="gift-tags"
+                  value={gift.tags ?? null}
+                  placeholder="Comma-separated tags"
+                  display={gift.tags ?? "—"}
+                  onSave={(next) => patch({ tags: next })}
+                />
+              </Row>
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
+                <InlineEditTextarea
+                  label="Details"
+                  testIdBase="gift-details"
+                  value={gift.details ?? null}
+                  placeholder="Add details…"
+                  display={
+                    gift.details ? (
+                      <p className="whitespace-pre-wrap text-left">{gift.details}</p>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  onSave={(next) => patch({ details: next })}
+                />
+              </div>
+            </div>
+          </FieldCard>
+
+          <div className="px-1 text-xs text-muted-foreground">
+            Created {formatDate(gift.createdAt)} • Updated {formatDate(gift.updatedAt)}
+          </div>
+        </>
+      }
+      center={
+        <>
+          <ThankYouPanel gift={gift} />
+          <NotesPanel giftId={gift.id} />
+          <TasksPanel giftId={gift.id} />
+        </>
+      }
+      right={
+        <>
+          <RelatedCard title="Allocations" count={allocations.length}>
+            <div className="px-2 py-1">
+              <GiftAllocationsEditor
+                giftId={gift.id}
+                allocations={gift.allocations ?? []}
+              />
+            </div>
+          </RelatedCard>
+
+          {hasRelated ? (
+            <RelatedCard title="Related">
+              <div>
+                {gift.paymentOnPledgeId ? (
+                  <RelatedRow
+                    name="Payment on pledge"
+                    href={`/pledges/${gift.paymentOnPledgeId}`}
+                    tone="primary"
+                    sub={gift.paymentOnPledgeId}
+                  />
+                ) : null}
+                {gift.giftBeingMatchedId ? (
+                  <RelatedRow
+                    name="Matching gift"
+                    href={`/gifts/${gift.giftBeingMatchedId}`}
+                    tone="primary"
+                    sub={gift.giftBeingMatchedId}
+                  />
+                ) : null}
+              </div>
+            </RelatedCard>
+          ) : null}
+        </>
+      }
+    />
   );
 }
 
