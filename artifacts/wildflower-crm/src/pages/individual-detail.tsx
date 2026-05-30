@@ -45,6 +45,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   InlineEditBoolean,
+  InlineEditCurrency,
   InlineEditSelect,
   InlineEditText,
   InlineEditTextarea,
@@ -68,6 +69,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import {
   formatCapacity,
+  formatCurrency,
   formatDate,
   formatEnum,
   formatFunderNameShort,
@@ -395,6 +397,18 @@ function PersonView({ person }: { person: PersonDetail }) {
           onSave={(next) =>
             patch({ capacityRating: next as PersonDetail["capacityRating"] })
           }
+        />
+      ),
+    },
+    {
+      label: "Net worth",
+      value: (
+        <InlineEditCurrency
+          label="Net worth"
+          testIdBase="person-net-worth"
+          value={person.netWorth ?? null}
+          display={formatCurrency(person.netWorth)}
+          onSave={(next) => patch({ netWorth: next })}
         />
       ),
     },

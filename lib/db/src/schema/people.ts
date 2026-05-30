@@ -6,6 +6,7 @@ import {
   timestamp,
   boolean,
   integer,
+  numeric,
   date,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -68,6 +69,9 @@ export const people = pgTable("people", {
   // so we can compare and roll up individuals + orgs against the same
   // bands. Nullable: not every contact has been rated.
   capacityRating: capacityRatingEnum("capacity_rating"),
+  // Estimated net worth for this individual. Decimal (2dp) with headroom for
+  // very large estates (up to ~99T).
+  netWorth: numeric("net_worth", { precision: 16, scale: 2 }),
   // Mirrors funders.connection_status / funders.enthusiasm so we can
   // track pipeline progression on individual donors and prospects in
   // the same vocabulary used for organizational funders.

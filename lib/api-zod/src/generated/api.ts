@@ -824,6 +824,12 @@ export const ListFundersResponse = zod.object({
       capacityRating: zod
         .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
         .nullish(),
+      totalAssets: zod
+        .string()
+        .nullish()
+        .describe(
+          "Estimated total assets \/ endowment size. Decimal as string.",
+        ),
       nationalPriorities: zod.boolean().nullish(),
       priorityAreasNotes: zod.string().nullish(),
       activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
@@ -934,6 +940,10 @@ export const CreateFunderBody = zod.object({
   capacityRating: zod
     .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
     .optional(),
+  totalAssets: zod
+    .string()
+    .optional()
+    .describe("Estimated total assets \/ endowment size. Decimal as string."),
   nationalPriorities: zod.boolean().optional(),
   priorityAreasNotes: zod.string().optional(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).optional(),
@@ -1012,6 +1022,10 @@ export const GetFunderResponse = zod
     capacityRating: zod
       .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
       .nullish(),
+    totalAssets: zod
+      .string()
+      .nullish()
+      .describe("Estimated total assets \/ endowment size. Decimal as string."),
     nationalPriorities: zod.boolean().nullish(),
     priorityAreasNotes: zod.string().nullish(),
     activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
@@ -1216,6 +1230,10 @@ export const UpdateFunderBody = zod.object({
   capacityRating: zod
     .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
     .nullish(),
+  totalAssets: zod
+    .string()
+    .nullish()
+    .describe("Estimated total assets \/ endowment size. Decimal as string."),
   nationalPriorities: zod.boolean().nullish(),
   priorityAreasNotes: zod.string().nullish(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
@@ -1289,6 +1307,10 @@ export const UpdateFunderResponse = zod.object({
   capacityRating: zod
     .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
     .nullish(),
+  totalAssets: zod
+    .string()
+    .nullish()
+    .describe("Estimated total assets \/ endowment size. Decimal as string."),
   nationalPriorities: zod.boolean().nullish(),
   priorityAreasNotes: zod.string().nullish(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
@@ -2155,6 +2177,12 @@ export const ListPeopleResponse = zod.object({
       capacityRating: zod
         .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
         .nullish(),
+      netWorth: zod
+        .string()
+        .nullish()
+        .describe(
+          "Estimated net worth for this individual. Decimal as string.",
+        ),
       connectionStatus: zod
         .enum(["connected", "have_a_connector", "no_connection"])
         .nullish(),
@@ -2245,6 +2273,10 @@ export const CreatePersonBody = zod.object({
   capacityRating: zod
     .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
     .optional(),
+  netWorth: zod
+    .string()
+    .optional()
+    .describe("Estimated net worth for this individual. Decimal as string."),
   connectionStatus: zod
     .enum(["connected", "have_a_connector", "no_connection"])
     .optional(),
@@ -2297,6 +2329,10 @@ export const GetPersonResponse = zod
     capacityRating: zod
       .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
       .nullish(),
+    netWorth: zod
+      .string()
+      .nullish()
+      .describe("Estimated net worth for this individual. Decimal as string."),
     connectionStatus: zod
       .enum(["connected", "have_a_connector", "no_connection"])
       .nullish(),
@@ -2483,6 +2519,10 @@ export const UpdatePersonBody = zod.object({
   capacityRating: zod
     .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
     .nullish(),
+  netWorth: zod
+    .string()
+    .nullish()
+    .describe("Estimated net worth for this individual. Decimal as string."),
   connectionStatus: zod
     .enum(["connected", "have_a_connector", "no_connection"])
     .nullish(),
@@ -2530,6 +2570,10 @@ export const UpdatePersonResponse = zod.object({
   capacityRating: zod
     .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
     .nullish(),
+  netWorth: zod
+    .string()
+    .nullish()
+    .describe("Estimated net worth for this individual. Decimal as string."),
   connectionStatus: zod
     .enum(["connected", "have_a_connector", "no_connection"])
     .nullish(),

@@ -36,6 +36,7 @@ import {
 } from "@/components/record-layout";
 import {
   InlineEditBoolean,
+  InlineEditCurrency,
   InlineEditSelect,
   InlineEditText,
   InlineEditTextarea,
@@ -54,6 +55,7 @@ import {
 } from "@/components/multi-select-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  formatCurrency,
   formatDate,
   formatEnum,
   formatCapacity,
@@ -321,6 +323,18 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           options={CAPACITY_OPTIONS}
           display={formatCapacity(funder.capacityRating)}
           onSave={(next) => patch({ capacityRating: next })}
+        />
+      ),
+    },
+    {
+      label: "Total assets",
+      value: (
+        <InlineEditCurrency
+          label="Total assets"
+          testIdBase="funder-total-assets"
+          value={funder.totalAssets ?? null}
+          display={formatCurrency(funder.totalAssets)}
+          onSave={(next) => patch({ totalAssets: next })}
         />
       ),
     },

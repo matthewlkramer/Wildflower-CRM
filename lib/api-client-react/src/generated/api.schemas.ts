@@ -654,6 +654,8 @@ export interface Funder {
   makesPris?: boolean | null;
   numberOfEmployees?: NumberOfEmployees | null;
   capacityRating?: CapacityRating | null;
+  /** Estimated total assets / endowment size. Decimal as string. */
+  totalAssets?: string | null;
   nationalPriorities?: boolean | null;
   priorityAreasNotes?: string | null;
   activeStatus?: ActiveStatus | null;
@@ -774,6 +776,8 @@ export interface CreateFunderBody {
   makesPris?: boolean;
   numberOfEmployees?: NumberOfEmployees;
   capacityRating?: CapacityRating;
+  /** Estimated total assets / endowment size. Decimal as string. */
+  totalAssets?: string;
   nationalPriorities?: boolean;
   priorityAreasNotes?: string;
   activeStatus?: ActiveStatus;
@@ -809,6 +813,8 @@ export interface UpdateFunderBody {
   makesPris?: boolean | null;
   numberOfEmployees?: NumberOfEmployees | null;
   capacityRating?: CapacityRating | null;
+  /** Estimated total assets / endowment size. Decimal as string. */
+  totalAssets?: string | null;
   nationalPriorities?: boolean | null;
   priorityAreasNotes?: string | null;
   activeStatus?: ActiveStatus | null;
@@ -978,6 +984,8 @@ export interface Person {
   meetingLink?: string | null;
   assistantPersonId?: string | null;
   capacityRating?: CapacityRating | null;
+  /** Estimated net worth for this individual. Decimal as string. */
+  netWorth?: string | null;
   connectionStatus?: ConnectionStatus | null;
   enthusiasm?: Enthusiasm | null;
   /** Solicitation priority tier (top/high/medium/low). The 'top' band is surfaced as a star on the individuals table and on opportunities/gifts where this person is the individual giver. */
@@ -1051,6 +1059,8 @@ export interface CreatePersonBody {
   meetingLink?: string;
   assistantPersonId?: string;
   capacityRating?: CapacityRating;
+  /** Estimated net worth for this individual. Decimal as string. */
+  netWorth?: string;
   connectionStatus?: ConnectionStatus;
   enthusiasm?: Enthusiasm;
   priority?: Priority;
@@ -1088,6 +1098,8 @@ export interface UpdatePersonBody {
   meetingLink?: string | null;
   assistantPersonId?: string | null;
   capacityRating?: CapacityRating | null;
+  /** Estimated net worth for this individual. Decimal as string. */
+  netWorth?: string | null;
   connectionStatus?: ConnectionStatus | null;
   enthusiasm?: Enthusiasm | null;
   priority?: Priority | null;

@@ -6,6 +6,7 @@ import {
   timestamp,
   boolean,
   integer,
+  numeric,
   date,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -29,6 +30,9 @@ export const funders = pgTable("funders", {
   makesPris: boolean("makes_pris"),
   numberOfEmployees: numberOfEmployeesEnum("number_of_employees"),
   capacityRating: capacityRatingEnum("capacity_rating"),
+  // Estimated total assets under management / endowment size for this funder.
+  // Decimal (2dp) with headroom for very large foundations (up to ~99T).
+  totalAssets: numeric("total_assets", { precision: 16, scale: 2 }),
   nationalPriorities: boolean("national_priorities"),
   priorityAreasNotes: text("priority_areas_notes"),
   activeStatus: activeStatusEnum("active_status"),
