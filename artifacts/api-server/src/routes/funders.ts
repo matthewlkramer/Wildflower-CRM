@@ -185,6 +185,10 @@ router.patch(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(UpdateFunderBody, req.body, res);
     if (!body) return;
+    if (body.parentFunderId != null && body.parentFunderId === paramId(req)) {
+      res.status(400).json({ error: "A funder cannot be its own parent." });
+      return;
+    }
     const [row] = await db
       .update(funders)
       .set({ ...body, updatedAt: new Date() })

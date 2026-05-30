@@ -5,6 +5,7 @@ import {
   useListPeople,
   useListHouseholds,
   useListPaymentIntermediaries,
+  useListOrganizations,
   useGetFunder,
   useGetPerson,
   useGetHousehold,
@@ -14,6 +15,7 @@ import {
   getListPeopleQueryKey,
   getListHouseholdsQueryKey,
   getListPaymentIntermediariesQueryKey,
+  getListOrganizationsQueryKey,
   getGetFunderQueryKey,
   getGetPersonQueryKey,
   getGetHouseholdQueryKey,
@@ -93,6 +95,8 @@ interface EntityPickerCoreProps {
   testId?: string;
   disabled?: boolean;
   allowNull?: boolean;
+  /** Option ids to hide from the list (e.g. to prevent self-references). */
+  excludeIds?: string[];
 }
 
 /**
@@ -101,7 +105,7 @@ interface EntityPickerCoreProps {
  * since cmdk does its own search state). Use this inside InlineEditX
  * components that handle the edit/save lifecycle, or standalone.
  */
-function EntityCombobox({
+export function EntityCombobox({
   useSearch,
   useResolve,
   value,
@@ -110,6 +114,7 @@ function EntityCombobox({
   testId,
   disabled,
   allowNull = true,
+  excludeIds,
 }: EntityPickerCoreProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -119,7 +124,14 @@ function EntityCombobox({
   useEffect(() => {
     if (!open) setQuery("");
   }, [open]);
-  const { items, isLoading } = useSearch(debounced);
+  const { items: rawItems, isLoading } = useSearch(debounced);
+  const items = useMemo(
+    () =>
+      excludeIds?.length
+        ? rawItems.filter((it) => !excludeIds.includes(it.id))
+        : rawItems,
+    [rawItems, excludeIds],
+  );
   const resolvedLabel = useResolve(value);
   const triggerLabel = value
     ? (resolvedLabel ?? value)
@@ -484,6 +496,27 @@ export function useOrganizationName(id: string | null): string | null {
     },
   });
   return id && q.data ? organizationDisplayName(q.data) : null;
+}
+
+export function useOrganizationSearch(query: string) {
+  const params = query
+    ? { search: query, limit: SEARCH_LIMIT }
+    : { limit: SEARCH_LIMIT };
+  const q = useListOrganizations(params, {
+    query: {
+      queryKey: getListOrganizationsQueryKey(params),
+      staleTime: SEARCH_STALE,
+    },
+  });
+  const items: PickerItem[] = useMemo(
+    () =>
+      (q.data?.data ?? []).map((o) => ({
+        id: o.id,
+        label: organizationDisplayName(o),
+      })),
+    [q.data],
+  );
+  return { items, isLoading: q.isLoading };
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */

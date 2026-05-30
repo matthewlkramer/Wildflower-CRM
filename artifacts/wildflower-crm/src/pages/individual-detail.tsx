@@ -34,6 +34,7 @@ import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
 } from "@/components/linked-records";
+import { AddPersonOrgRoleDialog } from "@/components/add-role-dialogs";
 import {
   RecordLayout,
   FieldCard,
@@ -775,7 +776,7 @@ function PersonView({ person }: { person: PersonDetail }) {
 
           <PeopleCard person={person} />
 
-          <OrganizationsCard roles={roles} />
+          <OrganizationsCard roles={roles} personId={person.id} />
 
           <LinkedOpportunitiesCard
             scope={{ individualGiverPersonId: person.id }}
@@ -842,7 +843,13 @@ function RoleRow({ role: r }: { role: PeopleEntityRole }) {
   );
 }
 
-function OrganizationsCard({ roles }: { roles: PeopleEntityRole[] }) {
+function OrganizationsCard({
+  roles,
+  personId,
+}: {
+  roles: PeopleEntityRole[];
+  personId: string;
+}) {
   // Everything that isn't a household membership is an organizational
   // affiliation (funder / non-funding org / payment intermediary).
   const orgRoles = roles.filter((r) => r.entityType !== "household");
@@ -856,12 +863,15 @@ function OrganizationsCard({ roles }: { roles: PeopleEntityRole[] }) {
       title="Organizations"
       count={visibleRoles.length}
       action={
-        hasInactive ? (
-          <HideInactiveToggle
-            hidden={hideInactive}
-            onToggle={() => setHideInactive((v) => !v)}
-          />
-        ) : undefined
+        <div className="flex items-center gap-1">
+          {hasInactive ? (
+            <HideInactiveToggle
+              hidden={hideInactive}
+              onToggle={() => setHideInactive((v) => !v)}
+            />
+          ) : null}
+          <AddPersonOrgRoleDialog personId={personId} />
+        </div>
       }
     >
       {visibleRoles.length > 0 ? (

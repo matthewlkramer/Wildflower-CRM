@@ -27,6 +27,10 @@ import {
   LinkedOpportunitiesCard,
 } from "@/components/linked-records";
 import {
+  AddFunderPersonRoleDialog,
+  AddFunderRelationDialog,
+} from "@/components/add-role-dialogs";
+import {
   RecordLayout,
   FieldCard,
   RelatedCard,
@@ -759,12 +763,15 @@ function FunderView({ funder }: { funder: FunderDetail }) {
             title="People"
             count={visiblePeople.length}
             action={
-              hasInactivePeople ? (
-                <HideInactiveToggle
-                  hidden={hideInactivePeople}
-                  onToggle={() => setHideInactivePeople((v) => !v)}
-                />
-              ) : undefined
+              <div className="flex items-center gap-1">
+                {hasInactivePeople ? (
+                  <HideInactiveToggle
+                    hidden={hideInactivePeople}
+                    onToggle={() => setHideInactivePeople((v) => !v)}
+                  />
+                ) : null}
+                <AddFunderPersonRoleDialog funderId={funder.id} />
+              </div>
             }
           >
             {visiblePeople.length > 0 ? (
@@ -863,12 +870,15 @@ function RelatedFundersCard({
       title="Organizations"
       count={count}
       action={
-        hasInactive ? (
-          <HideInactiveToggle
-            hidden={hideInactive}
-            onToggle={() => setHideInactive((v) => !v)}
-          />
-        ) : undefined
+        <div className="flex items-center gap-1">
+          {hasInactive ? (
+            <HideInactiveToggle
+              hidden={hideInactive}
+              onToggle={() => setHideInactive((v) => !v)}
+            />
+          ) : null}
+          <AddFunderRelationDialog funderId={funder.id} />
+        </div>
       }
     >
       <div>
