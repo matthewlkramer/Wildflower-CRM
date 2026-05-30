@@ -57,7 +57,7 @@ export function ThankYouPanel({ gift }: Props) {
             data-testid="button-link-thank-you"
           >
             <Mail className="h-4 w-4 mr-2" />
-            {linked ? "Change linked email" : "Link thank-you email"}
+            {linked ? "Change email" : "Link email"}
           </Button>
           {linked && (
             <Button

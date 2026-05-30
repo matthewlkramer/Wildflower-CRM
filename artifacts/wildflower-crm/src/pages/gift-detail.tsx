@@ -4,17 +4,25 @@ import {
   useGetGiftOrPayment,
   useUpdateGiftOrPayment,
   useDeleteGiftOrPayment,
+  useGetFunder,
+  useGetHousehold,
+  useGetPaymentIntermediary,
   getGetGiftOrPaymentQueryKey,
+  getGetFunderQueryKey,
+  getGetHouseholdQueryKey,
+  getGetPaymentIntermediaryQueryKey,
   getListGiftsAndPaymentsQueryKey,
   type GiftOrPaymentDetail,
   type UpdateGiftOrPaymentBody,
   type GiftType,
   type GiftPaymentMethod,
+  type PeopleEntityRole,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { GiftAllocationsEditor } from "@/components/allocation-editors";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { ThankYouPanel } from "@/components/thank-you-panel";
+import { TasksPanel } from "@/components/tasks-panel";
 import {
   InlineEditBoolean,
   InlineEditCurrency,
@@ -27,19 +35,20 @@ import {
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import {
   InlineEditPersonPicker,
+  InlineEditFunderPicker,
+  InlineEditHouseholdPicker,
   InlineEditIntermediaryPicker,
-  InlineEditDonor,
   usePersonName,
   useFunderName,
   useHouseholdName,
   useIntermediaryName,
-  type DonorSaveBody,
 } from "@/components/entity-picker";
 import {
   RecordLayout,
   FieldCard,
   RelatedCard,
   RelatedRow,
+  AffiliationRow,
   type Highlight,
 } from "@/components/record-layout";
 import { useQueryClient } from "@tanstack/react-query";
@@ -102,6 +111,39 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const advisorName = usePersonName(gift.advisorPersonId ?? null);
   const intermediaryName = useIntermediaryName(gift.paymentIntermediaryId ?? null);
 
+  // Fetch the linked entities so we can list the people associated with each
+  // (donor org / household / payment intermediary) in the People card.
+  const funderDetail = useGetFunder(gift.funderId ?? "", {
+    query: {
+      queryKey: getGetFunderQueryKey(gift.funderId ?? ""),
+      enabled: !!gift.funderId,
+    },
+  });
+  const householdDetail = useGetHousehold(gift.householdId ?? "", {
+    query: {
+      queryKey: getGetHouseholdQueryKey(gift.householdId ?? ""),
+      enabled: !!gift.householdId,
+    },
+  });
+  const intermediaryDetail = useGetPaymentIntermediary(gift.paymentIntermediaryId ?? "", {
+    query: {
+      queryKey: getGetPaymentIntermediaryQueryKey(gift.paymentIntermediaryId ?? ""),
+      enabled: !!gift.paymentIntermediaryId,
+    },
+  });
+
+  const associatedPeople: PeopleEntityRole[] = [];
+  const seenPeople = new Set<string>();
+  for (const role of [
+    ...(funderDetail.data?.people ?? []),
+    ...(householdDetail.data?.people ?? []),
+    ...(intermediaryDetail.data?.people ?? []),
+  ]) {
+    if (seenPeople.has(role.personId)) continue;
+    seenPeople.add(role.personId);
+    associatedPeople.push(role);
+  }
+
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(gift.name ?? "");
 
@@ -145,6 +187,37 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       </span>
     );
   }
+
+  const funderLinkDisplay: ReactNode = gift.funderId ? (
+    <Link
+      href={`/funding-entities/${gift.funderId}`}
+      className="text-primary hover:underline"
+    >
+      {funderName ?? gift.funderId}
+    </Link>
+  ) : (
+    "—"
+  );
+  const householdLinkDisplay: ReactNode = gift.householdId ? (
+    <Link
+      href={`/households/${gift.householdId}`}
+      className="text-primary hover:underline"
+    >
+      {householdName ?? gift.householdId}
+    </Link>
+  ) : (
+    "—"
+  );
+  const individualLinkDisplay: ReactNode = gift.individualGiverPersonId ? (
+    <Link
+      href={`/individuals/${gift.individualGiverPersonId}`}
+      className="text-primary hover:underline"
+    >
+      {giverName ?? gift.individualGiverPersonId}
+    </Link>
+  ) : (
+    "—"
+  );
   const advisorDisplay: ReactNode = gift.advisorPersonId ? (
     <Link
       href={`/individuals/${gift.advisorPersonId}`}
@@ -198,6 +271,15 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   function patch(body: UpdateGiftOrPaymentBody) {
     return update.mutateAsync({ id: gift.id, data: body });
   }
+
+  // The donor is one of (funder, individual giver, household), DB-enforced XOR.
+  // Each setter sends all three FK fields so exactly one stays populated.
+  const setFunderDonor = (next: string | null) =>
+    patch({ funderId: next, individualGiverPersonId: null, householdId: null });
+  const setHouseholdDonor = (next: string | null) =>
+    patch({ householdId: next, funderId: null, individualGiverPersonId: null });
+  const setIndividualDonor = (next: string | null) =>
+    patch({ individualGiverPersonId: next, funderId: null, householdId: null });
 
   async function saveName() {
     const trimmed = nameValue.trim();
@@ -263,12 +345,66 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
     </>
   );
 
+  const fyDisplay =
+    gift.grantYears && gift.grantYears.length > 0
+      ? gift.grantYears.join(", ")
+      : (gift.grantYear ?? "—");
+
   const highlights: Highlight[] = [
-    { label: "Amount", value: formatCurrency(gift.amount), accent: true },
-    { label: "Received", value: formatDate(gift.dateReceived) },
-    { label: "Type", value: formatEnum(gift.type) || "—" },
-    { label: "Method", value: formatEnum(gift.paymentMethod) || "—" },
-    { label: "Owner", value: ownerDisplay },
+    {
+      label: "Amount",
+      accent: true,
+      value: (
+        <InlineEditCurrency
+          label="Amount"
+          testIdBase="gift-amount"
+          value={gift.amount ?? null}
+          display={
+            <span className="font-bold text-primary">{formatCurrency(gift.amount)}</span>
+          }
+          onSave={(next) => patch({ amount: next })}
+        />
+      ),
+    },
+    {
+      label: "Received",
+      value: (
+        <InlineEditDate
+          label="Date received"
+          testIdBase="gift-date-received"
+          value={gift.dateReceived ?? null}
+          display={formatDate(gift.dateReceived)}
+          onSave={(next) => patch({ dateReceived: next })}
+        />
+      ),
+    },
+    {
+      label: "Type",
+      value: (
+        <InlineEditSelect
+          align="left"
+          label="Type"
+          testIdBase="gift-type"
+          value={gift.type ?? null}
+          options={GIFT_TYPE_OPTIONS}
+          display={formatEnum(gift.type) || "—"}
+          onSave={(next) => patch({ type: next })}
+        />
+      ),
+    },
+    { label: "FY", value: fyDisplay },
+    {
+      label: "Owner",
+      value: (
+        <InlineEditUserPicker
+          align="left"
+          testIdBase="gift-owner"
+          value={gift.ownerUserId ?? null}
+          display={ownerDisplay}
+          onSave={(next) => patch({ ownerUserId: next })}
+        />
+      ),
+    },
   ];
 
   const allocations = gift.allocations ?? [];
@@ -285,41 +421,8 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       highlights={highlights}
       left={
         <>
-          <FieldCard title="Amount">
-            <div className="space-y-1">
-              <Row label="Amount">
-                <InlineEditCurrency
-                  label="Amount"
-                  testIdBase="gift-amount"
-                  value={gift.amount ?? null}
-                  display={<span className="text-xl font-bold text-primary">{formatCurrency(gift.amount)}</span>}
-                  onSave={(next) => patch({ amount: next })}
-                />
-              </Row>
-              <Row label="Received">
-                <InlineEditDate
-                  label="Date received"
-                  testIdBase="gift-date-received"
-                  value={gift.dateReceived ?? null}
-                  display={formatDate(gift.dateReceived)}
-                  onSave={(next) => patch({ dateReceived: next })}
-                />
-              </Row>
-            </div>
-          </FieldCard>
-
           <FieldCard title="Classification">
             <div className="space-y-1">
-              <Row label="Type">
-                <InlineEditSelect
-                  label="Type"
-                  testIdBase="gift-type"
-                  value={gift.type ?? null}
-                  options={GIFT_TYPE_OPTIONS}
-                  display={formatEnum(gift.type) || "—"}
-                  onSave={(next) => patch({ type: next })}
-                />
-              </Row>
               <Row label="Method">
                 <InlineEditSelect
                   label="Payment method"
@@ -328,16 +431,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                   options={PAYMENT_METHOD_OPTIONS}
                   display={formatEnum(gift.paymentMethod) || "—"}
                   onSave={(next) => patch({ paymentMethod: next })}
-                />
-              </Row>
-              <Row label="Grant year">
-                <InlineEditText
-                  label="Grant year"
-                  testIdBase="gift-grant-year"
-                  value={gift.grantYear ?? null}
-                  placeholder="e.g. 2025"
-                  display={gift.grantYear ?? "—"}
-                  onSave={(next) => patch({ grantYear: next })}
                 />
               </Row>
               <Row label="Designated to school">
@@ -350,49 +443,19 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                   onSave={(next) => patch({ designatedToSchool: next ?? false })}
                 />
               </Row>
-              <Row label="Owner">
-                <InlineEditUserPicker
-                  testIdBase="gift-owner"
-                  value={gift.ownerUserId ?? null}
-                  display={ownerDisplay}
-                  onSave={(next) => patch({ ownerUserId: next })}
-                />
-              </Row>
             </div>
           </FieldCard>
 
-          <FieldCard title="Donor">
-            <div className="space-y-1">
-              <Row label="Donor">
-                <InlineEditDonor
-                  testIdBase="gift-donor"
-                  value={{
-                    funderId: gift.funderId ?? null,
-                    individualGiverPersonId: gift.individualGiverPersonId ?? null,
-                    householdId: gift.householdId ?? null,
-                  }}
-                  display={donorDisplay}
-                  onSave={(body: DonorSaveBody) => patch(body)}
-                />
-              </Row>
-              <Row label="Advisor">
-                <InlineEditPersonPicker
-                  testIdBase="gift-advisor"
-                  value={gift.advisorPersonId ?? null}
-                  display={advisorDisplay}
-                  onSave={(next) => patch({ advisorPersonId: next })}
-                />
-              </Row>
-              <Row label="Intermediary">
-                <InlineEditIntermediaryPicker
-                  testIdBase="gift-intermediary"
-                  value={gift.paymentIntermediaryId ?? null}
-                  display={intermediaryDisplay}
-                  onSave={(next) => patch({ paymentIntermediaryId: next })}
-                />
-              </Row>
+          <RelatedCard title="Allocations" count={allocations.length}>
+            <div className="px-2 py-1">
+              <GiftAllocationsEditor
+                giftId={gift.id}
+                allocations={gift.allocations ?? []}
+              />
             </div>
-          </FieldCard>
+          </RelatedCard>
+
+          <ThankYouPanel gift={gift} />
 
           <FieldCard title="Other details" defaultOpen={false}>
             <div className="space-y-4">
@@ -433,27 +496,98 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       }
       center={
         // Activity is scoped to the gift's donor (interactions/email/calendar/
-        // meetings only link to a person/funder/household); notes & tasks link
-        // to the gift itself.
+        // meetings only link to a person/funder/household); notes link to the
+        // gift itself. Tasks are surfaced in the dedicated Tasks card in the
+        // right rail, so they're hidden from the feed to avoid duplication.
         <UnifiedActivityFeed
           funderId={gift.funderId ?? undefined}
           personId={gift.individualGiverPersonId ?? undefined}
           householdId={gift.householdId ?? undefined}
           notesContext={{ giftId: gift.id }}
+          hideTasks
         />
       }
       right={
         <>
-          <ThankYouPanel gift={gift} />
-
-          <RelatedCard title="Allocations" count={allocations.length}>
-            <div className="px-2 py-1">
-              <GiftAllocationsEditor
-                giftId={gift.id}
-                allocations={gift.allocations ?? []}
-              />
+          <RelatedCard title="Organizations">
+            <div className="space-y-1 px-2 py-1">
+              <Row label="Funder">
+                <InlineEditFunderPicker
+                  testIdBase="gift-funder"
+                  value={gift.funderId ?? null}
+                  display={funderLinkDisplay}
+                  onSave={setFunderDonor}
+                  allowNull={false}
+                />
+              </Row>
+              <Row label="Payment intermediary">
+                <InlineEditIntermediaryPicker
+                  testIdBase="gift-intermediary"
+                  value={gift.paymentIntermediaryId ?? null}
+                  display={intermediaryDisplay}
+                  onSave={(next) => patch({ paymentIntermediaryId: next })}
+                />
+              </Row>
+              <Row label="Household">
+                <InlineEditHouseholdPicker
+                  testIdBase="gift-household"
+                  value={gift.householdId ?? null}
+                  display={householdLinkDisplay}
+                  onSave={setHouseholdDonor}
+                  allowNull={false}
+                />
+              </Row>
             </div>
           </RelatedCard>
+
+          <RelatedCard title="People" count={associatedPeople.length || undefined}>
+            <div className="space-y-1 px-2 py-1">
+              <Row label="Individual donor">
+                <InlineEditPersonPicker
+                  testIdBase="gift-individual-giver"
+                  value={gift.individualGiverPersonId ?? null}
+                  display={individualLinkDisplay}
+                  onSave={setIndividualDonor}
+                  allowNull={false}
+                />
+              </Row>
+              <Row label="Advisor">
+                <InlineEditPersonPicker
+                  testIdBase="gift-advisor"
+                  value={gift.advisorPersonId ?? null}
+                  display={advisorDisplay}
+                  onSave={(next) => patch({ advisorPersonId: next })}
+                />
+              </Row>
+            </div>
+            {associatedPeople.length > 0 ? (
+              <div className="border-t pt-1">
+                <div className="px-3 py-1 text-xs font-medium text-muted-foreground">
+                  Associated contacts
+                </div>
+                {associatedPeople.map((role) => {
+                  const subtitle =
+                    role.externalTitleOrRole ??
+                    (role.connection ? formatEnum(role.connection) : null);
+                  const roleLabel =
+                    [subtitle, role.personEmail].filter(Boolean).join(" · ") || undefined;
+                  return (
+                    <div key={role.id} data-testid={`row-gift-person-${role.personId}`}>
+                      <AffiliationRow
+                        name={role.personName ?? `Person ${role.personId}`}
+                        href={`/individuals/${role.personId}`}
+                        role={roleLabel}
+                        primary={role.primaryContact ?? false}
+                        hideStatusBadge
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </RelatedCard>
+
+          <TasksPanel giftId={gift.id} />
 
           {hasRelated ? (
             <RelatedCard title="Related">
