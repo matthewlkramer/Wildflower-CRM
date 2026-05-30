@@ -379,9 +379,16 @@ function FunderView({ funder }: { funder: FunderDetail }) {
   const people = funder.people ?? [];
   const [hideInactivePeople, setHideInactivePeople] = useState(false);
   const hasInactivePeople = people.some((p) => p.current === "past");
-  const visiblePeople = hideInactivePeople
-    ? people.filter((p) => p.current !== "past")
-    : people;
+  const visiblePeople = (
+    hideInactivePeople ? people.filter((p) => p.current !== "past") : people
+  )
+    .slice()
+    // Primary contact first; Array.prototype.sort is stable so the original
+    // order is preserved among the remaining (non-primary) people.
+    .sort(
+      (a, b) =>
+        Number(b.primaryContact ?? false) - Number(a.primaryContact ?? false),
+    );
 
   return (
     <RecordLayout
@@ -394,83 +401,123 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       highlights={highlights}
       left={
         <>
-          <FieldCard title="Status">
-            <div className="space-y-1">
-              <Row label="Active">
-                <InlineEditSelect
-                  label="Active status"
-                  testIdBase="funder-active-status"
-                  value={funder.activeStatus ?? null}
-                  options={ACTIVE_STATUS_OPTIONS}
-                  display={
-                    funder.activeStatus ? (
-                      <Badge variant={funder.activeStatus === "active" ? "default" : "outline"}>
-                        {formatEnum(funder.activeStatus)}
-                      </Badge>
-                    ) : (
-                      "—"
-                    )
-                  }
-                  onSave={(next) => patch({ activeStatus: next })}
-                />
-              </Row>
-              <Row label="National priorities">
-                <InlineEditBoolean
-                  label="National priorities"
-                  testIdBase="funder-national-priorities"
-                  value={funder.nationalPriorities ?? null}
-                  display={
-                    funder.nationalPriorities == null
-                      ? "—"
-                      : funder.nationalPriorities
-                        ? "Yes"
-                        : "No"
-                  }
-                  onSave={(next) => patch({ nationalPriorities: next })}
-                />
-              </Row>
-            </div>
-          </FieldCard>
-
-          <FieldCard title="Organization">
-            <div className="space-y-1">
-              <Row label="Subtype">
-                <InlineEditSelect
-                  label="Subtype"
-                  testIdBase="funder-subtype"
-                  value={funder.fundingEntitySubtype ?? null}
-                  options={SUBTYPE_OPTIONS}
-                  display={formatEnum(funder.fundingEntitySubtype)}
-                  onSave={(next) => patch({ fundingEntitySubtype: next })}
-                />
-              </Row>
-              <Row label="Employees">
-                <InlineEditSelect
-                  label="Number of employees"
-                  testIdBase="funder-employees"
-                  value={funder.numberOfEmployees ?? null}
-                  options={EMPLOYEES_OPTIONS}
-                  display={
-                    EMPLOYEES_OPTIONS.find((o) => o.value === funder.numberOfEmployees)?.label ?? "—"
-                  }
-                  onSave={(next) => patch({ numberOfEmployees: next })}
-                />
-              </Row>
-              <Row label="Makes PRIs">
-                <InlineEditBoolean
-                  label="Makes PRIs"
-                  testIdBase="funder-makes-pris"
-                  value={funder.makesPris ?? null}
-                  display={
-                    funder.makesPris == null
-                      ? "—"
-                      : funder.makesPris
-                        ? "Yes"
-                        : "No"
-                  }
-                  onSave={(next) => patch({ makesPris: next })}
-                />
-              </Row>
+          <FieldCard title="Details">
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Row label="Active">
+                  <InlineEditSelect
+                    label="Active status"
+                    testIdBase="funder-active-status"
+                    value={funder.activeStatus ?? null}
+                    options={ACTIVE_STATUS_OPTIONS}
+                    display={
+                      funder.activeStatus ? (
+                        <Badge variant={funder.activeStatus === "active" ? "default" : "outline"}>
+                          {formatEnum(funder.activeStatus)}
+                        </Badge>
+                      ) : (
+                        "—"
+                      )
+                    }
+                    onSave={(next) => patch({ activeStatus: next })}
+                  />
+                </Row>
+                <Row label="National priorities">
+                  <InlineEditBoolean
+                    label="National priorities"
+                    testIdBase="funder-national-priorities"
+                    value={funder.nationalPriorities ?? null}
+                    display={
+                      funder.nationalPriorities == null
+                        ? "—"
+                        : funder.nationalPriorities
+                          ? "Yes"
+                          : "No"
+                    }
+                    onSave={(next) => patch({ nationalPriorities: next })}
+                  />
+                </Row>
+                <Row label="Subtype">
+                  <InlineEditSelect
+                    label="Subtype"
+                    testIdBase="funder-subtype"
+                    value={funder.fundingEntitySubtype ?? null}
+                    options={SUBTYPE_OPTIONS}
+                    display={formatEnum(funder.fundingEntitySubtype)}
+                    onSave={(next) => patch({ fundingEntitySubtype: next })}
+                  />
+                </Row>
+                <Row label="Employees">
+                  <InlineEditSelect
+                    label="Number of employees"
+                    testIdBase="funder-employees"
+                    value={funder.numberOfEmployees ?? null}
+                    options={EMPLOYEES_OPTIONS}
+                    display={
+                      EMPLOYEES_OPTIONS.find((o) => o.value === funder.numberOfEmployees)?.label ?? "—"
+                    }
+                    onSave={(next) => patch({ numberOfEmployees: next })}
+                  />
+                </Row>
+                <Row label="Makes PRIs">
+                  <InlineEditBoolean
+                    label="Makes PRIs"
+                    testIdBase="funder-makes-pris"
+                    value={funder.makesPris ?? null}
+                    display={
+                      funder.makesPris == null
+                        ? "—"
+                        : funder.makesPris
+                          ? "Yes"
+                          : "No"
+                    }
+                    onSave={(next) => patch({ makesPris: next })}
+                  />
+                </Row>
+              </div>
+              <Separator />
+              <div className="space-y-4">
+                <Row label="Other names">
+                  <InlineEditText
+                    label="Other names"
+                    testIdBase="funder-other-names"
+                    value={funder.otherNames ?? null}
+                    placeholder="Aliases, abbreviations…"
+                    display={funder.otherNames ?? "—"}
+                    onSave={(next) => patch({ otherNames: next })}
+                  />
+                </Row>
+                <TagRow label="Historical names" values={funder.historicalNames} />
+                <Row label="Tags">
+                  <InlineEditText
+                    label="Tags"
+                    testIdBase="funder-tags"
+                    value={funder.tags ?? null}
+                    placeholder="Comma-separated tags"
+                    display={funder.tags ?? "—"}
+                    onSave={(next) => patch({ tags: next })}
+                  />
+                </Row>
+                <div>
+                  <div className="text-xs font-medium text-muted-foreground mb-1">
+                    Details
+                  </div>
+                  <InlineEditTextarea
+                    label="Details"
+                    testIdBase="funder-details"
+                    value={funder.details ?? null}
+                    placeholder="Add details…"
+                    display={
+                      funder.details ? (
+                        <p className="whitespace-pre-wrap text-left">{funder.details}</p>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )
+                    }
+                    onSave={(next) => patch({ details: next })}
+                  />
+                </div>
+              </div>
             </div>
           </FieldCard>
 
@@ -687,51 +734,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                   onSave={(next) => patch({ instagram: next })}
                 />
               </Row>
-            </div>
-          </FieldCard>
-
-          <FieldCard title="Other details" defaultOpen={false}>
-            <div className="space-y-4">
-              <Row label="Other names">
-                <InlineEditText
-                  label="Other names"
-                  testIdBase="funder-other-names"
-                  value={funder.otherNames ?? null}
-                  placeholder="Aliases, abbreviations…"
-                  display={funder.otherNames ?? "—"}
-                  onSave={(next) => patch({ otherNames: next })}
-                />
-              </Row>
-              <TagRow label="Historical names" values={funder.historicalNames} />
-              <Row label="Tags">
-                <InlineEditText
-                  label="Tags"
-                  testIdBase="funder-tags"
-                  value={funder.tags ?? null}
-                  placeholder="Comma-separated tags"
-                  display={funder.tags ?? "—"}
-                  onSave={(next) => patch({ tags: next })}
-                />
-              </Row>
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">
-                  Details
-                </div>
-                <InlineEditTextarea
-                  label="Details"
-                  testIdBase="funder-details"
-                  value={funder.details ?? null}
-                  placeholder="Add details…"
-                  display={
-                    funder.details ? (
-                      <p className="whitespace-pre-wrap text-left">{funder.details}</p>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )
-                  }
-                  onSave={(next) => patch({ details: next })}
-                />
-              </div>
             </div>
           </FieldCard>
 
