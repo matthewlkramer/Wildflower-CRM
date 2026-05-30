@@ -5,8 +5,14 @@ import {
   useUpdatePerson,
   useDeletePerson,
   useGetHousehold,
+  useGetFunder,
+  useGetOrganization,
+  useGetPaymentIntermediary,
   getGetPersonQueryKey,
   getGetHouseholdQueryKey,
+  getGetFunderQueryKey,
+  getGetOrganizationQueryKey,
+  getGetPaymentIntermediaryQueryKey,
   getListPeopleQueryKey,
   type PersonDetail,
   type UpdatePersonBody,
@@ -14,6 +20,7 @@ import {
   type ConnectionStatus,
   type Enthusiasm,
   type Priority,
+  type EntityRoleType,
 } from "@workspace/api-client-react";
 import { Check, Pencil, Trash2, X } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
@@ -1057,9 +1064,12 @@ function OrganizationsCard({ roles }: { roles: PeopleEntityRole[] }) {
 }
 
 function PeopleCard({ person }: { person: PersonDetail }) {
-  // "People" = co-members of every household this person belongs to. Each
-  // household is resolved by its own child component so the hooks stay
-  // stable regardless of how many households the person is in.
+  // "People" = everyone connected to this person through a shared entity:
+  //   • co-members of every household this person belongs to, and
+  //   • current/former colleagues — people who hold a role at the same
+  //     funder / organization / payment intermediary this person does.
+  // Each related entity is resolved by its own child component so the hooks
+  // stay stable regardless of how many entities the person is tied to.
   const roles = person.roles ?? [];
   const householdIds = Array.from(
     new Set(
@@ -1068,9 +1078,37 @@ function PeopleCard({ person }: { person: PersonDetail }) {
         .map((r) => r.householdId as string),
     ),
   );
+
+  // Dedupe org affiliations by entity; a person can hold more than one role at
+  // the same org (e.g. a current and a past one). The colleague is treated as
+  // "current" only when this person is currently affiliated there too.
+  const colleagueEntities = new Map<
+    string,
+    { entityType: EntityRoleType; entityId: string; viewerCurrent: boolean }
+  >();
+  for (const r of roles) {
+    if (r.entityType === "household") continue;
+    const entityId =
+      r.funderId ?? r.organizationId ?? r.paymentIntermediaryId ?? null;
+    if (!entityId) continue;
+    const key = `${r.entityType}:${entityId}`;
+    const isCurrent = r.current === "current";
+    const existing = colleagueEntities.get(key);
+    if (existing) {
+      existing.viewerCurrent = existing.viewerCurrent || isCurrent;
+    } else {
+      colleagueEntities.set(key, {
+        entityType: r.entityType,
+        entityId,
+        viewerCurrent: isCurrent,
+      });
+    }
+  }
+
+  const hasAny = householdIds.length > 0 || colleagueEntities.size > 0;
   return (
     <RelatedCard title="People">
-      {householdIds.length === 0 ? (
+      {!hasAny ? (
         <p className="px-2 py-2 text-sm text-muted-foreground">
           No related people.
         </p>
@@ -1080,6 +1118,15 @@ function PeopleCard({ person }: { person: PersonDetail }) {
             <HouseholdMembers
               key={hid}
               householdId={hid}
+              excludePersonId={person.id}
+            />
+          ))}
+          {Array.from(colleagueEntities.values()).map((e) => (
+            <ColleagueMembers
+              key={`${e.entityType}:${e.entityId}`}
+              entityType={e.entityType}
+              entityId={e.entityId}
+              viewerCurrent={e.viewerCurrent}
               excludePersonId={person.id}
             />
           ))}
@@ -1125,6 +1172,95 @@ function HouseholdMembers({
           primary={m.primaryContact}
         />
       ))}
+    </>
+  );
+}
+
+function ColleagueMembers({
+  entityType,
+  entityId,
+  viewerCurrent,
+  excludePersonId,
+}: {
+  entityType: EntityRoleType;
+  entityId: string;
+  viewerCurrent: boolean;
+  excludePersonId: string;
+}) {
+  // All three resolvers are called unconditionally to keep hook order stable;
+  // only the one matching this entity's type is enabled.
+  const funderQ = useGetFunder(entityId, {
+    query: {
+      queryKey: getGetFunderQueryKey(entityId),
+      enabled: entityType === "funder",
+    },
+  });
+  const orgQ = useGetOrganization(entityId, {
+    query: {
+      queryKey: getGetOrganizationQueryKey(entityId),
+      enabled: entityType === "non_funding_organization",
+    },
+  });
+  const piQ = useGetPaymentIntermediary(entityId, {
+    query: {
+      queryKey: getGetPaymentIntermediaryQueryKey(entityId),
+      enabled: entityType === "payment_intermediary",
+    },
+  });
+  const active =
+    entityType === "funder"
+      ? funderQ
+      : entityType === "non_funding_organization"
+        ? orgQ
+        : piQ;
+  const { data, isLoading, isError } = active;
+  if (isLoading) {
+    return <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>;
+  }
+  if (isError) {
+    return (
+      <p className="px-2 py-2 text-sm text-destructive">
+        Couldn’t load colleagues.
+      </p>
+    );
+  }
+  const entityName = data?.name ?? null;
+  // A person can hold more than one role at the same entity; dedupe by person so
+  // a colleague shows up once, preferring a "current" role for the status badge.
+  const people = (data?.people ?? []).filter(
+    (m) => m.personId !== excludePersonId,
+  );
+  const byPerson = new Map<string, (typeof people)[number]>();
+  for (const m of people) {
+    const existing = byPerson.get(m.personId);
+    if (!existing || (m.current === "current" && existing.current !== "current")) {
+      byPerson.set(m.personId, m);
+    }
+  }
+  const colleagues = Array.from(byPerson.values());
+  if (colleagues.length === 0) return null;
+  return (
+    <>
+      {colleagues.map((m) => {
+        const title = m.externalTitleOrRole ?? formatEnum(m.connection);
+        const roleLine = entityName
+          ? title && title !== "—"
+            ? `${title} · ${entityName}`
+            : entityName
+          : title;
+        // A "current" colleague requires both people to be currently there.
+        const isCurrent = viewerCurrent && m.current === "current";
+        return (
+          <AffiliationRow
+            key={`${entityId}:${m.id}`}
+            name={m.personName ?? `Person ${m.personId}`}
+            href={`/individuals/${m.personId}`}
+            role={roleLine}
+            status={isCurrent ? "active" : "past"}
+            primary={m.primaryContact}
+          />
+        );
+      })}
     </>
   );
 }
