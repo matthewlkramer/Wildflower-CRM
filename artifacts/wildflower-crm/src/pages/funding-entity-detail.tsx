@@ -424,21 +424,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                     onSave={(next) => patch({ activeStatus: next })}
                   />
                 </Row>
-                <Row label="National priorities">
-                  <InlineEditBoolean
-                    label="National priorities"
-                    testIdBase="funder-national-priorities"
-                    value={funder.nationalPriorities ?? null}
-                    display={
-                      funder.nationalPriorities == null
-                        ? "—"
-                        : funder.nationalPriorities
-                          ? "Yes"
-                          : "No"
-                    }
-                    onSave={(next) => patch({ nationalPriorities: next })}
-                  />
-                </Row>
                 <Row label="Subtype">
                   <InlineEditSelect
                     label="Subtype"

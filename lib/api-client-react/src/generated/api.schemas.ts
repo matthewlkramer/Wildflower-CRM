@@ -656,7 +656,6 @@ export interface Funder {
   capacityRating?: CapacityRating | null;
   /** Estimated total assets / endowment size. Decimal as string. */
   totalAssets?: string | null;
-  nationalPriorities?: boolean | null;
   priorityAreasNotes?: string | null;
   activeStatus?: ActiveStatus | null;
   otherNames?: string | null;
@@ -778,7 +777,6 @@ export interface CreateFunderBody {
   capacityRating?: CapacityRating;
   /** Estimated total assets / endowment size. Decimal as string. */
   totalAssets?: string;
-  nationalPriorities?: boolean;
   priorityAreasNotes?: string;
   activeStatus?: ActiveStatus;
   otherNames?: string;
@@ -815,7 +813,6 @@ export interface UpdateFunderBody {
   capacityRating?: CapacityRating | null;
   /** Estimated total assets / endowment size. Decimal as string. */
   totalAssets?: string | null;
-  nationalPriorities?: boolean | null;
   priorityAreasNotes?: string | null;
   activeStatus?: ActiveStatus | null;
   otherNames?: string | null;
@@ -2283,7 +2280,6 @@ export interface BulkUpdateFundersPatch {
   enthusiasm?: Enthusiasm | null;
   priority?: Priority | null;
   fundingEntitySubtype?: FundingEntitySubtype | null;
-  nationalPriorities?: boolean | null;
 }
 
 export interface BulkUpdateFundersBody {

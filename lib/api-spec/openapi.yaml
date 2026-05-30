@@ -2003,7 +2003,6 @@ components:
         numberOfEmployees:     { allOf: [ { $ref: "#/components/schemas/NumberOfEmployees" } ], nullable: true }
         capacityRating:        { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         totalAssets:           { type: string, nullable: true, description: "Estimated total assets / endowment size. Decimal as string." }
-        nationalPriorities:    { type: boolean, nullable: true }
         priorityAreasNotes:    { type: string, nullable: true }
         activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
         otherNames:            { type: string, nullable: true }
@@ -2062,7 +2061,6 @@ components:
         numberOfEmployees:     { $ref: "#/components/schemas/NumberOfEmployees" }
         capacityRating:        { $ref: "#/components/schemas/CapacityRating" }
         totalAssets:           { type: string, description: "Estimated total assets / endowment size. Decimal as string." }
-        nationalPriorities:    { type: boolean }
         priorityAreasNotes:    { type: string }
         activeStatus:          { $ref: "#/components/schemas/ActiveStatus" }
         otherNames:            { type: string }
@@ -2098,7 +2096,6 @@ components:
         numberOfEmployees:     { allOf: [ { $ref: "#/components/schemas/NumberOfEmployees" } ], nullable: true }
         capacityRating:        { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         totalAssets:           { type: string, nullable: true, description: "Estimated total assets / endowment size. Decimal as string." }
-        nationalPriorities:    { type: boolean, nullable: true }
         priorityAreasNotes:    { type: string, nullable: true }
         activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
         otherNames:            { type: string, nullable: true }
@@ -3703,7 +3700,6 @@ components:
         enthusiasm:           { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
         priority:             { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
         fundingEntitySubtype: { allOf: [ { $ref: "#/components/schemas/FundingEntitySubtype" } ], nullable: true }
-        nationalPriorities:   { type: boolean, nullable: true }
     BulkUpdateFundersBody:
       type: object
       required: [ids, patch]

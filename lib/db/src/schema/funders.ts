@@ -33,7 +33,6 @@ export const funders = pgTable("funders", {
   // Estimated total assets under management / endowment size for this funder.
   // Decimal (2dp) with headroom for very large foundations (up to ~99T).
   totalAssets: numeric("total_assets", { precision: 16, scale: 2 }),
-  nationalPriorities: boolean("national_priorities"),
   priorityAreasNotes: text("priority_areas_notes"),
   activeStatus: activeStatusEnum("active_status"),
   otherNames: text("other_names"),

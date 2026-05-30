@@ -156,18 +156,6 @@ function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
       cell: (f) => formatEnum(f.connectionStatus),
     },
     {
-      key: "nationalPriority",
-      label: "National?",
-      cell: (f) =>
-        f.nationalPriorities == null ? (
-          "—"
-        ) : f.nationalPriorities ? (
-          <Badge variant="default">Yes</Badge>
-        ) : (
-          <Badge variant="outline">No</Badge>
-        ),
-    },
-    {
       key: "enthusiasm",
       label: "Enthusiasm",
       cell: (f) => formatEnum(f.enthusiasm),
@@ -297,8 +285,6 @@ export default function FundingEntities() {
           subtype: (r) => r.fundingEntitySubtype ?? null,
           active: (r) => r.activeStatus ?? null,
           connection: (r) => r.connectionStatus ?? null,
-          nationalPriority: (r) =>
-            r.nationalPriorities == null ? null : r.nationalPriorities ? 1 : 0,
           enthusiasm: (r) => r.enthusiasm ?? null,
           capacity: (r) =>
             r.capacityRating ? (CAPACITY_ORDER[r.capacityRating] ?? 0) : null,

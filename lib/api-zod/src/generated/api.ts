@@ -830,7 +830,6 @@ export const ListFundersResponse = zod.object({
         .describe(
           "Estimated total assets \/ endowment size. Decimal as string.",
         ),
-      nationalPriorities: zod.boolean().nullish(),
       priorityAreasNotes: zod.string().nullish(),
       activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
       otherNames: zod.string().nullish(),
@@ -944,7 +943,6 @@ export const CreateFunderBody = zod.object({
     .string()
     .optional()
     .describe("Estimated total assets \/ endowment size. Decimal as string."),
-  nationalPriorities: zod.boolean().optional(),
   priorityAreasNotes: zod.string().optional(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).optional(),
   otherNames: zod.string().optional(),
@@ -1026,7 +1024,6 @@ export const GetFunderResponse = zod
       .string()
       .nullish()
       .describe("Estimated total assets \/ endowment size. Decimal as string."),
-    nationalPriorities: zod.boolean().nullish(),
     priorityAreasNotes: zod.string().nullish(),
     activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
     otherNames: zod.string().nullish(),
@@ -1234,7 +1231,6 @@ export const UpdateFunderBody = zod.object({
     .string()
     .nullish()
     .describe("Estimated total assets \/ endowment size. Decimal as string."),
-  nationalPriorities: zod.boolean().nullish(),
   priorityAreasNotes: zod.string().nullish(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
   otherNames: zod.string().nullish(),
@@ -1311,7 +1307,6 @@ export const UpdateFunderResponse = zod.object({
     .string()
     .nullish()
     .describe("Estimated total assets \/ endowment size. Decimal as string."),
-  nationalPriorities: zod.boolean().nullish(),
   priorityAreasNotes: zod.string().nullish(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
   otherNames: zod.string().nullish(),
@@ -6169,7 +6164,6 @@ export const BulkUpdateFundersBody = zod.object({
         "platform",
       ])
       .nullish(),
-    nationalPriorities: zod.boolean().nullish(),
   }),
 });
 
