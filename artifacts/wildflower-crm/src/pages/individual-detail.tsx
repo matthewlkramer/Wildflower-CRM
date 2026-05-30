@@ -39,6 +39,7 @@ import {
   FieldCard,
   RelatedCard,
   AffiliationRow,
+  HideInactiveToggle,
   type Highlight,
 } from "@/components/record-layout";
 import { cn } from "@/lib/utils";
@@ -831,11 +832,27 @@ function OrganizationsCard({ roles }: { roles: PeopleEntityRole[] }) {
   // Everything that isn't a household membership is an organizational
   // affiliation (funder / non-funding org / payment intermediary).
   const orgRoles = roles.filter((r) => r.entityType !== "household");
+  const [hideInactive, setHideInactive] = useState(false);
+  const hasInactive = orgRoles.some((r) => r.current === "past");
+  const visibleRoles = hideInactive
+    ? orgRoles.filter((r) => r.current !== "past")
+    : orgRoles;
   return (
-    <RelatedCard title="Organizations" count={orgRoles.length}>
-      {orgRoles.length > 0 ? (
+    <RelatedCard
+      title="Organizations"
+      count={visibleRoles.length}
+      action={
+        hasInactive ? (
+          <HideInactiveToggle
+            hidden={hideInactive}
+            onToggle={() => setHideInactive((v) => !v)}
+          />
+        ) : undefined
+      }
+    >
+      {visibleRoles.length > 0 ? (
         <ul className="space-y-1 px-2 py-1 text-sm">
-          {orgRoles.map((r) => (
+          {visibleRoles.map((r) => (
             <RoleRow key={r.id} role={r} />
           ))}
         </ul>
@@ -891,8 +908,23 @@ function PeopleCard({ person }: { person: PersonDetail }) {
   }
 
   const hasAny = householdIds.length > 0 || colleagueEntities.size > 0;
+  // Past colleagues are resolved inside the child components, so we can't know
+  // up here whether any inactive rows exist — offer the toggle whenever there
+  // are colleague affiliations (households are always "current" memberships).
+  const canHaveInactive = colleagueEntities.size > 0;
+  const [hideInactive, setHideInactive] = useState(false);
   return (
-    <RelatedCard title="People">
+    <RelatedCard
+      title="People"
+      action={
+        canHaveInactive ? (
+          <HideInactiveToggle
+            hidden={hideInactive}
+            onToggle={() => setHideInactive((v) => !v)}
+          />
+        ) : undefined
+      }
+    >
       {!hasAny ? (
         <p className="px-2 py-2 text-sm text-muted-foreground">
           No related people.
@@ -904,6 +936,7 @@ function PeopleCard({ person }: { person: PersonDetail }) {
               key={hid}
               householdId={hid}
               excludePersonId={person.id}
+              hideInactive={hideInactive}
             />
           ))}
           {Array.from(colleagueEntities.values()).map((e) => (
@@ -913,6 +946,7 @@ function PeopleCard({ person }: { person: PersonDetail }) {
               entityId={e.entityId}
               viewerCurrent={e.viewerCurrent}
               excludePersonId={person.id}
+              hideInactive={hideInactive}
             />
           ))}
         </div>
@@ -924,9 +958,11 @@ function PeopleCard({ person }: { person: PersonDetail }) {
 function HouseholdMembers({
   householdId,
   excludePersonId,
+  hideInactive,
 }: {
   householdId: string;
   excludePersonId: string;
+  hideInactive: boolean;
 }) {
   const { data, isLoading, isError } = useGetHousehold(householdId, {
     query: { queryKey: getGetHouseholdQueryKey(householdId) },
@@ -942,7 +978,9 @@ function HouseholdMembers({
     );
   }
   const members = (data?.people ?? []).filter(
-    (m) => m.personId !== excludePersonId,
+    (m) =>
+      m.personId !== excludePersonId &&
+      (!hideInactive || m.current === "current"),
   );
   if (members.length === 0) return null;
   return (
@@ -967,11 +1005,13 @@ function ColleagueMembers({
   entityId,
   viewerCurrent,
   excludePersonId,
+  hideInactive,
 }: {
   entityType: EntityRoleType;
   entityId: string;
   viewerCurrent: boolean;
   excludePersonId: string;
+  hideInactive: boolean;
 }) {
   // All three resolvers are called unconditionally to keep hook order stable;
   // only the one matching this entity's type is enabled.
@@ -1023,7 +1063,11 @@ function ColleagueMembers({
       byPerson.set(m.personId, m);
     }
   }
-  const colleagues = Array.from(byPerson.values());
+  const colleagues = Array.from(byPerson.values()).filter(
+    // A colleague is "current" only when both this person and the colleague
+    // are presently affiliated with the shared entity.
+    (m) => !hideInactive || (viewerCurrent && m.current === "current"),
+  );
   if (colleagues.length === 0) return null;
   return (
     <>

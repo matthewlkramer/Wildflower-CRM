@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
-import { ChevronLeft, ChevronDown, Plus, PanelLeft, X } from "lucide-react";
+import { ChevronLeft, ChevronDown, Plus, PanelLeft, X, EyeOff, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -292,6 +292,30 @@ export function CardAction({
     >
       <Plus className="h-3.5 w-3.5" />
       {label}
+    </button>
+  );
+}
+
+/* Header toggle that hides/shows inactive (past) rows in a related card. */
+export function HideInactiveToggle({
+  hidden,
+  onToggle,
+}: {
+  hidden: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
+    >
+      {hidden ? (
+        <Eye className="h-3.5 w-3.5" />
+      ) : (
+        <EyeOff className="h-3.5 w-3.5" />
+      )}
+      {hidden ? "Show inactive" : "Hide inactive"}
     </button>
   );
 }

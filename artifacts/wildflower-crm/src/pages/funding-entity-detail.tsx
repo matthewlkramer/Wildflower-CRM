@@ -31,6 +31,7 @@ import {
   FieldCard,
   RelatedCard,
   AffiliationRow,
+  HideInactiveToggle,
   type Highlight,
 } from "@/components/record-layout";
 import {
@@ -376,6 +377,11 @@ function FunderView({ funder }: { funder: FunderDetail }) {
   ];
 
   const people = funder.people ?? [];
+  const [hideInactivePeople, setHideInactivePeople] = useState(false);
+  const hasInactivePeople = people.some((p) => p.current === "past");
+  const visiblePeople = hideInactivePeople
+    ? people.filter((p) => p.current !== "past")
+    : people;
 
   return (
     <RecordLayout
@@ -738,10 +744,21 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       center={<UnifiedActivityFeed funderId={funder.id} hideTasks />}
       right={
         <>
-          <RelatedCard title="People" count={people.length}>
-            {people.length > 0 ? (
+          <RelatedCard
+            title="People"
+            count={visiblePeople.length}
+            action={
+              hasInactivePeople ? (
+                <HideInactiveToggle
+                  hidden={hideInactivePeople}
+                  onToggle={() => setHideInactivePeople((v) => !v)}
+                />
+              ) : undefined
+            }
+          >
+            {visiblePeople.length > 0 ? (
               <div>
-                {people.map((p) => {
+                {visiblePeople.map((p) => {
                   const title =
                     p.externalTitleOrRole ??
                     (p.connection ? formatEnum(p.connection) : null);
@@ -816,16 +833,41 @@ function RelatedFundersCard({
     },
   });
 
-  const children = childrenQ.data?.data ?? [];
-  const parent = funder.parentFunderId ? (parentQ.data ?? null) : null;
+  const [hideInactive, setHideInactive] = useState(false);
+  const isInactiveFunder = (f: { activeStatus?: string | null }) =>
+    f.activeStatus != null && f.activeStatus !== "active";
+
+  const allChildren = childrenQ.data?.data ?? [];
+  const fullParent = funder.parentFunderId ? (parentQ.data ?? null) : null;
   const intermediaryId = funder.paymentIntermediaryId ?? null;
   const resolvedIntermediaryName = useIntermediaryName(intermediaryId);
   const intermediaryName =
     funder.paymentIntermediary?.name ?? resolvedIntermediaryName;
+
+  const hasInactive =
+    allChildren.some(isInactiveFunder) ||
+    (fullParent ? isInactiveFunder(fullParent) : false);
+  const children =
+    hideInactive ? allChildren.filter((c) => !isInactiveFunder(c)) : allChildren;
+  const parent =
+    fullParent && !(hideInactive && isInactiveFunder(fullParent))
+      ? fullParent
+      : null;
   const count = (parent ? 1 : 0) + children.length + (intermediaryId ? 1 : 0);
 
   return (
-    <RelatedCard title="Organizations" count={count}>
+    <RelatedCard
+      title="Organizations"
+      count={count}
+      action={
+        hasInactive ? (
+          <HideInactiveToggle
+            hidden={hideInactive}
+            onToggle={() => setHideInactive((v) => !v)}
+          />
+        ) : undefined
+      }
+    >
       <div>
         {parent ? (
           <AffiliationRow
