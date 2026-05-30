@@ -5,7 +5,11 @@ import {
   useUpdateOpportunityOrPledge,
   useDeleteOpportunityOrPledge,
   useListEntities,
+  useGetFunder,
+  useGetHousehold,
   getGetOpportunityOrPledgeQueryKey,
+  getGetFunderQueryKey,
+  getGetHouseholdQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
   type OpportunityOrPledgeDetail,
   type UpdateOpportunityOrPledgeBody,
@@ -13,9 +17,11 @@ import {
   type OpportunityStatus,
   type OpportunityType,
   type OpportunityConditional,
+  type PeopleEntityRole,
 } from "@workspace/api-client-react";
 import { PledgeAllocationsEditor } from "@/components/allocation-editors";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
+import { TasksPanel } from "@/components/tasks-panel";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { GrantLetterUpload } from "@/components/grant-letter-upload";
 import { ReportingDeadlinesDialog } from "@/components/reporting-deadlines-dialog";
@@ -34,17 +40,18 @@ import {
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import {
   InlineEditPersonPicker,
-  InlineEditDonor,
+  InlineEditFunderPicker,
+  InlineEditHouseholdPicker,
   usePersonName,
   useFunderName,
   useHouseholdName,
-  type DonorSaveBody,
 } from "@/components/entity-picker";
 import {
   RecordLayout,
   FieldCard,
   RelatedCard,
   RelatedRow,
+  AffiliationRow,
   type Highlight,
 } from "@/components/record-layout";
 import { useQueryClient } from "@tanstack/react-query";
@@ -210,6 +217,32 @@ function OppView({
   const advisorName = usePersonName(opp.individualAdvisorPersonId ?? null);
   const primaryContactName = usePersonName(opp.primaryContactPersonId ?? null);
 
+  // Fetch the linked donor entities so the People card can list the people
+  // associated with the funder / household (mirrors the gift-detail layout).
+  const funderDetail = useGetFunder(opp.funderId ?? "", {
+    query: {
+      queryKey: getGetFunderQueryKey(opp.funderId ?? ""),
+      enabled: !!opp.funderId,
+    },
+  });
+  const householdDetail = useGetHousehold(opp.householdId ?? "", {
+    query: {
+      queryKey: getGetHouseholdQueryKey(opp.householdId ?? ""),
+      enabled: !!opp.householdId,
+    },
+  });
+
+  const associatedPeople: PeopleEntityRole[] = [];
+  const seenPeople = new Set<string>();
+  for (const role of [
+    ...(funderDetail.data?.people ?? []),
+    ...(householdDetail.data?.people ?? []),
+  ]) {
+    if (seenPeople.has(role.personId)) continue;
+    seenPeople.add(role.personId);
+    associatedPeople.push(role);
+  }
+
   let donorDisplay: ReactNode = (
     <span className="text-muted-foreground">No donor linked.</span>
   );
@@ -270,6 +303,46 @@ function OppView({
   ) : (
     "—"
   );
+
+  const funderLinkDisplay: ReactNode = opp.funderId ? (
+    <Link
+      href={`/funding-entities/${opp.funderId}`}
+      className="text-primary hover:underline"
+    >
+      {funderName ?? opp.funderId}
+    </Link>
+  ) : (
+    "—"
+  );
+  const householdLinkDisplay: ReactNode = opp.householdId ? (
+    <Link
+      href={`/households/${opp.householdId}`}
+      className="text-primary hover:underline"
+    >
+      {householdName ?? opp.householdId}
+    </Link>
+  ) : (
+    "—"
+  );
+  const individualLinkDisplay: ReactNode = opp.individualGiverPersonId ? (
+    <Link
+      href={`/individuals/${opp.individualGiverPersonId}`}
+      className="text-primary hover:underline"
+    >
+      {giverName ?? opp.individualGiverPersonId}
+    </Link>
+  ) : (
+    "—"
+  );
+
+  // The donor is one of (funder, individual giver, household), DB-enforced XOR.
+  // Each setter sends all three FK fields so exactly one stays populated.
+  const setFunderDonor = (next: string | null) =>
+    patch({ funderId: next, individualGiverPersonId: null, householdId: null });
+  const setHouseholdDonor = (next: string | null) =>
+    patch({ householdId: next, funderId: null, individualGiverPersonId: null });
+  const setIndividualDonor = (next: string | null) =>
+    patch({ individualGiverPersonId: next, funderId: null, householdId: null });
 
   const title = editingName ? (
     <Input
@@ -451,40 +524,7 @@ function OppView({
     </Badge>
   ) : null;
 
-  const subtitle = (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
-      <span className="inline-flex max-w-[280px] items-center">
-        <InlineEditDonor
-          testIdBase="opp-donor"
-          value={{
-            funderId: opp.funderId ?? null,
-            individualGiverPersonId: opp.individualGiverPersonId ?? null,
-            householdId: opp.householdId ?? null,
-          }}
-          display={donorDisplay}
-          onSave={(body: DonorSaveBody) => patch(body)}
-        />
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="text-muted-foreground">Primary contact:</span>
-        <InlineEditPersonPicker
-          testIdBase="opp-primary-contact"
-          value={opp.primaryContactPersonId ?? null}
-          display={primaryContactDisplay}
-          onSave={(next) => patch({ primaryContactPersonId: next })}
-        />
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="text-muted-foreground">Advisor:</span>
-        <InlineEditPersonPicker
-          testIdBase="opp-advisor"
-          value={opp.individualAdvisorPersonId ?? null}
-          display={advisorDisplay}
-          onSave={(next) => patch({ individualAdvisorPersonId: next })}
-        />
-      </span>
-    </div>
-  );
+  const subtitle = donorDisplay;
 
   return (
     <>
@@ -633,26 +673,6 @@ function OppView({
               </div>
             </FieldCard>
 
-            <div className="px-1 text-xs text-muted-foreground">
-              Created {formatDate(opp.createdAt)} • Updated {formatDate(opp.updatedAt)}
-            </div>
-          </>
-        }
-        center={
-          // Activity (interactions/emails/calendar/meetings) is scoped to
-          // whichever donor this opportunity is linked to — opportunities
-          // don't have their own activity arrays — while notes & tasks link
-          // to the opportunity itself.
-          <UnifiedActivityFeed
-            funderId={opp.funderId ?? undefined}
-            personId={opp.individualGiverPersonId ?? undefined}
-            householdId={opp.householdId ?? undefined}
-            notesContext={{ opportunityId: opp.id }}
-            hideTasks
-          />
-        }
-        right={
-          <>
             <RelatedCard
               title="Allocations"
               count={allocations.length}
@@ -715,6 +735,106 @@ function OppView({
                 <p className="px-2 py-2 text-sm text-muted-foreground">No payments yet.</p>
               )}
             </RelatedCard>
+
+            <div className="px-1 text-xs text-muted-foreground">
+              Created {formatDate(opp.createdAt)} • Updated {formatDate(opp.updatedAt)}
+            </div>
+          </>
+        }
+        center={
+          // Activity (interactions/emails/calendar/meetings) is scoped to
+          // whichever donor this opportunity is linked to — opportunities
+          // don't have their own activity arrays — while notes & tasks link
+          // to the opportunity itself.
+          <UnifiedActivityFeed
+            funderId={opp.funderId ?? undefined}
+            personId={opp.individualGiverPersonId ?? undefined}
+            householdId={opp.householdId ?? undefined}
+            notesContext={{ opportunityId: opp.id }}
+            hideTasks
+          />
+        }
+        right={
+          <>
+            <RelatedCard title="Organizations">
+              <div className="space-y-1 px-2 py-1">
+                <Row label="Funder">
+                  <InlineEditFunderPicker
+                    testIdBase="opp-funder"
+                    value={opp.funderId ?? null}
+                    display={funderLinkDisplay}
+                    onSave={setFunderDonor}
+                    allowNull={false}
+                  />
+                </Row>
+                <Row label="Household">
+                  <InlineEditHouseholdPicker
+                    testIdBase="opp-household"
+                    value={opp.householdId ?? null}
+                    display={householdLinkDisplay}
+                    onSave={setHouseholdDonor}
+                    allowNull={false}
+                  />
+                </Row>
+              </div>
+            </RelatedCard>
+
+            <RelatedCard title="People" count={associatedPeople.length || undefined}>
+              <div className="space-y-1 px-2 py-1">
+                <Row label="Individual donor">
+                  <InlineEditPersonPicker
+                    testIdBase="opp-individual-giver"
+                    value={opp.individualGiverPersonId ?? null}
+                    display={individualLinkDisplay}
+                    onSave={setIndividualDonor}
+                    allowNull={false}
+                  />
+                </Row>
+                <Row label="Primary contact">
+                  <InlineEditPersonPicker
+                    testIdBase="opp-primary-contact"
+                    value={opp.primaryContactPersonId ?? null}
+                    display={primaryContactDisplay}
+                    onSave={(next) => patch({ primaryContactPersonId: next })}
+                  />
+                </Row>
+                <Row label="Advisor">
+                  <InlineEditPersonPicker
+                    testIdBase="opp-advisor"
+                    value={opp.individualAdvisorPersonId ?? null}
+                    display={advisorDisplay}
+                    onSave={(next) => patch({ individualAdvisorPersonId: next })}
+                  />
+                </Row>
+              </div>
+              {associatedPeople.length > 0 ? (
+                <div className="border-t pt-1">
+                  <div className="px-3 py-1 text-xs font-medium text-muted-foreground">
+                    Associated contacts
+                  </div>
+                  {associatedPeople.map((role) => {
+                    const subtitle =
+                      role.externalTitleOrRole ??
+                      (role.connection ? formatEnum(role.connection) : null);
+                    const roleLabel =
+                      [subtitle, role.personEmail].filter(Boolean).join(" · ") || undefined;
+                    return (
+                      <div key={role.id} data-testid={`row-opp-person-${role.personId}`}>
+                        <AffiliationRow
+                          name={role.personName ?? `Person ${role.personId}`}
+                          href={`/individuals/${role.personId}`}
+                          role={roleLabel}
+                          primary={role.primaryContact ?? false}
+                          hideStatusBadge
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </RelatedCard>
+
+            <TasksPanel opportunityId={opp.id} />
           </>
         }
       />
