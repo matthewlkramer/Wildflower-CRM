@@ -746,6 +746,14 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       center={<UnifiedActivityFeed funderId={funder.id} hideTasks />}
       right={
         <>
+          <LinkedOpportunitiesCard
+            scope={{ funderId: funder.id }}
+            title="Open opportunities"
+            pledgeView="opportunities"
+            status="open"
+            emptyLabel="No open opportunities."
+          />
+
           <RelatedCard
             title="People"
             count={visiblePeople.length}
@@ -796,14 +804,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
             title="Pledges"
             pledgeView="pledges"
             emptyLabel="No pledges from this funder."
-          />
-
-          <LinkedOpportunitiesCard
-            scope={{ funderId: funder.id }}
-            title="Open opportunities"
-            pledgeView="opportunities"
-            status="open"
-            emptyLabel="No open opportunities."
           />
 
           <LinkedGiftsCard scope={{ funderId: funder.id }} />

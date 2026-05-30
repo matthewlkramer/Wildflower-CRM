@@ -749,12 +749,6 @@ function PersonView({ person }: { person: PersonDetail }) {
       center={<UnifiedActivityFeed personId={person.id} hideTasks />}
       right={
         <>
-          <PeopleCard person={person} />
-
-          <OrganizationsCard roles={roles} />
-
-          <LinkedTasksCard personId={person.id} />
-
           <LinkedOpportunitiesCard
             scope={{ individualGiverPersonId: person.id }}
             title="Open opportunities"
@@ -762,6 +756,12 @@ function PersonView({ person }: { person: PersonDetail }) {
             status="open"
             emptyLabel="No open opportunities."
           />
+
+          <PeopleCard person={person} />
+
+          <OrganizationsCard roles={roles} />
+
+          <LinkedTasksCard personId={person.id} />
 
           <LinkedOpportunitiesCard
             scope={{ individualGiverPersonId: person.id }}
