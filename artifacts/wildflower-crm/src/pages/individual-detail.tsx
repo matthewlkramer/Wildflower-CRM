@@ -113,7 +113,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { DerivedRow } from "@/components/derived-row";
 
 type NameDraft = {
   prefix: string;
@@ -459,23 +458,6 @@ function PersonView({ person }: { person: PersonDetail }) {
                   onSave={(next) => patch({ deceased: next ?? false })}
                 />
               </Row>
-            </div>
-          </FieldCard>
-
-          <FieldCard title="Engagement">
-            <div className="space-y-1">
-              <DerivedRow label="Last contacted" hint="derived from interactions">
-                {formatDate(person.lastContacted)}
-              </DerivedRow>
-              <DerivedRow label="Interactions" hint="derived from interactions">
-                {person.interactionCount ?? "—"}
-              </DerivedRow>
-              <Row label="Owner">
-                <InlineEditUserPicker testIdBase="person-owner"
-                  value={person.ownerUserId ?? null}
-                  display={ownerDisplay}
-                  onSave={(next) => patch({ ownerUserId: next })} />
-              </Row>
               <Row label="Region">
                 <InlineEditRegionPicker testIdBase="person-region"
                   value={person.currentHomeRegionId ?? null}
@@ -491,6 +473,226 @@ function PersonView({ person }: { person: PersonDetail }) {
                   display={person.childrenAtWf ?? "—"}
                   onSave={(next) => patch({ childrenAtWf: next })}
                 />
+              </Row>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Contact info" defaultOpen={false}>
+            <div className="space-y-4">
+              <EmailsEditor personId={person.id} emails={person.emails} />
+              <Separator />
+              <PhoneNumbersEditor
+                personId={person.id}
+                phoneNumbers={person.phoneNumbers}
+              />
+              <Separator />
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Addresses</div>
+                {person.addresses && person.addresses.length > 0 ? (
+                  <ul className="space-y-2 text-sm">
+                    {person.addresses.map((a) => (
+                      <li key={a.id}>
+                        {[a.street, a.cityName, a.stateCode, a.postalCode]
+                          .filter(Boolean)
+                          .join(", ") || "—"}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No addresses.</p>
+                )}
+              </div>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Interests">
+            <div className="space-y-3">
+              <TagEditRow label="Thematic">
+                <InlineEditInterestsThematic
+                  testIdBase="person-interests-thematic"
+                  value={person.interestsThematic ?? []}
+                  onSave={(next) => patch({ interestsThematic: next })}
+                />
+              </TagEditRow>
+              <TagEditRow label="Ages">
+                <InlineEditInterestsAges
+                  testIdBase="person-interests-ages"
+                  value={person.interestsAges ?? []}
+                  onSave={(next) => patch({ interestsAges: next })}
+                />
+              </TagEditRow>
+              <TagEditRow label="Gov models">
+                <InlineEditInterestsGovModels
+                  testIdBase="person-interests-gov"
+                  value={person.interestsGovModels ?? []}
+                  onSave={(next) => patch({ interestsGovModels: next })}
+                />
+              </TagEditRow>
+              <TagEditRow label="Regions">
+                <InlineEditMultiRegionPicker
+                  testIdBase="person-regions"
+                  value={person.regionIds ?? []}
+                  onSave={(next) => patch({ regionIds: next })}
+                />
+              </TagEditRow>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Web">
+            <div className="space-y-1">
+              <Row label="Website">
+                <InlineEditText label="Website" testIdBase="person-website"
+                  value={person.website ?? null} placeholder="https://…"
+                  display={
+                    person.website ? (
+                      <a href={person.website} target="_blank" rel="noreferrer"
+                        className="text-primary hover:underline break-all">
+                        {person.website}
+                      </a>
+                    ) : "—"
+                  }
+                  onSave={(next) => patch({ website: next })} />
+              </Row>
+              <Row label="LinkedIn">
+                <InlineEditText label="LinkedIn" testIdBase="person-linkedin"
+                  value={person.linkedin ?? null}
+                  display={
+                    person.linkedin ? (
+                      <a
+                        href={person.linkedin}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline truncate"
+                      >
+                        {formatLinkedinHandle(person.linkedin)}
+                      </a>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ linkedin: next })} />
+              </Row>
+              <Row label="X">
+                <InlineEditText label="X" testIdBase="person-x"
+                  value={person.x ?? null}
+                  display={
+                    person.x ? (
+                      <a
+                        href={person.x}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline truncate"
+                      >
+                        {formatXHandle(person.x)}
+                      </a>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ x: next })} />
+              </Row>
+              <Row label="Facebook">
+                <InlineEditText label="Facebook" testIdBase="person-facebook"
+                  value={person.facebook ?? null}
+                  display={
+                    person.facebook ? (
+                      <a
+                        href={person.facebook}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline truncate"
+                      >
+                        {formatFacebookHandle(person.facebook)}
+                      </a>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ facebook: next })} />
+              </Row>
+              <Row label="Instagram">
+                <InlineEditText label="Instagram" testIdBase="person-instagram"
+                  value={person.instagram ?? null}
+                  display={
+                    person.instagram ? (
+                      <a
+                        href={person.instagram}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline truncate"
+                      >
+                        {formatInstagramHandle(person.instagram)}
+                      </a>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ instagram: next })} />
+              </Row>
+              <Row label="Meeting link">
+                <InlineEditText label="Meeting link" testIdBase="person-meeting-link"
+                  value={person.meetingLink ?? null} display={person.meetingLink ?? "—"}
+                  onSave={(next) => patch({ meetingLink: next })} />
+              </Row>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Other details" defaultOpen={false}>
+            <div className="space-y-4">
+              <Row label="Tags">
+                <InlineEditText
+                  label="Tags"
+                  testIdBase="person-tags"
+                  value={person.tags ?? null}
+                  placeholder="Comma-separated tags"
+                  display={person.tags ?? "—"}
+                  onSave={(next) => patch({ tags: next })}
+                />
+              </Row>
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">About</div>
+                <InlineEditTextarea
+                  label="About"
+                  testIdBase="person-about-me"
+                  value={person.aboutMe ?? null}
+                  placeholder="Add a bio…"
+                  display={
+                    person.aboutMe ? (
+                      <p className="whitespace-pre-wrap text-left">{person.aboutMe}</p>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  onSave={(next) => patch({ aboutMe: next })}
+                />
+              </div>
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
+                <InlineEditTextarea
+                  label="Details"
+                  testIdBase="person-details"
+                  value={person.details ?? null}
+                  placeholder="Add details…"
+                  display={
+                    person.details ? (
+                      <p className="whitespace-pre-wrap text-left">{person.details}</p>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  onSave={(next) => patch({ details: next })}
+                />
+              </div>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Engagement">
+            <div className="space-y-1">
+              <Row label="Owner">
+                <InlineEditUserPicker testIdBase="person-owner"
+                  value={person.ownerUserId ?? null}
+                  display={ownerDisplay}
+                  onSave={(next) => patch({ ownerUserId: next })} />
               </Row>
               <Row label="Newsletter">
                 <InlineEditBoolean
