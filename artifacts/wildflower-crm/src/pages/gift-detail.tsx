@@ -392,6 +392,20 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
         />
       ),
     },
+    {
+      label: "Method",
+      value: (
+        <InlineEditSelect
+          align="left"
+          label="Payment method"
+          testIdBase="gift-method"
+          value={gift.paymentMethod ?? null}
+          options={PAYMENT_METHOD_OPTIONS}
+          display={formatEnum(gift.paymentMethod) || "—"}
+          onSave={(next) => patch({ paymentMethod: next })}
+        />
+      ),
+    },
     { label: "FY", value: fyDisplay },
     {
       label: "Owner",
@@ -423,16 +437,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
         <>
           <FieldCard title="Classification">
             <div className="space-y-1">
-              <Row label="Method">
-                <InlineEditSelect
-                  label="Payment method"
-                  testIdBase="gift-method"
-                  value={gift.paymentMethod ?? null}
-                  options={PAYMENT_METHOD_OPTIONS}
-                  display={formatEnum(gift.paymentMethod) || "—"}
-                  onSave={(next) => patch({ paymentMethod: next })}
-                />
-              </Row>
               <Row label="Designated to school">
                 <InlineEditBoolean
                   label="Designated to school"
