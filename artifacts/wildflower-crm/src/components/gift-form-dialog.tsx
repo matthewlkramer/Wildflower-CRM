@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { Plus } from "lucide-react";
 import {
   useCreateGiftOrPayment,
   getListGiftsAndPaymentsQueryKey,
@@ -74,8 +75,14 @@ export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
       }}
     >
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" data-testid="button-new-gift">
-          New gift
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-xs"
+          data-testid="button-new-gift"
+        >
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Add
         </Button>
       </DialogTrigger>
       <DialogContent>

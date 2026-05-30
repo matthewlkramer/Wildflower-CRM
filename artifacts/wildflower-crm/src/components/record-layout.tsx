@@ -246,7 +246,7 @@ export function RelatedCard({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex min-w-0 items-center gap-2"
+          className="flex min-w-0 items-center gap-2 text-left"
         >
           <span className="font-serif text-base font-semibold">{title}</span>
           {count != null ? (

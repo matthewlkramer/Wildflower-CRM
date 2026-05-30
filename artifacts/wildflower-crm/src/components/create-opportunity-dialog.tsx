@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
+import { Plus } from "lucide-react";
 import {
   useCreateOpportunityOrPledge,
   getListOpportunitiesAndPledgesQueryKey,
@@ -184,10 +185,12 @@ export function CreateOpportunityDialog({
       <DialogTrigger asChild>
         <Button
           size="sm"
-          variant="outline"
+          variant="ghost"
+          className="h-6 px-2 text-xs"
           data-testid={isPledge ? "button-new-pledge" : "button-new-opportunity"}
         >
-          {isPledge ? "New pledge" : "New opportunity"}
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Add
         </Button>
       </DialogTrigger>
       <DialogContent>

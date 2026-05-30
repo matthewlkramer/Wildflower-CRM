@@ -95,6 +95,10 @@ interface Props {
   // notes/tasks link to the opportunity/gift itself. API list filters AND
   // together, so the two scopes must be kept separate.
   notesContext?: NotesContext;
+  // When true, tasks are excluded from the feed entirely (source, chip,
+  // count, composer button, and query). Used by pages that surface tasks in
+  // their own dedicated card instead.
+  hideTasks?: boolean;
 }
 
 // Discriminated union of every event we can put on the feed. `source`
@@ -191,6 +195,7 @@ export function UnifiedActivityFeed({
   funderId,
   householdId,
   notesContext,
+  hideTasks = false,
 }: Props) {
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [activeSource, setActiveSource] = useState<Source | null>(null);
@@ -259,7 +264,10 @@ export function UnifiedActivityFeed({
     query: { queryKey: getListNotesQueryKey(noteTaskParams) },
   });
   const tasks = useListTasks(noteTaskParams, {
-    query: { queryKey: getListTasksQueryKey(noteTaskParams) },
+    query: {
+      enabled: !hideTasks,
+      queryKey: getListTasksQueryKey(noteTaskParams),
+    },
   });
 
   const userMap = useUserNameMap();
@@ -344,11 +352,13 @@ export function UnifiedActivityFeed({
         at: r.createdAt,
         row: r,
       })),
-      ...(tasks.data?.data ?? []).map<Item>((r) => ({
-        source: "task",
-        at: r.createdAt,
-        row: r,
-      })),
+      ...(hideTasks
+        ? []
+        : (tasks.data?.data ?? []).map<Item>((r) => ({
+            source: "task" as const,
+            at: r.createdAt,
+            row: r,
+          }))),
       ...(ints.data?.data ?? []).map<Item>((r) => ({
         source: "interaction",
         at: r.occurredAt,
@@ -385,6 +395,7 @@ export function UnifiedActivityFeed({
     cals.data,
     proposals.data,
     meetings.data,
+    hideTasks,
   ]);
 
   const items = useMemo(
@@ -408,7 +419,7 @@ export function UnifiedActivityFeed({
   const counts = useMemo(() => {
     const c: Record<Source, number> = {
       note: notes.data?.pagination.total ?? 0,
-      task: tasks.data?.pagination.total ?? 0,
+      task: hideTasks ? 0 : (tasks.data?.pagination.total ?? 0),
       interaction: relationScoped ? (ints.data?.pagination.total ?? 0) : 0,
       email: relationScoped ? (emails.data?.pagination.total ?? 0) : 0,
       calendar: relationScoped ? (cals.data?.pagination.total ?? 0) : 0,
@@ -426,6 +437,7 @@ export function UnifiedActivityFeed({
     meetings.data,
     relationScoped,
     proposalsEnabled,
+    hideTasks,
   ]);
 
   const totalAll =
@@ -446,7 +458,9 @@ export function UnifiedActivityFeed({
   const chips: { key: Source | "all"; label: string; count: number }[] = [
     { key: "all", label: "All", count: totalAll },
     { key: "note", label: SOURCE_LABEL.note, count: counts.note },
-    { key: "task", label: SOURCE_LABEL.task, count: counts.task },
+    ...(hideTasks
+      ? []
+      : [{ key: "task" as const, label: SOURCE_LABEL.task, count: counts.task }]),
     ...(relationScoped
       ? [
           {
@@ -496,7 +510,7 @@ export function UnifiedActivityFeed({
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
               <AddNoteDialog ctx={nt} />
-              <AddTaskDialog ctx={nt} />
+              {hideTasks ? null : <AddTaskDialog ctx={nt} />}
               {relationScoped ? (
                 <>
                   <LogInteractionDialog
@@ -507,6 +521,17 @@ export function UnifiedActivityFeed({
                   />
                   <AddMeetingNoteDialog
                     ctx={{ personId, funderId, householdId } as MeetingContext}
+                    trigger={
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        data-testid="button-take-meeting-notes"
+                      >
+                        <Sparkles className="mr-1.5 h-4 w-4" />
+                        Take meeting notes
+                      </Button>
+                    }
                   />
                 </>
               ) : null}

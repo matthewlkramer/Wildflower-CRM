@@ -4,7 +4,9 @@ import {
   useGetPerson,
   useUpdatePerson,
   useDeletePerson,
+  useGetHousehold,
   getGetPersonQueryKey,
+  getGetHouseholdQueryKey,
   getListPeopleQueryKey,
   type PersonDetail,
   type UpdatePersonBody,
@@ -13,6 +15,7 @@ import {
   type Enthusiasm,
   type Priority,
 } from "@workspace/api-client-react";
+import { Check, Pencil, Trash2, X } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import {
   EmailsEditor,
@@ -22,13 +25,16 @@ import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
+  LinkedTasksCard,
 } from "@/components/linked-records";
 import {
   RecordLayout,
   FieldCard,
   RelatedCard,
+  AffiliationRow,
   type Highlight,
 } from "@/components/record-layout";
+import { cn } from "@/lib/utils";
 import {
   InlineEditBoolean,
   InlineEditSelect,
@@ -109,6 +115,39 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { DerivedRow } from "@/components/derived-row";
 
+type NameDraft = {
+  prefix: string;
+  firstName: string;
+  nickname: string;
+  middleName: string;
+  lastName: string;
+  suffix: string;
+};
+
+function nameDraftFrom(p: PersonDetail): NameDraft {
+  return {
+    prefix: p.prefix ?? "",
+    firstName: p.firstName ?? "",
+    nickname: p.nickname ?? "",
+    middleName: p.middleName ?? "",
+    lastName: p.lastName ?? "",
+    suffix: p.suffix ?? "",
+  };
+}
+
+const NAME_FIELDS = [
+  { key: "prefix", label: "Prefix", width: "w-20" },
+  { key: "firstName", label: "First", width: "w-36" },
+  { key: "nickname", label: "Nickname", width: "w-32" },
+  { key: "middleName", label: "Middle", width: "w-28" },
+  { key: "lastName", label: "Last", width: "w-40" },
+  { key: "suffix", label: "Suffix", width: "w-20" },
+] as const satisfies ReadonlyArray<{
+  key: keyof NameDraft;
+  label: string;
+  width: string;
+}>;
+
 export default function IndividualDetail() {
   const [, params] = useRoute("/individuals/:id");
   const id = params?.id ?? "";
@@ -150,7 +189,7 @@ function PersonView({ person }: { person: PersonDetail }) {
     : "—";
 
   const [editingName, setEditingName] = useState(false);
-  const [nameValue, setNameValue] = useState(person.fullName ?? "");
+  const [nameDraft, setNameDraft] = useState(() => nameDraftFrom(person));
 
   const update = useUpdatePerson({
     mutation: {
@@ -192,25 +231,60 @@ function PersonView({ person }: { person: PersonDetail }) {
     return update.mutateAsync({ id: person.id, data: body });
   }
 
+  function startEditName() {
+    setNameDraft(nameDraftFrom(person));
+    setEditingName(true);
+  }
+
   async function saveName() {
-    const trimmed = nameValue.trim();
-    if (trimmed === (person.fullName ?? "")) {
-      setEditingName(false);
-      return;
-    }
-    await patch({ fullName: trimmed || null });
+    const norm = (s: string) => {
+      const t = s.trim();
+      return t.length ? t : null;
+    };
+    const prefix = norm(nameDraft.prefix);
+    const firstName = norm(nameDraft.firstName);
+    const nickname = norm(nameDraft.nickname);
+    const middleName = norm(nameDraft.middleName);
+    const lastName = norm(nameDraft.lastName);
+    const suffix = norm(nameDraft.suffix);
+    // The 5th highlight box (full name) is calculated from the parts, so we
+    // compose it here rather than letting it drift out of sync.
+    const fullName =
+      [prefix, firstName, middleName, lastName, suffix]
+        .filter(Boolean)
+        .join(" ") || null;
+    await patch({
+      prefix,
+      firstName,
+      nickname,
+      middleName,
+      lastName,
+      suffix,
+      fullName,
+    });
     setEditingName(false);
   }
 
   const title = editingName ? (
-    <Input
-      value={nameValue}
-      onChange={(e) => setNameValue(e.target.value)}
-      className="h-11 max-w-md font-serif text-2xl font-bold"
-      aria-label="Full name"
-      data-testid="input-person-name"
-      autoFocus
-    />
+    <div className="flex flex-wrap items-end gap-2">
+      {NAME_FIELDS.map((f) => (
+        <div key={f.key} className="space-y-1">
+          <label className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {f.label}
+          </label>
+          <Input
+            value={nameDraft[f.key]}
+            onChange={(e) =>
+              setNameDraft((d) => ({ ...d, [f.key]: e.target.value }))
+            }
+            className={cn("h-9 font-sans text-base font-normal", f.width)}
+            aria-label={f.label}
+            data-testid={`input-person-${f.key}`}
+            autoFocus={f.key === "firstName"}
+          />
+        </div>
+      ))}
+    </div>
   ) : (
     personDisplayName(person)
   );
@@ -218,40 +292,61 @@ function PersonView({ person }: { person: PersonDetail }) {
   const actions = editingName ? (
     <>
       <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 text-primary"
         onClick={saveName}
         disabled={update.isPending}
+        aria-label="Save name"
         data-testid="button-save-person-name"
       >
-        {update.isPending ? "Saving…" : "Save"}
+        <Check className="h-4 w-4" />
       </Button>
       <Button
+        type="button"
+        size="icon"
         variant="ghost"
-        onClick={() => {
-          setNameValue(person.fullName ?? "");
-          setEditingName(false);
-        }}
+        className="h-8 w-8 text-muted-foreground"
+        onClick={() => setEditingName(false)}
         disabled={update.isPending}
+        aria-label="Cancel name edit"
       >
-        Cancel
+        <X className="h-4 w-4" />
       </Button>
     </>
   ) : (
     <>
       <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setEditingName(true)}
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+        onClick={startEditName}
+        aria-label="Edit name"
         data-testid="button-edit-person-name"
       >
-        Edit name
+        <Pencil className="h-4 w-4" />
       </Button>
       <ConfirmDeleteDialog
         title={`Delete ${personDisplayName(person)}?`}
         description="This person record will be removed. Household memberships and links from opportunities or gifts may need to be cleaned up separately."
         onConfirm={() => del.mutateAsync({ id: person.id })}
         disabled={del.isPending}
-        triggerTestId="button-delete-person"
         confirmTestId="button-confirm-delete-person"
+        trigger={
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+            disabled={del.isPending}
+            aria-label="Delete person"
+            data-testid="button-delete-person"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        }
       />
     </>
   );
@@ -259,18 +354,69 @@ function PersonView({ person }: { person: PersonDetail }) {
   const highlights: Highlight[] = [
     {
       label: "Priority",
-      value: person.priority ? (
-        <Badge variant={person.priority === "top" ? "default" : "outline"}>
-          {formatEnum(person.priority)}
-        </Badge>
-      ) : (
-        "—"
+      value: (
+        <InlineEditSelect
+          label="Priority"
+          testIdBase="person-priority"
+          value={person.priority ?? null}
+          options={PRIORITY_OPTIONS}
+          display={
+            person.priority ? (
+              <Badge
+                variant={person.priority === "top" ? "default" : "outline"}
+              >
+                {formatEnum(person.priority)}
+              </Badge>
+            ) : (
+              "—"
+            )
+          }
+          onSave={(next) => patch({ priority: next })}
+        />
       ),
       accent: true,
     },
-    { label: "Capacity", value: formatCapacity(person.capacityRating) },
-    { label: "Enthusiasm", value: formatEnum(person.enthusiasm) },
-    { label: "Owner", value: ownerDisplay },
+    {
+      label: "Capacity",
+      value: (
+        <InlineEditSelect
+          label="Capacity rating"
+          testIdBase="person-capacity"
+          value={person.capacityRating ?? null}
+          options={CAPACITY_OPTIONS}
+          display={formatCapacity(person.capacityRating)}
+          onSave={(next) =>
+            patch({ capacityRating: next as PersonDetail["capacityRating"] })
+          }
+        />
+      ),
+    },
+    {
+      label: "Connection",
+      value: (
+        <InlineEditSelect
+          label="Connection status"
+          testIdBase="person-connection"
+          value={person.connectionStatus ?? null}
+          options={CONNECTION_STATUS_OPTIONS}
+          display={formatEnum(person.connectionStatus)}
+          onSave={(next) => patch({ connectionStatus: next })}
+        />
+      ),
+    },
+    {
+      label: "Enthusiasm",
+      value: (
+        <InlineEditSelect
+          label="Enthusiasm"
+          testIdBase="person-enthusiasm"
+          value={person.enthusiasm ?? null}
+          options={ENTHUSIASM_OPTIONS}
+          display={formatEnum(person.enthusiasm)}
+          onSave={(next) => patch({ enthusiasm: next })}
+        />
+      ),
+    },
     { label: "Last contacted", value: formatDate(person.lastContacted) },
   ];
 
@@ -289,36 +435,6 @@ function PersonView({ person }: { person: PersonDetail }) {
         <>
           <FieldCard title="Basics">
             <div className="space-y-1">
-              <Row label="Prefix">
-                <InlineEditText label="Prefix" testIdBase="person-prefix"
-                  value={person.prefix ?? null} display={person.prefix ?? "—"}
-                  onSave={(next) => patch({ prefix: next })} />
-              </Row>
-              <Row label="First">
-                <InlineEditText label="First name" testIdBase="person-first"
-                  value={person.firstName ?? null} display={person.firstName ?? "—"}
-                  onSave={(next) => patch({ firstName: next })} />
-              </Row>
-              <Row label="Middle">
-                <InlineEditText label="Middle name" testIdBase="person-middle"
-                  value={person.middleName ?? null} display={person.middleName ?? "—"}
-                  onSave={(next) => patch({ middleName: next })} />
-              </Row>
-              <Row label="Last">
-                <InlineEditText label="Last name" testIdBase="person-last"
-                  value={person.lastName ?? null} display={person.lastName ?? "—"}
-                  onSave={(next) => patch({ lastName: next })} />
-              </Row>
-              <Row label="Suffix">
-                <InlineEditText label="Suffix" testIdBase="person-suffix"
-                  value={person.suffix ?? null} display={person.suffix ?? "—"}
-                  onSave={(next) => patch({ suffix: next })} />
-              </Row>
-              <Row label="Nickname">
-                <InlineEditText label="Nickname" testIdBase="person-nickname"
-                  value={person.nickname ?? null} display={person.nickname ?? "—"}
-                  onSave={(next) => patch({ nickname: next })} />
-              </Row>
               <Row label="Pronouns">
                 <InlineEditSelect label="Pronouns" testIdBase="person-pronouns"
                   value={person.pronouns ?? null} options={PRONOUNS_OPTIONS}
@@ -341,54 +457,6 @@ function PersonView({ person }: { person: PersonDetail }) {
                         : "Living"
                   }
                   onSave={(next) => patch({ deceased: next ?? false })}
-                />
-              </Row>
-              <Row label="Capacity">
-                <InlineEditSelect
-                  label="Capacity rating"
-                  testIdBase="person-capacity"
-                  value={person.capacityRating ?? null}
-                  options={CAPACITY_OPTIONS}
-                  display={formatCapacity(person.capacityRating)}
-                  onSave={(next) => patch({ capacityRating: next as PersonDetail["capacityRating"] })}
-                />
-              </Row>
-              <Row label="Connection">
-                <InlineEditSelect
-                  label="Connection status"
-                  testIdBase="person-connection"
-                  value={person.connectionStatus ?? null}
-                  options={CONNECTION_STATUS_OPTIONS}
-                  display={formatEnum(person.connectionStatus)}
-                  onSave={(next) => patch({ connectionStatus: next })}
-                />
-              </Row>
-              <Row label="Enthusiasm">
-                <InlineEditSelect
-                  label="Enthusiasm"
-                  testIdBase="person-enthusiasm"
-                  value={person.enthusiasm ?? null}
-                  options={ENTHUSIASM_OPTIONS}
-                  display={formatEnum(person.enthusiasm)}
-                  onSave={(next) => patch({ enthusiasm: next })}
-                />
-              </Row>
-              <Row label="Priority">
-                <InlineEditSelect
-                  label="Priority"
-                  testIdBase="person-priority"
-                  value={person.priority ?? null}
-                  options={PRIORITY_OPTIONS}
-                  display={
-                    person.priority ? (
-                      <Badge variant={person.priority === "top" ? "default" : "outline"}>
-                        {formatEnum(person.priority)}
-                      </Badge>
-                    ) : (
-                      "—"
-                    )
-                  }
-                  onSave={(next) => patch({ priority: next })}
                 />
               </Row>
             </div>
@@ -677,29 +745,14 @@ function PersonView({ person }: { person: PersonDetail }) {
           </div>
         </>
       }
-      center={<UnifiedActivityFeed personId={person.id} />}
+      center={<UnifiedActivityFeed personId={person.id} hideTasks />}
       right={
         <>
-          <RelatedCard title="Affiliations" count={roles.length}>
-            {roles.length > 0 ? (
-              <ul className="space-y-1 px-2 py-1 text-sm">
-                {roles.map((r) => (
-                  <RoleRow key={r.id} role={r} />
-                ))}
-              </ul>
-            ) : (
-              <p className="px-2 py-2 text-sm text-muted-foreground">
-                No affiliations.
-              </p>
-            )}
-          </RelatedCard>
+          <PeopleCard person={person} />
 
-          <LinkedOpportunitiesCard
-            scope={{ individualGiverPersonId: person.id }}
-            title="Pledges"
-            pledgeView="pledges"
-            emptyLabel="No pledges from this individual."
-          />
+          <OrganizationsCard roles={roles} />
+
+          <LinkedTasksCard personId={person.id} />
 
           <LinkedOpportunitiesCard
             scope={{ individualGiverPersonId: person.id }}
@@ -707,6 +760,13 @@ function PersonView({ person }: { person: PersonDetail }) {
             pledgeView="opportunities"
             status="open"
             emptyLabel="No open opportunities."
+          />
+
+          <LinkedOpportunitiesCard
+            scope={{ individualGiverPersonId: person.id }}
+            title="Pledges"
+            pledgeView="pledges"
+            emptyLabel="No pledges from this individual."
           />
 
           <LinkedGiftsCard scope={{ individualGiverPersonId: person.id }} />
@@ -770,6 +830,100 @@ function RoleRow({ role: r }: { role: PeopleEntityRole }) {
         {r.primaryContact ? " • primary" : ""}
       </span>
     </li>
+  );
+}
+
+function OrganizationsCard({ roles }: { roles: PeopleEntityRole[] }) {
+  // Everything that isn't a household membership is an organizational
+  // affiliation (funder / non-funding org / payment intermediary).
+  const orgRoles = roles.filter((r) => r.entityType !== "household");
+  return (
+    <RelatedCard title="Organizations" count={orgRoles.length}>
+      {orgRoles.length > 0 ? (
+        <ul className="space-y-1 px-2 py-1 text-sm">
+          {orgRoles.map((r) => (
+            <RoleRow key={r.id} role={r} />
+          ))}
+        </ul>
+      ) : (
+        <p className="px-2 py-2 text-sm text-muted-foreground">
+          No organizations.
+        </p>
+      )}
+    </RelatedCard>
+  );
+}
+
+function PeopleCard({ person }: { person: PersonDetail }) {
+  // "People" = co-members of every household this person belongs to. Each
+  // household is resolved by its own child component so the hooks stay
+  // stable regardless of how many households the person is in.
+  const roles = person.roles ?? [];
+  const householdIds = Array.from(
+    new Set(
+      roles
+        .filter((r) => r.entityType === "household" && r.householdId)
+        .map((r) => r.householdId as string),
+    ),
+  );
+  return (
+    <RelatedCard title="People">
+      {householdIds.length === 0 ? (
+        <p className="px-2 py-2 text-sm text-muted-foreground">
+          No related people.
+        </p>
+      ) : (
+        <div>
+          {householdIds.map((hid) => (
+            <HouseholdMembers
+              key={hid}
+              householdId={hid}
+              excludePersonId={person.id}
+            />
+          ))}
+        </div>
+      )}
+    </RelatedCard>
+  );
+}
+
+function HouseholdMembers({
+  householdId,
+  excludePersonId,
+}: {
+  householdId: string;
+  excludePersonId: string;
+}) {
+  const { data, isLoading, isError } = useGetHousehold(householdId, {
+    query: { queryKey: getGetHouseholdQueryKey(householdId) },
+  });
+  if (isLoading) {
+    return <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>;
+  }
+  if (isError) {
+    return (
+      <p className="px-2 py-2 text-sm text-destructive">
+        Couldn’t load related people.
+      </p>
+    );
+  }
+  const members = (data?.people ?? []).filter(
+    (m) => m.personId !== excludePersonId,
+  );
+  if (members.length === 0) return null;
+  return (
+    <>
+      {members.map((m) => (
+        <AffiliationRow
+          key={m.id}
+          name={m.personName ?? `Person ${m.personId}`}
+          href={`/individuals/${m.personId}`}
+          role={m.externalTitleOrRole ?? formatEnum(m.connection)}
+          status={m.current === "current" ? "active" : "past"}
+          primary={m.primaryContact}
+        />
+      ))}
+    </>
   );
 }
 

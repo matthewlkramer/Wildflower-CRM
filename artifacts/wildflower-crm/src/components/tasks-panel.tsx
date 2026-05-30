@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   useListTasks,
   useCreateTask,
@@ -204,7 +204,13 @@ export function TasksPanel(ctx: PanelContext) {
   );
 }
 
-export function AddTaskDialog({ ctx }: { ctx: PanelContext }) {
+export function AddTaskDialog({
+  ctx,
+  trigger,
+}: {
+  ctx: PanelContext;
+  trigger?: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -250,9 +256,11 @@ export function AddTaskDialog({ ctx }: { ctx: PanelContext }) {
       }}
     >
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" data-testid="button-add-task">
-          Add task
-        </Button>
+        {trigger ?? (
+          <Button size="sm" variant="outline" data-testid="button-add-task">
+            Add task
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +21,8 @@ type Props = {
   confirmTestId?: string;
   onConfirm: () => Promise<unknown> | unknown;
   disabled?: boolean;
+  /** Custom trigger element. When provided, replaces the default Delete button. */
+  trigger?: ReactNode;
 };
 
 export function ConfirmDeleteDialog({
@@ -32,6 +34,7 @@ export function ConfirmDeleteDialog({
   confirmTestId,
   onConfirm,
   disabled,
+  trigger,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -54,15 +57,17 @@ export function ConfirmDeleteDialog({
   return (
     <AlertDialog open={open} onOpenChange={(v) => { if (!busy) setOpen(v); }}>
       <AlertDialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="text-destructive hover:text-destructive"
-          disabled={disabled}
-          data-testid={triggerTestId}
-        >
-          {triggerLabel}
-        </Button>
+        {trigger ?? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            disabled={disabled}
+            data-testid={triggerTestId}
+          >
+            {triggerLabel}
+          </Button>
+        )}
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
