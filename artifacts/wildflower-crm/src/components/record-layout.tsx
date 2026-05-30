@@ -20,6 +20,7 @@ export function RecordLayout({
   backLabel,
   title,
   typeBadge,
+  headerBadges,
   subtitle,
   actions,
   highlights,
@@ -31,6 +32,7 @@ export function RecordLayout({
   backLabel: string;
   title: ReactNode;
   typeBadge?: string;
+  headerBadges?: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
   highlights: Highlight[];
@@ -65,6 +67,7 @@ export function RecordLayout({
                   {typeBadge}
                 </Badge>
               ) : null}
+              {headerBadges}
             </div>
             {subtitle ? (
               <div className="mt-1 text-sm text-muted-foreground">{subtitle}</div>

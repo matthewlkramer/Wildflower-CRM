@@ -21,12 +21,15 @@ import { GrantLetterUpload } from "@/components/grant-letter-upload";
 import { ReportingDeadlinesDialog } from "@/components/reporting-deadlines-dialog";
 import {
   InlineEditBoolean,
-  InlineEditCurrency,
   InlineEditDate,
   InlineEditSelect,
   InlineEditText,
   InlineEditTextarea,
+  EditTriggerRow,
+  ActionButtons,
+  useSaveRunner,
   type InlineSelectOption,
+  type SaveResult,
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import {
@@ -322,31 +325,166 @@ function OppView({
     </>
   );
 
+  // Convenience: when closing a single opp that has no completion date yet,
+  // default to today so the user doesn't have to set it manually. (The
+  // bulk-edit path intentionally does NOT do this.)
+  const saveStatus = (next: OpportunityStatus | null) => {
+    const closed = next === "cash_in" || next === "lost" || next === "dormant";
+    const body: UpdateOpportunityOrPledgeBody = { status: next };
+    if (closed && !opp.actualCompletionDate) {
+      body.actualCompletionDate = new Date().toISOString().slice(0, 10);
+    }
+    return patch(body);
+  };
+
+  // Each cell shows ONE of a pair (awarded over ask; actual over projected)
+  // but on edit exposes BOTH underlying fields.
+  const amountIsAwarded = opp.awardedAmount != null;
+  const closeIsActual = opp.actualCompletionDate != null;
+
   const highlights: Highlight[] = [
     {
       label: "Status",
-      value: opp.status ? (
-        <Badge
-          variant={
-            opp.status === "cash_in" || opp.status === "pledge"
-              ? "default"
-              : "outline"
+      value: (
+        <InlineEditSelect
+          align="left"
+          label="Status"
+          testIdBase="opp-status"
+          value={opp.status ?? null}
+          options={STATUS_OPTIONS}
+          display={
+            opp.status ? (
+              <Badge
+                variant={
+                  opp.status === "cash_in" || opp.status === "pledge"
+                    ? "default"
+                    : "outline"
+                }
+              >
+                {formatEnum(opp.status)}
+              </Badge>
+            ) : (
+              "—"
+            )
           }
-        >
-          {formatEnum(opp.status)}
-        </Badge>
-      ) : (
-        "—"
+          onSave={saveStatus}
+        />
       ),
     },
-    { label: "Stage", value: formatEnum(opp.stage) || "—", accent: true },
-    { label: "Ask", value: formatCurrency(opp.askAmount) },
-    { label: "Awarded", value: formatCurrency(opp.awardedAmount) },
-    { label: "Owner", value: ownerDisplay },
+    {
+      label: "Stage",
+      accent: true,
+      value: (
+        <InlineEditSelect
+          align="left"
+          label="Stage"
+          testIdBase="opp-stage"
+          value={opp.stage ?? null}
+          options={STAGE_OPTIONS}
+          display={formatEnum(opp.stage) || "—"}
+          onSave={(next) => patch({ stage: next })}
+        />
+      ),
+    },
+    {
+      label: "Type",
+      value: (
+        <InlineEditSelect
+          align="left"
+          label="Type"
+          testIdBase="opp-type"
+          value={opp.type ?? null}
+          options={TYPE_OPTIONS}
+          display={formatEnum(opp.type) || "—"}
+          onSave={(next) => patch({ type: next })}
+        />
+      ),
+    },
+    {
+      label: amountIsAwarded ? "Awarded" : "Ask",
+      value: (
+        <InlineEditAmounts
+          ask={opp.askAmount ?? null}
+          awarded={opp.awardedAmount ?? null}
+          onSave={(body) => patch(body)}
+        />
+      ),
+    },
+    {
+      label: closeIsActual ? "Completed" : "Projected close",
+      value: (
+        <InlineEditCloseDates
+          projected={opp.projectedCloseDate ?? null}
+          actual={opp.actualCompletionDate ?? null}
+          onSave={(body) => patch(body)}
+        />
+      ),
+    },
+    {
+      label: "Owner",
+      value: (
+        <InlineEditUserPicker
+          align="left"
+          testIdBase="opp-owner"
+          value={opp.ownerUserId ?? null}
+          display={ownerDisplay}
+          onSave={(next) => patch({ ownerUserId: next })}
+        />
+      ),
+    },
   ];
 
   const allocations = opp.allocations ?? [];
   const payments = opp.payments ?? [];
+
+  // Pill target: awarded amount if present, else the ask. Sums compare
+  // allocations / payments against it.
+  const targetRaw = opp.awardedAmount ?? opp.askAmount ?? null;
+  const targetAmount = targetRaw == null ? null : toNum(targetRaw);
+  const allocationsSum = allocations.reduce((s, a) => s + toNum(a.subAmount), 0);
+  const paymentsSum = payments.reduce((s, p) => s + toNum(p.amount), 0);
+
+  // Fiscal-year pill shown next to the "Opportunity" type badge.
+  const headerBadges = opp.fiscalYear ? (
+    <Badge variant="outline" className="rounded-full" data-testid="badge-opp-fy">
+      {opp.fiscalYear}
+    </Badge>
+  ) : null;
+
+  const subtitle = (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+      <span className="inline-flex max-w-[280px] items-center">
+        <InlineEditDonor
+          testIdBase="opp-donor"
+          value={{
+            funderId: opp.funderId ?? null,
+            individualGiverPersonId: opp.individualGiverPersonId ?? null,
+            householdId: opp.householdId ?? null,
+          }}
+          display={donorDisplay}
+          onSave={(body: DonorSaveBody) => patch(body)}
+        />
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="text-muted-foreground">Primary contact:</span>
+        <InlineEditPersonPicker
+          testIdBase="opp-primary-contact"
+          value={opp.primaryContactPersonId ?? null}
+          display={primaryContactDisplay}
+          onSave={(next) => patch({ primaryContactPersonId: next })}
+        />
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="text-muted-foreground">Advisor:</span>
+        <InlineEditPersonPicker
+          testIdBase="opp-advisor"
+          value={opp.individualAdvisorPersonId ?? null}
+          display={advisorDisplay}
+          onSave={(next) => patch({ individualAdvisorPersonId: next })}
+        />
+      </span>
+    </div>
+  );
 
   return (
     <>
@@ -355,77 +493,21 @@ function OppView({
         backLabel={backLabel.replace(/^←\s*/, "")}
         title={title}
         typeBadge={entityLabel}
-        subtitle={donorDisplay}
+        headerBadges={headerBadges}
+        subtitle={subtitle}
         actions={actions}
         highlights={highlights}
         left={
           <>
             <FieldCard title="Pipeline">
               <div className="space-y-1">
-                <Row label="Stage">
-                  <InlineEditSelect
-                    label="Stage"
-                    testIdBase="opp-stage"
-                    value={opp.stage ?? null}
-                    options={STAGE_OPTIONS}
-                    display={formatEnum(opp.stage) || "—"}
-                    onSave={(next) => patch({ stage: next })}
-                  />
-                </Row>
-                <Row label="Status">
-                  {/*
-                    Status is normally auto-derived (open / pledge / cash_in)
-                    but users can still hand-set sticky overrides (dormant /
-                    lost). Surface the select on both Pledge and Opportunity
-                    detail pages — the only difference between them is the
-                    page filter, not the underlying record.
-                  */}
-                  <InlineEditSelect
-                    label="Status"
-                    testIdBase="opp-status"
-                    value={opp.status ?? null}
-                    options={STATUS_OPTIONS}
-                    display={
-                      opp.status ? (
-                        <Badge
-                          variant={
-                            opp.status === "cash_in" || opp.status === "pledge"
-                              ? "default"
-                              : "outline"
-                          }
-                        >
-                          {formatEnum(opp.status)}
-                        </Badge>
-                      ) : (
-                        "—"
-                      )
-                    }
-                    onSave={(next) => {
-                      // Convenience: when closing a single opp that has no
-                      // completion date yet, default to today so the user
-                      // doesn't have to set it manually. The bulk-edit path
-                      // intentionally does NOT do this (cleanup of historical
-                      // rows shouldn't invent a fake date).
-                      const closed =
-                        next === "cash_in" || next === "lost" || next === "dormant";
-                      const body: UpdateOpportunityOrPledgeBody = { status: next };
-                      if (closed && !opp.actualCompletionDate) {
-                        body.actualCompletionDate = new Date()
-                          .toISOString()
-                          .slice(0, 10);
-                      }
-                      return patch(body);
-                    }}
-                  />
-                </Row>
-                <Row label="Type">
-                  <InlineEditSelect
-                    label="Type"
-                    testIdBase="opp-type"
-                    value={opp.type ?? null}
-                    options={TYPE_OPTIONS}
-                    display={formatEnum(opp.type) || "—"}
-                    onSave={(next) => patch({ type: next })}
+                <Row label="Application deadline">
+                  <InlineEditDate
+                    label="Application deadline"
+                    testIdBase="opp-app-deadline"
+                    value={opp.applicationDeadline ?? null}
+                    display={formatDate(opp.applicationDeadline)}
+                    onSave={(next) => patch({ applicationDeadline: next })}
                   />
                 </Row>
                 <Row label="Win probability">
@@ -512,105 +594,6 @@ function OppView({
                     }
                   />
                 </Row>
-                <Row label="Owner">
-                  <InlineEditUserPicker
-                    testIdBase="opp-owner"
-                    value={opp.ownerUserId ?? null}
-                    display={ownerDisplay}
-                    onSave={(next) => patch({ ownerUserId: next })}
-                  />
-                </Row>
-              </div>
-            </FieldCard>
-
-            <FieldCard title="Amounts">
-              <div className="space-y-1">
-                <Row label="Ask">
-                  <InlineEditCurrency
-                    label="Ask amount"
-                    testIdBase="opp-ask"
-                    value={opp.askAmount ?? null}
-                    display={formatCurrency(opp.askAmount)}
-                    onSave={(next) => patch({ askAmount: next })}
-                  />
-                </Row>
-                <Row label="Awarded">
-                  <InlineEditCurrency
-                    label="Awarded amount"
-                    testIdBase="opp-awarded"
-                    value={opp.awardedAmount ?? null}
-                    display={formatCurrency(opp.awardedAmount)}
-                    onSave={(next) => patch({ awardedAmount: next })}
-                  />
-                </Row>
-              </div>
-            </FieldCard>
-
-            <FieldCard title="Dates">
-              <div className="space-y-1">
-                <Row label="Projected close">
-                  <InlineEditDate
-                    label="Projected close date"
-                    testIdBase="opp-projected-close"
-                    value={opp.projectedCloseDate ?? null}
-                    display={formatDate(opp.projectedCloseDate)}
-                    onSave={(next) => patch({ projectedCloseDate: next })}
-                  />
-                </Row>
-                <DerivedRow label="Fiscal year" hint="derived from close date">
-                  {opp.fiscalYear ?? "—"}
-                </DerivedRow>
-                <Row label="Actual completion">
-                  <InlineEditDate
-                    label="Actual completion date"
-                    testIdBase="opp-actual-completion"
-                    value={opp.actualCompletionDate ?? null}
-                    display={formatDate(opp.actualCompletionDate)}
-                    onSave={(next) => patch({ actualCompletionDate: next })}
-                  />
-                </Row>
-                <Row label="Application deadline">
-                  <InlineEditDate
-                    label="Application deadline"
-                    testIdBase="opp-app-deadline"
-                    value={opp.applicationDeadline ?? null}
-                    display={formatDate(opp.applicationDeadline)}
-                    onSave={(next) => patch({ applicationDeadline: next })}
-                  />
-                </Row>
-              </div>
-            </FieldCard>
-
-            <FieldCard title="Donor">
-              <div className="space-y-1">
-                <Row label="Donor">
-                  <InlineEditDonor
-                    testIdBase="opp-donor"
-                    value={{
-                      funderId: opp.funderId ?? null,
-                      individualGiverPersonId: opp.individualGiverPersonId ?? null,
-                      householdId: opp.householdId ?? null,
-                    }}
-                    display={donorDisplay}
-                    onSave={(body: DonorSaveBody) => patch(body)}
-                  />
-                </Row>
-                <Row label="Advisor">
-                  <InlineEditPersonPicker
-                    testIdBase="opp-advisor"
-                    value={opp.individualAdvisorPersonId ?? null}
-                    display={advisorDisplay}
-                    onSave={(next) => patch({ individualAdvisorPersonId: next })}
-                  />
-                </Row>
-                <Row label="Primary contact">
-                  <InlineEditPersonPicker
-                    testIdBase="opp-primary-contact"
-                    value={opp.primaryContactPersonId ?? null}
-                    display={primaryContactDisplay}
-                    onSave={(next) => patch({ primaryContactPersonId: next })}
-                  />
-                </Row>
               </div>
             </FieldCard>
 
@@ -662,7 +645,19 @@ function OppView({
         }
         right={
           <>
-            <RelatedCard title="Allocations" count={allocations.length}>
+            <RelatedCard
+              title="Allocations"
+              count={allocations.length}
+              action={
+                <ProgressPill
+                  sum={allocationsSum}
+                  target={targetAmount}
+                  fullLabel="Fully allocated"
+                  overLabel="Over allocated"
+                  underLabel="Under allocated"
+                />
+              }
+            >
               <div className="space-y-4 px-2 py-1">
                 <div className="space-y-2 text-sm">
                   <DerivedRow label="Covered FYs" hint="derived from allocations">
@@ -681,7 +676,19 @@ function OppView({
               </div>
             </RelatedCard>
 
-            <RelatedCard title="Payments" count={payments.length}>
+            <RelatedCard
+              title="Payments"
+              count={payments.length}
+              action={
+                <ProgressPill
+                  sum={paymentsSum}
+                  target={targetAmount}
+                  fullLabel="Fully paid"
+                  overLabel="Over paid"
+                  underLabel="Not fully paid"
+                />
+              }
+            >
               {payments.length > 0 ? (
                 <div>
                   {payments.map((p) => (
@@ -719,6 +726,245 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex items-baseline justify-between gap-2">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span className="text-right">{children}</span>
+    </div>
+  );
+}
+
+// Coerce a nullable numeric string ("1,200" / "1200.5" / null) to a number,
+// guarding against NaN so reduce() sums stay finite.
+function toNum(v: string | null | undefined): number {
+  if (v == null) return 0;
+  const n = Number(String(v).replace(/[,$\s]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Compares a running sum against a target (awarded ?? ask). Renders nothing
+// when there's no positive target to measure against.
+function ProgressPill({
+  sum,
+  target,
+  fullLabel,
+  overLabel,
+  underLabel,
+}: {
+  sum: number;
+  target: number | null;
+  fullLabel: string;
+  overLabel: string;
+  underLabel: string;
+}) {
+  if (target == null || target <= 0) return null;
+  const diff = sum - target;
+  const eps = 0.005;
+  if (Math.abs(diff) < eps) {
+    return (
+      <Badge variant="default" className="rounded-full" data-testid="pill-progress">
+        {fullLabel}
+      </Badge>
+    );
+  }
+  if (diff > 0) {
+    return (
+      <Badge variant="destructive" className="rounded-full" data-testid="pill-progress">
+        {overLabel}
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="rounded-full" data-testid="pill-progress">
+      {underLabel}
+    </Badge>
+  );
+}
+
+// Combined Ask + Awarded editor. The cell displays awarded (falling back to
+// ask) but on edit exposes BOTH fields and patches them together.
+function InlineEditAmounts({
+  ask,
+  awarded,
+  onSave,
+}: {
+  ask: string | null;
+  awarded: string | null;
+  onSave: (body: UpdateOpportunityOrPledgeBody) => SaveResult;
+}) {
+  const [editing, setEditing] = useState(false);
+  const { busy, run } = useSaveRunner();
+  const [askDraft, setAskDraft] = useState(ask ?? "");
+  const [awardedDraft, setAwardedDraft] = useState(awarded ?? "");
+
+  const display = formatCurrency(awarded ?? ask);
+
+  if (!editing) {
+    return (
+      <EditTriggerRow
+        align="left"
+        display={display}
+        onEdit={() => {
+          setAskDraft(ask ?? "");
+          setAwardedDraft(awarded ?? "");
+          setEditing(true);
+        }}
+        testIdBase="opp-amounts"
+        ariaLabel="Edit ask and awarded amounts"
+      />
+    );
+  }
+
+  const parse = (s: string): { value: string | null; ok: boolean } => {
+    const t = s.trim();
+    if (t.length === 0) return { value: null, ok: true };
+    const n = Number(t.replace(/[,$\s]/g, ""));
+    const ok = Number.isFinite(n) && n >= 0;
+    return { value: ok ? String(n) : null, ok };
+  };
+
+  const askParsed = parse(askDraft);
+  const awardedParsed = parse(awardedDraft);
+  const askCurrent = ask == null ? null : String(Number(ask));
+  const awardedCurrent = awarded == null ? null : String(Number(awarded));
+  const dirty =
+    askParsed.value !== askCurrent || awardedParsed.value !== awardedCurrent;
+  const canSave = askParsed.ok && awardedParsed.ok && dirty;
+
+  const trySave = () => {
+    if (!canSave || busy) return;
+    run(
+      () =>
+        onSave({ askAmount: askParsed.value, awardedAmount: awardedParsed.value }),
+      () => setEditing(false),
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="w-16 shrink-0 text-left">Ask</span>
+        <Input
+          value={askDraft}
+          onChange={(e) => setAskDraft(e.target.value)}
+          inputMode="decimal"
+          aria-label="Ask amount"
+          aria-invalid={!askParsed.ok}
+          disabled={busy}
+          data-testid="input-opp-ask"
+          className="h-8"
+        />
+      </label>
+      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="w-16 shrink-0 text-left">Awarded</span>
+        <Input
+          value={awardedDraft}
+          onChange={(e) => setAwardedDraft(e.target.value)}
+          inputMode="decimal"
+          aria-label="Awarded amount"
+          aria-invalid={!awardedParsed.ok}
+          disabled={busy}
+          data-testid="input-opp-awarded"
+          className="h-8"
+        />
+      </label>
+      <div className="flex items-center justify-start gap-1">
+        <ActionButtons
+          busy={busy}
+          canSave={canSave}
+          onSave={trySave}
+          onCancel={() => setEditing(false)}
+          testIdBase="opp-amounts"
+          label="amounts"
+        />
+      </div>
+    </div>
+  );
+}
+
+// Combined Projected-close + Actual-completion editor. The cell displays the
+// actual date (falling back to projected) but on edit exposes BOTH.
+function InlineEditCloseDates({
+  projected,
+  actual,
+  onSave,
+}: {
+  projected: string | null;
+  actual: string | null;
+  onSave: (body: UpdateOpportunityOrPledgeBody) => SaveResult;
+}) {
+  const [editing, setEditing] = useState(false);
+  const { busy, run } = useSaveRunner();
+  const [projectedDraft, setProjectedDraft] = useState(projected ?? "");
+  const [actualDraft, setActualDraft] = useState(actual ?? "");
+
+  const display = formatDate(actual ?? projected);
+
+  if (!editing) {
+    return (
+      <EditTriggerRow
+        align="left"
+        display={display}
+        onEdit={() => {
+          setProjectedDraft(projected ?? "");
+          setActualDraft(actual ?? "");
+          setEditing(true);
+        }}
+        testIdBase="opp-close-dates"
+        ariaLabel="Edit projected close and actual completion dates"
+      />
+    );
+  }
+
+  const projectedNext = projectedDraft.trim().length === 0 ? null : projectedDraft;
+  const actualNext = actualDraft.trim().length === 0 ? null : actualDraft;
+  const dirty =
+    projectedNext !== (projected ?? null) || actualNext !== (actual ?? null);
+
+  const trySave = () => {
+    if (!dirty || busy) return;
+    run(
+      () =>
+        onSave({
+          projectedCloseDate: projectedNext,
+          actualCompletionDate: actualNext,
+        }),
+      () => setEditing(false),
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="w-20 shrink-0 text-left">Projected</span>
+        <Input
+          type="date"
+          value={projectedDraft}
+          onChange={(e) => setProjectedDraft(e.target.value)}
+          aria-label="Projected close date"
+          disabled={busy}
+          data-testid="input-opp-projected-close"
+          className="h-8"
+        />
+      </label>
+      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="w-20 shrink-0 text-left">Completed</span>
+        <Input
+          type="date"
+          value={actualDraft}
+          onChange={(e) => setActualDraft(e.target.value)}
+          aria-label="Actual completion date"
+          disabled={busy}
+          data-testid="input-opp-actual-completion"
+          className="h-8"
+        />
+      </label>
+      <div className="flex items-center justify-start gap-1">
+        <ActionButtons
+          busy={busy}
+          canSave={dirty}
+          onSave={trySave}
+          onCancel={() => setEditing(false)}
+          testIdBase="opp-close-dates"
+          label="dates"
+        />
+      </div>
     </div>
   );
 }

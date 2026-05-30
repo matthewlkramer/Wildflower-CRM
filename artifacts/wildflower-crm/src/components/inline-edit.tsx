@@ -10,8 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
-type SaveResult = unknown | Promise<unknown>;
+export type SaveResult = unknown | Promise<unknown>;
 
 type BaseProps = {
   label: string;
@@ -19,20 +20,29 @@ type BaseProps = {
   display: ReactNode;
 };
 
-function EditTriggerRow({
+export function EditTriggerRow({
   display,
   onEdit,
   testIdBase,
   ariaLabel,
+  align = "right",
 }: {
   display: ReactNode;
   onEdit: () => void;
   testIdBase?: string;
   ariaLabel: string;
+  align?: "left" | "right";
 }) {
   return (
     <div className="flex items-center gap-2 min-w-0">
-      <div className="truncate text-right flex-1">{display}</div>
+      <div
+        className={cn(
+          "truncate flex-1",
+          align === "right" ? "text-right" : "text-left",
+        )}
+      >
+        {display}
+      </div>
       <Button
         type="button"
         variant="ghost"
@@ -48,7 +58,7 @@ function EditTriggerRow({
   );
 }
 
-function ActionButtons({
+export function ActionButtons({
   busy,
   canSave,
   onSave,
@@ -98,7 +108,7 @@ function ActionButtons({
  * Without the ref, rapid Enter presses / double-clicks can fire multiple PATCHes
  * before React applies the `disabled`/busy state.
  */
-function useSaveRunner() {
+export function useSaveRunner() {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
@@ -556,12 +566,14 @@ export function InlineEditSelect<T extends string>({
   testIdBase,
   nullLabel = "— None —",
   allowNull = true,
+  align = "right",
 }: BaseProps & {
   value: T | null;
   options: ReadonlyArray<InlineSelectOption<T>>;
   onSave: (next: T | null) => SaveResult;
   nullLabel?: string;
   allowNull?: boolean;
+  align?: "left" | "right";
 }) {
   const [editing, setEditing] = useState(false);
   const { busy, run } = useSaveRunner();
@@ -580,6 +592,7 @@ export function InlineEditSelect<T extends string>({
         onEdit={() => setEditing(true)}
         testIdBase={testIdBase}
         ariaLabel={`Edit ${label}`}
+        align={align}
       />
     );
   }

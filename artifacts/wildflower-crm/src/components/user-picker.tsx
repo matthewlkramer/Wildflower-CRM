@@ -57,12 +57,14 @@ export function InlineEditUserPicker({
   onSave,
   label = "Owner",
   testIdBase,
+  align = "right",
 }: {
   value: string | null;
   display: ReactNode;
   onSave: (next: string | null) => unknown | Promise<unknown>;
   label?: string;
   testIdBase?: string;
+  align?: "left" | "right";
 }) {
   const { data } = useListUsers({
     query: { queryKey: getListUsersQueryKey(), staleTime: 60_000 },
@@ -94,6 +96,7 @@ export function InlineEditUserPicker({
       display={display}
       options={options}
       onSave={onSave}
+      align={align}
     />
   );
 }
