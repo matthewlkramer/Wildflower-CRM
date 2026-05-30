@@ -834,8 +834,10 @@ function RelatedFundersCard({
   });
 
   const [hideInactive, setHideInactive] = useState(false);
+  // Only explicitly defunct funders are treated as inactive — spenddown
+  // funders are still active givers and stay visible.
   const isInactiveFunder = (f: { activeStatus?: string | null }) =>
-    f.activeStatus != null && f.activeStatus !== "active";
+    f.activeStatus === "defunct";
 
   const allChildren = childrenQ.data?.data ?? [];
   const fullParent = funder.parentFunderId ? (parentQ.data ?? null) : null;
