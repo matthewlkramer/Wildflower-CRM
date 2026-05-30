@@ -327,18 +327,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       ),
     },
     {
-      label: "Total assets",
-      value: (
-        <InlineEditCurrency
-          label="Total assets"
-          testIdBase="funder-total-assets"
-          value={funder.totalAssets ?? null}
-          display={formatCurrency(funder.totalAssets)}
-          onSave={(next) => patch({ totalAssets: next })}
-        />
-      ),
-    },
-    {
       label: "Connection",
       value: (
         <InlineEditSelect
@@ -471,6 +459,15 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                       EMPLOYEES_OPTIONS.find((o) => o.value === funder.numberOfEmployees)?.label ?? "—"
                     }
                     onSave={(next) => patch({ numberOfEmployees: next })}
+                  />
+                </Row>
+                <Row label="Total assets">
+                  <InlineEditCurrency
+                    label="Total assets"
+                    testIdBase="funder-total-assets"
+                    value={funder.totalAssets ?? null}
+                    display={formatCurrency(funder.totalAssets)}
+                    onSave={(next) => patch({ totalAssets: next })}
                   />
                 </Row>
                 <Row label="Makes PRIs">

@@ -401,18 +401,6 @@ function PersonView({ person }: { person: PersonDetail }) {
       ),
     },
     {
-      label: "Net worth",
-      value: (
-        <InlineEditCurrency
-          label="Net worth"
-          testIdBase="person-net-worth"
-          value={person.netWorth ?? null}
-          display={formatCurrency(person.netWorth)}
-          onSave={(next) => patch({ netWorth: next })}
-        />
-      ),
-    },
-    {
       label: "Connection",
       value: (
         <InlineEditSelect
@@ -494,6 +482,15 @@ function PersonView({ person }: { person: PersonDetail }) {
                   placeholder="e.g. 2"
                   display={person.childrenAtWf ?? "—"}
                   onSave={(next) => patch({ childrenAtWf: next })}
+                />
+              </Row>
+              <Row label="Net worth">
+                <InlineEditCurrency
+                  label="Net worth"
+                  testIdBase="person-net-worth"
+                  value={person.netWorth ?? null}
+                  display={formatCurrency(person.netWorth)}
+                  onSave={(next) => patch({ netWorth: next })}
                 />
               </Row>
             </div>
