@@ -29,6 +29,7 @@ import {
 import {
   AddFunderPersonRoleDialog,
   AddFunderRelationDialog,
+  EditPeopleEntityRoleDialog,
 } from "@/components/add-role-dialogs";
 import {
   RecordLayout,
@@ -797,6 +798,7 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                         role={role}
                         primary={p.primaryContact ?? false}
                         hideStatusBadge
+                        action={<EditPeopleEntityRoleDialog role={p} />}
                       />
                     </div>
                   );

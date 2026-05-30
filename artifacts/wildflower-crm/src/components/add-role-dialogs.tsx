@@ -1,15 +1,22 @@
 import { forwardRef, useState, type ComponentProps } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 import {
   useCreatePeopleEntityRole,
+  useUpdatePeopleEntityRole,
+  useDeletePeopleEntityRole,
   useUpdateFunder,
   getGetPersonQueryKey,
   getGetFunderQueryKey,
+  getGetOrganizationQueryKey,
+  getGetHouseholdQueryKey,
+  getGetPaymentIntermediaryQueryKey,
   getListFundersQueryKey,
+  getListPeopleEntityRolesQueryKey,
   EntityRoleType,
   PeopleEntityRoleConnection,
   PeopleRoleCurrent,
   type CreatePeopleEntityRoleBody,
+  type PeopleEntityRole,
 } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -32,7 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 import {
   EntityCombobox,
   useFunderSearch,
@@ -655,6 +662,215 @@ export function AddFunderRelationDialog({ funderId }: { funderId: string }) {
             >
               {update.isPending ? "Saving…" : "Add"}
             </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────────────────── */
+/* Edit / delete an existing people_entity_role record.                       */
+/* Rendered as a small pencil icon next to a relationship row; the row's      */
+/* name keeps its own navigation link.                                        */
+/* ───────────────────────────────────────────────────────────────────────── */
+
+// Must forward ref + props so DialogTrigger's `asChild` can attach onClick/ref.
+const EditRoleIconButton = forwardRef<
+  HTMLButtonElement,
+  { testId: string } & ComponentProps<typeof Button>
+>(({ testId, ...props }, ref) => (
+  <Button
+    ref={ref}
+    type="button"
+    variant="ghost"
+    size="icon"
+    className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+    data-testid={testId}
+    {...props}
+  >
+    <Pencil className="h-3.5 w-3.5" />
+    <span className="sr-only">Edit relationship</span>
+  </Button>
+));
+EditRoleIconButton.displayName = "EditRoleIconButton";
+
+export function EditPeopleEntityRoleDialog({
+  role,
+  contextLabel,
+}: {
+  role: PeopleEntityRole;
+  /** Optional name shown in the dialog header for context (entity or person). */
+  contextLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [connection, setConnection] = useState(role.connection ?? "");
+  const [title, setTitle] = useState(role.externalTitleOrRole ?? "");
+  const [current, setCurrent] = useState<PeopleRoleCurrent>(role.current);
+  const [primary, setPrimary] = useState(role.primaryContact);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  // Re-seed the form from the latest record each time the dialog opens so it
+  // never shows stale edits from a previous (cancelled) session.
+  const syncFromRole = () => {
+    setConnection(role.connection ?? "");
+    setTitle(role.externalTitleOrRole ?? "");
+    setCurrent(role.current);
+    setPrimary(role.primaryContact);
+    setConfirmDelete(false);
+  };
+
+  // The role record carries the person id plus exactly one entity FK, so every
+  // view that could be showing this row is refreshed straight from the record.
+  const invalidate = async () => {
+    const keys: QueryKey[] = [
+      getGetPersonQueryKey(role.personId),
+      getListPeopleEntityRolesQueryKey(),
+    ];
+    if (role.funderId) keys.push(getGetFunderQueryKey(role.funderId));
+    if (role.organizationId)
+      keys.push(getGetOrganizationQueryKey(role.organizationId));
+    if (role.householdId) keys.push(getGetHouseholdQueryKey(role.householdId));
+    if (role.paymentIntermediaryId)
+      keys.push(getGetPaymentIntermediaryQueryKey(role.paymentIntermediaryId));
+    await Promise.all(
+      keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+    );
+  };
+
+  const update = useUpdatePeopleEntityRole({
+    mutation: {
+      onSuccess: async () => {
+        await invalidate();
+        toast({ title: "Relationship updated" });
+        setOpen(false);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const remove = useDeletePeopleEntityRole({
+    mutation: {
+      onSuccess: async () => {
+        await invalidate();
+        toast({ title: "Relationship removed" });
+        setOpen(false);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Remove failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const pending = update.isPending || remove.isPending;
+
+  const submit = () => {
+    if (pending) return;
+    // PATCH semantics: send null (not undefined) to clear connection/title so an
+    // emptied field is actually cleared rather than left unchanged.
+    update.mutate({
+      id: role.id,
+      data: {
+        connection: connection
+          ? (connection as PeopleEntityRoleConnection)
+          : null,
+        externalTitleOrRole: title.trim() ? title.trim() : null,
+        current,
+        primaryContact: primary,
+      },
+    });
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (pending) return;
+        if (v) syncFromRole();
+        setOpen(v);
+      }}
+    >
+      <DialogTrigger asChild>
+        <EditRoleIconButton testId={`button-edit-role-${role.id}`} />
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit relationship</DialogTitle>
+          <DialogDescription>
+            {contextLabel
+              ? `Update how this person is connected to ${contextLabel}.`
+              : "Update this person↔entity relationship."}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+          className="space-y-3"
+        >
+          <RoleAttributeFields
+            connection={connection}
+            setConnection={setConnection}
+            title={title}
+            setTitle={setTitle}
+            current={current}
+            setCurrent={setCurrent}
+            primary={primary}
+            setPrimary={setPrimary}
+            idPrefix="edit-role"
+          />
+          <DialogFooter className="sm:justify-between">
+            <Button
+              type="button"
+              variant={confirmDelete ? "destructive" : "ghost"}
+              onClick={() => {
+                if (confirmDelete) {
+                  remove.mutate({ id: role.id });
+                } else {
+                  setConfirmDelete(true);
+                }
+              }}
+              disabled={pending}
+              data-testid={`button-delete-role-${role.id}`}
+              className={confirmDelete ? "" : "text-destructive"}
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              {remove.isPending
+                ? "Removing…"
+                : confirmDelete
+                  ? "Confirm remove"
+                  : "Remove"}
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setOpen(false)}
+                disabled={pending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={pending}
+                data-testid={`button-save-role-${role.id}`}
+              >
+                {update.isPending ? "Saving…" : "Save"}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>

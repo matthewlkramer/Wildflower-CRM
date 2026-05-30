@@ -23,6 +23,7 @@ import { PledgeAllocationsEditor } from "@/components/allocation-editors";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { TasksPanel } from "@/components/tasks-panel";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
 import { GrantLetterUpload } from "@/components/grant-letter-upload";
 import { ReportingDeadlinesDialog } from "@/components/reporting-deadlines-dialog";
 import {
@@ -829,6 +830,7 @@ function OppView({
                           role={roleLabel}
                           primary={role.primaryContact ?? false}
                           hideStatusBadge
+                          action={<EditPeopleEntityRoleDialog role={role} />}
                         />
                       </div>
                     );

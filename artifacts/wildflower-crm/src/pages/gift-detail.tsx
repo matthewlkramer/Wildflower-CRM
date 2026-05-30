@@ -19,6 +19,7 @@ import {
   type PeopleEntityRole,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
 import { GiftAllocationsEditor } from "@/components/allocation-editors";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { ThankYouPanel } from "@/components/thank-you-panel";
@@ -586,6 +587,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                         role={roleLabel}
                         primary={role.primaryContact ?? false}
                         hideStatusBadge
+                        action={<EditPeopleEntityRoleDialog role={role} />}
                       />
                     </div>
                   );

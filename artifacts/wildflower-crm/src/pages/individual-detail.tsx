@@ -34,7 +34,10 @@ import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
 } from "@/components/linked-records";
-import { AddPersonOrgRoleDialog } from "@/components/add-role-dialogs";
+import {
+  AddPersonOrgRoleDialog,
+  EditPeopleEntityRoleDialog,
+} from "@/components/add-role-dialogs";
 import {
   RecordLayout,
   FieldCard,
@@ -838,12 +841,18 @@ function RoleRow({ role: r }: { role: PeopleEntityRole }) {
           (entityLabel ?? formatEnum(r.entityType))
         )}
       </span>
-      <span className="text-muted-foreground text-xs whitespace-nowrap">
-        {r.externalTitleOrRole ?? formatEnum(r.connection)}
-        {r.current && r.current !== "current"
-          ? ` (${formatEnum(r.current)})`
-          : ""}
-        {r.primaryContact ? " • primary" : ""}
+      <span className="flex items-center gap-1 whitespace-nowrap">
+        <span className="text-muted-foreground text-xs">
+          {r.externalTitleOrRole ?? formatEnum(r.connection)}
+          {r.current && r.current !== "current"
+            ? ` (${formatEnum(r.current)})`
+            : ""}
+          {r.primaryContact ? " • primary" : ""}
+        </span>
+        <EditPeopleEntityRoleDialog
+          role={r}
+          contextLabel={entityLabel ?? undefined}
+        />
       </span>
     </li>
   );
@@ -1024,6 +1033,7 @@ function HouseholdMembers({
           status={m.current === "current" ? "active" : "past"}
           primary={m.primaryContact}
           hideStatusBadge
+          action={<EditPeopleEntityRoleDialog role={m} />}
         />
       ))}
     </>
@@ -1119,6 +1129,12 @@ function ColleagueMembers({
             status={isCurrent ? "active" : "past"}
             primary={m.primaryContact}
             hideStatusBadge
+            action={
+              <EditPeopleEntityRoleDialog
+                role={m}
+                contextLabel={entityName ?? undefined}
+              />
+            }
           />
         );
       })}
