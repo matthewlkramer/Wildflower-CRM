@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetFunder,
+  useListFunders,
   useUpdateFunder,
   useDeleteFunder,
   getGetFunderQueryKey,
   getListFundersQueryKey,
   type FunderDetail,
+  type ListFundersParams,
   type UpdateFunderBody,
   type ActiveStatus,
   type ConnectionStatus,
@@ -22,6 +24,7 @@ import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
+  LinkedTasksCard,
 } from "@/components/linked-records";
 import {
   RecordLayout,
@@ -282,19 +285,90 @@ function FunderView({ funder }: { funder: FunderDetail }) {
 
   const highlights: Highlight[] = [
     {
-      label: "Active",
-      value: funder.activeStatus ? (
-        <Badge variant={funder.activeStatus === "active" ? "default" : "outline"}>
-          {formatEnum(funder.activeStatus)}
-        </Badge>
-      ) : (
-        "—"
+      label: "Priority",
+      value: (
+        <InlineEditSelect
+          label="Priority"
+          testIdBase="funder-priority"
+          value={funder.priority ?? null}
+          options={PRIORITY_OPTIONS}
+          display={
+            funder.priority ? (
+              <Badge variant={funder.priority === "top" ? "default" : "outline"}>
+                {formatEnum(funder.priority)}
+              </Badge>
+            ) : (
+              "—"
+            )
+          }
+          onSave={(next) => patch({ priority: next })}
+        />
+      ),
+      accent: true,
+    },
+    {
+      label: "Capacity",
+      value: (
+        <InlineEditSelect
+          label="Capacity rating"
+          testIdBase="funder-capacity"
+          value={funder.capacityRating ?? null}
+          options={CAPACITY_OPTIONS}
+          display={formatCapacity(funder.capacityRating)}
+          onSave={(next) => patch({ capacityRating: next })}
+        />
       ),
     },
-    { label: "Priority", value: formatEnum(funder.priority), accent: true },
-    { label: "Capacity", value: formatCapacity(funder.capacityRating) },
-    { label: "Enthusiasm", value: formatEnum(funder.enthusiasm) },
-    { label: "Owner", value: ownerDisplay },
+    {
+      label: "Connection",
+      value: (
+        <InlineEditSelect
+          label="Connection status"
+          testIdBase="funder-connection"
+          value={funder.connectionStatus ?? null}
+          options={CONNECTION_STATUS_OPTIONS}
+          display={formatEnum(funder.connectionStatus)}
+          onSave={(next) => patch({ connectionStatus: next })}
+        />
+      ),
+    },
+    {
+      label: "Enthusiasm",
+      value: (
+        <InlineEditSelect
+          label="Enthusiasm"
+          testIdBase="funder-enthusiasm"
+          value={funder.enthusiasm ?? null}
+          options={ENTHUSIASM_OPTIONS}
+          display={formatEnum(funder.enthusiasm)}
+          onSave={(next) => patch({ enthusiasm: next })}
+        />
+      ),
+    },
+    {
+      label: "Strategic alignment",
+      value: (
+        <InlineEditSelect
+          label="Strategic alignment"
+          testIdBase="funder-alignment"
+          value={funder.strategicAlignment ?? null}
+          options={ALIGNMENT_OPTIONS}
+          display={formatEnum(funder.strategicAlignment)}
+          onSave={(next) => patch({ strategicAlignment: next })}
+        />
+      ),
+    },
+    {
+      label: "Owner",
+      value: (
+        <InlineEditUserPicker
+          testIdBase="funder-owner"
+          value={funder.ownerUserId ?? null}
+          display={ownerDisplay}
+          onSave={(next) => patch({ ownerUserId: next })}
+        />
+      ),
+    },
   ];
 
   const people = funder.people ?? [];
@@ -328,54 +402,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                     )
                   }
                   onSave={(next) => patch({ activeStatus: next })}
-                />
-              </Row>
-              <Row label="Connection">
-                <InlineEditSelect
-                  label="Connection status"
-                  testIdBase="funder-connection"
-                  value={funder.connectionStatus ?? null}
-                  options={CONNECTION_STATUS_OPTIONS}
-                  display={formatEnum(funder.connectionStatus)}
-                  onSave={(next) => patch({ connectionStatus: next })}
-                />
-              </Row>
-              <Row label="Enthusiasm">
-                <InlineEditSelect
-                  label="Enthusiasm"
-                  testIdBase="funder-enthusiasm"
-                  value={funder.enthusiasm ?? null}
-                  options={ENTHUSIASM_OPTIONS}
-                  display={formatEnum(funder.enthusiasm)}
-                  onSave={(next) => patch({ enthusiasm: next })}
-                />
-              </Row>
-              <Row label="Strategic alignment">
-                <InlineEditSelect
-                  label="Strategic alignment"
-                  testIdBase="funder-alignment"
-                  value={funder.strategicAlignment ?? null}
-                  options={ALIGNMENT_OPTIONS}
-                  display={formatEnum(funder.strategicAlignment)}
-                  onSave={(next) => patch({ strategicAlignment: next })}
-                />
-              </Row>
-              <Row label="Priority">
-                <InlineEditSelect
-                  label="Priority"
-                  testIdBase="funder-priority"
-                  value={funder.priority ?? null}
-                  options={PRIORITY_OPTIONS}
-                  display={
-                    funder.priority ? (
-                      <Badge variant={funder.priority === "top" ? "default" : "outline"}>
-                        {formatEnum(funder.priority)}
-                      </Badge>
-                    ) : (
-                      "—"
-                    )
-                  }
-                  onSave={(next) => patch({ priority: next })}
                 />
               </Row>
               <Row label="National priorities">
@@ -420,16 +446,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                   onSave={(next) => patch({ numberOfEmployees: next })}
                 />
               </Row>
-              <Row label="Capacity">
-                <InlineEditSelect
-                  label="Capacity rating"
-                  testIdBase="funder-capacity"
-                  value={funder.capacityRating ?? null}
-                  options={CAPACITY_OPTIONS}
-                  display={formatCapacity(funder.capacityRating)}
-                  onSave={(next) => patch({ capacityRating: next })}
-                />
-              </Row>
               <Row label="Makes PRIs">
                 <InlineEditBoolean
                   label="Makes PRIs"
@@ -445,18 +461,98 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                   onSave={(next) => patch({ makesPris: next })}
                 />
               </Row>
-              <Row label="Owner">
-                <InlineEditUserPicker
-                  testIdBase="funder-owner"
-                  value={funder.ownerUserId ?? null}
-                  display={ownerDisplay}
-                  onSave={(next) => patch({ ownerUserId: next })}
-                />
-              </Row>
             </div>
           </FieldCard>
 
-          <FieldCard title="Web">
+          <FieldCard title="Interests">
+            <div className="space-y-3">
+              <TagEditRow label="Thematic">
+                <InlineEditInterestsThematic
+                  testIdBase="funder-interests-thematic"
+                  value={funder.interestsThematic ?? []}
+                  onSave={(next) => patch({ interestsThematic: next })}
+                />
+              </TagEditRow>
+              <TagEditRow label="Ages">
+                <InlineEditInterestsAges
+                  testIdBase="funder-interests-ages"
+                  value={funder.interestsAges ?? []}
+                  onSave={(next) => patch({ interestsAges: next })}
+                />
+              </TagEditRow>
+              <TagEditRow label="Gov models">
+                <InlineEditInterestsGovModels
+                  testIdBase="funder-interests-gov"
+                  value={funder.interestsGovModels ?? []}
+                  onSave={(next) => patch({ interestsGovModels: next })}
+                />
+              </TagEditRow>
+              <TagEditRow label="Regions">
+                <InlineEditMultiRegionPicker
+                  testIdBase="funder-regions"
+                  value={funder.regionIds ?? []}
+                  onSave={(next) => patch({ regionIds: next })}
+                />
+              </TagEditRow>
+              {funder.priorityAreasNotes && (
+                <div>
+                  <div className="text-xs font-medium text-muted-foreground mb-1">
+                    Priority areas notes
+                  </div>
+                  <p className="whitespace-pre-wrap">{funder.priorityAreasNotes}</p>
+                </div>
+              )}
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Emails & addresses" defaultOpen={false}>
+            <div className="space-y-4">
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">
+                  Emails
+                </div>
+                {funder.emails && funder.emails.length > 0 ? (
+                  <ul className="space-y-1 text-sm">
+                    {funder.emails.map((e) => (
+                      <li
+                        key={e.id}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span className="truncate">{e.email}</span>
+                        <span className="text-muted-foreground text-xs">
+                          {e.isPreferred ? "preferred • " : ""}
+                          {formatEnum(e.validity)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No emails.</p>
+                )}
+              </div>
+              <Separator />
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">
+                  Addresses
+                </div>
+                {funder.addresses && funder.addresses.length > 0 ? (
+                  <ul className="space-y-2 text-sm">
+                    {funder.addresses.map((a) => (
+                      <li key={a.id}>
+                        {[a.street, a.cityName, a.stateCode, a.postalCode]
+                          .filter(Boolean)
+                          .join(", ") || "—"}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No addresses.</p>
+                )}
+              </div>
+            </div>
+          </FieldCard>
+
+          <FieldCard title="Web" defaultOpen={false}>
             <div className="space-y-1">
               <Row label="Website">
                 <InlineEditText
@@ -584,94 +680,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
             </div>
           </FieldCard>
 
-          <FieldCard title="Interests">
-            <div className="space-y-3">
-              <TagEditRow label="Thematic">
-                <InlineEditInterestsThematic
-                  testIdBase="funder-interests-thematic"
-                  value={funder.interestsThematic ?? []}
-                  onSave={(next) => patch({ interestsThematic: next })}
-                />
-              </TagEditRow>
-              <TagEditRow label="Ages">
-                <InlineEditInterestsAges
-                  testIdBase="funder-interests-ages"
-                  value={funder.interestsAges ?? []}
-                  onSave={(next) => patch({ interestsAges: next })}
-                />
-              </TagEditRow>
-              <TagEditRow label="Gov models">
-                <InlineEditInterestsGovModels
-                  testIdBase="funder-interests-gov"
-                  value={funder.interestsGovModels ?? []}
-                  onSave={(next) => patch({ interestsGovModels: next })}
-                />
-              </TagEditRow>
-              <TagEditRow label="Regions">
-                <InlineEditMultiRegionPicker
-                  testIdBase="funder-regions"
-                  value={funder.regionIds ?? []}
-                  onSave={(next) => patch({ regionIds: next })}
-                />
-              </TagEditRow>
-              {funder.priorityAreasNotes && (
-                <div>
-                  <div className="text-xs font-medium text-muted-foreground mb-1">
-                    Priority areas notes
-                  </div>
-                  <p className="whitespace-pre-wrap">{funder.priorityAreasNotes}</p>
-                </div>
-              )}
-            </div>
-          </FieldCard>
-
-          <FieldCard title="Emails & addresses" defaultOpen={false}>
-            <div className="space-y-4">
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">
-                  Emails
-                </div>
-                {funder.emails && funder.emails.length > 0 ? (
-                  <ul className="space-y-1 text-sm">
-                    {funder.emails.map((e) => (
-                      <li
-                        key={e.id}
-                        className="flex items-center justify-between gap-2"
-                      >
-                        <span className="truncate">{e.email}</span>
-                        <span className="text-muted-foreground text-xs">
-                          {e.isPreferred ? "preferred • " : ""}
-                          {formatEnum(e.validity)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No emails.</p>
-                )}
-              </div>
-              <Separator />
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">
-                  Addresses
-                </div>
-                {funder.addresses && funder.addresses.length > 0 ? (
-                  <ul className="space-y-2 text-sm">
-                    {funder.addresses.map((a) => (
-                      <li key={a.id}>
-                        {[a.street, a.cityName, a.stateCode, a.postalCode]
-                          .filter(Boolean)
-                          .join(", ") || "—"}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No addresses.</p>
-                )}
-              </div>
-            </div>
-          </FieldCard>
-
           <FieldCard title="Other details" defaultOpen={false}>
             <div className="space-y-4">
               <Row label="Other names">
@@ -723,32 +731,31 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           </div>
         </>
       }
-      center={<UnifiedActivityFeed funderId={funder.id} />}
+      center={<UnifiedActivityFeed funderId={funder.id} hideTasks />}
       right={
         <>
           <RelatedCard title="People" count={people.length}>
             {people.length > 0 ? (
               <div>
-                {people.map((p) => (
-                  <div key={p.id} data-testid={`row-funder-person-${p.id}`}>
-                    <AffiliationRow
-                      name={p.personName ?? `Person ${p.personId}`}
-                      href={`/individuals/${p.personId}`}
-                      role={
-                        p.externalTitleOrRole ??
-                        formatEnum(p.connection)
-                      }
-                      status={
-                        p.current === "current"
-                          ? "active"
-                          : p.current
-                            ? "past"
-                            : undefined
-                      }
-                      primary={p.primaryContact ?? false}
-                    />
-                  </div>
-                ))}
+                {people.map((p) => {
+                  const title =
+                    p.externalTitleOrRole ??
+                    (p.connection ? formatEnum(p.connection) : null);
+                  const role =
+                    [title, p.personEmail].filter(Boolean).join(" · ") ||
+                    undefined;
+                  return (
+                    <div key={p.id} data-testid={`row-funder-person-${p.id}`}>
+                      <AffiliationRow
+                        name={p.personName ?? `Person ${p.personId}`}
+                        href={`/individuals/${p.personId}`}
+                        role={role}
+                        primary={p.primaryContact ?? false}
+                        hideStatusBadge
+                      />
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <p className="px-2 py-2 text-sm text-muted-foreground">
@@ -756,6 +763,10 @@ function FunderView({ funder }: { funder: FunderDetail }) {
               </p>
             )}
           </RelatedCard>
+
+          <RelatedFundersCard funder={funder} />
+
+          <LinkedTasksCard funderId={funder.id} />
 
           <LinkedOpportunitiesCard
             scope={{ funderId: funder.id }}
@@ -776,6 +787,57 @@ function FunderView({ funder }: { funder: FunderDetail }) {
         </>
       }
     />
+  );
+}
+
+function RelatedFundersCard({ funder }: { funder: FunderDetail }) {
+  const childParams: ListFundersParams = {
+    parentFunderId: funder.id,
+    limit: 100,
+  };
+  const childrenQ = useListFunders(childParams, {
+    query: { queryKey: getListFundersQueryKey(childParams) },
+  });
+  const parentId = funder.parentFunderId ?? "";
+  const parentQ = useGetFunder(parentId, {
+    query: {
+      queryKey: getGetFunderQueryKey(parentId),
+      enabled: !!funder.parentFunderId,
+    },
+  });
+
+  const children = childrenQ.data?.data ?? [];
+  const parent = funder.parentFunderId ? (parentQ.data ?? null) : null;
+  const count = (parent ? 1 : 0) + children.length;
+
+  return (
+    <RelatedCard title="Organizations" count={count}>
+      {count > 0 ? (
+        <div>
+          {parent ? (
+            <AffiliationRow
+              name={parent.name}
+              href={`/funding-entities/${parent.id}`}
+              role="Parent organization"
+              hideStatusBadge
+            />
+          ) : null}
+          {children.map((c) => (
+            <AffiliationRow
+              key={c.id}
+              name={c.name}
+              href={`/funding-entities/${c.id}`}
+              role="Subsidiary"
+              hideStatusBadge
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="px-2 py-2 text-sm text-muted-foreground">
+          No related funding entities.
+        </p>
+      )}
+    </RelatedCard>
   );
 }
 

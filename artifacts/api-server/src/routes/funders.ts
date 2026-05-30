@@ -74,6 +74,7 @@ router.get(
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.search) filters.push(ilike(funders.name, `%${q.search}%`));
+    if (q.parentFunderId) filters.push(eq(funders.parentFunderId, q.parentFunderId));
     // Each filter folds the "__blank__" sentinel into an IS NULL OR-clause.
     {
       const f = splitBlank(q.subtype as string[] | undefined);

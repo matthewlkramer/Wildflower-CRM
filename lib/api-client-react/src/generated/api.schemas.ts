@@ -2469,6 +2469,10 @@ export type ListFiscalYearEntityGoalsParams = {
 
 export type ListFundersParams = {
   search?: string;
+  /**
+   * Filter to direct child funding entities of the given parent funder.
+   */
+  parentFunderId?: string;
   subtype?: string[];
   activeStatus?: string[];
   connectionStatus?: string[];

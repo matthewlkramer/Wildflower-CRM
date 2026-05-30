@@ -754,6 +754,12 @@ export const listFundersQueryPageDefault = 1;
 
 export const ListFundersQueryParams = zod.object({
   search: zod.coerce.string().optional(),
+  parentFunderId: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter to direct child funding entities of the given parent funder.",
+    ),
   subtype: zod.array(zod.coerce.string()).optional(),
   activeStatus: zod.array(zod.coerce.string()).optional(),
   connectionStatus: zod.array(zod.coerce.string()).optional(),
