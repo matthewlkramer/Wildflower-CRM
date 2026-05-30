@@ -2,3 +2,4 @@
 - [wildflower-crm activity feed scoping](wildflower-activity-feed-scoping.md) — keep notes/tasks scope separate from donor-relationship scope; API list filters AND together.
 - [wildflower email/calendar HTML entities](wildflower-html-entities.md) — Gmail/Calendar/Airtable text is HTML-escaped; decode at render via decodeHtmlEntities, not user-authored content.
 - [Donor XOR across split pickers](wildflower-donor-xor-pickers.md) — per-type donor pickers must send all 3 FK fields (null the rest) + allowNull=false to keep exactly-one invariant.
+- [e2e test users pollute owner filter](wildflower-test-user-pollution.md) — testClerkAuth sign-ins auto-provision "Test Dev"/"Test Admin" user rows that clutter the owner dropdown; expected to recur after e2e runs.

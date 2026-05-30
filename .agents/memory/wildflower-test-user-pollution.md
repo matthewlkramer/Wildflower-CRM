@@ -1,0 +1,24 @@
+---
+name: e2e test users pollute the owner filter
+description: Why "Test Dev"/"Test Admin" rows keep showing up in the owner dropdown and how to clean them
+---
+
+The owner filter (owner-multi-filter, sourced from the active users list) shows
+any user with a usable identity (first/last name). Running e2e tests via the
+testing skill's `testClerkAuth` programmatically signs in with
+`@wildflowerschools.org` emails, and `requireAuth` auto-provisions a real user
+row for each sign-in named "Test Dev" / "Test Admin". These accumulate and
+clutter the owner dropdown.
+
+**Why:** auth auto-provisioning + e2e sign-ins create persistent user rows in
+the dev DB; nothing prunes them.
+
+**How to apply:**
+- To clean up: delete users where `(first_name='Test' AND last_name IN ('Dev','Admin'))`.
+  Most user FKs are RESTRICT, so first clear blocking refs — usually leftover
+  e2e `notes` (bodies like "E2E note..."/"...e2e..."). email_/calendar_/
+  google_oauth columns are CASCADE and clear automatically. owner_user_id is
+  nullable on all owning entities.
+- They WILL reappear after any future e2e run. This is expected, not a bug.
+- The nameless `user_...@unknown.com` rows have no usable identity, so they are
+  already filtered out of the owner dropdown — leave them.
