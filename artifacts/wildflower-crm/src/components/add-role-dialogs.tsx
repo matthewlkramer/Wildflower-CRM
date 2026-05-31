@@ -7,6 +7,8 @@ import {
   useUpdateFunder,
   useCreateFunder,
   useCreateOrganization,
+  useCreatePerson,
+  getListPeopleQueryKey,
   getGetPersonQueryKey,
   getGetFunderQueryKey,
   getGetOrganizationQueryKey,
@@ -184,6 +186,19 @@ function buildRoleAttrs(
     externalTitleOrRole: title.trim() || undefined,
     current,
     primaryContact: primary || undefined,
+  };
+}
+
+// Split a single typed name into first/last for inline person creation. The
+// last whitespace-separated token becomes the last name; everything before it
+// the first name. A single token is treated as a first name only.
+function splitPersonName(name: string): { firstName?: string; lastName?: string } {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return {};
+  if (parts.length === 1) return { firstName: parts[0] };
+  return {
+    firstName: parts.slice(0, -1).join(" "),
+    lastName: parts[parts.length - 1],
   };
 }
 
@@ -548,6 +563,171 @@ export function AddFunderPersonRoleDialog({ funderId }: { funderId: string }) {
               data-testid="button-save-funder-person"
             >
               {create.isPending ? "Linking…" : "Link"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────────────────── */
+/* Household detail → Members card → "Add"                                    */
+/* Links a person to this household; can inline-create the person.            */
+/* ───────────────────────────────────────────────────────────────────────── */
+
+export function AddHouseholdMemberDialog({
+  householdId,
+}: {
+  householdId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [personId, setPersonId] = useState<string | null>(null);
+  const [connection, setConnection] = useState("");
+  const [title, setTitle] = useState("");
+  const [current, setCurrent] = useState<PeopleRoleCurrent>(
+    PeopleRoleCurrent.current,
+  );
+  const [primary, setPrimary] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const reset = () => {
+    setPersonId(null);
+    setConnection("");
+    setTitle("");
+    setCurrent(PeopleRoleCurrent.current);
+    setPrimary(false);
+  };
+
+  const createPerson = useCreatePerson();
+
+  // Inline-create a person from the picker: persist, prime the get-cache so the
+  // resolved name shows immediately, refresh the list, return the new id.
+  const handleCreatePerson = async (name: string): Promise<string | null> => {
+    const fullName = name.trim();
+    if (!fullName) return null;
+    try {
+      const p = await createPerson.mutateAsync({
+        data: { ...splitPersonName(fullName), fullName },
+      });
+      queryClient.setQueryData(getGetPersonQueryKey(p.id), p);
+      await queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() });
+      toast({ title: "Person created" });
+      return p.id;
+    } catch (err: unknown) {
+      toast({
+        title: "Create failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
+  const create = useCreatePeopleEntityRole({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({
+          queryKey: getGetHouseholdQueryKey(householdId),
+        });
+        toast({ title: "Member added" });
+        setOpen(false);
+        reset();
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Add failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const submit = () => {
+    if (!personId || create.isPending) return;
+    const attrs = buildRoleAttrs(connection, title, current, primary);
+    create.mutate({
+      data: {
+        personId,
+        entityType: EntityRoleType.household,
+        householdId,
+        ...attrs,
+      },
+    });
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (create.isPending) return;
+        setOpen(v);
+        if (!v) reset();
+      }}
+    >
+      <DialogTrigger asChild>
+        <AddCardButton testId="button-add-household-member" />
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add member</DialogTitle>
+          <DialogDescription>
+            Add a person to this household. If they don't exist yet, type their
+            name and choose "Create".
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+          className="space-y-3"
+        >
+          <div className="space-y-1.5">
+            <Label>Person</Label>
+            <EntityCombobox
+              useSearch={usePersonSearch}
+              useResolve={usePersonName}
+              value={personId}
+              onChange={setPersonId}
+              allowNull={false}
+              placeholder="Search people…"
+              testId="select-household-member-entity"
+              onCreate={handleCreatePerson}
+              createNoun="person"
+            />
+          </div>
+          <RoleAttributeFields
+            connection={connection}
+            setConnection={setConnection}
+            title={title}
+            setTitle={setTitle}
+            current={current}
+            setCurrent={setCurrent}
+            primary={primary}
+            setPrimary={setPrimary}
+            idPrefix="household-member"
+          />
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setOpen(false);
+                reset();
+              }}
+              disabled={create.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!personId || create.isPending}
+              data-testid="button-save-household-member"
+            >
+              {create.isPending ? "Adding…" : "Add"}
             </Button>
           </DialogFooter>
         </form>

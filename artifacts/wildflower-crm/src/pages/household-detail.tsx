@@ -10,7 +10,10 @@ import {
   type UpdateHouseholdBody,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
-import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
+import {
+  EditPeopleEntityRoleDialog,
+  AddHouseholdMemberDialog,
+} from "@/components/add-role-dialogs";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { TasksPanel } from "@/components/tasks-panel";
 import {
@@ -247,7 +250,11 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
       }
       right={
         <>
-          <RelatedCard title="Members" count={members.length}>
+          <RelatedCard
+            title="Members"
+            count={members.length}
+            action={<AddHouseholdMemberDialog householdId={household.id} />}
+          >
             {members.length > 0 ? (
               <div>
                 {members.map((p) => (
