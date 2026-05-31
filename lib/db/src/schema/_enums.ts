@@ -121,6 +121,7 @@ export const numberOfEmployeesEnum = pgEnum("number_of_employees", [
 ]);
 
 export const capacityRatingEnum = pgEnum("capacity_rating", [
+  "tier_1k_10k",
   "tier_10k_50k",
   "tier_50k_250k",
   "tier_250k_1m",

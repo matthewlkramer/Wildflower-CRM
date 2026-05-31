@@ -129,6 +129,7 @@ const EMPLOYEES_OPTIONS = [
 ] as const satisfies ReadonlyArray<InlineSelectOption<NumberOfEmployees>>;
 
 const CAPACITY_OPTIONS = [
+  { value: "tier_1k_10k", label: "$1k–$10k" },
   { value: "tier_10k_50k", label: "$10k–$50k" },
   { value: "tier_50k_250k", label: "$50k–$250k" },
   { value: "tier_250k_1m", label: "$250k–$1M" },

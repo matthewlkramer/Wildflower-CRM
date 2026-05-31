@@ -822,7 +822,13 @@ export const ListFundersResponse = zod.object({
         ])
         .nullish(),
       capacityRating: zod
-        .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+        .enum([
+          "tier_1k_10k",
+          "tier_10k_50k",
+          "tier_50k_250k",
+          "tier_250k_1m",
+          "tier_1m_plus",
+        ])
         .nullish(),
       totalAssets: zod
         .string()
@@ -937,7 +943,13 @@ export const CreateFunderBody = zod.object({
     ])
     .optional(),
   capacityRating: zod
-    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .enum([
+      "tier_1k_10k",
+      "tier_10k_50k",
+      "tier_50k_250k",
+      "tier_250k_1m",
+      "tier_1m_plus",
+    ])
     .optional(),
   totalAssets: zod
     .string()
@@ -1018,7 +1030,13 @@ export const GetFunderResponse = zod
       ])
       .nullish(),
     capacityRating: zod
-      .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+      .enum([
+        "tier_1k_10k",
+        "tier_10k_50k",
+        "tier_50k_250k",
+        "tier_250k_1m",
+        "tier_1m_plus",
+      ])
       .nullish(),
     totalAssets: zod
       .string()
@@ -1225,7 +1243,13 @@ export const UpdateFunderBody = zod.object({
     ])
     .nullish(),
   capacityRating: zod
-    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .enum([
+      "tier_1k_10k",
+      "tier_10k_50k",
+      "tier_50k_250k",
+      "tier_250k_1m",
+      "tier_1m_plus",
+    ])
     .nullish(),
   totalAssets: zod
     .string()
@@ -1301,7 +1325,13 @@ export const UpdateFunderResponse = zod.object({
     ])
     .nullish(),
   capacityRating: zod
-    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .enum([
+      "tier_1k_10k",
+      "tier_10k_50k",
+      "tier_50k_250k",
+      "tier_250k_1m",
+      "tier_1m_plus",
+    ])
     .nullish(),
   totalAssets: zod
     .string()
@@ -2170,7 +2200,13 @@ export const ListPeopleResponse = zod.object({
       meetingLink: zod.string().nullish(),
       assistantPersonId: zod.string().nullish(),
       capacityRating: zod
-        .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+        .enum([
+          "tier_1k_10k",
+          "tier_10k_50k",
+          "tier_50k_250k",
+          "tier_250k_1m",
+          "tier_1m_plus",
+        ])
         .nullish(),
       netWorth: zod
         .string()
@@ -2266,7 +2302,13 @@ export const CreatePersonBody = zod.object({
   meetingLink: zod.string().optional(),
   assistantPersonId: zod.string().optional(),
   capacityRating: zod
-    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .enum([
+      "tier_1k_10k",
+      "tier_10k_50k",
+      "tier_50k_250k",
+      "tier_250k_1m",
+      "tier_1m_plus",
+    ])
     .optional(),
   netWorth: zod
     .string()
@@ -2322,7 +2364,13 @@ export const GetPersonResponse = zod
     meetingLink: zod.string().nullish(),
     assistantPersonId: zod.string().nullish(),
     capacityRating: zod
-      .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+      .enum([
+        "tier_1k_10k",
+        "tier_10k_50k",
+        "tier_50k_250k",
+        "tier_250k_1m",
+        "tier_1m_plus",
+      ])
       .nullish(),
     netWorth: zod
       .string()
@@ -2512,7 +2560,13 @@ export const UpdatePersonBody = zod.object({
   meetingLink: zod.string().nullish(),
   assistantPersonId: zod.string().nullish(),
   capacityRating: zod
-    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .enum([
+      "tier_1k_10k",
+      "tier_10k_50k",
+      "tier_50k_250k",
+      "tier_250k_1m",
+      "tier_1m_plus",
+    ])
     .nullish(),
   netWorth: zod
     .string()
@@ -2563,7 +2617,13 @@ export const UpdatePersonResponse = zod.object({
   meetingLink: zod.string().nullish(),
   assistantPersonId: zod.string().nullish(),
   capacityRating: zod
-    .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+    .enum([
+      "tier_1k_10k",
+      "tier_10k_50k",
+      "tier_50k_250k",
+      "tier_250k_1m",
+      "tier_1m_plus",
+    ])
     .nullish(),
   netWorth: zod
     .string()
@@ -6220,7 +6280,13 @@ export const BulkUpdatePeopleBody = zod.object({
       ownerUserId: zod.string().nullish(),
       currentHomeRegionId: zod.string().nullish(),
       capacityRating: zod
-        .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+        .enum([
+          "tier_1k_10k",
+          "tier_10k_50k",
+          "tier_50k_250k",
+          "tier_250k_1m",
+          "tier_1m_plus",
+        ])
         .nullish(),
       priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
       deceased: zod.boolean().optional(),
@@ -6252,7 +6318,13 @@ export const BulkUpdateFundersBody = zod.object({
       .enum(["connected", "have_a_connector", "no_connection"])
       .nullish(),
     capacityRating: zod
-      .enum(["tier_10k_50k", "tier_50k_250k", "tier_250k_1m", "tier_1m_plus"])
+      .enum([
+        "tier_1k_10k",
+        "tier_10k_50k",
+        "tier_50k_250k",
+        "tier_250k_1m",
+        "tier_1m_plus",
+      ])
       .nullish(),
     enthusiasm: zod
       .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])

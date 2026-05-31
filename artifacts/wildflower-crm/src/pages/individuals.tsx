@@ -61,6 +61,7 @@ const PAGE_SIZE = 50;
 // Capacity column + filter — same enum + labels we use on funders, just
 // surfaced on individuals now that the field exists on people too.
 const CAPACITY_TIERS: CapacityRating[] = [
+  "tier_1k_10k",
   "tier_10k_50k",
   "tier_50k_250k",
   "tier_250k_1m",
@@ -243,7 +244,7 @@ export default function Individuals() {
   const colSpan = visibleCols.length + 1; // +1 for the checkbox column
 
   const CAPACITY_ORDER: Record<string, number> = {
-    tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
+    tier_1k_10k: 0, tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
   };
   const PRIORITY_ORDER: Record<string, number> = { top: 4, high: 3, medium: 2, low: 1 };
   const sortedRows = useMemo(

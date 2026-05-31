@@ -27,6 +27,7 @@ export const PEOPLE_BULK_FIELDS: ReadonlyArray<BulkField> = [
     label: "Capacity",
     nullable: true,
     options: [
+      { value: "tier_1k_10k", label: formatCapacity("tier_1k_10k") ?? "$1K–10K" },
       { value: "tier_10k_50k", label: formatCapacity("tier_10k_50k") ?? "$10K–50K" },
       { value: "tier_50k_250k", label: formatCapacity("tier_50k_250k") ?? "$50K–250K" },
       { value: "tier_250k_1m", label: formatCapacity("tier_250k_1m") ?? "$250K–1M" },
@@ -85,6 +86,7 @@ export const FUNDERS_BULK_FIELDS: ReadonlyArray<BulkField> = [
     label: "Capacity",
     nullable: true,
     options: [
+      { value: "tier_1k_10k", label: formatCapacity("tier_1k_10k") ?? "$1K–10K" },
       { value: "tier_10k_50k", label: formatCapacity("tier_10k_50k") ?? "$10K–50K" },
       { value: "tier_50k_250k", label: formatCapacity("tier_50k_250k") ?? "$50K–250K" },
       { value: "tier_250k_1m", label: formatCapacity("tier_250k_1m") ?? "$250K–1M" },

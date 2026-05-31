@@ -1732,7 +1732,7 @@ components:
     UserRole: { type: string, enum: [admin, team_member, finance, read_only] }
     FundingEntitySubtype: { type: string, enum: [family_foundation, institutional_foundation, corporate_foundation, community_foundation, bank_foundation, family_office_trust, intermediary, government, nonprofit, corporation, capital_provider, philanthropic_advisor, cdfi, education_forprofit, competition, public_private, daf_platform, platform] }
     NumberOfEmployees: { type: string, enum: [e_1, e_2_10, e_11_50, e_51_250, e_251_1000, e_1001_10000, e_10000_plus] }
-    CapacityRating: { type: string, enum: [tier_10k_50k, tier_50k_250k, tier_250k_1m, tier_1m_plus] }
+    CapacityRating: { type: string, enum: [tier_1k_10k, tier_10k_50k, tier_50k_250k, tier_250k_1m, tier_1m_plus] }
     ConnectionStatus: { type: string, enum: [connected, have_a_connector, no_connection] }
     Enthusiasm: { type: string, enum: [advocate, supportive, warm, neutral, unsupportive] }
     Priority: { type: string, enum: [top, high, medium, low] }

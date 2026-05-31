@@ -278,7 +278,7 @@ export default function FundingEntities() {
   const colSpan = visibleCols.length + 1;
 
   const CAPACITY_ORDER: Record<string, number> = {
-    tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
+    tier_1k_10k: 0, tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
   };
   const PRIORITY_ORDER: Record<string, number> = { top: 4, high: 3, medium: 2, low: 1 };
   const ALIGNMENT_ORDER: Record<string, number> = { high: 3, medium: 2, low: 1 };

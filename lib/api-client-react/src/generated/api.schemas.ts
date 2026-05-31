@@ -186,6 +186,7 @@ export type CapacityRating =
   (typeof CapacityRating)[keyof typeof CapacityRating];
 
 export const CapacityRating = {
+  tier_1k_10k: "tier_1k_10k",
   tier_10k_50k: "tier_10k_50k",
   tier_50k_250k: "tier_50k_250k",
   tier_250k_1m: "tier_250k_1m",
