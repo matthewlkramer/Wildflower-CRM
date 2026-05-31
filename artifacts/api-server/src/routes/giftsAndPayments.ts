@@ -133,6 +133,23 @@ router.get(
         );
       }
     }
+    // Presence filters on computed rollup fields (has value vs blank).
+    // Each mirrors the matching column expression in donorJoinSelect.
+    if (q.entitiesPresence === "has") {
+      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.entityId} IS NOT NULL)`);
+    } else if (q.entitiesPresence === "blank") {
+      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.entityId} IS NOT NULL)`);
+    }
+    if (q.usagesPresence === "has") {
+      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.displayUsage} IS NOT NULL)`);
+    } else if (q.usagesPresence === "blank") {
+      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.displayUsage} IS NOT NULL)`);
+    }
+    if (q.grantYearsPresence === "has") {
+      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.grantYear} IS NOT NULL)`);
+    } else if (q.grantYearsPresence === "blank") {
+      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.grantYear} IS NOT NULL)`);
+    }
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

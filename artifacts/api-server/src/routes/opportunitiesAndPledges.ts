@@ -234,6 +234,23 @@ router.get(
         ),
       );
     }
+    // Presence filters on computed rollup fields (has value vs blank).
+    // Each mirrors the matching column expression in donorJoinSelect.
+    if (q.paidPresence === "has") {
+      filters.push(sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.payment_on_pledge_id = ${opportunitiesAndPledges.id}) > 0`);
+    } else if (q.paidPresence === "blank") {
+      filters.push(sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.payment_on_pledge_id = ${opportunitiesAndPledges.id}) <= 0`);
+    }
+    if (q.coveredFysPresence === "has") {
+      filters.push(sql`EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.grantYear} IS NOT NULL)`);
+    } else if (q.coveredFysPresence === "blank") {
+      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.grantYear} IS NOT NULL)`);
+    }
+    if (q.entitiesPresence === "has") {
+      filters.push(sql`EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`);
+    } else if (q.entitiesPresence === "blank") {
+      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`);
+    }
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

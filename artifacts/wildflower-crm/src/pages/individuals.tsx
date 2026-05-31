@@ -14,7 +14,10 @@ import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
 import { SavedViewsBar } from "@/components/saved-views-bar";
 import { ColumnsMenu } from "@/components/columns-menu";
+import { FiltersMenu } from "@/components/filters-menu";
 import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
+import { resolveFilters, type FilterDef, type FiltersState } from "@/lib/filters";
+import { PresenceFilter, type PresenceValue } from "@/components/presence-filter";
 import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
@@ -262,6 +265,13 @@ export default function Individuals() {
   const [deceasedSel, setDeceasedSel] = usePersistedState<string[]>("wf.list.people.deceased", []);
   const [capacityTiers, setCapacityTiers] = usePersistedState<string[]>("wf.list.people.capacity", []);
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.people.owners", []);
+  // Presence filters on computed rollup columns (has value vs blank).
+  const [lifetimeGivingPresence, setLifetimeGivingPresence] = usePersistedState<PresenceValue>("wf.list.people.f.lifetimeGiving", undefined);
+  const [lastGiftPresence, setLastGiftPresence] = usePersistedState<PresenceValue>("wf.list.people.f.lastGift", undefined);
+  const [openAsksPresence, setOpenAsksPresence] = usePersistedState<PresenceValue>("wf.list.people.f.openAsks", undefined);
+  const [activeAffiliationPresence, setActiveAffiliationPresence] = usePersistedState<PresenceValue>("wf.list.people.f.activeAffiliation", undefined);
+  // Which optional filters are shown in the toolbar. null = registry defaults.
+  const [filtersState, setFiltersState] = usePersistedState<FiltersState | null>("wf.list.people.filters", null);
   const [page, setPage] = usePersistedState<number>("wf.list.people.page", 1);
   // Column customization: null = use registry defaults. Shape is
   // round-tripped through saved views, so changes here also persist
@@ -288,6 +298,10 @@ export default function Individuals() {
       ? { capacityRating: [...capacityTiers].sort() as CapacityRating[] }
       : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
+    ...(lifetimeGivingPresence ? { lifetimeGivingPresence } : {}),
+    ...(lastGiftPresence ? { lastGiftPresence } : {}),
+    ...(openAsksPresence ? { openAsksPresence } : {}),
+    ...(activeAffiliationPresence ? { activeAffiliationPresence } : {}),
   };
 
   const { data, isLoading, isError, error } = useListPeople(params, {
@@ -309,6 +323,125 @@ export default function Individuals() {
     [registry, columnsState],
   );
   const colSpan = visibleCols.length + 1; // +1 for the checkbox column
+
+  // Filter registry — every toolbar filter control, toggleable via the
+  // FiltersMenu. Enum filters default visible; presence filters on
+  // computed columns are opt-in (defaultVisible:false). Each def's
+  // `clear` resets its value so hiding an active filter stops narrowing.
+  const filterRegistry = useMemo<FilterDef[]>(
+    () => [
+      {
+        key: "status",
+        label: "Status",
+        active: deceasedSel.length > 0,
+        clear: () => { setDeceasedSel([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Status"
+            selected={deceasedSel}
+            onChange={(v) => { setDeceasedSel(v); setPage(1); selection.clear(); }}
+            options={DECEASED_OPTIONS}
+            testId="select-deceased"
+          />
+        ),
+      },
+      {
+        key: "capacity",
+        label: "Capacity",
+        active: capacityTiers.length > 0,
+        clear: () => { setCapacityTiers([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Capacity"
+            selected={capacityTiers}
+            onChange={(v) => { setCapacityTiers(v); setPage(1); selection.clear(); }}
+            options={CAPACITY_TIERS.map((t) => ({ value: t, label: formatCapacity(t) ?? t }))}
+            testId="select-capacity"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "owner",
+        label: "Owner",
+        active: owners.length > 0,
+        clear: () => { setOwners([]); setPage(1); selection.clear(); },
+        render: () => (
+          <OwnerMultiFilter
+            selected={owners}
+            onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
+            testId="select-person-owner"
+          />
+        ),
+      },
+      {
+        key: "lifetimeGiving",
+        label: "Lifetime giving",
+        defaultVisible: false,
+        active: !!lifetimeGivingPresence,
+        clear: () => { setLifetimeGivingPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Lifetime giving"
+            value={lifetimeGivingPresence}
+            onChange={(v) => { setLifetimeGivingPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-lifetime-giving"
+          />
+        ),
+      },
+      {
+        key: "lastGift",
+        label: "Last gift",
+        defaultVisible: false,
+        active: !!lastGiftPresence,
+        clear: () => { setLastGiftPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Last gift"
+            value={lastGiftPresence}
+            onChange={(v) => { setLastGiftPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-last-gift"
+          />
+        ),
+      },
+      {
+        key: "openAsks",
+        label: "Open asks",
+        defaultVisible: false,
+        active: !!openAsksPresence,
+        clear: () => { setOpenAsksPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Open asks"
+            value={openAsksPresence}
+            onChange={(v) => { setOpenAsksPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-open-asks"
+          />
+        ),
+      },
+      {
+        key: "activeAffiliation",
+        label: "Active funders / orgs",
+        defaultVisible: false,
+        active: !!activeAffiliationPresence,
+        clear: () => { setActiveAffiliationPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Active funders / orgs"
+            value={activeAffiliationPresence}
+            onChange={(v) => { setActiveAffiliationPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-active-affiliation"
+          />
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deceasedSel, capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence],
+  );
+  const visibleFilters = useMemo(
+    () => resolveFilters(filterRegistry, filtersState),
+    [filterRegistry, filtersState],
+  );
 
   const CAPACITY_ORDER: Record<string, number> = {
     tier_1k_10k: 0, tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
@@ -358,7 +491,11 @@ export default function Individuals() {
     !!search ||
     deceasedSel.length > 0 ||
     capacityTiers.length > 0 ||
-    owners.length > 0;
+    owners.length > 0 ||
+    !!lifetimeGivingPresence ||
+    !!lastGiftPresence ||
+    !!openAsksPresence ||
+    !!activeAffiliationPresence;
 
   // ─── Saved views ─────────────────────────────────────────────────
   // The persisted view captures filters + sort + the user's column
@@ -370,28 +507,42 @@ export default function Individuals() {
     deceasedSel: string[];
     capacityTiers: string[];
     owners: string[];
+    lifetimeGivingPresence: PresenceValue;
+    lastGiftPresence: PresenceValue;
+    openAsksPresence: PresenceValue;
+    activeAffiliationPresence: PresenceValue;
     sort: SortState;
     columns: ColumnsState | null;
+    filters: FiltersState | null;
   };
   const currentView: IndividualsView = {
     search,
     deceasedSel,
     capacityTiers,
     owners,
+    lifetimeGivingPresence,
+    lastGiftPresence,
+    openAsksPresence,
+    activeAffiliationPresence,
     sort: ts.sort,
     columns: columnsState,
+    filters: filtersState,
   };
   const clearAll = () => {
     setSearch("");
     setDeceasedSel([]);
     setCapacityTiers([]);
     setOwners([]);
+    setLifetimeGivingPresence(undefined);
+    setLastGiftPresence(undefined);
+    setOpenAsksPresence(undefined);
+    setActiveAffiliationPresence(undefined);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
-    // Clearing only resets filters + sort; we deliberately leave the
-    // user's column config alone since it's a presentation preference
-    // they tend to set once and forget.
+    // Clearing only resets filter values + sort; we deliberately leave
+    // the user's column config and filter-chooser visibility alone since
+    // they're presentation preferences set once and forgotten.
   };
   const viewsCtrl = useSavedViews<IndividualsView>({
     listKey: "individuals",
@@ -401,11 +552,16 @@ export default function Individuals() {
       setDeceasedSel(s.deceasedSel ?? []);
       setCapacityTiers(s.capacityTiers ?? []);
       setOwners(s.owners ?? []);
+      setLifetimeGivingPresence(s.lifetimeGivingPresence ?? undefined);
+      setLastGiftPresence(s.lastGiftPresence ?? undefined);
+      setOpenAsksPresence(s.openAsksPresence ?? undefined);
+      setActiveAffiliationPresence(s.activeAffiliationPresence ?? undefined);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       // Backwards-compat: views saved before this feature have no
-      // `columns` field. Treat them as "default columns" so applying
+      // `columns` / `filters` field. Treat them as "defaults" so applying
       // doesn't accidentally hide anything.
       setColumnsState(s.columns ?? null);
+      setFiltersState(s.filters ?? null);
       setPage(1);
       selection.clear();
     },
@@ -414,8 +570,13 @@ export default function Individuals() {
       (s.deceasedSel?.length ?? 0) === 0 &&
       (s.capacityTiers?.length ?? 0) === 0 &&
       (s.owners?.length ?? 0) === 0 &&
+      !s.lifetimeGivingPresence &&
+      !s.lastGiftPresence &&
+      !s.openAsksPresence &&
+      !s.activeAffiliationPresence &&
       (s.sort?.key ?? null) === null &&
-      (s.columns ?? null) === null,
+      (s.columns ?? null) === null &&
+      (s.filters ?? null) === null,
   });
 
   return (
@@ -434,7 +595,7 @@ export default function Individuals() {
 
       <SavedViewsBar
         controller={viewsCtrl}
-        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null}
+        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null || filtersState !== null}
         onClearAll={clearAll}
       />
 
@@ -453,26 +614,9 @@ export default function Individuals() {
           />
         </div>
 
-        <MultiFilterSelect
-          label="Status"
-          selected={deceasedSel}
-          onChange={(v) => { setDeceasedSel(v); setPage(1); selection.clear(); }}
-          options={DECEASED_OPTIONS}
-          testId="select-deceased"
-        />
-        <MultiFilterSelect
-          label="Capacity"
-          selected={capacityTiers}
-          onChange={(v) => { setCapacityTiers(v); setPage(1); selection.clear(); }}
-          options={CAPACITY_TIERS.map((t) => ({ value: t, label: formatCapacity(t) ?? t }))}
-          testId="select-capacity"
-          includeBlank
-        />
-        <OwnerMultiFilter
-          selected={owners}
-          onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
-          testId="select-person-owner"
-        />
+        {visibleFilters.map((f) => (
+          <div key={f.key}>{f.render()}</div>
+        ))}
 
         {hasActiveFilters && (
           <Button
@@ -483,6 +627,10 @@ export default function Individuals() {
               setDeceasedSel([]);
               setCapacityTiers([]);
               setOwners([]);
+              setLifetimeGivingPresence(undefined);
+              setLastGiftPresence(undefined);
+              setOpenAsksPresence(undefined);
+              setActiveAffiliationPresence(undefined);
               setPage(1);
               selection.clear();
             }}
@@ -491,7 +639,12 @@ export default function Individuals() {
           </Button>
         )}
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-end gap-2">
+          <FiltersMenu
+            registry={filterRegistry}
+            state={filtersState}
+            onChange={setFiltersState}
+          />
           <ColumnsMenu
             registry={registry}
             state={columnsState}

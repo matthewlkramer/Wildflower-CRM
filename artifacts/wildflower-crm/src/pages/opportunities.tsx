@@ -17,7 +17,10 @@ import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
 import { SavedViewsBar } from "@/components/saved-views-bar";
 import { ColumnsMenu } from "@/components/columns-menu";
+import { FiltersMenu } from "@/components/filters-menu";
 import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
+import { resolveFilters, type FilterDef, type FiltersState } from "@/lib/filters";
+import { PresenceFilter, type PresenceValue } from "@/components/presence-filter";
 import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
@@ -230,9 +233,16 @@ export default function Opportunities({
   const [types, setTypes] = usePersistedState<string[]>(`${persistNs}.types`, []);
   const [fiscalYears, setFiscalYears] = usePersistedState<string[]>(`${persistNs}.fiscalYears`, []);
   const [owners, setOwners] = usePersistedState<string[]>(`${persistNs}.owners`, []);
+  const [paidPresence, setPaidPresence] = usePersistedState<PresenceValue>(`${persistNs}.f.paid`, undefined);
+  const [coveredFysPresence, setCoveredFysPresence] = usePersistedState<PresenceValue>(`${persistNs}.f.coveredFys`, undefined);
+  const [entitiesPresence, setEntitiesPresence] = usePersistedState<PresenceValue>(`${persistNs}.f.entities`, undefined);
   const [page, setPage] = usePersistedState<number>(`${persistNs}.page`, 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     `${persistNs}.columns`,
+    null,
+  );
+  const [filtersState, setFiltersState] = usePersistedState<FiltersState | null>(
+    `${persistNs}.filters`,
     null,
   );
   const selection = useRowSelection();
@@ -274,6 +284,9 @@ export default function Opportunities({
     ...(globalEntityIds.length > 0
       ? { entityId: [...globalEntityIds].sort() }
       : {}),
+    ...(paidPresence ? { paidPresence } : {}),
+    ...(coveredFysPresence ? { coveredFysPresence } : {}),
+    ...(entitiesPresence ? { entitiesPresence } : {}),
   };
 
   const { data, isLoading, isError, error } = useListOpportunitiesAndPledges(params, {
@@ -298,6 +311,143 @@ export default function Opportunities({
     [registry, columnsState],
   );
   const colSpan = visibleCols.length + 1;
+
+  // Determine "is anything filtered beyond default?" for the Clear button.
+  const sameDefaultStatus =
+    statuses.length === defaultStatusArr.length &&
+    [...statuses].sort().join(",") === [...defaultStatusArr].sort().join(",");
+
+  // Filter registry — enum filters default visible; presence filters on
+  // computed columns are opt-in (defaultVisible:false). Each def's
+  // `clear` resets its value so hiding an active filter stops narrowing.
+  const filterRegistry = useMemo<FilterDef[]>(
+    () => [
+      {
+        key: "status",
+        label: "Status",
+        active: !sameDefaultStatus,
+        clear: () => { setStatuses(defaultStatusArr); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Status"
+            selected={statuses}
+            onChange={(v) => { setStatuses(v); setPage(1); selection.clear(); }}
+            options={STATUSES}
+            testId="select-opp-status"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "stage",
+        label: "Stage",
+        active: stages.length > 0,
+        clear: () => { setStages([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Stage"
+            selected={stages}
+            onChange={(v) => { setStages(v); setPage(1); selection.clear(); }}
+            options={STAGES}
+            testId="select-opp-stage"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "type",
+        label: "Type",
+        active: types.length > 0,
+        clear: () => { setTypes([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Type"
+            selected={types}
+            onChange={(v) => { setTypes(v); setPage(1); selection.clear(); }}
+            options={TYPES}
+            testId="select-opp-type"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "fiscalYear",
+        label: "Fiscal year",
+        active: fiscalYears.length > 0,
+        clear: () => { setFiscalYears([]); setPage(1); selection.clear(); },
+        render: () => (
+          <FiscalYearMultiSelect
+            selected={fiscalYears}
+            onChange={(v) => { setFiscalYears(v); setPage(1); selection.clear(); }}
+          />
+        ),
+      },
+      {
+        key: "owner",
+        label: "Owner",
+        active: owners.length > 0,
+        clear: () => { setOwners([]); setPage(1); selection.clear(); },
+        render: () => (
+          <OwnerMultiFilter
+            selected={owners}
+            onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
+            testId="select-opp-owner"
+          />
+        ),
+      },
+      {
+        key: "paid",
+        label: "Paid",
+        defaultVisible: false,
+        active: !!paidPresence,
+        clear: () => { setPaidPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Paid"
+            value={paidPresence}
+            onChange={(v) => { setPaidPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-paid"
+          />
+        ),
+      },
+      {
+        key: "coveredFys",
+        label: "Covered FYs",
+        defaultVisible: false,
+        active: !!coveredFysPresence,
+        clear: () => { setCoveredFysPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Covered FYs"
+            value={coveredFysPresence}
+            onChange={(v) => { setCoveredFysPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-covered-fys"
+          />
+        ),
+      },
+      {
+        key: "entities",
+        label: "Entities",
+        defaultVisible: false,
+        active: !!entitiesPresence,
+        clear: () => { setEntitiesPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Entities"
+            value={entitiesPresence}
+            onChange={(v) => { setEntitiesPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-entities"
+          />
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [statuses, stages, types, fiscalYears, owners, paidPresence, coveredFysPresence, entitiesPresence, sameDefaultStatus, defaultStatusArr],
+  );
+  const visibleFilters = useMemo(
+    () => resolveFilters(filterRegistry, filtersState),
+    [filterRegistry, filtersState],
+  );
 
   const STAGE_ORDER: Record<string, number> = {
     cold_lead: 1, warm_lead: 2, in_conversation: 3, convince: 4,
@@ -342,17 +492,16 @@ export default function Opportunities({
     return sortedRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   }, [sortActive, sortedRows, page]);
 
-  // Determine "is anything filtered beyond default?" for the Clear button.
-  const sameDefaultStatus =
-    statuses.length === defaultStatusArr.length &&
-    [...statuses].sort().join(",") === [...defaultStatusArr].sort().join(",");
   const hasActiveFilters =
     !!search ||
     !sameDefaultStatus ||
     stages.length > 0 ||
     types.length > 0 ||
     fiscalYears.length > 0 ||
-    owners.length > 0;
+    owners.length > 0 ||
+    !!paidPresence ||
+    !!coveredFysPresence ||
+    !!entitiesPresence;
 
   // ─── Saved views ─────────────────────────────────────────────────
   // /opportunities and /pledges share this component but should not
@@ -364,8 +513,12 @@ export default function Opportunities({
     types: string[];
     fiscalYears: string[];
     owners: string[];
+    paidPresence: PresenceValue;
+    coveredFysPresence: PresenceValue;
+    entitiesPresence: PresenceValue;
     sort: SortState;
     columns: ColumnsState | null;
+    filters: FiltersState | null;
   };
   const savedViewsListKey = `opportunities:${pledgeView ?? "all"}`;
   const currentView: OppsView = {
@@ -375,8 +528,12 @@ export default function Opportunities({
     types,
     fiscalYears,
     owners,
+    paidPresence,
+    coveredFysPresence,
+    entitiesPresence,
     sort: ts.sort,
     columns: columnsState,
+    filters: filtersState,
   };
   const clearAll = () => {
     setSearch("");
@@ -385,6 +542,9 @@ export default function Opportunities({
     setTypes([]);
     setFiscalYears([]);
     setOwners([]);
+    setPaidPresence(undefined);
+    setCoveredFysPresence(undefined);
+    setEntitiesPresence(undefined);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -399,8 +559,12 @@ export default function Opportunities({
       setTypes(s.types ?? []);
       setFiscalYears(s.fiscalYears ?? []);
       setOwners(s.owners ?? []);
+      setPaidPresence(s.paidPresence ?? undefined);
+      setCoveredFysPresence(s.coveredFysPresence ?? undefined);
+      setEntitiesPresence(s.entitiesPresence ?? undefined);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
+      setFiltersState(s.filters ?? null);
       setPage(1);
       selection.clear();
     },
@@ -414,8 +578,12 @@ export default function Opportunities({
         (s.types?.length ?? 0) === 0 &&
         (s.fiscalYears?.length ?? 0) === 0 &&
         (s.owners?.length ?? 0) === 0 &&
+        !s.paidPresence &&
+        !s.coveredFysPresence &&
+        !s.entitiesPresence &&
         (s.sort?.key ?? null) === null &&
-        (s.columns ?? null) === null
+        (s.columns ?? null) === null &&
+        (s.filters ?? null) === null
       );
     },
   });
@@ -431,7 +599,7 @@ export default function Opportunities({
 
       <SavedViewsBar
         controller={viewsCtrl}
-        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null}
+        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null || filtersState !== null}
         onClearAll={clearAll}
       />
 
@@ -445,39 +613,9 @@ export default function Opportunities({
             data-testid="input-search-opportunities"
           />
         </div>
-        <MultiFilterSelect
-          label="Status"
-          selected={statuses}
-          onChange={(v) => { setStatuses(v); setPage(1); selection.clear(); }}
-          options={STATUSES}
-          testId="select-opp-status"
-          includeBlank
-        />
-        <MultiFilterSelect
-          label="Stage"
-          selected={stages}
-          onChange={(v) => { setStages(v); setPage(1); selection.clear(); }}
-          options={STAGES}
-          testId="select-opp-stage"
-          includeBlank
-        />
-        <MultiFilterSelect
-          label="Type"
-          selected={types}
-          onChange={(v) => { setTypes(v); setPage(1); selection.clear(); }}
-          options={TYPES}
-          testId="select-opp-type"
-          includeBlank
-        />
-        <FiscalYearMultiSelect
-          selected={fiscalYears}
-          onChange={(v) => { setFiscalYears(v); setPage(1); selection.clear(); }}
-        />
-        <OwnerMultiFilter
-          selected={owners}
-          onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
-          testId="select-opp-owner"
-        />
+        {visibleFilters.map((f) => (
+          <div key={f.key}>{f.render()}</div>
+        ))}
         {hasActiveFilters && (
           <Button
             variant="ghost"
@@ -489,6 +627,9 @@ export default function Opportunities({
               setTypes([]);
               setFiscalYears([]);
               setOwners([]);
+              setPaidPresence(undefined);
+              setCoveredFysPresence(undefined);
+              setEntitiesPresence(undefined);
               setPage(1);
               selection.clear();
             }}
@@ -497,7 +638,12 @@ export default function Opportunities({
           </Button>
         )}
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-end gap-2">
+          <FiltersMenu
+            registry={filterRegistry}
+            state={filtersState}
+            onChange={setFiltersState}
+          />
           <ColumnsMenu
             registry={registry}
             state={columnsState}

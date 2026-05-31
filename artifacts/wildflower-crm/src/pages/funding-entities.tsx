@@ -17,7 +17,10 @@ import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
 import { SavedViewsBar } from "@/components/saved-views-bar";
 import { ColumnsMenu } from "@/components/columns-menu";
+import { FiltersMenu } from "@/components/filters-menu";
 import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
+import { resolveFilters, type FilterDef, type FiltersState } from "@/lib/filters";
+import { PresenceFilter, type PresenceValue } from "@/components/presence-filter";
 import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
@@ -280,9 +283,16 @@ export default function FundingEntities() {
   const [connectionStatuses, setConnectionStatuses] = usePersistedState<string[]>("wf.list.funders.connectionStatuses", []);
   const [priorities, setPriorities] = usePersistedState<string[]>("wf.list.funders.priorities", []);
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.funders.owners", []);
+  const [lifetimeGivingPresence, setLifetimeGivingPresence] = usePersistedState<PresenceValue>("wf.list.funders.f.lifetimeGiving", undefined);
+  const [openAsksPresence, setOpenAsksPresence] = usePersistedState<PresenceValue>("wf.list.funders.f.openAsks", undefined);
+  const [primaryContactPresence, setPrimaryContactPresence] = usePersistedState<PresenceValue>("wf.list.funders.f.primaryContact", undefined);
   const [page, setPage] = usePersistedState<number>("wf.list.funders.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     "wf.list.funders.columns",
+    null,
+  );
+  const [filtersState, setFiltersState] = usePersistedState<FiltersState | null>(
+    "wf.list.funders.filters",
     null,
   );
   const selection = useRowSelection();
@@ -306,6 +316,9 @@ export default function FundingEntities() {
       ? { priority: [...priorities].sort() as Priority[] }
       : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
+    ...(lifetimeGivingPresence ? { lifetimeGivingPresence } : {}),
+    ...(openAsksPresence ? { openAsksPresence } : {}),
+    ...(primaryContactPresence ? { primaryContactPresence } : {}),
   };
 
   const { data, isLoading, isError, error } = useListFunders(params, {
@@ -324,6 +337,149 @@ export default function FundingEntities() {
     [registry, columnsState],
   );
   const colSpan = visibleCols.length + 1;
+
+  const sortedDefaultActiveStatuses = [...DEFAULT_ACTIVE_STATUSES].sort().join(",");
+  const sameDefaultActiveStatuses =
+    [...activeStatuses].sort().join(",") === sortedDefaultActiveStatuses;
+  const sortedDefaultSubtypes = [...DEFAULT_SUBTYPES].sort().join(",");
+  const sameDefaultSubtypes =
+    [...subtypes].sort().join(",") === sortedDefaultSubtypes;
+
+  // Filter registry — enum filters default visible; presence filters on
+  // computed columns are opt-in (defaultVisible:false). Each def's
+  // `clear` resets its value so hiding an active filter stops narrowing.
+  const filterRegistry = useMemo<FilterDef[]>(
+    () => [
+      {
+        key: "subtype",
+        label: "Subtype",
+        active: !sameDefaultSubtypes,
+        clear: () => { setSubtypes(DEFAULT_SUBTYPES); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Subtype"
+            selected={subtypes}
+            onChange={(v) => { setSubtypes(v); setPage(1); selection.clear(); }}
+            options={SUBTYPES}
+            testId="select-subtype"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "activeStatus",
+        label: "Active status",
+        active: !sameDefaultActiveStatuses,
+        clear: () => { setActiveStatuses(DEFAULT_ACTIVE_STATUSES); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Active status"
+            selected={activeStatuses}
+            onChange={(v) => { setActiveStatuses(v); setPage(1); selection.clear(); }}
+            options={ACTIVE_STATUSES}
+            testId="select-active-status"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "connection",
+        label: "Connection",
+        active: connectionStatuses.length > 0,
+        clear: () => { setConnectionStatuses([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Connection"
+            selected={connectionStatuses}
+            onChange={(v) => { setConnectionStatuses(v); setPage(1); selection.clear(); }}
+            options={CONNECTION_STATUSES}
+            testId="select-connection-status"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "priority",
+        label: "Priority",
+        active: priorities.length > 0,
+        clear: () => { setPriorities([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Priority"
+            selected={priorities}
+            onChange={(v) => { setPriorities(v); setPage(1); selection.clear(); }}
+            options={PRIORITIES}
+            testId="select-priority"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "owner",
+        label: "Owner",
+        active: owners.length > 0,
+        clear: () => { setOwners([]); setPage(1); selection.clear(); },
+        render: () => (
+          <OwnerMultiFilter
+            selected={owners}
+            onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
+            testId="select-funder-owner"
+          />
+        ),
+      },
+      {
+        key: "lifetimeGiving",
+        label: "Lifetime giving",
+        defaultVisible: false,
+        active: !!lifetimeGivingPresence,
+        clear: () => { setLifetimeGivingPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Lifetime giving"
+            value={lifetimeGivingPresence}
+            onChange={(v) => { setLifetimeGivingPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-lifetime-giving"
+          />
+        ),
+      },
+      {
+        key: "openAsks",
+        label: "Open asks",
+        defaultVisible: false,
+        active: !!openAsksPresence,
+        clear: () => { setOpenAsksPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Open asks"
+            value={openAsksPresence}
+            onChange={(v) => { setOpenAsksPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-open-asks"
+          />
+        ),
+      },
+      {
+        key: "primaryContact",
+        label: "Primary contact",
+        defaultVisible: false,
+        active: !!primaryContactPresence,
+        clear: () => { setPrimaryContactPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Primary contact"
+            value={primaryContactPresence}
+            onChange={(v) => { setPrimaryContactPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-primary-contact"
+          />
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses],
+  );
+  const visibleFilters = useMemo(
+    () => resolveFilters(filterRegistry, filtersState),
+    [filterRegistry, filtersState],
+  );
 
   const CAPACITY_ORDER: Record<string, number> = {
     tier_1k_10k: 0, tier_10k_50k: 1, tier_50k_250k: 2, tier_250k_1m: 3, tier_1m_plus: 4,
@@ -367,19 +523,16 @@ export default function FundingEntities() {
     return sortedRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   }, [sortActive, sortedRows, page]);
 
-  const sortedDefaultActiveStatuses = [...DEFAULT_ACTIVE_STATUSES].sort().join(",");
-  const sameDefaultActiveStatuses =
-    [...activeStatuses].sort().join(",") === sortedDefaultActiveStatuses;
-  const sortedDefaultSubtypes = [...DEFAULT_SUBTYPES].sort().join(",");
-  const sameDefaultSubtypes =
-    [...subtypes].sort().join(",") === sortedDefaultSubtypes;
   const hasActiveFilters =
     !!search ||
     !sameDefaultSubtypes ||
     !sameDefaultActiveStatuses ||
     connectionStatuses.length > 0 ||
     priorities.length > 0 ||
-    owners.length > 0;
+    owners.length > 0 ||
+    !!lifetimeGivingPresence ||
+    !!openAsksPresence ||
+    !!primaryContactPresence;
 
   // ─── Saved views ─────────────────────────────────────────────────
   type FundersView = {
@@ -389,8 +542,12 @@ export default function FundingEntities() {
     connectionStatuses: string[];
     priorities: string[];
     owners: string[];
+    lifetimeGivingPresence: PresenceValue;
+    openAsksPresence: PresenceValue;
+    primaryContactPresence: PresenceValue;
     sort: SortState;
     columns: ColumnsState | null;
+    filters: FiltersState | null;
   };
   const currentView: FundersView = {
     search,
@@ -399,8 +556,12 @@ export default function FundingEntities() {
     connectionStatuses,
     priorities,
     owners,
+    lifetimeGivingPresence,
+    openAsksPresence,
+    primaryContactPresence,
     sort: ts.sort,
     columns: columnsState,
+    filters: filtersState,
   };
   const clearAll = () => {
     setSearch("");
@@ -409,6 +570,9 @@ export default function FundingEntities() {
     setConnectionStatuses([]);
     setPriorities([]);
     setOwners([]);
+    setLifetimeGivingPresence(undefined);
+    setOpenAsksPresence(undefined);
+    setPrimaryContactPresence(undefined);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -423,8 +587,12 @@ export default function FundingEntities() {
       setConnectionStatuses(s.connectionStatuses ?? []);
       setPriorities(s.priorities ?? []);
       setOwners(s.owners ?? []);
+      setLifetimeGivingPresence(s.lifetimeGivingPresence ?? undefined);
+      setOpenAsksPresence(s.openAsksPresence ?? undefined);
+      setPrimaryContactPresence(s.primaryContactPresence ?? undefined);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
+      setFiltersState(s.filters ?? null);
       setPage(1);
       selection.clear();
     },
@@ -438,8 +606,12 @@ export default function FundingEntities() {
         (s.connectionStatuses?.length ?? 0) === 0 &&
         (s.priorities?.length ?? 0) === 0 &&
         (s.owners?.length ?? 0) === 0 &&
+        !s.lifetimeGivingPresence &&
+        !s.openAsksPresence &&
+        !s.primaryContactPresence &&
         (s.sort?.key ?? null) === null &&
-        (s.columns ?? null) === null
+        (s.columns ?? null) === null &&
+        (s.filters ?? null) === null
       );
     },
   });
@@ -460,7 +632,7 @@ export default function FundingEntities() {
 
       <SavedViewsBar
         controller={viewsCtrl}
-        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null}
+        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null || filtersState !== null}
         onClearAll={clearAll}
       />
 
@@ -479,43 +651,9 @@ export default function FundingEntities() {
           />
         </div>
 
-        <MultiFilterSelect
-          label="Subtype"
-          selected={subtypes}
-          onChange={(v) => { setSubtypes(v); setPage(1); selection.clear(); }}
-          options={SUBTYPES}
-          testId="select-subtype"
-          includeBlank
-        />
-        <MultiFilterSelect
-          label="Active status"
-          selected={activeStatuses}
-          onChange={(v) => { setActiveStatuses(v); setPage(1); selection.clear(); }}
-          options={ACTIVE_STATUSES}
-          testId="select-active-status"
-          includeBlank
-        />
-        <MultiFilterSelect
-          label="Connection"
-          selected={connectionStatuses}
-          onChange={(v) => { setConnectionStatuses(v); setPage(1); selection.clear(); }}
-          options={CONNECTION_STATUSES}
-          testId="select-connection-status"
-          includeBlank
-        />
-        <MultiFilterSelect
-          label="Priority"
-          selected={priorities}
-          onChange={(v) => { setPriorities(v); setPage(1); selection.clear(); }}
-          options={PRIORITIES}
-          testId="select-priority"
-          includeBlank
-        />
-        <OwnerMultiFilter
-          selected={owners}
-          onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
-          testId="select-funder-owner"
-        />
+        {visibleFilters.map((f) => (
+          <div key={f.key}>{f.render()}</div>
+        ))}
 
         {hasActiveFilters && (
           <Button
@@ -528,6 +666,9 @@ export default function FundingEntities() {
               setConnectionStatuses([]);
               setPriorities([]);
               setOwners([]);
+              setLifetimeGivingPresence(undefined);
+              setOpenAsksPresence(undefined);
+              setPrimaryContactPresence(undefined);
               setPage(1);
               selection.clear();
             }}
@@ -536,7 +677,12 @@ export default function FundingEntities() {
           </Button>
         )}
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-end gap-2">
+          <FiltersMenu
+            registry={filterRegistry}
+            state={filtersState}
+            onChange={setFiltersState}
+          />
           <ColumnsMenu
             registry={registry}
             state={columnsState}

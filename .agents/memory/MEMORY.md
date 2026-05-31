@@ -1,5 +1,6 @@
 - [wildflower-crm detail routes](wildflower-crm-routes.md) — funders live at /funding-entities, not /funders; pledge detail inherits opportunity.
 - [wildflower-crm activity feed scoping](wildflower-activity-feed-scoping.md) — keep notes/tasks scope separate from donor-relationship scope; API list filters AND together.
+- [wildflower list-page chooser pattern](wildflower-list-chooser-pattern.md) — 4 list pages share filter/column choosers; saved views persist null at default & use known/hidden so opt-in filters stay hidden for predating views.
 - [media-mention GDELT dedupe](media-ingest-dedupe.md) — dedupe must stay DB-atomic ON CONFLICT upsert; manual script goes through the lock; never AI-summarize auto headlines.
 - [api-server runs a built bundle](wildflower-api-server-build.md) — schema/DB drift (e.g. "column X does not exist" 500) may be a stale build; restart rebuilds, check newest log.
 - [api-zod must stay env-neutral](api-zod-cross-env.md) — imported by server AND browser; no URL/node/DOM globals; validate via pure regex + superRefine, PATCH re-validates merged state.

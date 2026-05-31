@@ -760,6 +760,24 @@ export const ListFundersQueryParams = zod.object({
     .describe(
       "Filter to direct child funding entities of the given parent funder.",
     ),
+  lifetimeGivingPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).",
+    ),
+  openAsksPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).",
+    ),
+  primaryContactPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Presence filter on primary contact (`has` = set, `blank` = none).",
+    ),
   subtype: zod.array(zod.coerce.string()).optional(),
   activeStatus: zod.array(zod.coerce.string()).optional(),
   connectionStatus: zod.array(zod.coerce.string()).optional(),
@@ -2127,6 +2145,30 @@ export const ListPeopleQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   deceased: zod.coerce.boolean().optional(),
   regionId: zod.coerce.string().optional(),
+  lifetimeGivingPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).",
+    ),
+  lastGiftPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Rollup presence filter on most-recent gift date (`has` = any gift, `blank` = none).",
+    ),
+  openAsksPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).",
+    ),
+  activeAffiliationPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Presence filter on current funder\/organization roles (`has` = any current role, `blank` = none).",
+    ),
   capacityRating: zod
     .array(zod.coerce.string())
     .optional()
@@ -3147,6 +3189,24 @@ export const listOpportunitiesAndPledgesQueryPageDefault = 1;
 
 export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   search: zod.coerce.string().optional(),
+  paidPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Rollup presence filter on paid amount (`has` = >0, `blank` = none).",
+    ),
+  coveredFysPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Presence filter on covered fiscal years (`has` = any, `blank` = none).",
+    ),
+  entitiesPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Presence filter on linked entities (`has` = any allocation, `blank` = none).",
+    ),
   status: zod.array(zod.coerce.string()).optional(),
   stage: zod.array(zod.coerce.string()).optional(),
   pledgeView: zod
@@ -3854,6 +3914,22 @@ export const listGiftsAndPaymentsQueryPageDefault = 1;
 
 export const ListGiftsAndPaymentsQueryParams = zod.object({
   search: zod.coerce.string().optional(),
+  entitiesPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Presence filter on linked entities (`has` = any allocation, `blank` = none).",
+    ),
+  usagesPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Presence filter on display usages (`has` = any, `blank` = none).",
+    ),
+  grantYearsPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe("Presence filter on grant years (`has` = any, `blank` = none)."),
   type: zod.array(zod.coerce.string()).optional(),
   funderId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),

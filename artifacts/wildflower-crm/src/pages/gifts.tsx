@@ -16,7 +16,10 @@ import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
 import { SavedViewsBar } from "@/components/saved-views-bar";
 import { ColumnsMenu } from "@/components/columns-menu";
+import { FiltersMenu } from "@/components/filters-menu";
 import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
+import { resolveFilters, type FilterDef, type FiltersState } from "@/lib/filters";
+import { PresenceFilter, type PresenceValue } from "@/components/presence-filter";
 import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
@@ -160,9 +163,16 @@ export default function Gifts() {
   const [types, setTypes] = usePersistedState<string[]>("wf.list.gifts.types", []);
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.gifts.owners", []);
   const [fiscalYears, setFiscalYears] = usePersistedState<string[]>("wf.list.gifts.fiscalYears", []);
+  const [entitiesPresence, setEntitiesPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.entities", undefined);
+  const [usagesPresence, setUsagesPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.usages", undefined);
+  const [grantYearsPresence, setGrantYearsPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.grantYears", undefined);
   const [page, setPage] = usePersistedState<number>("wf.list.gifts.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     "wf.list.gifts.columns",
+    null,
+  );
+  const [filtersState, setFiltersState] = usePersistedState<FiltersState | null>(
+    "wf.list.gifts.filters",
     null,
   );
   const selection = useRowSelection();
@@ -186,6 +196,9 @@ export default function Gifts() {
     ...(globalEntityIds.length > 0
       ? { entityId: [...globalEntityIds].sort() }
       : {}),
+    ...(entitiesPresence ? { entitiesPresence } : {}),
+    ...(usagesPresence ? { usagesPresence } : {}),
+    ...(grantYearsPresence ? { grantYearsPresence } : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
@@ -210,6 +223,107 @@ export default function Gifts() {
     [registry, columnsState],
   );
   const colSpan = visibleCols.length + 1;
+
+  // Filter registry — enum filters default visible; presence filters on
+  // computed columns are opt-in (defaultVisible:false). Each def's
+  // `clear` resets its value so hiding an active filter stops narrowing.
+  const filterRegistry = useMemo<FilterDef[]>(
+    () => [
+      {
+        key: "type",
+        label: "Type",
+        active: types.length > 0,
+        clear: () => { setTypes([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Type"
+            selected={types}
+            onChange={(v) => { setTypes(v); setPage(1); selection.clear(); }}
+            options={TYPES}
+            testId="select-gift-type"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "owner",
+        label: "Owner",
+        active: owners.length > 0,
+        clear: () => { setOwners([]); setPage(1); selection.clear(); },
+        render: () => (
+          <OwnerMultiFilter
+            selected={owners}
+            onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
+            testId="select-gift-owner"
+          />
+        ),
+      },
+      {
+        key: "fiscalYear",
+        label: "Fiscal year",
+        active: fiscalYears.length > 0,
+        clear: () => { setFiscalYears([]); setPage(1); selection.clear(); },
+        render: () => (
+          <FiscalYearMultiSelect
+            selected={fiscalYears}
+            onChange={(v) => { setFiscalYears(v); setPage(1); selection.clear(); }}
+            testId="select-gift-fiscal-year"
+          />
+        ),
+      },
+      {
+        key: "entities",
+        label: "Entities",
+        defaultVisible: false,
+        active: !!entitiesPresence,
+        clear: () => { setEntitiesPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Entities"
+            value={entitiesPresence}
+            onChange={(v) => { setEntitiesPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-entities"
+          />
+        ),
+      },
+      {
+        key: "usages",
+        label: "Usages",
+        defaultVisible: false,
+        active: !!usagesPresence,
+        clear: () => { setUsagesPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Usages"
+            value={usagesPresence}
+            onChange={(v) => { setUsagesPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-usages"
+          />
+        ),
+      },
+      {
+        key: "grantYears",
+        label: "Grant years",
+        defaultVisible: false,
+        active: !!grantYearsPresence,
+        clear: () => { setGrantYearsPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Grant years"
+            value={grantYearsPresence}
+            onChange={(v) => { setGrantYearsPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-grant-years"
+          />
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence],
+  );
+  const visibleFilters = useMemo(
+    () => resolveFilters(filterRegistry, filtersState),
+    [filterRegistry, filtersState],
+  );
 
   const rows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
@@ -248,22 +362,33 @@ export default function Gifts() {
     types: string[];
     owners: string[];
     fiscalYears: string[];
+    entitiesPresence: PresenceValue;
+    usagesPresence: PresenceValue;
+    grantYearsPresence: PresenceValue;
     sort: SortState;
     columns: ColumnsState | null;
+    filters: FiltersState | null;
   };
   const currentView: GiftsView = {
     search,
     types,
     owners,
     fiscalYears,
+    entitiesPresence,
+    usagesPresence,
+    grantYearsPresence,
     sort: ts.sort,
     columns: columnsState,
+    filters: filtersState,
   };
   const clearAll = () => {
     setSearch("");
     setTypes([]);
     setOwners([]);
     setFiscalYears([]);
+    setEntitiesPresence(undefined);
+    setUsagesPresence(undefined);
+    setGrantYearsPresence(undefined);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -276,8 +401,12 @@ export default function Gifts() {
       setTypes(s.types ?? []);
       setOwners(s.owners ?? []);
       setFiscalYears(s.fiscalYears ?? []);
+      setEntitiesPresence(s.entitiesPresence ?? undefined);
+      setUsagesPresence(s.usagesPresence ?? undefined);
+      setGrantYearsPresence(s.grantYearsPresence ?? undefined);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
+      setFiltersState(s.filters ?? null);
       setPage(1);
       selection.clear();
     },
@@ -286,11 +415,21 @@ export default function Gifts() {
       (s.types?.length ?? 0) === 0 &&
       (s.owners?.length ?? 0) === 0 &&
       (s.fiscalYears?.length ?? 0) === 0 &&
+      !s.entitiesPresence &&
+      !s.usagesPresence &&
+      !s.grantYearsPresence &&
       (s.sort?.key ?? null) === null &&
-      (s.columns ?? null) === null,
+      (s.columns ?? null) === null &&
+      (s.filters ?? null) === null,
   });
   const hasActiveFilters =
-    !!search || types.length > 0 || owners.length > 0 || fiscalYears.length > 0;
+    !!search ||
+    types.length > 0 ||
+    owners.length > 0 ||
+    fiscalYears.length > 0 ||
+    !!entitiesPresence ||
+    !!usagesPresence ||
+    !!grantYearsPresence;
 
   return (
     <div className="space-y-6">
@@ -303,7 +442,7 @@ export default function Gifts() {
 
       <SavedViewsBar
         controller={viewsCtrl}
-        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null}
+        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null || filtersState !== null}
         onClearAll={clearAll}
       />
 
@@ -317,25 +456,10 @@ export default function Gifts() {
             data-testid="input-search-gifts"
           />
         </div>
-        <MultiFilterSelect
-          label="Type"
-          selected={types}
-          onChange={(v) => { setTypes(v); setPage(1); selection.clear(); }}
-          options={TYPES}
-          testId="select-gift-type"
-          includeBlank
-        />
-        <OwnerMultiFilter
-          selected={owners}
-          onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
-          testId="select-gift-owner"
-        />
-        <FiscalYearMultiSelect
-          selected={fiscalYears}
-          onChange={(v) => { setFiscalYears(v); setPage(1); selection.clear(); }}
-          testId="select-gift-fiscal-year"
-        />
-        {(search || types.length > 0 || owners.length > 0 || fiscalYears.length > 0) && (
+        {visibleFilters.map((f) => (
+          <div key={f.key}>{f.render()}</div>
+        ))}
+        {hasActiveFilters && (
           <Button
             variant="ghost"
             size="sm"
@@ -344,6 +468,9 @@ export default function Gifts() {
               setTypes([]);
               setOwners([]);
               setFiscalYears([]);
+              setEntitiesPresence(undefined);
+              setUsagesPresence(undefined);
+              setGrantYearsPresence(undefined);
               setPage(1);
               selection.clear();
             }}
@@ -352,7 +479,12 @@ export default function Gifts() {
           </Button>
         )}
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-end gap-2">
+          <FiltersMenu
+            registry={filterRegistry}
+            state={filtersState}
+            onChange={setFiltersState}
+          />
           <ColumnsMenu
             registry={registry}
             state={columnsState}

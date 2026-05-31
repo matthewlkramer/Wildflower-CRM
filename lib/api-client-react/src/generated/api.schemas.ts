@@ -2543,6 +2543,18 @@ export type ListFundersParams = {
    * Filter to direct child funding entities of the given parent funder.
    */
   parentFunderId?: string;
+  /**
+   * Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).
+   */
+  lifetimeGivingPresence?: ListFundersLifetimeGivingPresence;
+  /**
+   * Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).
+   */
+  openAsksPresence?: ListFundersOpenAsksPresence;
+  /**
+   * Presence filter on primary contact (`has` = set, `blank` = none).
+   */
+  primaryContactPresence?: ListFundersPrimaryContactPresence;
   subtype?: string[];
   activeStatus?: string[];
   connectionStatus?: string[];
@@ -2566,6 +2578,30 @@ Accepts the literal `__blank__` to match rows with no priority set.
    */
   page?: PageParameter;
 };
+
+export type ListFundersLifetimeGivingPresence =
+  (typeof ListFundersLifetimeGivingPresence)[keyof typeof ListFundersLifetimeGivingPresence];
+
+export const ListFundersLifetimeGivingPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
+
+export type ListFundersOpenAsksPresence =
+  (typeof ListFundersOpenAsksPresence)[keyof typeof ListFundersOpenAsksPresence];
+
+export const ListFundersOpenAsksPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
+
+export type ListFundersPrimaryContactPresence =
+  (typeof ListFundersPrimaryContactPresence)[keyof typeof ListFundersPrimaryContactPresence];
+
+export const ListFundersPrimaryContactPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
 
 export type ListOrganizationsParams = {
   search?: string;
@@ -2614,6 +2650,22 @@ export type ListPeopleParams = {
   deceased?: boolean;
   regionId?: string;
   /**
+   * Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).
+   */
+  lifetimeGivingPresence?: ListPeopleLifetimeGivingPresence;
+  /**
+   * Rollup presence filter on most-recent gift date (`has` = any gift, `blank` = none).
+   */
+  lastGiftPresence?: ListPeopleLastGiftPresence;
+  /**
+   * Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).
+   */
+  openAsksPresence?: ListPeopleOpenAsksPresence;
+  /**
+   * Presence filter on current funder/organization roles (`has` = any current role, `blank` = none).
+   */
+  activeAffiliationPresence?: ListPeopleActiveAffiliationPresence;
+  /**
  * Capacity-rating slugs (see CapacityRating). Accepts the
 literal `__blank__` to match rows with no capacity rating set.
 
@@ -2649,6 +2701,38 @@ Accepts the literal `__blank__` to match rows with no priority set.
    */
   page?: PageParameter;
 };
+
+export type ListPeopleLifetimeGivingPresence =
+  (typeof ListPeopleLifetimeGivingPresence)[keyof typeof ListPeopleLifetimeGivingPresence];
+
+export const ListPeopleLifetimeGivingPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
+
+export type ListPeopleLastGiftPresence =
+  (typeof ListPeopleLastGiftPresence)[keyof typeof ListPeopleLastGiftPresence];
+
+export const ListPeopleLastGiftPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
+
+export type ListPeopleOpenAsksPresence =
+  (typeof ListPeopleOpenAsksPresence)[keyof typeof ListPeopleOpenAsksPresence];
+
+export const ListPeopleOpenAsksPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
+
+export type ListPeopleActiveAffiliationPresence =
+  (typeof ListPeopleActiveAffiliationPresence)[keyof typeof ListPeopleActiveAffiliationPresence];
+
+export const ListPeopleActiveAffiliationPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
 
 export type ListPeopleEntityRolesParams = {
   personId?: string;
@@ -2716,6 +2800,18 @@ export type ListAddressesParams = {
 
 export type ListOpportunitiesAndPledgesParams = {
   search?: string;
+  /**
+   * Rollup presence filter on paid amount (`has` = >0, `blank` = none).
+   */
+  paidPresence?: ListOpportunitiesAndPledgesPaidPresence;
+  /**
+   * Presence filter on covered fiscal years (`has` = any, `blank` = none).
+   */
+  coveredFysPresence?: ListOpportunitiesAndPledgesCoveredFysPresence;
+  /**
+   * Presence filter on linked entities (`has` = any allocation, `blank` = none).
+   */
+  entitiesPresence?: ListOpportunitiesAndPledgesEntitiesPresence;
   status?: string[];
   stage?: string[];
   /**
@@ -2762,6 +2858,30 @@ years.
   page?: PageParameter;
 };
 
+export type ListOpportunitiesAndPledgesPaidPresence =
+  (typeof ListOpportunitiesAndPledgesPaidPresence)[keyof typeof ListOpportunitiesAndPledgesPaidPresence];
+
+export const ListOpportunitiesAndPledgesPaidPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
+
+export type ListOpportunitiesAndPledgesCoveredFysPresence =
+  (typeof ListOpportunitiesAndPledgesCoveredFysPresence)[keyof typeof ListOpportunitiesAndPledgesCoveredFysPresence];
+
+export const ListOpportunitiesAndPledgesCoveredFysPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
+
+export type ListOpportunitiesAndPledgesEntitiesPresence =
+  (typeof ListOpportunitiesAndPledgesEntitiesPresence)[keyof typeof ListOpportunitiesAndPledgesEntitiesPresence];
+
+export const ListOpportunitiesAndPledgesEntitiesPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
+
 export type ListOpportunitiesAndPledgesPledgeView =
   (typeof ListOpportunitiesAndPledgesPledgeView)[keyof typeof ListOpportunitiesAndPledgesPledgeView];
 
@@ -2785,6 +2905,18 @@ export type ListPledgeAllocationsParams = {
 
 export type ListGiftsAndPaymentsParams = {
   search?: string;
+  /**
+   * Presence filter on linked entities (`has` = any allocation, `blank` = none).
+   */
+  entitiesPresence?: ListGiftsAndPaymentsEntitiesPresence;
+  /**
+   * Presence filter on display usages (`has` = any, `blank` = none).
+   */
+  usagesPresence?: ListGiftsAndPaymentsUsagesPresence;
+  /**
+   * Presence filter on grant years (`has` = any, `blank` = none).
+   */
+  grantYearsPresence?: ListGiftsAndPaymentsGrantYearsPresence;
   type?: string[];
   funderId?: string;
   householdId?: string;
@@ -2816,6 +2948,30 @@ fiscal years.
    */
   page?: PageParameter;
 };
+
+export type ListGiftsAndPaymentsEntitiesPresence =
+  (typeof ListGiftsAndPaymentsEntitiesPresence)[keyof typeof ListGiftsAndPaymentsEntitiesPresence];
+
+export const ListGiftsAndPaymentsEntitiesPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
+
+export type ListGiftsAndPaymentsUsagesPresence =
+  (typeof ListGiftsAndPaymentsUsagesPresence)[keyof typeof ListGiftsAndPaymentsUsagesPresence];
+
+export const ListGiftsAndPaymentsUsagesPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
+
+export type ListGiftsAndPaymentsGrantYearsPresence =
+  (typeof ListGiftsAndPaymentsGrantYearsPresence)[keyof typeof ListGiftsAndPaymentsGrantYearsPresence];
+
+export const ListGiftsAndPaymentsGrantYearsPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
 
 export type ListGiftAllocationsParams = {
   giftId?: string;

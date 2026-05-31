@@ -301,6 +301,11 @@ paths:
       parameters:
         - { name: search, in: query, schema: { type: string } }
         - { name: parentFunderId, in: query, description: "Filter to direct child funding entities of the given parent funder.", schema: { type: string } }
+        # Presence filters on computed rollup fields. `has` keeps rows with a
+        # value, `blank` keeps rows with none. Omit for no constraint.
+        - { name: lifetimeGivingPresence, in: query, required: false, description: "Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: openAsksPresence, in: query, required: false, description: "Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: primaryContactPresence, in: query, required: false, description: "Presence filter on primary contact (`has` = set, `blank` = none).", schema: { type: string, enum: [has, blank] } }
         # Filter params on nullable columns accept the literal `__blank__`
         # to match rows where the column is NULL. Item type is plain string
         # (not the enum ref) so the sentinel passes generated zod validation.
@@ -508,6 +513,12 @@ paths:
         - { name: search, in: query, schema: { type: string } }
         - { name: deceased, in: query, schema: { type: boolean } }
         - { name: regionId, in: query, schema: { type: string } }
+        # Presence filters on computed rollup fields. `has` keeps rows with a
+        # value, `blank` keeps rows with none. Omit for no constraint.
+        - { name: lifetimeGivingPresence, in: query, required: false, description: "Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: lastGiftPresence, in: query, required: false, description: "Rollup presence filter on most-recent gift date (`has` = any gift, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: openAsksPresence, in: query, required: false, description: "Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: activeAffiliationPresence, in: query, required: false, description: "Presence filter on current funder/organization roles (`has` = any current role, `blank` = none).", schema: { type: string, enum: [has, blank] } }
         - name: capacityRating
           in: query
           description: |
@@ -731,6 +742,11 @@ paths:
       tags: [opportunities-and-pledges]
       parameters:
         - { name: search, in: query, schema: { type: string } }
+        # Presence filters on computed rollup fields. `has` keeps rows with a
+        # value, `blank` keeps rows with none. Omit for no constraint.
+        - { name: paidPresence, in: query, required: false, description: "Rollup presence filter on paid amount (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: coveredFysPresence, in: query, required: false, description: "Presence filter on covered fiscal years (`has` = any, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: entitiesPresence, in: query, required: false, description: "Presence filter on linked entities (`has` = any allocation, `blank` = none).", schema: { type: string, enum: [has, blank] } }
         # Filter params on nullable enum columns accept the literal
         # `__blank__` to match rows where the column is NULL. Item type is
         # plain string so the sentinel passes generated zod validation.
@@ -868,6 +884,11 @@ paths:
       tags: [gifts-and-payments]
       parameters:
         - { name: search, in: query, schema: { type: string } }
+        # Presence filters on computed rollup fields. `has` keeps rows with a
+        # value, `blank` keeps rows with none. Omit for no constraint.
+        - { name: entitiesPresence, in: query, required: false, description: "Presence filter on linked entities (`has` = any allocation, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: usagesPresence, in: query, required: false, description: "Presence filter on display usages (`has` = any, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: grantYearsPresence, in: query, required: false, description: "Presence filter on grant years (`has` = any, `blank` = none).", schema: { type: string, enum: [has, blank] } }
         - name: type
           in: query
           style: form

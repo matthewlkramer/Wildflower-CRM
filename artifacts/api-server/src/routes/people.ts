@@ -33,42 +33,57 @@ router.use(requireAuth);
 // any subquery whose own FROM table also has an `id` column
 // (people_entity_roles, opportunities_and_pledges, funders, …).
 const PEOPLE_ID = sql.raw(`"people"."id"`);
+
+// Rollup expressions are defined once and reused by both the SELECT
+// (cast/aliased) and the presence WHERE filters so the two can never
+// drift. Each is a correlated fragment scoped to `people.id`.
+const peopleLifetimeGivingExpr = sql`(
+  COALESCE(
+    (SELECT SUM(amount) FROM gifts_and_payments
+      WHERE individual_giver_person_id = ${PEOPLE_ID}),
+    0
+  ) + COALESCE(
+    (SELECT SUM(amount) FROM gifts_and_payments
+      WHERE household_id IN (
+        SELECT household_id FROM people_entity_roles
+        WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
+      )),
+    0
+  )
+)`;
+const peopleMostRecentGiftExpr = sql`(
+  SELECT MAX(d) FROM (
+    SELECT MAX(date_received) AS d FROM gifts_and_payments
+      WHERE individual_giver_person_id = ${PEOPLE_ID}
+    UNION ALL
+    SELECT MAX(date_received) AS d FROM gifts_and_payments
+      WHERE household_id IN (
+        SELECT household_id FROM people_entity_roles
+        WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
+      )
+  ) AS _gift_dates
+)`;
+const peopleOpenOppCountExpr = sql`(
+  SELECT COUNT(*)::int FROM opportunities_and_pledges
+    WHERE individual_giver_person_id = ${PEOPLE_ID} AND status = 'open'
+)`;
+// True when the person holds at least one current funder or org role.
+const peopleActiveAffiliationExists = sql`EXISTS (
+  SELECT 1 FROM people_entity_roles per
+  WHERE per.person_id = ${PEOPLE_ID}
+    AND per.current = 'current'
+    AND (per.funder_id IS NOT NULL OR per.organization_id IS NOT NULL)
+)`;
+
 const peopleListSelect = {
   ...getTableColumns(people),
-  lifetimeGiving: sql<string | null>`(
-    COALESCE(
-      (SELECT SUM(amount) FROM gifts_and_payments
-        WHERE individual_giver_person_id = ${PEOPLE_ID}),
-      0
-    ) + COALESCE(
-      (SELECT SUM(amount) FROM gifts_and_payments
-        WHERE household_id IN (
-          SELECT household_id FROM people_entity_roles
-          WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
-        )),
-      0
-    )
-  )::text`.as("lifetime_giving"),
+  lifetimeGiving: sql<string | null>`${peopleLifetimeGivingExpr}::text`.as("lifetime_giving"),
   // Postgres GREATEST returns NULL if any arg is NULL, which is wrong
   // here (a person with only direct gifts and no household gifts would
   // get NULL). Take MAX over a UNION of both sources instead — MAX
   // naturally ignores NULLs.
-  mostRecentGiftDate: sql<string | null>`(
-    SELECT MAX(d) FROM (
-      SELECT MAX(date_received) AS d FROM gifts_and_payments
-        WHERE individual_giver_person_id = ${PEOPLE_ID}
-      UNION ALL
-      SELECT MAX(date_received) AS d FROM gifts_and_payments
-        WHERE household_id IN (
-          SELECT household_id FROM people_entity_roles
-          WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
-        )
-    ) AS _gift_dates
-  )`.as("most_recent_gift_date"),
-  openOpportunityCount: sql<number>`(
-    SELECT COUNT(*)::int FROM opportunities_and_pledges
-      WHERE individual_giver_person_id = ${PEOPLE_ID} AND status = 'open'
-  )`.as("open_opportunity_count"),
+  mostRecentGiftDate: sql<string | null>`${peopleMostRecentGiftExpr}`.as("most_recent_gift_date"),
+  openOpportunityCount: sql<number>`${peopleOpenOppCountExpr}`.as("open_opportunity_count"),
   // DISTINCT to dedupe in case a person has multiple current role rows
   // at the same funder (different role titles, etc.).
   activeFunderNames: sql<string[] | null>`(
@@ -166,6 +181,15 @@ router.get(
     } else if (priorityFilter.values.length > 0) {
       filters.push(inArray(people.priority, priorityFilter.values as never[]));
     }
+    // Presence filters on computed rollup fields (has value vs blank).
+    if (q.lifetimeGivingPresence === "has") filters.push(sql`${peopleLifetimeGivingExpr} > 0`);
+    else if (q.lifetimeGivingPresence === "blank") filters.push(sql`${peopleLifetimeGivingExpr} <= 0`);
+    if (q.lastGiftPresence === "has") filters.push(sql`${peopleMostRecentGiftExpr} IS NOT NULL`);
+    else if (q.lastGiftPresence === "blank") filters.push(sql`${peopleMostRecentGiftExpr} IS NULL`);
+    if (q.openAsksPresence === "has") filters.push(sql`${peopleOpenOppCountExpr} > 0`);
+    else if (q.openAsksPresence === "blank") filters.push(sql`${peopleOpenOppCountExpr} = 0`);
+    if (q.activeAffiliationPresence === "has") filters.push(peopleActiveAffiliationExists);
+    else if (q.activeAffiliationPresence === "blank") filters.push(sql`NOT ${peopleActiveAffiliationExists}`);
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

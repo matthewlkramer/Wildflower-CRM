@@ -33,14 +33,27 @@ router.use(requireAuth);
 // subqueries whose own FROM table has an `id` column (people_entity_roles,
 // opportunities_and_pledges, joined people, …).
 const FUNDERS_ID = sql.raw(`"funders"."id"`);
+
+// Rollup expressions reused by both the SELECT and the presence WHERE
+// filters so the two can't drift. Each is correlated to `funders.id`.
+const fundersPrimaryContactIdExpr = sql`(
+  SELECT per.person_id FROM people_entity_roles per
+  WHERE per.funder_id = ${FUNDERS_ID} AND per.primary_contact = true
+  ORDER BY per.updated_at DESC
+  LIMIT 1
+)`;
+const fundersLifetimeGivingExpr = sql`(
+  SELECT COALESCE(SUM(amount), 0) FROM gifts_and_payments
+    WHERE funder_id = ${FUNDERS_ID}
+)`;
+const fundersOpenOppCountExpr = sql`(
+  SELECT COUNT(*)::int FROM opportunities_and_pledges
+    WHERE funder_id = ${FUNDERS_ID} AND status = 'open'
+)`;
+
 const fundersListSelect = {
   ...getTableColumns(funders),
-  primaryContactPersonId: sql<string | null>`(
-    SELECT per.person_id FROM people_entity_roles per
-    WHERE per.funder_id = ${FUNDERS_ID} AND per.primary_contact = true
-    ORDER BY per.updated_at DESC
-    LIMIT 1
-  )`.as("primary_contact_person_id"),
+  primaryContactPersonId: sql<string | null>`${fundersPrimaryContactIdExpr}`.as("primary_contact_person_id"),
   primaryContactPersonName: sql<string | null>`(
     SELECT COALESCE(
       NULLIF(TRIM(p.full_name), ''),
@@ -52,14 +65,8 @@ const fundersListSelect = {
     ORDER BY per.updated_at DESC
     LIMIT 1
   )`.as("primary_contact_person_name"),
-  lifetimeGiving: sql<string | null>`(
-    SELECT COALESCE(SUM(amount), 0)::text FROM gifts_and_payments
-      WHERE funder_id = ${FUNDERS_ID}
-  )`.as("lifetime_giving"),
-  openOpportunityCount: sql<number>`(
-    SELECT COUNT(*)::int FROM opportunities_and_pledges
-      WHERE funder_id = ${FUNDERS_ID} AND status = 'open'
-  )`.as("open_opportunity_count"),
+  lifetimeGiving: sql<string | null>`${fundersLifetimeGivingExpr}::text`.as("lifetime_giving"),
+  openOpportunityCount: sql<number>`${fundersOpenOppCountExpr}`.as("open_opportunity_count"),
 };
 
 router.get(
@@ -113,6 +120,13 @@ router.get(
       else if (f.wantsBlank) filters.push(isNull(funders.priority));
       else if (f.values.length > 0) filters.push(inArray(funders.priority, f.values as never[]));
     }
+    // Presence filters on computed rollup fields (has value vs blank).
+    if (q.lifetimeGivingPresence === "has") filters.push(sql`${fundersLifetimeGivingExpr} > 0`);
+    else if (q.lifetimeGivingPresence === "blank") filters.push(sql`${fundersLifetimeGivingExpr} <= 0`);
+    if (q.openAsksPresence === "has") filters.push(sql`${fundersOpenOppCountExpr} > 0`);
+    else if (q.openAsksPresence === "blank") filters.push(sql`${fundersOpenOppCountExpr} = 0`);
+    if (q.primaryContactPresence === "has") filters.push(sql`${fundersPrimaryContactIdExpr} IS NOT NULL`);
+    else if (q.primaryContactPresence === "blank") filters.push(sql`${fundersPrimaryContactIdExpr} IS NULL`);
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
