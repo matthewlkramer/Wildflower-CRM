@@ -5,12 +5,15 @@ import {
   useUpdatePeopleEntityRole,
   useDeletePeopleEntityRole,
   useUpdateFunder,
+  useCreateFunder,
+  useCreateOrganization,
   getGetPersonQueryKey,
   getGetFunderQueryKey,
   getGetOrganizationQueryKey,
   getGetHouseholdQueryKey,
   getGetPaymentIntermediaryQueryKey,
   getListFundersQueryKey,
+  getListOrganizationsQueryKey,
   getListPeopleEntityRolesQueryKey,
   EntityRoleType,
   PeopleEntityRoleConnection,
@@ -219,6 +222,49 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
     setPrimary(false);
   };
 
+  const createFunder = useCreateFunder();
+  const createOrganization = useCreateOrganization();
+
+  // Inline-create a funder from the picker: persist, prime the get-cache so
+  // the resolved name shows immediately, refresh the list, return the new id.
+  const handleCreateFunder = async (name: string): Promise<string | null> => {
+    try {
+      const f = await createFunder.mutateAsync({ data: { name } });
+      queryClient.setQueryData(getGetFunderQueryKey(f.id), f);
+      await queryClient.invalidateQueries({ queryKey: getListFundersQueryKey() });
+      toast({ title: "Funder created" });
+      return f.id;
+    } catch (err: unknown) {
+      toast({
+        title: "Create failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
+  const handleCreateOrganization = async (
+    name: string,
+  ): Promise<string | null> => {
+    try {
+      const o = await createOrganization.mutateAsync({ data: { name } });
+      queryClient.setQueryData(getGetOrganizationQueryKey(o.id), o);
+      await queryClient.invalidateQueries({
+        queryKey: getListOrganizationsQueryKey(),
+      });
+      toast({ title: "Organization created" });
+      return o.id;
+    } catch (err: unknown) {
+      toast({
+        title: "Create failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
   const create = useCreatePeopleEntityRole({
     mutation: {
       onSuccess: async () => {
@@ -260,7 +306,11 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        if (!create.isPending) setOpen(v);
+        if (create.isPending) return;
+        setOpen(v);
+        // Clear the form when closing so a re-open starts fresh rather than
+        // showing a leftover entity/role from a cancelled session.
+        if (!v) reset();
       }}
     >
       <DialogTrigger asChild>
@@ -313,6 +363,8 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
                   allowNull={false}
                   placeholder="Search funders…"
                   testId="select-person-org-entity"
+                  onCreate={handleCreateFunder}
+                  createNoun="funder"
                 />
               ) : kind === "non_funding_organization" ? (
                 <EntityCombobox
@@ -323,6 +375,8 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
                   allowNull={false}
                   placeholder="Search organizations…"
                   testId="select-person-org-entity"
+                  onCreate={handleCreateOrganization}
+                  createNoun="organization"
                 />
               ) : (
                 <EntityCombobox
@@ -352,7 +406,10 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false);
+                reset();
+              }}
               disabled={create.isPending}
             >
               Cancel

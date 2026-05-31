@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronsUpDown, Pencil, X } from "lucide-react";
+import { Check, ChevronsUpDown, Pencil, Plus, X } from "lucide-react";
 import {
   useListFunders,
   useListPeople,
@@ -97,6 +97,15 @@ interface EntityPickerCoreProps {
   allowNull?: boolean;
   /** Option ids to hide from the list (e.g. to prevent self-references). */
   excludeIds?: string[];
+  /**
+   * Optional inline create. When provided and the search query has no exact
+   * (case-insensitive) match, a "Create <query>" action is shown. It should
+   * create the record and resolve to the new id (or null on failure), which
+   * is then selected automatically.
+   */
+  onCreate?: (name: string) => Promise<string | null>;
+  /** Noun used in the inline-create label, e.g. "funder" → 'Create "X" funder'. */
+  createNoun?: string;
 }
 
 /**
@@ -115,9 +124,13 @@ export function EntityCombobox({
   disabled,
   allowNull = true,
   excludeIds,
+  onCreate,
+  createNoun,
 }: EntityPickerCoreProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
   const debounced = useDebounced(query);
   // Clear stale search input when the popover closes so reopening starts
   // fresh instead of showing the previous filter's results.
@@ -136,6 +149,37 @@ export function EntityCombobox({
   const triggerLabel = value
     ? (resolvedLabel ?? value)
     : placeholder;
+
+  const trimmedQuery = query.trim();
+  const hasExactMatch = items.some(
+    (it) => it.label.trim().toLowerCase() === trimmedQuery.toLowerCase(),
+  );
+  // Only offer create once the debounced search has caught up with the live
+  // input — otherwise a fast typist could create a duplicate against stale
+  // results before the matching record has loaded.
+  const searchSettled = query === debounced;
+  const showCreate =
+    !!onCreate &&
+    trimmedQuery.length > 0 &&
+    !hasExactMatch &&
+    !isLoading &&
+    searchSettled;
+
+  const runCreate = async () => {
+    if (!onCreate || creatingRef.current || !trimmedQuery) return;
+    creatingRef.current = true;
+    setCreating(true);
+    try {
+      const newId = await onCreate(trimmedQuery);
+      if (newId) {
+        onChange(newId);
+        setOpen(false);
+      }
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
+    }
+  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -169,8 +213,25 @@ export function EntityCombobox({
               <div className="py-4 text-center text-sm text-muted-foreground">
                 Loading…
               </div>
-            ) : items.length === 0 ? (
+            ) : items.length === 0 && !showCreate ? (
               <CommandEmpty>No results.</CommandEmpty>
+            ) : null}
+            {showCreate ? (
+              <CommandGroup>
+                <CommandItem
+                  value="__create__"
+                  onSelect={runCreate}
+                  disabled={creating}
+                  data-testid={testId ? `${testId}-option-create` : undefined}
+                >
+                  <Plus className="mr-2 h-4 w-4 shrink-0" />
+                  <span className="truncate">
+                    {creating
+                      ? "Creating…"
+                      : `Create "${trimmedQuery}"${createNoun ? ` ${createNoun}` : ""}`}
+                  </span>
+                </CommandItem>
+              </CommandGroup>
             ) : null}
             <CommandGroup>
               {allowNull ? (
