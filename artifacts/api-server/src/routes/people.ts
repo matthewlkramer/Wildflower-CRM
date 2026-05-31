@@ -14,7 +14,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
-const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus", "ownerUserId", "priority"] as const;
+const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus", "enthusiasm", "ownerUserId", "priority"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -164,7 +164,12 @@ router.get(
     } else if (connectionFilter.values.length > 0) {
       filters.push(inArray(people.connectionStatus, connectionFilter.values as never[]));
     }
-    if (q.enthusiasm) filters.push(eq(people.enthusiasm, q.enthusiasm));
+    {
+      const f = splitBlank(q.enthusiasm as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(people.enthusiasm), inArray(people.enthusiasm, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(people.enthusiasm));
+      else if (f.values.length > 0) filters.push(inArray(people.enthusiasm, f.values as never[]));
+    }
     const ownerFilter = splitBlank(q.ownerUserId);
     if (ownerFilter.wantsBlank && ownerFilter.values.length > 0) {
       filters.push(or(isNull(people.ownerUserId), inArray(people.ownerUserId, ownerFilter.values))!);

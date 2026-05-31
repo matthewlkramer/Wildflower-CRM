@@ -324,7 +324,16 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
-        - { name: enthusiasm, in: query, schema: { $ref: "#/components/schemas/Enthusiasm" } }
+        - name: enthusiasm
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
+        - name: strategicAlignment
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - name: capacityRating
           in: query
           style: form
@@ -535,7 +544,11 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
-        - { name: enthusiasm, in: query, schema: { $ref: "#/components/schemas/Enthusiasm" } }
+        - name: enthusiasm
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - name: ownerUserId
           in: query
           description: |
@@ -898,7 +911,12 @@ paths:
         - { name: householdId, in: query, schema: { type: string } }
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
         - { name: paymentOnPledgeId, in: query, schema: { type: string } }
-        - { name: paymentMethod, in: query, schema: { $ref: "#/components/schemas/GiftPaymentMethod" } }
+        - name: paymentMethod
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
+        - { name: thankYouSentAtPresence, in: query, required: false, description: "Presence filter on thank-you sent date (`has` = sent, `blank` = not sent).", schema: { type: string, enum: [has, blank] } }
         - name: ownerUserId
           in: query
           style: form
@@ -2088,6 +2106,7 @@ components:
         regionIds:             { type: array, items: { type: string }, nullable: true }
         parentFunderId:        { type: string, nullable: true }
         paymentIntermediaryId: { type: string, nullable: true, description: "Payment intermediary (e.g. a DAF) this funder gives through." }
+        lastContacted:         { type: string, format: date, nullable: true }
         x:                     { type: string, nullable: true }
         linkedin:              { type: string, nullable: true }
         facebook:              { type: string, nullable: true }

@@ -7,6 +7,7 @@ import {
   useBulkUpdateGiftsAndPayments,
   type ListGiftsAndPaymentsParams,
   type GiftType,
+  type GiftPaymentMethod,
   type GiftOrPayment,
   useListEntities,
   getListEntitiesQueryKey,
@@ -58,6 +59,16 @@ const TYPES: GiftType[] = [
   "directed_gift",
   "loan_fund_investment",
   "matching_gift",
+];
+const PAYMENT_METHODS: GiftPaymentMethod[] = [
+  "ach",
+  "check",
+  "wire",
+  "stock",
+  "donor_box",
+  "daf_ach",
+  "daf_check",
+  "daf_bill_com",
 ];
 
 const PAGE_SIZE = 50;
@@ -152,6 +163,18 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       cell: (g) =>
         g.ownerUserId ? (ctx.userNames.get(g.ownerUserId) ?? g.ownerUserId) : "—",
     },
+    {
+      key: "paymentMethod",
+      label: "Payment method",
+      defaultVisible: false,
+      cell: (g) => formatEnum(g.paymentMethod),
+    },
+    {
+      key: "thankYouSentAt",
+      label: "Thank-you sent",
+      defaultVisible: false,
+      cell: (g) => formatDateShort(g.thankYouSentAt),
+    },
   ];
 }
 
@@ -166,6 +189,8 @@ export default function Gifts() {
   const [entitiesPresence, setEntitiesPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.entities", undefined);
   const [usagesPresence, setUsagesPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.usages", undefined);
   const [grantYearsPresence, setGrantYearsPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.grantYears", undefined);
+  const [paymentMethods, setPaymentMethods] = usePersistedState<string[]>("wf.list.gifts.paymentMethods", []);
+  const [thankYouPresence, setThankYouPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.thankYouSentAt", undefined);
   const [page, setPage] = usePersistedState<number>("wf.list.gifts.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     "wf.list.gifts.columns",
@@ -199,6 +224,8 @@ export default function Gifts() {
     ...(entitiesPresence ? { entitiesPresence } : {}),
     ...(usagesPresence ? { usagesPresence } : {}),
     ...(grantYearsPresence ? { grantYearsPresence } : {}),
+    ...(paymentMethods.length > 0 ? { paymentMethod: [...paymentMethods].sort() as GiftPaymentMethod[] } : {}),
+    ...(thankYouPresence ? { thankYouSentAtPresence: thankYouPresence } : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
@@ -316,9 +343,41 @@ export default function Gifts() {
           />
         ),
       },
+      {
+        key: "paymentMethod",
+        label: "Payment method",
+        defaultVisible: false,
+        active: paymentMethods.length > 0,
+        clear: () => { setPaymentMethods([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Payment method"
+            selected={paymentMethods}
+            onChange={(v) => { setPaymentMethods(v); setPage(1); selection.clear(); }}
+            options={PAYMENT_METHODS}
+            testId="select-payment-method"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "thankYouSentAt",
+        label: "Thank-you sent",
+        defaultVisible: false,
+        active: !!thankYouPresence,
+        clear: () => { setThankYouPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Thank-you sent"
+            value={thankYouPresence}
+            onChange={(v) => { setThankYouPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-thank-you-sent"
+          />
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence],
+    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -340,6 +399,8 @@ export default function Gifts() {
           dateReceived: (r) => r.dateReceived ?? null,
           type: (r) => r.type ?? null,
           amount: (r) => (r.amount != null ? Number(r.amount) : null),
+          paymentMethod: (r) => r.paymentMethod ?? null,
+          thankYouSentAt: (r) => r.thankYouSentAt ?? null,
           owner: (r) =>
             r.ownerUserId
               ? (userNames.get(r.ownerUserId) ?? r.ownerUserId).toLowerCase()
@@ -365,6 +426,8 @@ export default function Gifts() {
     entitiesPresence: PresenceValue;
     usagesPresence: PresenceValue;
     grantYearsPresence: PresenceValue;
+    paymentMethods: string[];
+    thankYouPresence: PresenceValue;
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -377,6 +440,8 @@ export default function Gifts() {
     entitiesPresence,
     usagesPresence,
     grantYearsPresence,
+    paymentMethods,
+    thankYouPresence,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -389,6 +454,8 @@ export default function Gifts() {
     setEntitiesPresence(undefined);
     setUsagesPresence(undefined);
     setGrantYearsPresence(undefined);
+    setPaymentMethods([]);
+    setThankYouPresence(undefined);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -404,6 +471,8 @@ export default function Gifts() {
       setEntitiesPresence(s.entitiesPresence ?? undefined);
       setUsagesPresence(s.usagesPresence ?? undefined);
       setGrantYearsPresence(s.grantYearsPresence ?? undefined);
+      setPaymentMethods(s.paymentMethods ?? []);
+      setThankYouPresence(s.thankYouPresence ?? undefined);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
       setFiltersState(s.filters ?? null);
@@ -418,6 +487,8 @@ export default function Gifts() {
       !s.entitiesPresence &&
       !s.usagesPresence &&
       !s.grantYearsPresence &&
+      (s.paymentMethods?.length ?? 0) === 0 &&
+      !s.thankYouPresence &&
       (s.sort?.key ?? null) === null &&
       (s.columns ?? null) === null &&
       (s.filters ?? null) === null,
@@ -429,7 +500,9 @@ export default function Gifts() {
     fiscalYears.length > 0 ||
     !!entitiesPresence ||
     !!usagesPresence ||
-    !!grantYearsPresence;
+    !!grantYearsPresence ||
+    paymentMethods.length > 0 ||
+    !!thankYouPresence;
 
   return (
     <div className="space-y-6">
@@ -471,6 +544,8 @@ export default function Gifts() {
               setEntitiesPresence(undefined);
               setUsagesPresence(undefined);
               setGrantYearsPresence(undefined);
+              setPaymentMethods([]);
+              setThankYouPresence(undefined);
               setPage(1);
               selection.clear();
             }}

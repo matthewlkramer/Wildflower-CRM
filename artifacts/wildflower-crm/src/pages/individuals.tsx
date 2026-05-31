@@ -7,6 +7,7 @@ import {
   useBulkUpdatePeople,
   type ListPeopleParams,
   type CapacityRating,
+  type ConnectionStatus,
   type Person,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
@@ -27,6 +28,7 @@ import {
   formatCapacity,
   formatCurrency,
   formatDateShort,
+  formatEnum,
   formatFunderNameShort,
 } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -80,6 +82,9 @@ const DECEASED_OPTIONS: MultiFilterOption[] = [
   { value: "true", label: "Deceased" },
 ];
 const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
+const PRIORITIES = ["top", "high", "medium", "low"] as const;
+const CONNECTION_STATUSES: ConnectionStatus[] = ["connected", "have_a_connector", "no_connection"];
+const ENTHUSIASM_OPTIONS = ["advocate", "supportive", "warm", "neutral", "unsupportive"] as const;
 
 // Lookups the column cell renderers close over. Bundled into a single
 // context object so `buildColumns` stays a pure function of its inputs
@@ -210,6 +215,18 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
           : "—",
     },
     {
+      key: "connectionStatus",
+      label: "Connection",
+      defaultVisible: false,
+      cell: (p) => formatEnum(p.connectionStatus),
+    },
+    {
+      key: "enthusiasm",
+      label: "Enthusiasm",
+      defaultVisible: false,
+      cell: (p) => formatEnum(p.enthusiasm),
+    },
+    {
       key: "interestsAges",
       label: "Ages",
       defaultVisible: false,
@@ -270,6 +287,9 @@ export default function Individuals() {
   const [lastGiftPresence, setLastGiftPresence] = usePersistedState<PresenceValue>("wf.list.people.f.lastGift", undefined);
   const [openAsksPresence, setOpenAsksPresence] = usePersistedState<PresenceValue>("wf.list.people.f.openAsks", undefined);
   const [activeAffiliationPresence, setActiveAffiliationPresence] = usePersistedState<PresenceValue>("wf.list.people.f.activeAffiliation", undefined);
+  const [connectionStatusSel, setConnectionStatusSel] = usePersistedState<string[]>("wf.list.people.connectionStatuses", []);
+  const [enthusiasmSel, setEnthusiasmSel] = usePersistedState<string[]>("wf.list.people.enthusiasms", []);
+  const [prioritySel, setPrioritySel] = usePersistedState<string[]>("wf.list.people.priorities", []);
   // Which optional filters are shown in the toolbar. null = registry defaults.
   const [filtersState, setFiltersState] = usePersistedState<FiltersState | null>("wf.list.people.filters", null);
   const [page, setPage] = usePersistedState<number>("wf.list.people.page", 1);
@@ -302,6 +322,11 @@ export default function Individuals() {
     ...(lastGiftPresence ? { lastGiftPresence } : {}),
     ...(openAsksPresence ? { openAsksPresence } : {}),
     ...(activeAffiliationPresence ? { activeAffiliationPresence } : {}),
+    ...(connectionStatusSel.length > 0
+      ? { connectionStatus: [...connectionStatusSel].sort() as ConnectionStatus[] }
+      : {}),
+    ...(enthusiasmSel.length > 0 ? { enthusiasm: [...enthusiasmSel].sort() } : {}),
+    ...(prioritySel.length > 0 ? { priority: [...prioritySel].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListPeople(params, {
@@ -434,9 +459,60 @@ export default function Individuals() {
           />
         ),
       },
+      {
+        key: "connectionStatus",
+        label: "Connection",
+        defaultVisible: false,
+        active: connectionStatusSel.length > 0,
+        clear: () => { setConnectionStatusSel([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Connection"
+            selected={connectionStatusSel}
+            onChange={(v) => { setConnectionStatusSel(v); setPage(1); selection.clear(); }}
+            options={CONNECTION_STATUSES}
+            testId="select-person-connection"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "enthusiasm",
+        label: "Enthusiasm",
+        defaultVisible: false,
+        active: enthusiasmSel.length > 0,
+        clear: () => { setEnthusiasmSel([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Enthusiasm"
+            selected={enthusiasmSel}
+            onChange={(v) => { setEnthusiasmSel(v); setPage(1); selection.clear(); }}
+            options={[...ENTHUSIASM_OPTIONS]}
+            testId="select-person-enthusiasm"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "priority",
+        label: "Priority",
+        defaultVisible: false,
+        active: prioritySel.length > 0,
+        clear: () => { setPrioritySel([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Priority"
+            selected={prioritySel}
+            onChange={(v) => { setPrioritySel(v); setPage(1); selection.clear(); }}
+            options={[...PRIORITIES]}
+            testId="select-person-priority"
+            includeBlank
+          />
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [deceasedSel, capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence],
+    [deceasedSel, capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, connectionStatusSel, enthusiasmSel, prioritySel],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -469,6 +545,8 @@ export default function Individuals() {
           lastGift: (r) => r.mostRecentGiftDate ?? null,
           openAsks: (r) => r.openOpportunityCount ?? null,
           activeFunders: (r) => (r.activeFunderNames ?? []).length || null,
+          connectionStatus: (r) => r.connectionStatus ?? null,
+          enthusiasm: (r) => r.enthusiasm ?? null,
           owner: (r) =>
             r.ownerUserId
               ? (userNames.get(r.ownerUserId) ?? r.ownerUserId).toLowerCase()
@@ -495,7 +573,10 @@ export default function Individuals() {
     !!lifetimeGivingPresence ||
     !!lastGiftPresence ||
     !!openAsksPresence ||
-    !!activeAffiliationPresence;
+    !!activeAffiliationPresence ||
+    connectionStatusSel.length > 0 ||
+    enthusiasmSel.length > 0 ||
+    prioritySel.length > 0;
 
   // ─── Saved views ─────────────────────────────────────────────────
   // The persisted view captures filters + sort + the user's column
@@ -511,6 +592,9 @@ export default function Individuals() {
     lastGiftPresence: PresenceValue;
     openAsksPresence: PresenceValue;
     activeAffiliationPresence: PresenceValue;
+    connectionStatusSel: string[];
+    enthusiasmSel: string[];
+    prioritySel: string[];
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -524,6 +608,9 @@ export default function Individuals() {
     lastGiftPresence,
     openAsksPresence,
     activeAffiliationPresence,
+    connectionStatusSel,
+    enthusiasmSel,
+    prioritySel,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -537,6 +624,9 @@ export default function Individuals() {
     setLastGiftPresence(undefined);
     setOpenAsksPresence(undefined);
     setActiveAffiliationPresence(undefined);
+    setConnectionStatusSel([]);
+    setEnthusiasmSel([]);
+    setPrioritySel([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -556,6 +646,9 @@ export default function Individuals() {
       setLastGiftPresence(s.lastGiftPresence ?? undefined);
       setOpenAsksPresence(s.openAsksPresence ?? undefined);
       setActiveAffiliationPresence(s.activeAffiliationPresence ?? undefined);
+      setConnectionStatusSel(s.connectionStatusSel ?? []);
+      setEnthusiasmSel(s.enthusiasmSel ?? []);
+      setPrioritySel(s.prioritySel ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       // Backwards-compat: views saved before this feature have no
       // `columns` / `filters` field. Treat them as "defaults" so applying
@@ -574,6 +667,9 @@ export default function Individuals() {
       !s.lastGiftPresence &&
       !s.openAsksPresence &&
       !s.activeAffiliationPresence &&
+      (s.connectionStatusSel?.length ?? 0) === 0 &&
+      (s.enthusiasmSel?.length ?? 0) === 0 &&
+      (s.prioritySel?.length ?? 0) === 0 &&
       (s.sort?.key ?? null) === null &&
       (s.columns ?? null) === null &&
       (s.filters ?? null) === null,
@@ -631,6 +727,9 @@ export default function Individuals() {
               setLastGiftPresence(undefined);
               setOpenAsksPresence(undefined);
               setActiveAffiliationPresence(undefined);
+              setConnectionStatusSel([]);
+              setEnthusiasmSel([]);
+              setPrioritySel([]);
               setPage(1);
               selection.clear();
             }}

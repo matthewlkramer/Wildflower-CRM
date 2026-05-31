@@ -677,6 +677,7 @@ export interface Funder {
   parentFunderId?: string | null;
   /** Payment intermediary (e.g. a DAF) this funder gives through. */
   paymentIntermediaryId?: string | null;
+  lastContacted?: string | null;
   x?: string | null;
   linkedin?: string | null;
   facebook?: string | null;
@@ -2558,7 +2559,8 @@ export type ListFundersParams = {
   subtype?: string[];
   activeStatus?: string[];
   connectionStatus?: string[];
-  enthusiasm?: Enthusiasm;
+  enthusiasm?: string[];
+  strategicAlignment?: string[];
   capacityRating?: string[];
   ownerUserId?: string[];
   /**
@@ -2677,7 +2679,7 @@ literal `__blank__` to match rows with no connection status set.
 
  */
   connectionStatus?: string[];
-  enthusiasm?: Enthusiasm;
+  enthusiasm?: string[];
   /**
  * Owner user-id values. Accepts the literal `__blank__` to match
 rows with no owner assigned.
@@ -2922,7 +2924,11 @@ export type ListGiftsAndPaymentsParams = {
   householdId?: string;
   individualGiverPersonId?: string;
   paymentOnPledgeId?: string;
-  paymentMethod?: GiftPaymentMethod;
+  paymentMethod?: string[];
+  /**
+   * Presence filter on thank-you sent date (`has` = sent, `blank` = not sent).
+   */
+  thankYouSentAtPresence?: ListGiftsAndPaymentsThankYouSentAtPresence;
   ownerUserId?: string[];
   /**
  * Filter to gifts that have at least one gift_allocation with `entity_id`
@@ -2969,6 +2975,14 @@ export type ListGiftsAndPaymentsGrantYearsPresence =
   (typeof ListGiftsAndPaymentsGrantYearsPresence)[keyof typeof ListGiftsAndPaymentsGrantYearsPresence];
 
 export const ListGiftsAndPaymentsGrantYearsPresence = {
+  has: "has",
+  blank: "blank",
+} as const;
+
+export type ListGiftsAndPaymentsThankYouSentAtPresence =
+  (typeof ListGiftsAndPaymentsThankYouSentAtPresence)[keyof typeof ListGiftsAndPaymentsThankYouSentAtPresence];
+
+export const ListGiftsAndPaymentsThankYouSentAtPresence = {
   has: "has",
   blank: "blank",
 } as const;

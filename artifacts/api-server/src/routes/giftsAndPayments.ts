@@ -63,7 +63,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { inArray } from "drizzle-orm";
 
-const GIFTS_ARRAY_PARAMS = ["type", "ownerUserId", "entityId", "fiscalYear"] as const;
+const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -98,7 +98,12 @@ router.get(
     if (q.householdId) filters.push(eq(giftsAndPayments.householdId, q.householdId));
     if (q.individualGiverPersonId) filters.push(eq(giftsAndPayments.individualGiverPersonId, q.individualGiverPersonId));
     if (q.paymentOnPledgeId) filters.push(eq(giftsAndPayments.paymentOnPledgeId, q.paymentOnPledgeId));
-    if (q.paymentMethod) filters.push(eq(giftsAndPayments.paymentMethod, q.paymentMethod));
+    {
+      const f = splitBlank(q.paymentMethod as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(giftsAndPayments.paymentMethod), inArray(giftsAndPayments.paymentMethod, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(giftsAndPayments.paymentMethod));
+      else if (f.values.length > 0) filters.push(inArray(giftsAndPayments.paymentMethod, f.values as never[]));
+    }
     {
       const f = splitBlank(q.ownerUserId as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(giftsAndPayments.ownerUserId), inArray(giftsAndPayments.ownerUserId, f.values))!);
@@ -150,6 +155,8 @@ router.get(
     } else if (q.grantYearsPresence === "blank") {
       filters.push(sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.grantYear} IS NOT NULL)`);
     }
+    if (q.thankYouSentAtPresence === "has") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NOT NULL`);
+    else if (q.thankYouSentAtPresence === "blank") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NULL`);
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db

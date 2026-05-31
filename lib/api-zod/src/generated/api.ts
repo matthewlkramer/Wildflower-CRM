@@ -781,9 +781,8 @@ export const ListFundersQueryParams = zod.object({
   subtype: zod.array(zod.coerce.string()).optional(),
   activeStatus: zod.array(zod.coerce.string()).optional(),
   connectionStatus: zod.array(zod.coerce.string()).optional(),
-  enthusiasm: zod
-    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
-    .optional(),
+  enthusiasm: zod.array(zod.coerce.string()).optional(),
+  strategicAlignment: zod.array(zod.coerce.string()).optional(),
   capacityRating: zod.array(zod.coerce.string()).optional(),
   ownerUserId: zod.array(zod.coerce.string()).optional(),
   priority: zod
@@ -882,6 +881,7 @@ export const ListFundersResponse = zod.object({
         .describe(
           "Payment intermediary (e.g. a DAF) this funder gives through.",
         ),
+      lastContacted: zod.string().date().nullish(),
       x: zod.string().nullish(),
       linkedin: zod.string().nullish(),
       facebook: zod.string().nullish(),
@@ -1086,6 +1086,7 @@ export const GetFunderResponse = zod
       .string()
       .nullish()
       .describe("Payment intermediary (e.g. a DAF) this funder gives through."),
+    lastContacted: zod.string().date().nullish(),
     x: zod.string().nullish(),
     linkedin: zod.string().nullish(),
     facebook: zod.string().nullish(),
@@ -1381,6 +1382,7 @@ export const UpdateFunderResponse = zod.object({
     .string()
     .nullish()
     .describe("Payment intermediary (e.g. a DAF) this funder gives through."),
+  lastContacted: zod.string().date().nullish(),
   x: zod.string().nullish(),
   linkedin: zod.string().nullish(),
   facebook: zod.string().nullish(),
@@ -2181,9 +2183,7 @@ export const ListPeopleQueryParams = zod.object({
     .describe(
       "Connection-status slugs (see ConnectionStatus). Accepts the\nliteral `__blank__` to match rows with no connection status set.\n",
     ),
-  enthusiasm: zod
-    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
-    .optional(),
+  enthusiasm: zod.array(zod.coerce.string()).optional(),
   ownerUserId: zod
     .array(zod.coerce.string())
     .optional()
@@ -3935,18 +3935,13 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
   householdId: zod.coerce.string().optional(),
   individualGiverPersonId: zod.coerce.string().optional(),
   paymentOnPledgeId: zod.coerce.string().optional(),
-  paymentMethod: zod
-    .enum([
-      "ach",
-      "check",
-      "wire",
-      "stock",
-      "donor_box",
-      "daf_ach",
-      "daf_check",
-      "daf_bill_com",
-    ])
-    .optional(),
+  paymentMethod: zod.array(zod.coerce.string()).optional(),
+  thankYouSentAtPresence: zod
+    .enum(["has", "blank"])
+    .optional()
+    .describe(
+      "Presence filter on thank-you sent date (`has` = sent, `blank` = not sent).",
+    ),
   ownerUserId: zod.array(zod.coerce.string()).optional(),
   entityId: zod
     .array(zod.coerce.string())

@@ -14,7 +14,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
-const FUNDERS_ARRAY_PARAMS = ["subtype", "activeStatus", "connectionStatus", "capacityRating", "ownerUserId", "priority"] as const;
+const FUNDERS_ARRAY_PARAMS = ["subtype", "activeStatus", "connectionStatus", "enthusiasm", "strategicAlignment", "capacityRating", "ownerUserId", "priority"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -101,7 +101,18 @@ router.get(
       else if (f.wantsBlank) filters.push(isNull(funders.connectionStatus));
       else if (f.values.length > 0) filters.push(inArray(funders.connectionStatus, f.values as never[]));
     }
-    if (q.enthusiasm) filters.push(eq(funders.enthusiasm, q.enthusiasm));
+    {
+      const f = splitBlank(q.enthusiasm as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(funders.enthusiasm), inArray(funders.enthusiasm, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(funders.enthusiasm));
+      else if (f.values.length > 0) filters.push(inArray(funders.enthusiasm, f.values as never[]));
+    }
+    {
+      const f = splitBlank(q.strategicAlignment as string[] | undefined);
+      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(funders.strategicAlignment), inArray(funders.strategicAlignment, f.values as never[]))!);
+      else if (f.wantsBlank) filters.push(isNull(funders.strategicAlignment));
+      else if (f.values.length > 0) filters.push(inArray(funders.strategicAlignment, f.values as never[]));
+    }
     {
       const f = splitBlank(q.capacityRating as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(funders.capacityRating), inArray(funders.capacityRating, f.values as never[]))!);

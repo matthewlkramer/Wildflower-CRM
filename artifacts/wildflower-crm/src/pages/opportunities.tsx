@@ -185,6 +185,27 @@ function buildColumns(ctx: ColCtx): ColumnDef<OpportunityOrPledge>[] {
       cell: (o) =>
         o.ownerUserId ? (ctx.userNames.get(o.ownerUserId) ?? o.ownerUserId) : "—",
     },
+    {
+      key: "type",
+      label: "Type",
+      defaultVisible: false,
+      cell: (o) => formatEnum(o.type),
+    },
+    {
+      key: "applicationDeadline",
+      label: "App deadline",
+      defaultVisible: false,
+      cell: (o) => formatDateShort(o.applicationDeadline),
+    },
+    {
+      key: "winProbability",
+      label: "Win prob.",
+      defaultVisible: false,
+      align: "right",
+      tdClassName: "text-right tabular-nums",
+      cell: (o) =>
+        o.winProbability != null ? `${Math.round(Number(o.winProbability) * 100)}%` : "—",
+    },
   ];
 }
 
@@ -474,6 +495,9 @@ export default function Opportunities({
           fy: (r) => (r.coveredFiscalYears ?? []).join(",") || null,
           awarded: (r) => (r.awardedAmount != null ? Number(r.awardedAmount) : null),
           projectedClose: (r) => r.projectedCloseDate ?? null,
+          type: (r) => r.type ?? null,
+          applicationDeadline: (r) => r.applicationDeadline ?? null,
+          winProbability: (r) => (r.winProbability != null ? Number(r.winProbability) : null),
           owner: (r) =>
             r.ownerUserId
               ? (userNames.get(r.ownerUserId) ?? r.ownerUserId).toLowerCase()

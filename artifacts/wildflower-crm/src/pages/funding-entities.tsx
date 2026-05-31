@@ -9,6 +9,7 @@ import {
   type FundingEntitySubtype,
   type ConnectionStatus,
   type ActiveStatus,
+  type CapacityRating,
   type Priority,
   type Funder,
 } from "@workspace/api-client-react";
@@ -26,7 +27,7 @@ import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { FUNDERS_BULK_FIELDS } from "@/lib/bulk-fields";
 import { Checkbox } from "@/components/ui/checkbox";
-import { formatCapacity, formatCurrency, formatEnum, formatFunderNameShort } from "@/lib/format";
+import { formatCapacity, formatCurrency, formatDateShort, formatEnum, formatFunderNameShort } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
   Table,
@@ -99,6 +100,16 @@ const CONNECTION_STATUSES: ConnectionStatus[] = [
   "no_connection",
 ];
 const PRIORITIES: Priority[] = ["top", "high", "medium", "low"];
+
+const CAPACITY_TIERS: CapacityRating[] = [
+  "tier_1k_10k",
+  "tier_10k_50k",
+  "tier_50k_250k",
+  "tier_250k_1m",
+  "tier_1m_plus",
+];
+const ENTHUSIASM_OPTIONS = ["advocate", "supportive", "warm", "neutral", "unsupportive"] as const;
+const STRATEGIC_ALIGNMENTS = ["high", "medium", "low"] as const;
 
 const PAGE_SIZE = 50;
 const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
@@ -226,6 +237,12 @@ function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
         f.ownerUserId ? (ctx.userNames.get(f.ownerUserId) ?? f.ownerUserId) : "—",
     },
     {
+      key: "lastContacted",
+      label: "Last contacted",
+      defaultVisible: false,
+      cell: (f) => formatDateShort(f.lastContacted),
+    },
+    {
       key: "interestsAges",
       label: "Ages",
       defaultVisible: false,
@@ -286,6 +303,9 @@ export default function FundingEntities() {
   const [lifetimeGivingPresence, setLifetimeGivingPresence] = usePersistedState<PresenceValue>("wf.list.funders.f.lifetimeGiving", undefined);
   const [openAsksPresence, setOpenAsksPresence] = usePersistedState<PresenceValue>("wf.list.funders.f.openAsks", undefined);
   const [primaryContactPresence, setPrimaryContactPresence] = usePersistedState<PresenceValue>("wf.list.funders.f.primaryContact", undefined);
+  const [capacityTiers, setCapacityTiers] = usePersistedState<string[]>("wf.list.funders.capacity", []);
+  const [enthusiasms, setEnthusiasms] = usePersistedState<string[]>("wf.list.funders.enthusiasms", []);
+  const [strategicAlignments, setStrategicAlignments] = usePersistedState<string[]>("wf.list.funders.strategicAlignments", []);
   const [page, setPage] = usePersistedState<number>("wf.list.funders.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     "wf.list.funders.columns",
@@ -319,6 +339,9 @@ export default function FundingEntities() {
     ...(lifetimeGivingPresence ? { lifetimeGivingPresence } : {}),
     ...(openAsksPresence ? { openAsksPresence } : {}),
     ...(primaryContactPresence ? { primaryContactPresence } : {}),
+    ...(capacityTiers.length > 0 ? { capacityRating: [...capacityTiers].sort() as CapacityRating[] } : {}),
+    ...(enthusiasms.length > 0 ? { enthusiasm: [...enthusiasms].sort() } : {}),
+    ...(strategicAlignments.length > 0 ? { strategicAlignment: [...strategicAlignments].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListFunders(params, {
@@ -472,9 +495,60 @@ export default function FundingEntities() {
           />
         ),
       },
+      {
+        key: "capacity",
+        label: "Capacity",
+        defaultVisible: false,
+        active: capacityTiers.length > 0,
+        clear: () => { setCapacityTiers([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Capacity"
+            selected={capacityTiers}
+            onChange={(v) => { setCapacityTiers(v); setPage(1); selection.clear(); }}
+            options={CAPACITY_TIERS}
+            testId="select-funder-capacity"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "enthusiasm",
+        label: "Enthusiasm",
+        defaultVisible: false,
+        active: enthusiasms.length > 0,
+        clear: () => { setEnthusiasms([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Enthusiasm"
+            selected={enthusiasms}
+            onChange={(v) => { setEnthusiasms(v); setPage(1); selection.clear(); }}
+            options={[...ENTHUSIASM_OPTIONS]}
+            testId="select-funder-enthusiasm"
+            includeBlank
+          />
+        ),
+      },
+      {
+        key: "strategicAlignment",
+        label: "Strategic alignment",
+        defaultVisible: false,
+        active: strategicAlignments.length > 0,
+        clear: () => { setStrategicAlignments([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Strategic alignment"
+            selected={strategicAlignments}
+            onChange={(v) => { setStrategicAlignments(v); setPage(1); selection.clear(); }}
+            options={[...STRATEGIC_ALIGNMENTS]}
+            testId="select-funder-strategic-alignment"
+            includeBlank
+          />
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses],
+    [subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -507,6 +581,7 @@ export default function FundingEntities() {
           lifetimeGiving: (r) =>
             r.lifetimeGiving != null ? Number(r.lifetimeGiving) : null,
           openAsks: (r) => r.openOpportunityCount ?? null,
+          lastContacted: (r) => r.lastContacted ?? null,
           owner: (r) =>
             r.ownerUserId
               ? (userNames.get(r.ownerUserId) ?? r.ownerUserId).toLowerCase()
@@ -532,7 +607,10 @@ export default function FundingEntities() {
     owners.length > 0 ||
     !!lifetimeGivingPresence ||
     !!openAsksPresence ||
-    !!primaryContactPresence;
+    !!primaryContactPresence ||
+    capacityTiers.length > 0 ||
+    enthusiasms.length > 0 ||
+    strategicAlignments.length > 0;
 
   // ─── Saved views ─────────────────────────────────────────────────
   type FundersView = {
@@ -545,6 +623,9 @@ export default function FundingEntities() {
     lifetimeGivingPresence: PresenceValue;
     openAsksPresence: PresenceValue;
     primaryContactPresence: PresenceValue;
+    capacityTiers: string[];
+    enthusiasms: string[];
+    strategicAlignments: string[];
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -559,6 +640,9 @@ export default function FundingEntities() {
     lifetimeGivingPresence,
     openAsksPresence,
     primaryContactPresence,
+    capacityTiers,
+    enthusiasms,
+    strategicAlignments,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -573,6 +657,9 @@ export default function FundingEntities() {
     setLifetimeGivingPresence(undefined);
     setOpenAsksPresence(undefined);
     setPrimaryContactPresence(undefined);
+    setCapacityTiers([]);
+    setEnthusiasms([]);
+    setStrategicAlignments([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -590,6 +677,9 @@ export default function FundingEntities() {
       setLifetimeGivingPresence(s.lifetimeGivingPresence ?? undefined);
       setOpenAsksPresence(s.openAsksPresence ?? undefined);
       setPrimaryContactPresence(s.primaryContactPresence ?? undefined);
+      setCapacityTiers(s.capacityTiers ?? []);
+      setEnthusiasms(s.enthusiasms ?? []);
+      setStrategicAlignments(s.strategicAlignments ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
       setFiltersState(s.filters ?? null);
@@ -609,6 +699,9 @@ export default function FundingEntities() {
         !s.lifetimeGivingPresence &&
         !s.openAsksPresence &&
         !s.primaryContactPresence &&
+        (s.capacityTiers?.length ?? 0) === 0 &&
+        (s.enthusiasms?.length ?? 0) === 0 &&
+        (s.strategicAlignments?.length ?? 0) === 0 &&
         (s.sort?.key ?? null) === null &&
         (s.columns ?? null) === null &&
         (s.filters ?? null) === null
@@ -669,6 +762,9 @@ export default function FundingEntities() {
               setLifetimeGivingPresence(undefined);
               setOpenAsksPresence(undefined);
               setPrimaryContactPresence(undefined);
+              setCapacityTiers([]);
+              setEnthusiasms([]);
+              setStrategicAlignments([]);
               setPage(1);
               selection.clear();
             }}
