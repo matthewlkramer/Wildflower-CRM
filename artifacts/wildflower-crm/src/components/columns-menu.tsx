@@ -52,14 +52,27 @@ export function ColumnsMenu<R>({ registry, state, onChange }: Props<R>) {
   }, [registry, state]);
 
   const hiddenSet = useMemo<Set<string>>(() => {
-    if (state?.hidden) return new Set(state.hidden);
     // No explicit state → derive from registry defaults so the
     // checkboxes show the right initial state on first open.
-    return new Set(
-      registry
-        .filter((c) => c.defaultVisible === false && !c.required)
-        .map((c) => c.key),
-    );
+    if (!state?.hidden) {
+      return new Set(
+        registry
+          .filter((c) => c.defaultVisible === false && !c.required)
+          .map((c) => c.key),
+      );
+    }
+    // Explicit state: start from the saved hidden list, but a column the
+    // saved state predates (absent from `order`) follows its registry
+    // default — keeping the checkbox in sync with `resolveColumns` so a
+    // newly-introduced opt-in column reads as hidden until toggled.
+    const orderSet = new Set(state.order ?? []);
+    const set = new Set(state.hidden);
+    for (const c of registry) {
+      if (!c.required && c.defaultVisible === false && !orderSet.has(c.key)) {
+        set.add(c.key);
+      }
+    }
+    return set;
   }, [registry, state]);
 
   const byKey = useMemo(

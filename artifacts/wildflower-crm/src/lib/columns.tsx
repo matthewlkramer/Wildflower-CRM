@@ -84,9 +84,20 @@ export function resolveColumns<R>(
     ordered = [...registry];
   }
 
+  // When an explicit state exists, its `hidden` array is the source of
+  // truth for visibility — a column the user removed from `hidden` must
+  // show even if its registry default is hidden (`defaultVisible: false`).
+  // The one exception is a column the saved state predates entirely
+  // (absent from `state.order`): for those we fall back to the registry
+  // default so newly-introduced opt-in columns stay hidden until the user
+  // has actually seen/toggled them.
+  const hasState = !!(state?.order && state.order.length > 0);
+  const orderSet = new Set(state?.order ?? []);
   return ordered.filter((def) => {
     if (def.required) return true;
+    if (hasState && !orderSet.has(def.key)) return def.defaultVisible ?? true;
     if (hiddenSet.has(def.key)) return false;
+    if (hasState) return true;
     return def.defaultVisible ?? true;
   });
 }
