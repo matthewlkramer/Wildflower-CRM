@@ -42,6 +42,7 @@ import { PriorityTooltip } from "@/components/priority-tooltip";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
+import { useRegionNameMap } from "@/components/region-picker";
 import {
   Pagination,
   PaginationContent,
@@ -101,6 +102,7 @@ const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", mediu
 
 type ColCtx = {
   userNames: Map<string, string>;
+  regionNames: Map<string, string>;
 };
 
 function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
@@ -220,6 +222,51 @@ function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
       cell: (f) =>
         f.ownerUserId ? (ctx.userNames.get(f.ownerUserId) ?? f.ownerUserId) : "—",
     },
+    {
+      key: "interestsAges",
+      label: "Ages",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (f) => {
+        const vals = f.interestsAges ?? [];
+        return vals.length === 0 ? "—" : vals.join(", ");
+      },
+    },
+    {
+      key: "interestsThematic",
+      label: "Themes",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (f) => {
+        const vals = f.interestsThematic ?? [];
+        return vals.length === 0 ? "—" : vals.join(", ");
+      },
+    },
+    {
+      key: "interestsGovModels",
+      label: "Governance",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (f) => {
+        const vals = f.interestsGovModels ?? [];
+        return vals.length === 0 ? "—" : vals.join(", ");
+      },
+    },
+    {
+      key: "regionIds",
+      label: "Regions",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (f) => {
+        const ids = f.regionIds ?? [];
+        if (ids.length === 0) return "—";
+        return ids.map((id) => ctx.regionNames.get(id) ?? id).join(", ");
+      },
+    },
   ];
 }
 
@@ -270,7 +317,8 @@ export default function FundingEntities() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const userNames = useUserNameMap();
-  const registry = useMemo(() => buildColumns({ userNames }), [userNames]);
+  const regionNames = useRegionNameMap();
+  const registry = useMemo(() => buildColumns({ userNames, regionNames }), [userNames, regionNames]);
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
     [registry, columnsState],
@@ -310,7 +358,7 @@ export default function FundingEntities() {
         },
         ts.sort,
       ),
-    [rows, ts.sort, userNames],
+    [rows, ts.sort, userNames, regionNames],
   );
   const pagedRows = useMemo(() => {
     if (!sortActive) return sortedRows;

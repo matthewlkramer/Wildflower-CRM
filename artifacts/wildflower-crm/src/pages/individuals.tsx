@@ -184,6 +184,51 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
           ? (ctx.userNames.get(p.ownerUserId) ?? p.ownerUserId)
           : "—",
     },
+    {
+      key: "interestsAges",
+      label: "Ages",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (p) => {
+        const vals = p.interestsAges ?? [];
+        return vals.length === 0 ? "—" : vals.join(", ");
+      },
+    },
+    {
+      key: "interestsThematic",
+      label: "Themes",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (p) => {
+        const vals = p.interestsThematic ?? [];
+        return vals.length === 0 ? "—" : vals.join(", ");
+      },
+    },
+    {
+      key: "interestsGovModels",
+      label: "Governance",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (p) => {
+        const vals = p.interestsGovModels ?? [];
+        return vals.length === 0 ? "—" : vals.join(", ");
+      },
+    },
+    {
+      key: "regionIds",
+      label: "Regions",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (p) => {
+        const ids = p.regionIds ?? [];
+        if (ids.length === 0) return "—";
+        return ids.map((id) => ctx.regionNames.get(id) ?? id).join(", ");
+      },
+    },
   ];
 }
 
