@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   defaultFiltersState,
   isDefaultFiltersState,
+  keysHiddenOnReset,
   resolveFilters,
   type FilterDef,
   type FiltersState,
@@ -162,5 +163,34 @@ describe("isDefaultFiltersState", () => {
       hidden: ["entities"],
     };
     expect(isDefaultFiltersState(registry, state)).toBe(false);
+  });
+});
+
+describe("keysHiddenOnReset", () => {
+  it("returns opt-in filters that are currently visible (would be re-hidden by reset)", () => {
+    // User revealed both opt-in filters → both are visible now.
+    const currentHidden = new Set<string>();
+    expect(keysHiddenOnReset(registry, currentHidden).sort()).toEqual([
+      "entities",
+      "usages",
+    ]);
+  });
+
+  it("excludes opt-in filters that are already hidden", () => {
+    const currentHidden = new Set<string>(["entities"]);
+    expect(keysHiddenOnReset(registry, currentHidden)).toEqual(["usages"]);
+  });
+
+  it("returns nothing when no opt-in filter is currently visible", () => {
+    const currentHidden = new Set<string>(["entities", "usages"]);
+    expect(keysHiddenOnReset(registry, currentHidden)).toEqual([]);
+  });
+
+  it("never returns required or default-visible filters", () => {
+    const currentHidden = new Set<string>();
+    const keys = keysHiddenOnReset(registry, currentHidden);
+    expect(keys).not.toContain("search");
+    expect(keys).not.toContain("type");
+    expect(keys).not.toContain("owner");
   });
 });

@@ -8,8 +8,8 @@ import {
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  defaultFiltersState,
   isDefaultFiltersState,
+  keysHiddenOnReset,
   type FilterDef,
   type FiltersState,
 } from "@/lib/filters";
@@ -87,6 +87,13 @@ export function FiltersMenu({ registry, state, onChange }: Props) {
   }
 
   function reset() {
+    // Resetting to defaults re-hides opt-in filters. Any such filter that
+    // currently holds a value must be cleared too, so a now-hidden filter
+    // never silently keeps narrowing the results.
+    for (const key of keysHiddenOnReset(registry, hiddenSet)) {
+      const def = byKey.get(key);
+      if (def?.active) def.clear?.();
+    }
     onChange(null);
   }
 

@@ -103,6 +103,31 @@ export function defaultFiltersState(
 }
 
 /**
+ * The currently-visible filter keys that would become hidden if the user
+ * resets the chooser to defaults. Pages clear these filters' values on
+ * reset so a now-hidden filter never silently keeps narrowing results.
+ *
+ * `currentHidden` is the set the chooser is rendering (already accounts
+ * for opt-in filters that a saved view predates). A key is returned only
+ * when it is visible now (not in `currentHidden`) but hidden under the
+ * registry default.
+ */
+export function keysHiddenOnReset(
+  registry: readonly FilterDef[],
+  currentHidden: ReadonlySet<string>,
+): string[] {
+  const defaultHidden = new Set(defaultFiltersState(registry).hidden);
+  return registry
+    .filter(
+      (def) =>
+        !def.required &&
+        defaultHidden.has(def.key) &&
+        !currentHidden.has(def.key),
+    )
+    .map((def) => def.key);
+}
+
+/**
  * True when the given state matches the registry defaults. Pages use
  * this to persist `null` (canonical default) vs the explicit state,
  * keeping saved-view comparisons stable for users who never touched
