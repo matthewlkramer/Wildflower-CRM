@@ -37,6 +37,7 @@ import {
 } from "@/components/linked-records";
 import {
   AddPersonOrgRoleDialog,
+  AddPersonToHouseholdDialog,
   EditPeopleEntityRoleDialog,
 } from "@/components/add-role-dialogs";
 import {
@@ -959,12 +960,15 @@ function PeopleCard({ person }: { person: PersonDetail }) {
     <RelatedCard
       title="People"
       action={
-        canHaveInactive ? (
-          <HideInactiveToggle
-            hidden={hideInactive}
-            onToggle={() => setHideInactive((v) => !v)}
-          />
-        ) : undefined
+        <div className="flex items-center gap-1">
+          <AddPersonToHouseholdDialog personId={person.id} />
+          {canHaveInactive && (
+            <HideInactiveToggle
+              hidden={hideInactive}
+              onToggle={() => setHideInactive((v) => !v)}
+            />
+          )}
+        </div>
       }
     >
       {!hasAny ? (

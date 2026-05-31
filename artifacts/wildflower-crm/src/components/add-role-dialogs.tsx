@@ -8,11 +8,13 @@ import {
   useCreateFunder,
   useCreateOrganization,
   useCreatePerson,
+  useCreateHousehold,
   getListPeopleQueryKey,
   getGetPersonQueryKey,
   getGetFunderQueryKey,
   getGetOrganizationQueryKey,
   getGetHouseholdQueryKey,
+  getListHouseholdsQueryKey,
   getGetPaymentIntermediaryQueryKey,
   getListFundersQueryKey,
   getListOrganizationsQueryKey,
@@ -55,6 +57,8 @@ import {
   useOrganizationName,
   useIntermediarySearch,
   useIntermediaryName,
+  useHouseholdSearch,
+  useHouseholdName,
 } from "@/components/entity-picker";
 import { formatEnum } from "@/lib/format";
 
@@ -1108,6 +1112,175 @@ export function EditPeopleEntityRoleDialog({
                 {update.isPending ? "Saving…" : "Save"}
               </Button>
             </div>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────────────────── */
+/* Individual detail → People card → "Add to household"                       */
+/* Links this person to an existing household, or creates a new one first.    */
+/* ───────────────────────────────────────────────────────────────────────── */
+
+export function AddPersonToHouseholdDialog({
+  personId,
+}: {
+  personId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [householdId, setHouseholdId] = useState<string | null>(null);
+  const [connection, setConnection] = useState("");
+  const [title, setTitle] = useState("");
+  const [current, setCurrent] = useState<PeopleRoleCurrent>(
+    PeopleRoleCurrent.current,
+  );
+  const [primary, setPrimary] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const reset = () => {
+    setHouseholdId(null);
+    setConnection("");
+    setTitle("");
+    setCurrent(PeopleRoleCurrent.current);
+    setPrimary(false);
+  };
+
+  const createHousehold = useCreateHousehold();
+
+  const handleCreateHousehold = async (name: string): Promise<string | null> => {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    try {
+      const h = await createHousehold.mutateAsync({ data: { name: trimmed } });
+      queryClient.setQueryData(getGetHouseholdQueryKey(h.id), h);
+      await queryClient.invalidateQueries({
+        queryKey: getListHouseholdsQueryKey(),
+      });
+      toast({ title: "Household created" });
+      return h.id;
+    } catch (err: unknown) {
+      toast({
+        title: "Create failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
+  const create = useCreatePeopleEntityRole({
+    mutation: {
+      onSuccess: async (_data, variables) => {
+        const hid = variables.data.householdId;
+        await queryClient.invalidateQueries({
+          queryKey: getGetPersonQueryKey(personId),
+        });
+        if (hid) {
+          await queryClient.invalidateQueries({
+            queryKey: getGetHouseholdQueryKey(hid),
+          });
+        }
+        toast({ title: "Added to household" });
+        setOpen(false);
+        reset();
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Add failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const submit = () => {
+    if (!householdId || create.isPending) return;
+    const attrs = buildRoleAttrs(connection, title, current, primary);
+    create.mutate({
+      data: {
+        personId,
+        entityType: EntityRoleType.household,
+        householdId,
+        ...attrs,
+      },
+    });
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (create.isPending) return;
+        setOpen(v);
+        if (!v) reset();
+      }}
+    >
+      <DialogTrigger asChild>
+        <AddCardButton testId="button-add-to-household" />
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add to household</DialogTitle>
+          <DialogDescription>
+            Link this person to a household. Search for an existing one, or type
+            a new name to create it.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+          className="space-y-3"
+        >
+          <div className="space-y-1.5">
+            <Label>Household</Label>
+            <EntityCombobox
+              useSearch={useHouseholdSearch}
+              useResolve={useHouseholdName}
+              value={householdId}
+              onChange={setHouseholdId}
+              allowNull={false}
+              placeholder="Search households…"
+              testId="select-household-entity"
+              onCreate={handleCreateHousehold}
+              createNoun="household"
+            />
+          </div>
+          <RoleAttributeFields
+            connection={connection}
+            setConnection={setConnection}
+            title={title}
+            setTitle={setTitle}
+            current={current}
+            setCurrent={setCurrent}
+            primary={primary}
+            setPrimary={setPrimary}
+            idPrefix="add-to-household"
+          />
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setOpen(false);
+                reset();
+              }}
+              disabled={create.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!householdId || create.isPending}
+              data-testid="button-save-add-to-household"
+            >
+              {create.isPending ? "Adding…" : "Add"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
