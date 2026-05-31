@@ -168,11 +168,33 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
     },
     {
       key: "activeFunders",
-      label: "Active funders",
+      label: "Active funders / orgs",
       tdClassName: "text-xs text-muted-foreground max-w-[240px]",
       cell: (p) => {
-        const funders = p.activeFunderNames ?? [];
-        return funders.length === 0 ? "—" : funders.map(formatFunderNameShort).join(", ");
+        const activeFunders = p.activeFunderNames ?? [];
+        if (activeFunders.length > 0)
+          return activeFunders.map(formatFunderNameShort).join(", ");
+
+        const activeOrgs = p.activeOrganizationNames ?? [];
+        if (activeOrgs.length > 0)
+          return (
+            <span className="text-muted-foreground/70">
+              {activeOrgs.join(", ")}
+            </span>
+          );
+
+        const pastFunders = (p.pastFunderNames ?? []).map(formatFunderNameShort);
+        const pastOrgs = p.pastOrganizationNames ?? [];
+        const past = [...pastFunders, ...pastOrgs];
+        if (past.length > 0)
+          return (
+            <span className="italic text-muted-foreground/50" title="Past role(s)">
+              {past.join(", ")}
+              <span className="not-italic ml-1 text-[10px] uppercase tracking-wide">past</span>
+            </span>
+          );
+
+        return "—";
       },
     },
     {

@@ -2352,6 +2352,8 @@ components:
         openOpportunityCount:     { type: integer, nullable: true, readOnly: true, description: "Count of opportunities_and_pledges where this person is the individual giver and status='open'." }
         activeFunderNames:        { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of funders the person currently holds a role at (people_entity_roles.current='current')." }
         activeOrganizationNames:  { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of non-funding organizations the person currently holds a role at (people_entity_roles.current='current')." }
+        pastFunderNames:          { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of funders the person previously held a role at (people_entity_roles.current='past')." }
+        pastOrganizationNames:    { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of non-funding organizations the person previously held a role at (people_entity_roles.current='past')." }
         createdAt:                { type: string, format: date-time }
         updatedAt:                { type: string, format: date-time }
     PersonDetail:

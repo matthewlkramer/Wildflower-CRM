@@ -88,6 +88,24 @@ const peopleListSelect = {
       AND per.current = 'current'
       AND per.organization_id IS NOT NULL
   )`.as("active_organization_names"),
+  // Past funder roles (current='past') — used as fallback in the list column.
+  pastFunderNames: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT f.name ORDER BY f.name)
+    FROM people_entity_roles per
+    JOIN funders f ON f.id = per.funder_id
+    WHERE per.person_id = ${PEOPLE_ID}
+      AND per.current = 'past'
+      AND per.funder_id IS NOT NULL
+  )`.as("past_funder_names"),
+  // Past non-funding organization roles — fallback alongside pastFunderNames.
+  pastOrganizationNames: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT o.name ORDER BY o.name)
+    FROM people_entity_roles per
+    JOIN organizations o ON o.id = per.organization_id
+    WHERE per.person_id = ${PEOPLE_ID}
+      AND per.current = 'past'
+      AND per.organization_id IS NOT NULL
+  )`.as("past_organization_names"),
 };
 
 router.get(

@@ -998,6 +998,10 @@ export interface Person {
   readonly activeFunderNames?: readonly string[] | null;
   /** Names of non-funding organizations the person currently holds a role at (people_entity_roles.current='current'). */
   readonly activeOrganizationNames?: readonly string[] | null;
+  /** Names of funders the person previously held a role at (people_entity_roles.current='past'). */
+  readonly pastFunderNames?: readonly string[] | null;
+  /** Names of non-funding organizations the person previously held a role at (people_entity_roles.current='past'). */
+  readonly pastOrganizationNames?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
 }
