@@ -416,7 +416,29 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       backLabel="Back to funders"
       title={title}
       typeBadge="Funder"
-      subtitle={formatEnum(funder.fundingEntitySubtype)}
+      subtitle={
+        <>
+          <div>{formatEnum(funder.fundingEntitySubtype)}</div>
+          <div className="mt-2 max-w-2xl">
+            <InlineEditTextarea
+              label="About"
+              testIdBase="funder-about"
+              value={funder.about ?? null}
+              placeholder="Add an overview of this funder…"
+              display={
+                funder.about ? (
+                  <p className="whitespace-pre-wrap text-left text-sm text-foreground">
+                    {funder.about}
+                  </p>
+                ) : (
+                  <span className="text-muted-foreground">Add an overview…</span>
+                )
+              }
+              onSave={(next) => patch({ about: next })}
+            />
+          </div>
+        </>
+      }
       actions={actions}
       highlights={highlights}
       left={

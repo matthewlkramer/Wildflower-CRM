@@ -658,6 +658,8 @@ export interface Funder {
   /** Estimated total assets / endowment size. Decimal as string. */
   totalAssets?: string | null;
   priorityAreasNotes?: string | null;
+  /** Free-form long-text overview of the funder. */
+  about?: string | null;
   activeStatus?: ActiveStatus | null;
   otherNames?: string | null;
   historicalNames?: string[] | null;
@@ -796,6 +798,8 @@ export interface CreateFunderBody {
   /** Estimated total assets / endowment size. Decimal as string. */
   totalAssets?: string;
   priorityAreasNotes?: string;
+  /** Free-form long-text overview of the funder. */
+  about?: string;
   activeStatus?: ActiveStatus;
   otherNames?: string;
   historicalNames?: string[];
@@ -832,6 +836,8 @@ export interface UpdateFunderBody {
   /** Estimated total assets / endowment size. Decimal as string. */
   totalAssets?: string | null;
   priorityAreasNotes?: string | null;
+  /** Free-form long-text overview of the funder. */
+  about?: string | null;
   activeStatus?: ActiveStatus | null;
   otherNames?: string | null;
   historicalNames?: string[] | null;

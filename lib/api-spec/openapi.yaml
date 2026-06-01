@@ -2182,6 +2182,7 @@ components:
         capacityRating:        { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         totalAssets:           { type: string, nullable: true, description: "Estimated total assets / endowment size. Decimal as string." }
         priorityAreasNotes:    { type: string, nullable: true }
+        about:                 { type: string, nullable: true, description: "Free-form long-text overview of the funder." }
         activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
         otherNames:            { type: string, nullable: true }
         historicalNames:       { type: array, items: { type: string }, nullable: true }
@@ -2242,6 +2243,7 @@ components:
         capacityRating:        { $ref: "#/components/schemas/CapacityRating" }
         totalAssets:           { type: string, description: "Estimated total assets / endowment size. Decimal as string." }
         priorityAreasNotes:    { type: string }
+        about:                 { type: string, description: "Free-form long-text overview of the funder." }
         activeStatus:          { $ref: "#/components/schemas/ActiveStatus" }
         otherNames:            { type: string }
         historicalNames:       { type: array, items: { type: string } }
@@ -2277,6 +2279,7 @@ components:
         capacityRating:        { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         totalAssets:           { type: string, nullable: true, description: "Estimated total assets / endowment size. Decimal as string." }
         priorityAreasNotes:    { type: string, nullable: true }
+        about:                 { type: string, nullable: true, description: "Free-form long-text overview of the funder." }
         activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
         otherNames:            { type: string, nullable: true }
         historicalNames:       { type: array, items: { type: string }, nullable: true }

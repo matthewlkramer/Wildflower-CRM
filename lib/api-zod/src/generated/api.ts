@@ -854,6 +854,10 @@ export const ListFundersResponse = zod.object({
           "Estimated total assets \/ endowment size. Decimal as string.",
         ),
       priorityAreasNotes: zod.string().nullish(),
+      about: zod
+        .string()
+        .nullish()
+        .describe("Free-form long-text overview of the funder."),
       activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
       otherNames: zod.string().nullish(),
       historicalNames: zod.array(zod.string()).nullish(),
@@ -974,6 +978,10 @@ export const CreateFunderBody = zod.object({
     .optional()
     .describe("Estimated total assets \/ endowment size. Decimal as string."),
   priorityAreasNotes: zod.string().optional(),
+  about: zod
+    .string()
+    .optional()
+    .describe("Free-form long-text overview of the funder."),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).optional(),
   otherNames: zod.string().optional(),
   historicalNames: zod.array(zod.string()).optional(),
@@ -1061,6 +1069,10 @@ export const GetFunderResponse = zod
       .nullish()
       .describe("Estimated total assets \/ endowment size. Decimal as string."),
     priorityAreasNotes: zod.string().nullish(),
+    about: zod
+      .string()
+      .nullish()
+      .describe("Free-form long-text overview of the funder."),
     activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
     otherNames: zod.string().nullish(),
     historicalNames: zod.array(zod.string()).nullish(),
@@ -1293,6 +1305,10 @@ export const UpdateFunderBody = zod.object({
     .nullish()
     .describe("Estimated total assets \/ endowment size. Decimal as string."),
   priorityAreasNotes: zod.string().nullish(),
+  about: zod
+    .string()
+    .nullish()
+    .describe("Free-form long-text overview of the funder."),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
   otherNames: zod.string().nullish(),
   historicalNames: zod.array(zod.string()).nullish(),
@@ -1375,6 +1391,10 @@ export const UpdateFunderResponse = zod.object({
     .nullish()
     .describe("Estimated total assets \/ endowment size. Decimal as string."),
   priorityAreasNotes: zod.string().nullish(),
+  about: zod
+    .string()
+    .nullish()
+    .describe("Free-form long-text overview of the funder."),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
   otherNames: zod.string().nullish(),
   historicalNames: zod.array(zod.string()).nullish(),

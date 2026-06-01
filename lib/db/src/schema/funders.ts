@@ -34,6 +34,9 @@ export const funders = pgTable("funders", {
   // Decimal (2dp) with headroom for very large foundations (up to ~99T).
   totalAssets: numeric("total_assets", { precision: 16, scale: 2 }),
   priorityAreasNotes: text("priority_areas_notes"),
+  // Free-form long-text overview of the funder. Surfaced in the detail
+  // header under the subtype.
+  about: text("about"),
   activeStatus: activeStatusEnum("active_status"),
   otherNames: text("other_names"),
   details: text("details"),
