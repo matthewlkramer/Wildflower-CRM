@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
   useListTrackedEmails,
+  getListTrackedEmailsQueryKey,
   useGetTrackedEmail,
   getGetTrackedEmailQueryKey,
 } from "@workspace/api-client-react";
@@ -179,7 +180,13 @@ function EmailDetailDialog({
 }
 
 export default function EmailTrackingPage() {
-  const { data, isLoading } = useListTrackedEmails({ limit: 200 });
+  const listParams = { limit: 200 };
+  const { data, isLoading } = useListTrackedEmails(listParams, {
+    query: {
+      queryKey: getListTrackedEmailsQueryKey(listParams),
+      refetchInterval: 15_000,
+    },
+  });
   const [openId, setOpenId] = useState<string | null>(null);
 
   const rows = data?.data ?? [];
