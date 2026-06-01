@@ -68,6 +68,7 @@ import type {
   EmailProposalList,
   EmailProposalSummary,
   Entity,
+  ExtensionTokenResponse,
   FiscalYear,
   FiscalYearBreakdown,
   FiscalYearEntityGoal,
@@ -160,6 +161,8 @@ import type {
   School,
   SchoolList,
   SearchTrackedEmailParams,
+  SendTrackedEmailBody,
+  SendTrackedEmailResult,
   Task,
   TaskList,
   TrackedEmail,
@@ -10093,6 +10096,90 @@ export const useCreateTrackedEmail = <
 };
 
 /**
+ * Superhuman-style per-recipient send. The extension posts the composed message; the server delivers one individualized copy per recipient through the sender's own Gmail (each copy carries a unique tracking pixel but shows the full To/Cc group). Authenticated by the per-user X-Extension-Token header (not Clerk).
+ */
+export const getSendTrackedEmailUrl = () => {
+  return `/api/email-tracking/send`;
+};
+
+export const sendTrackedEmail = async (
+  sendTrackedEmailBody: SendTrackedEmailBody,
+  options?: RequestInit,
+): Promise<SendTrackedEmailResult> => {
+  return customFetch<SendTrackedEmailResult>(getSendTrackedEmailUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sendTrackedEmailBody),
+  });
+};
+
+export const getSendTrackedEmailMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendTrackedEmail>>,
+    TError,
+    { data: BodyType<SendTrackedEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendTrackedEmail>>,
+  TError,
+  { data: BodyType<SendTrackedEmailBody> },
+  TContext
+> => {
+  const mutationKey = ["sendTrackedEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendTrackedEmail>>,
+    { data: BodyType<SendTrackedEmailBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return sendTrackedEmail(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendTrackedEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendTrackedEmail>>
+>;
+export type SendTrackedEmailMutationBody = BodyType<SendTrackedEmailBody>;
+export type SendTrackedEmailMutationError =
+  ErrorType<BadRequestResponse | void>;
+
+export const useSendTrackedEmail = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendTrackedEmail>>,
+    TError,
+    { data: BodyType<SendTrackedEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendTrackedEmail>>,
+  TError,
+  { data: BodyType<SendTrackedEmailBody> },
+  TContext
+> => {
+  return useMutation(getSendTrackedEmailMutationOptions(options));
+};
+
+/**
  * Extension sidebar lookup by subject. Returns null when no match. Unauthenticated.
  */
 export const getSearchTrackedEmailUrl = (params: SearchTrackedEmailParams) => {
@@ -10365,6 +10452,155 @@ export function useListTrackedEmailsByContact<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Returns the current user's tracking-extension token (or null if not yet generated). Requires auth.
+ */
+export const getGetExtensionTokenUrl = () => {
+  return `/api/email-tracking/extension-token`;
+};
+
+export const getExtensionToken = async (
+  options?: RequestInit,
+): Promise<ExtensionTokenResponse> => {
+  return customFetch<ExtensionTokenResponse>(getGetExtensionTokenUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetExtensionTokenQueryKey = () => {
+  return [`/api/email-tracking/extension-token`] as const;
+};
+
+export const getGetExtensionTokenQueryOptions = <
+  TData = Awaited<ReturnType<typeof getExtensionToken>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getExtensionToken>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetExtensionTokenQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getExtensionToken>>
+  > = ({ signal }) => getExtensionToken({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getExtensionToken>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetExtensionTokenQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getExtensionToken>>
+>;
+export type GetExtensionTokenQueryError = ErrorType<unknown>;
+
+export function useGetExtensionToken<
+  TData = Awaited<ReturnType<typeof getExtensionToken>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getExtensionToken>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetExtensionTokenQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Generates (or rotates) the current user's tracking-extension token and returns it. Requires auth.
+ */
+export const getRotateExtensionTokenUrl = () => {
+  return `/api/email-tracking/extension-token`;
+};
+
+export const rotateExtensionToken = async (
+  options?: RequestInit,
+): Promise<ExtensionTokenResponse> => {
+  return customFetch<ExtensionTokenResponse>(getRotateExtensionTokenUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRotateExtensionTokenMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rotateExtensionToken>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rotateExtensionToken>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["rotateExtensionToken"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rotateExtensionToken>>,
+    void
+  > = () => {
+    return rotateExtensionToken(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RotateExtensionTokenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rotateExtensionToken>>
+>;
+
+export type RotateExtensionTokenMutationError = ErrorType<unknown>;
+
+export const useRotateExtensionToken = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rotateExtensionToken>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rotateExtensionToken>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRotateExtensionTokenMutationOptions(options));
+};
 
 /**
  * CRM detail view. Requires auth.

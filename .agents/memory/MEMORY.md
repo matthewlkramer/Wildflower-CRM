@@ -7,3 +7,4 @@
 - [wildflower email/calendar HTML entities](wildflower-html-entities.md) — Gmail/Calendar/Airtable text is HTML-escaped; decode at render via decodeHtmlEntities, not user-authored content.
 - [Donor XOR across split pickers](wildflower-donor-xor-pickers.md) — per-type donor pickers must send all 3 FK fields (null the rest) + allowNull=false to keep exactly-one invariant.
 - [e2e test users pollute owner filter](wildflower-test-user-pollution.md) — testClerkAuth sign-ins auto-provision "Test Dev"/"Test Admin" user rows that clutter the owner dropdown; expected to recur after e2e runs.
+- [Per-recipient open tracking (Path A)](wildflower-per-recipient-tracking.md) — multi-recipient server-send guardrails (Bcc/attachment/reply fallback, region-scoped chip extraction, extension-token auth, gmail.send reconnect).

@@ -5594,6 +5594,14 @@ export const ListTrackedEmailsResponse = zod.object({
       recipientPersonIds: zod.array(zod.string()),
       recipientFunderIds: zod.array(zod.string()),
       recipientHouseholdIds: zod.array(zod.string()),
+      groupId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Shared across per-recipient copies of one group send; null for legacy single-pixel sends.",
+        ),
+      gmailMessageId: zod.string().nullish(),
+      gmailThreadId: zod.string().nullish(),
       createdAt: zod.string().datetime({}),
       totalViews: zod
         .number()
@@ -5620,6 +5628,30 @@ export const CreateTrackedEmailBody = zod
   .describe("Posted by the extension at send-time.");
 
 /**
+ * Superhuman-style per-recipient send. The extension posts the composed message; the server delivers one individualized copy per recipient through the sender's own Gmail (each copy carries a unique tracking pixel but shows the full To/Cc group). Authenticated by the per-user X-Extension-Token header (not Clerk).
+ */
+
+export const SendTrackedEmailBody = zod
+  .object({
+    subject: zod.string(),
+    html: zod.string().describe("Composed message body as HTML."),
+    to: zod
+      .array(zod.string())
+      .min(1)
+      .describe("To: addresses (shown on every copy)."),
+    cc: zod
+      .array(zod.string())
+      .optional()
+      .describe("Cc: addresses (shown on every copy)."),
+    inReplyTo: zod
+      .string()
+      .nullish()
+      .describe("Message-ID being replied to, for threading."),
+    references: zod.string().nullish(),
+  })
+  .describe("Posted by the extension for a per-recipient (group) send.");
+
+/**
  * Extension sidebar lookup by subject. Returns null when no match. Unauthenticated.
  */
 export const SearchTrackedEmailQueryParams = zod.object({
@@ -5641,6 +5673,14 @@ export const SearchTrackedEmailResponse = zod.union([
       recipientPersonIds: zod.array(zod.string()),
       recipientFunderIds: zod.array(zod.string()),
       recipientHouseholdIds: zod.array(zod.string()),
+      groupId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Shared across per-recipient copies of one group send; null for legacy single-pixel sends.",
+        ),
+      gmailMessageId: zod.string().nullish(),
+      gmailThreadId: zod.string().nullish(),
       createdAt: zod.string().datetime({}),
       totalViews: zod
         .number()
@@ -5660,6 +5700,21 @@ export const SearchTrackedEmailResponse = zod.union([
             userAgent: zod.string().nullish(),
           }),
         ),
+        recipients: zod
+          .array(
+            zod.object({
+              id: zod
+                .string()
+                .describe("tracked_emails row id = this recipient's pixel id."),
+              recipient: zod.string(),
+              totalViews: zod.number(),
+              lastView: zod.string().datetime({}).nullish(),
+            }),
+          )
+          .optional()
+          .describe(
+            "Per-recipient open breakdown. For a group send this lists every recipient with their own open counts; for a legacy single send it has one entry. Aggregate fields above sum across the group.",
+          ),
       }),
     ),
   zod.null(),
@@ -5700,6 +5755,14 @@ export const ListTrackedEmailsByContactResponse = zod.object({
       recipientPersonIds: zod.array(zod.string()),
       recipientFunderIds: zod.array(zod.string()),
       recipientHouseholdIds: zod.array(zod.string()),
+      groupId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Shared across per-recipient copies of one group send; null for legacy single-pixel sends.",
+        ),
+      gmailMessageId: zod.string().nullish(),
+      gmailThreadId: zod.string().nullish(),
       createdAt: zod.string().datetime({}),
       totalViews: zod
         .number()
@@ -5708,6 +5771,26 @@ export const ListTrackedEmailsByContactResponse = zod.object({
       lastView: zod.string().datetime({}).nullish(),
     }),
   ),
+});
+
+/**
+ * Returns the current user's tracking-extension token (or null if not yet generated). Requires auth.
+ */
+export const GetExtensionTokenResponse = zod.object({
+  token: zod
+    .string()
+    .nullable()
+    .describe("Null when the user has not generated a token yet."),
+});
+
+/**
+ * Generates (or rotates) the current user's tracking-extension token and returns it. Requires auth.
+ */
+export const RotateExtensionTokenResponse = zod.object({
+  token: zod
+    .string()
+    .nullable()
+    .describe("Null when the user has not generated a token yet."),
 });
 
 /**
@@ -5731,6 +5814,14 @@ export const GetTrackedEmailResponse = zod
     recipientPersonIds: zod.array(zod.string()),
     recipientFunderIds: zod.array(zod.string()),
     recipientHouseholdIds: zod.array(zod.string()),
+    groupId: zod
+      .string()
+      .nullish()
+      .describe(
+        "Shared across per-recipient copies of one group send; null for legacy single-pixel sends.",
+      ),
+    gmailMessageId: zod.string().nullish(),
+    gmailThreadId: zod.string().nullish(),
     createdAt: zod.string().datetime({}),
     totalViews: zod
       .number()
@@ -5750,6 +5841,21 @@ export const GetTrackedEmailResponse = zod
           userAgent: zod.string().nullish(),
         }),
       ),
+      recipients: zod
+        .array(
+          zod.object({
+            id: zod
+              .string()
+              .describe("tracked_emails row id = this recipient's pixel id."),
+            recipient: zod.string(),
+            totalViews: zod.number(),
+            lastView: zod.string().datetime({}).nullish(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Per-recipient open breakdown. For a group send this lists every recipient with their own open counts; for a legacy single send it has one entry. Aggregate fields above sum across the group.",
+        ),
     }),
   );
 

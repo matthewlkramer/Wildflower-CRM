@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { EntityMultiSelect } from "@/components/entity-filter";
 import GoogleConnectSection from "@/components/google-connect-section";
+import ExtensionTokenSection from "@/components/extension-token-section";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 
 // User-level settings. Per-user prefs and per-user connections live here;
@@ -37,6 +38,7 @@ export default function Settings() {
       <DefaultEntitySection />
       <EmailPrivacySection />
       <GoogleConnectSection returnTo="/settings" />
+      <ExtensionTokenSection />
     </div>
   );
 }

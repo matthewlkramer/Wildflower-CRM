@@ -40,11 +40,103 @@ export function getPixelUrl(emailId: string): string {
   return `${API_BASE_URL}/api/email-tracking/track/${emailId}.gif`;
 }
 
+// Per-recipient server-send (Path A). The server splits the group into one
+// individualized copy per recipient — each showing the full To/Cc group but
+// carrying a unique tracking pixel — and sends them through the caller's own
+// Gmail (resolved from the extension token).
+//
+// The outcome distinguishes three cases so the caller never double-sends:
+//   - 'sent'      — all copies delivered; discard the Gmail draft.
+//   - 'not_sent'  — the server rejected BEFORE delivering anything (bad body,
+//                   Google not connected, missing scope, or a 502 whose
+//                   details.sent is empty = the very first copy failed). Safe to
+//                   fall back to the legacy single-pixel + Gmail-send path.
+//   - 'uncertain' — a copy MAY already be out (partial 502, unknown 5xx, or no
+//                   response). The caller must NOT auto-resend via Gmail, or it
+//                   would duplicate to recipients who already received a copy.
+export type SendTrackedEmailOutcome =
+  | { status: 'sent'; groupId: string; recipients: { id: string; recipient: string }[] }
+  | { status: 'not_sent' }
+  | { status: 'uncertain' };
+
+export async function sendTrackedEmail(args: {
+  token: string;
+  subject: string;
+  html: string;
+  to: string[];
+  cc?: string[];
+}): Promise<SendTrackedEmailOutcome> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/email-tracking/send`, {
+      method: 'POST',
+      headers: { ...POST_HEADERS, 'X-Extension-Token': args.token },
+      body: JSON.stringify({
+        subject: args.subject,
+        html: args.html,
+        to: args.to,
+        cc: args.cc && args.cc.length > 0 ? args.cc : undefined,
+      }),
+    });
+  } catch (err) {
+    // No response — we can't know whether the server delivered anything.
+    console.error('[WildflowerTracking] Send network error:', err);
+    return { status: 'uncertain' };
+  }
+
+  if (res.ok) {
+    try {
+      const data = await res.json();
+      return {
+        status: 'sent',
+        groupId: data.groupId,
+        recipients: data.recipients ?? [],
+      };
+    } catch {
+      // The copies were delivered (2xx) but we couldn't read the body — never
+      // resend, but we also can't report counts.
+      return { status: 'sent', groupId: '', recipients: [] };
+    }
+  }
+
+  let body: { details?: { sent?: unknown } } | null = null;
+  try {
+    body = await res.json();
+  } catch {
+    /* non-JSON error body */
+  }
+  // 400/401/409 are all returned before any copy is sent.
+  if (res.status === 400 || res.status === 401 || res.status === 409) {
+    return { status: 'not_sent' };
+  }
+  // 502 carries details.sent: an empty array means the first copy failed, so
+  // nothing went out; a non-empty array is a partial send.
+  if (res.status === 502) {
+    const sent = body?.details?.sent;
+    if (Array.isArray(sent) && sent.length === 0) return { status: 'not_sent' };
+    return { status: 'uncertain' };
+  }
+  console.error('[WildflowerTracking] Send error:', res.status, body);
+  return { status: 'uncertain' };
+}
+
+// One entry per recipient in a per-recipient send group, aggregated by the
+// /search handler. Present only for groups sent via Path A; absent (or a single
+// entry) for legacy single-pixel sends.
+export type TrackingRecipient = {
+  id: string;
+  recipient: string;
+  totalViews: number;
+  lastView: string | null;
+};
+
 export type TrackingData = {
   id: string;
   subject: string;
   sender: string;
   recipient: string;
+  groupId?: string | null;
+  recipients?: TrackingRecipient[];
   totalViews: number;
   uniqueIps: number;
   lastView: string | null;

@@ -88,6 +88,60 @@ export function getRecipient(composeWindow: Element): string {
   return toInput?.value || 'Unknown Recipient';
 }
 
+// Collect the chip emails inside a specific recipient region (To/Cc/Bcc).
+// Scoped to the labeled region so we never mix To, Cc, and Bcc together —
+// critical so a Bcc address is never leaked into a visible To/Cc header.
+// Returns lowercased, de-duplicated addresses. Returns [] when the labeled
+// region can't be found (the caller then falls back to the safe path rather
+// than risk an unscoped grab).
+function regionEmails(composeWindow: Element, label: string): string[] {
+  const region = composeWindow.querySelector(
+    `div[aria-label="${label}"], div[aria-label^="${label} "]`
+  );
+  if (!region) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const span of Array.from(region.querySelectorAll('span[email]'))) {
+    const email = (span.getAttribute('email') || '').trim().toLowerCase();
+    if (email.includes('@') && !seen.has(email)) {
+      seen.add(email);
+      out.push(email);
+    }
+  }
+  return out;
+}
+
+export function getToAddresses(composeWindow: Element): string[] {
+  return regionEmails(composeWindow, 'To');
+}
+
+export function getCcAddresses(composeWindow: Element): string[] {
+  return regionEmails(composeWindow, 'Cc');
+}
+
+export function getBccAddresses(composeWindow: Element): string[] {
+  return regionEmails(composeWindow, 'Bcc');
+}
+
+// True when the compose has a file attachment OR an inline image. The
+// server-send path re-emits the body HTML as a fresh MIME message, which can't
+// carry Gmail's attachment blobs or cid:/blob: inline images — so these force
+// the safe single-pixel fallback.
+export function hasAttachments(composeWindow: Element): boolean {
+  const attachmentSelectors = [
+    'div[aria-label*="attachment" i]',
+    'div[command="clearAttachment"]',
+    'div.dim',
+    'div.aZo',
+  ];
+  for (const sel of attachmentSelectors) {
+    if (composeWindow.querySelector(sel)) return true;
+  }
+  const body = getComposeBody(composeWindow);
+  if (body && body.querySelector('img')) return true;
+  return false;
+}
+
 export function getSender(): string {
   const fromSelect = document.querySelector<HTMLSelectElement>('select[aria-label*="From"]');
   if (fromSelect?.value) return fromSelect.value;

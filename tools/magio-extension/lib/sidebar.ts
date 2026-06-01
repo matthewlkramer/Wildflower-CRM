@@ -100,9 +100,54 @@ function buildNoDataHTML(): string {
   `;
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function buildRecipientRow(r: NonNullable<TrackingData['recipients']>[number]): string {
+  const opened = r.totalViews > 0;
+  const dotColor = opened ? '#1e8e3e' : '#dadce0';
+  const status = opened
+    ? (r.lastView ? `Opened ${formatTimeAgo(r.lastView)}` : 'Opened')
+    : 'Not opened';
+  const countBadge = opened
+    ? `<span style="font-size:11px;color:#5f6368;white-space:nowrap;padding-left:8px;">${r.totalViews} view${r.totalViews !== 1 ? 's' : ''}</span>`
+    : '';
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f3f4;">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+        <div style="width:8px;height:8px;border-radius:50%;background:${dotColor};flex:none;"></div>
+        <div style="min-width:0;">
+          <div style="font-size:12px;color:#202124;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.recipient)}</div>
+          <div style="font-size:11px;color:${opened ? '#1e8e3e' : '#5f6368'};line-height:1.2;">${status}</div>
+        </div>
+      </div>
+      ${countBadge}
+    </div>
+  `;
+}
+
+function buildRecipientsSection(data: TrackingData): string {
+  const recipients = data.recipients;
+  if (!recipients || recipients.length < 2) return '';
+  const openedCount = recipients.filter((r) => r.totalViews > 0).length;
+  const rows = recipients.map(buildRecipientRow).join('');
+  return `
+    <div style="padding:10px 14px 8px;border-bottom:1px solid #dadce0;">
+      <div style="font-size:11px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:2px;">By recipient · ${openedCount}/${recipients.length} opened</div>
+      ${rows}
+    </div>
+  `;
+}
+
 function buildSidebarHTML(data: TrackingData): string {
   const lastViewText = data.lastView ? `Viewed ${formatTimeAgo(data.lastView)}` : 'Not viewed yet';
   const viewRows = data.views.slice(0, 10).map(buildViewRow).join('');
+  const recipientsSection = buildRecipientsSection(data);
 
   return `
     <div style="font-family:'Google Sans',Roboto,RobotoDraft,Helvetica,Arial,sans-serif;background:#fff;height:100%;">
@@ -146,6 +191,8 @@ function buildSidebarHTML(data: TrackingData): string {
           </div>
         </div>
       </div>
+
+      ${recipientsSection}
 
       ${data.views.length > 0 ? `
         <div style="padding:10px 14px 8px;">

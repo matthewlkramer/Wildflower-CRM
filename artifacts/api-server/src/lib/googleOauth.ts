@@ -8,6 +8,12 @@
  * Scopes requested:
  *   - openid, email — to identify which Google account was connected
  *   - gmail.readonly — for the Gmail sync worker (T003)
+ *   - gmail.send — to send the per-recipient tracked copies (Superhuman-style
+ *     per-recipient open tracking). Lets the server deliver one individualized
+ *     copy per recipient through the user's own mailbox. Adding this scope means
+ *     already-connected users must reconnect once to grant it; until they do,
+ *     the send path returns a "reconnect Google" error and the extension falls
+ *     back to the single-pixel path.
  *   - calendar.readonly — for the Calendar sync worker (T004)
  */
 
@@ -15,8 +21,13 @@ export const GOOGLE_SCOPES = [
   "openid",
   "email",
   "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/calendar.readonly",
 ] as const;
+
+/** The Gmail send scope — checked before attempting an API send. */
+export const GMAIL_SEND_SCOPE =
+  "https://www.googleapis.com/auth/gmail.send";
 
 export interface GoogleOauthConfig {
   clientId: string;

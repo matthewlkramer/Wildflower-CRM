@@ -1,14 +1,25 @@
 import { Router, type IRouter } from "express";
+import { randomBytes } from "node:crypto";
 import { db } from "@workspace/db";
 import {
   emails as emailsTable,
   trackedEmails,
   trackedEmailViews,
+  users,
 } from "@workspace/db/schema";
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
+import { requireExtensionToken } from "../middlewares/requireExtensionToken";
 import { asyncHandler, newId, notFound, paramId } from "../lib/helpers";
-import { CreateTrackedEmailBody as CreateTrackedEmailBodyZ } from "@workspace/api-zod";
+import {
+  CreateTrackedEmailBody as CreateTrackedEmailBodyZ,
+  SendTrackedEmailBody as SendTrackedEmailBodyZ,
+} from "@workspace/api-zod";
+import { getAppUser } from "../lib/appRequest";
+import { getValidGoogleAccessTokenForUser } from "../lib/googleTokenStore";
+import { GMAIL_SEND_SCOPE } from "../lib/googleOauth";
+import { buildRawMessage } from "../lib/mime";
+import { sendRawMessage, GmailSendError } from "../lib/gmailSend";
 
 /**
  * Self-hosted backend for the vendored Magio email-tracking extension
@@ -159,6 +170,93 @@ function shapeWithViews(
   };
 }
 
+/**
+ * Public origin the recipient's mail client can reach to load the pixel. The
+ * server injects the pixel for per-recipient sends, so (unlike the extension,
+ * which knows its own API base) the server must derive an absolute URL. Prefer
+ * an explicit override, then the published domain, then the dev domain.
+ */
+function publicBaseUrl(): string {
+  const override = process.env.PUBLIC_BASE_URL?.trim();
+  if (override) return override.replace(/\/+$/, "");
+  const domains = (process.env.REPLIT_DOMAINS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const host = domains[0] ?? process.env.REPLIT_DEV_DOMAIN?.trim();
+  return host ? `https://${host.replace(/\/+$/, "")}` : "";
+}
+
+function pixelUrlFor(id: string): string {
+  return `${publicBaseUrl()}/api/email-tracking/track/${id}.gif`;
+}
+
+/** Append the 1×1 tracking pixel to an HTML body for a given pixel id. */
+function injectPixel(html: string, id: string): string {
+  const img = `<img src="${pixelUrlFor(id)}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;border:0;" />`;
+  return `${html}${img}`;
+}
+
+/**
+ * Load every tracked_emails row belonging to the same group send (or just the
+ * one row for a legacy single-pixel send). Ordered by send time then address so
+ * the per-recipient breakdown is stable.
+ */
+async function loadGroupRows(
+  email: typeof trackedEmails.$inferSelect,
+): Promise<(typeof trackedEmails.$inferSelect)[]> {
+  if (!email.groupId) return [email];
+  return db
+    .select()
+    .from(trackedEmails)
+    .where(eq(trackedEmails.groupId, email.groupId))
+    .orderBy(asc(trackedEmails.createdAt), asc(trackedEmails.recipient));
+}
+
+/**
+ * Shape a matched tracked email into the detail/search response, group-aware:
+ * for a group send the top-level aggregate fields (totalViews/uniqueIps/views)
+ * sum across the whole group and `recipients[]` carries the per-person
+ * breakdown; for a legacy single send `recipients[]` has one entry.
+ */
+async function shapeGroupWithViews(email: typeof trackedEmails.$inferSelect) {
+  const rows = await loadGroupRows(email);
+  const ids = rows.map((r) => r.id);
+  const allViews = await db
+    .select({
+      emailId: trackedEmailViews.emailId,
+      id: trackedEmailViews.id,
+      viewedAt: trackedEmailViews.viewedAt,
+      ipAddress: trackedEmailViews.ipAddress,
+      userAgent: trackedEmailViews.userAgent,
+    })
+    .from(trackedEmailViews)
+    .where(inArray(trackedEmailViews.emailId, ids))
+    .orderBy(desc(trackedEmailViews.viewedAt));
+
+  const byEmail = new Map<string, ViewRow[]>();
+  for (const id of ids) byEmail.set(id, []);
+  for (const v of allViews) byEmail.get(v.emailId)?.push(v);
+
+  const recipients = rows.map((r) => {
+    const vs = byEmail.get(r.id) ?? [];
+    return {
+      id: r.id,
+      recipient: r.recipient,
+      totalViews: vs.length,
+      lastView: vs[0]?.viewedAt.toISOString() ?? null,
+    };
+  });
+
+  return {
+    ...shapeWithViews(email, allViews),
+    groupId: email.groupId,
+    gmailMessageId: email.gmailMessageId,
+    gmailThreadId: email.gmailThreadId,
+    recipients,
+  };
+}
+
 // ─── Pixel endpoint (must be registered before /:id) ───────────────────────
 //
 // Express params don't split on `.`, so a route like `/track/:id.gif` would
@@ -274,6 +372,125 @@ router.post(
   }),
 );
 
+// ─── Per-recipient (group) send (extension-token authed) ───────────────────
+//
+// The extension routes a multi-recipient, attachment-free tracked send here.
+// We deliver one individualized copy per recipient through the sender's own
+// Gmail, each carrying a unique pixel but showing the full To/Cc group, then
+// record one tracked_emails row per recipient sharing a group_id + Gmail thread.
+router.post(
+  "/email-tracking/send",
+  requireExtensionToken,
+  asyncHandler(async (req, res) => {
+    const parsed = SendTrackedEmailBodyZ.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Invalid send body",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "unauthorized", message: "No user" });
+      return;
+    }
+    const grant = await getValidGoogleAccessTokenForUser(user.id);
+    if (!grant) {
+      res.status(409).json({
+        error: "google_not_connected",
+        message: "Google account not connected. Reconnect in Settings.",
+      });
+      return;
+    }
+    if (!grant.scope.split(/\s+/).includes(GMAIL_SEND_SCOPE)) {
+      res.status(409).json({
+        error: "send_scope_missing",
+        message:
+          "Gmail send permission not granted. Reconnect Google in Settings.",
+      });
+      return;
+    }
+
+    const to = parsed.data.to.map((s) => s.trim()).filter(Boolean);
+    const cc = (parsed.data.cc ?? []).map((s) => s.trim()).filter(Boolean);
+    // One row (and one copy) per distinct address across To+Cc.
+    const seen = new Set<string>();
+    const recipients: string[] = [];
+    for (const a of [...to, ...cc]) {
+      const lc = a.toLowerCase();
+      if (lc.includes("@") && !seen.has(lc)) {
+        seen.add(lc);
+        recipients.push(lc);
+      }
+    }
+    if (recipients.length === 0) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "No valid recipient addresses.",
+      });
+      return;
+    }
+
+    const groupId = newId();
+    const sender = grant.googleEmail.trim().toLowerCase();
+    const out: { id: string; recipient: string }[] = [];
+    // Gmail returns a threadId only after the first send; reuse it so the
+    // sender's Sent folder collapses the copies into one conversation.
+    let sharedThreadId: string | null = null;
+
+    for (const recipient of recipients) {
+      const pixelId = newId();
+      const links = await resolveLinks([recipient]);
+      const raw = buildRawMessage({
+        from: { email: sender },
+        to,
+        cc: cc.length ? cc : undefined,
+        subject: parsed.data.subject,
+        html: injectPixel(parsed.data.html, pixelId),
+        inReplyTo: parsed.data.inReplyTo ?? null,
+        references: parsed.data.references ?? null,
+      });
+      let sent;
+      try {
+        sent = await sendRawMessage(grant.accessToken, raw, sharedThreadId);
+      } catch (err) {
+        const status = err instanceof GmailSendError ? err.status : 0;
+        req.log.error(
+          { err, groupId, recipient, sentSoFar: out.length },
+          "tracked group send failed",
+        );
+        res.status(502).json({
+          error: "gmail_send_failed",
+          message: "Gmail send failed.",
+          details: { status, sent: out },
+        });
+        return;
+      }
+      if (!sharedThreadId) sharedThreadId = sent.threadId;
+      await db.insert(trackedEmails).values({
+        id: pixelId,
+        subject: parsed.data.subject,
+        recipient,
+        sender,
+        senderIp: null,
+        groupId,
+        gmailMessageId: sent.id,
+        gmailThreadId: sent.threadId,
+        recipientPersonIds: links.personIds,
+        recipientFunderIds: links.funderIds,
+        recipientHouseholdIds: links.householdIds,
+      });
+      out.push({ id: pixelId, recipient });
+    }
+
+    res
+      .status(201)
+      .json({ groupId, threadId: sharedThreadId, recipients: out });
+  }),
+);
+
 router.get(
   "/email-tracking/search",
   asyncHandler(async (req, res) => {
@@ -299,17 +516,7 @@ router.get(
       res.json(null);
       return;
     }
-    const views = await db
-      .select({
-        id: trackedEmailViews.id,
-        viewedAt: trackedEmailViews.viewedAt,
-        ipAddress: trackedEmailViews.ipAddress,
-        userAgent: trackedEmailViews.userAgent,
-      })
-      .from(trackedEmailViews)
-      .where(eq(trackedEmailViews.emailId, email.id))
-      .orderBy(desc(trackedEmailViews.viewedAt));
-    res.json(shapeWithViews(email, views));
+    res.json(await shapeGroupWithViews(email));
   }),
 );
 
@@ -469,6 +676,36 @@ router.get(
   }),
 );
 
+// ─── Extension-token management (auth required) ────────────────────────────
+// The user generates a token here, then pastes it into the tracking extension
+// so the extension can authenticate the per-recipient send endpoint.
+router.get(
+  "/email-tracking/extension-token",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    res.json({ token: user?.extensionToken ?? null });
+  }),
+);
+
+router.post(
+  "/email-tracking/extension-token",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "unauthorized", message: "No user" });
+      return;
+    }
+    const token = `wft_${randomBytes(24).toString("base64url")}`;
+    await db
+      .update(users)
+      .set({ extensionToken: token })
+      .where(eq(users.id, user.id));
+    res.json({ token });
+  }),
+);
+
 router.get(
   "/email-tracking/:id",
   requireAuth,
@@ -480,17 +717,7 @@ router.get(
       .where(eq(trackedEmails.id, id))
       .then((r) => r[0]);
     if (!email) return notFound(res, "tracked email");
-    const views = await db
-      .select({
-        id: trackedEmailViews.id,
-        viewedAt: trackedEmailViews.viewedAt,
-        ipAddress: trackedEmailViews.ipAddress,
-        userAgent: trackedEmailViews.userAgent,
-      })
-      .from(trackedEmailViews)
-      .where(eq(trackedEmailViews.emailId, id))
-      .orderBy(desc(trackedEmailViews.viewedAt));
-    res.json(shapeWithViews(email, views));
+    res.json(await shapeGroupWithViews(email));
   }),
 );
 

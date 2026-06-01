@@ -2259,6 +2259,10 @@ export interface TrackedEmail {
   recipientPersonIds: string[];
   recipientFunderIds: string[];
   recipientHouseholdIds: string[];
+  /** Shared across per-recipient copies of one group send; null for legacy single-pixel sends. */
+  groupId?: string | null;
+  gmailMessageId?: string | null;
+  gmailThreadId?: string | null;
   createdAt: string;
   /** Convenience aggregate; present on list/detail responses. */
   totalViews?: number;
@@ -2272,10 +2276,20 @@ export interface TrackedEmailView {
   userAgent?: string | null;
 }
 
+export interface TrackedEmailRecipient {
+  /** tracked_emails row id = this recipient's pixel id. */
+  id: string;
+  recipient: string;
+  totalViews: number;
+  lastView?: string | null;
+}
+
 export type TrackedEmailWithViews = TrackedEmail & {
   totalViews: number;
   uniqueIps: number;
   views: TrackedEmailView[];
+  /** Per-recipient open breakdown. For a group send this lists every recipient with their own open counts; for a legacy single send it has one entry. Aggregate fields above sum across the group. */
+  recipients?: TrackedEmailRecipient[];
 };
 
 export interface TrackedEmailList {
@@ -2295,6 +2309,42 @@ export interface CreateTrackedEmailBody {
   /** Comma- or semicolon-separated address list scraped from compose UI. */
   recipient: string;
   sender: string;
+}
+
+/**
+ * Posted by the extension for a per-recipient (group) send.
+ */
+export interface SendTrackedEmailBody {
+  subject: string;
+  /** Composed message body as HTML. */
+  html: string;
+  /**
+   * To: addresses (shown on every copy).
+   * @minItems 1
+   */
+  to: string[];
+  /** Cc: addresses (shown on every copy). */
+  cc?: string[];
+  /** Message-ID being replied to, for threading. */
+  inReplyTo?: string | null;
+  references?: string | null;
+}
+
+export type SendTrackedEmailResultRecipientsItem = {
+  id: string;
+  recipient: string;
+};
+
+export interface SendTrackedEmailResult {
+  groupId: string;
+  /** Shared Gmail thread id for the sent copies. */
+  threadId?: string | null;
+  recipients: SendTrackedEmailResultRecipientsItem[];
+}
+
+export interface ExtensionTokenResponse {
+  /** Null when the user has not generated a token yet. */
+  token: string | null;
 }
 
 export type BulkUpdateResultFailedItem = {

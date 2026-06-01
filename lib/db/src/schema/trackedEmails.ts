@@ -36,6 +36,18 @@ export const trackedEmails = pgTable(
     recipient: text("recipient").notNull(),
     sender: text("sender").notNull(),
     senderIp: text("sender_ip"),
+    // Per-recipient (Superhuman-style) sends create ONE row per recipient, all
+    // sharing the same `group_id`, so a single group email yields a distinct
+    // pixel (= row id) per recipient and we can attribute opens to a specific
+    // person. Null for legacy single-pixel sends registered via POST
+    // /email-tracking (one row, `recipient` = the whole comma-separated To line).
+    groupId: text("group_id"),
+    // Gmail message + thread ids returned by users.messages.send for this
+    // recipient's copy. Null on the legacy register path (the extension lets
+    // Gmail send and we never see the ids). threadId is shared across a group so
+    // the sender's Sent folder collapses the copies into one conversation.
+    gmailMessageId: text("gmail_message_id"),
+    gmailThreadId: text("gmail_thread_id"),
     recipientPersonIds: text("recipient_person_ids")
       .array()
       .notNull()
@@ -56,6 +68,7 @@ export const trackedEmails = pgTable(
     index("tracked_emails_subject_idx").on(t.subject),
     index("tracked_emails_sender_idx").on(t.sender),
     index("tracked_emails_created_at_idx").on(t.createdAt),
+    index("tracked_emails_group_id_idx").on(t.groupId),
     // GIN indexes for the linked-contact arrays — queried with array
     // operators (@>, &&) on contact-detail pages.
     index("tracked_emails_recipient_person_ids_gin")

@@ -37,6 +37,12 @@ export const users = pgTable("users", {
   role: userRoleEnum("role").notNull().default("team_member"),
   defaultFund: fundEnum("default_fund"),
   emailSyncMode: emailSyncModeEnum("email_sync_mode").notNull().default("full"),
+  // Opaque per-user token the Gmail tracking extension stores and sends as the
+  // `X-Extension-Token` header on the (Clerk-cookie-less) /email-tracking/send
+  // endpoint. The server resolves it back to this user so it can send the
+  // individualized per-recipient copies through the user's own Google grant.
+  // Null = not yet generated. Rotatable from Settings.
+  extensionToken: text("extension_token").unique(),
   // Soft-delete marker. Non-null = archived. Archived users are filtered
   // out of user pickers but remain resolvable so historical owner_user_id
   // refs still render a real name. Every owner_user_id FK is RESTRICT, so

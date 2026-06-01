@@ -17,6 +17,7 @@ function makeUser(overrides: Partial<User> = {}): User {
     role: "team_member",
     defaultFund: null,
     emailSyncMode: "full",
+    extensionToken: null,
     archivedAt: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),

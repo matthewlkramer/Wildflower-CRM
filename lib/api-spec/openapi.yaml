@@ -1364,6 +1364,23 @@ paths:
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/TrackedEmail" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /email-tracking/send:
+    post:
+      operationId: sendTrackedEmail
+      tags: [email-tracking]
+      description: >-
+        Superhuman-style per-recipient send. The extension posts the composed
+        message; the server delivers one individualized copy per recipient
+        through the sender's own Gmail (each copy carries a unique tracking
+        pixel but shows the full To/Cc group). Authenticated by the per-user
+        X-Extension-Token header (not Clerk).
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SendTrackedEmailBody" } } } }
+      responses:
+        "201": { description: Sent, content: { application/json: { schema: { $ref: "#/components/schemas/SendTrackedEmailResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { description: Missing or invalid extension token }
+        "409": { description: "Google not connected or send scope not granted (reconnect required)." }
+        "502": { description: Gmail send failed }
   /email-tracking/search:
     get:
       operationId: searchTrackedEmail
@@ -1399,6 +1416,19 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TrackedEmailList" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /email-tracking/extension-token:
+    get:
+      operationId: getExtensionToken
+      tags: [email-tracking]
+      description: "Returns the current user's tracking-extension token (or null if not yet generated). Requires auth."
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ExtensionTokenResponse" } } } }
+    post:
+      operationId: rotateExtensionToken
+      tags: [email-tracking]
+      description: "Generates (or rotates) the current user's tracking-extension token and returns it. Requires auth."
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ExtensionTokenResponse" } } } }
   /email-tracking/{id}:
     get:
       operationId: getTrackedEmail
@@ -3759,6 +3789,9 @@ components:
         recipientPersonIds:       { type: array, items: { type: string } }
         recipientFunderIds:       { type: array, items: { type: string } }
         recipientHouseholdIds:    { type: array, items: { type: string } }
+        groupId:                  { type: string, nullable: true, description: "Shared across per-recipient copies of one group send; null for legacy single-pixel sends." }
+        gmailMessageId:           { type: string, nullable: true }
+        gmailThreadId:            { type: string, nullable: true }
         createdAt:                { type: string, format: date-time }
         totalViews:               { type: integer, description: "Convenience aggregate; present on list/detail responses." }
         lastView:                 { type: string, format: date-time, nullable: true }
@@ -3779,6 +3812,18 @@ components:
             totalViews: { type: integer }
             uniqueIps:  { type: integer }
             views:      { type: array, items: { $ref: "#/components/schemas/TrackedEmailView" } }
+            recipients:
+              type: array
+              description: "Per-recipient open breakdown. For a group send this lists every recipient with their own open counts; for a legacy single send it has one entry. Aggregate fields above sum across the group."
+              items: { $ref: "#/components/schemas/TrackedEmailRecipient" }
+    TrackedEmailRecipient:
+      type: object
+      required: [id, recipient, totalViews]
+      properties:
+        id:         { type: string, description: "tracked_emails row id = this recipient's pixel id." }
+        recipient:  { type: string }
+        totalViews: { type: integer }
+        lastView:   { type: string, format: date-time, nullable: true }
     TrackedEmailList:
       type: object
       required: [data]
@@ -3798,6 +3843,36 @@ components:
         subject:   { type: string }
         recipient: { type: string, description: "Comma- or semicolon-separated address list scraped from compose UI." }
         sender:    { type: string }
+    SendTrackedEmailBody:
+      type: object
+      required: [subject, html, to]
+      description: "Posted by the extension for a per-recipient (group) send."
+      properties:
+        subject:    { type: string }
+        html:       { type: string, description: "Composed message body as HTML." }
+        to:         { type: array, items: { type: string }, minItems: 1, description: "To: addresses (shown on every copy)." }
+        cc:         { type: array, items: { type: string }, description: "Cc: addresses (shown on every copy)." }
+        inReplyTo:  { type: string, nullable: true, description: "Message-ID being replied to, for threading." }
+        references: { type: string, nullable: true }
+    SendTrackedEmailResult:
+      type: object
+      required: [groupId, recipients]
+      properties:
+        groupId:  { type: string }
+        threadId: { type: string, nullable: true, description: "Shared Gmail thread id for the sent copies." }
+        recipients:
+          type: array
+          items:
+            type: object
+            required: [id, recipient]
+            properties:
+              id:        { type: string }
+              recipient: { type: string }
+    ExtensionTokenResponse:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, nullable: true, description: "Null when the user has not generated a token yet." }
 
     # ─── Bulk record updates ───────────────────────────────────────────────────
     BulkUpdateResult:
