@@ -1,13 +1,30 @@
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import {
   useListRegions,
   getListRegionsQueryKey,
   type Region,
 } from "@workspace/api-client-react";
 import {
-  InlineEditSelect,
-  type InlineSelectOption,
+  EditTriggerRow,
+  ActionButtons,
+  useSaveRunner,
 } from "@/components/inline-edit";
+import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 import { abbreviateUsStates } from "@/lib/format";
 
 const PAGE_SIZE = 1000;
@@ -157,10 +174,10 @@ export function InlineEditRegionPicker({
     },
   });
 
-  const options: ReadonlyArray<InlineSelectOption<string>> = useMemo(() => {
+  const options: ReadonlyArray<{ value: string; label: string }> = useMemo(() => {
     const regions = data?.data ?? [];
     const byId = buildRegionIndex(regions);
-    const opts: InlineSelectOption<string>[] = regions.map((r) => ({
+    const opts = regions.map((r) => ({
       value: r.id,
       label: regionDisplayName(r, byId),
     }));
@@ -174,14 +191,143 @@ export function InlineEditRegionPicker({
     return opts;
   }, [data, value]);
 
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string | null>(value);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const { busy, run } = useSaveRunner();
+
+  useEffect(() => {
+    if (editing) {
+      setDraft(value);
+      setQuery("");
+      setPopoverOpen(false);
+    }
+  }, [editing, value]);
+
+  useEffect(() => {
+    if (!popoverOpen) setQuery("");
+  }, [popoverOpen]);
+
+  if (!editing) {
+    return (
+      <EditTriggerRow
+        display={display}
+        onEdit={() => setEditing(true)}
+        testIdBase={testIdBase}
+        ariaLabel={`Edit ${label}`}
+      />
+    );
+  }
+
+  const selectedLabel = draft
+    ? (options.find((o) => o.value === draft)?.label ?? draft)
+    : null;
+
+  const term = query.trim().toLowerCase();
+  const visibleOptions = term
+    ? options.filter(
+        (o) =>
+          o.label.toLowerCase().includes(term) ||
+          o.value.toLowerCase().includes(term),
+      )
+    : options;
+
+  const dirty = (draft ?? null) !== (value ?? null);
+  const trySave = () => {
+    if (!dirty || busy) return;
+    run(() => onSave(draft ?? null), () => setEditing(false));
+  };
+  const select = (next: string | null) => {
+    setDraft(next);
+    setPopoverOpen(false);
+  };
+
   return (
-    <InlineEditSelect
-      label={label}
-      testIdBase={testIdBase}
-      value={value}
-      display={display}
-      options={options}
-      onSave={onSave}
-    />
+    <div className="flex items-center gap-1 min-w-0">
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            size="sm"
+            className="h-8 min-w-0 flex-1 justify-between font-normal"
+            disabled={busy}
+            data-testid={testIdBase ? `select-${testIdBase}` : undefined}
+          >
+            <span className="truncate">
+              {selectedLabel ?? `Select ${label.toLowerCase()}…`}
+            </span>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="p-0 w-[--radix-popover-trigger-width] min-w-[260px]"
+          align="start"
+        >
+          <Command shouldFilter={false}>
+            <CommandInput
+              value={query}
+              onValueChange={setQuery}
+              placeholder={`Search ${label.toLowerCase()}…`}
+              data-testid={
+                testIdBase ? `select-${testIdBase}-search` : undefined
+              }
+            />
+            <CommandList>
+              {visibleOptions.length === 0 ? (
+                <CommandEmpty>No matches.</CommandEmpty>
+              ) : null}
+              <CommandGroup>
+                <CommandItem
+                  value="__null__"
+                  onSelect={() => select(null)}
+                  data-testid={
+                    testIdBase ? `select-${testIdBase}-option-none` : undefined
+                  }
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      draft === null ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                  <span className="text-muted-foreground">— None —</span>
+                </CommandItem>
+                {visibleOptions.map((o) => (
+                  <CommandItem
+                    key={o.value}
+                    value={o.value}
+                    onSelect={() => select(o.value)}
+                    data-testid={
+                      testIdBase
+                        ? `select-${testIdBase}-option-${o.value}`
+                        : undefined
+                    }
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        draft === o.value ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                    <span className="truncate">{o.label}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      <ActionButtons
+        busy={busy}
+        canSave={dirty}
+        onSave={trySave}
+        onCancel={() => setEditing(false)}
+        testIdBase={testIdBase}
+        label={label}
+      />
+    </div>
   );
 }
