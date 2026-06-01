@@ -2504,6 +2504,46 @@ export interface BulkUpdateGiftsBody {
   patch: BulkUpdateGiftsPatch;
 }
 
+export interface PersonSuppressionWindow {
+  id: string;
+  personId: string;
+  notes?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PersonSuppressionWindowList {
+  data: PersonSuppressionWindow[];
+}
+
+export interface CreatePersonSuppressionWindowBody {
+  personId: string;
+  notes?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface UpdatePersonSuppressionWindowBody {
+  notes?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
+export interface CalendarMeetingFiltersConfig {
+  titlePatterns: string[];
+  /** @minimum 2 */
+  attendeeCountCutoff: number;
+  updatedAt: string | null;
+}
+
+export interface UpdateCalendarMeetingFiltersBody {
+  titlePatterns: string[];
+  /** @minimum 2 */
+  attendeeCountCutoff: number;
+}
+
 /**
  * Not found
  */
@@ -2513,6 +2553,11 @@ export type NotFoundResponse = ErrorResponse;
  * Bad request (validation error)
  */
 export type BadRequestResponse = ErrorResponse;
+
+/**
+ * Forbidden (admin access required)
+ */
+export type ForbiddenResponse = ErrorResponse;
 
 export type LimitParameter = number;
 
@@ -3301,4 +3346,11 @@ export type RequestUploadUrl200 = {
   uploadURL: string;
   objectPath: string;
   metadata?: RequestUploadUrl200Metadata;
+};
+
+export type ListPersonSuppressionWindowsParams = {
+  /**
+   * Filter to a specific person.
+   */
+  personId?: string;
 };

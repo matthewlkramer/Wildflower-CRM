@@ -41,6 +41,8 @@ tags:
   - { name: saved-views }
   - { name: storage }
   - { name: media-mentions }
+  - { name: suppression-windows }
+  - { name: calendar-meeting-filters }
 
 paths:
   # ─── Email intelligence proposals ──────────────────────────────────────────
@@ -1750,6 +1752,65 @@ paths:
                       contentType: { type: string }
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  # ─── Person suppression windows ─────────────────────────────────────────────
+  /person-suppression-windows:
+    get:
+      operationId: listPersonSuppressionWindows
+      tags: [suppression-windows]
+      summary: List per-person sync suppression windows
+      parameters:
+        - { name: personId, in: query, schema: { type: string }, description: "Filter to a specific person." }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PersonSuppressionWindowList" } } } }
+    post:
+      operationId: createPersonSuppressionWindow
+      tags: [suppression-windows]
+      summary: Add a suppression window for a person (admin only)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreatePersonSuppressionWindowBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/PersonSuppressionWindow" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /person-suppression-windows/{id}:
+    patch:
+      operationId: updatePersonSuppressionWindow
+      tags: [suppression-windows]
+      summary: Update a suppression window (admin only)
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdatePersonSuppressionWindowBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PersonSuppressionWindow" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deletePersonSuppressionWindow
+      tags: [suppression-windows]
+      summary: Delete a suppression window (admin only)
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Calendar meeting-filter config ─────────────────────────────────────────
+  /calendar-meeting-filters:
+    get:
+      operationId: getCalendarMeetingFilters
+      tags: [calendar-meeting-filters]
+      summary: Get the current group-meeting suppression config
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarMeetingFiltersConfig" } } } }
+    put:
+      operationId: updateCalendarMeetingFilters
+      tags: [calendar-meeting-filters]
+      summary: Replace the group-meeting suppression config (admin only)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateCalendarMeetingFiltersBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarMeetingFiltersConfig" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
 components:
   parameters:
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 50 } }
@@ -1762,6 +1823,9 @@ components:
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     BadRequest:
       description: Bad request (validation error)
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    Forbidden:
+      description: Forbidden (admin access required)
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
 
   schemas:
@@ -3998,3 +4062,50 @@ components:
       properties:
         ids:   { type: array, items: { type: string }, minItems: 1, maxItems: 1000 }
         patch: { $ref: "#/components/schemas/BulkUpdateGiftsPatch" }
+
+    # ─── Person suppression windows ──────────────────────────────────────────
+    PersonSuppressionWindow:
+      type: object
+      required: [id, personId, createdAt, updatedAt]
+      properties:
+        id:        { type: string }
+        personId:  { type: string }
+        notes:     { type: string, nullable: true }
+        startDate: { type: string, format: date, nullable: true }
+        endDate:   { type: string, format: date, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PersonSuppressionWindowList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/PersonSuppressionWindow" } }
+    CreatePersonSuppressionWindowBody:
+      type: object
+      required: [personId]
+      properties:
+        personId:  { type: string }
+        notes:     { type: string }
+        startDate: { type: string, format: date }
+        endDate:   { type: string, format: date }
+    UpdatePersonSuppressionWindowBody:
+      type: object
+      properties:
+        notes:     { type: string, nullable: true }
+        startDate: { type: string, format: date, nullable: true }
+        endDate:   { type: string, format: date, nullable: true }
+
+    # ─── Calendar meeting-filter config ──────────────────────────────────────
+    CalendarMeetingFiltersConfig:
+      type: object
+      required: [titlePatterns, attendeeCountCutoff, updatedAt]
+      properties:
+        titlePatterns:      { type: array, items: { type: string } }
+        attendeeCountCutoff: { type: integer, minimum: 2 }
+        updatedAt:          { type: string, format: date-time, nullable: true }
+    UpdateCalendarMeetingFiltersBody:
+      type: object
+      required: [titlePatterns, attendeeCountCutoff]
+      properties:
+        titlePatterns:      { type: array, items: { type: string } }
+        attendeeCountCutoff: { type: integer, minimum: 2 }

@@ -26,6 +26,7 @@ import {
 } from "./gmail";
 import { getValidGoogleAccessTokenForUser, type ActiveGoogleGrant } from "./googleTokenStore";
 import { matchEmails, isMatchEmpty, type EmailMatchResult } from "./emailMatcher";
+import { isCalendarInviteMessage } from "./calendarInviteDetector";
 import { uploadAttachment } from "./emailAttachmentStore";
 import {
   processIntelForMatched,
@@ -461,9 +462,47 @@ async function processOneMessage(
   const ccAddrs = parseAddressHeader(getHeader(meta.payload, "Cc"));
   const bccAddrs = parseAddressHeader(getHeader(meta.payload, "Bcc"));
   const allAddrs = [...fromAddrs, ...toAddrs, ...ccAddrs, ...bccAddrs];
+
+  // Calendar-invite skip: detect invitations/updates/cancellations from
+  // the metadata headers alone (subject prefix + sender domain). These
+  // are already captured by the Calendar sync so we don't need them here.
+  // Route directly to the skip table without fetching the full body.
+  if (isCalendarInviteMessage(meta)) {
+    const subject = getHeader(meta.payload, "Subject") ?? null;
+    const dateRaw = getHeader(meta.payload, "Date");
+    let sentAt: Date | null = null;
+    if (dateRaw) {
+      const parsed = new Date(dateRaw);
+      if (!Number.isNaN(parsed.getTime())) sentAt = parsed;
+    }
+    await db
+      .insert(emailSyncSkip)
+      .values({
+        mailboxUserId: grant.userId,
+        gmailMessageId: gmailId,
+        fromAddrs,
+        toAddrs,
+        ccAddrs,
+        bccAddrs,
+        subject,
+        sentAt,
+      })
+      .onConflictDoNothing();
+    report.skipped++;
+    return true;
+  }
+
+  // Parse the message date from the Date header for date-window suppression.
+  const dateHeaderRaw = getHeader(meta.payload, "Date");
+  let messageDate: Date = new Date();
+  if (dateHeaderRaw) {
+    const parsed = new Date(dateHeaderRaw);
+    if (!Number.isNaN(parsed.getTime())) messageDate = parsed;
+  }
+
   let match: EmailMatchResult;
   try {
-    match = await matchEmails(allAddrs, grant.googleEmail);
+    match = await matchEmails(allAddrs, grant.googleEmail, messageDate);
   } catch (e) {
     logger.warn({ err: e, userId: grant.userId, gmailId }, "Matcher query failed");
     return false;

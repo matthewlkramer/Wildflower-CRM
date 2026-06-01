@@ -8,12 +8,18 @@ import {
   useGetFunder,
   useGetOrganization,
   useGetPaymentIntermediary,
+  useGetCurrentUser,
+  useListPersonSuppressionWindows,
+  useCreatePersonSuppressionWindow,
+  useUpdatePersonSuppressionWindow,
+  useDeletePersonSuppressionWindow,
   getGetPersonQueryKey,
   getGetHouseholdQueryKey,
   getGetFunderQueryKey,
   getGetOrganizationQueryKey,
   getGetPaymentIntermediaryQueryKey,
   getListPeopleQueryKey,
+  getListPersonSuppressionWindowsQueryKey,
   type PersonDetail,
   type UpdatePersonBody,
   type Pronouns,
@@ -21,6 +27,7 @@ import {
   type Enthusiasm,
   type Priority,
   type EntityRoleType,
+  type PersonSuppressionWindow,
 } from "@workspace/api-client-react";
 import { Check, Pencil, Trash2, X } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
@@ -799,6 +806,8 @@ function PersonView({ person }: { person: PersonDetail }) {
           />
 
           <LinkedGiftsCard scope={{ individualGiverPersonId: person.id }} />
+
+          <SuppressionWindowsCard personId={person.id} />
         </>
       }
     />
@@ -1172,5 +1181,302 @@ function TagEditRow({
       </div>
       {children}
     </div>
+  );
+}
+
+// ── Suppression windows card ─────────────────────────────────────────────────
+
+function SuppressionWindowsCard({ personId }: { personId: string }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const meQ = useGetCurrentUser();
+  const isAdmin = meQ.data?.role === "admin";
+
+  const windowsQ = useListPersonSuppressionWindows(
+    { personId },
+    { query: { queryKey: getListPersonSuppressionWindowsQueryKey({ personId }), staleTime: 30_000 } },
+  );
+
+  const [showAdd, setShowAdd] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [fromDraft, setFromDraft] = useState("");
+  const [untilDraft, setUntilDraft] = useState("");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editFromDraft, setEditFromDraft] = useState("");
+  const [editUntilDraft, setEditUntilDraft] = useState("");
+  const [editNoteDraft, setEditNoteDraft] = useState("");
+
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: getListPersonSuppressionWindowsQueryKey({ personId }) });
+
+  const createW = useCreatePersonSuppressionWindow({
+    mutation: {
+      onSuccess: async () => {
+        await invalidate();
+        toast({ title: "Suppression window added" });
+        setShowAdd(false);
+        setNoteDraft("");
+        setFromDraft("");
+        setUntilDraft("");
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Failed to add window",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const updateW = useUpdatePersonSuppressionWindow({
+    mutation: {
+      onSuccess: async () => {
+        await invalidate();
+        toast({ title: "Suppression window updated" });
+        setEditingId(null);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Failed to update window",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const deleteW = useDeletePersonSuppressionWindow({
+    mutation: {
+      onSuccess: async () => {
+        await invalidate();
+        toast({ title: "Suppression window removed" });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Failed to remove window",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const windows = windowsQ.data?.data ?? [];
+
+  // Don't render the card at all for non-admins when there are no windows
+  if (!isAdmin && windows.length === 0) return null;
+
+  const formatDateStr = (s: string | null | undefined) => {
+    if (!s) return "—";
+    return new Date(s).toLocaleDateString(undefined, { dateStyle: "medium" });
+  };
+
+  const inputCls =
+    "w-full rounded-md border border-input bg-background px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+  return (
+    <RelatedCard
+      title="Sync suppression"
+      defaultOpen={windows.length > 0}
+    >
+      <p className="text-xs text-muted-foreground mb-2">
+        Email/calendar sync skips this person&apos;s addresses during active windows.
+      </p>
+      {windowsQ.isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : windows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No suppression windows.</p>
+      ) : (
+        <ul className="space-y-2">
+          {windows.map((w: PersonSuppressionWindow) =>
+            isAdmin && editingId === w.id ? (
+              <li key={w.id} className="text-sm space-y-2" data-testid={`suppression-window-${w.id}`}>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-0.5 block">From</label>
+                    <input
+                      type="date"
+                      className={inputCls}
+                      value={editFromDraft}
+                      onChange={(e) => setEditFromDraft(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-0.5 block">Until</label>
+                    <input
+                      type="date"
+                      className={inputCls}
+                      value={editUntilDraft}
+                      onChange={(e) => setEditUntilDraft(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-0.5 block">Notes</label>
+                  <input
+                    type="text"
+                    className={inputCls}
+                    value={editNoteDraft}
+                    onChange={(e) => setEditNoteDraft(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="text-xs font-medium bg-primary text-primary-foreground rounded px-2 py-1 disabled:opacity-50"
+                    disabled={updateW.isPending}
+                    onClick={() =>
+                      updateW.mutate({
+                        id: w.id,
+                        data: {
+                          startDate: editFromDraft || null,
+                          endDate: editUntilDraft || null,
+                          notes: editNoteDraft.trim() || null,
+                        },
+                      })
+                    }
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setEditingId(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </li>
+            ) : (
+              <li
+                key={w.id}
+                className="flex items-start justify-between gap-2 text-sm"
+                data-testid={`suppression-window-${w.id}`}
+              >
+                <div>
+                  <div className="font-medium tabular-nums">
+                    {formatDateStr(w.startDate)} → {formatDateStr(w.endDate)}
+                  </div>
+                  {w.notes && (
+                    <div className="text-xs text-muted-foreground mt-0.5">{w.notes}</div>
+                  )}
+                </div>
+                {isAdmin && (
+                  <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label="Edit suppression window"
+                      onClick={() => {
+                        setEditingId(w.id);
+                        setEditFromDraft(w.startDate ? String(w.startDate).slice(0, 10) : "");
+                        setEditUntilDraft(w.endDate ? String(w.endDate).slice(0, 10) : "");
+                        setEditNoteDraft(w.notes ?? "");
+                      }}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="text-destructive hover:opacity-70"
+                      aria-label="Delete suppression window"
+                      disabled={deleteW.isPending}
+                      onClick={() => deleteW.mutate({ id: w.id })}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                )}
+              </li>
+            ),
+          )}
+        </ul>
+      )}
+
+      {isAdmin && !showAdd && (
+        <button
+          type="button"
+          className="mt-3 text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+          onClick={() => setShowAdd(true)}
+        >
+          + Add window
+        </button>
+      )}
+
+      {isAdmin && showAdd && (
+        <div className="mt-3 space-y-2 text-sm">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-muted-foreground mb-0.5 block">
+                From (leave blank for open start)
+              </label>
+              <input
+                type="date"
+                className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={fromDraft}
+                onChange={(e) => setFromDraft(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-0.5 block">
+                Until (leave blank for open end)
+              </label>
+              <input
+                type="date"
+                className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={untilDraft}
+                onChange={(e) => setUntilDraft(e.target.value)}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-0.5 block">
+              Notes (optional)
+            </label>
+            <input
+              type="text"
+              className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder="e.g. Staff member 2023–2025"
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="text-xs font-medium bg-primary text-primary-foreground rounded px-2 py-1 disabled:opacity-50"
+              disabled={createW.isPending}
+              onClick={() =>
+                createW.mutate({
+                  data: {
+                    personId,
+                    ...(fromDraft ? { startDate: fromDraft } : {}),
+                    ...(untilDraft ? { endDate: untilDraft } : {}),
+                    ...(noteDraft.trim() ? { notes: noteDraft.trim() } : {}),
+                  },
+                })
+              }
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setShowAdd(false);
+                setNoteDraft("");
+                setFromDraft("");
+                setUntilDraft("");
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </RelatedCard>
   );
 }

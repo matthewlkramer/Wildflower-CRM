@@ -6830,3 +6830,102 @@ export const RequestUploadUrlResponse = zod.object({
     })
     .optional(),
 });
+
+/**
+ * @summary List per-person sync suppression windows
+ */
+export const ListPersonSuppressionWindowsQueryParams = zod.object({
+  personId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to a specific person."),
+});
+
+export const ListPersonSuppressionWindowsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      personId: zod.string(),
+      notes: zod.string().nullish(),
+      startDate: zod.string().date().nullish(),
+      endDate: zod.string().date().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    }),
+  ),
+});
+
+/**
+ * @summary Add a suppression window for a person (admin only)
+ */
+export const CreatePersonSuppressionWindowBody = zod.object({
+  personId: zod.string(),
+  notes: zod.string().optional(),
+  startDate: zod.string().date().optional(),
+  endDate: zod.string().date().optional(),
+});
+
+/**
+ * @summary Update a suppression window (admin only)
+ */
+export const UpdatePersonSuppressionWindowParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdatePersonSuppressionWindowBody = zod.object({
+  notes: zod.string().nullish(),
+  startDate: zod.string().date().nullish(),
+  endDate: zod.string().date().nullish(),
+});
+
+export const UpdatePersonSuppressionWindowResponse = zod.object({
+  id: zod.string(),
+  personId: zod.string(),
+  notes: zod.string().nullish(),
+  startDate: zod.string().date().nullish(),
+  endDate: zod.string().date().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * @summary Delete a suppression window (admin only)
+ */
+export const DeletePersonSuppressionWindowParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary Get the current group-meeting suppression config
+ */
+export const getCalendarMeetingFiltersResponseAttendeeCountCutoffMin = 2;
+
+export const GetCalendarMeetingFiltersResponse = zod.object({
+  titlePatterns: zod.array(zod.string()),
+  attendeeCountCutoff: zod
+    .number()
+    .min(getCalendarMeetingFiltersResponseAttendeeCountCutoffMin),
+  updatedAt: zod.string().datetime({}).nullable(),
+});
+
+/**
+ * @summary Replace the group-meeting suppression config (admin only)
+ */
+export const updateCalendarMeetingFiltersBodyAttendeeCountCutoffMin = 2;
+
+export const UpdateCalendarMeetingFiltersBody = zod.object({
+  titlePatterns: zod.array(zod.string()),
+  attendeeCountCutoff: zod
+    .number()
+    .min(updateCalendarMeetingFiltersBodyAttendeeCountCutoffMin),
+});
+
+export const updateCalendarMeetingFiltersResponseAttendeeCountCutoffMin = 2;
+
+export const UpdateCalendarMeetingFiltersResponse = zod.object({
+  titlePatterns: zod.array(zod.string()),
+  attendeeCountCutoff: zod
+    .number()
+    .min(updateCalendarMeetingFiltersResponseAttendeeCountCutoffMin),
+  updatedAt: zod.string().datetime({}).nullable(),
+});

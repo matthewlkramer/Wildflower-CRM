@@ -13,11 +13,14 @@ import {
   useDeleteFiscalYearEntityGoal,
   useAdminListGoogleSync,
   useAdminResyncGoogleUser,
+  useGetCalendarMeetingFilters,
+  useUpdateCalendarMeetingFilters,
   getListEntitiesQueryKey,
   getListFundableProjectsQueryKey,
   getListFiscalYearEntityGoalsQueryKey,
   getGetDashboardSummaryQueryKey,
   getAdminListGoogleSyncQueryKey,
+  getGetCalendarMeetingFiltersQueryKey,
 } from "@workspace/api-client-react";
 import type { Entity, FundableProject, FiscalYearEntityGoal, FiscalYear } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -97,6 +100,7 @@ export default function Admin() {
       <FundableProjectsSection projects={projects} loading={projectsQ.isLoading} />
       <GoalsSection entities={entities} fyList={fyList} goals={goals} loading={goalsQ.isLoading || fyListQ.isLoading} />
       <AdminSyncSection />
+      <CalendarMeetingFiltersSection />
       <p className="text-xs text-muted-foreground">
         Looking to connect or disconnect your own Google account? That moved
         to <a className="underline" href="/settings">Settings</a>.
@@ -963,5 +967,156 @@ function GoalCell({
     >
       {formatMoney(current)}
     </button>
+  );
+}
+
+// ── Calendar meeting-filter config ───────────────────────────────────────────
+
+function CalendarMeetingFiltersSection() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const q = useGetCalendarMeetingFilters({
+    query: { queryKey: getGetCalendarMeetingFiltersQueryKey(), staleTime: 60_000 },
+  });
+
+  const [editing, setEditing] = useState(false);
+  const [patternsDraft, setPatternsDraft] = useState("");
+  const [cutoffDraft, setCutoffDraft] = useState("");
+
+  const current = q.data;
+
+  const update = useUpdateCalendarMeetingFilters({
+    mutation: {
+      onSuccess: async () => {
+        await qc.invalidateQueries({ queryKey: getGetCalendarMeetingFiltersQueryKey() });
+        toast({ title: "Meeting filter config saved" });
+        setEditing(false);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Save failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const startEdit = () => {
+    if (!current) return;
+    setPatternsDraft((current.titlePatterns ?? []).join("\n"));
+    setCutoffDraft(String(current.attendeeCountCutoff ?? 20));
+    setEditing(true);
+  };
+
+  const commit = () => {
+    const patterns = patternsDraft
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    const cutoffNum = parseInt(cutoffDraft, 10);
+    if (!Number.isFinite(cutoffNum) || cutoffNum < 2) {
+      toast({
+        title: "Invalid cutoff",
+        description: "Attendee cutoff must be a whole number ≥ 2.",
+        variant: "destructive",
+      });
+      return;
+    }
+    update.mutate({ data: { titlePatterns: patterns, attendeeCountCutoff: cutoffNum } });
+  };
+
+  // 403 → non-admin; hide the card
+  const errStatus = (q.error as unknown as { status?: number } | null)?.status;
+  if (errStatus === 403) return null;
+
+  return (
+    <Card data-testid="admin-meeting-filters-section">
+      <CardHeader>
+        <CardTitle>Group-meeting suppression</CardTitle>
+        <CardDescription>
+          Calendar events matching these title keywords, or with ≥ the attendee
+          cutoff, are skipped during calendar sync — they won't appear on donor
+          timelines.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {q.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : editing ? (
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="title-patterns">
+                Title keywords (one per line, case-insensitive substring match)
+              </Label>
+              <textarea
+                id="title-patterns"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono min-h-[140px] resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={patternsDraft}
+                onChange={(e) => setPatternsDraft(e.target.value)}
+                placeholder={"all hands\nstaff meeting\nboard meeting"}
+              />
+            </div>
+            <div>
+              <Label htmlFor="attendee-cutoff">Attendee count cutoff (≥ this → suppressed)</Label>
+              <Input
+                id="attendee-cutoff"
+                className="mt-1 w-32"
+                type="number"
+                min={2}
+                value={cutoffDraft}
+                onChange={(e) => setCutoffDraft(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={commit} disabled={update.isPending}>
+                Save
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditing(false)}
+                disabled={update.isPending}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">
+                Title keywords
+              </div>
+              {(current?.titlePatterns ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">None configured.</p>
+              ) : (
+                <ul className="text-sm space-y-0.5">
+                  {(current?.titlePatterns ?? []).map((p) => (
+                    <li key={p} className="font-mono bg-muted rounded px-2 py-0.5 inline-block mr-1 mb-1">
+                      {p}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <span className="text-xs font-medium text-muted-foreground">Attendee cutoff: </span>
+              <span className="text-sm">{current?.attendeeCountCutoff ?? "—"}</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Last updated:{" "}
+              {current?.updatedAt
+                ? new Date(current.updatedAt).toLocaleString()
+                : "never"}
+            </div>
+            <Button size="sm" variant="outline" onClick={startEdit}>
+              Edit
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

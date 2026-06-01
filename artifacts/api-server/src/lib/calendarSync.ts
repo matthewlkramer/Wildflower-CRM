@@ -4,7 +4,7 @@ import {
   calendarSyncState,
   type CalendarSyncState,
 } from "@workspace/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
 import {
@@ -16,6 +16,7 @@ import {
 } from "./gcal";
 import { getValidGoogleAccessTokenForUser, type ActiveGoogleGrant } from "./googleTokenStore";
 import { matchEmails, isMatchEmpty } from "./emailMatcher";
+import { shouldSuppressMeeting, loadMeetingFilterConfig, type MeetingFilterConfig } from "./calendarMeetingFilter";
 
 /**
  * Per-user Google Calendar sync orchestrator.
@@ -114,11 +115,24 @@ export async function syncUserCalendar(userId: string): Promise<CalendarSyncOutc
       hasSyncToken: !!state.syncToken,
     };
 
+    // Load the meeting-filter config once per sync run (not per event)
+    // so every event in this run uses the same snapshot of the config.
+    let meetingFilterConfig: MeetingFilterConfig;
+    try {
+      meetingFilterConfig = await loadMeetingFilterConfig();
+    } catch (e) {
+      logger.warn({ err: e, userId }, "Failed to load meeting filter config; using defaults");
+      meetingFilterConfig = {
+        titlePatterns: ["all hands", "governance mtg", "finance meeting", "tactical mtg", "partner training", "board meeting", "staff meeting", "all-staff", "all staff"],
+        attendeeCountCutoff: 20,
+      };
+    }
+
     if (!state.bootstrapCompletedAt) {
-      await runBootstrapPass(grant, state, report);
+      await runBootstrapPass(grant, state, report, meetingFilterConfig);
     } else if (state.syncToken) {
       try {
-        await runIncrementalPass(grant, state, report);
+        await runIncrementalPass(grant, state, report, meetingFilterConfig);
       } catch (e) {
         if (e instanceof CalendarSyncTokenGoneError) {
           report.mode = "rebootstrap";
@@ -152,6 +166,7 @@ export async function syncUserCalendar(userId: string): Promise<CalendarSyncOutc
         })
         .where(eq(calendarSyncState.calendarUserId, userId));
     }
+    void meetingFilterConfig; // used above, referenced to avoid unused-var lint
 
     await db
       .update(calendarSyncState)
@@ -184,6 +199,7 @@ async function runBootstrapPass(
   grant: ActiveGoogleGrant,
   state: CalendarSyncState,
   report: CalendarSyncReport,
+  meetingFilterConfig: MeetingFilterConfig,
 ): Promise<void> {
   // Anchor at the Unix epoch so we fetch the entire calendar history.
   // We can't simply omit `timeMin` — with `singleEvents=true` (which
@@ -211,7 +227,7 @@ async function runBootstrapPass(
     let pageErrors = 0;
     report.candidates += page.items.length;
     for (const ev of page.items) {
-      const ok = await processOneEvent(grant, state.gcalCalendarId, ev, report);
+      const ok = await processOneEvent(grant, state.gcalCalendarId, ev, report, meetingFilterConfig);
       if (!ok) pageErrors++;
     }
     report.errors += pageErrors;
@@ -267,6 +283,7 @@ async function runIncrementalPass(
   grant: ActiveGoogleGrant,
   state: CalendarSyncState,
   report: CalendarSyncReport,
+  meetingFilterConfig: MeetingFilterConfig,
 ): Promise<void> {
   const startSyncToken = state.syncToken!;
   let pageToken: string | null = state.incrementalPageToken ?? null;
@@ -294,7 +311,7 @@ async function runIncrementalPass(
     let pageErrors = 0;
     report.candidates += page.items.length;
     for (const ev of page.items) {
-      const ok = await processOneEvent(grant, state.gcalCalendarId, ev, report);
+      const ok = await processOneEvent(grant, state.gcalCalendarId, ev, report, meetingFilterConfig);
       if (!ok) pageErrors++;
     }
     report.errors += pageErrors;
@@ -363,6 +380,7 @@ async function processOneEvent(
   calendarId: string,
   event: GCalEvent,
   report: CalendarSyncReport,
+  meetingFilterConfig: MeetingFilterConfig,
 ): Promise<boolean> {
   const { startAt, endAt } = eventTimes(event);
   if (!startAt) {
@@ -373,10 +391,28 @@ async function processOneEvent(
     return true;
   }
 
+  // Group-meeting suppression: skip large internal meetings
+  // (by title keyword or attendee count) before any CRM matching.
+  // Also delete any existing stored row — the filter config may have
+  // been updated after the event was first synced.
+  if (shouldSuppressMeeting(event, meetingFilterConfig)) {
+    await db
+      .delete(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.calendarUserId, grant.userId),
+          eq(calendarEvents.gcalCalendarId, calendarId),
+          eq(calendarEvents.gcalEventId, event.id),
+        ),
+      );
+    report.skipped++;
+    return true;
+  }
+
   const attendeeEmails = extractAttendeeEmails(event);
   let match;
   try {
-    match = await matchEmails(attendeeEmails, grant.googleEmail);
+    match = await matchEmails(attendeeEmails, grant.googleEmail, startAt);
   } catch (e) {
     logger.warn(
       { err: e, userId: grant.userId, eventId: event.id },

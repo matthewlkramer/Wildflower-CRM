@@ -37,3 +37,5 @@ export * from "./meetingNotes";
 export * from "./bulkOperations";
 export * from "./savedViews";
 export * from "./trackedEmails";
+export * from "./personSuppressionWindows";
+export * from "./calendarMeetingFilters";

@@ -36,6 +36,8 @@ import meetingNotesRouter from "./meetingNotes";
 import savedViewsRouter from "./savedViews";
 import storageRouter from "./storage";
 import emailTrackingRouter from "./emailTracking";
+import suppressionWindowsRouter from "./suppressionWindows";
+import calendarMeetingFiltersRouter from "./calendarMeetingFiltersRoute";
 
 const router: IRouter = Router();
 
@@ -86,5 +88,7 @@ router.use(tasksRouter);
 router.use(meetingNotesRouter);
 router.use(savedViewsRouter);
 router.use(storageRouter);
+router.use(suppressionWindowsRouter);
+router.use(calendarMeetingFiltersRouter);
 
 export default router;

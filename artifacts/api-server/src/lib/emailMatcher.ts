@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
-import { emails, funders } from "@workspace/db/schema";
-import { inArray, sql } from "drizzle-orm";
+import { emails, funders, personSuppressionWindows } from "@workspace/db/schema";
+import { and, inArray, lte, or, sql, isNull, gte } from "drizzle-orm";
 
 /**
  * Lookup which people / funders / households in the CRM are
@@ -17,6 +17,9 @@ import { inArray, sql } from "drizzle-orm";
  *     still sync the message, we just route unmatched copies to
  *     the skip table — see the session plan note).
  *   - addresses are lowercased + deduped before query.
+ *   - personIds whose suppression window covers `messageDate` are
+ *     excluded — e.g. a Wildflower staff member's personal address
+ *     is suppressed during their employment window.
  *
  * Returns three deduped, sorted arrays of entity IDs. Empty array
  * (length 0) means "no match" — the worker treats that as the
@@ -72,9 +75,42 @@ function domainOf(addr: string): string | null {
   return d.length > 0 ? d : null;
 }
 
+/**
+ * Load the set of person IDs that have an active suppression window
+ * covering `date`. A window covers date D when:
+ *   (start_date IS NULL OR start_date <= D)
+ *   AND (end_date IS NULL OR end_date >= D)
+ */
+async function loadSuppressedPersonIds(date: Date): Promise<Set<string>> {
+  // Normalize to the start-of-day in UTC so window boundaries cover the
+  // entire calendar day.  Without this, an endDate stored as midnight
+  // would fail the `endDate >= messageDate` check for any message arriving
+  // later in the same day, causing a false "not suppressed" result.
+  const dayStart = new Date(date);
+  dayStart.setUTCHours(0, 0, 0, 0);
+
+  const rows = await db
+    .select({ personId: personSuppressionWindows.personId })
+    .from(personSuppressionWindows)
+    .where(
+      and(
+        or(
+          isNull(personSuppressionWindows.startDate),
+          lte(personSuppressionWindows.startDate, dayStart),
+        ),
+        or(
+          isNull(personSuppressionWindows.endDate),
+          gte(personSuppressionWindows.endDate, dayStart),
+        ),
+      ),
+    );
+  return new Set(rows.map((r) => r.personId));
+}
+
 export async function matchEmails(
   addresses: string[],
   mailboxOwnerEmail: string | null,
+  messageDate: Date = new Date(),
 ): Promise<EmailMatchResult> {
   const cleaned = normalizeForMatching(addresses, mailboxOwnerEmail);
   if (cleaned.length === 0) return EMPTY_MATCH;
@@ -90,7 +126,7 @@ export async function matchEmails(
   // lower(email) yet — for the read volumes this is fine (the
   // `emails` table is in the low five-figures), but worth adding
   // an expression index later if email matching ever becomes hot.
-  const [addrRows, domainRows] = await Promise.all([
+  const [addrRows, domainRows, suppressedIds] = await Promise.all([
     db
       .select({
         personId: emails.personId,
@@ -105,13 +141,14 @@ export async function matchEmails(
           .select({ funderId: funders.id })
           .from(funders)
           .where(inArray(sql`lower(${funders.emailDomain})`, domains)),
+    loadSuppressedPersonIds(messageDate),
   ]);
 
   const personIds = new Set<string>();
   const funderIds = new Set<string>();
   const householdIds = new Set<string>();
   for (const r of addrRows) {
-    if (r.personId) personIds.add(r.personId);
+    if (r.personId && !suppressedIds.has(r.personId)) personIds.add(r.personId);
     if (r.funderId) funderIds.add(r.funderId);
     if (r.householdId) householdIds.add(r.householdId);
   }

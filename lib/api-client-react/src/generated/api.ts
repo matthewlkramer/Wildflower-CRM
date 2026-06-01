@@ -31,6 +31,7 @@ import type {
   BulkUpdateResult,
   CalendarEvent,
   CalendarEventList,
+  CalendarMeetingFiltersConfig,
   CalendarSyncRunResponse,
   CandidateThankYouEmailList,
   CreateAddressBody,
@@ -50,6 +51,7 @@ import type {
   CreatePaymentIntermediaryBody,
   CreatePeopleEntityRoleBody,
   CreatePersonBody,
+  CreatePersonSuppressionWindowBody,
   CreatePhoneNumberBody,
   CreatePledgeAllocationBody,
   CreateSavedViewBody,
@@ -72,6 +74,7 @@ import type {
   FiscalYear,
   FiscalYearBreakdown,
   FiscalYearEntityGoal,
+  ForbiddenResponse,
   FundableProject,
   Funder,
   FunderDetail,
@@ -113,6 +116,7 @@ import type {
   ListPaymentIntermediariesParams,
   ListPeopleEntityRolesParams,
   ListPeopleParams,
+  ListPersonSuppressionWindowsParams,
   ListPhoneNumbersParams,
   ListPledgeAllocationsParams,
   ListRegionsParams,
@@ -145,6 +149,8 @@ import type {
   Person,
   PersonDetail,
   PersonList,
+  PersonSuppressionWindow,
+  PersonSuppressionWindowList,
   PhoneNumber,
   PhoneNumberList,
   PledgeAllocation,
@@ -172,6 +178,7 @@ import type {
   UnrecognizedCorrespondentList,
   UpdateAddressBody,
   UpdateCalendarEventPrivacyBody,
+  UpdateCalendarMeetingFiltersBody,
   UpdateCurrentUserBody,
   UpdateEmailBody,
   UpdateEmailMessagePrivacyBody,
@@ -189,6 +196,7 @@ import type {
   UpdatePaymentIntermediaryBody,
   UpdatePeopleEntityRoleBody,
   UpdatePersonBody,
+  UpdatePersonSuppressionWindowBody,
   UpdatePhoneNumberBody,
   UpdatePledgeAllocationBody,
   UpdateSavedViewBody,
@@ -12713,4 +12721,555 @@ export const useRequestUploadUrl = <
   TContext
 > => {
   return useMutation(getRequestUploadUrlMutationOptions(options));
+};
+
+/**
+ * @summary List per-person sync suppression windows
+ */
+export const getListPersonSuppressionWindowsUrl = (
+  params?: ListPersonSuppressionWindowsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/person-suppression-windows?${stringifiedParams}`
+    : `/api/person-suppression-windows`;
+};
+
+export const listPersonSuppressionWindows = async (
+  params?: ListPersonSuppressionWindowsParams,
+  options?: RequestInit,
+): Promise<PersonSuppressionWindowList> => {
+  return customFetch<PersonSuppressionWindowList>(
+    getListPersonSuppressionWindowsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListPersonSuppressionWindowsQueryKey = (
+  params?: ListPersonSuppressionWindowsParams,
+) => {
+  return [
+    `/api/person-suppression-windows`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListPersonSuppressionWindowsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPersonSuppressionWindows>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListPersonSuppressionWindowsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPersonSuppressionWindows>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListPersonSuppressionWindowsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPersonSuppressionWindows>>
+  > = ({ signal }) =>
+    listPersonSuppressionWindows(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPersonSuppressionWindows>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPersonSuppressionWindowsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPersonSuppressionWindows>>
+>;
+export type ListPersonSuppressionWindowsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List per-person sync suppression windows
+ */
+
+export function useListPersonSuppressionWindows<
+  TData = Awaited<ReturnType<typeof listPersonSuppressionWindows>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListPersonSuppressionWindowsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPersonSuppressionWindows>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPersonSuppressionWindowsQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add a suppression window for a person (admin only)
+ */
+export const getCreatePersonSuppressionWindowUrl = () => {
+  return `/api/person-suppression-windows`;
+};
+
+export const createPersonSuppressionWindow = async (
+  createPersonSuppressionWindowBody: CreatePersonSuppressionWindowBody,
+  options?: RequestInit,
+): Promise<PersonSuppressionWindow> => {
+  return customFetch<PersonSuppressionWindow>(
+    getCreatePersonSuppressionWindowUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createPersonSuppressionWindowBody),
+    },
+  );
+};
+
+export const getCreatePersonSuppressionWindowMutationOptions = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPersonSuppressionWindow>>,
+    TError,
+    { data: BodyType<CreatePersonSuppressionWindowBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createPersonSuppressionWindow>>,
+  TError,
+  { data: BodyType<CreatePersonSuppressionWindowBody> },
+  TContext
+> => {
+  const mutationKey = ["createPersonSuppressionWindow"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createPersonSuppressionWindow>>,
+    { data: BodyType<CreatePersonSuppressionWindowBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createPersonSuppressionWindow(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreatePersonSuppressionWindowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createPersonSuppressionWindow>>
+>;
+export type CreatePersonSuppressionWindowMutationBody =
+  BodyType<CreatePersonSuppressionWindowBody>;
+export type CreatePersonSuppressionWindowMutationError = ErrorType<
+  BadRequestResponse | ForbiddenResponse
+>;
+
+/**
+ * @summary Add a suppression window for a person (admin only)
+ */
+export const useCreatePersonSuppressionWindow = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPersonSuppressionWindow>>,
+    TError,
+    { data: BodyType<CreatePersonSuppressionWindowBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createPersonSuppressionWindow>>,
+  TError,
+  { data: BodyType<CreatePersonSuppressionWindowBody> },
+  TContext
+> => {
+  return useMutation(getCreatePersonSuppressionWindowMutationOptions(options));
+};
+
+/**
+ * @summary Update a suppression window (admin only)
+ */
+export const getUpdatePersonSuppressionWindowUrl = (id: string) => {
+  return `/api/person-suppression-windows/${id}`;
+};
+
+export const updatePersonSuppressionWindow = async (
+  id: string,
+  updatePersonSuppressionWindowBody: UpdatePersonSuppressionWindowBody,
+  options?: RequestInit,
+): Promise<PersonSuppressionWindow> => {
+  return customFetch<PersonSuppressionWindow>(
+    getUpdatePersonSuppressionWindowUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updatePersonSuppressionWindowBody),
+    },
+  );
+};
+
+export const getUpdatePersonSuppressionWindowMutationOptions = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePersonSuppressionWindow>>,
+    TError,
+    { id: string; data: BodyType<UpdatePersonSuppressionWindowBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePersonSuppressionWindow>>,
+  TError,
+  { id: string; data: BodyType<UpdatePersonSuppressionWindowBody> },
+  TContext
+> => {
+  const mutationKey = ["updatePersonSuppressionWindow"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePersonSuppressionWindow>>,
+    { id: string; data: BodyType<UpdatePersonSuppressionWindowBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updatePersonSuppressionWindow(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePersonSuppressionWindowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePersonSuppressionWindow>>
+>;
+export type UpdatePersonSuppressionWindowMutationBody =
+  BodyType<UpdatePersonSuppressionWindowBody>;
+export type UpdatePersonSuppressionWindowMutationError = ErrorType<
+  BadRequestResponse | ForbiddenResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Update a suppression window (admin only)
+ */
+export const useUpdatePersonSuppressionWindow = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePersonSuppressionWindow>>,
+    TError,
+    { id: string; data: BodyType<UpdatePersonSuppressionWindowBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updatePersonSuppressionWindow>>,
+  TError,
+  { id: string; data: BodyType<UpdatePersonSuppressionWindowBody> },
+  TContext
+> => {
+  return useMutation(getUpdatePersonSuppressionWindowMutationOptions(options));
+};
+
+/**
+ * @summary Delete a suppression window (admin only)
+ */
+export const getDeletePersonSuppressionWindowUrl = (id: string) => {
+  return `/api/person-suppression-windows/${id}`;
+};
+
+export const deletePersonSuppressionWindow = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeletePersonSuppressionWindowUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeletePersonSuppressionWindowMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePersonSuppressionWindow>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deletePersonSuppressionWindow>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deletePersonSuppressionWindow"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deletePersonSuppressionWindow>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deletePersonSuppressionWindow(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeletePersonSuppressionWindowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deletePersonSuppressionWindow>>
+>;
+
+export type DeletePersonSuppressionWindowMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Delete a suppression window (admin only)
+ */
+export const useDeletePersonSuppressionWindow = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePersonSuppressionWindow>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deletePersonSuppressionWindow>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeletePersonSuppressionWindowMutationOptions(options));
+};
+
+/**
+ * @summary Get the current group-meeting suppression config
+ */
+export const getGetCalendarMeetingFiltersUrl = () => {
+  return `/api/calendar-meeting-filters`;
+};
+
+export const getCalendarMeetingFilters = async (
+  options?: RequestInit,
+): Promise<CalendarMeetingFiltersConfig> => {
+  return customFetch<CalendarMeetingFiltersConfig>(
+    getGetCalendarMeetingFiltersUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetCalendarMeetingFiltersQueryKey = () => {
+  return [`/api/calendar-meeting-filters`] as const;
+};
+
+export const getGetCalendarMeetingFiltersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCalendarMeetingFilters>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCalendarMeetingFilters>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCalendarMeetingFiltersQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCalendarMeetingFilters>>
+  > = ({ signal }) => getCalendarMeetingFilters({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCalendarMeetingFilters>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCalendarMeetingFiltersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCalendarMeetingFilters>>
+>;
+export type GetCalendarMeetingFiltersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the current group-meeting suppression config
+ */
+
+export function useGetCalendarMeetingFilters<
+  TData = Awaited<ReturnType<typeof getCalendarMeetingFilters>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCalendarMeetingFilters>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCalendarMeetingFiltersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Replace the group-meeting suppression config (admin only)
+ */
+export const getUpdateCalendarMeetingFiltersUrl = () => {
+  return `/api/calendar-meeting-filters`;
+};
+
+export const updateCalendarMeetingFilters = async (
+  updateCalendarMeetingFiltersBody: UpdateCalendarMeetingFiltersBody,
+  options?: RequestInit,
+): Promise<CalendarMeetingFiltersConfig> => {
+  return customFetch<CalendarMeetingFiltersConfig>(
+    getUpdateCalendarMeetingFiltersUrl(),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateCalendarMeetingFiltersBody),
+    },
+  );
+};
+
+export const getUpdateCalendarMeetingFiltersMutationOptions = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCalendarMeetingFilters>>,
+    TError,
+    { data: BodyType<UpdateCalendarMeetingFiltersBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCalendarMeetingFilters>>,
+  TError,
+  { data: BodyType<UpdateCalendarMeetingFiltersBody> },
+  TContext
+> => {
+  const mutationKey = ["updateCalendarMeetingFilters"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCalendarMeetingFilters>>,
+    { data: BodyType<UpdateCalendarMeetingFiltersBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateCalendarMeetingFilters(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCalendarMeetingFiltersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateCalendarMeetingFilters>>
+>;
+export type UpdateCalendarMeetingFiltersMutationBody =
+  BodyType<UpdateCalendarMeetingFiltersBody>;
+export type UpdateCalendarMeetingFiltersMutationError = ErrorType<
+  BadRequestResponse | ForbiddenResponse
+>;
+
+/**
+ * @summary Replace the group-meeting suppression config (admin only)
+ */
+export const useUpdateCalendarMeetingFilters = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCalendarMeetingFilters>>,
+    TError,
+    { data: BodyType<UpdateCalendarMeetingFiltersBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateCalendarMeetingFilters>>,
+  TError,
+  { data: BodyType<UpdateCalendarMeetingFiltersBody> },
+  TContext
+> => {
+  return useMutation(getUpdateCalendarMeetingFiltersMutationOptions(options));
 };
