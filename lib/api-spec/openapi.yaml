@@ -3195,6 +3195,9 @@ components:
         matchedFunderIds:    { type: array, items: { type: string }, nullable: true }
         matchedHouseholdIds: { type: array, items: { type: string }, nullable: true }
         aiSummary:           { type: string, nullable: true, description: "One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent." }
+        isTracked:           { type: boolean, readOnly: true, description: "True when this sent message matches an open-tracking pixel record. Only ever true for sent messages." }
+        trackingTotalViews:  { type: integer, nullable: true, readOnly: true, description: "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId/funderId/householdId), this counts opens by that contact only. Null when not tracked." }
+        trackingLastOpenedAt: { type: string, format: date-time, nullable: true, readOnly: true, description: "Most recent tracked open timestamp. Null when not tracked or not yet opened." }
     EmailMessageDetail:
       allOf:
         - $ref: "#/components/schemas/EmailMessage"

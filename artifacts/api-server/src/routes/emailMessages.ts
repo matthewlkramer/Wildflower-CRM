@@ -15,6 +15,7 @@ import {
   parseOrBadRequest,
   parsePagination,
 } from "../lib/helpers";
+import { computeTracking } from "../lib/emailTrackingEnrich";
 
 /**
  * Read-only-ish surface over the synced Gmail messages. The sync
@@ -109,7 +110,23 @@ router.get(
         .offset(offset),
       db.select({ value: count() }).from(emailMessages).where(where),
     ]);
-    res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
+    const trackingMap = await computeTracking(rows, {
+      personId: q.personId,
+      funderId: q.funderId,
+      householdId: q.householdId,
+    });
+    const data = rows.map((r) => {
+      const t = trackingMap.get(r.id);
+      return t
+        ? { ...r, ...t }
+        : {
+            ...r,
+            isTracked: false,
+            trackingTotalViews: null,
+            trackingLastOpenedAt: null,
+          };
+    });
+    res.json({ data, pagination: { page, limit, total: Number(total) } });
   }),
 );
 

@@ -73,6 +73,8 @@ import {
   Video,
   Lock,
   Paperclip,
+  Eye,
+  EyeOff,
   ExternalLink,
   Sparkles,
   StickyNote,
@@ -828,6 +830,28 @@ export function UnifiedActivityFeed({
                       ) : null}
                       {r.hasAttachments ? (
                         <Paperclip className="h-3 w-3 text-muted-foreground" />
+                      ) : null}
+                      {r.isTracked ? (
+                        r.trackingTotalViews && r.trackingTotalViews > 0 ? (
+                          <Badge
+                            variant="default"
+                            className="gap-1"
+                            title={
+                              r.trackingLastOpenedAt
+                                ? `Last opened ${fmtWhen(r.trackingLastOpenedAt)}`
+                                : undefined
+                            }
+                          >
+                            <Eye className="h-3 w-3" /> Opened
+                            {r.trackingTotalViews > 1
+                              ? ` ${r.trackingTotalViews}\u00d7`
+                              : ""}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="gap-1">
+                            <EyeOff className="h-3 w-3" /> Not opened yet
+                          </Badge>
+                        )
                       ) : null}
                       <span className="text-xs text-muted-foreground">
                         {fmtWhen(r.sentAt)}

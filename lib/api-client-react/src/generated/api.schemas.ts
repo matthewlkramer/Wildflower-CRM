@@ -1656,6 +1656,12 @@ export interface EmailMessage {
   matchedHouseholdIds?: string[] | null;
   /** One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent. */
   aiSummary?: string | null;
+  /** True when this sent message matches an open-tracking pixel record. Only ever true for sent messages. */
+  readonly isTracked?: boolean;
+  /** Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId/funderId/householdId), this counts opens by that contact only. Null when not tracked. */
+  readonly trackingTotalViews?: number | null;
+  /** Most recent tracked open timestamp. Null when not tracked or not yet opened. */
+  readonly trackingLastOpenedAt?: string | null;
 }
 
 export interface EmailAttachmentSummary {

@@ -5916,6 +5916,25 @@ export const ListEmailMessagesResponse = zod.object({
         .describe(
           "One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent.",
         ),
+      isTracked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when this sent message matches an open-tracking pixel record. Only ever true for sent messages.",
+        ),
+      trackingTotalViews: zod
+        .number()
+        .nullish()
+        .describe(
+          "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId\/funderId\/householdId), this counts opens by that contact only. Null when not tracked.",
+        ),
+      trackingLastOpenedAt: zod
+        .string()
+        .datetime({})
+        .nullish()
+        .describe(
+          "Most recent tracked open timestamp. Null when not tracked or not yet opened.",
+        ),
     }),
   ),
   pagination: zod.object({
@@ -5954,6 +5973,25 @@ export const GetEmailMessageResponse = zod
       .nullish()
       .describe(
         "One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent.",
+      ),
+    isTracked: zod
+      .boolean()
+      .optional()
+      .describe(
+        "True when this sent message matches an open-tracking pixel record. Only ever true for sent messages.",
+      ),
+    trackingTotalViews: zod
+      .number()
+      .nullish()
+      .describe(
+        "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId\/funderId\/householdId), this counts opens by that contact only. Null when not tracked.",
+      ),
+    trackingLastOpenedAt: zod
+      .string()
+      .datetime({})
+      .nullish()
+      .describe(
+        "Most recent tracked open timestamp. Null when not tracked or not yet opened.",
       ),
   })
   .and(
@@ -6006,6 +6044,25 @@ export const UpdateEmailMessagePrivacyResponse = zod.object({
     .nullish()
     .describe(
       "One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent.",
+    ),
+  isTracked: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this sent message matches an open-tracking pixel record. Only ever true for sent messages.",
+    ),
+  trackingTotalViews: zod
+    .number()
+    .nullish()
+    .describe(
+      "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId\/funderId\/householdId), this counts opens by that contact only. Null when not tracked.",
+    ),
+  trackingLastOpenedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Most recent tracked open timestamp. Null when not tracked or not yet opened.",
     ),
 });
 
