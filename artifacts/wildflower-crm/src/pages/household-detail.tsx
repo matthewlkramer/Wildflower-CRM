@@ -47,7 +47,7 @@ export default function HouseholdDetail() {
   if (isError || !data) {
     return (
       <div className="space-y-4">
-        <Link href="/households" className="text-sm text-primary hover:underline">← Back to households</Link>
+        <Link href="/individuals" className="text-sm text-primary hover:underline">← Back to individuals</Link>
         <div className="text-sm text-destructive">
           {error instanceof Error ? error.message : "Household not found."}
         </div>
@@ -89,7 +89,7 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
       onSuccess: async () => {
         await queryClient.invalidateQueries({ queryKey: getListHouseholdsQueryKey() });
         toast({ title: "Household deleted" });
-        navigate("/households");
+        navigate("/individuals");
       },
       onError: (err: unknown) => {
         toast({
@@ -195,8 +195,8 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
 
   return (
     <RecordLayout
-      backHref="/households"
-      backLabel="Back to households"
+      backHref="/individuals"
+      backLabel="Back to individuals"
       title={title}
       typeBadge="Household"
       actions={actions}

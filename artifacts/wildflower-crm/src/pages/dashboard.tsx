@@ -51,7 +51,6 @@ export default function Dashboard() {
   const countTiles = [
     { label: "People", value: counts?.people, href: "/individuals", testId: "tile-people" },
     { label: "Funding entities", value: counts?.funders, href: "/funding-entities", testId: "tile-funders" },
-    { label: "Households", value: counts?.households, href: "/households", testId: "tile-households" },
     { label: "Organizations", value: counts?.organizations, href: "/organizations", testId: "tile-orgs" },
     { label: "Opportunities", value: counts?.opportunities, href: "/opportunities", testId: "tile-opps" },
     { label: "Open opps", value: counts?.openOpportunities, href: "/opportunities", testId: "tile-open-opps" },

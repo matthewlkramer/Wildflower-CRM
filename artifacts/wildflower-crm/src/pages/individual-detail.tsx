@@ -794,6 +794,8 @@ function PersonView({ person }: { person: PersonDetail }) {
             emptyLabel="No open opportunities."
           />
 
+          <HouseholdCard person={person} />
+
           <PeopleCard person={person} />
 
           <OrganizationsCard roles={roles} personId={person.id} />
@@ -918,20 +920,12 @@ function OrganizationsCard({
 }
 
 function PeopleCard({ person }: { person: PersonDetail }) {
-  // "People" = everyone connected to this person through a shared entity:
-  //   • co-members of every household this person belongs to, and
-  //   • current/former colleagues — people who hold a role at the same
-  //     funder / organization / payment intermediary this person does.
-  // Each related entity is resolved by its own child component so the hooks
-  // stay stable regardless of how many entities the person is tied to.
+  // "Colleagues" = current/former colleagues — people who hold a role at the
+  // same funder / organization / payment intermediary this person does.
+  // Household co-members live in the dedicated Household card above. Each
+  // related entity is resolved by its own child component so the hooks stay
+  // stable regardless of how many entities the person is tied to.
   const roles = person.roles ?? [];
-  const householdIds = Array.from(
-    new Set(
-      roles
-        .filter((r) => r.entityType === "household" && r.householdId)
-        .map((r) => r.householdId as string),
-    ),
-  );
 
   // Dedupe org affiliations by entity; a person can hold more than one role at
   // the same org (e.g. a current and a past one). The colleague is treated as
@@ -959,41 +953,30 @@ function PeopleCard({ person }: { person: PersonDetail }) {
     }
   }
 
-  const hasAny = householdIds.length > 0 || colleagueEntities.size > 0;
+  const hasAny = colleagueEntities.size > 0;
   // Past colleagues are resolved inside the child components, so we can't know
   // up here whether any inactive rows exist — offer the toggle whenever there
-  // are colleague affiliations (households are always "current" memberships).
+  // are colleague affiliations.
   const canHaveInactive = colleagueEntities.size > 0;
   const [hideInactive, setHideInactive] = useState(false);
   return (
     <RelatedCard
-      title="People"
+      title="Colleagues"
       action={
-        <div className="flex items-center gap-1">
-          <AddPersonToHouseholdDialog personId={person.id} />
-          {canHaveInactive && (
-            <HideInactiveToggle
-              hidden={hideInactive}
-              onToggle={() => setHideInactive((v) => !v)}
-            />
-          )}
-        </div>
+        canHaveInactive ? (
+          <HideInactiveToggle
+            hidden={hideInactive}
+            onToggle={() => setHideInactive((v) => !v)}
+          />
+        ) : undefined
       }
     >
       {!hasAny ? (
         <p className="px-2 py-2 text-sm text-muted-foreground">
-          No related people.
+          No colleagues.
         </p>
       ) : (
         <div>
-          {householdIds.map((hid) => (
-            <HouseholdMembers
-              key={hid}
-              householdId={hid}
-              excludePersonId={person.id}
-              hideInactive={hideInactive}
-            />
-          ))}
           {Array.from(colleagueEntities.values()).map((e) => (
             <ColleagueMembers
               key={`${e.entityType}:${e.entityId}`}
@@ -1010,14 +993,53 @@ function PeopleCard({ person }: { person: PersonDetail }) {
   );
 }
 
-function HouseholdMembers({
+// Dedicated Household card on the individual page. Households stay first-class
+// donor entities (joint-account giving), but they no longer have a top-level
+// list page — they surface contextually here: name, combined giving, the other
+// members, and a link through to the full household. Inactive households (a
+// couple split by death/divorce) render as "Former household" so both former
+// members keep visibility of the shared giving history without either personally
+// owning it.
+function HouseholdCard({ person }: { person: PersonDetail }) {
+  const roles = person.roles ?? [];
+  const householdIds = Array.from(
+    new Set(
+      roles
+        .filter((r) => r.entityType === "household" && r.householdId)
+        .map((r) => r.householdId as string),
+    ),
+  );
+  return (
+    <RelatedCard
+      title="Household"
+      count={householdIds.length > 0 ? householdIds.length : undefined}
+      action={<AddPersonToHouseholdDialog personId={person.id} />}
+    >
+      {householdIds.length === 0 ? (
+        <p className="px-2 py-2 text-sm text-muted-foreground">
+          Not part of a household.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {householdIds.map((hid) => (
+            <HouseholdCardItem
+              key={hid}
+              householdId={hid}
+              excludePersonId={person.id}
+            />
+          ))}
+        </div>
+      )}
+    </RelatedCard>
+  );
+}
+
+function HouseholdCardItem({
   householdId,
   excludePersonId,
-  hideInactive,
 }: {
   householdId: string;
   excludePersonId: string;
-  hideInactive: boolean;
 }) {
   const { data, isLoading, isError } = useGetHousehold(householdId, {
     query: { queryKey: getGetHouseholdQueryKey(householdId) },
@@ -1025,34 +1047,77 @@ function HouseholdMembers({
   if (isLoading) {
     return <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>;
   }
-  if (isError) {
+  if (isError || !data) {
     return (
       <p className="px-2 py-2 text-sm text-destructive">
-        Couldn’t load related people.
+        Couldn’t load household.
       </p>
     );
   }
-  const members = (data?.people ?? []).filter(
-    (m) =>
-      m.personId !== excludePersonId &&
-      (!hideInactive || m.current === "current"),
+  const otherMembers = (data.people ?? []).filter(
+    (m) => m.personId !== excludePersonId,
   );
-  if (members.length === 0) return null;
+  const openAsks = data.openOpportunityCount ?? 0;
   return (
-    <>
-      {members.map((m) => (
-        <AffiliationRow
-          key={m.id}
-          name={m.personName ?? `Person ${m.personId}`}
-          href={`/individuals/${m.personId}`}
-          role="Household"
-          status={m.current === "current" ? "active" : "past"}
-          primary={m.primaryContact}
-          hideStatusBadge
-          action={<EditPeopleEntityRoleDialog role={m} />}
-        />
-      ))}
-    </>
+    <div data-testid={`household-card-item-${data.id}`}>
+      <div className="flex items-center justify-between gap-2 px-2">
+        <Link
+          href={`/households/${data.id}`}
+          className="truncate font-medium text-primary hover:underline"
+          data-testid={`link-household-${data.id}`}
+        >
+          {data.name}
+        </Link>
+        {!data.active && (
+          <Badge variant="outline" className="shrink-0">
+            Former household
+          </Badge>
+        )}
+      </div>
+
+      <dl className="mt-2 grid grid-cols-3 gap-2 px-2 text-sm">
+        <div>
+          <dt className="text-xs text-muted-foreground">Combined giving</dt>
+          <dd className="font-medium tabular-nums">
+            {formatCurrency(data.lifetimeGiving)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Last gift</dt>
+          <dd className="font-medium tabular-nums">
+            {data.mostRecentGiftDate ? formatDate(data.mostRecentGiftDate) : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Open asks</dt>
+          <dd className="font-medium tabular-nums">{openAsks}</dd>
+        </div>
+      </dl>
+
+      <div className="mt-2">
+        <div className="px-2 text-xs font-medium text-muted-foreground">
+          {otherMembers.length > 0 ? "Other members" : "Members"}
+        </div>
+        {otherMembers.length > 0 ? (
+          otherMembers.map((m) => (
+            <AffiliationRow
+              key={m.id}
+              name={m.personName ?? `Person ${m.personId}`}
+              href={`/individuals/${m.personId}`}
+              role={m.externalTitleOrRole ?? formatEnum(m.connection)}
+              status={m.current === "current" ? "active" : "past"}
+              primary={m.primaryContact ?? false}
+              hideStatusBadge
+              action={<EditPeopleEntityRoleDialog role={m} />}
+            />
+          ))
+        ) : (
+          <p className="px-2 py-1 text-sm text-muted-foreground">
+            No other members.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -4,7 +4,6 @@ import { useClerk, useUser } from "@clerk/react";
 import { 
   LayoutDashboard, 
   Users, 
-  Home, 
   MessageSquare,
   Building2, 
   Target, 
@@ -34,7 +33,6 @@ import { AddMeetingNoteDialog } from "@/components/meeting-notes-panel";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/individuals", label: "Individuals", icon: Users },
-  { href: "/households", label: "Households", icon: Home },
   { href: "/funding-entities", label: "Funding Entities", icon: Building2 },
   { href: "/opportunities", label: "Opportunities", icon: Target },
   { href: "/pipeline", label: "Pipeline", icon: Columns3 },
