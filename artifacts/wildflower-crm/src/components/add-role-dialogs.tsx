@@ -472,6 +472,31 @@ export function AddFunderPersonRoleDialog({ funderId }: { funderId: string }) {
     setPrimary(false);
   };
 
+  const createPerson = useCreatePerson();
+
+  // Inline-create a person from the picker: persist, prime the get-cache so the
+  // resolved name shows immediately, refresh the list, return the new id.
+  const handleCreatePerson = async (name: string): Promise<string | null> => {
+    const fullName = name.trim();
+    if (!fullName) return null;
+    try {
+      const p = await createPerson.mutateAsync({
+        data: { ...splitPersonName(fullName), fullName },
+      });
+      queryClient.setQueryData(getGetPersonQueryKey(p.id), p);
+      await queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() });
+      toast({ title: "Person created" });
+      return p.id;
+    } catch (err: unknown) {
+      toast({
+        title: "Create failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
   const create = useCreatePeopleEntityRole({
     mutation: {
       onSuccess: async () => {
@@ -519,7 +544,8 @@ export function AddFunderPersonRoleDialog({ funderId }: { funderId: string }) {
         <DialogHeader>
           <DialogTitle>Link person</DialogTitle>
           <DialogDescription>
-            Tie a person to this funder.
+            Tie a person to this funder. If they don't exist yet, type their
+            name and choose "Create".
           </DialogDescription>
         </DialogHeader>
         <form
@@ -539,6 +565,8 @@ export function AddFunderPersonRoleDialog({ funderId }: { funderId: string }) {
               allowNull={false}
               placeholder="Search people…"
               testId="select-funder-person-entity"
+              onCreate={handleCreatePerson}
+              createNoun="person"
             />
           </div>
           <RoleAttributeFields
