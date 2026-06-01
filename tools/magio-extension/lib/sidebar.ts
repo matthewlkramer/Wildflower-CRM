@@ -12,6 +12,14 @@ const MAIN_MIN_WIDTH_ATTR = 'data-magio-main-min-width';
 const SIDEBAR_SELECTOR = `#${SIDEBAR_ID}, [data-magio-sidebar="true"]`;
 
 let renderToken = 0;
+let pollIntervalId: ReturnType<typeof setInterval> | null = null;
+
+function clearPollInterval() {
+  if (pollIntervalId !== null) {
+    clearInterval(pollIntervalId);
+    pollIntervalId = null;
+  }
+}
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -170,6 +178,7 @@ function bindCloseButton(sidebar: HTMLElement) {
 }
 
 export function removeSidebar() {
+  clearPollInterval();
   document.querySelectorAll(SIDEBAR_SELECTOR).forEach((sidebar) => sidebar.remove());
 
   const shell = document.querySelector<HTMLElement>(`[${SHELL_WIDTH_ATTR}]`);
@@ -282,4 +291,20 @@ export async function renderSidebar(subject: string) {
     sidebar.innerHTML = buildSidebarHTML(data);
     bindCloseButton(sidebar);
   }
+
+  // Poll for new views every 10 seconds while the sidebar is open.
+  clearPollInterval();
+  const POLL_INTERVAL_MS = 10_000;
+  pollIntervalId = setInterval(async () => {
+    if (!document.body.contains(sidebar)) {
+      clearPollInterval();
+      return;
+    }
+    const fresh = await fetchTrackingData(subject);
+    if (!fresh) return;
+    if (document.body.contains(sidebar)) {
+      sidebar.innerHTML = buildSidebarHTML(fresh);
+      bindCloseButton(sidebar);
+    }
+  }, POLL_INTERVAL_MS);
 }
