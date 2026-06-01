@@ -125,17 +125,17 @@ export function RecordLayout({
       {/* 3-lane layout: details / activity / related.
           - mobile (default): single stacked column, activity feed first.
           - laptop (md): two lanes (activity + related); details is a drawer.
-          - desktop (xl): three lanes; details + related are sticky and scroll
-            independently of the (taller) center feed. */}
+          - desktop (xl): three lanes that all grow to their natural height and
+            scroll together with the page (no per-lane internal scrolling). */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(300px,360px)]">
         {/* LEFT — record details. Hidden at md (shown via drawer instead). */}
-        <div className="order-2 space-y-4 md:hidden xl:order-1 xl:block xl:self-start xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pr-1">
+        <div className="order-2 space-y-4 md:hidden xl:order-1 xl:block xl:self-start">
           {left}
         </div>
         {/* CENTER — unified activity feed (widest, primary focus). */}
         <div className="order-1 space-y-4 xl:order-2">{center}</div>
         {/* RIGHT — related records. */}
-        <div className="order-3 space-y-4 xl:order-3 xl:self-start xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pr-1">
+        <div className="order-3 space-y-4 xl:order-3 xl:self-start">
           {right}
         </div>
       </div>
