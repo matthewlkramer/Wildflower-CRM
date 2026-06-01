@@ -23,7 +23,7 @@ title = "CRM Competitive Review & Roadmap"
 id = "VJpEbVGKIya4SlxpQY2PG"
 uri = "file://tools/magio-extension/build/wildflower-tracking-extension.zip"
 type = "unspecified"
-title = "Extension bundle (upload this to the Chrome Web Store)"
+title = "Wildflower Tracking Extension (dev build)"
 
 [[outputs]]
 id = "OHRRM_nsErt0JmUVK-w6k"
@@ -48,3 +48,21 @@ id = "bOIopGPiiEPToF2h8BIjx"
 uri = "file://tools/magio-extension/build/screenshots/01-gmail-overview.jpg"
 type = "image"
 title = "Chrome Web Store screenshot (1280×800)"
+
+[[outputs]]
+id = "rKEiRkGvarmuqryRjhIXq"
+uri = "file://review-samples/calendar-events-sample.csv"
+type = "table"
+title = "Calendar Events — 100 random (synced)"
+
+[[outputs]]
+id = "Rr04fzfrGb37JWc1LOfAi"
+uri = "file://review-samples/emails-kept-sample.csv"
+type = "table"
+title = "Gmail Kept — 1,000 random (matched a CRM contact)"
+
+[[outputs]]
+id = "EYOG0hqsEeVV2lbI_hrwj"
+uri = "file://review-samples/emails-skipped-sample.csv"
+type = "table"
+title = "Gmail Skipped — 1,000 random (no CRM match)"
