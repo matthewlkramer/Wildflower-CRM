@@ -29,6 +29,11 @@ import { CreateTrackedEmailBody as CreateTrackedEmailBodyZ } from "@workspace/ap
  */
 const router: IRouter = Router();
 
+/**
+ * How far back `DELETE /email-tracking/:id/views/latest` reaches when the
+ * sidebar asks us to scrub a sender self-view (e.g. sender opened on a
+ * different network so the IP check didn't suppress it).
+ */
 const SENDER_PEEK_WINDOW_MS = 5 * 60_000;
 
 /**
@@ -183,11 +188,21 @@ router.get(
       return;
     }
 
+    // Suppress two classes of non-human opens:
+    //
+    // 1. Gmail image proxy (GoogleImageProxy UA): Gmail pre-downloads all
+    //    images in an email through its own proxy at delivery time. This fires
+    //    the pixel but represents Gmail's caching system, not a human open.
+    //    Filter by UA rather than by time so real recipient opens in the first
+    //    few minutes are not also suppressed.
+    //
+    // 2. Sender self-view (same IP): the sender opening the email in their
+    //    Sent folder from the same network should not count as a recipient open.
+    //    The sidebar handles the cross-network case via DELETE .../views/latest.
+    const isGmailProxy = /GoogleImageProxy/i.test(userAgent ?? "");
     const isSenderPeek = !!email.senderIp && !!ip && email.senderIp === ip;
-    const isImmediateOpen =
-      Date.now() - email.createdAt.getTime() < SENDER_PEEK_WINDOW_MS;
 
-    if (!isSenderPeek && !isImmediateOpen) {
+    if (!isGmailProxy && !isSenderPeek) {
       // Fire-and-forget so we never hold up the pixel response.
       db.insert(trackedEmailViews)
         .values({
