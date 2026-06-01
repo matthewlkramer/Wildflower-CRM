@@ -732,6 +732,21 @@ export interface Email {
   updatedAt: string;
 }
 
+export interface PhoneNumber {
+  id: string;
+  phoneNumber: string;
+  type?: PhoneType | null;
+  personId?: string | null;
+  funderId?: string | null;
+  organizationId?: string | null;
+  paymentIntermediaryId?: string | null;
+  householdId?: string | null;
+  validity: ContactValidity;
+  isPreferred: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Address {
   id: string;
   street?: string | null;
@@ -761,6 +776,7 @@ export interface PaymentIntermediary {
 export type FunderDetail = Funder & {
   people?: PeopleEntityRole[];
   emails?: Email[];
+  phoneNumbers?: PhoneNumber[];
   addresses?: Address[];
   /** Resolved payment intermediary referenced by paymentIntermediaryId, if set. */
   readonly paymentIntermediary?: PaymentIntermediary | null;
@@ -1007,17 +1023,6 @@ export interface Person {
   updatedAt: string;
 }
 
-export interface PhoneNumber {
-  id: string;
-  phoneNumber: string;
-  type?: PhoneType | null;
-  personId?: string | null;
-  validity: ContactValidity;
-  isPreferred: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export type PersonDetail = Person & {
   roles?: PeopleEntityRole[];
   emails?: Email[];
@@ -1172,6 +1177,10 @@ export interface CreatePhoneNumberBody {
   phoneNumber: string;
   type?: PhoneType;
   personId?: string;
+  funderId?: string;
+  organizationId?: string;
+  paymentIntermediaryId?: string;
+  householdId?: string;
   validity?: ContactValidity;
   isPreferred?: boolean;
 }

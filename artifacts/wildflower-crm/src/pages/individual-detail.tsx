@@ -34,6 +34,7 @@ import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import {
   EmailsEditor,
   PhoneNumbersEditor,
+  AddressesEditor,
 } from "@/components/contact-info-editor";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { PinnedMediaCard } from "@/components/media-mentions-panel";
@@ -516,31 +517,22 @@ function PersonView({ person }: { person: PersonDetail }) {
             </div>
           </FieldCard>
 
-          <FieldCard title="Contact info" defaultOpen={false}>
+          <FieldCard title="Contact info">
             <div className="space-y-4">
-              <EmailsEditor personId={person.id} emails={person.emails} />
+              <EmailsEditor
+                owner={{ kind: "person", id: person.id }}
+                emails={person.emails}
+              />
               <Separator />
               <PhoneNumbersEditor
-                personId={person.id}
+                owner={{ kind: "person", id: person.id }}
                 phoneNumbers={person.phoneNumbers}
               />
               <Separator />
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">Addresses</div>
-                {person.addresses && person.addresses.length > 0 ? (
-                  <ul className="space-y-2 text-sm">
-                    {person.addresses.map((a) => (
-                      <li key={a.id}>
-                        {[a.street, a.cityName, a.stateCode, a.postalCode]
-                          .filter(Boolean)
-                          .join(", ") || "—"}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No addresses.</p>
-                )}
-              </div>
+              <AddressesEditor
+                owner={{ kind: "person", id: person.id }}
+                addresses={person.addresses}
+              />
             </div>
           </FieldCard>
 

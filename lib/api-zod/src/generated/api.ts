@@ -1183,6 +1183,24 @@ export const GetFunderResponse = zod
           }),
         )
         .optional(),
+      phoneNumbers: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            phoneNumber: zod.string(),
+            type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
+            personId: zod.string().nullish(),
+            funderId: zod.string().nullish(),
+            organizationId: zod.string().nullish(),
+            paymentIntermediaryId: zod.string().nullish(),
+            householdId: zod.string().nullish(),
+            validity: zod.enum(["valid", "invalid", "unknown"]),
+            isPreferred: zod.boolean(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
+          }),
+        )
+        .optional(),
       addresses: zod
         .array(
           zod.object({
@@ -2557,6 +2575,10 @@ export const GetPersonResponse = zod
             phoneNumber: zod.string(),
             type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
             personId: zod.string().nullish(),
+            funderId: zod.string().nullish(),
+            organizationId: zod.string().nullish(),
+            paymentIntermediaryId: zod.string().nullish(),
+            householdId: zod.string().nullish(),
             validity: zod.enum(["valid", "invalid", "unknown"]),
             isPreferred: zod.boolean(),
             createdAt: zod.string().datetime({}),
@@ -3033,6 +3055,10 @@ export const ListPhoneNumbersResponse = zod.object({
       phoneNumber: zod.string(),
       type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
       personId: zod.string().nullish(),
+      funderId: zod.string().nullish(),
+      organizationId: zod.string().nullish(),
+      paymentIntermediaryId: zod.string().nullish(),
+      householdId: zod.string().nullish(),
       validity: zod.enum(["valid", "invalid", "unknown"]),
       isPreferred: zod.boolean(),
       createdAt: zod.string().datetime({}),
@@ -3050,6 +3076,10 @@ export const CreatePhoneNumberBody = zod.object({
   phoneNumber: zod.string(),
   type: zod.enum(["work", "mobile", "home", "other"]).optional(),
   personId: zod.string().optional(),
+  funderId: zod.string().optional(),
+  organizationId: zod.string().optional(),
+  paymentIntermediaryId: zod.string().optional(),
+  householdId: zod.string().optional(),
   validity: zod.enum(["valid", "invalid", "unknown"]).optional(),
   isPreferred: zod.boolean().optional(),
 });
@@ -3070,6 +3100,10 @@ export const UpdatePhoneNumberResponse = zod.object({
   phoneNumber: zod.string(),
   type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
   personId: zod.string().nullish(),
+  funderId: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
+  paymentIntermediaryId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
   validity: zod.enum(["valid", "invalid", "unknown"]),
   isPreferred: zod.boolean(),
   createdAt: zod.string().datetime({}),

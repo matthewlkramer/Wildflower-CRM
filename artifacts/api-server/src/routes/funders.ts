@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { funders, peopleEntityRoles, emails, addresses, paymentIntermediaries } from "@workspace/db/schema";
+import { funders, peopleEntityRoles, emails, phoneNumbers, addresses, paymentIntermediaries } from "@workspace/db/schema";
 import { and, asc, count, eq, getTableColumns, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   ListFundersQueryParams,
@@ -159,9 +159,10 @@ router.get(
     const id = paramId(req);
     const row = await db.select(fundersListSelect).from(funders).where(eq(funders.id, id)).then((r) => r[0]);
     if (!row) return notFound(res, "funder");
-    const [people, emailRows, addressRows, paymentIntermediary] = await Promise.all([
+    const [people, emailRows, phoneRows, addressRows, paymentIntermediary] = await Promise.all([
       peopleEntityRolesQuery().where(eq(peopleEntityRoles.funderId, id)),
       db.select().from(emails).where(eq(emails.funderId, id)),
+      db.select().from(phoneNumbers).where(eq(phoneNumbers.funderId, id)),
       db.select().from(addresses).where(eq(addresses.funderId, id)),
       row.paymentIntermediaryId
         ? db
@@ -171,7 +172,7 @@ router.get(
             .then((r) => r[0] ?? null)
         : Promise.resolve(null),
     ]);
-    res.json({ ...row, people, emails: emailRows, addresses: addressRows, paymentIntermediary });
+    res.json({ ...row, people, emails: emailRows, phoneNumbers: phoneRows, addresses: addressRows, paymentIntermediary });
   }),
 );
 

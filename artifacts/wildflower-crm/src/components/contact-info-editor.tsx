@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 import {
   useCreateEmail,
   useUpdateEmail,
@@ -7,9 +7,14 @@ import {
   useCreatePhoneNumber,
   useUpdatePhoneNumber,
   useDeletePhoneNumber,
+  useCreateAddress,
+  useUpdateAddress,
+  useDeleteAddress,
   getGetPersonQueryKey,
+  getGetFunderQueryKey,
   type Email,
   type PhoneNumber,
+  type Address,
   type ContactValidity,
   type EmailType,
   type PhoneType,
@@ -46,6 +51,28 @@ import { useToast } from "@/hooks/use-toast";
 import { formatEnum } from "@/lib/format";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 
+/**
+ * Contact records (emails / phones / addresses) belong to exactly one owner —
+ * a person or a funder (DB-enforced num_nonnulls(...) = 1). The editors take an
+ * owner so the same UI works on both the individual- and funder-detail pages:
+ * the owner decides which FK to send on create and which detail query to refetch.
+ */
+export type ContactOwner =
+  | { kind: "person"; id: string }
+  | { kind: "funder"; id: string };
+
+function ownerCreateField(owner: ContactOwner): { personId: string } | { funderId: string } {
+  return owner.kind === "person"
+    ? { personId: owner.id }
+    : { funderId: owner.id };
+}
+
+function ownerQueryKey(owner: ContactOwner): QueryKey {
+  return owner.kind === "person"
+    ? getGetPersonQueryKey(owner.id)
+    : getGetFunderQueryKey(owner.id);
+}
+
 const VALIDITY_OPTIONS: { value: ContactValidity; label: string }[] = [
   { value: "valid", label: "Valid" },
   { value: "unknown", label: "Unknown" },
@@ -79,6 +106,14 @@ type PhoneFormState = {
   isPreferred: boolean;
 };
 
+type AddressFormState = {
+  street: string;
+  cityName: string;
+  stateCode: string;
+  postalCode: string;
+  country: string;
+};
+
 const EMPTY_EMAIL: EmailFormState = {
   email: "",
   type: "",
@@ -93,11 +128,19 @@ const EMPTY_PHONE: PhoneFormState = {
   isPreferred: false,
 };
 
+const EMPTY_ADDRESS: AddressFormState = {
+  street: "",
+  cityName: "",
+  stateCode: "",
+  postalCode: "",
+  country: "",
+};
+
 export function EmailsEditor({
-  personId,
+  owner,
   emails,
 }: {
-  personId: string;
+  owner: ContactOwner;
   emails: readonly Email[] | undefined;
 }) {
   const qc = useQueryClient();
@@ -108,7 +151,7 @@ export function EmailsEditor({
   const [form, setForm] = useState<EmailFormState>(EMPTY_EMAIL);
 
   const invalidate = () =>
-    qc.invalidateQueries({ queryKey: getGetPersonQueryKey(personId) });
+    qc.invalidateQueries({ queryKey: ownerQueryKey(owner) });
 
   const create = useCreateEmail({
     mutation: {
@@ -188,7 +231,7 @@ export function EmailsEditor({
         data: {
           email: trimmed,
           ...(form.type ? { type: form.type } : {}),
-          personId,
+          ...ownerCreateField(owner),
           validity: form.validity,
           isPreferred: form.isPreferred,
         },
@@ -367,7 +410,7 @@ export function EmailsEditor({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove this email?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget?.email} will be removed from this person.
+              {deleteTarget?.email} will be removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -393,10 +436,10 @@ export function EmailsEditor({
 }
 
 export function PhoneNumbersEditor({
-  personId,
+  owner,
   phoneNumbers,
 }: {
-  personId: string;
+  owner: ContactOwner;
   phoneNumbers: readonly PhoneNumber[] | undefined;
 }) {
   const qc = useQueryClient();
@@ -407,7 +450,7 @@ export function PhoneNumbersEditor({
   const [form, setForm] = useState<PhoneFormState>(EMPTY_PHONE);
 
   const invalidate = () =>
-    qc.invalidateQueries({ queryKey: getGetPersonQueryKey(personId) });
+    qc.invalidateQueries({ queryKey: ownerQueryKey(owner) });
 
   const create = useCreatePhoneNumber({
     mutation: {
@@ -487,7 +530,7 @@ export function PhoneNumbersEditor({
         data: {
           phoneNumber: trimmed,
           ...(form.type ? { type: form.type } : {}),
-          personId,
+          ...ownerCreateField(owner),
           validity: form.validity,
           isPreferred: form.isPreferred,
         },
@@ -681,7 +724,7 @@ export function PhoneNumbersEditor({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove this phone number?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget?.phoneNumber} will be removed from this person.
+              {deleteTarget?.phoneNumber} will be removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -695,6 +738,314 @@ export function PhoneNumbersEditor({
               }}
               disabled={del.isPending}
               data-testid="btn-confirm-delete-phone"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {del.isPending ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function formatAddress(a: Address): string {
+  return (
+    [a.street, a.cityName, a.stateCode, a.postalCode, a.country]
+      .filter(Boolean)
+      .join(", ") || "—"
+  );
+}
+
+export function AddressesEditor({
+  owner,
+  addresses,
+}: {
+  owner: ContactOwner;
+  addresses: readonly Address[] | undefined;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [editTarget, setEditTarget] = useState<Address | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Address | null>(null);
+  const [form, setForm] = useState<AddressFormState>(EMPTY_ADDRESS);
+
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: ownerQueryKey(owner) });
+
+  const create = useCreateAddress({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        toast({ title: "Address added" });
+        setAdding(false);
+        setForm(EMPTY_ADDRESS);
+      },
+      onError: (e) =>
+        toast({
+          title: "Could not add address",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+  const update = useUpdateAddress({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        toast({ title: "Address updated" });
+        setEditTarget(null);
+      },
+      onError: (e) =>
+        toast({
+          title: "Could not update address",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+  const del = useDeleteAddress({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        toast({ title: "Address removed" });
+        setDeleteTarget(null);
+      },
+      onError: (e) =>
+        toast({
+          title: "Could not remove address",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const openAdd = () => {
+    setForm(EMPTY_ADDRESS);
+    setAdding(true);
+  };
+  const openEdit = (a: Address) => {
+    setForm({
+      street: a.street ?? "",
+      cityName: a.cityName ?? "",
+      stateCode: a.stateCode ?? "",
+      postalCode: a.postalCode ?? "",
+      country: a.country ?? "",
+    });
+    setEditTarget(a);
+  };
+  const isEmptyForm =
+    !form.street.trim() &&
+    !form.cityName.trim() &&
+    !form.stateCode.trim() &&
+    !form.postalCode.trim() &&
+    !form.country.trim();
+  const submit = () => {
+    if (isEmptyForm) return;
+    const fields = {
+      street: form.street.trim() || null,
+      cityName: form.cityName.trim() || null,
+      stateCode: form.stateCode.trim() || null,
+      postalCode: form.postalCode.trim() || null,
+      country: form.country.trim() || null,
+    };
+    if (editTarget) {
+      update.mutate({ id: editTarget.id, data: fields });
+    } else {
+      create.mutate({
+        data: {
+          ...(form.street.trim() ? { street: form.street.trim() } : {}),
+          ...(form.cityName.trim() ? { cityName: form.cityName.trim() } : {}),
+          ...(form.stateCode.trim() ? { stateCode: form.stateCode.trim() } : {}),
+          ...(form.postalCode.trim()
+            ? { postalCode: form.postalCode.trim() }
+            : {}),
+          ...(form.country.trim() ? { country: form.country.trim() } : {}),
+          ...ownerCreateField(owner),
+        },
+      });
+    }
+  };
+
+  const list = addresses ?? [];
+  const dialogOpen = adding || editTarget !== null;
+  const closeDialog = () => {
+    setAdding(false);
+    setEditTarget(null);
+    setForm(EMPTY_ADDRESS);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs font-medium text-muted-foreground">
+          Addresses
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={openAdd}
+          data-testid="btn-add-address"
+        >
+          <Plus className="h-3.5 w-3.5 mr-1" />
+          Add
+        </Button>
+      </div>
+      {list.length > 0 ? (
+        <ul className="space-y-2 text-sm">
+          {list.map((a) => (
+            <li
+              key={a.id}
+              className="flex items-center justify-between gap-2 group"
+              data-testid={`address-row-${a.id}`}
+            >
+              <span className="min-w-0">{formatAddress(a)}</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                  onClick={() => openEdit(a)}
+                  data-testid={`btn-edit-address-${a.id}`}
+                  aria-label="Edit address"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive"
+                  onClick={() => setDeleteTarget(a)}
+                  data-testid={`btn-delete-address-${a.id}`}
+                  aria-label="Delete address"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">No addresses.</p>
+      )}
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(o) => {
+          if (!o) closeDialog();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editTarget ? "Edit address" : "Add address"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 min-w-0">
+            <div className="space-y-1.5">
+              <Label htmlFor="address-street">Street</Label>
+              <Input
+                id="address-street"
+                value={form.street}
+                onChange={(ev) => setForm({ ...form, street: ev.target.value })}
+                placeholder="123 Main St"
+                data-testid="input-address-street"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="address-city">City</Label>
+                <Input
+                  id="address-city"
+                  value={form.cityName}
+                  onChange={(ev) =>
+                    setForm({ ...form, cityName: ev.target.value })
+                  }
+                  placeholder="Springfield"
+                  data-testid="input-address-city"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="address-state">State</Label>
+                <Input
+                  id="address-state"
+                  value={form.stateCode}
+                  onChange={(ev) =>
+                    setForm({ ...form, stateCode: ev.target.value })
+                  }
+                  placeholder="IL"
+                  data-testid="input-address-state"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="address-postal">Postal code</Label>
+                <Input
+                  id="address-postal"
+                  value={form.postalCode}
+                  onChange={(ev) =>
+                    setForm({ ...form, postalCode: ev.target.value })
+                  }
+                  placeholder="62704"
+                  data-testid="input-address-postal"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="address-country">Country</Label>
+                <Input
+                  id="address-country"
+                  value={form.country}
+                  onChange={(ev) =>
+                    setForm({ ...form, country: ev.target.value })
+                  }
+                  placeholder="USA"
+                  data-testid="input-address-country"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>
+              Cancel
+            </Button>
+            <Button
+              onClick={submit}
+              disabled={isEmptyForm || create.isPending || update.isPending}
+              data-testid="btn-save-address"
+            >
+              {editTarget ? "Save" : "Add"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => {
+          if (!o && !del.isPending) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this address?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget ? formatAddress(deleteTarget) : ""} will be removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={del.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteTarget) del.mutate({ id: deleteTarget.id });
+              }}
+              disabled={del.isPending}
+              data-testid="btn-confirm-delete-address"
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {del.isPending ? "Removing…" : "Remove"}

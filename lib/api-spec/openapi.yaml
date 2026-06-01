@@ -2220,9 +2220,10 @@ components:
         - { $ref: "#/components/schemas/Funder" }
         - type: object
           properties:
-            people:    { type: array, items: { $ref: "#/components/schemas/PeopleEntityRole" } }
-            emails:    { type: array, items: { $ref: "#/components/schemas/Email" } }
-            addresses: { type: array, items: { $ref: "#/components/schemas/Address" } }
+            people:       { type: array, items: { $ref: "#/components/schemas/PeopleEntityRole" } }
+            emails:       { type: array, items: { $ref: "#/components/schemas/Email" } }
+            phoneNumbers: { type: array, items: { $ref: "#/components/schemas/PhoneNumber" } }
+            addresses:    { type: array, items: { $ref: "#/components/schemas/Address" } }
             paymentIntermediary: { allOf: [ { $ref: "#/components/schemas/PaymentIntermediary" } ], nullable: true, readOnly: true, description: "Resolved payment intermediary referenced by paymentIntermediaryId, if set." }
     FunderList:
       type: object
@@ -2688,7 +2689,11 @@ components:
         id:          { type: string }
         phoneNumber: { type: string }
         type:        { allOf: [ { $ref: "#/components/schemas/PhoneType" } ], nullable: true }
-        personId:    { type: string, nullable: true }
+        personId:              { type: string, nullable: true }
+        funderId:              { type: string, nullable: true }
+        organizationId:        { type: string, nullable: true }
+        paymentIntermediaryId: { type: string, nullable: true }
+        householdId:           { type: string, nullable: true }
         validity:    { $ref: "#/components/schemas/ContactValidity" }
         isPreferred: { type: boolean }
         createdAt:   { type: string, format: date-time }
@@ -2705,7 +2710,11 @@ components:
       properties:
         phoneNumber: { type: string }
         type:        { $ref: "#/components/schemas/PhoneType" }
-        personId:    { type: string }
+        personId:              { type: string }
+        funderId:              { type: string }
+        organizationId:        { type: string }
+        paymentIntermediaryId: { type: string }
+        householdId:           { type: string }
         validity:    { $ref: "#/components/schemas/ContactValidity" }
         isPreferred: { type: boolean }
     UpdatePhoneNumberBody:

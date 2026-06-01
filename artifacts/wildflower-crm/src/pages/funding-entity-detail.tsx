@@ -149,6 +149,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { DerivedRow } from "@/components/derived-row";
+import {
+  EmailsEditor,
+  PhoneNumbersEditor,
+  AddressesEditor,
+} from "@/components/contact-info-editor";
 
 export default function FundingEntityDetail() {
   const [, params] = useRoute("/funding-entities/:id");
@@ -571,50 +576,22 @@ function FunderView({ funder }: { funder: FunderDetail }) {
             </div>
           </FieldCard>
 
-          <FieldCard title="Emails & addresses" defaultOpen={false}>
+          <FieldCard title="Contact info">
             <div className="space-y-4">
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">
-                  Emails
-                </div>
-                {funder.emails && funder.emails.length > 0 ? (
-                  <ul className="space-y-1 text-sm">
-                    {funder.emails.map((e) => (
-                      <li
-                        key={e.id}
-                        className="flex items-center justify-between gap-2"
-                      >
-                        <span className="truncate">{e.email}</span>
-                        <span className="text-muted-foreground text-xs">
-                          {e.isPreferred ? "preferred • " : ""}
-                          {formatEnum(e.validity)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No emails.</p>
-                )}
-              </div>
+              <EmailsEditor
+                owner={{ kind: "funder", id: funder.id }}
+                emails={funder.emails}
+              />
               <Separator />
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">
-                  Addresses
-                </div>
-                {funder.addresses && funder.addresses.length > 0 ? (
-                  <ul className="space-y-2 text-sm">
-                    {funder.addresses.map((a) => (
-                      <li key={a.id}>
-                        {[a.street, a.cityName, a.stateCode, a.postalCode]
-                          .filter(Boolean)
-                          .join(", ") || "—"}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No addresses.</p>
-                )}
-              </div>
+              <PhoneNumbersEditor
+                owner={{ kind: "funder", id: funder.id }}
+                phoneNumbers={funder.phoneNumbers}
+              />
+              <Separator />
+              <AddressesEditor
+                owner={{ kind: "funder", id: funder.id }}
+                addresses={funder.addresses}
+              />
             </div>
           </FieldCard>
 

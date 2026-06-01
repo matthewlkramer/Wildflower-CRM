@@ -37,18 +37,14 @@ router.post(
     if (!body) return;
     // phone_numbers mirrors emails/addresses: exactly one of person /
     // funder / organization / payment_intermediary / household must be set
-    // (DB-enforced via num_nonnulls(...) = 1 CHECK). The generated zod
-    // body type still marks every owner optional because the OpenAPI spec
-    // rewrite is part of pending Stage 2; guard at runtime until then.
+    // (DB-enforced via num_nonnulls(...) = 1 CHECK). Guard at runtime so
+    // the API returns 400 instead of letting the DB raise a 500.
     const ownerCount = [
       body.personId,
-      // The other 4 owner fields aren't in the generated zod body yet
-      // (Stage 2 will add them). Read them defensively from the raw body
-      // so callers can post them today.
-      (req.body as Record<string, unknown>).funderId,
-      (req.body as Record<string, unknown>).organizationId,
-      (req.body as Record<string, unknown>).paymentIntermediaryId,
-      (req.body as Record<string, unknown>).householdId,
+      body.funderId,
+      body.organizationId,
+      body.paymentIntermediaryId,
+      body.householdId,
     ].filter((v) => v != null && v !== "").length;
     if (ownerCount !== 1) {
       res.status(400).json({
@@ -57,17 +53,9 @@ router.post(
       });
       return;
     }
-    const raw = req.body as Record<string, unknown>;
     const [row] = await db
       .insert(phoneNumbers)
-      .values({
-        id: newId(),
-        ...body,
-        funderId: (raw.funderId as string | undefined) ?? null,
-        organizationId: (raw.organizationId as string | undefined) ?? null,
-        paymentIntermediaryId: (raw.paymentIntermediaryId as string | undefined) ?? null,
-        householdId: (raw.householdId as string | undefined) ?? null,
-      })
+      .values({ id: newId(), ...body })
       .returning();
     res.status(201).json(row);
   }),
