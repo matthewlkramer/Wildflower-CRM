@@ -190,19 +190,25 @@ router.get(
 
     // Suppress two classes of non-human opens:
     //
-    // 1. Gmail image proxy (GoogleImageProxy UA): Gmail pre-downloads all
-    //    images in an email through its own proxy at delivery time. This fires
-    //    the pixel but represents Gmail's caching system, not a human open.
-    //    Filter by UA rather than by time so real recipient opens in the first
-    //    few minutes are not also suppressed.
+    // 1. Gmail delivery-time proxy fetch (GoogleImageProxy UA, early):
+    //    Gmail routes ALL image requests through its GoogleImageProxy — both at
+    //    delivery time AND when a human opens the email. We cannot filter ALL
+    //    GoogleImageProxy requests or we lose every real open. Instead, we only
+    //    suppress proxy hits that arrive within GMAIL_PROXY_WINDOW_MS of the
+    //    email being registered (those represent Gmail's delivery-time cache
+    //    fetch). Proxy hits after that window are treated as real human opens
+    //    because our no-cache headers force Gmail to re-fetch on each open.
     //
     // 2. Sender self-view (same IP): the sender opening the email in their
     //    Sent folder from the same network should not count as a recipient open.
     //    The sidebar handles the cross-network case via DELETE .../views/latest.
+    const GMAIL_PROXY_WINDOW_MS = 2 * 60_000; // 2 minutes
     const isGmailProxy = /GoogleImageProxy/i.test(userAgent ?? "");
+    const ageMs = Date.now() - email.createdAt.getTime();
+    const isDeliveryTimeProxyFetch = isGmailProxy && ageMs < GMAIL_PROXY_WINDOW_MS;
     const isSenderPeek = !!email.senderIp && !!ip && email.senderIp === ip;
 
-    if (!isGmailProxy && !isSenderPeek) {
+    if (!isDeliveryTimeProxyFetch && !isSenderPeek) {
       // Fire-and-forget so we never hold up the pixel response.
       db.insert(trackedEmailViews)
         .values({
