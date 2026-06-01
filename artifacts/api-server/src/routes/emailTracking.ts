@@ -202,7 +202,7 @@ router.get(
     // 2. Sender self-view (same IP): the sender opening the email in their
     //    Sent folder from the same network should not count as a recipient open.
     //    The sidebar handles the cross-network case via DELETE .../views/latest.
-    const GMAIL_PROXY_WINDOW_MS = 30_000; // 30 seconds — covers Gmail's delivery-time cache fetch
+    const GMAIL_PROXY_WINDOW_MS = 10_000; // 10 seconds — covers Gmail's delivery-time cache fetch
     const isGmailProxy = /GoogleImageProxy/i.test(userAgent ?? "");
     const ageMs = Date.now() - email.createdAt.getTime();
     const isDeliveryTimeProxyFetch = isGmailProxy && ageMs < GMAIL_PROXY_WINDOW_MS;
