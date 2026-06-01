@@ -393,7 +393,7 @@ router.get(
         recipientHouseholdIds: r.recipientHouseholdIds,
         createdAt: r.createdAt.toISOString(),
         totalViews: r.totalViews ?? 0,
-        lastView: r.lastView ? r.lastView.toISOString() : null,
+        lastView: r.lastView ? new Date(r.lastView).toISOString() : null,
       })),
     });
   }),
