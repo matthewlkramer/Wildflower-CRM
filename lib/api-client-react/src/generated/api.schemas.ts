@@ -2380,6 +2380,43 @@ export interface BulkUpdateResult {
   failed: BulkUpdateResultFailedItem[];
 }
 
+export interface MergeResult {
+  /** The surviving record id. */
+  primaryId: string;
+  /** Duplicate record ids that were merged into the primary and deleted. */
+  mergedIds: string[];
+}
+
+export type MergeFundersBodyOverrides = { [key: string]: unknown } | null;
+
+/**
+ * Collapse `mergeIds` (duplicates) into `primaryId` (survivor). `overrides` supplies the user-chosen winning value for each scalar field; only whitelisted funder columns are applied.
+ */
+export interface MergeFundersBody {
+  primaryId: string;
+  /**
+   * @minItems 1
+   * @maxItems 49
+   */
+  mergeIds: string[];
+  overrides?: MergeFundersBodyOverrides;
+}
+
+export type MergePeopleBodyOverrides = { [key: string]: unknown } | null;
+
+/**
+ * Collapse `mergeIds` (duplicates) into `primaryId` (survivor). `overrides` supplies the user-chosen winning value for each scalar field; only whitelisted person columns are applied.
+ */
+export interface MergePeopleBody {
+  primaryId: string;
+  /**
+   * @minItems 1
+   * @maxItems 49
+   */
+  mergeIds: string[];
+  overrides?: MergePeopleBodyOverrides;
+}
+
 /**
  * Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged.
  */

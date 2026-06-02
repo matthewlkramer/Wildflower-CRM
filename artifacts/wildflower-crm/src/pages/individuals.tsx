@@ -1,15 +1,20 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useQueries } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListPeople,
   getListPeopleQueryKey,
   useBulkUpdatePeople,
+  useMergePeople,
+  getGetPersonQueryOptions,
+  getGetPersonQueryKey,
   type ListPeopleParams,
   type CapacityRating,
   type ConnectionStatus,
   type Person,
 } from "@workspace/api-client-react";
+import { MergeDialog, type MergeField, type MergeRecord } from "@/components/merge-dialog";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
@@ -303,6 +308,8 @@ export default function Individuals() {
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdatePeople();
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const mergeMut = useMergePeople();
 
   const ts = useTableState("individuals");
   const sortActive = ts.sort.key !== null;
@@ -338,6 +345,67 @@ export default function Individuals() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const regionNames = useRegionNameMap();
   const userNames = useUserNameMap();
+
+  // Fetch full records for the merge dialog only while it's open.
+  const mergeIds = mergeOpen ? selection.selectedIds : [];
+  const mergeQueries = useQueries({
+    queries: mergeIds.map((id) =>
+      getGetPersonQueryOptions(id, {
+        query: {
+          enabled: mergeOpen,
+          staleTime: 30_000,
+          queryKey: getGetPersonQueryKey(id),
+        },
+      }),
+    ),
+  });
+  const mergeRecords = useMemo<MergeRecord[]>(
+    () =>
+      mergeQueries
+        .map((q) => q.data)
+        .filter((d): d is Person => !!d)
+        .map((d) => d as unknown as MergeRecord),
+    [mergeQueries],
+  );
+  const mergeLoading = mergeOpen && mergeQueries.some((q) => q.isLoading);
+
+  const mergeFields = useMemo<MergeField[]>(
+    () => [
+      { key: "firstName", label: "First name" },
+      { key: "lastName", label: "Last name" },
+      { key: "fullName", label: "Full name" },
+      { key: "nickname", label: "Nickname" },
+      { key: "pronouns", label: "Pronouns" },
+      { key: "capacityRating", label: "Capacity", display: (v) => formatCapacity(v as string | null) },
+      { key: "connectionStatus", label: "Connection", display: (v) => formatEnum(v as string | null) },
+      { key: "enthusiasm", label: "Enthusiasm", display: (v) => formatEnum(v as string | null) },
+      { key: "priority", label: "Priority", display: (v) => formatEnum(v as string | null) },
+      { key: "deceased", label: "Deceased", display: (v) => (v == null ? "—" : v ? "Yes" : "No") },
+      {
+        key: "currentHomeRegionId",
+        label: "Home region",
+        display: (v) => (v ? (regionNames.get(v as string) ?? String(v)) : "—"),
+      },
+      {
+        key: "ownerUserId",
+        label: "Owner",
+        display: (v) => (v ? (userNames.get(v as string) ?? String(v)) : "—"),
+      },
+      { key: "lastContacted", label: "Last contacted", display: (v) => formatDateShort(v as string | null) },
+      { key: "website", label: "Website" },
+      { key: "linkedin", label: "LinkedIn" },
+    ],
+    [regionNames, userNames],
+  );
+
+  const mergeLabel = (r: MergeRecord): string => {
+    const p = r as unknown as Person;
+    return (
+      (p.fullName as string | null) ||
+      [p.firstName, p.lastName].filter(Boolean).join(" ") ||
+      p.id
+    );
+  };
 
   const registry = useMemo(
     () => buildColumns({ regionNames, userNames }),
@@ -830,9 +898,25 @@ export default function Individuals() {
       <BulkActionBar
         count={selection.count}
         onEdit={() => setBulkOpen(true)}
+        onMerge={() => setMergeOpen(true)}
         onClear={selection.clear}
         entityNoun="person"
       />
+      {mergeOpen && !mergeLoading && mergeRecords.length >= 2 && (
+        <MergeDialog
+          open={mergeOpen}
+          onOpenChange={setMergeOpen}
+          entityNoun="person"
+          records={mergeRecords}
+          fields={mergeFields}
+          recordLabel={mergeLabel}
+          invalidateKeys={[getListPeopleQueryKey()]}
+          onSubmit={async ({ primaryId, mergeIds: ids, overrides }) =>
+            mergeMut.mutateAsync({ data: { primaryId, mergeIds: ids, overrides } })
+          }
+          onDone={() => selection.clear()}
+        />
+      )}
       <BulkEditDialog
         open={bulkOpen}
         onOpenChange={setBulkOpen}

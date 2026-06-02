@@ -11,6 +11,7 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
+import { mergeEntity, PERSON_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
@@ -241,6 +242,13 @@ router.post(
         "deceased",
       ],
     });
+  }),
+);
+
+router.post(
+  "/people/merge",
+  asyncHandler(async (req, res) => {
+    await mergeEntity(req, res, PERSON_MERGE_CONFIG);
   }),
 );
 

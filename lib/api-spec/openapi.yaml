@@ -1692,6 +1692,22 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /funders/merge:
+    post:
+      operationId: mergeFunders
+      tags: [funders]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MergeFundersBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MergeResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /people/merge:
+    post:
+      operationId: mergePeople
+      tags: [people]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MergePeopleBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MergeResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /households/bulk-update:
     post:
       operationId: bulkUpdateHouseholds
@@ -3968,6 +3984,28 @@ components:
             properties:
               id:      { type: string }
               message: { type: string }
+    MergeResult:
+      type: object
+      required: [primaryId, mergedIds]
+      properties:
+        primaryId: { type: string, description: "The surviving record id." }
+        mergedIds: { type: array, items: { type: string }, description: "Duplicate record ids that were merged into the primary and deleted." }
+    MergeFundersBody:
+      type: object
+      required: [primaryId, mergeIds]
+      description: "Collapse `mergeIds` (duplicates) into `primaryId` (survivor). `overrides` supplies the user-chosen winning value for each scalar field; only whitelisted funder columns are applied."
+      properties:
+        primaryId: { type: string }
+        mergeIds:  { type: array, items: { type: string }, minItems: 1, maxItems: 49 }
+        overrides: { type: object, additionalProperties: true, nullable: true }
+    MergePeopleBody:
+      type: object
+      required: [primaryId, mergeIds]
+      description: "Collapse `mergeIds` (duplicates) into `primaryId` (survivor). `overrides` supplies the user-chosen winning value for each scalar field; only whitelisted person columns are applied."
+      properties:
+        primaryId: { type: string }
+        mergeIds:  { type: array, items: { type: string }, minItems: 1, maxItems: 49 }
+        overrides: { type: object, additionalProperties: true, nullable: true }
     BulkUpdatePeoplePatch:
       type: object
       description: "Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged."

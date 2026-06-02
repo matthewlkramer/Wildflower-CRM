@@ -132,6 +132,9 @@ import type {
   MediaMentionUpdate,
   MeetingNote,
   MeetingNoteList,
+  MergeFundersBody,
+  MergePeopleBody,
+  MergeResult,
   NotFoundResponse,
   Note,
   NoteList,
@@ -12385,6 +12388,166 @@ export const useBulkUpdateFunders = <
   TContext
 > => {
   return useMutation(getBulkUpdateFundersMutationOptions(options));
+};
+
+export const getMergeFundersUrl = () => {
+  return `/api/funders/merge`;
+};
+
+export const mergeFunders = async (
+  mergeFundersBody: MergeFundersBody,
+  options?: RequestInit,
+): Promise<MergeResult> => {
+  return customFetch<MergeResult>(getMergeFundersUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(mergeFundersBody),
+  });
+};
+
+export const getMergeFundersMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeFunders>>,
+    TError,
+    { data: BodyType<MergeFundersBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mergeFunders>>,
+  TError,
+  { data: BodyType<MergeFundersBody> },
+  TContext
+> => {
+  const mutationKey = ["mergeFunders"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mergeFunders>>,
+    { data: BodyType<MergeFundersBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return mergeFunders(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MergeFundersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mergeFunders>>
+>;
+export type MergeFundersMutationBody = BodyType<MergeFundersBody>;
+export type MergeFundersMutationError = ErrorType<BadRequestResponse>;
+
+export const useMergeFunders = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeFunders>>,
+    TError,
+    { data: BodyType<MergeFundersBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof mergeFunders>>,
+  TError,
+  { data: BodyType<MergeFundersBody> },
+  TContext
+> => {
+  return useMutation(getMergeFundersMutationOptions(options));
+};
+
+export const getMergePeopleUrl = () => {
+  return `/api/people/merge`;
+};
+
+export const mergePeople = async (
+  mergePeopleBody: MergePeopleBody,
+  options?: RequestInit,
+): Promise<MergeResult> => {
+  return customFetch<MergeResult>(getMergePeopleUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(mergePeopleBody),
+  });
+};
+
+export const getMergePeopleMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergePeople>>,
+    TError,
+    { data: BodyType<MergePeopleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mergePeople>>,
+  TError,
+  { data: BodyType<MergePeopleBody> },
+  TContext
+> => {
+  const mutationKey = ["mergePeople"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mergePeople>>,
+    { data: BodyType<MergePeopleBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return mergePeople(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MergePeopleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mergePeople>>
+>;
+export type MergePeopleMutationBody = BodyType<MergePeopleBody>;
+export type MergePeopleMutationError = ErrorType<BadRequestResponse>;
+
+export const useMergePeople = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergePeople>>,
+    TError,
+    { data: BodyType<MergePeopleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof mergePeople>>,
+  TError,
+  { data: BodyType<MergePeopleBody> },
+  TContext
+> => {
+  return useMutation(getMergePeopleMutationOptions(options));
 };
 
 export const getBulkUpdateHouseholdsUrl = () => {

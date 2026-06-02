@@ -11,6 +11,7 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
+import { mergeEntity, FUNDER_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
@@ -193,6 +194,13 @@ router.post(
         "fundingEntitySubtype",
       ],
     });
+  }),
+);
+
+router.post(
+  "/funders/merge",
+  asyncHandler(async (req, res) => {
+    await mergeEntity(req, res, FUNDER_MERGE_CONFIG);
   }),
 );
 

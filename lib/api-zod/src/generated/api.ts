@@ -6690,6 +6690,48 @@ export const BulkUpdateFundersResponse = zod.object({
   ),
 });
 
+export const mergeFundersBodyMergeIdsMax = 49;
+
+export const MergeFundersBody = zod
+  .object({
+    primaryId: zod.string(),
+    mergeIds: zod.array(zod.string()).min(1).max(mergeFundersBodyMergeIdsMax),
+    overrides: zod.record(zod.string(), zod.unknown()).nullish(),
+  })
+  .describe(
+    "Collapse `mergeIds` (duplicates) into `primaryId` (survivor). `overrides` supplies the user-chosen winning value for each scalar field; only whitelisted funder columns are applied.",
+  );
+
+export const MergeFundersResponse = zod.object({
+  primaryId: zod.string().describe("The surviving record id."),
+  mergedIds: zod
+    .array(zod.string())
+    .describe(
+      "Duplicate record ids that were merged into the primary and deleted.",
+    ),
+});
+
+export const mergePeopleBodyMergeIdsMax = 49;
+
+export const MergePeopleBody = zod
+  .object({
+    primaryId: zod.string(),
+    mergeIds: zod.array(zod.string()).min(1).max(mergePeopleBodyMergeIdsMax),
+    overrides: zod.record(zod.string(), zod.unknown()).nullish(),
+  })
+  .describe(
+    "Collapse `mergeIds` (duplicates) into `primaryId` (survivor). `overrides` supplies the user-chosen winning value for each scalar field; only whitelisted person columns are applied.",
+  );
+
+export const MergePeopleResponse = zod.object({
+  primaryId: zod.string().describe("The surviving record id."),
+  mergedIds: zod
+    .array(zod.string())
+    .describe(
+      "Duplicate record ids that were merged into the primary and deleted.",
+    ),
+});
+
 export const bulkUpdateHouseholdsBodyIdsMax = 1000;
 
 export const BulkUpdateHouseholdsBody = zod.object({

@@ -1,10 +1,14 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useQueries } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListFunders,
   getListFundersQueryKey,
   useBulkUpdateFunders,
+  useMergeFunders,
+  getGetFunderQueryOptions,
+  getGetFunderQueryKey,
   type ListFundersParams,
   type FundingEntitySubtype,
   type ConnectionStatus,
@@ -13,6 +17,7 @@ import {
   type Priority,
   type Funder,
 } from "@workspace/api-client-react";
+import { MergeDialog, type MergeField, type MergeRecord } from "@/components/merge-dialog";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
@@ -318,6 +323,8 @@ export default function FundingEntities() {
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const bulkMut = useBulkUpdateFunders();
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const mergeMut = useMergeFunders();
 
   const ts = useTableState("funding-entities");
   const sortActive = ts.sort.key !== null;
@@ -354,6 +361,59 @@ export default function FundingEntities() {
 
   const userNames = useUserNameMap();
   const regionNames = useRegionNameMap();
+
+  // Fetch full records for the merge dialog only while it's open.
+  const mergeSelected = mergeOpen ? selection.selectedIds : [];
+  const mergeQueries = useQueries({
+    queries: mergeSelected.map((id) =>
+      getGetFunderQueryOptions(id, {
+        query: {
+          enabled: mergeOpen,
+          staleTime: 30_000,
+          queryKey: getGetFunderQueryKey(id),
+        },
+      }),
+    ),
+  });
+  const mergeRecords = useMemo<MergeRecord[]>(
+    () =>
+      mergeQueries
+        .map((q) => q.data)
+        .filter((d): d is Funder => !!d)
+        .map((d) => d as unknown as MergeRecord),
+    [mergeQueries],
+  );
+  const mergeLoading = mergeOpen && mergeQueries.some((q) => q.isLoading);
+
+  const mergeFields = useMemo<MergeField[]>(
+    () => [
+      { key: "name", label: "Name" },
+      { key: "fundingEntitySubtype", label: "Subtype", display: (v) => formatEnum(v as string | null) },
+      { key: "capacityRating", label: "Capacity", display: (v) => formatCapacity(v as string | null) },
+      { key: "activeStatus", label: "Active status", display: (v) => formatEnum(v as string | null) },
+      { key: "connectionStatus", label: "Connection", display: (v) => formatEnum(v as string | null) },
+      { key: "enthusiasm", label: "Enthusiasm", display: (v) => formatEnum(v as string | null) },
+      { key: "strategicAlignment", label: "Strategic alignment", display: (v) => formatEnum(v as string | null) },
+      { key: "priority", label: "Priority", display: (v) => formatEnum(v as string | null) },
+      {
+        key: "ownerUserId",
+        label: "Owner",
+        display: (v) => (v ? (userNames.get(v as string) ?? String(v)) : "—"),
+      },
+      { key: "lastContacted", label: "Last contacted", display: (v) => formatDateShort(v as string | null) },
+      { key: "website", label: "Website" },
+      { key: "orgEmail", label: "Org email" },
+      { key: "emailDomain", label: "Email domain" },
+      { key: "linkedin", label: "LinkedIn" },
+    ],
+    [userNames],
+  );
+
+  const mergeLabel = (r: MergeRecord): string => {
+    const f = r as unknown as Funder;
+    return (f.name as string | null) || f.id;
+  };
+
   const registry = useMemo(() => buildColumns({ userNames, regionNames }), [userNames, regionNames]);
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
@@ -865,9 +925,25 @@ export default function FundingEntities() {
       <BulkActionBar
         count={selection.count}
         onEdit={() => setBulkOpen(true)}
+        onMerge={() => setMergeOpen(true)}
         onClear={selection.clear}
         entityNoun="funder"
       />
+      {mergeOpen && !mergeLoading && mergeRecords.length >= 2 && (
+        <MergeDialog
+          open={mergeOpen}
+          onOpenChange={setMergeOpen}
+          entityNoun="funding entity"
+          records={mergeRecords}
+          fields={mergeFields}
+          recordLabel={mergeLabel}
+          invalidateKeys={[getListFundersQueryKey()]}
+          onSubmit={async ({ primaryId, mergeIds, overrides }) =>
+            mergeMut.mutateAsync({ data: { primaryId, mergeIds, overrides } })
+          }
+          onDone={() => selection.clear()}
+        />
+      )}
       <BulkEditDialog
         open={bulkOpen}
         onOpenChange={setBulkOpen}

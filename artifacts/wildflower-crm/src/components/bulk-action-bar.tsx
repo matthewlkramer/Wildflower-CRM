@@ -9,11 +9,14 @@ import { X } from "lucide-react";
 export function BulkActionBar({
   count,
   onEdit,
+  onMerge,
   onClear,
   entityNoun,
 }: {
   count: number;
   onEdit: () => void;
+  /** When provided, a "Merge" button appears once 2+ rows are selected. */
+  onMerge?: () => void;
   onClear: () => void;
   /** Singular noun used in the label, e.g. "person" → "1 person selected". */
   entityNoun: string;
@@ -34,6 +37,16 @@ export function BulkActionBar({
         <Button size="sm" onClick={onEdit} data-testid="button-bulk-edit">
           Edit selected
         </Button>
+        {onMerge && count >= 2 && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={onMerge}
+            data-testid="button-bulk-merge"
+          >
+            Merge
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
