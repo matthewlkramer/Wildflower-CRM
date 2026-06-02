@@ -428,7 +428,7 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       subtitle={
         <>
           <div>{formatEnum(funder.fundingEntitySubtype)}</div>
-          <div className="mt-2 max-w-2xl">
+          <div className="mt-2 w-full">
             <InlineEditTextarea
               label="About"
               testIdBase="funder-about"
