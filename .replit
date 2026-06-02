@@ -42,3 +42,8 @@ externalPort = 3001
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+COPPER_USER_EMAIL = "matthew.kramer@wildflowerschools.org"
