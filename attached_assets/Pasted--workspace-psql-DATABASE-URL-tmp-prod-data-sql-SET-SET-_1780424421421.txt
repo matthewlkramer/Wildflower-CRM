@@ -1,0 +1,139 @@
+~/workspace$ psql "$DATABASE_URL" < /tmp/prod_data.sql
+SET
+SET
+SET
+SET
+SET
+ set_config 
+------------
+ 
+(1 row)
+
+SET
+SET
+SET
+SET
+ERROR:  duplicate key value violates unique constraint "payment_intermediaries_pkey"
+DETAIL:  Key (id)=(rec328QP2Au75Wqr1) already exists.
+CONTEXT:  COPY payment_intermediaries, line 1
+ERROR:  duplicate key value violates unique constraint "users_pkey"
+DETAIL:  Key (id)=(0yXx_yn4I_pdm3bHLpNRS) already exists.
+CONTEXT:  COPY users, line 1
+ERROR:  duplicate key value violates unique constraint "funders_pkey"
+DETAIL:  Key (id)=(recVlfvZ97jAcRlAE) already exists.
+CONTEXT:  COPY funders, line 1
+ERROR:  duplicate key value violates unique constraint "households_pkey"
+DETAIL:  Key (id)=(rec09zdC8mGgea1Dj) already exists.
+CONTEXT:  COPY households, line 1
+ERROR:  duplicate key value violates unique constraint "organizations_pkey"
+DETAIL:  Key (id)=(rec06pk08cnJ68Uuf) already exists.
+CONTEXT:  COPY organizations, line 1
+ERROR:  duplicate key value violates unique constraint "regions_pkey"
+DETAIL:  Key (id)=(united_states__texas__spring) already exists.
+CONTEXT:  COPY regions, line 1
+ERROR:  duplicate key value violates unique constraint "people_pkey"
+DETAIL:  Key (id)=(rec0Hbs10HvrSmize) already exists.
+CONTEXT:  COPY people, line 1
+ERROR:  duplicate key value violates unique constraint "addresses_pkey"
+DETAIL:  Key (id)=(recrmKYLSIwESW1WA) already exists.
+CONTEXT:  COPY addresses, line 1
+ERROR:  duplicate key value violates unique constraint "bulk_operations_pkey"
+DETAIL:  Key (id)=(aZhfM4yrlH6fbUrVVxqwx) already exists.
+CONTEXT:  COPY bulk_operations, line 1
+ERROR:  duplicate key value violates unique constraint "calendar_events_pkey"
+DETAIL:  Key (id)=(9MOIRbRi-SLZl9h1TFF55) already exists.
+CONTEXT:  COPY calendar_events, line 1
+ERROR:  duplicate key value violates unique constraint "calendar_meeting_filters_pkey"
+DETAIL:  Key (id)=(singleton) already exists.
+CONTEXT:  COPY calendar_meeting_filters, line 1
+ERROR:  duplicate key value violates unique constraint "calendar_sync_state_pkey"
+DETAIL:  Key (calendar_user_id)=(zFVwzgKh7bIFy9eeuH3ft) already exists.
+CONTEXT:  COPY calendar_sync_state, line 2
+ERROR:  duplicate key value violates unique constraint "correspondent_ignore_pk"
+DETAIL:  Key (mailbox_user_id, email_lower)=(zFVwzgKh7bIFy9eeuH3ft, erica.cantoni@wildflowerschools.org) already exists.
+CONTEXT:  COPY correspondent_ignore, line 1
+ERROR:  duplicate key value violates unique constraint "email_messages_pkey"
+DETAIL:  Key (id)=(iKpQI6CL-PCU8rDJj9BAE) already exists.
+CONTEXT:  COPY email_messages, line 1
+ERROR:  duplicate key value violates unique constraint "email_attachments_pkey"
+DETAIL:  Key (id)=(EL6gTQcJek-DP7ZSatQW0) already exists.
+CONTEXT:  COPY email_attachments, line 1
+ERROR:  duplicate key value violates unique constraint "emails_pkey"
+DETAIL:  Key (id)=(rec00oKJYcfr26dZt) already exists.
+CONTEXT:  COPY emails, line 1
+ERROR:  duplicate key value violates unique constraint "email_proposals_pkey"
+DETAIL:  Key (id)=(07WdZNIRSOmxeJl6TdEBJ) already exists.
+CONTEXT:  COPY email_proposals, line 1
+ERROR:  duplicate key value violates unique constraint "email_sync_skip_pk"
+DETAIL:  Key (mailbox_user_id, gmail_message_id)=(zFVwzgKh7bIFy9eeuH3ft, 19e3da4de3df7c8d) already exists.
+CONTEXT:  COPY email_sync_skip, line 1
+ERROR:  duplicate key value violates unique constraint "email_sync_state_pkey"
+DETAIL:  Key (mailbox_user_id)=(zFVwzgKh7bIFy9eeuH3ft) already exists.
+CONTEXT:  COPY email_sync_state, line 1
+ERROR:  duplicate key value violates unique constraint "entities_pkey"
+DETAIL:  Key (id)=(wildflower_foundation) already exists.
+CONTEXT:  COPY entities, line 1
+ERROR:  duplicate key value violates unique constraint "fiscal_years_pkey"
+DETAIL:  Key (id)=(fy2014) already exists.
+CONTEXT:  COPY fiscal_years, line 1
+ERROR:  duplicate key value violates unique constraint "fiscal_year_entity_goals_fiscal_year_id_entity_id_pk"
+DETAIL:  Key (fiscal_year_id, entity_id)=(fy2026, wildflower_foundation) already exists.
+CONTEXT:  COPY fiscal_year_entity_goals, line 1
+ERROR:  duplicate key value violates unique constraint "fundable_projects_pkey"
+DETAIL:  Key (id)=(charter_growth) already exists.
+CONTEXT:  COPY fundable_projects, line 1
+ERROR:  duplicate key value violates unique constraint "opportunities_and_pledges_pkey"
+DETAIL:  Key (id)=(rec079KqC7wktjWsp) already exists.
+CONTEXT:  COPY opportunities_and_pledges, line 1
+ERROR:  duplicate key value violates unique constraint "gifts_and_payments_pkey"
+DETAIL:  Key (id)=(recIWlIexIN5tXKqX) already exists.
+CONTEXT:  COPY gifts_and_payments, line 1
+ERROR:  duplicate key value violates unique constraint "schools_pkey"
+DETAIL:  Key (id)=(recWDdzadbfzlnLlF) already exists.
+CONTEXT:  COPY schools, line 1
+ERROR:  function compute_gift_allocation_display_usage(public.intended_usage, text, text, text[]) does not exist
+LINE 1: NEW.display_usage := compute_gift_allocation_display_usage(
+                             ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+QUERY:  NEW.display_usage := compute_gift_allocation_display_usage(
+    NEW.intended_usage,
+    NEW.school_recipient_id,
+    NEW.fundable_project_id,
+    NEW.region_ids
+  )
+CONTEXT:  PL/pgSQL function public.gift_allocations_set_display_usage() line 3 at assignment
+COPY gift_allocations, line 1: "synth-ga-recl4qagDw1VF9GbG  recl4qagDw1VF9GbG   150.00  fy2024  f   f   \N  \N  \N  2026-05-23 01:50:33.690324  2..."
+ERROR:  duplicate key value violates unique constraint "google_oauth_tokens_pkey"
+DETAIL:  Key (user_id)=(zFVwzgKh7bIFy9eeuH3ft) already exists.
+CONTEXT:  COPY google_oauth_tokens, line 2
+COPY 0
+ERROR:  duplicate key value violates unique constraint "media_ingest_state_pkey"
+DETAIL:  Key (id)=(singleton) already exists.
+CONTEXT:  COPY media_ingest_state, line 1
+ERROR:  duplicate key value violates unique constraint "media_mentions_pkey"
+DETAIL:  Key (id)=(RGLeAVHsL0yFE0H7sUgOd) already exists.
+CONTEXT:  COPY media_mentions, line 1
+COPY 0
+ERROR:  duplicate key value violates unique constraint "notes_pkey"
+DETAIL:  Key (id)=(copper_13131599713) already exists.
+CONTEXT:  COPY notes, line 1
+ERROR:  duplicate key value violates unique constraint "people_entity_roles_pkey"
+DETAIL:  Key (id)=(rec02cvWEv0R1ycUW) already exists.
+CONTEXT:  COPY people_entity_roles, line 1
+COPY 0
+ERROR:  duplicate key value violates unique constraint "phone_numbers_pkey"
+DETAIL:  Key (id)=(rec02k3JyW7TCIRTN) already exists.
+CONTEXT:  COPY phone_numbers, line 1
+ERROR:  duplicate key value violates unique constraint "pledge_allocations_pkey"
+DETAIL:  Key (id)=(rec5STshJgGrB669t) already exists.
+CONTEXT:  COPY pledge_allocations, line 1
+ERROR:  duplicate key value violates unique constraint "saved_views_pkey"
+DETAIL:  Key (id)=(OXnEvlOOTXpGw5n3AO-ku) already exists.
+CONTEXT:  COPY saved_views, line 1
+COPY 1
+ERROR:  duplicate key value violates unique constraint "tracked_emails_pkey"
+DETAIL:  Key (id)=(_DF3DQaLlp_GTEvuRlj_t) already exists.
+CONTEXT:  COPY tracked_emails, line 1
+ERROR:  duplicate key value violates unique constraint "tracked_email_views_pkey"
+DETAIL:  Key (id)=(-v_1Fa5Ek5Qb-f1k2V8QG) already exists.
+CONTEXT:  COPY tracked_email_views, line 1
