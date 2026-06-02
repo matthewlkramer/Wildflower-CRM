@@ -134,7 +134,7 @@ const PRIORITY_OPTIONS = [
 ] as const satisfies ReadonlyArray<InlineSelectOption<Priority>>;
 import { useToast } from "@/hooks/use-toast";
 import { personDisplayName } from "@/lib/person";
-import { canSeeIdentity, ANONYMOUS_LABEL } from "@/lib/visibility";
+import { canSeeIdentity, canManageIdentity, ANONYMOUS_LABEL } from "@/lib/visibility";
 import { Badge } from "@/components/ui/badge";
 import { PriorityTooltip } from "@/components/priority-tooltip";
 import { Button } from "@/components/ui/button";
@@ -490,7 +490,8 @@ function PersonView({ person }: { person: PersonDetail }) {
                   onSave={(next) => patch({ deceased: next ?? false })}
                 />
               </Row>
-              <Row label="Anonymous">
+              {canManageIdentity(person, viewer) && (
+                <Row label="Anonymous">
                   <InlineEditBoolean
                     label="Anonymous"
                     testIdBase="person-anonymous"
@@ -502,6 +503,7 @@ function PersonView({ person }: { person: PersonDetail }) {
                     onSave={(next) => patch({ anonymous: next ?? false })}
                   />
                 </Row>
+              )}
               <Row label="Region">
                 <InlineEditRegionPicker testIdBase="person-region"
                   value={person.currentHomeRegionId ?? null}
