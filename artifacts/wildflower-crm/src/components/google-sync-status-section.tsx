@@ -25,7 +25,6 @@ export default function GoogleSyncStatusSection() {
   });
 
   const data = statusQ.data;
-  const year = data?.year ?? new Date().getFullYear();
 
   return (
     <Card data-testid="google-sync-status-section">
@@ -33,8 +32,8 @@ export default function GoogleSyncStatusSection() {
         <CardTitle>Sync status</CardTitle>
         <CardDescription>
           A read-only health check of your Gmail &amp; Calendar sync. Counts and
-          the synced date range below cover {year} so far. Use this to spot gaps
-          if emails or meetings stop appearing on contact pages.
+          the synced date range below reflect your full inbox history. Use this
+          to spot gaps if emails or meetings stop appearing on contact pages.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -140,7 +139,7 @@ function SourcePanel({
           </dl>
 
           <p className="text-xs text-muted-foreground">
-            {reviewedLabel} this year.
+            {reviewedLabel} total.
           </p>
 
           {lastError ? (

@@ -7,7 +7,7 @@ import {
   emailSyncSkip,
   calendarEvents,
 } from "@workspace/db/schema";
-import { eq, and, gte, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler } from "../lib/helpers";
 import { getAppUser } from "../lib/appRequest";
@@ -33,10 +33,6 @@ router.get(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    // Counts + coverage are scoped to the current calendar year so the
-    // numbers are a stable, intuitive "this year so far" troubleshooting
-    // picture (matches the year label shown in the UI).
-    const yearStart = new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1));
     const toIso = (v: unknown): string | null =>
       v == null
         ? null
@@ -63,12 +59,7 @@ router.get(
             latest: sql<Date | null>`max(${emailMessages.sentAt})`,
           })
           .from(emailMessages)
-          .where(
-            and(
-              eq(emailMessages.mailboxUserId, user.id),
-              gte(emailMessages.sentAt, yearStart),
-            ),
-          )
+          .where(eq(emailMessages.mailboxUserId, user.id))
           .then((r) => r[0]),
         db
           .select({
@@ -77,12 +68,7 @@ router.get(
             latest: sql<Date | null>`max(${emailSyncSkip.sentAt})`,
           })
           .from(emailSyncSkip)
-          .where(
-            and(
-              eq(emailSyncSkip.mailboxUserId, user.id),
-              gte(emailSyncSkip.sentAt, yearStart),
-            ),
-          )
+          .where(eq(emailSyncSkip.mailboxUserId, user.id))
           .then((r) => r[0]),
         db
           .select({
@@ -91,12 +77,7 @@ router.get(
             latest: sql<Date | null>`max(${calendarEvents.startAt})`,
           })
           .from(calendarEvents)
-          .where(
-            and(
-              eq(calendarEvents.calendarUserId, user.id),
-              gte(calendarEvents.startAt, yearStart),
-            ),
-          )
+          .where(eq(calendarEvents.calendarUserId, user.id))
           .then((r) => r[0]),
       ]);
 
@@ -121,7 +102,6 @@ router.get(
     const calCount = calAgg?.count ?? 0;
 
     res.json({
-      year: new Date().getUTCFullYear(),
       gmail: emailRow
         ? {
             lastHistoryId: emailRow.lastHistoryId,
