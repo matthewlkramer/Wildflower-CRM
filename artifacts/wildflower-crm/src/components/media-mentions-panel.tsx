@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import {
   useUpdateMediaMention,
+  useDeleteMediaMention,
   useListMediaMentions,
   getListMediaMentionsQueryKey,
   type MediaMention,
@@ -14,7 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { ExternalLink, Newspaper, Pin } from "lucide-react";
+import { ExternalLink, Newspaper, Pin, Trash2 } from "lucide-react";
 
 /** Format a `YYYY-MM-DD` (or ISO) publication date without timezone drift. */
 function formatPubDate(value?: string | null): string | null {
@@ -82,6 +84,72 @@ export function MediaPinButton({
   );
 }
 
+/**
+ * Trash-can delete button with a two-click arm-then-confirm pattern.
+ * First click turns the icon red and starts a 3-second disarm timer.
+ * Second click within that window fires the DELETE mutation.
+ */
+export function MediaDeleteButton({ id }: { id: string }) {
+  const [armed, setArmed] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const deleteMutation = useDeleteMediaMention({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({
+          queryKey: getListMediaMentionsQueryKey(),
+        });
+        toast({ title: "Media mention removed" });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Delete failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleClick = () => {
+    if (armed) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setArmed(false);
+      deleteMutation.mutate({ id });
+    } else {
+      setArmed(true);
+      timerRef.current = setTimeout(() => setArmed(false), 3000);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={deleteMutation.isPending}
+      aria-label={armed ? "Click again to confirm delete" : "Delete media mention"}
+      title={armed ? "Click again to confirm delete" : "Delete this media mention"}
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded p-0.5 transition-colors disabled:opacity-50",
+        armed
+          ? "text-destructive hover:text-destructive/80"
+          : "text-muted-foreground hover:text-destructive",
+      )}
+      data-testid={`button-delete-media-${id}`}
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
 /** Single media mention, reused by the activity feed and the pinned card. */
 export function MediaMentionRow({ row }: { row: MediaMention }) {
   const pubDate = formatPubDate(row.publicationDate);
@@ -95,7 +163,10 @@ export function MediaMentionRow({ row }: { row: MediaMention }) {
           <Badge variant="secondary">Media</Badge>
           <span className="truncate font-medium">{headline}</span>
         </div>
-        <MediaPinButton id={row.id} pinned={row.pinned} size="sm" />
+        <div className="flex shrink-0 items-center gap-1">
+          <MediaPinButton id={row.id} pinned={row.pinned} size="sm" />
+          <MediaDeleteButton id={row.id} />
+        </div>
       </div>
       <div className="text-xs text-muted-foreground">
         {[showSource ? row.publicationName : null, row.author, pubDate]
