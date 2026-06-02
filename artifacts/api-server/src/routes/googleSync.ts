@@ -1,7 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { calendarSyncState, emailSyncState } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import {
+  calendarSyncState,
+  emailSyncState,
+  emailMessages,
+  emailSyncSkip,
+  calendarEvents,
+} from "@workspace/db/schema";
+import { eq, and, gte, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler } from "../lib/helpers";
 import { getAppUser } from "../lib/appRequest";
@@ -27,19 +33,95 @@ router.get(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    const [emailRow, calRow] = await Promise.all([
-      db
-        .select()
-        .from(emailSyncState)
-        .where(eq(emailSyncState.mailboxUserId, user.id))
-        .then((r) => r[0]),
-      db
-        .select()
-        .from(calendarSyncState)
-        .where(eq(calendarSyncState.calendarUserId, user.id))
-        .then((r) => r[0]),
-    ]);
+    // Counts + coverage are scoped to the current calendar year so the
+    // numbers are a stable, intuitive "this year so far" troubleshooting
+    // picture (matches the year label shown in the UI).
+    const yearStart = new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1));
+    const toIso = (v: unknown): string | null =>
+      v == null
+        ? null
+        : v instanceof Date
+          ? v.toISOString()
+          : new Date(v as string).toISOString();
+
+    const [emailRow, calRow, matchedAgg, skippedAgg, calAgg] =
+      await Promise.all([
+        db
+          .select()
+          .from(emailSyncState)
+          .where(eq(emailSyncState.mailboxUserId, user.id))
+          .then((r) => r[0]),
+        db
+          .select()
+          .from(calendarSyncState)
+          .where(eq(calendarSyncState.calendarUserId, user.id))
+          .then((r) => r[0]),
+        db
+          .select({
+            count: sql<number>`count(*)::int`,
+            earliest: sql<Date | null>`min(${emailMessages.sentAt})`,
+            latest: sql<Date | null>`max(${emailMessages.sentAt})`,
+          })
+          .from(emailMessages)
+          .where(
+            and(
+              eq(emailMessages.mailboxUserId, user.id),
+              gte(emailMessages.sentAt, yearStart),
+            ),
+          )
+          .then((r) => r[0]),
+        db
+          .select({
+            count: sql<number>`count(*)::int`,
+            earliest: sql<Date | null>`min(${emailSyncSkip.sentAt})`,
+            latest: sql<Date | null>`max(${emailSyncSkip.sentAt})`,
+          })
+          .from(emailSyncSkip)
+          .where(
+            and(
+              eq(emailSyncSkip.mailboxUserId, user.id),
+              gte(emailSyncSkip.sentAt, yearStart),
+            ),
+          )
+          .then((r) => r[0]),
+        db
+          .select({
+            count: sql<number>`count(*)::int`,
+            earliest: sql<Date | null>`min(${calendarEvents.startAt})`,
+            latest: sql<Date | null>`max(${calendarEvents.startAt})`,
+          })
+          .from(calendarEvents)
+          .where(
+            and(
+              eq(calendarEvents.calendarUserId, user.id),
+              gte(calendarEvents.startAt, yearStart),
+            ),
+          )
+          .then((r) => r[0]),
+      ]);
+
+    const matchedCount = matchedAgg?.count ?? 0;
+    const skippedCount = skippedAgg?.count ?? 0;
+    // Earliest/latest synced email spans both matched + skipped messages.
+    const emailDates = [
+      matchedAgg?.earliest,
+      skippedAgg?.earliest,
+      matchedAgg?.latest,
+      skippedAgg?.latest,
+    ]
+      .map((d) => (d == null ? null : new Date(d as unknown as string)))
+      .filter((d): d is Date => d != null);
+    const gmailEarliest = emailDates.length
+      ? new Date(Math.min(...emailDates.map((d) => d.getTime())))
+      : null;
+    const gmailLatest = emailDates.length
+      ? new Date(Math.max(...emailDates.map((d) => d.getTime())))
+      : null;
+
+    const calCount = calAgg?.count ?? 0;
+
     res.json({
+      year: new Date().getUTCFullYear(),
       gmail: emailRow
         ? {
             lastHistoryId: emailRow.lastHistoryId,
@@ -49,6 +131,15 @@ router.get(
               emailRow.bootstrapCompletedAt?.toISOString() ?? null,
             bootstrapInProgress:
               !emailRow.bootstrapCompletedAt && !!emailRow.bootstrapPageToken,
+            counts: {
+              matched: matchedCount,
+              skipped: skippedCount,
+              reviewed: matchedCount + skippedCount,
+            },
+            dateRange: {
+              earliest: gmailEarliest?.toISOString() ?? null,
+              latest: gmailLatest?.toISOString() ?? null,
+            },
           }
         : null,
       calendar: calRow
@@ -60,6 +151,17 @@ router.get(
               calRow.bootstrapCompletedAt?.toISOString() ?? null,
             bootstrapInProgress:
               !calRow.bootstrapCompletedAt && !!calRow.bootstrapPageToken,
+            counts: {
+              // Calendar only stores matched events — there is no
+              // per-event skip ledger, so "skipped" is not tracked.
+              matched: calCount,
+              skipped: null,
+              reviewed: calCount,
+            },
+            dateRange: {
+              earliest: toIso(calAgg?.earliest),
+              latest: toIso(calAgg?.latest),
+            },
           }
         : null,
     });

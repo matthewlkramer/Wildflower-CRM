@@ -6295,6 +6295,10 @@ export const DisconnectGoogleOauthResponse = zod.object({
 });
 
 export const GetGoogleSyncStatusResponse = zod.object({
+  year: zod
+    .number()
+    .optional()
+    .describe("Calendar year the counts and date range are scoped to"),
   gmail: zod
     .object({
       lastHistoryId: zod.string().nullish(),
@@ -6302,6 +6306,19 @@ export const GetGoogleSyncStatusResponse = zod.object({
       lastError: zod.string().nullish(),
       bootstrapCompletedAt: zod.string().datetime({}).nullish(),
       bootstrapInProgress: zod.boolean().optional(),
+      counts: zod
+        .object({
+          matched: zod.number().optional(),
+          skipped: zod.number().nullish(),
+          reviewed: zod.number().optional(),
+        })
+        .optional(),
+      dateRange: zod
+        .object({
+          earliest: zod.string().datetime({}).nullish(),
+          latest: zod.string().datetime({}).nullish(),
+        })
+        .optional(),
     })
     .nullish(),
   calendar: zod
@@ -6311,6 +6328,19 @@ export const GetGoogleSyncStatusResponse = zod.object({
       lastError: zod.string().nullish(),
       bootstrapCompletedAt: zod.string().datetime({}).nullish(),
       bootstrapInProgress: zod.boolean().optional(),
+      counts: zod
+        .object({
+          matched: zod.number().optional(),
+          skipped: zod.number().nullish(),
+          reviewed: zod.number().optional(),
+        })
+        .optional(),
+      dateRange: zod
+        .object({
+          earliest: zod.string().datetime({}).nullish(),
+          latest: zod.string().datetime({}).nullish(),
+        })
+        .optional(),
     })
     .nullish(),
 });

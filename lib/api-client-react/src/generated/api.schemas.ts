@@ -1768,13 +1768,32 @@ export interface GoogleOauthStatus {
   lastError?: string | null;
 }
 
+export interface GoogleSyncDateRange {
+  earliest?: string | null;
+  latest?: string | null;
+}
+
+export type GoogleSyncStatusGmailCounts = {
+  matched?: number;
+  skipped?: number | null;
+  reviewed?: number;
+};
+
 export type GoogleSyncStatusGmail = {
   lastHistoryId?: string | null;
   lastSyncedAt?: string | null;
   lastError?: string | null;
   bootstrapCompletedAt?: string | null;
   bootstrapInProgress?: boolean;
+  counts?: GoogleSyncStatusGmailCounts;
+  dateRange?: GoogleSyncDateRange;
 } | null;
+
+export type GoogleSyncStatusCalendarCounts = {
+  matched?: number;
+  skipped?: number | null;
+  reviewed?: number;
+};
 
 export type GoogleSyncStatusCalendar = {
   hasSyncToken?: boolean;
@@ -1782,9 +1801,13 @@ export type GoogleSyncStatusCalendar = {
   lastError?: string | null;
   bootstrapCompletedAt?: string | null;
   bootstrapInProgress?: boolean;
+  counts?: GoogleSyncStatusCalendarCounts;
+  dateRange?: GoogleSyncDateRange;
 } | null;
 
 export interface GoogleSyncStatus {
+  /** Calendar year the counts and date range are scoped to */
+  year?: number;
   gmail?: GoogleSyncStatusGmail;
   calendar?: GoogleSyncStatusCalendar;
 }

@@ -3399,9 +3399,15 @@ components:
         lastError:    { type: string, nullable: true }
 
     # ─── Google sync status + run report ──────────────────────────────────────
+    GoogleSyncDateRange:
+      type: object
+      properties:
+        earliest: { type: string, format: date-time, nullable: true }
+        latest:   { type: string, format: date-time, nullable: true }
     GoogleSyncStatus:
       type: object
       properties:
+        year: { type: integer, description: Calendar year the counts and date range are scoped to }
         gmail:
           nullable: true
           type: object
@@ -3411,6 +3417,13 @@ components:
             lastError:            { type: string, nullable: true }
             bootstrapCompletedAt: { type: string, format: date-time, nullable: true }
             bootstrapInProgress:  { type: boolean }
+            counts:
+              type: object
+              properties:
+                matched:  { type: integer }
+                skipped:  { type: integer, nullable: true }
+                reviewed: { type: integer }
+            dateRange: { $ref: "#/components/schemas/GoogleSyncDateRange" }
         calendar:
           nullable: true
           type: object
@@ -3420,6 +3433,13 @@ components:
             lastError:            { type: string, nullable: true }
             bootstrapCompletedAt: { type: string, format: date-time, nullable: true }
             bootstrapInProgress:  { type: boolean }
+            counts:
+              type: object
+              properties:
+                matched:  { type: integer }
+                skipped:  { type: integer, nullable: true }
+                reviewed: { type: integer }
+            dateRange: { $ref: "#/components/schemas/GoogleSyncDateRange" }
     GmailSyncRunResponse:
       type: object
       required: [ok]

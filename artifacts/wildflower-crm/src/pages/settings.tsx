@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { EntityMultiSelect } from "@/components/entity-filter";
 import GoogleConnectSection from "@/components/google-connect-section";
+import GoogleSyncStatusSection from "@/components/google-sync-status-section";
 import ExtensionTokenSection from "@/components/extension-token-section";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 
@@ -38,6 +39,7 @@ export default function Settings() {
       <DefaultEntitySection />
       <EmailPrivacySection />
       <GoogleConnectSection returnTo="/settings" />
+      <GoogleSyncStatusSection />
       <ExtensionTokenSection />
     </div>
   );

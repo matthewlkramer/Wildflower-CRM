@@ -391,6 +391,22 @@ export async function mergeEntity(
   const actor = getAppUser(req);
 
   await db.transaction(async (tx) => {
+    // 0. Lock the primary + every loser entity row FOR UPDATE before any
+    //    rewrite. Several child FKs (addresses, emails, phone_numbers,
+    //    people_entity_roles, person_suppression_windows) are ON DELETE
+    //    CASCADE. Without this lock a concurrent INSERT of a child row
+    //    pointing at a loser could land between the FK rewrite (step 2) and
+    //    the loser DELETE (step 5) and then be silently cascade-deleted.
+    //    FOR UPDATE conflicts with the FOR KEY SHARE lock a child INSERT
+    //    takes on its parent, so such an insert blocks until this txn
+    //    commits and then fails its own FK check instead of vanishing.
+    //    It also serializes overlapping merges of the same records.
+    await tx.execute(sql`
+      SELECT id FROM ${ident(cfg.kind)}
+      WHERE id = ANY(${idArray(allIds)})
+      FOR UPDATE
+    `);
+
     // 1. Apply scalar winners + unioned arrays to the primary.
     await tx
       .update(cfg.table)
