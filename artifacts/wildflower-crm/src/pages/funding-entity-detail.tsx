@@ -405,6 +405,22 @@ function FunderView({ funder }: { funder: FunderDetail }) {
   ];
 
   const people = funder.people ?? [];
+
+  // Derive unique email domains from connected people's addresses as a fallback
+  // for the stored emailDomain (which comes only from the funder's own orgEmail,
+  // often left blank). People's emails are much more likely to be populated.
+  const peopleDomains = [
+    ...new Set(
+      people
+        .map((p) => p.personEmail?.trim())
+        .filter(Boolean)
+        .map((e) => e!.split("@")[1]?.toLowerCase())
+        .filter(Boolean) as string[],
+    ),
+  ];
+  const resolvedEmailDomain =
+    funder.emailDomain?.trim() || peopleDomains.join(", ") || null;
+
   const [hideInactivePeople, setHideInactivePeople] = useState(false);
   const hasInactivePeople = people.some((p) => p.current === "past");
   const visiblePeople = (
@@ -671,8 +687,8 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                   onSave={(next) => patch({ orgEmail: next })}
                 />
               </Row>
-              <DerivedRow label="Domain" hint="derived from email">
-                {funder.emailDomain ?? "—"}
+              <DerivedRow label="Domain" hint="derived from org email or connected people">
+                {resolvedEmailDomain ?? "—"}
               </DerivedRow>
               <Row label="LinkedIn">
                 <InlineEditText
