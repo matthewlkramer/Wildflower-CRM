@@ -146,23 +146,17 @@ export function useRegionNameMap(): Map<string, string> {
 }
 
 /**
- * Inline-edit Region picker. Sources options from /api/regions and
- * surfaces each region's full displayPath (e.g.
- * "United States, Massachusetts, Greater Boston, Boston") so users can
- * disambiguate same-named regions across states/countries.
- *
- * Pages pass a `display` fallback resolved via useRegionNameMap so the
- * read-mode label shows the name instead of a raw slug.
+ * Inline-edit Region picker. Sources options from /api/regions and uses
+ * regionDisplayName for both read-mode display and edit-mode dropdown labels,
+ * so formatting is consistent with the multi-region picker.
  */
 export function InlineEditRegionPicker({
   value,
-  display,
   onSave,
   label = "Region",
   testIdBase,
 }: {
   value: string | null;
-  display: ReactNode;
   onSave: (next: string | null) => unknown | Promise<unknown>;
   label?: string;
   testIdBase?: string;
@@ -209,10 +203,14 @@ export function InlineEditRegionPicker({
     if (!popoverOpen) setQuery("");
   }, [popoverOpen]);
 
+  const readLabel = value
+    ? (options.find((o) => o.value === value)?.label ?? value)
+    : "—";
+
   if (!editing) {
     return (
       <EditTriggerRow
-        display={display}
+        display={readLabel}
         onEdit={() => setEditing(true)}
         testIdBase={testIdBase}
         ariaLabel={`Edit ${label}`}

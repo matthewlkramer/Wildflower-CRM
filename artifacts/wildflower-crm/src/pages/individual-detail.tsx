@@ -66,7 +66,7 @@ import {
   type InlineSelectOption,
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
-import { InlineEditRegionPicker, useRegionNameMap } from "@/components/region-picker";
+import { InlineEditRegionPicker } from "@/components/region-picker";
 import {
   useFunderName,
   useHouseholdName,
@@ -209,11 +209,6 @@ function PersonView({ person }: { person: PersonDetail }) {
   const ownerDisplay = person.ownerUserId
     ? (userNames.get(person.ownerUserId) ?? person.ownerUserId)
     : "—";
-  const regionNames = useRegionNameMap();
-  const regionDisplay = person.currentHomeRegionId
-    ? (regionNames.get(person.currentHomeRegionId) ?? person.currentHomeRegionId)
-    : "—";
-
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(() => nameDraftFrom(person));
 
@@ -512,7 +507,6 @@ function PersonView({ person }: { person: PersonDetail }) {
               <Row label="Region">
                 <InlineEditRegionPicker testIdBase="person-region"
                   value={person.currentHomeRegionId ?? null}
-                  display={regionDisplay}
                   onSave={(next) => patch({ currentHomeRegionId: next })} />
               </Row>
               <Row label="Children at WF">
