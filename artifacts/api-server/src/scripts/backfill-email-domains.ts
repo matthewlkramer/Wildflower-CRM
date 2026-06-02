@@ -14,13 +14,7 @@
 import { db } from "@workspace/db";
 import { funders, peopleEntityRoles, emails } from "@workspace/db/schema";
 import { isNull, inArray, eq, and } from "drizzle-orm";
-
-function domainOf(email: string): string | null {
-  const at = email.lastIndexOf("@");
-  if (at < 0) return null;
-  const d = email.slice(at + 1).trim().toLowerCase();
-  return d.length > 0 ? d : null;
-}
+import { domainOf, isFreeMailDomain } from "../lib/intelDetectors";
 
 async function main(): Promise<void> {
   const targets = await db
@@ -74,18 +68,25 @@ async function main(): Promise<void> {
         continue;
       }
 
+      // Only consider work-domain emails (skip gmail, icloud, comcast, etc.)
+      const workDomain = (email: string | null | undefined): string | null => {
+        const d = domainOf(email);
+        return d && !isFreeMailDomain(d) ? d : null;
+      };
+
       const primaryRows = rows.filter((r) => r.primaryContact);
 
-      // 1. Active primary contact's preferred email
+      // 1. Active primary contact's preferred work-domain email
       const primaryPreferred =
-        primaryRows.find((r) => r.isPreferred)?.email ?? null;
-      // 2. Active primary contact's any email
-      const primaryAny = primaryRows[0]?.email ?? null;
-      // 3. Most common domain among all active contacts
+        primaryRows.find((r) => r.isPreferred && workDomain(r.email))?.email ?? null;
+      // 2. Active primary contact's any work-domain email
+      const primaryAny =
+        primaryRows.find((r) => workDomain(r.email))?.email ?? null;
+      // 3. Most common work domain across all active contacts
       const mostCommon = (() => {
         const freq = new Map<string, number>();
         for (const r of rows) {
-          const d = domainOf(r.email);
+          const d = workDomain(r.email);
           if (d) freq.set(d, (freq.get(d) ?? 0) + 1);
         }
         if (!freq.size) return null;
@@ -93,8 +94,8 @@ async function main(): Promise<void> {
       })();
 
       const domain =
-        domainOf(primaryPreferred ?? "") ??
-        domainOf(primaryAny ?? "") ??
+        workDomain(primaryPreferred) ??
+        workDomain(primaryAny) ??
         mostCommon;
 
       if (!domain) {
