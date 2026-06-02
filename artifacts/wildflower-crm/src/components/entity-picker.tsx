@@ -504,9 +504,11 @@ export function intermediaryDisplayName(p: PaymentIntermediary): string {
 
 export function useIntermediarySearch(_query: string) {
   // Only ~35 records — no server-side search needed; cmdk filters locally.
-  // We still respect the query param for forward compatibility but ignore it
-  // here because the server only indexes name and there are too few rows
-  // to bother paginating.
+  // NOTE: keep this to exactly 2 hooks (useQuery + useMemo) to match the
+  // hook count of useFunderSearch / useHouseholdSearch / etc. Both pickers
+  // share the same EntityCombobox instance (same tree position), so React
+  // reuses the component and the hook call count must stay identical across
+  // all useSearch implementations or a "rendered more hooks" error fires.
   const q = useListPaymentIntermediaries(
     { limit: 200 },
     {
@@ -516,21 +518,16 @@ export function useIntermediarySearch(_query: string) {
       },
     },
   );
-  const items: PickerItem[] = useMemo(
-    () =>
-      (q.data?.data ?? []).map((p) => ({
-        id: p.id,
-        label: intermediaryDisplayName(p),
-      })),
-    [q.data],
-  );
-  // Filter locally to keep the API simple
-  const filtered = useMemo(() => {
+  const items: PickerItem[] = useMemo(() => {
+    const all = (q.data?.data ?? []).map((p) => ({
+      id: p.id,
+      label: intermediaryDisplayName(p),
+    }));
     const term = _query.trim().toLowerCase();
-    if (!term) return items;
-    return items.filter((it) => it.label.toLowerCase().includes(term));
-  }, [items, _query]);
-  return { items: filtered, isLoading: q.isLoading };
+    if (!term) return all;
+    return all.filter((it) => it.label.toLowerCase().includes(term));
+  }, [q.data, _query]);
+  return { items, isLoading: q.isLoading };
 }
 
 export function useIntermediaryName(id: string | null): string | null {
