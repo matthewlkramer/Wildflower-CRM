@@ -7,6 +7,7 @@ import {
   getListFundersQueryKey,
   useBulkUpdateFunders,
   useMergeFunders,
+  useGetCurrentUser,
   getGetFunderQueryOptions,
   getGetFunderQueryKey,
   type ListFundersParams,
@@ -51,6 +52,7 @@ import { PriorityTooltip } from "@/components/priority-tooltip";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
+import { canSeeIdentity, displayFunderName, ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
 import { useRegionNameMap } from "@/components/region-picker";
 import {
   Pagination,
@@ -122,6 +124,7 @@ const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", mediu
 type ColCtx = {
   userNames: Map<string, string>;
   regionNames: Map<string, string>;
+  viewer: Viewer;
 };
 
 function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
@@ -141,7 +144,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
       tdClassName: "font-medium",
       cell: (f) => (
         <Link href={`/funding-entities/${f.id}`} className="block w-full">
-          {formatFunderNameShort(f.name)}
+          {canSeeIdentity(f, ctx.viewer) ? formatFunderNameShort(f.name) : ANONYMOUS_LABEL}
         </Link>
       ),
     },
@@ -414,7 +417,8 @@ export default function FundingEntities() {
     return (f.name as string | null) || f.id;
   };
 
-  const registry = useMemo(() => buildColumns({ userNames, regionNames }), [userNames, regionNames]);
+  const viewer = useGetCurrentUser().data ?? null;
+  const registry = useMemo(() => buildColumns({ userNames, regionNames, viewer }), [userNames, regionNames, viewer]);
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
     [registry, columnsState],
@@ -626,7 +630,7 @@ export default function FundingEntities() {
         rows,
         {
           priority: (r) => (r.priority === "top" ? 1 : 0),
-          name: (r) => formatFunderNameShort(r.name).toLowerCase(),
+          name: (r) => displayFunderName(r, viewer).toLowerCase(),
           subtype: (r) => r.fundingEntitySubtype ?? null,
           active: (r) => r.activeStatus ?? null,
           connection: (r) => r.connectionStatus ?? null,
@@ -649,7 +653,7 @@ export default function FundingEntities() {
         },
         ts.sort,
       ),
-    [rows, ts.sort, userNames, regionNames],
+    [rows, ts.sort, userNames, regionNames, viewer],
   );
   const pagedRows = useMemo(() => {
     if (!sortActive) return sortedRows;
@@ -906,7 +910,7 @@ export default function FundingEntities() {
                     <Checkbox
                       checked={selection.isSelected(f.id)}
                       onCheckedChange={() => selection.toggle(f.id)}
-                      aria-label={`Select ${f.name}`}
+                      aria-label={`Select ${displayFunderName(f, viewer)}`}
                       data-testid={`checkbox-select-${f.id}`}
                     />
                   </TableCell>

@@ -885,6 +885,11 @@ export const ListFundersResponse = zod.object({
         .describe(
           "Payment intermediary (e.g. a DAF) this funder gives through.",
         ),
+      anonymous: zod
+        .boolean()
+        .describe(
+          "When true, hide the funder's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
+        ),
       lastContacted: zod.string().date().nullish(),
       x: zod.string().nullish(),
       linkedin: zod.string().nullish(),
@@ -1011,6 +1016,7 @@ export const CreateFunderBody = zod.object({
   youtube: zod.string().optional(),
   crunchbase: zod.string().optional(),
   priority: zod.enum(["top", "high", "medium", "low"]).optional(),
+  anonymous: zod.boolean().optional(),
 });
 
 export const GetFunderParams = zod.object({
@@ -1098,6 +1104,11 @@ export const GetFunderResponse = zod
       .string()
       .nullish()
       .describe("Payment intermediary (e.g. a DAF) this funder gives through."),
+    anonymous: zod
+      .boolean()
+      .describe(
+        "When true, hide the funder's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
+      ),
     lastContacted: zod.string().date().nullish(),
     x: zod.string().nullish(),
     linkedin: zod.string().nullish(),
@@ -1338,6 +1349,7 @@ export const UpdateFunderBody = zod.object({
   youtube: zod.string().nullish(),
   crunchbase: zod.string().nullish(),
   priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+  anonymous: zod.boolean().optional(),
 });
 
 export const UpdateFunderResponse = zod.object({
@@ -1420,6 +1432,11 @@ export const UpdateFunderResponse = zod.object({
     .string()
     .nullish()
     .describe("Payment intermediary (e.g. a DAF) this funder gives through."),
+  anonymous: zod
+    .boolean()
+    .describe(
+      "When true, hide the funder's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
+    ),
   lastContacted: zod.string().date().nullish(),
   x: zod.string().nullish(),
   linkedin: zod.string().nullish(),
@@ -2306,6 +2323,11 @@ export const ListPeopleResponse = zod.object({
         .describe(
           "Solicitation priority tier (top\/high\/medium\/low). The 'top' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.",
         ),
+      anonymous: zod
+        .boolean()
+        .describe(
+          "When true, hide the person's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
+        ),
       lifetimeGiving: zod
         .string()
         .nullish()
@@ -2413,6 +2435,7 @@ export const CreatePersonBody = zod.object({
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .optional(),
   priority: zod.enum(["top", "high", "medium", "low"]).optional(),
+  anonymous: zod.boolean().optional(),
 });
 
 export const GetPersonParams = zod.object({
@@ -2479,6 +2502,11 @@ export const GetPersonResponse = zod
       .nullish()
       .describe(
         "Solicitation priority tier (top\/high\/medium\/low). The 'top' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.",
+      ),
+    anonymous: zod
+      .boolean()
+      .describe(
+        "When true, hide the person's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
       ),
     lifetimeGiving: zod
       .string()
@@ -2687,6 +2715,7 @@ export const UpdatePersonBody = zod.object({
     .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
     .nullish(),
   priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+  anonymous: zod.boolean().optional(),
 });
 
 export const UpdatePersonResponse = zod.object({
@@ -2748,6 +2777,11 @@ export const UpdatePersonResponse = zod.object({
     .nullish()
     .describe(
       "Solicitation priority tier (top\/high\/medium\/low). The 'top' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.",
+    ),
+  anonymous: zod
+    .boolean()
+    .describe(
+      "When true, hide the person's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
     ),
   lifetimeGiving: zod
     .string()

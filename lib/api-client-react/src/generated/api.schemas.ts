@@ -679,6 +679,8 @@ export interface Funder {
   parentFunderId?: string | null;
   /** Payment intermediary (e.g. a DAF) this funder gives through. */
   paymentIntermediaryId?: string | null;
+  /** When true, hide the funder's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned. */
+  anonymous: boolean;
   lastContacted?: string | null;
   x?: string | null;
   linkedin?: string | null;
@@ -825,6 +827,7 @@ export interface CreateFunderBody {
   youtube?: string;
   crunchbase?: string;
   priority?: Priority;
+  anonymous?: boolean;
 }
 
 export interface UpdateFunderBody {
@@ -863,6 +866,7 @@ export interface UpdateFunderBody {
   youtube?: string | null;
   crunchbase?: string | null;
   priority?: Priority | null;
+  anonymous?: boolean;
 }
 
 export interface Organization {
@@ -1011,6 +1015,8 @@ export interface Person {
   enthusiasm?: Enthusiasm | null;
   /** Solicitation priority tier (top/high/medium/low). The 'top' band is surfaced as a star on the individuals table and on opportunities/gifts where this person is the individual giver. */
   priority?: Priority | null;
+  /** When true, hide the person's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned. */
+  anonymous: boolean;
   /** Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string. */
   readonly lifetimeGiving?: string | null;
   /** Most recent date_received across direct individual gifts and gifts to households the person belongs to. */
@@ -1078,6 +1084,7 @@ export interface CreatePersonBody {
   connectionStatus?: ConnectionStatus;
   enthusiasm?: Enthusiasm;
   priority?: Priority;
+  anonymous?: boolean;
 }
 
 export interface UpdatePersonBody {
@@ -1117,6 +1124,7 @@ export interface UpdatePersonBody {
   connectionStatus?: ConnectionStatus | null;
   enthusiasm?: Enthusiasm | null;
   priority?: Priority | null;
+  anonymous?: boolean;
 }
 
 export interface PeopleEntityRoleList {

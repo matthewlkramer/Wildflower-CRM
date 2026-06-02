@@ -7,6 +7,7 @@ import {
   getListPeopleQueryKey,
   useBulkUpdatePeople,
   useMergePeople,
+  useGetCurrentUser,
   getGetPersonQueryOptions,
   getGetPersonQueryKey,
   type ListPeopleParams,
@@ -15,6 +16,7 @@ import {
   type Person,
 } from "@workspace/api-client-react";
 import { MergeDialog, type MergeField, type MergeRecord } from "@/components/merge-dialog";
+import { canSeeIdentity, displayPersonName, ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
@@ -97,6 +99,7 @@ const ENTHUSIASM_OPTIONS = ["advocate", "supportive", "warm", "neutral", "unsupp
 type ColCtx = {
   regionNames: Map<string, string>;
   userNames: Map<string, string>;
+  viewer: Viewer;
 };
 
 function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
@@ -116,7 +119,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
       tdClassName: "font-medium",
       cell: (p) => (
         <Link href={`/individuals/${p.id}`} className="block w-full">
-          {personDisplayName(p)}
+          {canSeeIdentity(p, ctx.viewer) ? personDisplayName(p) : ANONYMOUS_LABEL}
         </Link>
       ),
     },
@@ -407,9 +410,10 @@ export default function Individuals() {
     );
   };
 
+  const viewer = useGetCurrentUser().data ?? null;
   const registry = useMemo(
-    () => buildColumns({ regionNames, userNames }),
-    [regionNames, userNames],
+    () => buildColumns({ regionNames, userNames, viewer }),
+    [regionNames, userNames, viewer],
   );
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
@@ -597,7 +601,7 @@ export default function Individuals() {
         rows,
         {
           priority: (r) => (r.priority === "top" ? 1 : 0),
-          name: (r) => personDisplayName(r).toLowerCase(),
+          name: (r) => displayPersonName(r, viewer).toLowerCase(),
           status: (r) => (r.deceased ? 1 : 0),
           region: (r) =>
             r.currentHomeRegionId
@@ -622,7 +626,7 @@ export default function Individuals() {
         },
         ts.sort,
       ),
-    [rows, ts.sort, regionNames, userNames],
+    [rows, ts.sort, regionNames, userNames, viewer],
   );
   const pagedRows = useMemo(() => {
     if (!sortActive) return sortedRows;
@@ -879,7 +883,7 @@ export default function Individuals() {
                     <Checkbox
                       checked={selection.isSelected(p.id)}
                       onCheckedChange={() => selection.toggle(p.id)}
-                      aria-label={`Select ${personDisplayName(p)}`}
+                      aria-label={`Select ${displayPersonName(p, viewer)}`}
                       data-testid={`checkbox-select-${p.id}`}
                     />
                   </TableCell>

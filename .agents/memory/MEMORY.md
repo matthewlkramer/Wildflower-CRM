@@ -8,6 +8,7 @@
 - [Donor XOR across split pickers](wildflower-donor-xor-pickers.md) — per-type donor pickers must send all 3 FK fields (null the rest) + allowNull=false to keep exactly-one invariant.
 - [Activity-feed email open-tracking enrich](wildflower-activity-feed-tracking-enrich.md) — tracked open status merged onto synced email_messages server-side; exact gmail-id beats fuzzy; shows only after sync.
 - [e2e test users pollute owner filter](wildflower-test-user-pollution.md) — testClerkAuth sign-ins auto-provision "Test Dev"/"Test Admin" user rows that clutter the owner dropdown; expected to recur after e2e runs.
+- [anonymous funders/people visibility](wildflower-anonymous-visibility.md) — UI-only name hiding; canSeeIdentity (display) vs canManageIdentity (toggle) must stay separate; join-projection name refs aren't masked.
 - [Entity-merge cascade-delete lock](merge-entity-cascade-lock.md) — merge txn must SELECT...FOR UPDATE the funder/person rows before reassign+delete; cascade FKs otherwise lose concurrent child inserts.
 - [Copper notes migration](copper-notes-migration.md) — one-time Copper→notes import; idempotent copper_<id>, strip-tags-before-decode, conservative matching, run via nohup (exceeds 120s).
 - [Per-recipient open tracking (Path A)](wildflower-per-recipient-tracking.md) — multi-recipient server-send guardrails (Bcc/attachment/reply fallback, region-scoped chip extraction, extension-token auth, gmail.send reconnect).

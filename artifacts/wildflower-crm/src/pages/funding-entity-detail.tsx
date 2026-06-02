@@ -5,6 +5,7 @@ import {
   useListFunders,
   useUpdateFunder,
   useDeleteFunder,
+  useGetCurrentUser,
   getGetFunderQueryKey,
   getListFundersQueryKey,
   type FunderDetail,
@@ -20,6 +21,7 @@ import {
   type Priority,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { canSeeIdentity, canManageIdentity, displayFunderName, ANONYMOUS_LABEL } from "@/lib/visibility";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { PinnedMediaCard } from "@/components/media-mentions-panel";
 import { TasksPanel } from "@/components/tasks-panel";
@@ -196,6 +198,10 @@ function FunderView({ funder }: { funder: FunderDetail }) {
     ? (userNames.get(funder.ownerUserId) ?? funder.ownerUserId)
     : "—";
 
+  const viewer = useGetCurrentUser().data ?? null;
+  const canSeeName = canSeeIdentity(funder, viewer);
+  const displayName = canSeeName ? funder.name : ANONYMOUS_LABEL;
+
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(funder.name);
 
@@ -259,7 +265,7 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       autoFocus
     />
   ) : (
-    funder.name
+    displayName
   );
 
   const actions = editingName ? (
@@ -284,16 +290,18 @@ function FunderView({ funder }: { funder: FunderDetail }) {
     </>
   ) : (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setEditingName(true)}
-        data-testid="button-edit-funder-name"
-      >
-        Edit name
-      </Button>
+      {canSeeName && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setEditingName(true)}
+          data-testid="button-edit-funder-name"
+        >
+          Edit name
+        </Button>
+      )}
       <ConfirmDeleteDialog
-        title={`Delete ${funder.name}?`}
+        title={`Delete ${displayName}?`}
         description="This funder and any direct references to it will be removed. Linked opportunities and gifts may need to be reassigned."
         onConfirm={() => del.mutateAsync({ id: funder.id })}
         disabled={del.isPending}
@@ -510,6 +518,18 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                     onSave={(next) => patch({ makesPris: next })}
                   />
                 </Row>
+                {canManageIdentity(funder, viewer) && (
+                  <Row label="Anonymous">
+                    <InlineEditBoolean
+                      label="Anonymous"
+                      testIdBase="funder-anonymous"
+                      value={funder.anonymous}
+                      allowNull={false}
+                      display={funder.anonymous ? "Yes" : "No"}
+                      onSave={(next) => patch({ anonymous: next ?? false })}
+                    />
+                  </Row>
+                )}
               </div>
               <Separator />
               <div className="space-y-4">
@@ -843,6 +863,7 @@ function RelatedFundersCard({
   const childrenQ = useListFunders(childParams, {
     query: { queryKey: getListFundersQueryKey(childParams) },
   });
+  const viewer = useGetCurrentUser().data ?? null;
   const parentId = funder.parentFunderId ?? "";
   const parentQ = useGetFunder(parentId, {
     query: {
@@ -894,7 +915,7 @@ function RelatedFundersCard({
       <div>
         {parent ? (
           <AffiliationRow
-            name={parent.name}
+            name={displayFunderName(parent, viewer)}
             href={`/funding-entities/${parent.id}`}
             role="Parent organization"
             hideStatusBadge
@@ -903,7 +924,7 @@ function RelatedFundersCard({
         {children.map((c) => (
           <AffiliationRow
             key={c.id}
-            name={c.name}
+            name={displayFunderName(c, viewer)}
             href={`/funding-entities/${c.id}`}
             role="Subsidiary"
             hideStatusBadge

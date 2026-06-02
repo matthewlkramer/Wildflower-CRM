@@ -29,7 +29,9 @@ import {
   getListHouseholdsQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
   getListGiftsAndPaymentsQueryKey,
+  useGetCurrentUser,
 } from "@workspace/api-client-react";
+import { displayPersonName, displayFunderName } from "@/lib/visibility";
 import {
   Building2,
   Gift,
@@ -77,6 +79,7 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const debounced = useDebounced(query.trim(), DEBOUNCE_MS);
   const enabled = debounced.length >= SEARCH_MIN_LEN;
+  const viewer = useGetCurrentUser().data ?? null;
 
   // cmdk does its own client-side filtering by default. We're already
   // filtering server-side via the `search` query param, so we disable
@@ -151,9 +154,7 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
                 data-testid={`palette-person-${p.id}`}
               >
                 <Users />
-                <span className="truncate">
-                  {p.fullName ?? [p.firstName, p.lastName].filter(Boolean).join(" ") ?? "Untitled"}
-                </span>
+                <span className="truncate">{displayPersonName(p, viewer)}</span>
               </CommandItem>
             ))}
           </CommandGroup>
@@ -171,7 +172,7 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
                   data-testid={`palette-funder-${f.id}`}
                 >
                   <Building2 />
-                  <span className="truncate">{f.name}</span>
+                  <span className="truncate">{displayFunderName(f, viewer)}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

@@ -134,6 +134,7 @@ const PRIORITY_OPTIONS = [
 ] as const satisfies ReadonlyArray<InlineSelectOption<Priority>>;
 import { useToast } from "@/hooks/use-toast";
 import { personDisplayName } from "@/lib/person";
+import { canSeeIdentity, canManageIdentity, ANONYMOUS_LABEL } from "@/lib/visibility";
 import { Badge } from "@/components/ui/badge";
 import { PriorityTooltip } from "@/components/priority-tooltip";
 import { Button } from "@/components/ui/button";
@@ -252,6 +253,9 @@ function PersonView({ person }: { person: PersonDetail }) {
     },
   });
 
+  const viewer = useGetCurrentUser().data ?? null;
+  const canSeeName = canSeeIdentity(person, viewer);
+
   function patch(body: UpdatePersonBody) {
     return update.mutateAsync({ id: person.id, data: body });
   }
@@ -311,7 +315,7 @@ function PersonView({ person }: { person: PersonDetail }) {
       ))}
     </div>
   ) : (
-    personDisplayName(person)
+    canSeeName ? personDisplayName(person) : ANONYMOUS_LABEL
   );
 
   const actions = editingName ? (
@@ -342,19 +346,21 @@ function PersonView({ person }: { person: PersonDetail }) {
     </>
   ) : (
     <>
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-        onClick={startEditName}
-        aria-label="Edit name"
-        data-testid="button-edit-person-name"
-      >
-        <Pencil className="h-4 w-4" />
-      </Button>
+      {canSeeName && (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          onClick={startEditName}
+          aria-label="Edit name"
+          data-testid="button-edit-person-name"
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+      )}
       <ConfirmDeleteDialog
-        title={`Delete ${personDisplayName(person)}?`}
+        title={`Delete ${canSeeName ? personDisplayName(person) : ANONYMOUS_LABEL}?`}
         description="This person record will be removed. Household memberships and links from opportunities or gifts may need to be cleaned up separately."
         onConfirm={() => del.mutateAsync({ id: person.id })}
         disabled={del.isPending}
@@ -489,6 +495,20 @@ function PersonView({ person }: { person: PersonDetail }) {
                   onSave={(next) => patch({ deceased: next ?? false })}
                 />
               </Row>
+              {canManageIdentity(person, viewer) && (
+                <Row label="Anonymous">
+                  <InlineEditBoolean
+                    label="Anonymous"
+                    testIdBase="person-anonymous"
+                    value={person.anonymous}
+                    trueLabel="Anonymous"
+                    falseLabel="Visible"
+                    allowNull={false}
+                    display={person.anonymous ? "Yes" : "No"}
+                    onSave={(next) => patch({ anonymous: next ?? false })}
+                  />
+                </Row>
+              )}
               <Row label="Region">
                 <InlineEditRegionPicker testIdBase="person-region"
                   value={person.currentHomeRegionId ?? null}

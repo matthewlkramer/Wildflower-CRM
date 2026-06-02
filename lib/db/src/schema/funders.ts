@@ -88,6 +88,10 @@ export const funders = pgTable("funders", {
   // is surfaced as a star icon on the funders table and inline next to
   // the funder name wherever it appears as a donor (opportunities, gifts).
   priority: priorityEnum("priority"),
+  // When true, the funder's real name is hidden in the UI (shown as
+  // "Anonymous") from everyone except the record owner and admins. This is a
+  // UI-only courtesy flag — the name is still stored and returned by the API.
+  anonymous: boolean("anonymous").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

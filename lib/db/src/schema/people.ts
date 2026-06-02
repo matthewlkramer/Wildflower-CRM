@@ -89,6 +89,10 @@ export const people = pgTable("people", {
   // is surfaced as a star icon on the individuals table and inline next
   // to the person's name wherever they appear as a donor.
   priority: priorityEnum("priority"),
+  // When true, the person's real name is hidden in the UI (shown as
+  // "Anonymous") from everyone except the record owner and admins. This is a
+  // UI-only courtesy flag — the name is still stored and returned by the API.
+  anonymous: boolean("anonymous").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
