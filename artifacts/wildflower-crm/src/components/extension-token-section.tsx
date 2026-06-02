@@ -79,6 +79,41 @@ export default function ExtensionTokenSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="rounded-md border bg-muted/30 p-4">
+          <p className="mb-2 text-sm font-medium">
+            How to set up the extension
+          </p>
+          <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
+            <li>
+              Generate your token below (or use the existing one) and click{" "}
+              <span className="font-medium text-foreground">Copy</span>.
+            </li>
+            <li>
+              In Chrome, open{" "}
+              <span className="font-medium text-foreground">Gmail</span> and click
+              the{" "}
+              <span className="font-medium text-foreground">
+                Wildflower Foundation CRM
+              </span>{" "}
+              extension icon in the toolbar (click the puzzle-piece icon and pin
+              it if you don't see it).
+            </li>
+            <li>
+              Paste the token into the{" "}
+              <span className="font-medium text-foreground">token field</span> in
+              the extension popup and save.
+            </li>
+            <li>
+              That's it — group emails you send from Gmail now track opens per
+              recipient. You only need to do this once per computer.
+            </li>
+          </ol>
+          <p className="mt-3 text-xs text-muted-foreground">
+            First time using tracking? You'll also be asked to reconnect your
+            Google account the first time you send, to allow sending the
+            individualized copies.
+          </p>
+        </div>
         {tokenQ.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : token ? (
