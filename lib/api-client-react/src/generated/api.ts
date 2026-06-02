@@ -54,6 +54,7 @@ import type {
   CreatePersonSuppressionWindowBody,
   CreatePhoneNumberBody,
   CreatePledgeAllocationBody,
+  CreateRegionBody,
   CreateSavedViewBody,
   CreateTaskBody,
   CreateTrackedEmailBody,
@@ -1093,6 +1094,86 @@ export function useListRegions<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getCreateRegionUrl = () => {
+  return `/api/regions`;
+};
+
+export const createRegion = async (
+  createRegionBody: CreateRegionBody,
+  options?: RequestInit,
+): Promise<Region> => {
+  return customFetch<Region>(getCreateRegionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createRegionBody),
+  });
+};
+
+export const getCreateRegionMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRegion>>,
+    TError,
+    { data: BodyType<CreateRegionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createRegion>>,
+  TError,
+  { data: BodyType<CreateRegionBody> },
+  TContext
+> => {
+  const mutationKey = ["createRegion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createRegion>>,
+    { data: BodyType<CreateRegionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createRegion(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateRegionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createRegion>>
+>;
+export type CreateRegionMutationBody = BodyType<CreateRegionBody>;
+export type CreateRegionMutationError = ErrorType<BadRequestResponse | void>;
+
+export const useCreateRegion = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRegion>>,
+    TError,
+    { data: BodyType<CreateRegionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createRegion>>,
+  TError,
+  { data: BodyType<CreateRegionBody> },
+  TContext
+> => {
+  return useMutation(getCreateRegionMutationOptions(options));
+};
 
 export const getGetRegionUrl = (id: string) => {
   return `/api/regions/${id}`;

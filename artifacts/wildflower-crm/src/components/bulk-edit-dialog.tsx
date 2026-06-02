@@ -5,6 +5,7 @@ import {
   getListUsersQueryKey,
   useListRegions,
   getListRegionsQueryKey,
+  useCreateRegion,
   useListFiscalYears,
   getListFiscalYearsQueryKey,
   useListEntities,
@@ -12,6 +13,7 @@ import {
   useListFundableProjects,
   getListFundableProjectsQueryKey,
 } from "@workspace/api-client-react";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { userDisplayName } from "@/components/user-picker";
 import { regionDisplayName, buildRegionIndex } from "@/components/region-picker";
 import {
@@ -43,11 +45,155 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 
 const NULL_SENTINEL = "__null__";
 const CONFIRM_THRESHOLD = 25;
+
+// ── BulkRegionCombobox ────────────────────────────────────────────────────
+// A searchable combobox for the region field in BulkEditDialog that also
+// shows a "Create '[query]'" option when no existing region matches.
+
+interface BulkRegionComboboxProps {
+  value: string;
+  onChange: (v: string) => void;
+  disabled: boolean;
+  nullable?: boolean;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  onRegionCreated: (id: string, label: string) => void;
+}
+
+function BulkRegionCombobox({
+  value,
+  onChange,
+  disabled,
+  nullable,
+  options,
+  onRegionCreated,
+}: BulkRegionComboboxProps) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const createRegion = useCreateRegion();
+  const queryClient = useQueryClient();
+
+  const REGIONS_PARAMS = { limit: 1000 } as const;
+
+  const trimmedQuery = query.trim();
+  const filtered = trimmedQuery
+    ? options.filter(
+        (o) =>
+          o.label.toLowerCase().includes(trimmedQuery.toLowerCase()) ||
+          o.value.toLowerCase().includes(trimmedQuery.toLowerCase()),
+      )
+    : options;
+
+  const showCreate = !!trimmedQuery && filtered.length === 0 && !creating;
+
+  const selectedLabel =
+    value === NULL_SENTINEL
+      ? "— Clear —"
+      : (options.find((o) => o.value === value)?.label ?? (value ? value : undefined));
+
+  const handleCreate = async () => {
+    if (!trimmedQuery || creating) return;
+    setCreating(true);
+    try {
+      const newRegion = await createRegion.mutateAsync({ data: { name: trimmedQuery } });
+      await queryClient.invalidateQueries({
+        queryKey: getListRegionsQueryKey(REGIONS_PARAMS),
+      });
+      onChange(newRegion.id);
+      onRegionCreated(newRegion.id, newRegion.name);
+      setOpen(false);
+      setQuery("");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          className="w-full justify-between font-normal"
+          disabled={disabled}
+          data-testid="bulk-select-regionId"
+        >
+          <span className="truncate text-left">
+            {selectedLabel ?? <span className="text-muted-foreground">Pick a region…</span>}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[260px]" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            value={query}
+            onValueChange={setQuery}
+            placeholder="Search regions…"
+          />
+          <CommandList>
+            {filtered.length === 0 && !showCreate ? (
+              trimmedQuery ? null : <CommandEmpty>No matches.</CommandEmpty>
+            ) : null}
+            <CommandGroup>
+              {nullable && (
+                <CommandItem
+                  value={NULL_SENTINEL}
+                  onSelect={() => { onChange(NULL_SENTINEL); setOpen(false); setQuery(""); }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === NULL_SENTINEL ? "opacity-100" : "opacity-0")} />
+                  <span className="text-muted-foreground">— Clear —</span>
+                </CommandItem>
+              )}
+              {filtered.map((o) => (
+                <CommandItem
+                  key={o.value}
+                  value={o.value}
+                  onSelect={() => { onChange(o.value); setOpen(false); setQuery(""); }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === o.value ? "opacity-100" : "opacity-0")} />
+                  <span className="truncate">{o.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            {showCreate ? (
+              <CommandGroup heading="New region">
+                <CommandItem
+                  value={`__create__${trimmedQuery}`}
+                  onSelect={handleCreate}
+                  disabled={creating}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  {creating ? "Creating…" : `Create "${trimmedQuery}"`}
+                </CommandItem>
+              </CommandGroup>
+            ) : null}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export type BulkField =
   | {
@@ -431,9 +577,7 @@ export function BulkEditDialog({
 
     let control: ReactNode = null;
     switch (f.kind) {
-      case "owner":
-      case "region": {
-        const options = f.kind === "owner" ? userOptions : regionOptions;
+      case "owner": {
         control = (
           <Select
             value={d.value || undefined}
@@ -453,13 +597,26 @@ export function BulkEditDialog({
                   <span className="text-muted-foreground">— Clear —</span>
                 </SelectItem>
               )}
-              {options.map((o) => (
+              {userOptions.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        );
+        break;
+      }
+      case "region": {
+        control = (
+          <BulkRegionCombobox
+            value={d.value}
+            onChange={(v) => patchDraft(f.key, { value: v })}
+            disabled={!d.enabled}
+            nullable={f.nullable}
+            options={regionOptions}
+            onRegionCreated={(id) => patchDraft(f.key, { value: id })}
+          />
         );
         break;
       }

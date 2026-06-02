@@ -396,6 +396,16 @@ export interface UpdateCurrentUserBody {
   emailSyncMode?: EmailSyncMode;
 }
 
+export interface CreateRegionBody {
+  /**
+   * Human-readable region name, e.g. 'Greater Boston'.
+   * @minLength 1
+   */
+  name: string;
+  /** Full display path, e.g. 'United States, Massachusetts, Greater Boston'. Defaults to name when omitted. */
+  displayPath?: string;
+}
+
 export interface Region {
   /** Human-readable slug PK, e.g. `united_states__minnesota__saint_paul`. Built from the region's name plus its included-type ancestors (continent / country / state / city / neighborhood); intermediate aggregation layers (multi_state_region, region_within_state, metro_area) are skipped. */
   id: string;

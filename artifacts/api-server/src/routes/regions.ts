@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { regions } from "@workspace/db/schema";
 import { and, asc, count, eq, ilike, sql, type SQL } from "drizzle-orm";
-import { ListRegionsQueryParams } from "@workspace/api-zod";
+import { CreateRegionBody, ListRegionsQueryParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 
@@ -27,6 +27,30 @@ router.get(
   }),
 );
 
+router.post(
+  "/regions",
+  asyncHandler(async (req, res) => {
+    const body = parseOrBadRequest(CreateRegionBody, req.body, res);
+    if (!body) return;
+
+    const slug = nameToSlug(body.name);
+    if (!slug) {
+      res.status(400).json({ error: "Region name must contain at least one letter or digit." });
+      return;
+    }
+    const displayPath = body.displayPath ?? body.name;
+
+    // Try the base slug; if taken, append a short numeric suffix.
+    const id = await resolveUniqueSlug(slug);
+
+    const [row] = await db
+      .insert(regions)
+      .values({ id, name: body.name, displayPath })
+      .returning();
+    res.status(201).json(row);
+  }),
+);
+
 router.get(
   "/regions/:id",
   asyncHandler(async (req, res) => {
@@ -37,3 +61,32 @@ router.get(
 );
 
 export default router;
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Convert a human-readable name to a URL-safe slug:
+ * lowercase, spaces→hyphens, collapse runs of non-alphanumeric chars to a
+ * single hyphen, strip leading/trailing hyphens.
+ * Returns "" when the name contains no letters or digits at all.
+ */
+function nameToSlug(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** Find an unused slug, appending -2, -3 … if the base is already taken. */
+async function resolveUniqueSlug(base: string): Promise<string> {
+  const existing = await db
+    .select({ id: regions.id })
+    .from(regions)
+    .where(sql`${regions.id} = ${base} OR ${regions.id} LIKE ${base + "-%"}`);
+  const taken = new Set(existing.map((r) => r.id));
+  if (!taken.has(base)) return base;
+  let i = 2;
+  while (taken.has(`${base}-${i}`)) i++;
+  return `${base}-${i}`;
+}

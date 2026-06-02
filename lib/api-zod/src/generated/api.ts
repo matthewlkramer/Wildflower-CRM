@@ -436,6 +436,19 @@ export const ListRegionsResponse = zod.object({
   }),
 });
 
+export const CreateRegionBody = zod.object({
+  name: zod
+    .string()
+    .min(1)
+    .describe("Human-readable region name, e.g. 'Greater Boston'."),
+  displayPath: zod
+    .string()
+    .optional()
+    .describe(
+      "Full display path, e.g. 'United States, Massachusetts, Greater Boston'. Defaults to name when omitted.",
+    ),
+});
+
 export const GetRegionParams = zod.object({
   id: zod.coerce.string(),
 });

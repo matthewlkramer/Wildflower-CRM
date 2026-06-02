@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import {
   useListRegions,
+  useCreateRegion,
   getListRegionsQueryKey,
   type Region,
 } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   EditTriggerRow,
   ActionButtons,
@@ -189,7 +191,10 @@ export function InlineEditRegionPicker({
   const [draft, setDraft] = useState<string | null>(value);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
   const { busy, run } = useSaveRunner();
+  const queryClient = useQueryClient();
+  const createRegion = useCreateRegion();
 
   useEffect(() => {
     if (editing) {
@@ -231,6 +236,12 @@ export function InlineEditRegionPicker({
       )
     : options;
 
+  const trimmedQuery = query.trim();
+  const showCreate =
+    !!trimmedQuery &&
+    visibleOptions.length === 0 &&
+    !creating;
+
   const dirty = (draft ?? null) !== (value ?? null);
   const trySave = () => {
     if (!dirty || busy) return;
@@ -239,6 +250,20 @@ export function InlineEditRegionPicker({
   const select = (next: string | null) => {
     setDraft(next);
     setPopoverOpen(false);
+  };
+
+  const handleCreate = async () => {
+    if (!trimmedQuery || creating) return;
+    setCreating(true);
+    try {
+      const newRegion = await createRegion.mutateAsync({ data: { name: trimmedQuery } });
+      await queryClient.invalidateQueries({ queryKey: getListRegionsQueryKey(QUERY_PARAMS) });
+      setDraft(newRegion.id);
+      setPopoverOpen(false);
+      setQuery("");
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -274,8 +299,8 @@ export function InlineEditRegionPicker({
               }
             />
             <CommandList>
-              {visibleOptions.length === 0 ? (
-                <CommandEmpty>No matches.</CommandEmpty>
+              {visibleOptions.length === 0 && !showCreate ? (
+                trimmedQuery ? null : <CommandEmpty>No matches.</CommandEmpty>
               ) : null}
               <CommandGroup>
                 <CommandItem
@@ -314,6 +339,21 @@ export function InlineEditRegionPicker({
                   </CommandItem>
                 ))}
               </CommandGroup>
+              {showCreate ? (
+                <CommandGroup heading="New region">
+                  <CommandItem
+                    value={`__create__${trimmedQuery}`}
+                    onSelect={handleCreate}
+                    disabled={creating}
+                    data-testid={
+                      testIdBase ? `select-${testIdBase}-create` : undefined
+                    }
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    {creating ? "Creating…" : `Create "${trimmedQuery}"`}
+                  </CommandItem>
+                </CommandGroup>
+              ) : null}
             </CommandList>
           </Command>
         </PopoverContent>

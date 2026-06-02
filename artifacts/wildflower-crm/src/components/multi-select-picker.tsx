@@ -8,8 +8,10 @@ import {
 import { Check, ChevronsUpDown, Pencil, Plus, X } from "lucide-react";
 import {
   useListRegions,
+  useCreateRegion,
   getListRegionsQueryKey,
 } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -81,6 +83,13 @@ interface InlineEditMultiSelectProps {
    * extending the suggestion set with free-form tags.
    */
   allowCustom?: boolean;
+  /**
+   * If provided, shown instead of (or alongside) `allowCustom` — calling
+   * this async function creates a new option server-side and returns the
+   * id/value to add to the current selection. Used by the region picker
+   * so that "Create 'X'" POSTs a new region and adds its id.
+   */
+  onCreateOption?: (label: string) => Promise<string>;
   emptyLabel?: string;
   placeholder?: string;
   onSave: (next: string[] | null) => SaveResult;
@@ -108,6 +117,7 @@ export function InlineEditMultiSelect({
   options,
   renderChipLabel,
   allowCustom = false,
+  onCreateOption,
   emptyLabel = "—",
   placeholder,
   onSave,
@@ -118,6 +128,7 @@ export function InlineEditMultiSelect({
   const [draft, setDraft] = useState<string[]>(value);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [creatingOption, setCreatingOption] = useState(false);
 
   useEffect(() => {
     if (editing) {
@@ -192,6 +203,11 @@ export function InlineEditMultiSelect({
     ) ||
       draft.some((v) => v.toLowerCase() === trimmedQuery.toLowerCase()));
   const showAddCustom = allowCustom && !!trimmedQuery && !exactMatchExists;
+  const showCreateOption =
+    !!onCreateOption &&
+    !!trimmedQuery &&
+    visibleOptions.length === 0 &&
+    !creatingOption;
 
   const toggle = (v: string) => {
     setDraft((d) =>
@@ -203,6 +219,17 @@ export function InlineEditMultiSelect({
     if (!trimmedQuery) return;
     if (!draft.includes(trimmedQuery)) setDraft((d) => [...d, trimmedQuery]);
     setQuery("");
+  };
+  const handleCreateOption = async () => {
+    if (!trimmedQuery || !onCreateOption || creatingOption) return;
+    setCreatingOption(true);
+    try {
+      const newValue = await onCreateOption(trimmedQuery);
+      setDraft((d) => (d.includes(newValue) ? d : [...d, newValue]));
+      setQuery("");
+    } finally {
+      setCreatingOption(false);
+    }
   };
 
   const arraysEqual = (a: string[], b: string[]) => {
@@ -285,7 +312,7 @@ export function InlineEditMultiSelect({
                 }
               />
               <CommandList>
-                {visibleOptions.length === 0 && !showAddCustom ? (
+                {visibleOptions.length === 0 && !showAddCustom && !showCreateOption ? (
                   <CommandEmpty>No matches.</CommandEmpty>
                 ) : null}
                 {visibleOptions.length > 0 ? (
@@ -335,6 +362,23 @@ export function InlineEditMultiSelect({
                     >
                       <Plus className="mr-2 h-4 w-4" />
                       Add &ldquo;{trimmedQuery}&rdquo;
+                    </CommandItem>
+                  </CommandGroup>
+                ) : null}
+                {showCreateOption ? (
+                  <CommandGroup heading="New region">
+                    <CommandItem
+                      value={`__create__${trimmedQuery}`}
+                      onSelect={handleCreateOption}
+                      disabled={creatingOption}
+                      data-testid={
+                        testIdBase
+                          ? `select-${testIdBase}-create`
+                          : undefined
+                      }
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      {creatingOption ? "Creating…" : `Create "${trimmedQuery}"`}
                     </CommandItem>
                   </CommandGroup>
                 ) : null}
@@ -440,6 +484,9 @@ const REGION_QUERY_PARAMS = { limit: 1000 } as const;
  * under the 1000 cap) from /api/regions and shows each region's full
  * displayPath so users can disambiguate same-named regions. Saves the
  * selection as a `string[]` of region ids; clears to `null` when empty.
+ *
+ * When no region matches the typed query, shows a "Create '[query]'" item
+ * that POSTs a new region and immediately adds it to the selection.
  */
 export function InlineEditMultiRegionPicker({
   value,
@@ -458,6 +505,9 @@ export function InlineEditMultiRegionPicker({
       staleTime: 5 * 60_000,
     },
   });
+  const queryClient = useQueryClient();
+  const createRegion = useCreateRegion();
+
   const options: ReadonlyArray<MultiSelectOption> = useMemo(() => {
     const regions = data?.data ?? [];
     const byId = buildRegionIndex(regions);
@@ -480,6 +530,14 @@ export function InlineEditMultiRegionPicker({
     return m;
   }, [options]);
 
+  const handleCreateOption = async (name: string): Promise<string> => {
+    const newRegion = await createRegion.mutateAsync({ data: { name } });
+    await queryClient.invalidateQueries({
+      queryKey: getListRegionsQueryKey(REGION_QUERY_PARAMS),
+    });
+    return newRegion.id;
+  };
+
   return (
     <InlineEditMultiSelect
       label={label}
@@ -488,6 +546,7 @@ export function InlineEditMultiRegionPicker({
       options={options}
       renderChipLabel={(v) => labelMap.get(v) ?? v}
       onSave={onSave}
+      onCreateOption={handleCreateOption}
       placeholder="Add region…"
     />
   );

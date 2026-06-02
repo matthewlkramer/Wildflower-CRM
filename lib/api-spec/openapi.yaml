@@ -159,6 +159,14 @@ paths:
         - { $ref: "#/components/parameters/Page" }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RegionList" } } } }
+    post:
+      operationId: createRegion
+      tags: [regions]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateRegionBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Region" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Conflict (slug already exists) }
   /regions/{id}:
     get:
       operationId: getRegion
@@ -1935,6 +1943,12 @@ components:
         emailSyncMode:  { $ref: "#/components/schemas/EmailSyncMode" }
 
     # ─── Regions ───────────────────────────────────────────────────────────────
+    CreateRegionBody:
+      type: object
+      required: [name]
+      properties:
+        name:        { type: string, minLength: 1, description: "Human-readable region name, e.g. 'Greater Boston'." }
+        displayPath: { type: string, description: "Full display path, e.g. 'United States, Massachusetts, Greater Boston'. Defaults to name when omitted." }
     Region:
       type: object
       required: [id, name, displayPath, createdAt, updatedAt]
