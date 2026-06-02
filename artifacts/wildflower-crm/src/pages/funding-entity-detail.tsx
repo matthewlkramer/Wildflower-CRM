@@ -21,7 +21,7 @@ import {
   type Priority,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
-import { canSeeIdentity, canManageIdentity, displayFunderName, ANONYMOUS_LABEL } from "@/lib/visibility";
+import { canSeeIdentity, displayFunderName, ANONYMOUS_LABEL } from "@/lib/visibility";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { PinnedMediaCard } from "@/components/media-mentions-panel";
 import { TasksPanel } from "@/components/tasks-panel";
@@ -519,8 +519,7 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                     onSave={(next) => patch({ makesPris: next })}
                   />
                 </Row>
-                {canManageIdentity(funder, viewer) && (
-                  <Row label="Anonymous">
+                <Row label="Anonymous">
                     <InlineEditBoolean
                       label="Anonymous"
                       testIdBase="funder-anonymous"
@@ -530,7 +529,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                       onSave={(next) => patch({ anonymous: next ?? false })}
                     />
                   </Row>
-                )}
               </div>
               <Separator />
               <div className="space-y-4">
