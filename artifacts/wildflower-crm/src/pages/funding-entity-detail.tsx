@@ -406,20 +406,31 @@ function FunderView({ funder }: { funder: FunderDetail }) {
 
   const people = funder.people ?? [];
 
-  // Derive unique email domains from connected people's addresses as a fallback
-  // for the stored emailDomain (which comes only from the funder's own orgEmail,
-  // often left blank). People's emails are much more likely to be populated.
-  const peopleDomains = [
-    ...new Set(
-      people
-        .map((p) => p.personEmail?.trim())
-        .filter(Boolean)
-        .map((e) => e!.split("@")[1]?.toLowerCase())
-        .filter(Boolean) as string[],
-    ),
-  ];
+  // Derive the display domain from connected people's emails (much more
+  // commonly populated than the funder's own orgEmail).
+  // Priority: (1) active primary contact's email domain, (2) most common
+  // domain among active contacts, (3) stored funder.emailDomain from orgEmail.
+  const domainFrom = (email: string | null | undefined) =>
+    email?.trim() ? email.trim().split("@")[1]?.toLowerCase() ?? null : null;
+
+  const activeContacts = people.filter((p) => p.current !== "past");
+  const primaryDomain = domainFrom(
+    activeContacts.find((p) => p.primaryContact)?.personEmail,
+  );
+
+  const mostCommonActiveDomain = (() => {
+    if (primaryDomain) return null; // already have a better answer
+    const freq = new Map<string, number>();
+    for (const p of activeContacts) {
+      const d = domainFrom(p.personEmail);
+      if (d) freq.set(d, (freq.get(d) ?? 0) + 1);
+    }
+    if (!freq.size) return null;
+    return [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  })();
+
   const resolvedEmailDomain =
-    funder.emailDomain?.trim() || peopleDomains.join(", ") || null;
+    primaryDomain ?? mostCommonActiveDomain ?? funder.emailDomain?.trim() ?? null;
 
   const [hideInactivePeople, setHideInactivePeople] = useState(false);
   const hasInactivePeople = people.some((p) => p.current === "past");
