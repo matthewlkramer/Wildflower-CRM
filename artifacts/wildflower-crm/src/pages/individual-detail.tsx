@@ -504,8 +504,9 @@ function PersonView({ person }: { person: PersonDetail }) {
                   />
                 </Row>
               )}
-              <Row label="Region">
+              <Row label="Home region">
                 <InlineEditRegionPicker testIdBase="person-region"
+                  label="Home region"
                   value={person.currentHomeRegionId ?? null}
                   onSave={(next) => patch({ currentHomeRegionId: next })} />
               </Row>
