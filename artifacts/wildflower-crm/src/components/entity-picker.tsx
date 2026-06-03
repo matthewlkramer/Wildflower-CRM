@@ -898,6 +898,7 @@ export function DonorFieldPicker({
   testIdBase,
   individualLabel = "Individual",
   disabled,
+  onCreateFunder,
 }: {
   type: DonorType;
   id: string | null;
@@ -905,6 +906,12 @@ export function DonorFieldPicker({
   testIdBase?: string;
   individualLabel?: string;
   disabled?: boolean;
+  /**
+   * When provided, an inline "Create <name> funder" option appears in the
+   * funder combobox when the search query has no exact match. The callback
+   * should create the funder and return its new id (or null on failure).
+   */
+  onCreateFunder?: (name: string) => Promise<string | null>;
 }) {
   return (
     <div className="flex flex-col gap-2 min-w-0">
@@ -938,6 +945,8 @@ export function DonorFieldPicker({
           placeholder="Search funders…"
           disabled={disabled}
           testId={testIdBase ? `select-${testIdBase}` : undefined}
+          onCreate={onCreateFunder}
+          createNoun="funder"
         />
       ) : type === "individual" ? (
         <EntityCombobox
