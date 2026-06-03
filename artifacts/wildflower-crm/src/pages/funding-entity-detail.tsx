@@ -428,35 +428,30 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       backLabel="Back to funders"
       title={title}
       typeBadge="Funder"
-      subtitle={
-        <>
-          <div>{formatEnum(funder.fundingEntitySubtype)}</div>
-          <div className="mt-2 w-full">
-            <InlineEditTextarea
-              label="About"
-              testIdBase="funder-about"
-              value={funder.about ?? null}
-              placeholder="Add an overview of this funder…"
-              display={
-                funder.about ? (
-                  <p className="whitespace-pre-wrap text-left text-sm text-foreground">
-                    {funder.about}
-                  </p>
-                ) : (
-                  <span className="text-muted-foreground">Add an overview…</span>
-                )
-              }
-              onSave={(next) => patch({ about: next })}
-            />
-          </div>
-        </>
-      }
+      subtitle={<div>{formatEnum(funder.fundingEntitySubtype)}</div>}
       actions={actions}
       highlights={highlights}
       left={
         <>
           <FieldCard title="Details">
             <div className="space-y-4">
+              <InlineEditTextarea
+                label="About"
+                testIdBase="funder-about"
+                value={funder.about ?? null}
+                placeholder="Add an overview of this funder…"
+                display={
+                  funder.about ? (
+                    <p className="whitespace-pre-wrap text-left text-sm text-foreground">
+                      {funder.about}
+                    </p>
+                  ) : (
+                    <span className="text-muted-foreground">Add an overview…</span>
+                  )
+                }
+                onSave={(next) => patch({ about: next })}
+              />
+              <Separator />
               <div className="space-y-1">
                 <Row label="Active">
                   <InlineEditSelect
