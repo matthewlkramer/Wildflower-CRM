@@ -32,6 +32,8 @@ import Settings from "@/pages/settings";
 import EmailIntelligence from "@/pages/email-intelligence";
 import EmailTracking from "@/pages/email-tracking";
 import ReportingDeadlines from "@/pages/reporting-deadlines";
+import PaymentIntermediaries from "@/pages/payment-intermediaries";
+import PaymentIntermediaryDetail from "@/pages/payment-intermediary-detail";
 import Layout from "@/components/layout";
 import { EntityFilterProvider } from "@/lib/entity-filter-context";
 
@@ -189,6 +191,9 @@ function ClerkProviderWithRoutes() {
           
           <Route path="/funding-entities"><ProtectedRoute component={FundingEntities} /></Route>
           <Route path="/funding-entities/:id"><ProtectedRoute component={FundingEntityDetail} /></Route>
+          
+          <Route path="/payment-intermediaries"><ProtectedRoute component={PaymentIntermediaries} /></Route>
+          <Route path="/payment-intermediaries/:id"><ProtectedRoute component={PaymentIntermediaryDetail} /></Route>
           
           <Route path="/pipeline"><ProtectedRoute component={Pipeline} /></Route>
           <Route path="/opportunities"><ProtectedRoute component={() => <Opportunities pledgeView="opportunities" />} /></Route>

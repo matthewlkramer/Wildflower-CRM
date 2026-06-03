@@ -19,6 +19,7 @@ import {
   Inbox,
   Eye,
   FileClock,
+  Landmark,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -34,6 +35,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/individuals", label: "Individuals", icon: Users },
   { href: "/funding-entities", label: "Funding Entities", icon: Building2 },
+  { href: "/payment-intermediaries", label: "Payment Intermediaries", icon: Landmark },
   { href: "/opportunities", label: "Opportunities", icon: Target },
   { href: "/pipeline", label: "Pipeline", icon: Columns3 },
   { href: "/pledges", label: "Pledges", icon: HandCoins },
