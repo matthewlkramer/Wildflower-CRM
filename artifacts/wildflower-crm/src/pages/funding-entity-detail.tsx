@@ -382,19 +382,6 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       ),
     },
     {
-      label: "Strategic alignment",
-      value: (
-        <InlineEditSelect
-          label="Strategic alignment"
-          testIdBase="funder-alignment"
-          value={funder.strategicAlignment ?? null}
-          options={ALIGNMENT_OPTIONS}
-          display={formatEnum(funder.strategicAlignment)}
-          onSave={(next) => patch({ strategicAlignment: next })}
-        />
-      ),
-    },
-    {
       label: "Owner",
       value: (
         <InlineEditUserPicker
@@ -404,6 +391,10 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           onSave={(next) => patch({ ownerUserId: next })}
         />
       ),
+    },
+    {
+      label: "Lifetime giving",
+      value: formatCurrency(funder.lifetimeGiving),
     },
   ];
 
@@ -515,6 +506,16 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                           : "No"
                     }
                     onSave={(next) => patch({ makesPris: next })}
+                  />
+                </Row>
+                <Row label="Strategic alignment">
+                  <InlineEditSelect
+                    label="Strategic alignment"
+                    testIdBase="funder-alignment"
+                    value={funder.strategicAlignment ?? null}
+                    options={ALIGNMENT_OPTIONS}
+                    display={formatEnum(funder.strategicAlignment)}
+                    onSave={(next) => patch({ strategicAlignment: next })}
                   />
                 </Row>
                 {canManageIdentity(funder, viewer) && (

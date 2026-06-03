@@ -451,6 +451,10 @@ function PersonView({ person }: { person: PersonDetail }) {
         />
       ),
     },
+    {
+      label: "Lifetime giving",
+      value: formatCurrency(person.lifetimeGiving),
+    },
     { label: "Last contacted", value: formatDate(person.lastContacted) },
   ];
 
