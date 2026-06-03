@@ -15,7 +15,7 @@ import { mergeEntity, PERSON_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
-const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus", "enthusiasm", "ownerUserId", "priority"] as const;
+const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus", "enthusiasm", "ownerUserId", "priority", "regionIds"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -186,6 +186,13 @@ router.get(
       filters.push(isNull(people.priority));
     } else if (priorityFilter.values.length > 0) {
       filters.push(inArray(people.priority, priorityFilter.values as never[]));
+    }
+    // Array overlap filter: person must share at least one region with the requested set.
+    {
+      const ids = q.regionIds as string[] | undefined;
+      if (ids && ids.length > 0) {
+        filters.push(sql`${people.regionIds} && ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::text[]`);
+      }
     }
     // Presence filters on computed rollup fields (has value vs blank).
     if (q.lifetimeGivingPresence === "has") filters.push(sql`${peopleLifetimeGivingExpr} > 0`);

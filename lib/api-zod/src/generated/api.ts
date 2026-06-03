@@ -804,6 +804,12 @@ export const ListFundersQueryParams = zod.object({
     .describe(
       "Filter to funders whose `priority` tier is in the given set\n(top\/high\/medium\/low). Multi-value: repeat or comma-separate.\nAccepts the literal `__blank__` to match rows with no priority set.\n",
     ),
+  regionIds: zod
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Filter to funders whose `regionIds` array overlaps the given set\n(any selected region appears in the funder's regions). Multi-value:\nrepeat or comma-separate.\n",
+    ),
   limit: zod.coerce
     .number()
     .min(1)
@@ -2263,6 +2269,12 @@ export const ListPeopleQueryParams = zod.object({
     .optional()
     .describe(
       "Filter to people whose `priority` tier is in the given set\n(top\/high\/medium\/low). Multi-value: repeat or comma-separate.\nAccepts the literal `__blank__` to match rows with no priority set.\n",
+    ),
+  regionIds: zod
+    .array(zod.coerce.string())
+    .optional()
+    .describe(
+      "Filter to people whose `regionIds` array overlaps the given set\n(any selected region appears in the person's regions). Multi-value:\nrepeat or comma-separate. Distinct from `regionId` which filters\non `currentHomeRegionId`.\n",
     ),
   limit: zod.coerce
     .number()

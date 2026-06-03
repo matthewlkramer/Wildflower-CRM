@@ -2765,6 +2765,13 @@ Accepts the literal `__blank__` to match rows with no priority set.
  */
   priority?: string[];
   /**
+ * Filter to funders whose `regionIds` array overlaps the given set
+(any selected region appears in the funder's regions). Multi-value:
+repeat or comma-separate.
+
+ */
+  regionIds?: string[];
+  /**
    * @minimum 1
    * @maximum 10000
    */
@@ -2887,6 +2894,14 @@ Accepts the literal `__blank__` to match rows with no priority set.
 
  */
   priority?: string[];
+  /**
+ * Filter to people whose `regionIds` array overlaps the given set
+(any selected region appears in the person's regions). Multi-value:
+repeat or comma-separate. Distinct from `regionId` which filters
+on `currentHomeRegionId`.
+
+ */
+  regionIds?: string[];
   /**
    * @minimum 1
    * @maximum 10000

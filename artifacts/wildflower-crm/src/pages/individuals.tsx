@@ -58,6 +58,7 @@ import {
   type MultiFilterOption,
 } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
+import { RegionMultiFilter } from "@/components/region-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
 import {
   Pagination,
@@ -298,6 +299,7 @@ export default function Individuals() {
   const [connectionStatusSel, setConnectionStatusSel] = usePersistedState<string[]>("wf.list.people.connectionStatuses", []);
   const [enthusiasmSel, setEnthusiasmSel] = usePersistedState<string[]>("wf.list.people.enthusiasms", []);
   const [prioritySel, setPrioritySel] = usePersistedState<string[]>("wf.list.people.priorities", []);
+  const [regionIdsSel, setRegionIdsSel] = usePersistedState<string[]>("wf.list.people.regionIds", []);
   // Which optional filters are shown in the toolbar. null = registry defaults.
   const [filtersState, setFiltersState] = usePersistedState<FiltersState | null>("wf.list.people.filters", null);
   const [page, setPage] = usePersistedState<number>("wf.list.people.page", 1);
@@ -337,6 +339,7 @@ export default function Individuals() {
       : {}),
     ...(enthusiasmSel.length > 0 ? { enthusiasm: [...enthusiasmSel].sort() } : {}),
     ...(prioritySel.length > 0 ? { priority: [...prioritySel].sort() } : {}),
+    ...(regionIdsSel.length > 0 ? { regionIds: [...regionIdsSel].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListPeople(params, {
@@ -582,9 +585,23 @@ export default function Individuals() {
           />
         ),
       },
+      {
+        key: "region",
+        label: "Region",
+        defaultVisible: false,
+        active: regionIdsSel.length > 0,
+        clear: () => { setRegionIdsSel([]); setPage(1); selection.clear(); },
+        render: () => (
+          <RegionMultiFilter
+            selected={regionIdsSel}
+            onChange={(v) => { setRegionIdsSel(v); setPage(1); selection.clear(); }}
+            testId="select-person-region"
+          />
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [deceasedSel, capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, connectionStatusSel, enthusiasmSel, prioritySel],
+    [deceasedSel, capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -648,7 +665,8 @@ export default function Individuals() {
     !!activeAffiliationPresence ||
     connectionStatusSel.length > 0 ||
     enthusiasmSel.length > 0 ||
-    prioritySel.length > 0;
+    prioritySel.length > 0 ||
+    regionIdsSel.length > 0;
 
   // ─── Saved views ─────────────────────────────────────────────────
   // The persisted view captures filters + sort + the user's column
@@ -667,6 +685,7 @@ export default function Individuals() {
     connectionStatusSel: string[];
     enthusiasmSel: string[];
     prioritySel: string[];
+    regionIdsSel: string[];
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -683,6 +702,7 @@ export default function Individuals() {
     connectionStatusSel,
     enthusiasmSel,
     prioritySel,
+    regionIdsSel,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -699,6 +719,7 @@ export default function Individuals() {
     setConnectionStatusSel([]);
     setEnthusiasmSel([]);
     setPrioritySel([]);
+    setRegionIdsSel([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -721,6 +742,7 @@ export default function Individuals() {
       setConnectionStatusSel(s.connectionStatusSel ?? []);
       setEnthusiasmSel(s.enthusiasmSel ?? []);
       setPrioritySel(s.prioritySel ?? []);
+      setRegionIdsSel(s.regionIdsSel ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       // Backwards-compat: views saved before this feature have no
       // `columns` / `filters` field. Treat them as "defaults" so applying
@@ -742,6 +764,7 @@ export default function Individuals() {
       (s.connectionStatusSel?.length ?? 0) === 0 &&
       (s.enthusiasmSel?.length ?? 0) === 0 &&
       (s.prioritySel?.length ?? 0) === 0 &&
+      (s.regionIdsSel?.length ?? 0) === 0 &&
       (s.sort?.key ?? null) === null &&
       (s.columns ?? null) === null &&
       (s.filters ?? null) === null,
@@ -802,6 +825,7 @@ export default function Individuals() {
               setConnectionStatusSel([]);
               setEnthusiasmSel([]);
               setPrioritySel([]);
+              setRegionIdsSel([]);
               setPage(1);
               selection.clear();
             }}

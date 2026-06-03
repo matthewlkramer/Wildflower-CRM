@@ -363,6 +363,15 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
+        - name: regionIds
+          in: query
+          description: |
+            Filter to funders whose `regionIds` array overlaps the given set
+            (any selected region appears in the funder's regions). Multi-value:
+            repeat or comma-separate.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -573,6 +582,16 @@ paths:
             Filter to people whose `priority` tier is in the given set
             (top/high/medium/low). Multi-value: repeat or comma-separate.
             Accepts the literal `__blank__` to match rows with no priority set.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
+        - name: regionIds
+          in: query
+          description: |
+            Filter to people whose `regionIds` array overlaps the given set
+            (any selected region appears in the person's regions). Multi-value:
+            repeat or comma-separate. Distinct from `regionId` which filters
+            on `currentHomeRegionId`.
           style: form
           explode: false
           schema: { type: array, items: { type: string } }

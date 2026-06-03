@@ -15,7 +15,7 @@ import { mergeEntity, FUNDER_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
-const FUNDERS_ARRAY_PARAMS = ["subtype", "activeStatus", "connectionStatus", "enthusiasm", "strategicAlignment", "capacityRating", "ownerUserId", "priority"] as const;
+const FUNDERS_ARRAY_PARAMS = ["subtype", "activeStatus", "connectionStatus", "enthusiasm", "strategicAlignment", "capacityRating", "ownerUserId", "priority", "regionIds"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -131,6 +131,13 @@ router.get(
       if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(funders.priority), inArray(funders.priority, f.values as never[]))!);
       else if (f.wantsBlank) filters.push(isNull(funders.priority));
       else if (f.values.length > 0) filters.push(inArray(funders.priority, f.values as never[]));
+    }
+    // Array overlap filter: funder must share at least one region with the requested set.
+    {
+      const ids = q.regionIds as string[] | undefined;
+      if (ids && ids.length > 0) {
+        filters.push(sql`${funders.regionIds} && ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::text[]`);
+      }
     }
     // Presence filters on computed rollup fields (has value vs blank).
     if (q.lifetimeGivingPresence === "has") filters.push(sql`${fundersLifetimeGivingExpr} > 0`);

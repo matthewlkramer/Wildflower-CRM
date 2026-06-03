@@ -51,6 +51,7 @@ import { PriorityStar } from "@/components/priority-star";
 import { PriorityTooltip } from "@/components/priority-tooltip";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
+import { RegionMultiFilter } from "@/components/region-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
 import { canSeeIdentity, displayFunderName, ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
 import { useRegionNameMap } from "@/components/region-picker";
@@ -314,6 +315,7 @@ export default function FundingEntities() {
   const [capacityTiers, setCapacityTiers] = usePersistedState<string[]>("wf.list.funders.capacity", []);
   const [enthusiasms, setEnthusiasms] = usePersistedState<string[]>("wf.list.funders.enthusiasms", []);
   const [strategicAlignments, setStrategicAlignments] = usePersistedState<string[]>("wf.list.funders.strategicAlignments", []);
+  const [regionIdsSel, setRegionIdsSel] = usePersistedState<string[]>("wf.list.funders.regionIds", []);
   const [page, setPage] = usePersistedState<number>("wf.list.funders.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     "wf.list.funders.columns",
@@ -352,6 +354,7 @@ export default function FundingEntities() {
     ...(capacityTiers.length > 0 ? { capacityRating: [...capacityTiers].sort() as CapacityRating[] } : {}),
     ...(enthusiasms.length > 0 ? { enthusiasm: [...enthusiasms].sort() } : {}),
     ...(strategicAlignments.length > 0 ? { strategicAlignment: [...strategicAlignments].sort() } : {}),
+    ...(regionIdsSel.length > 0 ? { regionIds: [...regionIdsSel].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListFunders(params, {
@@ -610,9 +613,23 @@ export default function FundingEntities() {
           />
         ),
       },
+      {
+        key: "region",
+        label: "Region",
+        defaultVisible: false,
+        active: regionIdsSel.length > 0,
+        clear: () => { setRegionIdsSel([]); setPage(1); selection.clear(); },
+        render: () => (
+          <RegionMultiFilter
+            selected={regionIdsSel}
+            onChange={(v) => { setRegionIdsSel(v); setPage(1); selection.clear(); }}
+            testId="select-funder-region"
+          />
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments],
+    [subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, regionIdsSel],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -674,7 +691,8 @@ export default function FundingEntities() {
     !!primaryContactPresence ||
     capacityTiers.length > 0 ||
     enthusiasms.length > 0 ||
-    strategicAlignments.length > 0;
+    strategicAlignments.length > 0 ||
+    regionIdsSel.length > 0;
 
   // ─── Saved views ─────────────────────────────────────────────────
   type FundersView = {
@@ -690,6 +708,7 @@ export default function FundingEntities() {
     capacityTiers: string[];
     enthusiasms: string[];
     strategicAlignments: string[];
+    regionIdsSel: string[];
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -707,6 +726,7 @@ export default function FundingEntities() {
     capacityTiers,
     enthusiasms,
     strategicAlignments,
+    regionIdsSel,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -724,6 +744,7 @@ export default function FundingEntities() {
     setCapacityTiers([]);
     setEnthusiasms([]);
     setStrategicAlignments([]);
+    setRegionIdsSel([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -744,6 +765,7 @@ export default function FundingEntities() {
       setCapacityTiers(s.capacityTiers ?? []);
       setEnthusiasms(s.enthusiasms ?? []);
       setStrategicAlignments(s.strategicAlignments ?? []);
+      setRegionIdsSel(s.regionIdsSel ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
       setFiltersState(s.filters ?? null);
@@ -766,6 +788,7 @@ export default function FundingEntities() {
         (s.capacityTiers?.length ?? 0) === 0 &&
         (s.enthusiasms?.length ?? 0) === 0 &&
         (s.strategicAlignments?.length ?? 0) === 0 &&
+        (s.regionIdsSel?.length ?? 0) === 0 &&
         (s.sort?.key ?? null) === null &&
         (s.columns ?? null) === null &&
         (s.filters ?? null) === null
@@ -829,6 +852,7 @@ export default function FundingEntities() {
               setCapacityTiers([]);
               setEnthusiasms([]);
               setStrategicAlignments([]);
+              setRegionIdsSel([]);
               setPage(1);
               selection.clear();
             }}
