@@ -9,6 +9,7 @@ import {
   useUpdateGiftAllocation,
   useDeleteGiftAllocation,
   useListEntities,
+  useListFiscalYears,
   useListFundableProjects,
   getGetOpportunityOrPledgeQueryKey,
   getGetGiftOrPaymentQueryKey,
@@ -28,6 +29,23 @@ import {
   type InlineSelectOption,
 } from "@/components/inline-edit";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatEnum } from "@/lib/format";
 
@@ -54,12 +72,76 @@ function useEntityOptions(): ReadonlyArray<InlineSelectOption<string>> {
   return (data ?? []).map((e) => ({ value: e.id, label: e.name }));
 }
 
+function useFiscalYearOptions(): ReadonlyArray<InlineSelectOption<string>> {
+  const { data } = useListFiscalYears();
+  return (data ?? [])
+    .slice()
+    .sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+    .map((fy) => ({ value: fy.id, label: fy.label }));
+}
+
+function useFundableProjectOptions(currentId: string | null = null): ReadonlyArray<InlineSelectOption<string>> {
+  const { data } = useListFundableProjects();
+  const projects = data ?? [];
+  const options: InlineSelectOption<string>[] = projects
+    .filter((p) => p.active || p.id === currentId)
+    .map((p) => ({
+      value: p.id,
+      label: p.active ? p.name : `${p.name} (retired)`,
+    }));
+  if (currentId && !options.some((o) => o.value === currentId)) {
+    options.push({ value: currentId, label: currentId });
+  }
+  return options;
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[8rem_1fr] items-start gap-2 text-sm">
       <span className="text-muted-foreground pt-1">{label}</span>
       <div className="min-w-0">{children}</div>
     </div>
+  );
+}
+
+function DialogField({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[9rem_1fr] items-start gap-3">
+      <Label htmlFor={htmlFor} className="pt-2 text-sm text-muted-foreground text-right">
+        {label}
+      </Label>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function DialogSelect({
+  id,
+  value,
+  onValueChange,
+  options,
+  placeholder = "— None —",
+}: {
+  id?: string;
+  value: string;
+  onValueChange: (v: string) => void;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  placeholder?: string;
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger id={id} className="h-8 text-sm">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="__none__">{placeholder}</SelectItem>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -108,6 +190,418 @@ function FundableProjectField({
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */
+/* New pledge allocation dialog                                             */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+function NewPledgeAllocationDialog({
+  open,
+  onClose,
+  pledgeOrOpportunityId,
+  onCreate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  pledgeOrOpportunityId: string;
+  onCreate: (data: {
+    pledgeOrOpportunityId: string;
+    subAmount?: string;
+    grantYear?: string;
+    entityId?: string;
+    intendedUsage?: IntendedUsage;
+    fundableProjectId?: string;
+    directToSchool?: boolean;
+    status?: PledgeAllocationStatus;
+    conditions?: string;
+    notes?: string;
+  }) => Promise<void>;
+}) {
+  const entityOptions = useEntityOptions();
+  const fiscalYearOptions = useFiscalYearOptions();
+  const fundableProjectOptions = useFundableProjectOptions();
+
+  const [subAmount, setSubAmount] = useState("");
+  const [grantYear, setGrantYear] = useState("");
+  const [entityId, setEntityId] = useState("");
+  const [intendedUsage, setIntendedUsage] = useState("");
+  const [fundableProjectId, setFundableProjectId] = useState("");
+  const [directToSchool, setDirectToSchool] = useState("");
+  const [status, setStatus] = useState("");
+  const [conditions, setConditions] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function reset() {
+    setSubAmount("");
+    setGrantYear("");
+    setEntityId("");
+    setIntendedUsage("");
+    setFundableProjectId("");
+    setDirectToSchool("");
+    setStatus("");
+    setConditions("");
+    setNotes("");
+  }
+
+  function handleClose() {
+    reset();
+    onClose();
+  }
+
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const payload: Parameters<typeof onCreate>[0] = {
+        pledgeOrOpportunityId,
+      };
+      const amtNum = Number(subAmount.replace(/[,$\s]/g, ""));
+      if (subAmount.trim() && Number.isFinite(amtNum) && amtNum >= 0) {
+        payload.subAmount = String(amtNum);
+      }
+      if (grantYear && grantYear !== "__none__") payload.grantYear = grantYear;
+      if (entityId && entityId !== "__none__") payload.entityId = entityId;
+      if (intendedUsage && intendedUsage !== "__none__") {
+        payload.intendedUsage = intendedUsage as IntendedUsage;
+      }
+      if (fundableProjectId && fundableProjectId !== "__none__") {
+        payload.fundableProjectId = fundableProjectId;
+      }
+      if (directToSchool !== "") {
+        payload.directToSchool = directToSchool === "true";
+      }
+      if (status && status !== "__none__") {
+        payload.status = status as PledgeAllocationStatus;
+      }
+      if (conditions.trim()) payload.conditions = conditions.trim();
+      if (notes.trim()) payload.notes = notes.trim();
+      await onCreate(payload);
+      reset();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add allocation</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <DialogField label="Amount" htmlFor="pa-amount">
+            <Input
+              id="pa-amount"
+              className="h-8 text-sm"
+              value={subAmount}
+              onChange={(e) => setSubAmount(e.target.value)}
+              placeholder="e.g. 50000"
+              inputMode="decimal"
+            />
+          </DialogField>
+          <DialogField label="Entity" htmlFor="pa-entity">
+            <DialogSelect
+              id="pa-entity"
+              value={entityId}
+              onValueChange={setEntityId}
+              options={entityOptions}
+              placeholder="— None —"
+            />
+          </DialogField>
+          <DialogField label="Intended usage" htmlFor="pa-usage">
+            <DialogSelect
+              id="pa-usage"
+              value={intendedUsage}
+              onValueChange={setIntendedUsage}
+              options={INTENDED_USAGE_OPTIONS}
+              placeholder="— None —"
+            />
+          </DialogField>
+          <DialogField label="Grant year" htmlFor="pa-year">
+            <DialogSelect
+              id="pa-year"
+              value={grantYear}
+              onValueChange={setGrantYear}
+              options={fiscalYearOptions}
+              placeholder="— None —"
+            />
+          </DialogField>
+          <DialogField label="Status" htmlFor="pa-status">
+            <DialogSelect
+              id="pa-status"
+              value={status}
+              onValueChange={setStatus}
+              options={PLEDGE_ALLOCATION_STATUS_OPTIONS}
+              placeholder="— None —"
+            />
+          </DialogField>
+          <DialogField label="Direct to school" htmlFor="pa-direct">
+            <DialogSelect
+              id="pa-direct"
+              value={directToSchool}
+              onValueChange={setDirectToSchool}
+              options={[
+                { value: "false", label: "No" },
+                { value: "true", label: "Yes" },
+              ]}
+              placeholder="No"
+            />
+          </DialogField>
+          <DialogField label="Fundable project" htmlFor="pa-project">
+            <DialogSelect
+              id="pa-project"
+              value={fundableProjectId}
+              onValueChange={setFundableProjectId}
+              options={fundableProjectOptions}
+              placeholder="— None —"
+            />
+          </DialogField>
+          <DialogField label="Conditions" htmlFor="pa-conditions">
+            <Textarea
+              id="pa-conditions"
+              className="text-sm min-h-[60px]"
+              value={conditions}
+              onChange={(e) => setConditions(e.target.value)}
+              placeholder="—"
+              rows={2}
+            />
+          </DialogField>
+          <DialogField label="Notes" htmlFor="pa-notes">
+            <Textarea
+              id="pa-notes"
+              className="text-sm min-h-[60px]"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="—"
+              rows={2}
+            />
+          </DialogField>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={handleClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={handleSave} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────── */
+/* New gift allocation dialog                                               */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+function NewGiftAllocationDialog({
+  open,
+  onClose,
+  giftId,
+  onCreate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  giftId: string;
+  onCreate: (data: {
+    giftId: string;
+    subAmount?: string;
+    grantYear?: string;
+    entityId?: string;
+    intendedUsage?: IntendedUsage;
+    fundableProjectId?: string;
+    formalRegionalRestriction?: boolean;
+    formalFundUseRestriction?: boolean;
+    schoolRecipientId?: string;
+    spendingStart?: string;
+    spendingEnd?: string;
+  }) => Promise<void>;
+}) {
+  const entityOptions = useEntityOptions();
+  const fiscalYearOptions = useFiscalYearOptions();
+  const fundableProjectOptions = useFundableProjectOptions();
+
+  const [subAmount, setSubAmount] = useState("");
+  const [grantYear, setGrantYear] = useState("");
+  const [entityId, setEntityId] = useState("");
+  const [intendedUsage, setIntendedUsage] = useState("");
+  const [fundableProjectId, setFundableProjectId] = useState("");
+  const [formalRegionalRestriction, setFormalRegionalRestriction] = useState("");
+  const [formalFundUseRestriction, setFormalFundUseRestriction] = useState("");
+  const [schoolRecipientId, setSchoolRecipientId] = useState("");
+  const [spendingStart, setSpendingStart] = useState("");
+  const [spendingEnd, setSpendingEnd] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function reset() {
+    setSubAmount("");
+    setGrantYear("");
+    setEntityId("");
+    setIntendedUsage("");
+    setFundableProjectId("");
+    setFormalRegionalRestriction("");
+    setFormalFundUseRestriction("");
+    setSchoolRecipientId("");
+    setSpendingStart("");
+    setSpendingEnd("");
+  }
+
+  function handleClose() {
+    reset();
+    onClose();
+  }
+
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const payload: Parameters<typeof onCreate>[0] = { giftId };
+      const amtNum = Number(subAmount.replace(/[,$\s]/g, ""));
+      if (subAmount.trim() && Number.isFinite(amtNum) && amtNum >= 0) {
+        payload.subAmount = String(amtNum);
+      }
+      if (grantYear && grantYear !== "__none__") payload.grantYear = grantYear;
+      if (entityId && entityId !== "__none__") payload.entityId = entityId;
+      if (intendedUsage && intendedUsage !== "__none__") {
+        payload.intendedUsage = intendedUsage as IntendedUsage;
+      }
+      if (fundableProjectId && fundableProjectId !== "__none__") {
+        payload.fundableProjectId = fundableProjectId;
+      }
+      if (formalRegionalRestriction !== "") {
+        payload.formalRegionalRestriction = formalRegionalRestriction === "true";
+      }
+      if (formalFundUseRestriction !== "") {
+        payload.formalFundUseRestriction = formalFundUseRestriction === "true";
+      }
+      if (schoolRecipientId.trim()) payload.schoolRecipientId = schoolRecipientId.trim();
+      if (spendingStart.trim()) payload.spendingStart = spendingStart;
+      if (spendingEnd.trim()) payload.spendingEnd = spendingEnd;
+      await onCreate(payload);
+      reset();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add allocation</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <DialogField label="Amount" htmlFor="ga-amount">
+            <Input
+              id="ga-amount"
+              className="h-8 text-sm"
+              value={subAmount}
+              onChange={(e) => setSubAmount(e.target.value)}
+              placeholder="e.g. 50000"
+              inputMode="decimal"
+            />
+          </DialogField>
+          <DialogField label="Entity" htmlFor="ga-entity">
+            <DialogSelect
+              id="ga-entity"
+              value={entityId}
+              onValueChange={setEntityId}
+              options={entityOptions}
+              placeholder="— None —"
+            />
+          </DialogField>
+          <DialogField label="Intended usage" htmlFor="ga-usage">
+            <DialogSelect
+              id="ga-usage"
+              value={intendedUsage}
+              onValueChange={setIntendedUsage}
+              options={INTENDED_USAGE_OPTIONS}
+              placeholder="— None —"
+            />
+          </DialogField>
+          <DialogField label="Grant year" htmlFor="ga-year">
+            <DialogSelect
+              id="ga-year"
+              value={grantYear}
+              onValueChange={setGrantYear}
+              options={fiscalYearOptions}
+              placeholder="— None —"
+            />
+          </DialogField>
+          <DialogField label="School recipient" htmlFor="ga-school">
+            <Input
+              id="ga-school"
+              className="h-8 text-sm"
+              value={schoolRecipientId}
+              onChange={(e) => setSchoolRecipientId(e.target.value)}
+              placeholder="School ID"
+            />
+          </DialogField>
+          <DialogField label="Fundable project" htmlFor="ga-project">
+            <DialogSelect
+              id="ga-project"
+              value={fundableProjectId}
+              onValueChange={setFundableProjectId}
+              options={fundableProjectOptions}
+              placeholder="— None —"
+            />
+          </DialogField>
+          <DialogField label="Regional restriction" htmlFor="ga-region-rest">
+            <DialogSelect
+              id="ga-region-rest"
+              value={formalRegionalRestriction}
+              onValueChange={setFormalRegionalRestriction}
+              options={[
+                { value: "false", label: "No" },
+                { value: "true", label: "Yes" },
+              ]}
+              placeholder="No"
+            />
+          </DialogField>
+          <DialogField label="Use restriction" htmlFor="ga-use-rest">
+            <DialogSelect
+              id="ga-use-rest"
+              value={formalFundUseRestriction}
+              onValueChange={setFormalFundUseRestriction}
+              options={[
+                { value: "false", label: "No" },
+                { value: "true", label: "Yes" },
+              ]}
+              placeholder="No"
+            />
+          </DialogField>
+          <DialogField label="Spending start" htmlFor="ga-start">
+            <Input
+              id="ga-start"
+              type="date"
+              className="h-8 text-sm"
+              value={spendingStart}
+              onChange={(e) => setSpendingStart(e.target.value)}
+            />
+          </DialogField>
+          <DialogField label="Spending end" htmlFor="ga-end">
+            <Input
+              id="ga-end"
+              type="date"
+              className="h-8 text-sm"
+              value={spendingEnd}
+              onChange={(e) => setSpendingEnd(e.target.value)}
+            />
+          </DialogField>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={handleClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={handleSave} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────── */
 /* Pledge allocations                                                       */
 /* ──────────────────────────────────────────────────────────────────────── */
 
@@ -122,6 +616,7 @@ export function PledgeAllocationsEditor({
   const { toast } = useToast();
   const entityOptions = useEntityOptions();
   const entityNameById = new Map(entityOptions.map((o) => [o.value, o.label]));
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const invalidate = () =>
     queryClient.invalidateQueries({
@@ -169,15 +664,21 @@ export function PledgeAllocationsEditor({
         type="button"
         variant="outline"
         size="sm"
-        disabled={create.isPending}
-        onClick={() =>
-          create.mutate({ data: { pledgeOrOpportunityId } })
-        }
+        onClick={() => setDialogOpen(true)}
         data-testid="button-add-opp-alloc"
       >
         <Plus className="h-4 w-4 mr-1" />
         Add allocation
       </Button>
+      <NewPledgeAllocationDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        pledgeOrOpportunityId={pledgeOrOpportunityId}
+        onCreate={async (data) => {
+          await create.mutateAsync({ data });
+          setDialogOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -195,6 +696,7 @@ function PledgeAllocationRow({
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const fiscalYearOptions = useFiscalYearOptions();
   const invalidate = () =>
     queryClient.invalidateQueries({
       queryKey: getGetOpportunityOrPledgeQueryKey(pledgeOrOpportunityId),
@@ -312,11 +814,11 @@ function PledgeAllocationRow({
         />
       </Field>
       <Field label="Grant year">
-        <InlineEditText
+        <InlineEditSelect
           label="Grant year"
           testIdBase={`${tid}-year`}
           value={alloc.grantYear ?? null}
-          placeholder="e.g. FY26"
+          options={fiscalYearOptions}
           display={alloc.grantYear ?? "—"}
           onSave={(next) => patch({ grantYear: next })}
         />
@@ -385,6 +887,7 @@ export function GiftAllocationsEditor({
   const { toast } = useToast();
   const entityOptions = useEntityOptions();
   const entityNameById = new Map(entityOptions.map((o) => [o.value, o.label]));
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const invalidate = () =>
     queryClient.invalidateQueries({
@@ -432,13 +935,21 @@ export function GiftAllocationsEditor({
         type="button"
         variant="outline"
         size="sm"
-        disabled={create.isPending}
-        onClick={() => create.mutate({ data: { giftId } })}
+        onClick={() => setDialogOpen(true)}
         data-testid="button-add-gift-alloc"
       >
         <Plus className="h-4 w-4 mr-1" />
         Add allocation
       </Button>
+      <NewGiftAllocationDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        giftId={giftId}
+        onCreate={async (data) => {
+          await create.mutateAsync({ data });
+          setDialogOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -456,6 +967,7 @@ function GiftAllocationRow({
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const fiscalYearOptions = useFiscalYearOptions();
   const invalidate = () =>
     queryClient.invalidateQueries({
       queryKey: getGetGiftOrPaymentQueryKey(giftId),
@@ -577,11 +1089,11 @@ function GiftAllocationRow({
         />
       </Field>
       <Field label="Grant year">
-        <InlineEditText
+        <InlineEditSelect
           label="Grant year"
           testIdBase={`${tid}-year`}
           value={alloc.grantYear ?? null}
-          placeholder="e.g. FY26"
+          options={fiscalYearOptions}
           display={alloc.grantYear ?? "—"}
           onSave={(next) => patch({ grantYear: next })}
         />
