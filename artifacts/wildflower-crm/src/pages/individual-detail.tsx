@@ -462,7 +462,29 @@ function PersonView({ person }: { person: PersonDetail }) {
       backLabel="Back to individuals"
       title={title}
       typeBadge="Individual"
-      subtitle={person.pronouns ? formatEnum(person.pronouns) : undefined}
+      subtitle={
+        <>
+          {person.pronouns && <div>{formatEnum(person.pronouns)}</div>}
+          <div className="mt-2 w-full">
+            <InlineEditTextarea
+              label="About"
+              testIdBase="person-about-me"
+              value={person.aboutMe ?? null}
+              placeholder="Add a bio…"
+              display={
+                person.aboutMe ? (
+                  <p className="whitespace-pre-wrap text-left text-sm text-foreground">
+                    {person.aboutMe}
+                  </p>
+                ) : (
+                  <span className="text-muted-foreground">Add a bio…</span>
+                )
+              }
+              onSave={(next) => patch({ aboutMe: next })}
+            />
+          </div>
+        </>
+      }
       actions={actions}
       highlights={highlights}
       left={
@@ -698,23 +720,6 @@ function PersonView({ person }: { person: PersonDetail }) {
                   onSave={(next) => patch({ tags: next })}
                 />
               </Row>
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">About</div>
-                <InlineEditTextarea
-                  label="About"
-                  testIdBase="person-about-me"
-                  value={person.aboutMe ?? null}
-                  placeholder="Add a bio…"
-                  display={
-                    person.aboutMe ? (
-                      <p className="whitespace-pre-wrap text-left">{person.aboutMe}</p>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )
-                  }
-                  onSave={(next) => patch({ aboutMe: next })}
-                />
-              </div>
               <div>
                 <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
                 <InlineEditTextarea
