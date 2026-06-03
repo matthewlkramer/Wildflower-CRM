@@ -40,6 +40,7 @@ pnpm --filter @workspace/api-spec run codegen   # Regenerate hooks/Zod from Open
 pnpm --filter @workspace/db run push            # Push DB schema changes (dev only)
 node lib/db/src/import-airtable.mjs             # Re-import Airtable data
 cd lib/db && pnpm exec tsc -p tsconfig.json     # Rebuild DB declarations (after schema changes)
+pnpm --filter @workspace/scripts run cleanup:test-users  # Archive test users after e2e runs
 ```
 
 **Important**: After changing the DB schema, always run both `pnpm --filter @workspace/db run push` AND `cd lib/db && pnpm exec tsc -p tsconfig.json` to keep declarations in sync.
