@@ -49,6 +49,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { DonorCell } from "@/components/donor-cell";
+import { CreateOpportunityDialog } from "@/components/create-opportunity-dialog";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
@@ -614,11 +615,14 @@ export default function Opportunities({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-serif font-bold text-foreground">{title}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
-        </p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-serif font-bold text-foreground">{title}</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
+          </p>
+        </div>
+        <CreateOpportunityDialog mode={isPledgeView ? "pledge" : "opportunity"} />
       </div>
 
       <SavedViewsBar

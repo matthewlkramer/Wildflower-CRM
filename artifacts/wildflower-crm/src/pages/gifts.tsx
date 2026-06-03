@@ -50,6 +50,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { DonorCell } from "@/components/donor-cell";
+import { GiftFormDialog } from "@/components/gift-form-dialog";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
 
@@ -506,11 +507,14 @@ export default function Gifts() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-serif font-bold text-foreground">Gifts & payments</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
-        </p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-serif font-bold text-foreground">Gifts & payments</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
+          </p>
+        </div>
+        <GiftFormDialog />
       </div>
 
       <SavedViewsBar

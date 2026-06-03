@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { Plus } from "lucide-react";
 import {
@@ -9,6 +9,11 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import type { LinkedRecordsScope } from "@/components/linked-records";
+import {
+  DonorFieldPicker,
+  donorBodyFor,
+  type DonorType,
+} from "@/components/entity-picker";
 import {
   Dialog,
   DialogContent,
@@ -23,24 +28,53 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 /**
- * Maps a donor-scoping object to the XOR donor field on the create body.
- * Exactly one of funderId / householdId / individualGiverPersonId is set,
- * mirroring the donor XOR invariant enforced by the API/DB.
+ * Maps a donor-scoping object to an initial (type, id) pair for the donor
+ * picker. Exactly one of funderId / householdId / individualGiverPersonId is
+ * set on the scope, mirroring the donor XOR invariant enforced by the API/DB.
  */
-function donorFields(scope: LinkedRecordsScope): Partial<CreateGiftOrPaymentBody> {
-  if ("funderId" in scope) return { funderId: scope.funderId };
-  if ("householdId" in scope) return { householdId: scope.householdId };
-  return { individualGiverPersonId: scope.individualGiverPersonId };
+function donorFromScope(scope: LinkedRecordsScope): {
+  type: DonorType;
+  id: string;
+} {
+  if ("funderId" in scope) return { type: "funder", id: scope.funderId };
+  if ("householdId" in scope) return { type: "household", id: scope.householdId };
+  return { type: "individual", id: scope.individualGiverPersonId };
 }
 
-export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
+export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [dateReceived, setDateReceived] = useState("");
+  const initialDonor = scope ? donorFromScope(scope) : null;
+  const [donorType, setDonorType] = useState<DonorType>(
+    initialDonor?.type ?? "funder",
+  );
+  const [donorId, setDonorId] = useState<string | null>(
+    initialDonor?.id ?? null,
+  );
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  function resetDonor() {
+    if (scope) {
+      const d = donorFromScope(scope);
+      setDonorType(d.type);
+      setDonorId(d.id);
+    } else {
+      setDonorType("funder");
+      setDonorId(null);
+    }
+  }
+
+  // Re-seed the donor from scope each time the dialog opens, so navigating
+  // between donor detail pages always pre-fills the right donor.
+  const scopeKey = JSON.stringify(scope ?? null);
+  useEffect(() => {
+    if (open) resetDonor();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, scopeKey]);
 
   const create = useCreateGiftOrPayment({
     mutation: {
@@ -53,6 +87,7 @@ export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
         setName("");
         setAmount("");
         setDateReceived("");
+        resetDonor();
         if (created?.id) navigate(`/gifts/${created.id}`);
       },
       onError: (err: unknown) => {
@@ -67,13 +102,22 @@ export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
 
   const trimmed = name.trim();
 
+  function resetAndClose(next: boolean) {
+    if (create.isPending) return;
+    setOpen(next);
+    if (!next) {
+      setName("");
+      setAmount("");
+      setDateReceived("");
+      resetDonor();
+    }
+  }
+
+  // Label for the trigger button differs by context.
+  const triggerLabel = scope ? "Add" : "New gift / payment";
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        if (!create.isPending) setOpen(v);
-      }}
-    >
+    <Dialog open={open} onOpenChange={resetAndClose}>
       <DialogTrigger asChild>
         <Button
           size="sm"
@@ -82,7 +126,7 @@ export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
           data-testid="button-new-gift"
         >
           <Plus className="mr-1 h-3.5 w-3.5" />
-          Add
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -95,13 +139,17 @@ export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!trimmed) return;
+            if (!trimmed || !donorId) return;
             const amt = amount.trim();
             const date = dateReceived.trim();
+            const donor = donorBodyFor(donorType, donorId);
             create.mutate({
               data: {
                 name: trimmed,
-                ...donorFields(scope),
+                funderId: donor.funderId ?? undefined,
+                individualGiverPersonId:
+                  donor.individualGiverPersonId ?? undefined,
+                householdId: donor.householdId ?? undefined,
                 ...(amt ? { amount: amt } : {}),
                 ...(date ? { dateReceived: date } : {}),
               },
@@ -120,6 +168,32 @@ export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
               data-testid="input-new-gift-name"
             />
           </div>
+
+          <div className="space-y-1.5">
+            <Label>Donor</Label>
+            <DonorFieldPicker
+              type={donorType}
+              id={donorId}
+              onChange={(t, id) => {
+                setDonorType(t);
+                setDonorId(id);
+              }}
+              testIdBase="new-gift-donor"
+              disabled={create.isPending}
+            />
+            {scope ? (
+              <p className="text-xs text-muted-foreground">
+                Defaults to this record; pick a different funder, household, or
+                individual to file it elsewhere.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Required — choose the funder, household, or individual this
+                payment is from.
+              </p>
+            )}
+          </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="new-gift-amount">Amount</Label>
             <Input
@@ -147,14 +221,14 @@ export function GiftFormDialog({ scope }: { scope: LinkedRecordsScope }) {
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setOpen(false)}
+              onClick={() => resetAndClose(false)}
               disabled={create.isPending}
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={!trimmed || create.isPending}
+              disabled={!trimmed || !donorId || create.isPending}
               data-testid="button-create-gift"
             >
               {create.isPending ? "Creating…" : "Create"}

@@ -91,23 +91,32 @@ export function CreateOpportunityDialog({
   scope,
   mode,
 }: {
-  scope: LinkedRecordsScope;
+  scope?: LinkedRecordsScope;
   mode: "opportunity" | "pledge";
 }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const initialDonor = donorFromScope(scope);
-  const [donorType, setDonorType] = useState<DonorType>(initialDonor.type);
-  const [donorId, setDonorId] = useState<string | null>(initialDonor.id);
+  const initialDonor = scope ? donorFromScope(scope) : null;
+  const [donorType, setDonorType] = useState<DonorType>(
+    initialDonor?.type ?? "funder",
+  );
+  const [donorId, setDonorId] = useState<string | null>(
+    initialDonor?.id ?? null,
+  );
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const isPledge = mode === "pledge";
 
   function resetDonor() {
-    const d = donorFromScope(scope);
-    setDonorType(d.type);
-    setDonorId(d.id);
+    if (scope) {
+      const d = donorFromScope(scope);
+      setDonorType(d.type);
+      setDonorId(d.id);
+    } else {
+      setDonorType("funder");
+      setDonorId(null);
+    }
   }
 
   // Re-seed the donor default from the page scope each time the dialog
@@ -115,7 +124,7 @@ export function CreateOpportunityDialog({
   // mounted across donor navigations, so initializing from scope only on
   // mount would leave a stale default — this keeps the donor's own page
   // as the default every launch.
-  const scopeKey = JSON.stringify(scope);
+  const scopeKey = JSON.stringify(scope ?? null);
   useEffect(() => {
     if (open) resetDonor();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,6 +189,14 @@ export function CreateOpportunityDialog({
     });
   }
 
+  // Label for the trigger button differs by context: list-page headers use a
+  // full "New …" label; detail-page linked-record cards use compact "Add".
+  const triggerLabel = scope
+    ? "Add"
+    : isPledge
+      ? "New pledge"
+      : "New opportunity";
+
   return (
     <Dialog open={open} onOpenChange={resetAndClose}>
       <DialogTrigger asChild>
@@ -190,7 +207,7 @@ export function CreateOpportunityDialog({
           data-testid={isPledge ? "button-new-pledge" : "button-new-opportunity"}
         >
           <Plus className="mr-1 h-3.5 w-3.5" />
-          Add
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -232,10 +249,17 @@ export function CreateOpportunityDialog({
               testIdBase="new-opportunity-donor"
               disabled={create.isPending}
             />
-            <p className="text-xs text-muted-foreground">
-              Defaults to this record; pick a different funder, household, or
-              individual to file it elsewhere.
-            </p>
+            {scope ? (
+              <p className="text-xs text-muted-foreground">
+                Defaults to this record; pick a different funder, household, or
+                individual to file it elsewhere.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Required — choose the funder, household, or individual this is
+                for.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
