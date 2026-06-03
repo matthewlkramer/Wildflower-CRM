@@ -142,11 +142,13 @@ export const priorityEnum = pgEnum("priority", [
 ]);
 
 export const enthusiasmEnum = pgEnum("enthusiasm", [
-  "advocate",
-  "supportive",
-  "warm",
-  "neutral",
-  "unsupportive",
+  "7-advocate",
+  "6-supportive",
+  "5-warm",
+  "4-neutral",
+  "3-cool",
+  "2-unsupportive",
+  "1-hostile",
 ]);
 
 export const strategicAlignmentEnum = pgEnum("strategic_alignment", [

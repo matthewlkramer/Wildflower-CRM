@@ -890,7 +890,15 @@ export const ListFundersResponse = zod.object({
         .enum(["connected", "have_a_connector", "no_connection"])
         .nullish(),
       enthusiasm: zod
-        .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+        .enum([
+          "7-advocate",
+          "6-supportive",
+          "5-warm",
+          "4-neutral",
+          "3-cool",
+          "2-unsupportive",
+          "1-hostile",
+        ])
         .nullish(),
       strategicAlignment: zod.enum(["high", "medium", "low"]).nullish(),
       interestsThematic: zod.array(zod.string()).nullish(),
@@ -1019,7 +1027,15 @@ export const CreateFunderBody = zod.object({
     .enum(["connected", "have_a_connector", "no_connection"])
     .optional(),
   enthusiasm: zod
-    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+    .enum([
+      "7-advocate",
+      "6-supportive",
+      "5-warm",
+      "4-neutral",
+      "3-cool",
+      "2-unsupportive",
+      "1-hostile",
+    ])
     .optional(),
   strategicAlignment: zod.enum(["high", "medium", "low"]).optional(),
   interestsThematic: zod.array(zod.string()).optional(),
@@ -1111,7 +1127,15 @@ export const GetFunderResponse = zod
       .enum(["connected", "have_a_connector", "no_connection"])
       .nullish(),
     enthusiasm: zod
-      .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+      .enum([
+        "7-advocate",
+        "6-supportive",
+        "5-warm",
+        "4-neutral",
+        "3-cool",
+        "2-unsupportive",
+        "1-hostile",
+      ])
       .nullish(),
     strategicAlignment: zod.enum(["high", "medium", "low"]).nullish(),
     interestsThematic: zod.array(zod.string()).nullish(),
@@ -1352,7 +1376,15 @@ export const UpdateFunderBody = zod.object({
     .enum(["connected", "have_a_connector", "no_connection"])
     .nullish(),
   enthusiasm: zod
-    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+    .enum([
+      "7-advocate",
+      "6-supportive",
+      "5-warm",
+      "4-neutral",
+      "3-cool",
+      "2-unsupportive",
+      "1-hostile",
+    ])
     .nullish(),
   strategicAlignment: zod.enum(["high", "medium", "low"]).nullish(),
   interestsThematic: zod.array(zod.string()).nullish(),
@@ -1439,7 +1471,15 @@ export const UpdateFunderResponse = zod.object({
     .enum(["connected", "have_a_connector", "no_connection"])
     .nullish(),
   enthusiasm: zod
-    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+    .enum([
+      "7-advocate",
+      "6-supportive",
+      "5-warm",
+      "4-neutral",
+      "3-cool",
+      "2-unsupportive",
+      "1-hostile",
+    ])
     .nullish(),
   strategicAlignment: zod.enum(["high", "medium", "low"]).nullish(),
   interestsThematic: zod.array(zod.string()).nullish(),
@@ -2340,7 +2380,15 @@ export const ListPeopleResponse = zod.object({
         .enum(["connected", "have_a_connector", "no_connection"])
         .nullish(),
       enthusiasm: zod
-        .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+        .enum([
+          "7-advocate",
+          "6-supportive",
+          "5-warm",
+          "4-neutral",
+          "3-cool",
+          "2-unsupportive",
+          "1-hostile",
+        ])
         .nullish(),
       priority: zod
         .enum(["top", "high", "medium", "low"])
@@ -2457,7 +2505,15 @@ export const CreatePersonBody = zod.object({
     .enum(["connected", "have_a_connector", "no_connection"])
     .optional(),
   enthusiasm: zod
-    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+    .enum([
+      "7-advocate",
+      "6-supportive",
+      "5-warm",
+      "4-neutral",
+      "3-cool",
+      "2-unsupportive",
+      "1-hostile",
+    ])
     .optional(),
   priority: zod.enum(["top", "high", "medium", "low"]).optional(),
   anonymous: zod.boolean().optional(),
@@ -2520,7 +2576,15 @@ export const GetPersonResponse = zod
       .enum(["connected", "have_a_connector", "no_connection"])
       .nullish(),
     enthusiasm: zod
-      .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+      .enum([
+        "7-advocate",
+        "6-supportive",
+        "5-warm",
+        "4-neutral",
+        "3-cool",
+        "2-unsupportive",
+        "1-hostile",
+      ])
       .nullish(),
     priority: zod
       .enum(["top", "high", "medium", "low"])
@@ -2737,7 +2801,15 @@ export const UpdatePersonBody = zod.object({
     .enum(["connected", "have_a_connector", "no_connection"])
     .nullish(),
   enthusiasm: zod
-    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+    .enum([
+      "7-advocate",
+      "6-supportive",
+      "5-warm",
+      "4-neutral",
+      "3-cool",
+      "2-unsupportive",
+      "1-hostile",
+    ])
     .nullish(),
   priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
   anonymous: zod.boolean().optional(),
@@ -2795,7 +2867,15 @@ export const UpdatePersonResponse = zod.object({
     .enum(["connected", "have_a_connector", "no_connection"])
     .nullish(),
   enthusiasm: zod
-    .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+    .enum([
+      "7-advocate",
+      "6-supportive",
+      "5-warm",
+      "4-neutral",
+      "3-cool",
+      "2-unsupportive",
+      "1-hostile",
+    ])
     .nullish(),
   priority: zod
     .enum(["top", "high", "medium", "low"])
@@ -6740,7 +6820,15 @@ export const BulkUpdateFundersBody = zod.object({
       ])
       .nullish(),
     enthusiasm: zod
-      .enum(["advocate", "supportive", "warm", "neutral", "unsupportive"])
+      .enum([
+        "7-advocate",
+        "6-supportive",
+        "5-warm",
+        "4-neutral",
+        "3-cool",
+        "2-unsupportive",
+        "1-hostile",
+      ])
       .nullish(),
     priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
     fundingEntitySubtype: zod

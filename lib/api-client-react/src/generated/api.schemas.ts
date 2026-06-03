@@ -205,11 +205,13 @@ export const ConnectionStatus = {
 export type Enthusiasm = (typeof Enthusiasm)[keyof typeof Enthusiasm];
 
 export const Enthusiasm = {
-  advocate: "advocate",
-  supportive: "supportive",
-  warm: "warm",
-  neutral: "neutral",
-  unsupportive: "unsupportive",
+  "7-advocate": "7-advocate",
+  "6-supportive": "6-supportive",
+  "5-warm": "5-warm",
+  "4-neutral": "4-neutral",
+  "3-cool": "3-cool",
+  "2-unsupportive": "2-unsupportive",
+  "1-hostile": "1-hostile",
 } as const;
 
 export type Priority = (typeof Priority)[keyof typeof Priority];

@@ -66,6 +66,7 @@ import {
   formatCurrency,
   formatDate,
   formatEnum,
+  formatEnthusiasm,
   formatCapacity,
   formatCrunchbaseHandle,
   formatFacebookHandle,
@@ -86,11 +87,13 @@ const CONNECTION_STATUS_OPTIONS = [
 ] as const satisfies ReadonlyArray<InlineSelectOption<ConnectionStatus>>;
 
 const ENTHUSIASM_OPTIONS = [
-  { value: "advocate", label: "Advocate" },
-  { value: "supportive", label: "Supportive" },
-  { value: "warm", label: "Warm" },
-  { value: "neutral", label: "Neutral" },
-  { value: "unsupportive", label: "Unsupportive" },
+  { value: "7-advocate", label: "7-Advocate" },
+  { value: "6-supportive", label: "6-Supportive" },
+  { value: "5-warm", label: "5-Warm" },
+  { value: "4-neutral", label: "4-Neutral" },
+  { value: "3-cool", label: "3-Cool" },
+  { value: "2-unsupportive", label: "2-Unsupportive" },
+  { value: "1-hostile", label: "1-Hostile" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<Enthusiasm>>;
 
 const ALIGNMENT_OPTIONS = [
@@ -373,7 +376,7 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           testIdBase="funder-enthusiasm"
           value={funder.enthusiasm ?? null}
           options={ENTHUSIASM_OPTIONS}
-          display={formatEnum(funder.enthusiasm)}
+          display={formatEnthusiasm(funder.enthusiasm)}
           onSave={(next) => patch({ enthusiasm: next })}
         />
       ),

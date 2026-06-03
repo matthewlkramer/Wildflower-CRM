@@ -99,11 +99,13 @@ export const FUNDERS_BULK_FIELDS: ReadonlyArray<BulkField> = [
     label: "Enthusiasm",
     nullable: true,
     options: [
-      { value: "advocate", label: "Advocate" },
-      { value: "supportive", label: "Supportive" },
-      { value: "warm", label: "Warm" },
-      { value: "neutral", label: "Neutral" },
-      { value: "unsupportive", label: "Unsupportive" },
+      { value: "7-advocate", label: "7-Advocate" },
+      { value: "6-supportive", label: "6-Supportive" },
+      { value: "5-warm", label: "5-Warm" },
+      { value: "4-neutral", label: "4-Neutral" },
+      { value: "3-cool", label: "3-Cool" },
+      { value: "2-unsupportive", label: "2-Unsupportive" },
+      { value: "1-hostile", label: "1-Hostile" },
     ],
   },
   {

@@ -145,6 +145,21 @@ export function formatEnum(value: string | null | undefined): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+const ENTHUSIASM_LABELS: Record<string, string> = {
+  "7-advocate": "7-Advocate",
+  "6-supportive": "6-Supportive",
+  "5-warm": "5-Warm",
+  "4-neutral": "4-Neutral",
+  "3-cool": "3-Cool",
+  "2-unsupportive": "2-Unsupportive",
+  "1-hostile": "1-Hostile",
+};
+
+export function formatEnthusiasm(value: string | null | undefined): string {
+  if (!value) return "—";
+  return ENTHUSIASM_LABELS[value] ?? value;
+}
+
 export const FUND_LABELS: Record<string, string> = {
   general_operating: "General Operating",
   seed_fund: "Seed Fund",

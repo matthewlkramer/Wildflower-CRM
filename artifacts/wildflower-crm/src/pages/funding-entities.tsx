@@ -33,7 +33,7 @@ import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { FUNDERS_BULK_FIELDS } from "@/lib/bulk-fields";
 import { Checkbox } from "@/components/ui/checkbox";
-import { formatCapacity, formatCurrency, formatDateShort, formatEnum, formatFunderNameShort } from "@/lib/format";
+import { formatCapacity, formatCurrency, formatDateShort, formatEnum, formatEnthusiasm, formatFunderNameShort } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
   Table,
@@ -116,7 +116,15 @@ const CAPACITY_TIERS: CapacityRating[] = [
   "tier_250k_1m",
   "tier_1m_plus",
 ];
-const ENTHUSIASM_OPTIONS = ["advocate", "supportive", "warm", "neutral", "unsupportive"] as const;
+const ENTHUSIASM_OPTIONS = [
+  { value: "7-advocate", label: "7-Advocate" },
+  { value: "6-supportive", label: "6-Supportive" },
+  { value: "5-warm", label: "5-Warm" },
+  { value: "4-neutral", label: "4-Neutral" },
+  { value: "3-cool", label: "3-Cool" },
+  { value: "2-unsupportive", label: "2-Unsupportive" },
+  { value: "1-hostile", label: "1-Hostile" },
+] as const;
 const STRATEGIC_ALIGNMENTS = ["high", "medium", "low"] as const;
 
 const PAGE_SIZE = 50;
@@ -190,7 +198,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
     {
       key: "enthusiasm",
       label: "Enthusiasm",
-      cell: (f) => formatEnum(f.enthusiasm),
+      cell: (f) => formatEnthusiasm(f.enthusiasm),
     },
     {
       key: "strategicAlignment",
@@ -398,7 +406,7 @@ export default function FundingEntities() {
       { key: "capacityRating", label: "Capacity", display: (v) => formatCapacity(v as string | null) },
       { key: "activeStatus", label: "Active status", display: (v) => formatEnum(v as string | null) },
       { key: "connectionStatus", label: "Connection", display: (v) => formatEnum(v as string | null) },
-      { key: "enthusiasm", label: "Enthusiasm", display: (v) => formatEnum(v as string | null) },
+      { key: "enthusiasm", label: "Enthusiasm", display: (v) => formatEnthusiasm(v as string | null) },
       { key: "strategicAlignment", label: "Strategic alignment", display: (v) => formatEnum(v as string | null) },
       { key: "priority", label: "Priority", display: (v) => formatEnum(v as string | null) },
       {

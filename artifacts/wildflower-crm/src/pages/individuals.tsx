@@ -36,6 +36,7 @@ import {
   formatCurrency,
   formatDateShort,
   formatEnum,
+  formatEnthusiasm,
   formatFunderNameShort,
 } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -92,7 +93,15 @@ const DECEASED_OPTIONS: MultiFilterOption[] = [
 const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
 const PRIORITIES = ["top", "high", "medium", "low"] as const;
 const CONNECTION_STATUSES: ConnectionStatus[] = ["connected", "have_a_connector", "no_connection"];
-const ENTHUSIASM_OPTIONS = ["advocate", "supportive", "warm", "neutral", "unsupportive"] as const;
+const ENTHUSIASM_OPTIONS = [
+  { value: "7-advocate", label: "7-Advocate" },
+  { value: "6-supportive", label: "6-Supportive" },
+  { value: "5-warm", label: "5-Warm" },
+  { value: "4-neutral", label: "4-Neutral" },
+  { value: "3-cool", label: "3-Cool" },
+  { value: "2-unsupportive", label: "2-Unsupportive" },
+  { value: "1-hostile", label: "1-Hostile" },
+] as const;
 
 // Lookups the column cell renderers close over. Bundled into a single
 // context object so `buildColumns` stays a pure function of its inputs
@@ -233,7 +242,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
       key: "enthusiasm",
       label: "Enthusiasm",
       defaultVisible: false,
-      cell: (p) => formatEnum(p.enthusiasm),
+      cell: (p) => formatEnthusiasm(p.enthusiasm),
     },
     {
       key: "interestsAges",
@@ -384,7 +393,7 @@ export default function Individuals() {
       { key: "pronouns", label: "Pronouns" },
       { key: "capacityRating", label: "Capacity", display: (v) => formatCapacity(v as string | null) },
       { key: "connectionStatus", label: "Connection", display: (v) => formatEnum(v as string | null) },
-      { key: "enthusiasm", label: "Enthusiasm", display: (v) => formatEnum(v as string | null) },
+      { key: "enthusiasm", label: "Enthusiasm", display: (v) => formatEnthusiasm(v as string | null) },
       { key: "priority", label: "Priority", display: (v) => formatEnum(v as string | null) },
       { key: "deceased", label: "Deceased", display: (v) => (v == null ? "—" : v ? "Yes" : "No") },
       {

@@ -1910,7 +1910,7 @@ components:
     NumberOfEmployees: { type: string, enum: [e_1, e_2_10, e_11_50, e_51_250, e_251_1000, e_1001_10000, e_10000_plus] }
     CapacityRating: { type: string, enum: [tier_1k_10k, tier_10k_50k, tier_50k_250k, tier_250k_1m, tier_1m_plus] }
     ConnectionStatus: { type: string, enum: [connected, have_a_connector, no_connection] }
-    Enthusiasm: { type: string, enum: [advocate, supportive, warm, neutral, unsupportive] }
+    Enthusiasm: { type: string, enum: ['7-advocate', '6-supportive', '5-warm', '4-neutral', '3-cool', '2-unsupportive', '1-hostile'] }
     Priority: { type: string, enum: [top, high, medium, low] }
     StrategicAlignment: { type: string, enum: [high, medium, low] }
     ActiveStatus: { type: string, enum: [active, defunct, spenddown] }
