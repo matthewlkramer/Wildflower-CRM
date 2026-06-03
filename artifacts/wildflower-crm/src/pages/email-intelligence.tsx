@@ -40,7 +40,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { EmailDetailDialog } from "@/components/email-detail-dialog";
-import { Mail, Check, X, MessageSquarePlus } from "lucide-react";
+import { Mail, Check, X, MessageSquarePlus, ExternalLink } from "lucide-react";
 
 type Kind =
   | "linkedin_job_change"
@@ -307,7 +307,21 @@ function ProposalList({ kind }: { kind: Kind }) {
                   <Mail className="h-3.5 w-3.5 mr-1" />
                   View email
                 </Button>
-              ) : null}
+              ) : (() => {
+                const gmailId = (p.payload as Record<string, unknown>)?.gmailMessageId;
+                return typeof gmailId === "string" && gmailId ? (
+                  <a
+                    href={`https://mail.google.com/mail/u/0/#all/${gmailId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    data-testid={`btn-view-gmail-${p.id}`}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    View in Gmail
+                  </a>
+                ) : null;
+              })()}
               <Button
                 size="icon"
                 variant="outline"

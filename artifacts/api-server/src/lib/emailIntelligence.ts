@@ -125,6 +125,7 @@ export async function processIntelForMatched(args: {
       await handleGrants({
         mailboxUserId: args.mailboxUserId,
         gmailMessageId: args.messageRowId,
+        messageRowId: args.messageRowId,
         fromEmail: args.fromEmail,
         subject: args.subject,
         bodyText: args.bodyText,
@@ -275,6 +276,7 @@ async function handleBounce(args: {
 async function handleGrants(args: {
   mailboxUserId: string;
   gmailMessageId: string;
+  messageRowId?: string | null;
   fromEmail: string | null;
   subject: string | null;
   bodyText: string | null;
@@ -374,6 +376,7 @@ async function handleGrants(args: {
       subjectDomain: domainOf(args.fromEmail),
       subjectEmail: args.fromEmail?.toLowerCase() ?? null,
       emailSentAt: args.emailSentAt,
+      sourceMessageId: args.messageRowId ?? null,
       payload: {
         title: it.title,
         funderName: it.funderName,
