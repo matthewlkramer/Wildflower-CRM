@@ -7,10 +7,16 @@ import {
   useRejectEmailProposal,
   useListUnrecognizedCorrespondents,
   useCreateCorrespondentIgnore,
+  useCreateEmail,
   getListEmailProposalsQueryKey,
   getGetEmailProposalSummaryQueryKey,
   getListUnrecognizedCorrespondentsQueryKey,
 } from "@workspace/api-client-react";
+import {
+  EntityCombobox,
+  usePersonSearch,
+  usePersonName,
+} from "@/components/entity-picker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { decodeHtmlEntities } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -790,12 +796,20 @@ function UnrecognizedCorrespondents() {
     },
   );
 
+  // Per-row "link to person" state: which email address is currently
+  // showing the inline picker, and which person id has been selected.
+  const [linkingEmail, setLinkingEmail] = useState<string | null>(null);
+  const [linkPersonId, setLinkPersonId] = useState<string | null>(null);
+
+  const invalidateCorrespondents = () =>
+    void qc.invalidateQueries({
+      queryKey: getListUnrecognizedCorrespondentsQueryKey(),
+    });
+
   const ignore = useCreateCorrespondentIgnore({
     mutation: {
       onSuccess: () => {
-        void qc.invalidateQueries({
-          queryKey: getListUnrecognizedCorrespondentsQueryKey(),
-        });
+        invalidateCorrespondents();
         toast({ title: "Hidden from this list" });
       },
       onError: (e) =>
@@ -806,6 +820,42 @@ function UnrecognizedCorrespondents() {
         }),
     },
   });
+
+  const linkEmail = useCreateEmail({
+    mutation: {
+      onSuccess: (_data, variables) => {
+        invalidateCorrespondents();
+        // Also invalidate the person's record so their email list
+        // reflects the newly attached address immediately.
+        void qc.invalidateQueries();
+        const addr = (variables.data as { email?: string }).email ?? "";
+        toast({ title: `Email linked`, description: addr ? `"${addr}" added to person` : undefined });
+        setLinkingEmail(null);
+        setLinkPersonId(null);
+      },
+      onError: (e) =>
+        toast({
+          title: "Could not link email",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const startLinking = (emailAddress: string) => {
+    setLinkingEmail(emailAddress);
+    setLinkPersonId(null);
+  };
+
+  const cancelLinking = () => {
+    setLinkingEmail(null);
+    setLinkPersonId(null);
+  };
+
+  const confirmLink = (emailAddress: string) => {
+    if (!linkPersonId) return;
+    linkEmail.mutate({ data: { email: emailAddress, personId: linkPersonId } });
+  };
 
   if (isLoading) {
     return <div className="text-sm text-muted-foreground">Loading…</div>;
@@ -836,42 +886,117 @@ function UnrecognizedCorrespondents() {
           {rows.map((r) => (
             <li
               key={r.emailAddress}
-              className="flex items-center justify-between gap-3 px-4 py-3"
+              className="px-4 py-3 space-y-2"
               data-testid={`correspondent-${r.emailAddress}`}
             >
-              <div className="min-w-0">
-                <div className="font-medium truncate">{r.emailAddress}</div>
-                <div className="text-xs text-muted-foreground">
-                  {r.threadCount} thread{r.threadCount === 1 ? "" : "s"} ·
-                  last on {new Date(r.lastSeenAt).toLocaleDateString()}
-                  {r.lastSubject ? ` · "${r.lastSubject}"` : ""}
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{r.emailAddress}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {r.threadCount} thread{r.threadCount === 1 ? "" : "s"} ·
+                    last on {new Date(r.lastSeenAt).toLocaleDateString()}
+                    {r.lastSubject ? ` · "${r.lastSubject}"` : ""}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Link
+                    href={`/individuals?createFromEmail=${encodeURIComponent(
+                      r.emailAddress,
+                    )}`}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Create person
+                  </Link>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={linkEmail.isPending}
+                    onClick={() => startLinking(r.emailAddress)}
+                    data-testid={`btn-link-${r.emailAddress}`}
+                  >
+                    Link to existing person
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={ignore.isPending}
+                    onClick={() =>
+                      ignore.mutate({ data: { emailAddress: r.emailAddress } })
+                    }
+                    data-testid={`btn-ignore-${r.emailAddress}`}
+                  >
+                    Ignore
+                  </Button>
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <Link
-                  href={`/individuals?createFromEmail=${encodeURIComponent(
-                    r.emailAddress,
-                  )}`}
-                  className="text-xs text-primary hover:underline"
-                >
-                  Create person
-                </Link>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={ignore.isPending}
-                  onClick={() =>
-                    ignore.mutate({ data: { emailAddress: r.emailAddress } })
-                  }
-                  data-testid={`btn-ignore-${r.emailAddress}`}
-                >
-                  Ignore
-                </Button>
-              </div>
+
+              {linkingEmail === r.emailAddress ? (
+                <LinkToPersonInline
+                  emailAddress={r.emailAddress}
+                  selectedPersonId={linkPersonId}
+                  onPersonChange={setLinkPersonId}
+                  onConfirm={() => confirmLink(r.emailAddress)}
+                  onCancel={cancelLinking}
+                  isPending={linkEmail.isPending}
+                />
+              ) : null}
             </li>
           ))}
         </ul>
       </CardContent>
     </Card>
+  );
+}
+
+function LinkToPersonInline({
+  emailAddress,
+  selectedPersonId,
+  onPersonChange,
+  onConfirm,
+  onCancel,
+  isPending,
+}: {
+  emailAddress: string;
+  selectedPersonId: string | null;
+  onPersonChange: (id: string | null) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
+  const resolvedName = usePersonName(selectedPersonId);
+  return (
+    <div
+      className="flex items-center gap-2 pl-1"
+      data-testid={`link-picker-${emailAddress}`}
+    >
+      <div className="flex-1 min-w-0">
+        <EntityCombobox
+          useSearch={usePersonSearch}
+          useResolve={usePersonName}
+          value={selectedPersonId}
+          onChange={onPersonChange}
+          placeholder="Search people…"
+          allowNull={false}
+          testId={`combobox-link-person-${emailAddress}`}
+        />
+      </div>
+      <Button
+        size="sm"
+        disabled={!selectedPersonId || isPending}
+        onClick={onConfirm}
+        data-testid={`btn-confirm-link-${emailAddress}`}
+      >
+        {isPending ? "Linking…" : `Link${resolvedName ? ` to ${resolvedName}` : ""}`}
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={isPending}
+        onClick={onCancel}
+        data-testid={`btn-cancel-link-${emailAddress}`}
+      >
+        Cancel
+      </Button>
+    </div>
   );
 }
