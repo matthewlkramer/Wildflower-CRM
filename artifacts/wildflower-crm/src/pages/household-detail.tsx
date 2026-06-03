@@ -25,6 +25,7 @@ import {
   FieldCard,
   RelatedCard,
   AffiliationRow,
+  HideInactiveToggle,
   type Highlight,
 } from "@/components/record-layout";
 import { useQueryClient } from "@tanstack/react-query";
@@ -181,6 +182,12 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
 
   const members = household.people ?? [];
 
+  const [hideInactiveMembers, setHideInactiveMembers] = useState(false);
+  const hasInactiveMembers = members.some((m) => m.current !== "current");
+  const visibleMembers = hideInactiveMembers
+    ? members.filter((m) => m.current === "current")
+    : members;
+
   const highlights: Highlight[] = [
     {
       label: "Status",
@@ -253,11 +260,21 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
           <RelatedCard
             title="Members"
             count={members.length}
-            action={<AddHouseholdMemberDialog householdId={household.id} />}
+            action={
+              <>
+                {hasInactiveMembers && (
+                  <HideInactiveToggle
+                    hidden={hideInactiveMembers}
+                    onToggle={() => setHideInactiveMembers((h) => !h)}
+                  />
+                )}
+                <AddHouseholdMemberDialog householdId={household.id} />
+              </>
+            }
           >
-            {members.length > 0 ? (
+            {visibleMembers.length > 0 ? (
               <div>
-                {members.map((p) => (
+                {visibleMembers.map((p) => (
                   <div key={p.id} data-testid={`row-household-member-${p.id}`}>
                     <AffiliationRow
                       name={p.personName ?? `Person ${p.personId}`}
@@ -277,7 +294,9 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
                 ))}
               </div>
             ) : (
-              <p className="px-2 py-2 text-sm text-muted-foreground">No members linked.</p>
+              <p className="px-2 py-2 text-sm text-muted-foreground">
+                {members.length > 0 ? "All members are inactive." : "No members linked."}
+              </p>
             )}
           </RelatedCard>
 

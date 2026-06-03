@@ -53,6 +53,7 @@ import {
   RelatedCard,
   RelatedRow,
   AffiliationRow,
+  HideInactiveToggle,
   type Highlight,
 } from "@/components/record-layout";
 import { useQueryClient } from "@tanstack/react-query";
@@ -244,6 +245,12 @@ function OppView({
     seenPeople.add(role.personId);
     associatedPeople.push(role);
   }
+
+  const [hideInactivePeople, setHideInactivePeople] = useState(false);
+  const hasInactivePeople = associatedPeople.some((p) => p.current === "past");
+  const visibleAssociatedPeople = hideInactivePeople
+    ? associatedPeople.filter((p) => p.current !== "past")
+    : associatedPeople;
 
   let donorDisplay: ReactNode = (
     <span className="text-muted-foreground">No donor linked.</span>
@@ -768,7 +775,18 @@ function OppView({
               </div>
             </RelatedCard>
 
-            <RelatedCard title="People" count={associatedPeople.length || undefined}>
+            <RelatedCard
+              title="People"
+              count={associatedPeople.length || undefined}
+              action={
+                hasInactivePeople ? (
+                  <HideInactiveToggle
+                    hidden={hideInactivePeople}
+                    onToggle={() => setHideInactivePeople((h) => !h)}
+                  />
+                ) : undefined
+              }
+            >
               <div className="space-y-1 px-2 py-1">
                 <Row label="Individual donor">
                   <InlineEditPersonPicker
@@ -796,12 +814,12 @@ function OppView({
                   />
                 </Row>
               </div>
-              {associatedPeople.length > 0 ? (
+              {visibleAssociatedPeople.length > 0 ? (
                 <div className="border-t pt-1">
                   <div className="px-3 py-1 text-xs font-medium text-muted-foreground">
                     Associated contacts
                   </div>
-                  {associatedPeople.map((role) => {
+                  {visibleAssociatedPeople.map((role) => {
                     const subtitle =
                       role.externalTitleOrRole ??
                       (role.connection ? formatEnum(role.connection) : null);
