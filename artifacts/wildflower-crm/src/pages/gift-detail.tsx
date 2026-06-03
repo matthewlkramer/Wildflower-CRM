@@ -111,6 +111,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const giverName = usePersonName(gift.individualGiverPersonId ?? null);
   const householdName = useHouseholdName(gift.householdId ?? null);
   const advisorName = usePersonName(gift.advisorPersonId ?? null);
+  const primaryContactName = usePersonName(gift.primaryContactPersonId ?? null);
   const intermediaryName = useIntermediaryName(gift.paymentIntermediaryId ?? null);
 
   // Fetch the linked entities so we can list the people associated with each
@@ -232,6 +233,16 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       className="text-primary hover:underline"
     >
       {advisorName ?? gift.advisorPersonId}
+    </Link>
+  ) : (
+    "—"
+  );
+  const primaryContactDisplay: ReactNode = gift.primaryContactPersonId ? (
+    <Link
+      href={`/individuals/${gift.primaryContactPersonId}`}
+      className="text-primary hover:underline"
+    >
+      {primaryContactName ?? gift.primaryContactPersonId}
     </Link>
   ) : (
     "—"
@@ -583,6 +594,14 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                   value={gift.advisorPersonId ?? null}
                   display={advisorDisplay}
                   onSave={(next) => patch({ advisorPersonId: next })}
+                />
+              </Row>
+              <Row label="Primary contact">
+                <InlineEditPersonPicker
+                  testIdBase="gift-primary-contact"
+                  value={gift.primaryContactPersonId ?? null}
+                  display={primaryContactDisplay}
+                  onSave={(next) => patch({ primaryContactPersonId: next })}
                 />
               </Row>
             </div>
