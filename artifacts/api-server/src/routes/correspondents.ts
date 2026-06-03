@@ -111,7 +111,8 @@ router.get(
           AND split_part(addr, '@', 2) NOT IN (
             'bounces.google.com', 'bounce.linkedin.com',
             'email.linkedin.com', 'bounces.amazonses.com',
-            'sendgrid.net', 'mailchimp.com', 'mailgun.org'
+            'sendgrid.net', 'mailchimp.com', 'mailgun.org',
+            'wildflowerschools.org'
           )
         GROUP BY addr
       )
