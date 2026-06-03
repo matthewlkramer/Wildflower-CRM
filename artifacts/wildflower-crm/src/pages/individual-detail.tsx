@@ -467,33 +467,31 @@ function PersonView({ person }: { person: PersonDetail }) {
       title={title}
       typeBadge="Individual"
       subtitle={
-        <>
-          {person.pronouns && <div>{formatEnum(person.pronouns)}</div>}
-          <div className="mt-2 w-full">
-            <InlineEditTextarea
-              label="About"
-              testIdBase="person-about-me"
-              value={person.aboutMe ?? null}
-              placeholder="Add a bio…"
-              display={
-                person.aboutMe ? (
-                  <p className="whitespace-pre-wrap text-left text-sm text-foreground">
-                    {person.aboutMe}
-                  </p>
-                ) : (
-                  <span className="text-muted-foreground">Add a bio…</span>
-                )
-              }
-              onSave={(next) => patch({ aboutMe: next })}
-            />
-          </div>
-        </>
+        person.pronouns ? <div>{formatEnum(person.pronouns)}</div> : undefined
       }
       actions={actions}
       highlights={highlights}
       left={
         <>
           <FieldCard title="Basics">
+            <div className="mb-3">
+              <InlineEditTextarea
+                label="About"
+                testIdBase="person-about-me"
+                value={person.aboutMe ?? null}
+                placeholder="Add a bio…"
+                display={
+                  person.aboutMe ? (
+                    <p className="whitespace-pre-wrap text-sm text-foreground">
+                      {person.aboutMe}
+                    </p>
+                  ) : (
+                    <span className="text-muted-foreground">Add a bio…</span>
+                  )
+                }
+                onSave={(next) => patch({ aboutMe: next })}
+              />
+            </div>
             <div className="space-y-1">
               <Row label="Pronouns">
                 <InlineEditSelect label="Pronouns" testIdBase="person-pronouns"
