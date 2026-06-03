@@ -3454,6 +3454,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       conditional: zod
         .enum([
           "unconditional",
+          "conditional_unspecified",
           "reimbursable",
           "conditional_on_funder_determination",
           "conditional_on_target",
@@ -3492,7 +3493,6 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       usageNotes: zod.string().nullish(),
       copperPledgeId: zod.string().nullish(),
       wasPledge: zod.boolean(),
-      isConditional: zod.boolean(),
       grantLetterUrl: zod.string().nullish(),
       grantLetterFilename: zod.string().nullish(),
       grantLetterUploadedAt: zod.string().datetime({}).nullish(),
@@ -3531,6 +3531,7 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   conditional: zod
     .enum([
       "unconditional",
+      "conditional_unspecified",
       "reimbursable",
       "conditional_on_funder_determination",
       "conditional_on_target",
@@ -3569,7 +3570,6 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   usageNotes: zod.string().optional(),
   copperPledgeId: zod.string().optional(),
   wasPledge: zod.boolean().optional(),
-  isConditional: zod.boolean().optional(),
   grantLetterUrl: zod.string().optional(),
   grantLetterFilename: zod.string().optional(),
   grantLetterUploadedAt: zod.string().datetime({}).optional(),
@@ -3594,6 +3594,7 @@ export const GetOpportunityOrPledgeResponse = zod
     conditional: zod
       .enum([
         "unconditional",
+        "conditional_unspecified",
         "reimbursable",
         "conditional_on_funder_determination",
         "conditional_on_target",
@@ -3632,7 +3633,6 @@ export const GetOpportunityOrPledgeResponse = zod
     usageNotes: zod.string().nullish(),
     copperPledgeId: zod.string().nullish(),
     wasPledge: zod.boolean(),
-    isConditional: zod.boolean(),
     grantLetterUrl: zod.string().nullish(),
     grantLetterFilename: zod.string().nullish(),
     grantLetterUploadedAt: zod.string().datetime({}).nullish(),
@@ -3809,6 +3809,7 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
   conditional: zod
     .enum([
       "unconditional",
+      "conditional_unspecified",
       "reimbursable",
       "conditional_on_funder_determination",
       "conditional_on_target",
@@ -3847,7 +3848,6 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
   wasPledge: zod.boolean().optional(),
-  isConditional: zod.boolean().optional(),
   grantLetterUrl: zod.string().nullish(),
   grantLetterFilename: zod.string().nullish(),
   grantLetterUploadedAt: zod.string().datetime({}).nullish(),
@@ -3867,6 +3867,7 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   conditional: zod
     .enum([
       "unconditional",
+      "conditional_unspecified",
       "reimbursable",
       "conditional_on_funder_determination",
       "conditional_on_target",
@@ -3905,7 +3906,6 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
   wasPledge: zod.boolean(),
-  isConditional: zod.boolean(),
   grantLetterUrl: zod.string().nullish(),
   grantLetterFilename: zod.string().nullish(),
   grantLetterUploadedAt: zod.string().datetime({}).nullish(),
@@ -6959,7 +6959,6 @@ export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
       .nullish(),
     type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
     wasPledge: zod.boolean().nullish(),
-    isConditional: zod.boolean().nullish(),
     actualCompletionDate: zod
       .string()
       .date()

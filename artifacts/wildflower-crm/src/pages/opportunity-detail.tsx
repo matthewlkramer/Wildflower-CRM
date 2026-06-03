@@ -87,6 +87,7 @@ const TYPE_OPTIONS = [
 
 const CONDITIONAL_OPTIONS = [
   { value: "unconditional", label: "Unconditional" },
+  { value: "conditional_unspecified", label: "Conditional (unspecified)" },
   { value: "reimbursable", label: "Reimbursable" },
   { value: "conditional_on_funder_determination", label: "Conditional — funder determination" },
   { value: "conditional_on_target", label: "Conditional — on target" },
@@ -612,22 +613,6 @@ function OppView({
                     options={CONDITIONAL_OPTIONS}
                     display={formatEnum(opp.conditional) || "—"}
                     onSave={(next) => patch({ conditional: next })}
-                  />
-                </Row>
-                <Row label="Is conditional">
-                  {/*
-                    Independent boolean flag (separate from the
-                    `conditional` semantic-context enum above). Toggled
-                    manually; pre-set true on records imported with a
-                    `conditional_commitment` stage.
-                  */}
-                  <InlineEditBoolean
-                    label="Is conditional"
-                    testIdBase="opp-is-conditional"
-                    value={opp.isConditional ?? false}
-                    allowNull={false}
-                    display={opp.isConditional ? "Yes" : "No"}
-                    onSave={(next) => patch({ isConditional: next ?? false })}
                   />
                 </Row>
                 <Row label="Conditions met">

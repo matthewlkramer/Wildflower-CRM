@@ -1930,7 +1930,7 @@ components:
         user explicitly picks a different value).
     OpportunityType: { type: string, enum: [solicitation, renewal, open_application] }
     OpportunityStage: { type: string, enum: [cold_lead, warm_lead, in_conversation, convince, conditional_commitment, probable_renewal, verbal_commitment, written_commitment, cash_in] }
-    OpportunityConditional: { type: string, enum: [unconditional, reimbursable, conditional_on_funder_determination, conditional_on_target] }
+    OpportunityConditional: { type: string, enum: [unconditional, conditional_unspecified, reimbursable, conditional_on_funder_determination, conditional_on_target] }
     PledgeAllocationStatus: { type: string, enum: [working, committed, superseded, committed_with_conditions, superseded_by_pledge, superseded_by_gift, abandoned] }
     GiftType: { type: string, enum: [standard_gift, pledge_payment, directed_gift, loan_fund_investment, matching_gift] }
     GiftPaymentMethod: { type: string, enum: [ach, check, wire, stock, donor_box, daf_ach, daf_check, daf_bill_com] }
@@ -2842,7 +2842,7 @@ components:
     # ─── Opportunities & pledges ───────────────────────────────────────────────
     OpportunityOrPledge:
       type: object
-      required: [id, conditionsMet, wasPledge, isConditional, createdAt, updatedAt]
+      required: [id, conditionsMet, wasPledge, createdAt, updatedAt]
       properties:
         id:                         { type: string }
         name:                       { type: string, nullable: true }
@@ -2878,10 +2878,6 @@ components:
         # Drives the Pledges page filter — historical pledges stay on the
         # Pledges page after they're fully paid.
         wasPledge:                  { type: boolean }
-        # Marks a pledge as carrying conditions. Auto-set true on
-        # migration for stage=conditional_commitment rows; user-editable
-        # thereafter (independent of the legacy `conditional` enum).
-        isConditional:              { type: boolean }
         # Foundation grant letter (object storage URL + display name +
         # upload time). Uploading flips wasPledge=true.
         grantLetterUrl:             { type: string, nullable: true }
@@ -2959,7 +2955,6 @@ components:
         usageNotes:                 { type: string }
         copperPledgeId:             { type: string }
         wasPledge:                  { type: boolean }
-        isConditional:              { type: boolean }
         grantLetterUrl:             { type: string }
         grantLetterFilename:        { type: string }
         grantLetterUploadedAt:      { type: string, format: date-time }
@@ -2991,7 +2986,6 @@ components:
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
         wasPledge:                  { type: boolean }
-        isConditional:              { type: boolean }
         grantLetterUrl:             { type: string, nullable: true }
         grantLetterFilename:        { type: string, nullable: true }
         grantLetterUploadedAt:      { type: string, format: date-time, nullable: true }
@@ -4114,7 +4108,6 @@ components:
         stage:       { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true }
         type:        { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
         wasPledge:   { type: boolean, nullable: true }
-        isConditional: { type: boolean, nullable: true }
         actualCompletionDate: { type: string, format: date, nullable: true, description: "Optional close date when bulk-setting status to cash_in/lost. Left null is allowed to support historical cleanup workflows." }
         coveredFiscalYears:
           type: array

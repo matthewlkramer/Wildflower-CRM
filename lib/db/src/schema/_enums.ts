@@ -209,6 +209,7 @@ export const opportunityStageEnum = pgEnum("opportunity_stage", [
 
 export const opportunityConditionalEnum = pgEnum("opportunity_conditional", [
   "unconditional",
+  "conditional_unspecified",
   "reimbursable",
   "conditional_on_funder_determination",
   "conditional_on_target",

@@ -318,6 +318,7 @@ export type OpportunityConditional =
 
 export const OpportunityConditional = {
   unconditional: "unconditional",
+  conditional_unspecified: "conditional_unspecified",
   reimbursable: "reimbursable",
   conditional_on_funder_determination: "conditional_on_funder_determination",
   conditional_on_target: "conditional_on_target",
@@ -1279,7 +1280,6 @@ export interface OpportunityOrPledge {
   usageNotes?: string | null;
   copperPledgeId?: string | null;
   wasPledge: boolean;
-  isConditional: boolean;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;
   grantLetterUploadedAt?: string | null;
@@ -1401,7 +1401,6 @@ export interface CreateOpportunityOrPledgeBody {
   usageNotes?: string;
   copperPledgeId?: string;
   wasPledge?: boolean;
-  isConditional?: boolean;
   grantLetterUrl?: string;
   grantLetterFilename?: string;
   grantLetterUploadedAt?: string;
@@ -1433,7 +1432,6 @@ export interface UpdateOpportunityOrPledgeBody {
   usageNotes?: string | null;
   copperPledgeId?: string | null;
   wasPledge?: boolean;
-  isConditional?: boolean;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;
   grantLetterUploadedAt?: string | null;
@@ -2529,7 +2527,6 @@ export interface BulkUpdateOpportunitiesPatch {
   stage?: OpportunityStage | null;
   type?: OpportunityType | null;
   wasPledge?: boolean | null;
-  isConditional?: boolean | null;
   /** Optional close date when bulk-setting status to cash_in/lost. Left null is allowed to support historical cleanup workflows. */
   actualCompletionDate?: string | null;
   /** Set of fiscal-year slugs (e.g. 'fy2026') to attach to each opportunity via pledge_allocations. Combined with coveredFiscalYearsMode. */

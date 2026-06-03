@@ -299,7 +299,7 @@ router.post(
       entity: "opportunities_and_pledges",
       table: opportunitiesAndPledges,
       bodySchema: BulkUpdateOpportunitiesAndPledgesBody,
-      allowedFields: ["ownerUserId", "status", "stage", "type", "wasPledge", "isConditional", "actualCompletionDate"],
+      allowedFields: ["ownerUserId", "status", "stage", "type", "wasPledge", "actualCompletionDate"],
       // Allocation-table reconciliation fields — not columns on
       // opportunities_and_pledges, so they go through extraApply and
       // are excluded from the column SET.

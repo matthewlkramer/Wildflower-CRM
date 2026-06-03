@@ -1,12 +1,12 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  boolean,
   check,
   index,
   pgTable,
   text,
   timestamp,
-  boolean,
   numeric,
   date,
 } from "drizzle-orm/pg-core";
@@ -70,8 +70,6 @@ import { households } from "./households";
 // pledge, regardless of current status. Auto-flipped true when stage
 // reaches conditional/verbal/written, when a grant letter is uploaded,
 // or when a user manually checks the box. Never auto-flipped false.
-// `is_conditional` (boolean) marks pledges that carry conditions.
-// Migration auto-set it true for rows currently at stage=conditional_commitment.
 //
 // Partial indexes below match the two hot read paths: "open pipeline"
 // (filter by status='open', sorted by projected_close_date, often
@@ -136,9 +134,6 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // stays true forever. Drives the Pledges page filter so historical
   // pledges remain visible after being fully paid.
   wasPledge: boolean("was_pledge").default(false).notNull(),
-  // Marks a pledge as carrying conditions. Auto-set true on migration
-  // for stage=conditional_commitment rows; user-editable thereafter.
-  isConditional: boolean("is_conditional").default(false).notNull(),
   // Grant letter (foundation pledge documentation). Lives in object
   // storage; only the URL is stored. Uploading flips was_pledge=true.
   grantLetterUrl: text("grant_letter_url"),
