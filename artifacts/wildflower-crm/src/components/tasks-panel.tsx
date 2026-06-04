@@ -37,7 +37,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Trash2, Check } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Trash2, Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   EntityLinksEditor,
   EMPTY_LINKS,
@@ -318,22 +332,11 @@ export function AddTaskDialog({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="task-assignee">Assignee</Label>
-              <Select
-                value={assigneeUserId || "__none__"}
-                onValueChange={(v) => setAssigneeUserId(v === "__none__" ? "" : v)}
-              >
-                <SelectTrigger id="task-assignee" data-testid="select-task-assignee">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Unassigned</SelectItem>
-                  {userOpts.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AssigneeCombobox
+                value={assigneeUserId}
+                onChange={setAssigneeUserId}
+                users={userOpts}
+              />
             </div>
           </div>
           <div className="space-y-1.5">
@@ -374,6 +377,103 @@ export function AddTaskDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function AssigneeCombobox({
+  value,
+  onChange,
+  users,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  users: { id: string; label: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  // Reset the search filter whenever the popover closes so reopening starts fresh.
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) setQuery("");
+  };
+  const trimmed = query.trim().toLowerCase();
+  const filtered = trimmed
+    ? users.filter((u) => u.label.toLowerCase().includes(trimmed))
+    : users;
+  const selected = value ? users.find((u) => u.id === value) : undefined;
+  const triggerLabel = value ? (selected?.label ?? value) : "Unassigned";
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          id="task-assignee"
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          data-testid="select-task-assignee"
+          className="h-9 w-full justify-between font-normal"
+        >
+          <span className="truncate">{triggerLabel}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="p-0 w-[--radix-popover-trigger-width] min-w-[220px]"
+        align="start"
+      >
+        <Command shouldFilter={false}>
+          <CommandInput
+            value={query}
+            onValueChange={setQuery}
+            placeholder="Search people…"
+            data-testid="select-task-assignee-search"
+          />
+          <CommandList>
+            {filtered.length === 0 ? (
+              <CommandEmpty>No results.</CommandEmpty>
+            ) : null}
+            <CommandGroup>
+              <CommandItem
+                value="__none__"
+                onSelect={() => {
+                  onChange("");
+                  handleOpenChange(false);
+                }}
+                data-testid="select-task-assignee-option-none"
+              >
+                <Check
+                  className={cn(
+                    "mr-2 h-4 w-4",
+                    value === "" ? "opacity-100" : "opacity-0",
+                  )}
+                />
+                Unassigned
+              </CommandItem>
+              {filtered.map((u) => (
+                <CommandItem
+                  key={u.id}
+                  value={u.id}
+                  onSelect={() => {
+                    onChange(u.id);
+                    handleOpenChange(false);
+                  }}
+                  data-testid={`select-task-assignee-option-${u.id}`}
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      value === u.id ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                  <span className="truncate">{u.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
