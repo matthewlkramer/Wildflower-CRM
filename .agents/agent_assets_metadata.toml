@@ -78,3 +78,9 @@ id = "1zU2NcdQCZRu9xV_U8CAR"
 uri = "file://.local/sync-review/dev-sync-summary.csv"
 type = "table"
 title = "Per-table summary + include/exclude list"
+
+[[outputs]]
+id = "7iR5Vc2OcvwyTmJBxSjf6"
+uri = "file://.local/sync-review/dev-sync-changes-CORRECTED.csv"
+type = "table"
+title = "CORRECTED changes (77 'about' reverts removed)"
