@@ -24,7 +24,7 @@ description: What changed when the funders and organizations tables were merged,
 The DB migration is **staged**, decoupled from the schema-source rename:
 
 - **Phase 1 (additive, run via `migrate:organizations` script):** ADDS `organizations` rows + `organization_id`/`organization_ids` columns and copies from the funder columns, but **KEEPS** the `funders` table and `funder_id` columns dual-populated. This lets the already-renamed app code run before the destructive drop. **Done on dev.** Not yet on prod.
-- **Phase 2 (`when we're done`):** `drizzle push` to drop `funders` table + `funder_id` columns, re-add the XOR/owner CHECK constraints keyed on `organization_id`, convert `entity_type`/`enthusiasm` to enum types, apply `0001_drop_is_conditional`. Not yet run anywhere.
+- **Phase 2 (`lib/db/migrations/0002_finalize_organizations.sql`, applied via `psql -1 -v ON_ERROR_STOP=1`):** drops `funders` table + ALL `funder_*` columns, re-adds the 7 XOR/owner/discriminator CHECK constraints keyed on `organization_id`, converts `entity_type`/`enthusiasm` text→enum (enthusiasm uses a legacy-text→7-point CASE map; `people` drops the old text col and renames `enthusiasm_enum`→`enthusiasm`), and trims `entity_role_type` to its 3 live values. Idempotent (DO-block guards). **Done on dev (2026-06-04).** Not yet on prod. `0001_drop_is_conditional.sql` also **applied on dev**, not prod.
 
 **Why the schema source can look "ahead" of the DB:** schema files (`lib/db/src/schema/`) are already fully unified (organizationIds, anonymous, priority, matchedOrganizationIds all present). If api-server typecheck reports those props "do not exist", it's **stale composite-lib declarations** — run `pnpm run typecheck` (builds libs first), not the leaf-only check.
 
@@ -36,6 +36,5 @@ The DB migration is **staged**, decoupled from the schema-source rename:
 
 ## Still needed
 
-- **Airtable importer** (`lib/db/src/import-airtable.mjs`) not yet updated — still targets old split schema; run will fail until updated
-- **Production DB migration** not yet run — production still has old schema (needs Phase 1 then Phase 2, ideally same maintenance window)
-- **issuesGrants filter** on Organizations list page not yet built
+- **Airtable importer** (`lib/db/src/import-airtable.mjs`) not yet updated — still targets old split schema (writes a `funders` table that no longer exists); a re-import will fail until updated. `lib/db/SCHEMA.md` is likewise stale (still documents the split funders/organizations model).
+- **Production DB migration** not yet run — production still has the old split schema. To bring prod to dev's state it needs Phase 1 (`migrate:organizations`) THEN `0001_drop_is_conditional.sql` THEN Phase 2 (`0002_finalize_organizations.sql`), ideally one maintenance window. Dev is fully consolidated; prod is not.
