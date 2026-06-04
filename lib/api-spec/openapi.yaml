@@ -296,6 +296,19 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /fundable-projects-progress:
+    get:
+      operationId: getFundableProjectsProgress
+      tags: [fundable-projects]
+      summary: Amount raised so far per fundable project (sum of gift_allocations.sub_amount).
+      description: |
+        Returns, per fundable project, the total amount raised so far — the sum of
+        `gift_allocations.sub_amount` for allocations whose `fundable_project_id`
+        matches. Projects with no gift allocations report `raised: "0"`. Use with
+        each project's `fundraisingGoal` to render progress-to-goal.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FundableProjectProgress" } } } } }
+
   # ─── Fiscal years ──────────────────────────────────────────────────────────
   /fiscal-years:
     get:
@@ -2038,26 +2051,47 @@ components:
       type: object
       required: [id, name, active, createdAt, updatedAt]
       properties:
-        id:          { type: string }
-        name:        { type: string }
-        description: { type: string, nullable: true }
-        active:      { type: boolean }
-        createdAt:   { type: string, format: date-time }
-        updatedAt:   { type: string, format: date-time }
+        id:               { type: string }
+        name:             { type: string }
+        description:      { type: string, nullable: true }
+        active:           { type: boolean }
+        fundraisingStart: { type: string, format: date, nullable: true, description: "Fundraising start date (YYYY-MM-DD). Null on legacy rows; UI prompts to fill in." }
+        fundraisingEnd:   { type: string, format: date, nullable: true }
+        spendingStart:    { type: string, format: date, nullable: true }
+        spendingEnd:      { type: string, format: date, nullable: true }
+        fundraisingGoal:  { type: string, nullable: true, description: "Decimal string (numeric(14,2)). Null on legacy rows." }
+        createdAt:        { type: string, format: date-time }
+        updatedAt:        { type: string, format: date-time }
     CreateFundableProjectBody:
       type: object
       required: [id, name]
       properties:
-        id:          { type: string, description: "Slug-style key, e.g. ssj. Must be unique." }
-        name:        { type: string }
-        description: { type: string, nullable: true }
-        active:      { type: boolean, description: "Defaults to true. Set false to mark retired." }
+        id:               { type: string, description: "Slug-style key, e.g. ssj. Must be unique." }
+        name:             { type: string }
+        description:      { type: string, nullable: true }
+        active:           { type: boolean, description: "Defaults to true. Set false to mark retired." }
+        fundraisingStart: { type: string, format: date, nullable: true }
+        fundraisingEnd:   { type: string, format: date, nullable: true }
+        spendingStart:    { type: string, format: date, nullable: true }
+        spendingEnd:      { type: string, format: date, nullable: true }
+        fundraisingGoal:  { type: string, nullable: true, description: "Decimal string. Use plain digits with optional decimal, no commas." }
     UpdateFundableProjectBody:
       type: object
       properties:
-        name:        { type: string }
-        description: { type: string, nullable: true }
-        active:      { type: boolean }
+        name:             { type: string }
+        description:      { type: string, nullable: true }
+        active:           { type: boolean }
+        fundraisingStart: { type: string, format: date, nullable: true }
+        fundraisingEnd:   { type: string, format: date, nullable: true }
+        spendingStart:    { type: string, format: date, nullable: true }
+        spendingEnd:      { type: string, format: date, nullable: true }
+        fundraisingGoal:  { type: string, nullable: true, description: "Decimal string. Use plain digits with optional decimal, no commas." }
+    FundableProjectProgress:
+      type: object
+      required: [fundableProjectId, raised]
+      properties:
+        fundableProjectId: { type: string }
+        raised:            { type: string, description: "Decimal string — sum of gift_allocations.sub_amount for this project. '0' when none." }
     FiscalYear:
       type: object
       required: [id, label, createdAt, updatedAt]

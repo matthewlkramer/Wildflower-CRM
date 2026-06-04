@@ -701,6 +701,20 @@ export const ListFundableProjectsResponseItem = zod.object({
   name: zod.string(),
   description: zod.string().nullish(),
   active: zod.boolean(),
+  fundraisingStart: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Fundraising start date (YYYY-MM-DD). Null on legacy rows; UI prompts to fill in.",
+    ),
+  fundraisingEnd: zod.string().date().nullish(),
+  spendingStart: zod.string().date().nullish(),
+  spendingEnd: zod.string().date().nullish(),
+  fundraisingGoal: zod
+    .string()
+    .nullish()
+    .describe("Decimal string (numeric(14,2)). Null on legacy rows."),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -716,6 +730,16 @@ export const CreateFundableProjectBody = zod.object({
     .boolean()
     .optional()
     .describe("Defaults to true. Set false to mark retired."),
+  fundraisingStart: zod.string().date().nullish(),
+  fundraisingEnd: zod.string().date().nullish(),
+  spendingStart: zod.string().date().nullish(),
+  spendingEnd: zod.string().date().nullish(),
+  fundraisingGoal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Decimal string. Use plain digits with optional decimal, no commas.",
+    ),
 });
 
 export const GetFundableProjectParams = zod.object({
@@ -727,6 +751,20 @@ export const GetFundableProjectResponse = zod.object({
   name: zod.string(),
   description: zod.string().nullish(),
   active: zod.boolean(),
+  fundraisingStart: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Fundraising start date (YYYY-MM-DD). Null on legacy rows; UI prompts to fill in.",
+    ),
+  fundraisingEnd: zod.string().date().nullish(),
+  spendingStart: zod.string().date().nullish(),
+  spendingEnd: zod.string().date().nullish(),
+  fundraisingGoal: zod
+    .string()
+    .nullish()
+    .describe("Decimal string (numeric(14,2)). Null on legacy rows."),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -739,6 +777,16 @@ export const UpdateFundableProjectBody = zod.object({
   name: zod.string().optional(),
   description: zod.string().nullish(),
   active: zod.boolean().optional(),
+  fundraisingStart: zod.string().date().nullish(),
+  fundraisingEnd: zod.string().date().nullish(),
+  spendingStart: zod.string().date().nullish(),
+  spendingEnd: zod.string().date().nullish(),
+  fundraisingGoal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Decimal string. Use plain digits with optional decimal, no commas.",
+    ),
 });
 
 export const UpdateFundableProjectResponse = zod.object({
@@ -746,9 +794,43 @@ export const UpdateFundableProjectResponse = zod.object({
   name: zod.string(),
   description: zod.string().nullish(),
   active: zod.boolean(),
+  fundraisingStart: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Fundraising start date (YYYY-MM-DD). Null on legacy rows; UI prompts to fill in.",
+    ),
+  fundraisingEnd: zod.string().date().nullish(),
+  spendingStart: zod.string().date().nullish(),
+  spendingEnd: zod.string().date().nullish(),
+  fundraisingGoal: zod
+    .string()
+    .nullish()
+    .describe("Decimal string (numeric(14,2)). Null on legacy rows."),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
+
+/**
+ * Returns, per fundable project, the total amount raised so far — the sum of
+`gift_allocations.sub_amount` for allocations whose `fundable_project_id`
+matches. Projects with no gift allocations report `raised: "0"`. Use with
+each project's `fundraisingGoal` to render progress-to-goal.
+
+ * @summary Amount raised so far per fundable project (sum of gift_allocations.sub_amount).
+ */
+export const GetFundableProjectsProgressResponseItem = zod.object({
+  fundableProjectId: zod.string(),
+  raised: zod
+    .string()
+    .describe(
+      "Decimal string — sum of gift_allocations.sub_amount for this project. '0' when none.",
+    ),
+});
+export const GetFundableProjectsProgressResponse = zod.array(
+  GetFundableProjectsProgressResponseItem,
+);
 
 export const ListFiscalYearsResponseItem = zod.object({
   id: zod.string(),

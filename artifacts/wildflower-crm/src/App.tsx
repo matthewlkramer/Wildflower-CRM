@@ -28,6 +28,7 @@ import Projections from "@/pages/projections";
 import GrantsCalendar from "@/pages/grants-calendar";
 import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import Admin from "@/pages/admin";
+import FundableProjects from "@/pages/fundable-projects";
 import Settings from "@/pages/settings";
 import EmailIntelligence from "@/pages/email-intelligence";
 import EmailTracking from "@/pages/email-tracking";
@@ -214,6 +215,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/reporting-deadlines"><ProtectedRoute component={ReportingDeadlines} /></Route>
           <Route path="/email-intelligence"><ProtectedRoute component={EmailIntelligence} /></Route>
           <Route path="/email-tracking"><ProtectedRoute component={EmailTracking} /></Route>
+          <Route path="/fundable-projects"><ProtectedRoute component={FundableProjects} /></Route>
           <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
           <Route path="/admin"><ProtectedRoute component={Admin} /></Route>
           

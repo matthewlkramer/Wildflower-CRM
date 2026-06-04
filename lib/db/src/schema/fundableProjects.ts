@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, date, numeric } from "drizzle-orm/pg-core";
 
 // Specific fundable projects (e.g. SSJ, MDD, Charter Growth). Referenced
 // from opportunities_and_pledges / pledge_allocations / gifts_and_payments /
@@ -10,6 +10,17 @@ export const fundableProjects = pgTable("fundable_projects", {
   name: text("name").notNull(),
   description: text("description"),
   active: boolean("active").default(true).notNull(),
+  // Planning timeframes + goal for the dedicated Fundable projects page.
+  // fundraisingStart is conceptually required, but kept nullable so existing
+  // rows (seeded before these columns existed) keep loading; the UI treats a
+  // missing fundraisingStart/goal as "needs to be filled in".
+  fundraisingStart: date("fundraising_start"),
+  fundraisingEnd: date("fundraising_end"),
+  spendingStart: date("spending_start"),
+  spendingEnd: date("spending_end"),
+  // Fundraising goal in dollars. Decimal string convention (numeric(14,2)),
+  // mirroring fiscal_year_entity_goals.goalAmount.
+  fundraisingGoal: numeric("fundraising_goal", { precision: 14, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

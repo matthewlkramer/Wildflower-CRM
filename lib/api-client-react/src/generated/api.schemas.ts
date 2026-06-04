@@ -544,6 +544,13 @@ export interface FundableProject {
   name: string;
   description?: string | null;
   active: boolean;
+  /** Fundraising start date (YYYY-MM-DD). Null on legacy rows; UI prompts to fill in. */
+  fundraisingStart?: string | null;
+  fundraisingEnd?: string | null;
+  spendingStart?: string | null;
+  spendingEnd?: string | null;
+  /** Decimal string (numeric(14,2)). Null on legacy rows. */
+  fundraisingGoal?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -555,12 +562,30 @@ export interface CreateFundableProjectBody {
   description?: string | null;
   /** Defaults to true. Set false to mark retired. */
   active?: boolean;
+  fundraisingStart?: string | null;
+  fundraisingEnd?: string | null;
+  spendingStart?: string | null;
+  spendingEnd?: string | null;
+  /** Decimal string. Use plain digits with optional decimal, no commas. */
+  fundraisingGoal?: string | null;
 }
 
 export interface UpdateFundableProjectBody {
   name?: string;
   description?: string | null;
   active?: boolean;
+  fundraisingStart?: string | null;
+  fundraisingEnd?: string | null;
+  spendingStart?: string | null;
+  spendingEnd?: string | null;
+  /** Decimal string. Use plain digits with optional decimal, no commas. */
+  fundraisingGoal?: string | null;
+}
+
+export interface FundableProjectProgress {
+  fundableProjectId: string;
+  /** Decimal string — sum of gift_allocations.sub_amount for this project. '0' when none. */
+  raised: string;
 }
 
 export interface FiscalYear {

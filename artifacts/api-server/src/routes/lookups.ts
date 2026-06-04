@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { fundableProjects, fiscalYears } from "@workspace/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { fundableProjects, fiscalYears, giftAllocations } from "@workspace/db/schema";
+import { asc, eq, sql } from "drizzle-orm";
 import { CreateFundableProjectBody, UpdateFundableProjectBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound, paramId, parseOrBadRequest } from "../lib/helpers";
@@ -16,6 +16,29 @@ router.get(
   "/fundable-projects",
   asyncHandler(async (_req, res) => {
     const rows = await db.select().from(fundableProjects).orderBy(asc(fundableProjects.name));
+    res.json(rows);
+  }),
+);
+
+// Amount raised so far per fundable project — sum of gift_allocations.sub_amount
+// grouped by fundable_project_id (follows the analytics line-item summation
+// pattern). Projects with no allocations simply don't appear; the page treats a
+// missing entry as "0 raised".
+router.get(
+  "/fundable-projects-progress",
+  asyncHandler(async (_req, res) => {
+    const rows = await db
+      .select({
+        fundableProjectId: fundableProjects.id,
+        raised: sql<string>`COALESCE(SUM(${giftAllocations.subAmount}), 0)::text`,
+      })
+      .from(fundableProjects)
+      .leftJoin(
+        giftAllocations,
+        eq(giftAllocations.fundableProjectId, fundableProjects.id),
+      )
+      .groupBy(fundableProjects.id)
+      .orderBy(asc(fundableProjects.id));
     res.json(rows);
   }),
 );

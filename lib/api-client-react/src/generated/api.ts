@@ -76,6 +76,7 @@ import type {
   FiscalYearEntityGoal,
   ForbiddenResponse,
   FundableProject,
+  FundableProjectProgress,
   GetDashboardSummaryParams,
   GetFiscalYearBreakdownParams,
   GetProjectionsByFyEntityParams,
@@ -2330,6 +2331,91 @@ export const useUpdateFundableProject = <
 > => {
   return useMutation(getUpdateFundableProjectMutationOptions(options));
 };
+
+/**
+ * Returns, per fundable project, the total amount raised so far — the sum of
+`gift_allocations.sub_amount` for allocations whose `fundable_project_id`
+matches. Projects with no gift allocations report `raised: "0"`. Use with
+each project's `fundraisingGoal` to render progress-to-goal.
+
+ * @summary Amount raised so far per fundable project (sum of gift_allocations.sub_amount).
+ */
+export const getGetFundableProjectsProgressUrl = () => {
+  return `/api/fundable-projects-progress`;
+};
+
+export const getFundableProjectsProgress = async (
+  options?: RequestInit,
+): Promise<FundableProjectProgress[]> => {
+  return customFetch<FundableProjectProgress[]>(
+    getGetFundableProjectsProgressUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetFundableProjectsProgressQueryKey = () => {
+  return [`/api/fundable-projects-progress`] as const;
+};
+
+export const getGetFundableProjectsProgressQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFundableProjectsProgress>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFundableProjectsProgress>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetFundableProjectsProgressQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getFundableProjectsProgress>>
+  > = ({ signal }) =>
+    getFundableProjectsProgress({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFundableProjectsProgress>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFundableProjectsProgressQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFundableProjectsProgress>>
+>;
+export type GetFundableProjectsProgressQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Amount raised so far per fundable project (sum of gift_allocations.sub_amount).
+ */
+
+export function useGetFundableProjectsProgress<
+  TData = Awaited<ReturnType<typeof getFundableProjectsProgress>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFundableProjectsProgress>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFundableProjectsProgressQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListFiscalYearsUrl = () => {
   return `/api/fiscal-years`;

@@ -21,6 +21,7 @@ import {
   FileClock,
   Landmark,
   Star,
+  FolderKanban,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -46,6 +47,7 @@ const navItems = [
   { href: "/interactions", label: "Interactions", icon: MessageSquare },
   { href: "/projections", label: "Projections", icon: LineChart },
   { href: "/grants-calendar", label: "Grants Calendar", icon: CalendarDays },
+  { href: "/fundable-projects", label: "Fundable Projects", icon: FolderKanban },
   { href: "/reporting-deadlines", label: "Reporting Deadlines", icon: FileClock },
   { href: "/email-intelligence", label: "Email Intelligence", icon: Inbox },
   { href: "/email-tracking", label: "Email Tracking", icon: Eye },
