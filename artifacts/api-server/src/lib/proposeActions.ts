@@ -1,5 +1,6 @@
 import { db } from "@workspace/db";
 import {
+  emailIntelPrompts,
   emailProposals,
   emails as emailsTable,
   households,
@@ -612,7 +613,13 @@ async function enrichCreatePerEntityNames(
 // Prompt builder
 // ──────────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(): string {
+/**
+ * The built-in default system prompt. Used as the fallback when no
+ * admin-saved version exists in `email_intel_prompts`, and as the
+ * starting point the "Generate AI update" flow improves on. Exported so
+ * the admin console can display it before the first save.
+ */
+export function buildDefaultSystemPrompt(): string {
   return [
     "You are a fundraising-CRM data steward. The user runs Wildflower Schools' fundraising operation.",
     "Each turn, you receive one email-intelligence proposal — a signal extracted from a synced Gmail message — along with whatever CRM context is relevant.",
@@ -643,6 +650,23 @@ function buildSystemPrompt(): string {
     "",
     "Return an empty actions array when no automatic mutation is warranted — that is a valid and often correct answer.",
   ].join("\n");
+}
+
+/**
+ * Resolve the system prompt the pipeline should use right now: the
+ * admin-saved active version from `email_intel_prompts` if one exists,
+ * otherwise the built-in default. Reading this per-run means an admin's
+ * save takes effect on the next proposal without a redeploy. The
+ * prompt-cache breakpoint downstream caches on the text bytes, so a new
+ * prompt naturally invalidates the cache (correct behavior).
+ */
+export async function getActiveSystemPrompt(): Promise<string> {
+  const [row] = await db
+    .select({ promptText: emailIntelPrompts.promptText })
+    .from(emailIntelPrompts)
+    .where(eq(emailIntelPrompts.status, "active"))
+    .limit(1);
+  return row?.promptText ?? buildDefaultSystemPrompt();
 }
 
 function buildUserPrompt(args: {
@@ -803,6 +827,11 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
       messageBody,
     });
 
+    // Load the admin-editable system prompt (active DB version, or the
+    // built-in default). Done once here so the same text drives both the
+    // request and the prompt-cache key for this call.
+    const systemPrompt = await getActiveSystemPrompt();
+
     // Route the AI call through (a) a process-global concurrency limiter so
     // a sync's inline fan-out can't burst many simultaneous requests at the
     // shared integration proxy, and (b) a rate-limit-aware retry that backs
@@ -827,7 +856,7 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
             system: [
               {
                 type: "text",
-                text: buildSystemPrompt(),
+                text: systemPrompt,
                 cache_control: { type: "ephemeral" },
               },
             ],

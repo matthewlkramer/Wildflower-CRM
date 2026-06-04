@@ -28,6 +28,7 @@ export * from "./emailSyncState";
 export * from "./calendarEvents";
 export * from "./calendarSyncState";
 export * from "./emailProposals";
+export * from "./emailIntelPrompts";
 export * from "./correspondentIgnore";
 export * from "./notes";
 export * from "./mediaMentions";

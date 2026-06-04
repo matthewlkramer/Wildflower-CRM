@@ -12,17 +12,43 @@ import {
   useAdminResyncGoogleUser,
   useGetCalendarMeetingFilters,
   useUpdateCalendarMeetingFilters,
+  useAdminListEmailIntelPrompts,
+  useAdminSaveEmailIntelPrompt,
+  useAdminGenerateEmailIntelPrompt,
+  useAdminActivateEmailIntelPrompt,
+  useAdminRevertEmailIntelPrompt,
+  useAdminDiscardEmailIntelPrompt,
+  useAdminListEmailIntelFeedback,
   getListEntitiesQueryKey,
   getListFiscalYearEntityGoalsQueryKey,
   getGetDashboardSummaryQueryKey,
   getAdminListGoogleSyncQueryKey,
   getGetCalendarMeetingFiltersQueryKey,
+  getAdminListEmailIntelPromptsQueryKey,
+  getAdminListEmailIntelFeedbackQueryKey,
 } from "@workspace/api-client-react";
-import type { Entity, FiscalYearEntityGoal, FiscalYear } from "@workspace/api-client-react";
+import type {
+  Entity,
+  FiscalYearEntityGoal,
+  FiscalYear,
+  EmailIntelPrompt,
+  EmailProposalKind,
+  EmailProposalStatus,
+} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Table,
@@ -92,6 +118,7 @@ export default function Admin() {
       <GoalsSection entities={entities} fyList={fyList} goals={goals} loading={goalsQ.isLoading || fyListQ.isLoading} />
       <AdminSyncSection />
       <CalendarMeetingFiltersSection />
+      <EmailIntelligenceSection />
       <p className="text-xs text-muted-foreground">
         Looking to connect or disconnect your own Google account? That moved
         to <a className="underline" href="/settings">Settings</a>.
@@ -879,5 +906,513 @@ function CalendarMeetingFiltersSection() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ── Admin: email-intelligence console ────────────────────────────────────────
+// Admin-only. Hand-edit / AI-draft / version / revert the system prompt that
+// drives email-intelligence action proposals, and browse a cross-mailbox feed
+// of reviewer feedback to inform those edits. Hidden entirely on 403.
+
+const PROMPT_KIND_LABELS: Record<EmailProposalKind, string> = {
+  linkedin_job_change: "Job change",
+  auto_responder_move: "Moved (auto-reply)",
+  bounce_invalid: "Hard bounce",
+  bounce_soft: "Soft bounce",
+  signature_update: "Signature update",
+  grant_opportunity: "Grant opportunity",
+  thank_you_acknowledgment: "Thank-you ack",
+};
+
+const ORIGIN_LABELS: Record<EmailIntelPrompt["origin"], string> = {
+  hand_edited: "Hand-edited",
+  ai_generated: "AI-generated",
+  reverted: "Reverted",
+};
+
+/**
+ * Minimal line-level diff: classify each line of `next` against `prev` as
+ * added / unchanged, and each line of `prev` missing from `next` as removed.
+ * Good enough to let an admin eyeball what an AI draft changed without
+ * pulling in a diff library.
+ */
+function lineDiff(
+  prev: string,
+  next: string,
+): { type: "added" | "removed" | "same"; text: string }[] {
+  const prevLines = prev.split("\n");
+  const nextLines = next.split("\n");
+  const prevSet = new Set(prevLines);
+  const nextSet = new Set(nextLines);
+  const out: { type: "added" | "removed" | "same"; text: string }[] = [];
+  for (const line of nextLines) {
+    out.push({ type: prevSet.has(line) ? "same" : "added", text: line });
+  }
+  for (const line of prevLines) {
+    if (!nextSet.has(line)) out.push({ type: "removed", text: line });
+  }
+  return out;
+}
+
+function EmailIntelligenceSection() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const promptsQ = useAdminListEmailIntelPrompts({
+    query: { queryKey: getAdminListEmailIntelPromptsQueryKey() },
+  });
+
+  const errStatus = (promptsQ.error as unknown as { status?: number } | null)?.status;
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [showDraftDiff, setShowDraftDiff] = useState(true);
+
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: getAdminListEmailIntelPromptsQueryKey() });
+
+  const save = useAdminSaveEmailIntelPrompt({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        setEditing(false);
+        toast({ title: "Prompt saved as the new active version" });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Save failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const generate = useAdminGenerateEmailIntelPrompt({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        setShowDraftDiff(true);
+        toast({ title: "AI draft generated", description: "Review and approve below." });
+      },
+      onError: (e: unknown) => {
+        const status = (e as { status?: number } | null)?.status;
+        toast({
+          title: status === 409 ? "No feedback yet" : "Generation failed",
+          description:
+            status === 409
+              ? "There are no resolved proposals to learn from yet."
+              : e instanceof Error
+                ? e.message
+                : "Unknown error",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const activate = useAdminActivateEmailIntelPrompt({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        toast({ title: "Version activated" });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Activate failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const revert = useAdminRevertEmailIntelPrompt({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        toast({ title: "Reverted", description: "A new active version was created from that version." });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Revert failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const discard = useAdminDiscardEmailIntelPrompt({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        toast({ title: "Draft discarded" });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Discard failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  // 403 → hide the whole card for non-admins.
+  if (errStatus === 403) return null;
+
+  const overview = promptsQ.data;
+  const active = overview?.active ?? null;
+  const aiDraft = overview?.draft ?? null;
+  const history = overview?.history ?? [];
+  const usingDefault = overview?.usingDefault ?? true;
+  const baselineText = active?.promptText ?? overview?.default ?? "";
+
+  const startEdit = () => {
+    setDraft(baselineText);
+    setEditing(true);
+  };
+
+  return (
+    <Card data-testid="admin-email-intel-section">
+      <CardHeader>
+        <CardTitle>Email intelligence prompt</CardTitle>
+        <CardDescription>
+          The system prompt the AI follows when proposing CRM actions from
+          incoming email. Hand-edit it, or generate an improved draft from recent
+          reviewer feedback — drafts are never applied until you approve them.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {promptsQ.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : (
+          <>
+            {/* Active prompt + editor */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Active prompt</span>
+                {usingDefault ? (
+                  <Badge variant="secondary">Built-in default</Badge>
+                ) : active ? (
+                  <Badge variant="secondary">{ORIGIN_LABELS[active.origin]}</Badge>
+                ) : null}
+                {active?.updatedAt ? (
+                  <span className="text-xs text-muted-foreground">
+                    updated {new Date(active.updatedAt).toLocaleString()}
+                    {active.authorName ? ` by ${active.authorName}` : ""}
+                  </span>
+                ) : null}
+              </div>
+
+              {editing ? (
+                <div className="space-y-2">
+                  <Textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    rows={18}
+                    className="font-mono text-xs"
+                    data-testid="email-intel-prompt-editor"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={save.isPending || !draft.trim()}
+                      onClick={() => save.mutate({ data: { promptText: draft } })}
+                      data-testid="email-intel-save"
+                    >
+                      {save.isPending ? "Saving…" : "Save as active"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={save.isPending}
+                      onClick={() => setEditing(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <pre className="max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap font-mono">
+                    {baselineText}
+                  </pre>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={startEdit} data-testid="email-intel-edit">
+                      Edit prompt
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={generate.isPending}
+                      onClick={() => generate.mutate()}
+                      data-testid="email-intel-generate"
+                    >
+                      {generate.isPending ? "Generating…" : "Generate AI update"}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Outstanding AI draft awaiting review */}
+            {aiDraft ? (
+              <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3" data-testid="email-intel-draft">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-amber-600 hover:bg-amber-600">AI draft</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      generated {new Date(aiDraft.createdAt).toLocaleString()}
+                      {aiDraft.authorName ? ` by ${aiDraft.authorName}` : ""}
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowDraftDiff((v) => !v)}
+                  >
+                    {showDraftDiff ? "Show full text" : "Show diff"}
+                  </Button>
+                </div>
+                {showDraftDiff ? (
+                  <pre className="max-h-72 overflow-auto rounded-md bg-background p-3 text-xs whitespace-pre-wrap font-mono">
+                    {lineDiff(baselineText, aiDraft.promptText).map((l, i) => (
+                      <div
+                        key={i}
+                        className={
+                          l.type === "added"
+                            ? "bg-emerald-100 text-emerald-900"
+                            : l.type === "removed"
+                              ? "bg-red-100 text-red-900 line-through"
+                              : ""
+                        }
+                      >
+                        {l.type === "added" ? "+ " : l.type === "removed" ? "- " : "  "}
+                        {l.text}
+                      </div>
+                    ))}
+                  </pre>
+                ) : (
+                  <pre className="max-h-72 overflow-auto rounded-md bg-background p-3 text-xs whitespace-pre-wrap font-mono">
+                    {aiDraft.promptText}
+                  </pre>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={activate.isPending}
+                    onClick={() => activate.mutate({ id: aiDraft.id })}
+                    data-testid="email-intel-approve-draft"
+                  >
+                    {activate.isPending ? "Approving…" : "Approve & activate"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={discard.isPending}
+                    onClick={() => discard.mutate({ id: aiDraft.id })}
+                    data-testid="email-intel-discard-draft"
+                  >
+                    Discard
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Version history */}
+            {history.length > 0 ? (
+              <div className="space-y-2">
+                <span className="text-sm font-medium">Version history</span>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Archived</TableHead>
+                      <TableHead>Origin</TableHead>
+                      <TableHead>Author</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {history.map((h) => (
+                      <TableRow key={h.id} data-testid={`email-intel-history-${h.id}`}>
+                        <TableCell className="text-sm">
+                          {new Date(h.updatedAt).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{ORIGIN_LABELS[h.origin]}</Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">{h.authorName ?? "—"}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={revert.isPending}
+                            onClick={() => revert.mutate({ id: h.id })}
+                            data-testid={`email-intel-revert-${h.id}`}
+                          >
+                            Revert to this
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : null}
+
+            <Separator />
+
+            <EmailIntelFeedbackFeed />
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const FEEDBACK_PAGE_SIZE = 20;
+
+function EmailIntelFeedbackFeed() {
+  const [kind, setKind] = useState<EmailProposalKind | "all">("all");
+  const [status, setStatus] = useState<EmailProposalStatus | "all">("all");
+  const [page, setPage] = useState(1);
+
+  const params = {
+    ...(kind !== "all" ? { kind } : {}),
+    ...(status !== "all" ? { status } : {}),
+    limit: FEEDBACK_PAGE_SIZE,
+    page,
+  };
+
+  const q = useAdminListEmailIntelFeedback(params, {
+    query: { queryKey: getAdminListEmailIntelFeedbackQueryKey(params) },
+  });
+
+  const items = q.data?.data ?? [];
+  const total = q.data?.pagination.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / FEEDBACK_PAGE_SIZE));
+
+  const statusBadge = (s: EmailProposalStatus) => {
+    if (s === "applied") return <Badge className="bg-emerald-600 hover:bg-emerald-600">Accepted</Badge>;
+    if (s === "rejected") return <Badge variant="destructive">Rejected</Badge>;
+    return <Badge variant="secondary">Ignored</Badge>;
+  };
+
+  return (
+    <div className="space-y-3" data-testid="email-intel-feedback">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="text-sm font-medium">Reviewer feedback (all mailboxes)</span>
+        <div className="flex gap-2">
+          <Select
+            value={kind}
+            onValueChange={(v) => {
+              setKind(v as EmailProposalKind | "all");
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-44 h-8 text-xs" data-testid="feedback-kind-filter">
+              <SelectValue placeholder="All kinds" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All kinds</SelectItem>
+              {(Object.keys(PROMPT_KIND_LABELS) as EmailProposalKind[]).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {PROMPT_KIND_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={status}
+            onValueChange={(v) => {
+              setStatus(v as EmailProposalStatus | "all");
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-36 h-8 text-xs" data-testid="feedback-status-filter">
+              <SelectValue placeholder="All verdicts" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All verdicts</SelectItem>
+              <SelectItem value="applied">Accepted</SelectItem>
+              <SelectItem value="rejected">Rejected</SelectItem>
+              <SelectItem value="ignored">Ignored</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {q.isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No resolved proposals match these filters.</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((it) => (
+            <div
+              key={it.id}
+              className="rounded-md border p-3 space-y-1.5"
+              data-testid={`feedback-item-${it.id}`}
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                {statusBadge(it.status)}
+                <Badge variant="outline">{PROMPT_KIND_LABELS[it.kind]}</Badge>
+                <span className="text-sm font-medium">
+                  {it.subjectName ?? it.subjectEmail ?? "(unknown subject)"}
+                </span>
+                <span className="text-xs text-muted-foreground ml-auto">
+                  {it.resolvedAt ? new Date(it.resolvedAt).toLocaleString() : ""}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                mailbox: {it.mailboxUserName ?? it.mailboxUserId}
+                {it.resolverName ? ` · resolved by ${it.resolverName}` : ""}
+              </div>
+              {it.proposedActions.length > 0 ? (
+                <ul className="text-xs space-y-0.5">
+                  {it.proposedActions.map((a, i) => (
+                    <li key={i}>
+                      <span className="font-mono text-muted-foreground">{a.type}</span>
+                      {a.reason ? <span> — {a.reason}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-xs text-muted-foreground italic">No actions proposed.</div>
+              )}
+              {it.reviewerNote ? (
+                <div className="text-xs rounded bg-muted px-2 py-1">
+                  <span className="font-medium">Reviewer note:</span> {it.reviewerNote}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {totalPages > 1 ? (
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            Page {page} of {totalPages} · {total} total
+          </span>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }

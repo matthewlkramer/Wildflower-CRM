@@ -263,6 +263,209 @@ export const RejectEmailProposalResponse = zod.object({
   reviewerNote: zod.string().nullish(),
 });
 
+/**
+ * @summary Active AI prompt + draft + version history (admin only)
+ */
+export const AdminListEmailIntelPromptsResponse = zod.object({
+  active: zod
+    .object({
+      id: zod.string(),
+      promptText: zod.string(),
+      status: zod.enum(["active", "draft", "archived"]),
+      origin: zod.enum(["hand_edited", "ai_generated", "reverted"]),
+      authorUserId: zod.string().nullish(),
+      authorName: zod.string().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    })
+    .nullish(),
+  draft: zod
+    .object({
+      id: zod.string(),
+      promptText: zod.string(),
+      status: zod.enum(["active", "draft", "archived"]),
+      origin: zod.enum(["hand_edited", "ai_generated", "reverted"]),
+      authorUserId: zod.string().nullish(),
+      authorName: zod.string().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    })
+    .nullish(),
+  history: zod.array(
+    zod.object({
+      id: zod.string(),
+      promptText: zod.string(),
+      status: zod.enum(["active", "draft", "archived"]),
+      origin: zod.enum(["hand_edited", "ai_generated", "reverted"]),
+      authorUserId: zod.string().nullish(),
+      authorName: zod.string().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    }),
+  ),
+  default: zod
+    .string()
+    .describe(
+      "Built-in default prompt text (used when no active version exists).",
+    ),
+  usingDefault: zod
+    .boolean()
+    .describe(
+      "True when no saved active version exists and the pipeline is on the built-in default.",
+    ),
+});
+
+/**
+ * @summary Save a hand-edited prompt as the new active version (admin only)
+ */
+
+export const AdminSaveEmailIntelPromptBody = zod.object({
+  promptText: zod.string().min(1),
+});
+
+export const AdminSaveEmailIntelPromptResponse = zod.object({
+  id: zod.string(),
+  promptText: zod.string(),
+  status: zod.enum(["active", "draft", "archived"]),
+  origin: zod.enum(["hand_edited", "ai_generated", "reverted"]),
+  authorUserId: zod.string().nullish(),
+  authorName: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * @summary Draft an improved prompt from recent feedback, saved as a non-active draft (admin only)
+ */
+export const AdminGenerateEmailIntelPromptResponse = zod.object({
+  id: zod.string(),
+  promptText: zod.string(),
+  status: zod.enum(["active", "draft", "archived"]),
+  origin: zod.enum(["hand_edited", "ai_generated", "reverted"]),
+  authorUserId: zod.string().nullish(),
+  authorName: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * @summary Approve a draft / promote a version to active (admin only)
+ */
+export const AdminActivateEmailIntelPromptParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AdminActivateEmailIntelPromptResponse = zod.object({
+  id: zod.string(),
+  promptText: zod.string(),
+  status: zod.enum(["active", "draft", "archived"]),
+  origin: zod.enum(["hand_edited", "ai_generated", "reverted"]),
+  authorUserId: zod.string().nullish(),
+  authorName: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * @summary Revert to a prior version by copying it into a new active version (admin only)
+ */
+export const AdminRevertEmailIntelPromptParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AdminRevertEmailIntelPromptResponse = zod.object({
+  id: zod.string(),
+  promptText: zod.string(),
+  status: zod.enum(["active", "draft", "archived"]),
+  origin: zod.enum(["hand_edited", "ai_generated", "reverted"]),
+  authorUserId: zod.string().nullish(),
+  authorName: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * @summary Discard an outstanding AI draft (admin only)
+ */
+export const AdminDiscardEmailIntelPromptParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AdminDiscardEmailIntelPromptResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
+ * @summary Cross-mailbox feed of resolved proposal feedback (admin only)
+ */
+export const adminListEmailIntelFeedbackQueryLimitDefault = 50;
+export const adminListEmailIntelFeedbackQueryLimitMax = 10000;
+
+export const adminListEmailIntelFeedbackQueryPageDefault = 1;
+
+export const AdminListEmailIntelFeedbackQueryParams = zod.object({
+  kind: zod
+    .enum([
+      "linkedin_job_change",
+      "auto_responder_move",
+      "bounce_invalid",
+      "bounce_soft",
+      "signature_update",
+      "grant_opportunity",
+      "thank_you_acknowledgment",
+    ])
+    .optional(),
+  status: zod.enum(["pending", "applied", "rejected", "ignored"]).optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(adminListEmailIntelFeedbackQueryLimitMax)
+    .default(adminListEmailIntelFeedbackQueryLimitDefault),
+  page: zod.coerce
+    .number()
+    .min(1)
+    .default(adminListEmailIntelFeedbackQueryPageDefault),
+});
+
+export const AdminListEmailIntelFeedbackResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      kind: zod.enum([
+        "linkedin_job_change",
+        "auto_responder_move",
+        "bounce_invalid",
+        "bounce_soft",
+        "signature_update",
+        "grant_opportunity",
+        "thank_you_acknowledgment",
+      ]),
+      status: zod.enum(["pending", "applied", "rejected", "ignored"]),
+      reviewerNote: zod.string().nullish(),
+      mailboxUserId: zod.string(),
+      mailboxUserName: zod.string().nullish(),
+      resolvedByUserId: zod.string().nullish(),
+      resolverName: zod.string().nullish(),
+      resolvedAt: zod.string().datetime({}).nullish(),
+      subjectName: zod.string().nullish(),
+      subjectEmail: zod.string().nullish(),
+      proposedActions: zod.array(
+        zod.object({
+          type: zod.string(),
+          reason: zod.string(),
+        }),
+      ),
+      createdAt: zod.string().datetime({}),
+      emailSentAt: zod.string().datetime({}).nullish(),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
 export const listUnrecognizedCorrespondentsQueryDaysDefault = 60;
 export const listUnrecognizedCorrespondentsQueryDaysMax = 365;
 

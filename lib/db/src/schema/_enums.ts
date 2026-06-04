@@ -378,6 +378,30 @@ export const emailProposalStatusEnum = pgEnum("email_proposal_status", [
   "ignored",
 ]);
 
+// Lifecycle of an email-intelligence AI-prompt version.
+//   - `active`   : the single live version the proposal pipeline reads.
+//   - `draft`    : an AI-generated candidate awaiting admin review. At
+//                  most one outstanding at a time; approving it makes it
+//                  active, discarding deletes it.
+//   - `archived` : a previously-active version retained for history /
+//                  revert. Never destroyed.
+export const emailIntelPromptStatusEnum = pgEnum("email_intel_prompt_status", [
+  "active",
+  "draft",
+  "archived",
+]);
+
+// Where a prompt version came from.
+//   - `hand_edited`  : an admin typed/edited the text directly.
+//   - `ai_generated` : drafted by the "Generate AI update" flow from
+//                      recent reviewer feedback.
+//   - `reverted`     : a copy of an earlier version re-promoted to active.
+export const emailIntelPromptOriginEnum = pgEnum("email_intel_prompt_origin", [
+  "hand_edited",
+  "ai_generated",
+  "reverted",
+]);
+
 // ---- People-entity-role enums ----
 export const peopleEntityRoleConnectionEnum = pgEnum(
   "people_entity_role_connection",

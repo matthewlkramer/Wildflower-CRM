@@ -2094,6 +2094,77 @@ export interface RejectEmailProposalBody {
   reviewerNote?: string | null;
 }
 
+export type EmailIntelPromptStatus =
+  (typeof EmailIntelPromptStatus)[keyof typeof EmailIntelPromptStatus];
+
+export const EmailIntelPromptStatus = {
+  active: "active",
+  draft: "draft",
+  archived: "archived",
+} as const;
+
+export type EmailIntelPromptOrigin =
+  (typeof EmailIntelPromptOrigin)[keyof typeof EmailIntelPromptOrigin];
+
+export const EmailIntelPromptOrigin = {
+  hand_edited: "hand_edited",
+  ai_generated: "ai_generated",
+  reverted: "reverted",
+} as const;
+
+export interface EmailIntelPrompt {
+  id: string;
+  promptText: string;
+  status: EmailIntelPromptStatus;
+  origin: EmailIntelPromptOrigin;
+  authorUserId?: string | null;
+  authorName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmailIntelPromptOverview {
+  active?: EmailIntelPrompt | null;
+  draft?: EmailIntelPrompt | null;
+  history: EmailIntelPrompt[];
+  /** Built-in default prompt text (used when no active version exists). */
+  default: string;
+  /** True when no saved active version exists and the pipeline is on the built-in default. */
+  usingDefault: boolean;
+}
+
+export interface SaveEmailIntelPromptBody {
+  /** @minLength 1 */
+  promptText: string;
+}
+
+export interface EmailIntelFeedbackAction {
+  type: string;
+  reason: string;
+}
+
+export interface EmailIntelFeedbackItem {
+  id: string;
+  kind: EmailProposalKind;
+  status: EmailProposalStatus;
+  reviewerNote?: string | null;
+  mailboxUserId: string;
+  mailboxUserName?: string | null;
+  resolvedByUserId?: string | null;
+  resolverName?: string | null;
+  resolvedAt?: string | null;
+  subjectName?: string | null;
+  subjectEmail?: string | null;
+  proposedActions: EmailIntelFeedbackAction[];
+  createdAt: string;
+  emailSentAt?: string | null;
+}
+
+export interface EmailIntelFeedbackList {
+  data: EmailIntelFeedbackItem[];
+  pagination: Pagination;
+}
+
 export interface UnrecognizedCorrespondent {
   emailAddress: string;
   displayName?: string | null;
@@ -2752,6 +2823,24 @@ export type ListEmailProposalsParams = {
    * Filter to proposals targeting this funder.
    */
   organizationId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
+
+export type AdminDiscardEmailIntelPrompt200 = {
+  ok: boolean;
+};
+
+export type AdminListEmailIntelFeedbackParams = {
+  kind?: EmailProposalKind;
+  status?: EmailProposalStatus;
   /**
    * @minimum 1
    * @maximum 10000

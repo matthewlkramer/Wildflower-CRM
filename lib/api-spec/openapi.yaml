@@ -45,6 +45,7 @@ tags:
   - { name: suppression-windows }
   - { name: calendar-meeting-filters }
   - { name: top-priorities }
+  - { name: admin }
 
 paths:
   # ─── Email intelligence proposals ──────────────────────────────────────────
@@ -96,6 +97,77 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposal" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Email-intelligence admin console ──────────────────────────────────────
+  /admin/email-intel/prompts:
+    get:
+      operationId: adminListEmailIntelPrompts
+      tags: [admin]
+      summary: Active AI prompt + draft + version history (admin only)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailIntelPromptOverview" } } } }
+        "403": { description: Admin required }
+    post:
+      operationId: adminSaveEmailIntelPrompt
+      tags: [admin]
+      summary: Save a hand-edited prompt as the new active version (admin only)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SaveEmailIntelPromptBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailIntelPrompt" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Admin required }
+  /admin/email-intel/prompts/generate:
+    post:
+      operationId: adminGenerateEmailIntelPrompt
+      tags: [admin]
+      summary: Draft an improved prompt from recent feedback, saved as a non-active draft (admin only)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailIntelPrompt" } } } }
+        "403": { description: Admin required }
+        "409": { description: No feedback available to learn from }
+  /admin/email-intel/prompts/{id}/activate:
+    post:
+      operationId: adminActivateEmailIntelPrompt
+      tags: [admin]
+      summary: Approve a draft / promote a version to active (admin only)
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailIntelPrompt" } } } }
+        "403": { description: Admin required }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/email-intel/prompts/{id}/revert:
+    post:
+      operationId: adminRevertEmailIntelPrompt
+      tags: [admin]
+      summary: Revert to a prior version by copying it into a new active version (admin only)
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailIntelPrompt" } } } }
+        "403": { description: Admin required }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/email-intel/prompts/{id}:
+    delete:
+      operationId: adminDiscardEmailIntelPrompt
+      tags: [admin]
+      summary: Discard an outstanding AI draft (admin only)
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, required: [ok], properties: { ok: { type: boolean } } } } } }
+        "403": { description: Admin required }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/email-intel/feedback:
+    get:
+      operationId: adminListEmailIntelFeedback
+      tags: [admin]
+      summary: Cross-mailbox feed of resolved proposal feedback (admin only)
+      parameters:
+        - { name: kind, in: query, schema: { $ref: "#/components/schemas/EmailProposalKind" } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/EmailProposalStatus" } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailIntelFeedbackList" } } } }
+        "403": { description: Admin required }
 
   # ─── Unrecognized correspondents panel ─────────────────────────────────────
   /correspondents/unrecognized:
@@ -3711,6 +3783,75 @@ components:
       type: object
       properties:
         reviewerNote: { type: string, nullable: true }
+
+    # ─── Email-intelligence admin console ──────────────────────────────────────
+    EmailIntelPromptStatus:
+      type: string
+      enum: [active, draft, archived]
+    EmailIntelPromptOrigin:
+      type: string
+      enum: [hand_edited, ai_generated, reverted]
+    EmailIntelPrompt:
+      type: object
+      required: [id, promptText, status, origin, createdAt, updatedAt]
+      properties:
+        id:           { type: string }
+        promptText:   { type: string }
+        status:       { $ref: "#/components/schemas/EmailIntelPromptStatus" }
+        origin:       { $ref: "#/components/schemas/EmailIntelPromptOrigin" }
+        authorUserId: { type: string, nullable: true }
+        authorName:   { type: string, nullable: true }
+        createdAt:    { type: string, format: date-time }
+        updatedAt:    { type: string, format: date-time }
+    EmailIntelPromptOverview:
+      # The full state the admin console needs in one fetch: the live
+      # active version (omitted when on the built-in default), any
+      # outstanding AI draft awaiting review, the archived version
+      # history (newest first), and the built-in default text.
+      type: object
+      required: [history, default, usingDefault]
+      properties:
+        active:       { allOf: [ { $ref: "#/components/schemas/EmailIntelPrompt" } ], nullable: true }
+        draft:        { allOf: [ { $ref: "#/components/schemas/EmailIntelPrompt" } ], nullable: true }
+        history:      { type: array, items: { $ref: "#/components/schemas/EmailIntelPrompt" } }
+        default:      { type: string, description: "Built-in default prompt text (used when no active version exists)." }
+        usingDefault: { type: boolean, description: "True when no saved active version exists and the pipeline is on the built-in default." }
+    SaveEmailIntelPromptBody:
+      type: object
+      required: [promptText]
+      properties:
+        promptText: { type: string, minLength: 1 }
+    EmailIntelFeedbackAction:
+      type: object
+      required: [type, reason]
+      properties:
+        type:   { type: string }
+        reason: { type: string }
+    EmailIntelFeedbackItem:
+      type: object
+      required: [id, kind, status, mailboxUserId, proposedActions, createdAt]
+      properties:
+        id:               { type: string }
+        kind:             { $ref: "#/components/schemas/EmailProposalKind" }
+        status:           { $ref: "#/components/schemas/EmailProposalStatus" }
+        reviewerNote:     { type: string, nullable: true }
+        mailboxUserId:    { type: string }
+        mailboxUserName:  { type: string, nullable: true }
+        resolvedByUserId: { type: string, nullable: true }
+        resolverName:     { type: string, nullable: true }
+        resolvedAt:       { type: string, format: date-time, nullable: true }
+        subjectName:      { type: string, nullable: true }
+        subjectEmail:     { type: string, nullable: true }
+        proposedActions:  { type: array, items: { $ref: "#/components/schemas/EmailIntelFeedbackAction" } }
+        createdAt:        { type: string, format: date-time }
+        emailSentAt:      { type: string, format: date-time, nullable: true }
+    EmailIntelFeedbackList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/EmailIntelFeedbackItem" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+
     UnrecognizedCorrespondent:
       type: object
       required: [emailAddress, threadCount, firstSeenAt, lastSeenAt]

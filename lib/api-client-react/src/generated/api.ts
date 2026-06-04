@@ -20,7 +20,9 @@ import type {
   AcceptEmailProposalBody,
   Address,
   AddressList,
+  AdminDiscardEmailIntelPrompt200,
   AdminGoogleSyncList,
+  AdminListEmailIntelFeedbackParams,
   AdminResyncGoogleUser200,
   BadRequestResponse,
   BulkUpdateGiftsBody,
@@ -64,6 +66,9 @@ import type {
   DonorPaymentIntermediary,
   DonorPaymentIntermediaryList,
   Email,
+  EmailIntelFeedbackList,
+  EmailIntelPrompt,
+  EmailIntelPromptOverview,
   EmailList,
   EmailMessage,
   EmailMessageDetail,
@@ -166,6 +171,7 @@ import type {
   RejectEmailProposalBody,
   RequestUploadUrl200,
   RequestUploadUrlBody,
+  SaveEmailIntelPromptBody,
   SavedView,
   SavedViewList,
   School,
@@ -544,6 +550,624 @@ export const useRejectEmailProposal = <
 > => {
   return useMutation(getRejectEmailProposalMutationOptions(options));
 };
+
+/**
+ * @summary Active AI prompt + draft + version history (admin only)
+ */
+export const getAdminListEmailIntelPromptsUrl = () => {
+  return `/api/admin/email-intel/prompts`;
+};
+
+export const adminListEmailIntelPrompts = async (
+  options?: RequestInit,
+): Promise<EmailIntelPromptOverview> => {
+  return customFetch<EmailIntelPromptOverview>(
+    getAdminListEmailIntelPromptsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getAdminListEmailIntelPromptsQueryKey = () => {
+  return [`/api/admin/email-intel/prompts`] as const;
+};
+
+export const getAdminListEmailIntelPromptsQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminListEmailIntelPrompts>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminListEmailIntelPrompts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminListEmailIntelPromptsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminListEmailIntelPrompts>>
+  > = ({ signal }) => adminListEmailIntelPrompts({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminListEmailIntelPrompts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminListEmailIntelPromptsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminListEmailIntelPrompts>>
+>;
+export type AdminListEmailIntelPromptsQueryError = ErrorType<void>;
+
+/**
+ * @summary Active AI prompt + draft + version history (admin only)
+ */
+
+export function useAdminListEmailIntelPrompts<
+  TData = Awaited<ReturnType<typeof adminListEmailIntelPrompts>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminListEmailIntelPrompts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminListEmailIntelPromptsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Save a hand-edited prompt as the new active version (admin only)
+ */
+export const getAdminSaveEmailIntelPromptUrl = () => {
+  return `/api/admin/email-intel/prompts`;
+};
+
+export const adminSaveEmailIntelPrompt = async (
+  saveEmailIntelPromptBody: SaveEmailIntelPromptBody,
+  options?: RequestInit,
+): Promise<EmailIntelPrompt> => {
+  return customFetch<EmailIntelPrompt>(getAdminSaveEmailIntelPromptUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(saveEmailIntelPromptBody),
+  });
+};
+
+export const getAdminSaveEmailIntelPromptMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminSaveEmailIntelPrompt>>,
+    TError,
+    { data: BodyType<SaveEmailIntelPromptBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminSaveEmailIntelPrompt>>,
+  TError,
+  { data: BodyType<SaveEmailIntelPromptBody> },
+  TContext
+> => {
+  const mutationKey = ["adminSaveEmailIntelPrompt"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminSaveEmailIntelPrompt>>,
+    { data: BodyType<SaveEmailIntelPromptBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return adminSaveEmailIntelPrompt(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminSaveEmailIntelPromptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminSaveEmailIntelPrompt>>
+>;
+export type AdminSaveEmailIntelPromptMutationBody =
+  BodyType<SaveEmailIntelPromptBody>;
+export type AdminSaveEmailIntelPromptMutationError =
+  ErrorType<BadRequestResponse | void>;
+
+/**
+ * @summary Save a hand-edited prompt as the new active version (admin only)
+ */
+export const useAdminSaveEmailIntelPrompt = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminSaveEmailIntelPrompt>>,
+    TError,
+    { data: BodyType<SaveEmailIntelPromptBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminSaveEmailIntelPrompt>>,
+  TError,
+  { data: BodyType<SaveEmailIntelPromptBody> },
+  TContext
+> => {
+  return useMutation(getAdminSaveEmailIntelPromptMutationOptions(options));
+};
+
+/**
+ * @summary Draft an improved prompt from recent feedback, saved as a non-active draft (admin only)
+ */
+export const getAdminGenerateEmailIntelPromptUrl = () => {
+  return `/api/admin/email-intel/prompts/generate`;
+};
+
+export const adminGenerateEmailIntelPrompt = async (
+  options?: RequestInit,
+): Promise<EmailIntelPrompt> => {
+  return customFetch<EmailIntelPrompt>(getAdminGenerateEmailIntelPromptUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getAdminGenerateEmailIntelPromptMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["adminGenerateEmailIntelPrompt"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>,
+    void
+  > = () => {
+    return adminGenerateEmailIntelPrompt(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminGenerateEmailIntelPromptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>
+>;
+
+export type AdminGenerateEmailIntelPromptMutationError = ErrorType<void>;
+
+/**
+ * @summary Draft an improved prompt from recent feedback, saved as a non-active draft (admin only)
+ */
+export const useAdminGenerateEmailIntelPrompt = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getAdminGenerateEmailIntelPromptMutationOptions(options));
+};
+
+/**
+ * @summary Approve a draft / promote a version to active (admin only)
+ */
+export const getAdminActivateEmailIntelPromptUrl = (id: string) => {
+  return `/api/admin/email-intel/prompts/${id}/activate`;
+};
+
+export const adminActivateEmailIntelPrompt = async (
+  id: string,
+  options?: RequestInit,
+): Promise<EmailIntelPrompt> => {
+  return customFetch<EmailIntelPrompt>(
+    getAdminActivateEmailIntelPromptUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getAdminActivateEmailIntelPromptMutationOptions = <
+  TError = ErrorType<void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminActivateEmailIntelPrompt>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminActivateEmailIntelPrompt>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["adminActivateEmailIntelPrompt"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminActivateEmailIntelPrompt>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return adminActivateEmailIntelPrompt(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminActivateEmailIntelPromptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminActivateEmailIntelPrompt>>
+>;
+
+export type AdminActivateEmailIntelPromptMutationError =
+  ErrorType<void | NotFoundResponse>;
+
+/**
+ * @summary Approve a draft / promote a version to active (admin only)
+ */
+export const useAdminActivateEmailIntelPrompt = <
+  TError = ErrorType<void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminActivateEmailIntelPrompt>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminActivateEmailIntelPrompt>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getAdminActivateEmailIntelPromptMutationOptions(options));
+};
+
+/**
+ * @summary Revert to a prior version by copying it into a new active version (admin only)
+ */
+export const getAdminRevertEmailIntelPromptUrl = (id: string) => {
+  return `/api/admin/email-intel/prompts/${id}/revert`;
+};
+
+export const adminRevertEmailIntelPrompt = async (
+  id: string,
+  options?: RequestInit,
+): Promise<EmailIntelPrompt> => {
+  return customFetch<EmailIntelPrompt>(getAdminRevertEmailIntelPromptUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getAdminRevertEmailIntelPromptMutationOptions = <
+  TError = ErrorType<void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminRevertEmailIntelPrompt>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminRevertEmailIntelPrompt>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["adminRevertEmailIntelPrompt"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminRevertEmailIntelPrompt>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return adminRevertEmailIntelPrompt(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminRevertEmailIntelPromptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminRevertEmailIntelPrompt>>
+>;
+
+export type AdminRevertEmailIntelPromptMutationError =
+  ErrorType<void | NotFoundResponse>;
+
+/**
+ * @summary Revert to a prior version by copying it into a new active version (admin only)
+ */
+export const useAdminRevertEmailIntelPrompt = <
+  TError = ErrorType<void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminRevertEmailIntelPrompt>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminRevertEmailIntelPrompt>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getAdminRevertEmailIntelPromptMutationOptions(options));
+};
+
+/**
+ * @summary Discard an outstanding AI draft (admin only)
+ */
+export const getAdminDiscardEmailIntelPromptUrl = (id: string) => {
+  return `/api/admin/email-intel/prompts/${id}`;
+};
+
+export const adminDiscardEmailIntelPrompt = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AdminDiscardEmailIntelPrompt200> => {
+  return customFetch<AdminDiscardEmailIntelPrompt200>(
+    getAdminDiscardEmailIntelPromptUrl(id),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getAdminDiscardEmailIntelPromptMutationOptions = <
+  TError = ErrorType<void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminDiscardEmailIntelPrompt>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminDiscardEmailIntelPrompt>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["adminDiscardEmailIntelPrompt"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminDiscardEmailIntelPrompt>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return adminDiscardEmailIntelPrompt(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminDiscardEmailIntelPromptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminDiscardEmailIntelPrompt>>
+>;
+
+export type AdminDiscardEmailIntelPromptMutationError =
+  ErrorType<void | NotFoundResponse>;
+
+/**
+ * @summary Discard an outstanding AI draft (admin only)
+ */
+export const useAdminDiscardEmailIntelPrompt = <
+  TError = ErrorType<void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminDiscardEmailIntelPrompt>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminDiscardEmailIntelPrompt>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getAdminDiscardEmailIntelPromptMutationOptions(options));
+};
+
+/**
+ * @summary Cross-mailbox feed of resolved proposal feedback (admin only)
+ */
+export const getAdminListEmailIntelFeedbackUrl = (
+  params?: AdminListEmailIntelFeedbackParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/email-intel/feedback?${stringifiedParams}`
+    : `/api/admin/email-intel/feedback`;
+};
+
+export const adminListEmailIntelFeedback = async (
+  params?: AdminListEmailIntelFeedbackParams,
+  options?: RequestInit,
+): Promise<EmailIntelFeedbackList> => {
+  return customFetch<EmailIntelFeedbackList>(
+    getAdminListEmailIntelFeedbackUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getAdminListEmailIntelFeedbackQueryKey = (
+  params?: AdminListEmailIntelFeedbackParams,
+) => {
+  return [
+    `/api/admin/email-intel/feedback`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getAdminListEmailIntelFeedbackQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminListEmailIntelFeedback>>,
+  TError = ErrorType<void>,
+>(
+  params?: AdminListEmailIntelFeedbackParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminListEmailIntelFeedback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminListEmailIntelFeedbackQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminListEmailIntelFeedback>>
+  > = ({ signal }) =>
+    adminListEmailIntelFeedback(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminListEmailIntelFeedback>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminListEmailIntelFeedbackQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminListEmailIntelFeedback>>
+>;
+export type AdminListEmailIntelFeedbackQueryError = ErrorType<void>;
+
+/**
+ * @summary Cross-mailbox feed of resolved proposal feedback (admin only)
+ */
+
+export function useAdminListEmailIntelFeedback<
+  TData = Awaited<ReturnType<typeof adminListEmailIntelFeedback>>,
+  TError = ErrorType<void>,
+>(
+  params?: AdminListEmailIntelFeedbackParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminListEmailIntelFeedback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminListEmailIntelFeedbackQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListUnrecognizedCorrespondentsUrl = (
   params?: ListUnrecognizedCorrespondentsParams,
