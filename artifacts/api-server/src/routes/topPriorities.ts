@@ -1,0 +1,205 @@
+import { Router, type IRouter } from "express";
+import { db } from "@workspace/db";
+import { funders, people } from "@workspace/db/schema";
+import { and, asc, eq, sql } from "drizzle-orm";
+import { requireAuth } from "../middlewares/requireAuth";
+import { asyncHandler } from "../lib/helpers";
+import { getAppUser } from "../lib/appRequest";
+
+const router: IRouter = Router();
+router.use(requireAuth);
+
+const FUNDERS_ID = sql.raw(`"funders"."id"`);
+const PEOPLE_ID = sql.raw(`"people"."id"`);
+
+const ANON_LABEL = "Anonymous";
+
+// ─── Correlated subquery fragments scoped to funders.id ───────────────────
+
+const funderOpenOppCountExpr = sql`(
+  SELECT COUNT(*)::int FROM opportunities_and_pledges
+  WHERE funder_id = ${FUNDERS_ID} AND status = 'open'
+)`;
+
+const funderOpenTaskCountExpr = sql`(
+  SELECT COUNT(*)::int FROM tasks
+  WHERE ${FUNDERS_ID} = ANY(funder_ids) AND status = 'open'
+)`;
+
+const funderLastGiftDateExpr = sql`(
+  SELECT MAX(date_received)::text FROM gifts_and_payments
+  WHERE funder_id = ${FUNDERS_ID}
+)`;
+
+const funderLastGiftAmountExpr = sql`(
+  SELECT amount::text FROM gifts_and_payments
+  WHERE funder_id = ${FUNDERS_ID}
+  ORDER BY date_received DESC NULLS LAST
+  LIMIT 1
+)`;
+
+// Aggregates current affiliated people as a JSON array.
+const funderAffiliatedPeopleExpr = sql`(
+  SELECT COALESCE(
+    JSON_AGG(
+      JSON_BUILD_OBJECT(
+        'personId',    p.id,
+        'personName',  COALESCE(
+                         NULLIF(TRIM(p.full_name), ''),
+                         NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), ''),
+                         p.id
+                       ),
+        'anonymous',   p.anonymous,
+        'ownerUserId', p.owner_user_id
+      )
+      ORDER BY p.last_name NULLS LAST, p.first_name NULLS LAST
+    ),
+    '[]'::json
+  )
+  FROM people_entity_roles per
+  JOIN people p ON p.id = per.person_id
+  WHERE per.funder_id = ${FUNDERS_ID}
+    AND per.current = 'current'
+)`;
+
+// ─── Correlated subquery fragments scoped to people.id ────────────────────
+
+const personOpenOppCountExpr = sql`(
+  SELECT COUNT(*)::int FROM opportunities_and_pledges
+  WHERE individual_giver_person_id = ${PEOPLE_ID} AND status = 'open'
+)`;
+
+const personOpenTaskCountExpr = sql`(
+  SELECT COUNT(*)::int FROM tasks
+  WHERE ${PEOPLE_ID} = ANY(person_ids) AND status = 'open'
+)`;
+
+const personLastGiftDateExpr = sql`(
+  SELECT MAX(d)::text FROM (
+    SELECT MAX(date_received) AS d FROM gifts_and_payments
+      WHERE individual_giver_person_id = ${PEOPLE_ID}
+    UNION ALL
+    SELECT MAX(date_received) AS d FROM gifts_and_payments
+      WHERE household_id IN (
+        SELECT household_id FROM people_entity_roles
+        WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
+      )
+  ) AS _gift_dates
+)`;
+
+const personLastGiftAmountExpr = sql`(
+  SELECT amount::text FROM gifts_and_payments
+  WHERE individual_giver_person_id = ${PEOPLE_ID}
+    OR household_id IN (
+      SELECT household_id FROM people_entity_roles
+      WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
+    )
+  ORDER BY date_received DESC NULLS LAST
+  LIMIT 1
+)`;
+
+// ─── Visibility helpers (mirror UI canSeeIdentity logic server-side) ───────
+
+function canSeeIdentity(
+  entity: { anonymous: boolean; ownerUserId: string | null },
+  viewerId: string,
+  viewerRole: string,
+): boolean {
+  if (!entity.anonymous) return true;
+  if (viewerRole === "admin") return true;
+  return viewerId === entity.ownerUserId;
+}
+
+function maskFunderName(name: string, anonymous: boolean, ownerUserId: string | null, viewerId: string, viewerRole: string): string {
+  return canSeeIdentity({ anonymous, ownerUserId }, viewerId, viewerRole) ? name : ANON_LABEL;
+}
+
+function maskPersonName(
+  raw: { fullName: string | null; firstName: string | null; lastName: string | null; id: string },
+  anonymous: boolean,
+  ownerUserId: string | null,
+  viewerId: string,
+  viewerRole: string,
+): { firstName: string | null; lastName: string | null; fullName: string | null } {
+  if (canSeeIdentity({ anonymous, ownerUserId }, viewerId, viewerRole)) {
+    return { firstName: raw.firstName, lastName: raw.lastName, fullName: raw.fullName };
+  }
+  return { firstName: ANON_LABEL, lastName: null, fullName: ANON_LABEL };
+}
+
+router.get(
+  "/top-priorities",
+  asyncHandler(async (req, res) => {
+    const viewer = getAppUser(req);
+    const viewerId = viewer?.id ?? "";
+    const viewerRole = viewer?.role ?? "";
+
+    const [funderRows, personRows] = await Promise.all([
+      db
+        .select({
+          id: funders.id,
+          name: funders.name,
+          anonymous: funders.anonymous,
+          ownerUserId: funders.ownerUserId,
+          openOpportunityCount: sql<number>`${funderOpenOppCountExpr}`.as("open_opportunity_count"),
+          openTaskCount: sql<number>`${funderOpenTaskCountExpr}`.as("open_task_count"),
+          affiliatedPeople: sql<Array<{ personId: string; personName: string; anonymous: boolean; ownerUserId: string | null }>>`${funderAffiliatedPeopleExpr}`.as("affiliated_people"),
+          lastGiftDate: sql<string | null>`${funderLastGiftDateExpr}`.as("last_gift_date"),
+          lastGiftAmount: sql<string | null>`${funderLastGiftAmountExpr}`.as("last_gift_amount"),
+        })
+        .from(funders)
+        .where(eq(funders.priority, "top"))
+        .orderBy(asc(funders.name)),
+
+      db
+        .select({
+          id: people.id,
+          firstName: people.firstName,
+          lastName: people.lastName,
+          fullName: people.fullName,
+          anonymous: people.anonymous,
+          ownerUserId: people.ownerUserId,
+          openOpportunityCount: sql<number>`${personOpenOppCountExpr}`.as("open_opportunity_count"),
+          openTaskCount: sql<number>`${personOpenTaskCountExpr}`.as("open_task_count"),
+          lastGiftDate: sql<string | null>`${personLastGiftDateExpr}`.as("last_gift_date"),
+          lastGiftAmount: sql<string | null>`${personLastGiftAmountExpr}`.as("last_gift_amount"),
+        })
+        .from(people)
+        .where(
+          and(
+            eq(people.priority, "top"),
+            sql`NOT EXISTS (
+              SELECT 1 FROM people_entity_roles per
+              JOIN funders f ON f.id = per.funder_id
+              WHERE per.person_id = ${PEOPLE_ID}
+                AND per.current = 'current'
+                AND f.priority = 'top'
+            )`,
+          ),
+        )
+        .orderBy(asc(people.lastName), asc(people.firstName)),
+    ]);
+
+    // Apply server-side anonymous masking so the API never exposes a real
+    // name to a viewer who isn't the owner or an admin.
+    const maskedFunders = funderRows.map((f) => ({
+      ...f,
+      name: maskFunderName(f.name, f.anonymous, f.ownerUserId, viewerId, viewerRole),
+      affiliatedPeople: (f.affiliatedPeople ?? []).map((p) => ({
+        ...p,
+        personName: canSeeIdentity({ anonymous: p.anonymous, ownerUserId: p.ownerUserId }, viewerId, viewerRole)
+          ? p.personName
+          : ANON_LABEL,
+      })),
+    }));
+
+    const maskedPeople = personRows.map((p) => {
+      const names = maskPersonName(p, p.anonymous, p.ownerUserId, viewerId, viewerRole);
+      return { ...p, ...names };
+    });
+
+    res.json({ funders: maskedFunders, individuals: maskedPeople });
+  }),
+);
+
+export default router;

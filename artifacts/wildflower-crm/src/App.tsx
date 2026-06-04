@@ -32,6 +32,7 @@ import Settings from "@/pages/settings";
 import EmailIntelligence from "@/pages/email-intelligence";
 import EmailTracking from "@/pages/email-tracking";
 import ReportingDeadlines from "@/pages/reporting-deadlines";
+import TopPriorities from "@/pages/top-priorities";
 import PaymentIntermediaries from "@/pages/payment-intermediaries";
 import PaymentIntermediaryDetail from "@/pages/payment-intermediary-detail";
 import Layout from "@/components/layout";
@@ -183,6 +184,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/sign-up/*?" component={SignUpPage} />
           
           <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
+          <Route path="/top-priorities"><ProtectedRoute component={TopPriorities} /></Route>
           
           <Route path="/individuals"><ProtectedRoute component={Individuals} /></Route>
           <Route path="/individuals/:id"><ProtectedRoute component={IndividualDetail} /></Route>

@@ -43,6 +43,7 @@ tags:
   - { name: media-mentions }
   - { name: suppression-windows }
   - { name: calendar-meeting-filters }
+  - { name: top-priorities }
 
 paths:
   # ─── Email intelligence proposals ──────────────────────────────────────────
@@ -1628,6 +1629,21 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarSyncRunResponse" } } } }
         "409": { description: "Caller has no active Google grant" }
 
+  # ─── Top Priorities ────────────────────────────────────────────────────────
+  /top-priorities:
+    get:
+      operationId: getTopPriorities
+      tags: [top-priorities]
+      summary: Top-priority funders and individuals for the fundraiser dashboard.
+      description: |
+        Returns all funders with priority='top' and all people with priority='top'
+        who are NOT currently affiliated with a top-priority funder. Each row carries
+        computed open-opportunity count, open-task count, affiliated people (funders)
+        or last-gift info (both). Names are masked server-side for anonymous records
+        when the viewer is not the owner or an admin.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TopPriorities" } } } }
+
   # ─── Analytics (aggregate read-only) ───────────────────────────────────────
   /dashboard-summary:
     get:
@@ -2145,6 +2161,57 @@ components:
       required: [rows]
       properties:
         rows: { type: array, items: { $ref: "#/components/schemas/ProjectionByFyEntityRow" } }
+
+    TopPriorityAffiliate:
+      type: object
+      required: [personId, personName, anonymous, ownerUserId]
+      properties:
+        personId:    { type: string }
+        personName:  { type: string }
+        anonymous:   { type: boolean }
+        ownerUserId: { type: string, nullable: true }
+
+    TopPriorityFunder:
+      type: object
+      required: [id, name, anonymous, ownerUserId, openOpportunityCount, openTaskCount, affiliatedPeople]
+      properties:
+        id:                   { type: string }
+        name:                 { type: string }
+        anonymous:            { type: boolean }
+        ownerUserId:          { type: string, nullable: true }
+        openOpportunityCount: { type: integer }
+        openTaskCount:        { type: integer }
+        affiliatedPeople:
+          type: array
+          items: { $ref: "#/components/schemas/TopPriorityAffiliate" }
+        lastGiftDate:         { type: string, nullable: true }
+        lastGiftAmount:       { type: string, nullable: true }
+
+    TopPriorityPerson:
+      type: object
+      required: [id, firstName, lastName, anonymous, ownerUserId, openOpportunityCount, openTaskCount]
+      properties:
+        id:                   { type: string }
+        firstName:            { type: string, nullable: true }
+        lastName:             { type: string, nullable: true }
+        fullName:             { type: string, nullable: true }
+        anonymous:            { type: boolean }
+        ownerUserId:          { type: string, nullable: true }
+        openOpportunityCount: { type: integer }
+        openTaskCount:        { type: integer }
+        lastGiftDate:         { type: string, nullable: true }
+        lastGiftAmount:       { type: string, nullable: true }
+
+    TopPriorities:
+      type: object
+      required: [funders, individuals]
+      properties:
+        funders:
+          type: array
+          items: { $ref: "#/components/schemas/TopPriorityFunder" }
+        individuals:
+          type: array
+          items: { $ref: "#/components/schemas/TopPriorityPerson" }
 
     FiscalYearReceivedRow:
       type: object

@@ -175,6 +175,7 @@ import type {
   SendTrackedEmailResult,
   Task,
   TaskList,
+  TopPriorities,
   TrackedEmail,
   TrackedEmailList,
   TrackedEmailStatus,
@@ -11972,6 +11973,86 @@ export const useRunCalendarSync = <
 > => {
   return useMutation(getRunCalendarSyncMutationOptions(options));
 };
+
+/**
+ * Returns all funders with priority='top' and all people with priority='top'
+who are NOT currently affiliated with a top-priority funder. Each row carries
+computed open-opportunity count, open-task count, affiliated people (funders)
+or last-gift info (both). Anonymous masking applied to names.
+
+ * @summary Top-priority funders and individuals for the fundraiser dashboard.
+ */
+export const getGetTopPrioritiesUrl = () => {
+  return `/api/top-priorities`;
+};
+
+export const getTopPriorities = async (
+  options?: RequestInit,
+): Promise<TopPriorities> => {
+  return customFetch<TopPriorities>(getGetTopPrioritiesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTopPrioritiesQueryKey = () => {
+  return [`/api/top-priorities`] as const;
+};
+
+export const getGetTopPrioritiesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTopPriorities>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTopPriorities>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTopPrioritiesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTopPriorities>>
+  > = ({ signal }) => getTopPriorities({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTopPriorities>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTopPrioritiesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTopPriorities>>
+>;
+export type GetTopPrioritiesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Top-priority funders and individuals for the fundraiser dashboard.
+ */
+
+export function useGetTopPriorities<
+  TData = Awaited<ReturnType<typeof getTopPriorities>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTopPriorities>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTopPrioritiesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Aggregate counts + money totals for the Dashboard landing page.

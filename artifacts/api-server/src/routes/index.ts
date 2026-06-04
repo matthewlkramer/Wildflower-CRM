@@ -38,6 +38,7 @@ import storageRouter from "./storage";
 import emailTrackingRouter from "./emailTracking";
 import suppressionWindowsRouter from "./suppressionWindows";
 import calendarMeetingFiltersRouter from "./calendarMeetingFiltersRoute";
+import topPrioritiesRouter from "./topPriorities";
 
 const router: IRouter = Router();
 
@@ -90,5 +91,6 @@ router.use(savedViewsRouter);
 router.use(storageRouter);
 router.use(suppressionWindowsRouter);
 router.use(calendarMeetingFiltersRouter);
+router.use(topPrioritiesRouter);
 
 export default router;

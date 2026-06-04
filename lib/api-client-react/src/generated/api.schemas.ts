@@ -578,6 +578,43 @@ export interface ProjectionsByFyEntity {
   rows: ProjectionByFyEntityRow[];
 }
 
+export interface TopPriorityAffiliate {
+  personId: string;
+  personName: string;
+  anonymous: boolean;
+  ownerUserId: string | null;
+}
+
+export interface TopPriorityFunder {
+  id: string;
+  name: string;
+  anonymous: boolean;
+  ownerUserId: string | null;
+  openOpportunityCount: number;
+  openTaskCount: number;
+  affiliatedPeople: TopPriorityAffiliate[];
+  lastGiftDate?: string | null;
+  lastGiftAmount?: string | null;
+}
+
+export interface TopPriorityPerson {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  fullName?: string | null;
+  anonymous: boolean;
+  ownerUserId: string | null;
+  openOpportunityCount: number;
+  openTaskCount: number;
+  lastGiftDate?: string | null;
+  lastGiftAmount?: string | null;
+}
+
+export interface TopPriorities {
+  funders: TopPriorityFunder[];
+  individuals: TopPriorityPerson[];
+}
+
 /**
  * A single gift_allocation row booked to the FY's grant_year, denormalized with parent gift + donor info.
  */

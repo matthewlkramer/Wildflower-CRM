@@ -6523,6 +6523,51 @@ export const RunCalendarSyncResponse = zod.object({
 });
 
 /**
+ * Returns all funders with priority='top' and all people with priority='top'
+who are NOT currently affiliated with a top-priority funder. Each row carries
+computed open-opportunity count, open-task count, affiliated people (funders)
+or last-gift info (both). Anonymous masking applied to names.
+
+ * @summary Top-priority funders and individuals for the fundraiser dashboard.
+ */
+export const GetTopPrioritiesResponse = zod.object({
+  funders: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      anonymous: zod.boolean(),
+      ownerUserId: zod.string().nullable(),
+      openOpportunityCount: zod.number(),
+      openTaskCount: zod.number(),
+      affiliatedPeople: zod.array(
+        zod.object({
+          personId: zod.string(),
+          personName: zod.string(),
+          anonymous: zod.boolean(),
+          ownerUserId: zod.string().nullable(),
+        }),
+      ),
+      lastGiftDate: zod.string().nullish(),
+      lastGiftAmount: zod.string().nullish(),
+    }),
+  ),
+  individuals: zod.array(
+    zod.object({
+      id: zod.string(),
+      firstName: zod.string().nullable(),
+      lastName: zod.string().nullable(),
+      fullName: zod.string().nullish(),
+      anonymous: zod.boolean(),
+      ownerUserId: zod.string().nullable(),
+      openOpportunityCount: zod.number(),
+      openTaskCount: zod.number(),
+      lastGiftDate: zod.string().nullish(),
+      lastGiftAmount: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
  * @summary Aggregate counts + money totals for the Dashboard landing page.
  */
 export const GetDashboardSummaryQueryParams = zod.object({
