@@ -65,7 +65,11 @@ function buildColumns(): ColumnDef<PaymentIntermediary>[] {
       label: "Type",
       cell: (p) =>
         p.type ? (
-          <Badge variant="outline">{formatEnum(p.type)}</Badge>
+          <Badge variant="outline">
+            {p.type === PaymentIntermediaryType.daf
+              ? "DAF"
+              : formatEnum(p.type)}
+          </Badge>
         ) : (
           "—"
         ),
