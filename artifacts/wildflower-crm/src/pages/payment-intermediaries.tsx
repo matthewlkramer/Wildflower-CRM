@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { PaymentIntermediaryRowActions } from "@/components/payment-intermediary-row-actions";
+import { CreatePaymentIntermediaryDialog } from "@/components/create-payment-intermediary-dialog";
 import {
   Pagination,
   PaginationContent,
@@ -225,6 +226,7 @@ export default function PaymentIntermediaries() {
             {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
           </p>
         </div>
+        <CreatePaymentIntermediaryDialog />
       </div>
 
       <SavedViewsBar
