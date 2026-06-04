@@ -13,3 +13,4 @@
 - [Entity-merge cascade-delete lock](merge-entity-cascade-lock.md) — merge txn must SELECT...FOR UPDATE the funder/person rows before reassign+delete; cascade FKs otherwise lose concurrent child inserts.
 - [Copper notes migration](copper-notes-migration.md) — one-time Copper→notes import; idempotent copper_<id>, strip-tags-before-decode, conservative matching, run via nohup (exceeds 120s).
 - [Per-recipient open tracking (Path A)](wildflower-per-recipient-tracking.md) — multi-recipient server-send guardrails (Bcc/attachment/reply fallback, region-scoped chip extraction, extension-token auth, gmail.send reconnect).
+- [prod→dev data sync](prod-dev-data-sync.md) — mirror prod rows into dev w/o reverting dev edits (funders.about ties); funders text overflows json_agg; apply via json_populate + replica mode; verify INCLUDE→EXCLUDE FKs first.
