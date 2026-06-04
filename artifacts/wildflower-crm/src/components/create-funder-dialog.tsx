@@ -49,7 +49,7 @@ export function CreateOrganizationDialog() {
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!create.isPending) setOpen(v); }}>
       <DialogTrigger asChild>
-        <Button data-testid="button-new-funder">New funder</Button>
+        <Button data-testid="button-new-funder">New organization</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
