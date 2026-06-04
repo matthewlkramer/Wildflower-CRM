@@ -20,6 +20,7 @@ import {
   LinkedGiftsCard,
   LinkedOpportunitiesCard,
 } from "@/components/linked-records";
+import { GivesThroughCard } from "@/components/gives-through-card";
 import {
   RecordLayout,
   FieldCard,
@@ -299,6 +300,8 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
               </p>
             )}
           </RelatedCard>
+
+          <GivesThroughCard donor={{ householdId: household.id }} />
 
           <LinkedOpportunitiesCard
             scope={{ householdId: household.id }}

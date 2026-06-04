@@ -36,6 +36,7 @@ import {
 } from "@/components/contact-info-editor";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { PinnedMediaCard } from "@/components/media-mentions-panel";
+import { GivesThroughCard } from "@/components/gives-through-card";
 import { TasksPanel } from "@/components/tasks-panel";
 import {
   LinkedGiftsCard,
@@ -837,6 +838,8 @@ function PersonView({ person }: { person: PersonDetail }) {
           <PeopleCard person={person} />
 
           <OrganizationsCard roles={roles} personId={person.id} />
+
+          <GivesThroughCard donor={{ individualGiverPersonId: person.id }} />
 
           <LinkedOpportunitiesCard
             scope={{ individualGiverPersonId: person.id }}

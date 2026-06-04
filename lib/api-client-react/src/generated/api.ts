@@ -36,6 +36,7 @@ import type {
   CandidateThankYouEmailList,
   CreateAddressBody,
   CreateCorrespondentIgnoreBody,
+  CreateDonorPaymentIntermediaryBody,
   CreateEmailBody,
   CreateEntityBody,
   CreateFundableProjectBody,
@@ -60,6 +61,8 @@ import type {
   DashboardSummary,
   DeleteLatestTrackedEmailView200,
   DisconnectGoogleOauth200,
+  DonorPaymentIntermediary,
+  DonorPaymentIntermediaryList,
   Email,
   EmailList,
   EmailMessage,
@@ -97,6 +100,7 @@ import type {
   LinkThankYouEmailBody,
   ListAddressesParams,
   ListCalendarEventsParams,
+  ListDonorPaymentIntermediariesParams,
   ListEmailMessagesParams,
   ListEmailProposalsParams,
   ListEmailsParams,
@@ -4474,6 +4478,272 @@ export const useDeletePeopleEntityRole = <
   TContext
 > => {
   return useMutation(getDeletePeopleEntityRoleMutationOptions(options));
+};
+
+export const getListDonorPaymentIntermediariesUrl = (
+  params?: ListDonorPaymentIntermediariesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/donor-payment-intermediaries?${stringifiedParams}`
+    : `/api/donor-payment-intermediaries`;
+};
+
+export const listDonorPaymentIntermediaries = async (
+  params?: ListDonorPaymentIntermediariesParams,
+  options?: RequestInit,
+): Promise<DonorPaymentIntermediaryList> => {
+  return customFetch<DonorPaymentIntermediaryList>(
+    getListDonorPaymentIntermediariesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListDonorPaymentIntermediariesQueryKey = (
+  params?: ListDonorPaymentIntermediariesParams,
+) => {
+  return [
+    `/api/donor-payment-intermediaries`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListDonorPaymentIntermediariesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  params?: ListDonorPaymentIntermediariesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListDonorPaymentIntermediariesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>
+  > = ({ signal }) =>
+    listDonorPaymentIntermediaries(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDonorPaymentIntermediariesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>
+>;
+export type ListDonorPaymentIntermediariesQueryError =
+  ErrorType<BadRequestResponse>;
+
+export function useListDonorPaymentIntermediaries<
+  TData = Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  params?: ListDonorPaymentIntermediariesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDonorPaymentIntermediariesQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateDonorPaymentIntermediaryUrl = () => {
+  return `/api/donor-payment-intermediaries`;
+};
+
+export const createDonorPaymentIntermediary = async (
+  createDonorPaymentIntermediaryBody: CreateDonorPaymentIntermediaryBody,
+  options?: RequestInit,
+): Promise<DonorPaymentIntermediary> => {
+  return customFetch<DonorPaymentIntermediary>(
+    getCreateDonorPaymentIntermediaryUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createDonorPaymentIntermediaryBody),
+    },
+  );
+};
+
+export const getCreateDonorPaymentIntermediaryMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDonorPaymentIntermediary>>,
+    TError,
+    { data: BodyType<CreateDonorPaymentIntermediaryBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createDonorPaymentIntermediary>>,
+  TError,
+  { data: BodyType<CreateDonorPaymentIntermediaryBody> },
+  TContext
+> => {
+  const mutationKey = ["createDonorPaymentIntermediary"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createDonorPaymentIntermediary>>,
+    { data: BodyType<CreateDonorPaymentIntermediaryBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createDonorPaymentIntermediary(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateDonorPaymentIntermediaryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createDonorPaymentIntermediary>>
+>;
+export type CreateDonorPaymentIntermediaryMutationBody =
+  BodyType<CreateDonorPaymentIntermediaryBody>;
+export type CreateDonorPaymentIntermediaryMutationError =
+  ErrorType<BadRequestResponse>;
+
+export const useCreateDonorPaymentIntermediary = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDonorPaymentIntermediary>>,
+    TError,
+    { data: BodyType<CreateDonorPaymentIntermediaryBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createDonorPaymentIntermediary>>,
+  TError,
+  { data: BodyType<CreateDonorPaymentIntermediaryBody> },
+  TContext
+> => {
+  return useMutation(getCreateDonorPaymentIntermediaryMutationOptions(options));
+};
+
+export const getDeleteDonorPaymentIntermediaryUrl = (id: string) => {
+  return `/api/donor-payment-intermediaries/${id}`;
+};
+
+export const deleteDonorPaymentIntermediary = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteDonorPaymentIntermediaryUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteDonorPaymentIntermediaryMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteDonorPaymentIntermediary"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteDonorPaymentIntermediary(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteDonorPaymentIntermediaryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>
+>;
+
+export type DeleteDonorPaymentIntermediaryMutationError = ErrorType<unknown>;
+
+export const useDeleteDonorPaymentIntermediary = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteDonorPaymentIntermediaryMutationOptions(options));
 };
 
 export const getListEmailsUrl = (params?: ListEmailsParams) => {

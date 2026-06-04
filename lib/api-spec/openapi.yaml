@@ -22,6 +22,7 @@ tags:
   - { name: households }
   - { name: people }
   - { name: people-entity-roles }
+  - { name: donor-payment-intermediaries }
   - { name: emails }
   - { name: phone-numbers }
   - { name: addresses }
@@ -636,6 +637,32 @@ paths:
     delete:
       operationId: deletePeopleEntityRole
       tags: [people-entity-roles]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
+  # ─── Donor payment-intermediaries ("gives through") ─────────────────────────
+  /donor-payment-intermediaries:
+    get:
+      operationId: listDonorPaymentIntermediaries
+      tags: [donor-payment-intermediaries]
+      parameters:
+        - { name: organizationId, in: query, schema: { type: string } }
+        - { name: individualGiverPersonId, in: query, schema: { type: string } }
+        - { name: householdId, in: query, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DonorPaymentIntermediaryList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      operationId: createDonorPaymentIntermediary
+      tags: [donor-payment-intermediaries]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateDonorPaymentIntermediaryBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/DonorPaymentIntermediary" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /donor-payment-intermediaries/{id}:
+    delete:
+      operationId: deleteDonorPaymentIntermediary
+      tags: [donor-payment-intermediaries]
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses: { "204": { description: Deleted } }
 
@@ -2445,6 +2472,38 @@ components:
         crunchbase:            { type: string, nullable: true }
         priority:              { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
         anonymous:             { type: boolean }
+
+    # ─── Donor payment-intermediaries ("gives through") ─────────────────────────
+    DonorPaymentIntermediary:
+      type: object
+      required: [id, paymentIntermediaryId, paymentIntermediary, createdAt, updatedAt]
+      properties:
+        id:                      { type: string }
+        paymentIntermediaryId:   { type: string }
+        organizationId:          { type: string, nullable: true }
+        individualGiverPersonId: { type: string, nullable: true }
+        householdId:             { type: string, nullable: true }
+        notes:                   { type: string, nullable: true }
+        paymentIntermediary:     { $ref: "#/components/schemas/PaymentIntermediary" }
+        createdAt:               { type: string, format: date-time }
+        updatedAt:               { type: string, format: date-time }
+    DonorPaymentIntermediaryList:
+      type: object
+      required: [data, giftDerived]
+      properties:
+        data:        { type: array, items: { $ref: "#/components/schemas/DonorPaymentIntermediary" } }
+        # Intermediaries seen on this donor's gifts that are NOT yet logged as
+        # explicit links — surfaced as quick-add suggestions, not persisted.
+        giftDerived: { type: array, items: { $ref: "#/components/schemas/PaymentIntermediary" } }
+    CreateDonorPaymentIntermediaryBody:
+      type: object
+      required: [paymentIntermediaryId]
+      properties:
+        paymentIntermediaryId:   { type: string }
+        organizationId:          { type: string }
+        individualGiverPersonId: { type: string }
+        householdId:             { type: string }
+        notes:                   { type: string }
 
     # ─── Payment intermediaries ────────────────────────────────────────────────
     PaymentIntermediary:

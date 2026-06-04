@@ -421,7 +421,7 @@ export function InlineEditMultiSelect({
 /*                                                                          */
 /* Canonical normalized set of distinct values across the organizations +    */
 /* people tables (legacy snake_case + casing duplicates were merged into     */
-/* these — see lib/db/migrations/0006). Both columns are free-form text[]    */
+/* these — see lib/db/migrations/0007). Both columns are free-form text[]    */
 /* server-side (no enum), so users can add new tags via the "Add 'X'"       */
 /* affordance — the lists here are just convenience suggestions.            */
 /* ──────────────────────────────────────────────────────────────────────── */

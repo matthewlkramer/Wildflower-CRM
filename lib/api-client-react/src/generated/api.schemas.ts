@@ -1000,6 +1000,31 @@ export interface UpdateOrganizationBody {
   anonymous?: boolean;
 }
 
+export interface DonorPaymentIntermediary {
+  id: string;
+  paymentIntermediaryId: string;
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+  notes?: string | null;
+  paymentIntermediary: PaymentIntermediary;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DonorPaymentIntermediaryList {
+  data: DonorPaymentIntermediary[];
+  giftDerived: PaymentIntermediary[];
+}
+
+export interface CreateDonorPaymentIntermediaryBody {
+  paymentIntermediaryId: string;
+  organizationId?: string;
+  individualGiverPersonId?: string;
+  householdId?: string;
+  notes?: string;
+}
+
 export type PaymentIntermediaryDetail = PaymentIntermediary & {
   people?: PeopleEntityRole[];
   emails?: Email[];
@@ -3012,6 +3037,12 @@ export type ListPeopleEntityRolesParams = {
    * @minimum 1
    */
   page?: PageParameter;
+};
+
+export type ListDonorPaymentIntermediariesParams = {
+  organizationId?: string;
+  individualGiverPersonId?: string;
+  householdId?: string;
 };
 
 export type ListEmailsParams = {

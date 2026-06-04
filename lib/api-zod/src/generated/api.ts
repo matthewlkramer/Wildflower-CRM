@@ -2849,6 +2849,59 @@ export const DeletePeopleEntityRoleParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const ListDonorPaymentIntermediariesQueryParams = zod.object({
+  organizationId: zod.coerce.string().optional(),
+  individualGiverPersonId: zod.coerce.string().optional(),
+  householdId: zod.coerce.string().optional(),
+});
+
+export const ListDonorPaymentIntermediariesResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      paymentIntermediaryId: zod.string(),
+      organizationId: zod.string().nullish(),
+      individualGiverPersonId: zod.string().nullish(),
+      householdId: zod.string().nullish(),
+      notes: zod.string().nullish(),
+      paymentIntermediary: zod.object({
+        id: zod.string(),
+        name: zod.string(),
+        type: zod
+          .enum(["daf", "giving_platform", "private_wealth_manager"])
+          .nullish(),
+        createdAt: zod.string().datetime({}),
+        updatedAt: zod.string().datetime({}),
+      }),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    }),
+  ),
+  giftDerived: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod
+        .enum(["daf", "giving_platform", "private_wealth_manager"])
+        .nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    }),
+  ),
+});
+
+export const CreateDonorPaymentIntermediaryBody = zod.object({
+  paymentIntermediaryId: zod.string(),
+  organizationId: zod.string().optional(),
+  individualGiverPersonId: zod.string().optional(),
+  householdId: zod.string().optional(),
+  notes: zod.string().optional(),
+});
+
+export const DeleteDonorPaymentIntermediaryParams = zod.object({
+  id: zod.coerce.string(),
+});
+
 export const listEmailsQueryLimitDefault = 50;
 export const listEmailsQueryLimitMax = 10000;
 

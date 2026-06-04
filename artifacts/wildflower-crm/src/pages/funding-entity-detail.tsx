@@ -51,10 +51,7 @@ import {
   type InlineSelectOption,
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
-import {
-  InlineEditIntermediaryPicker,
-  useIntermediaryName,
-} from "@/components/entity-picker";
+import { GivesThroughCard } from "@/components/gives-through-card";
 import {
   InlineEditInterestsThematic,
   InlineEditInterestsAges,
@@ -871,7 +868,9 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
             )}
           </RelatedCard>
 
-          <RelatedOrganizationsCard org={org} patch={patch} />
+          <RelatedOrganizationsCard org={org} />
+
+          <GivesThroughCard donor={{ organizationId: org.id }} />
 
           <LinkedOpportunitiesCard
             scope={{ organizationId: org.id }}
@@ -889,10 +888,8 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
 
 function RelatedOrganizationsCard({
   org,
-  patch,
 }: {
   org: OrganizationDetail;
-  patch: (body: UpdateOrganizationBody) => Promise<unknown>;
 }) {
   const childParams: ListOrganizationsParams = {
     parentOrganizationId: org.id,
@@ -918,10 +915,6 @@ function RelatedOrganizationsCard({
 
   const allChildren = childrenQ.data?.data ?? [];
   const fullParent = org.parentOrganizationId ? (parentQ.data ?? null) : null;
-  const intermediaryId = org.paymentIntermediaryId ?? null;
-  const resolvedIntermediaryName = useIntermediaryName(intermediaryId);
-  const intermediaryName =
-    org.paymentIntermediary?.name ?? resolvedIntermediaryName;
 
   const hasInactive =
     allChildren.some(isInactiveOrg) ||
@@ -932,7 +925,7 @@ function RelatedOrganizationsCard({
     fullParent && !(hideInactive && isInactiveOrg(fullParent))
       ? fullParent
       : null;
-  const count = (parent ? 1 : 0) + children.length + (intermediaryId ? 1 : 0);
+  const count = (parent ? 1 : 0) + children.length;
 
   return (
     <RelatedCard
@@ -968,14 +961,6 @@ function RelatedOrganizationsCard({
             hideStatusBadge
           />
         ))}
-        <InlineEditIntermediaryPicker
-          label="Payment intermediary"
-          testIdBase="organization-payment-intermediary"
-          display={intermediaryName ?? undefined}
-          value={intermediaryId}
-          onSave={(next) => patch({ paymentIntermediaryId: next })}
-          allowNull
-        />
       </div>
     </RelatedCard>
   );
