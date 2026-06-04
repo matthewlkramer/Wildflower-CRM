@@ -494,6 +494,16 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     onSave={(next) => patch({ totalAssets: next })}
                   />
                 </Row>
+                <Row label="Makes grants">
+                  <InlineEditBoolean
+                    label="Makes grants"
+                    testIdBase="organization-issues-grants"
+                    value={org.issuesGrants}
+                    allowNull={false}
+                    display={org.issuesGrants ? "Yes" : "No"}
+                    onSave={(next) => patch({ issuesGrants: next ?? false })}
+                  />
+                </Row>
                 <Row label="Makes PRIs">
                   <InlineEditBoolean
                     label="Makes PRIs"
