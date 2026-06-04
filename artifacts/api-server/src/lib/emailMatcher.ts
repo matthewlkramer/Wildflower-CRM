@@ -1,5 +1,10 @@
 import { db } from "@workspace/db";
-import { emails, organizations, personSuppressionWindows } from "@workspace/db/schema";
+import {
+  emails,
+  organizations,
+  personSuppressionWindows,
+  internalEmailDomains,
+} from "@workspace/db/schema";
 import { and, eq, inArray, lte, or, sql, isNull, gte } from "drizzle-orm";
 import { isFreeMailDomain } from "./freeMailDomains";
 
@@ -35,10 +40,51 @@ import { isFreeMailDomain } from "./freeMailDomains";
  * touching callers.
  */
 
-const INTERNAL_DOMAINS = new Set([
+/**
+ * Seed / fallback internal domains. Used when the singleton settings row
+ * has not been created yet (so behavior is unchanged on rollout) and as the
+ * default for the pure `normalizeForMatching` helper (keeps unit tests and
+ * any non-DB callers behaving like the old hardcoded Set). Admins manage the
+ * live list via the `internal_email_domains` settings table.
+ */
+export const DEFAULT_INTERNAL_DOMAINS: readonly string[] = [
   "wildflowerschools.org",
   "blackwildflowers.org",
-]);
+];
+
+// Short-lived in-memory cache of the configured internal domains. matchEmails
+// runs once per synced message/event during sync, so we avoid a DB round-trip
+// on every call. The Admin update route calls `invalidateInternalDomainsCache`
+// so edits take effect immediately rather than after the TTL.
+const INTERNAL_DOMAINS_TTL_MS = 60_000;
+let internalDomainsCache: { value: Set<string>; expiresAt: number } | null =
+  null;
+
+export function invalidateInternalDomainsCache(): void {
+  internalDomainsCache = null;
+}
+
+/**
+ * Load the configured internal domains from the settings table, lowercased.
+ * Falls back to `DEFAULT_INTERNAL_DOMAINS` when the singleton row does not
+ * exist yet (pre-seed) so sync drops the original two domains unchanged.
+ */
+export async function loadInternalDomains(): Promise<Set<string>> {
+  const now = Date.now();
+  if (internalDomainsCache && internalDomainsCache.expiresAt > now) {
+    return internalDomainsCache.value;
+  }
+  const rows = await db
+    .select({ domains: internalEmailDomains.domains })
+    .from(internalEmailDomains)
+    .where(eq(internalEmailDomains.id, "singleton"));
+  const row = rows[0];
+  const value = row
+    ? new Set(row.domains.map((d) => d.trim().toLowerCase()).filter(Boolean))
+    : new Set(DEFAULT_INTERNAL_DOMAINS);
+  internalDomainsCache = { value, expiresAt: now + INTERNAL_DOMAINS_TTL_MS };
+  return value;
+}
 
 export interface EmailMatchResult {
   personIds: string[];
@@ -55,6 +101,7 @@ export const EMPTY_MATCH: EmailMatchResult = {
 export function normalizeForMatching(
   addrs: Iterable<string>,
   mailboxOwnerEmail: string | null,
+  internalDomains: ReadonlySet<string> = new Set(DEFAULT_INTERNAL_DOMAINS),
 ): string[] {
   const owner = mailboxOwnerEmail?.toLowerCase() ?? null;
   const out = new Set<string>();
@@ -63,7 +110,7 @@ export function normalizeForMatching(
     if (!a) continue;
     if (owner && a === owner) continue;
     const domain = a.split("@")[1];
-    if (domain && INTERNAL_DOMAINS.has(domain)) continue;
+    if (domain && internalDomains.has(domain)) continue;
     out.add(a);
   }
   return [...out];
@@ -117,7 +164,12 @@ export async function matchEmails(
   mailboxOwnerEmail: string | null,
   messageDate: Date = new Date(),
 ): Promise<EmailMatchResult> {
-  const cleaned = normalizeForMatching(addresses, mailboxOwnerEmail);
+  const internalDomains = await loadInternalDomains();
+  const cleaned = normalizeForMatching(
+    addresses,
+    mailboxOwnerEmail,
+    internalDomains,
+  );
   if (cleaned.length === 0) return EMPTY_MATCH;
 
   // Domains we'll match against organizations.email_domain so that mail

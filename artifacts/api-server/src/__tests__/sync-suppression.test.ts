@@ -210,6 +210,29 @@ describe("normalizeForMatching", () => {
   it("ignores empty strings", () => {
     expect(normalizeForMatching(["", "  ", "a@b.com"], null)).toEqual(["a@b.com"]);
   });
+
+  it("strips domains from a caller-supplied internal-domain set", () => {
+    // Admin-configured list: a custom domain is dropped, while the previously
+    // hardcoded defaults are NOT (the caller fully controls the set).
+    const internal = new Set(["newstaff.org"]);
+    expect(
+      normalizeForMatching(
+        ["staff@newstaff.org", "staff@wildflowerschools.org", "donor@outside.org"],
+        null,
+        internal,
+      ),
+    ).toEqual(["staff@wildflowerschools.org", "donor@outside.org"]);
+  });
+
+  it("keeps everything when given an empty internal-domain set", () => {
+    expect(
+      normalizeForMatching(
+        ["staff@wildflowerschools.org", "donor@outside.org"],
+        null,
+        new Set<string>(),
+      ),
+    ).toEqual(["staff@wildflowerschools.org", "donor@outside.org"]);
+  });
 });
 
 // ── backfill helpers (pure-logic regression tests) ───────────────────────────

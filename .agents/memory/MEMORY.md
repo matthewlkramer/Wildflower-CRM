@@ -24,3 +24,4 @@
 - [clerk admin-gated e2e testing](clerk-admin-e2e-testing.md) — testClerkAuth provisions team_member; add a [DB] step to promote to admin or admin cards silently 403/hide.
 - [task intelligence](task-intelligence.md) — AI next-step suggestions in Tasks card; auto-generate ONLY on true first view (hasAnyProposal=false), never regenerate after accept/dismiss; refresh is explicit.
 - [QuickBooks payment sync](quickbooks-payment-sync.md) — pull-only QBO→CRM; idempotent (realmId,type,id) rows retained; dev keys⇒sandbox host, prod keys⇒live; redirect URI exact-match per key set; approve mints gift w/ Donor XOR.
+- [internal email domains config](internal-email-domains-config.md) — staff domains moved from hardcoded Set to internal_email_domains singleton; matcher loads via cached loadInternalDomains; defaults seed/fallback keep sync unchanged on rollout.

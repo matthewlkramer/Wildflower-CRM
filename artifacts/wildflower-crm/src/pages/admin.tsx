@@ -12,6 +12,8 @@ import {
   useAdminResyncGoogleUser,
   useGetCalendarMeetingFilters,
   useUpdateCalendarMeetingFilters,
+  useGetInternalEmailDomains,
+  useUpdateInternalEmailDomains,
   useAdminListEmailIntelPrompts,
   useAdminSaveEmailIntelPrompt,
   useAdminGenerateEmailIntelPrompt,
@@ -24,6 +26,7 @@ import {
   getGetDashboardSummaryQueryKey,
   getAdminListGoogleSyncQueryKey,
   getGetCalendarMeetingFiltersQueryKey,
+  getGetInternalEmailDomainsQueryKey,
   getAdminListEmailIntelPromptsQueryKey,
   getAdminListEmailIntelFeedbackQueryKey,
 } from "@workspace/api-client-react";
@@ -118,6 +121,7 @@ export default function Admin() {
       <GoalsSection entities={entities} fyList={fyList} goals={goals} loading={goalsQ.isLoading || fyListQ.isLoading} />
       <AdminSyncSection />
       <CalendarMeetingFiltersSection />
+      <InternalEmailDomainsSection />
       <EmailIntelligenceSection />
       <p className="text-xs text-muted-foreground">
         Looking to connect or disconnect your own Google account? That moved
@@ -900,6 +904,146 @@ function CalendarMeetingFiltersSection() {
                 : "never"}
             </div>
             <Button size="sm" variant="outline" onClick={startEdit}>
+              Edit
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Internal staff email-domain config ───────────────────────────────────────
+// The Gmail + Calendar sync matcher drops any address on one of these domains
+// so internal staff-to-staff threads never land on a donor timeline. Read is
+// open to any signed-in user; the PUT is admin-only and returns 403 (surfaced
+// as a toast) for non-admins.
+
+function InternalEmailDomainsSection() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const q = useGetInternalEmailDomains({
+    query: { queryKey: getGetInternalEmailDomainsQueryKey(), staleTime: 60_000 },
+  });
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const current = q.data;
+
+  const update = useUpdateInternalEmailDomains({
+    mutation: {
+      onSuccess: async () => {
+        await qc.invalidateQueries({ queryKey: getGetInternalEmailDomainsQueryKey() });
+        toast({ title: "Internal domains saved" });
+        setEditing(false);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Save failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const startEdit = () => {
+    if (!current) return;
+    setDraft((current.domains ?? []).join("\n"));
+    setEditing(true);
+  };
+
+  const commit = () => {
+    const domains = draft
+      .split("\n")
+      .map((s) => s.trim().toLowerCase().replace(/^\*?@/, "").trim())
+      .filter((s) => s.length > 0);
+    update.mutate({ data: { domains } });
+  };
+
+  return (
+    <Card data-testid="admin-internal-domains-section">
+      <CardHeader>
+        <CardTitle>Internal staff email domains</CardTitle>
+        <CardDescription>
+          Email + calendar sync drops any address on these domains, so internal
+          staff-to-staff messages never appear on donor timelines. Add a new
+          Google Workspace domain here when staff start using one — no code
+          change needed.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {q.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : editing ? (
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="internal-domains">
+                Domains (one per line, e.g. wildflowerschools.org)
+              </Label>
+              <textarea
+                id="internal-domains"
+                data-testid="internal-domains-input"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono min-h-[120px] resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={"wildflowerschools.org\nblackwildflowers.org"}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={commit}
+                disabled={update.isPending}
+                data-testid="internal-domains-save"
+              >
+                Save
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditing(false)}
+                disabled={update.isPending}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">
+                Configured domains
+              </div>
+              {(current?.domains ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">None configured.</p>
+              ) : (
+                <ul className="text-sm space-y-0.5">
+                  {(current?.domains ?? []).map((d) => (
+                    <li
+                      key={d}
+                      className="font-mono bg-muted rounded px-2 py-0.5 inline-block mr-1 mb-1"
+                    >
+                      {d}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Last updated:{" "}
+              {current?.updatedAt
+                ? new Date(current.updatedAt).toLocaleString()
+                : "never"}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={startEdit}
+              data-testid="internal-domains-edit"
+            >
               Edit
             </Button>
           </div>

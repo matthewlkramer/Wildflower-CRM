@@ -2949,6 +2949,15 @@ export interface UpdateCalendarMeetingFiltersBody {
   attendeeCountCutoff: number;
 }
 
+export interface InternalEmailDomainsConfig {
+  domains: string[];
+  updatedAt: string | null;
+}
+
+export interface UpdateInternalEmailDomainsBody {
+  domains: string[];
+}
+
 /**
  * Not found
  */

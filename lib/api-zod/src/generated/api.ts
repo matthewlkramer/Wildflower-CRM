@@ -7578,3 +7578,23 @@ export const UpdateCalendarMeetingFiltersResponse = zod.object({
     .min(updateCalendarMeetingFiltersResponseAttendeeCountCutoffMin),
   updatedAt: zod.string().datetime({}).nullable(),
 });
+
+/**
+ * @summary Get the configured internal staff email domains
+ */
+export const GetInternalEmailDomainsResponse = zod.object({
+  domains: zod.array(zod.string()),
+  updatedAt: zod.string().datetime({}).nullable(),
+});
+
+/**
+ * @summary Replace the internal staff email-domain list (admin only)
+ */
+export const UpdateInternalEmailDomainsBody = zod.object({
+  domains: zod.array(zod.string()),
+});
+
+export const UpdateInternalEmailDomainsResponse = zod.object({
+  domains: zod.array(zod.string()),
+  updatedAt: zod.string().datetime({}).nullable(),
+});

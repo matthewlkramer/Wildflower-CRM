@@ -45,6 +45,7 @@ tags:
   - { name: media-mentions }
   - { name: suppression-windows }
   - { name: calendar-meeting-filters }
+  - { name: internal-email-domains }
   - { name: top-priorities }
   - { name: quickbooks-oauth }
   - { name: quickbooks-sync }
@@ -2074,6 +2075,24 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateCalendarMeetingFiltersBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarMeetingFiltersConfig" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ─── Internal staff email-domain config ─────────────────────────────────────
+  /internal-email-domains:
+    get:
+      operationId: getInternalEmailDomains
+      tags: [internal-email-domains]
+      summary: Get the configured internal staff email domains
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/InternalEmailDomainsConfig" } } } }
+    put:
+      operationId: updateInternalEmailDomains
+      tags: [internal-email-domains]
+      summary: Replace the internal staff email-domain list (admin only)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateInternalEmailDomainsBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/InternalEmailDomainsConfig" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -4717,3 +4736,16 @@ components:
       properties:
         titlePatterns:      { type: array, items: { type: string } }
         attendeeCountCutoff: { type: integer, minimum: 2 }
+
+    # ─── Internal staff email-domain config ──────────────────────────────────
+    InternalEmailDomainsConfig:
+      type: object
+      required: [domains, updatedAt]
+      properties:
+        domains:   { type: array, items: { type: string } }
+        updatedAt: { type: string, format: date-time, nullable: true }
+    UpdateInternalEmailDomainsBody:
+      type: object
+      required: [domains]
+      properties:
+        domains: { type: array, items: { type: string } }

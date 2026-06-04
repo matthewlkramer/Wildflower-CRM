@@ -108,6 +108,7 @@ import type {
   HouseholdList,
   Interaction,
   InteractionList,
+  InternalEmailDomainsConfig,
   LinkThankYouEmailBody,
   ListAddressesParams,
   ListCalendarEventsParams,
@@ -215,6 +216,7 @@ import type {
   UpdateGiftOrPaymentBody,
   UpdateHouseholdBody,
   UpdateInteractionBody,
+  UpdateInternalEmailDomainsBody,
   UpdateMeetingNoteBody,
   UpdateNoteBody,
   UpdateOpportunityOrPledgeBody,
@@ -15193,4 +15195,175 @@ export const useUpdateCalendarMeetingFilters = <
   TContext
 > => {
   return useMutation(getUpdateCalendarMeetingFiltersMutationOptions(options));
+};
+
+/**
+ * @summary Get the configured internal staff email domains
+ */
+export const getGetInternalEmailDomainsUrl = () => {
+  return `/api/internal-email-domains`;
+};
+
+export const getInternalEmailDomains = async (
+  options?: RequestInit,
+): Promise<InternalEmailDomainsConfig> => {
+  return customFetch<InternalEmailDomainsConfig>(
+    getGetInternalEmailDomainsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetInternalEmailDomainsQueryKey = () => {
+  return [`/api/internal-email-domains`] as const;
+};
+
+export const getGetInternalEmailDomainsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getInternalEmailDomains>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getInternalEmailDomains>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetInternalEmailDomainsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getInternalEmailDomains>>
+  > = ({ signal }) => getInternalEmailDomains({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getInternalEmailDomains>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetInternalEmailDomainsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getInternalEmailDomains>>
+>;
+export type GetInternalEmailDomainsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the configured internal staff email domains
+ */
+
+export function useGetInternalEmailDomains<
+  TData = Awaited<ReturnType<typeof getInternalEmailDomains>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getInternalEmailDomains>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInternalEmailDomainsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Replace the internal staff email-domain list (admin only)
+ */
+export const getUpdateInternalEmailDomainsUrl = () => {
+  return `/api/internal-email-domains`;
+};
+
+export const updateInternalEmailDomains = async (
+  updateInternalEmailDomainsBody: UpdateInternalEmailDomainsBody,
+  options?: RequestInit,
+): Promise<InternalEmailDomainsConfig> => {
+  return customFetch<InternalEmailDomainsConfig>(
+    getUpdateInternalEmailDomainsUrl(),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateInternalEmailDomainsBody),
+    },
+  );
+};
+
+export const getUpdateInternalEmailDomainsMutationOptions = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInternalEmailDomains>>,
+    TError,
+    { data: BodyType<UpdateInternalEmailDomainsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateInternalEmailDomains>>,
+  TError,
+  { data: BodyType<UpdateInternalEmailDomainsBody> },
+  TContext
+> => {
+  const mutationKey = ["updateInternalEmailDomains"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateInternalEmailDomains>>,
+    { data: BodyType<UpdateInternalEmailDomainsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateInternalEmailDomains(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateInternalEmailDomainsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateInternalEmailDomains>>
+>;
+export type UpdateInternalEmailDomainsMutationBody =
+  BodyType<UpdateInternalEmailDomainsBody>;
+export type UpdateInternalEmailDomainsMutationError = ErrorType<
+  BadRequestResponse | ForbiddenResponse
+>;
+
+/**
+ * @summary Replace the internal staff email-domain list (admin only)
+ */
+export const useUpdateInternalEmailDomains = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInternalEmailDomains>>,
+    TError,
+    { data: BodyType<UpdateInternalEmailDomainsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateInternalEmailDomains>>,
+  TError,
+  { data: BodyType<UpdateInternalEmailDomainsBody> },
+  TContext
+> => {
+  return useMutation(getUpdateInternalEmailDomainsMutationOptions(options));
 };
