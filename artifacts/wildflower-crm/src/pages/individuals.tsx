@@ -102,6 +102,25 @@ const ENTHUSIASM_OPTIONS = [
   { value: "2-unsupportive", label: "2-Unsupportive" },
   { value: "1-hostile", label: "1-Hostile" },
 ] as const;
+// Derived newsletter status. `unsubscribed` wins over the `newsletter`
+// flag so the three states are mutually exclusive (matches the detail
+// page + the server-side filter + Flodesk precedence).
+const NEWSLETTER_OPTIONS: MultiFilterOption[] = [
+  { value: "subscribed", label: "Subscribed" },
+  { value: "unsubscribed", label: "Unsubscribed" },
+  { value: "not_subscribed", label: "Not subscribed" },
+];
+type NewsletterStatus = "subscribed" | "unsubscribed" | "not_subscribed";
+function newsletterStatus(p: Person): NewsletterStatus {
+  if (p.unsubscribedToNewsletter) return "unsubscribed";
+  if (p.newsletter) return "subscribed";
+  return "not_subscribed";
+}
+const NEWSLETTER_SORT: Record<NewsletterStatus, number> = {
+  subscribed: 2,
+  not_subscribed: 1,
+  unsubscribed: 0,
+};
 
 // Lookups the column cell renderers close over. Bundled into a single
 // context object so `buildColumns` stays a pure function of its inputs
@@ -233,6 +252,23 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
           : "—",
     },
     {
+      key: "newsletter",
+      label: "Newsletter",
+      defaultVisible: false,
+      cell: (p) => {
+        const s = newsletterStatus(p);
+        if (s === "subscribed")
+          return <Badge variant="outline">Subscribed</Badge>;
+        if (s === "unsubscribed")
+          return (
+            <Badge variant="outline" className="text-muted-foreground">
+              Unsubscribed
+            </Badge>
+          );
+        return "—";
+      },
+    },
+    {
       key: "connectionStatus",
       label: "Connection",
       defaultVisible: false,
@@ -309,6 +345,7 @@ export default function Individuals() {
   const [enthusiasmSel, setEnthusiasmSel] = usePersistedState<string[]>("wf.list.people.enthusiasms", []);
   const [prioritySel, setPrioritySel] = usePersistedState<string[]>("wf.list.people.priorities", []);
   const [regionIdsSel, setRegionIdsSel] = usePersistedState<string[]>("wf.list.people.regionIds", []);
+  const [newsletterSel, setNewsletterSel] = usePersistedState<string[]>("wf.list.people.newsletter", []);
   // Which optional filters are shown in the toolbar. null = registry defaults.
   const [filtersState, setFiltersState] = usePersistedState<FiltersState | null>("wf.list.people.filters", null);
   const [page, setPage] = usePersistedState<number>("wf.list.people.page", 1);
@@ -349,6 +386,9 @@ export default function Individuals() {
     ...(enthusiasmSel.length > 0 ? { enthusiasm: [...enthusiasmSel].sort() } : {}),
     ...(prioritySel.length > 0 ? { priority: [...prioritySel].sort() } : {}),
     ...(regionIdsSel.length > 0 ? { regionIds: [...regionIdsSel].sort() } : {}),
+    ...(newsletterSel.length > 0
+      ? { newsletterStatus: [...newsletterSel].sort() as NewsletterStatus[] }
+      : {}),
   };
 
   const { data, isLoading, isError, error } = useListPeople(params, {
@@ -608,9 +648,25 @@ export default function Individuals() {
           />
         ),
       },
+      {
+        key: "newsletter",
+        label: "Newsletter",
+        defaultVisible: false,
+        active: newsletterSel.length > 0,
+        clear: () => { setNewsletterSel([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Newsletter"
+            selected={newsletterSel}
+            onChange={(v) => { setNewsletterSel(v); setPage(1); selection.clear(); }}
+            options={NEWSLETTER_OPTIONS}
+            testId="select-person-newsletter"
+          />
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [deceasedSel, capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel],
+    [deceasedSel, capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel, newsletterSel],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -644,6 +700,7 @@ export default function Individuals() {
           openAsks: (r) => r.openOpportunityCount ?? null,
           activeFunders: (r) => (r.activeOrganizationNames ?? []).length || null,
           connectionStatus: (r) => r.connectionStatus ?? null,
+          newsletter: (r) => NEWSLETTER_SORT[newsletterStatus(r)],
           enthusiasm: (r) => r.enthusiasm ?? null,
           owner: (r) =>
             r.ownerUserId
@@ -675,7 +732,8 @@ export default function Individuals() {
     connectionStatusSel.length > 0 ||
     enthusiasmSel.length > 0 ||
     prioritySel.length > 0 ||
-    regionIdsSel.length > 0;
+    regionIdsSel.length > 0 ||
+    newsletterSel.length > 0;
 
   // ─── Saved views ─────────────────────────────────────────────────
   // The persisted view captures filters + sort + the user's column
@@ -695,6 +753,7 @@ export default function Individuals() {
     enthusiasmSel: string[];
     prioritySel: string[];
     regionIdsSel: string[];
+    newsletterSel: string[];
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -712,6 +771,7 @@ export default function Individuals() {
     enthusiasmSel,
     prioritySel,
     regionIdsSel,
+    newsletterSel,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -729,6 +789,7 @@ export default function Individuals() {
     setEnthusiasmSel([]);
     setPrioritySel([]);
     setRegionIdsSel([]);
+    setNewsletterSel([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -752,6 +813,7 @@ export default function Individuals() {
       setEnthusiasmSel(s.enthusiasmSel ?? []);
       setPrioritySel(s.prioritySel ?? []);
       setRegionIdsSel(s.regionIdsSel ?? []);
+      setNewsletterSel(s.newsletterSel ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       // Backwards-compat: views saved before this feature have no
       // `columns` / `filters` field. Treat them as "defaults" so applying
@@ -774,6 +836,7 @@ export default function Individuals() {
       (s.enthusiasmSel?.length ?? 0) === 0 &&
       (s.prioritySel?.length ?? 0) === 0 &&
       (s.regionIdsSel?.length ?? 0) === 0 &&
+      (s.newsletterSel?.length ?? 0) === 0 &&
       (s.sort?.key ?? null) === null &&
       (s.columns ?? null) === null &&
       (s.filters ?? null) === null,
@@ -835,6 +898,7 @@ export default function Individuals() {
               setEnthusiasmSel([]);
               setPrioritySel([]);
               setRegionIdsSel([]);
+              setNewsletterSel([]);
               setPage(1);
               selection.clear();
             }}

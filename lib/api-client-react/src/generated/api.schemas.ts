@@ -2801,6 +2801,8 @@ export interface BulkUpdatePeoplePatch {
   capacityRating?: CapacityRating | null;
   priority?: Priority | null;
   deceased?: boolean;
+  /** Newsletter subscription flag. Changes are mirrored out to Flodesk (precedence rules apply — a Flodesk unsubscribe still wins). */
+  newsletter?: boolean;
 }
 
 export interface BulkUpdatePeopleBody {
@@ -3235,6 +3237,15 @@ export type ListPeopleParams = {
    */
   activeAffiliationPresence?: ListPeopleActiveAffiliationPresence;
   /**
+ * Filter to people by derived newsletter status. Multi-value
+(OR semantics): repeat or comma-separate. `subscribed` =
+newsletter on and not unsubscribed; `unsubscribed` =
+unsubscribed flag set (wins over newsletter); `not_subscribed`
+= newsletter off and not unsubscribed.
+
+ */
+  newsletterStatus?: ListPeopleNewsletterStatusItem[];
+  /**
  * Capacity-rating slugs (see CapacityRating). Accepts the
 literal `__blank__` to match rows with no capacity rating set.
 
@@ -3309,6 +3320,15 @@ export type ListPeopleActiveAffiliationPresence =
 export const ListPeopleActiveAffiliationPresence = {
   has: "has",
   blank: "blank",
+} as const;
+
+export type ListPeopleNewsletterStatusItem =
+  (typeof ListPeopleNewsletterStatusItem)[keyof typeof ListPeopleNewsletterStatusItem];
+
+export const ListPeopleNewsletterStatusItem = {
+  subscribed: "subscribed",
+  unsubscribed: "unsubscribed",
+  not_subscribed: "not_subscribed",
 } as const;
 
 export type ListPeopleEntityRolesParams = {

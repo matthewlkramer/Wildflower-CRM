@@ -650,6 +650,17 @@ paths:
         - { name: lastGiftPresence, in: query, required: false, description: "Rollup presence filter on most-recent gift date (`has` = any gift, `blank` = none).", schema: { type: string, enum: [has, blank] } }
         - { name: openAsksPresence, in: query, required: false, description: "Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }
         - { name: activeAffiliationPresence, in: query, required: false, description: "Presence filter on current funder/organization roles (`has` = any current role, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - name: newsletterStatus
+          in: query
+          description: |
+            Filter to people by derived newsletter status. Multi-value
+            (OR semantics): repeat or comma-separate. `subscribed` =
+            newsletter on and not unsubscribed; `unsubscribed` =
+            unsubscribed flag set (wins over newsletter); `not_subscribed`
+            = newsletter off and not unsubscribed.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string, enum: [subscribed, unsubscribed, not_subscribed] } }
         - name: capacityRating
           in: query
           description: |
@@ -4615,6 +4626,7 @@ components:
         capacityRating:      { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         priority:            { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
         deceased:            { type: boolean }
+        newsletter:          { type: boolean, description: "Newsletter subscription flag. Changes are mirrored out to Flodesk (precedence rules apply — a Flodesk unsubscribe still wins)." }
     BulkUpdatePeopleBody:
       type: object
       required: [ids, patch]

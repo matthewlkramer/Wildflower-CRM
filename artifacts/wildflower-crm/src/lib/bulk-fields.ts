@@ -54,6 +54,15 @@ export const PEOPLE_BULK_FIELDS: ReadonlyArray<BulkField> = [
     falseLabel: "Living",
     destructiveValue: true,
   },
+  {
+    // Newsletter on/off. Changes flow through the same outbound Flodesk
+    // sync the single-person edit uses (server afterApply hook).
+    kind: "boolean",
+    key: "newsletter",
+    label: "Newsletter",
+    trueLabel: "Subscribed",
+    falseLabel: "Not subscribed",
+  },
 ];
 
 export const ORGANIZATIONS_BULK_FIELDS: ReadonlyArray<BulkField> = [

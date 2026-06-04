@@ -16,7 +16,17 @@ import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 import { syncPersonToFlodeskInBackground } from "../lib/flodeskSync";
 
-const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus", "enthusiasm", "ownerUserId", "priority", "regionIds"] as const;
+const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus", "enthusiasm", "ownerUserId", "priority", "regionIds", "newsletterStatus"] as const;
+
+// Derived newsletter status WHERE fragments. `unsubscribed` wins over
+// the `newsletter` flag (matches the detail-page display + Flodesk
+// precedence), so the three statuses are mutually exclusive and cover
+// every row.
+const NEWSLETTER_STATUS_SQL: Record<string, SQL> = {
+  subscribed: sql`(${people.newsletter} = true AND ${people.unsubscribedToNewsletter} = false)`,
+  unsubscribed: sql`${people.unsubscribedToNewsletter} = true`,
+  not_subscribed: sql`(${people.newsletter} = false AND ${people.unsubscribedToNewsletter} = false)`,
+};
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -186,6 +196,14 @@ router.get(
     else if (q.openAsksPresence === "blank") filters.push(sql`${peopleOpenOppCountExpr} = 0`);
     if (q.activeAffiliationPresence === "has") filters.push(peopleActiveAffiliationExists);
     else if (q.activeAffiliationPresence === "blank") filters.push(sql`NOT ${peopleActiveAffiliationExists}`);
+    // Derived newsletter status — OR the selected statuses together.
+    {
+      const statuses = (q.newsletterStatus as string[] | undefined) ?? [];
+      const clauses = statuses
+        .map((s) => NEWSLETTER_STATUS_SQL[s])
+        .filter((c): c is SQL => !!c);
+      if (clauses.length > 0) filters.push(or(...clauses)!);
+    }
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
@@ -230,7 +248,18 @@ router.post(
         "capacityRating",
         "priority",
         "deceased",
+        "newsletter",
       ],
+      // Mirror newsletter changes out to Flodesk per updated row, the
+      // same way the single PATCH does. Fire-and-forget + no-op when
+      // Flodesk isn't configured; precedence rules still apply (a
+      // Flodesk unsubscribe wins). Only worth doing when the patch
+      // actually touched the newsletter flag.
+      afterApply: Object.prototype.hasOwnProperty.call(req.body?.patch ?? {}, "newsletter")
+        ? async (id: string) => {
+            syncPersonToFlodeskInBackground(id);
+          }
+        : undefined,
     });
   }),
 );

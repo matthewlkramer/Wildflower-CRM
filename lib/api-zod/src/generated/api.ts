@@ -2449,6 +2449,12 @@ export const ListPeopleQueryParams = zod.object({
     .describe(
       "Presence filter on current funder\/organization roles (`has` = any current role, `blank` = none).",
     ),
+  newsletterStatus: zod
+    .array(zod.enum(["subscribed", "unsubscribed", "not_subscribed"]))
+    .optional()
+    .describe(
+      "Filter to people by derived newsletter status. Multi-value\n(OR semantics): repeat or comma-separate. `subscribed` =\nnewsletter on and not unsubscribed; `unsubscribed` =\nunsubscribed flag set (wins over newsletter); `not_subscribed`\n= newsletter off and not unsubscribed.\n",
+    ),
   capacityRating: zod
     .array(zod.coerce.string())
     .optional()
@@ -7235,6 +7241,12 @@ export const BulkUpdatePeopleBody = zod.object({
         .nullish(),
       priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
       deceased: zod.boolean().optional(),
+      newsletter: zod
+        .boolean()
+        .optional()
+        .describe(
+          "Newsletter subscription flag. Changes are mirrored out to Flodesk (precedence rules apply — a Flodesk unsubscribe still wins).",
+        ),
     })
     .describe(
       "Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged.",
