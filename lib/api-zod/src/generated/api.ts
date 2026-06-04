@@ -3116,7 +3116,13 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       status: zod
         .enum(["open", "pledge", "cash_in", "dormant", "lost"])
         .describe(
-          "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+          "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage ∈ (verbal_commitment, written_commitment) → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+        )
+        .nullish(),
+      lossType: zod
+        .enum(["dormant", "lost"])
+        .describe(
+          "User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to 'dormant'\n(paused) or 'lost' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n",
         )
         .nullish(),
       projectedCloseDate: zod.string().date().nullish(),
@@ -3192,11 +3198,11 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   individualGiverPersonId: zod.string().optional(),
   individualAdvisorPersonId: zod.string().optional(),
   matchId: zod.string().optional(),
-  status: zod
-    .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+  lossType: zod
+    .enum(["dormant", "lost"])
     .optional()
     .describe(
-      "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+      "User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to 'dormant'\n(paused) or 'lost' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n",
     ),
   projectedCloseDate: zod.string().date().optional(),
   actualCompletionDate: zod.string().date().optional(),
@@ -3258,7 +3264,13 @@ export const GetOpportunityOrPledgeResponse = zod
     status: zod
       .enum(["open", "pledge", "cash_in", "dormant", "lost"])
       .describe(
-        "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+        "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage ∈ (verbal_commitment, written_commitment) → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+      )
+      .nullish(),
+    lossType: zod
+      .enum(["dormant", "lost"])
+      .describe(
+        "User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to 'dormant'\n(paused) or 'lost' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n",
       )
       .nullish(),
     projectedCloseDate: zod.string().date().nullish(),
@@ -3470,10 +3482,10 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
   individualGiverPersonId: zod.string().nullish(),
   individualAdvisorPersonId: zod.string().nullish(),
   matchId: zod.string().nullish(),
-  status: zod
-    .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+  lossType: zod
+    .enum(["dormant", "lost"])
     .describe(
-      "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+      "User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to 'dormant'\n(paused) or 'lost' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n",
     )
     .nullish(),
   projectedCloseDate: zod.string().date().nullish(),
@@ -3531,7 +3543,13 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   status: zod
     .enum(["open", "pledge", "cash_in", "dormant", "lost"])
     .describe(
-      "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+      "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage ∈ (verbal_commitment, written_commitment) → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+    )
+    .nullish(),
+  lossType: zod
+    .enum(["dormant", "lost"])
+    .describe(
+      "User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to 'dormant'\n(paused) or 'lost' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n",
     )
     .nullish(),
   projectedCloseDate: zod.string().date().nullish(),
@@ -6630,10 +6648,10 @@ export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
     .max(bulkUpdateOpportunitiesAndPledgesBodyIdsMax),
   patch: zod.object({
     ownerUserId: zod.string().nullish(),
-    status: zod
-      .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+    lossType: zod
+      .enum(["dormant", "lost"])
       .describe(
-        "Lifecycle status of an opportunity\/pledge row.\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in conditional\/verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused; sticky user override\n  lost    — declined\/withdrawn; sticky user override\nStatus is auto-derived from stage + payments on every write EXCEPT when\nthe row is already dormant\/lost (sticky overrides — only clear when the\nuser explicitly picks a different value).\n",
+        "User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to 'dormant'\n(paused) or 'lost' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n",
       )
       .nullish(),
     stage: zod
@@ -6656,7 +6674,7 @@ export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
       .date()
       .nullish()
       .describe(
-        "Optional close date when bulk-setting status to cash_in\/lost. Left null is allowed to support historical cleanup workflows.",
+        "Optional close date when bulk-setting lossType to lost (or stage to cash_in). Left null is allowed to support historical cleanup workflows.",
       ),
     coveredFiscalYears: zod
       .array(zod.string())

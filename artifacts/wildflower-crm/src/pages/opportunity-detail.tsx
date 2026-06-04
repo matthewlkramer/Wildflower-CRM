@@ -15,6 +15,7 @@ import {
   type UpdateOpportunityOrPledgeBody,
   type OpportunityStage,
   type OpportunityStatus,
+  type OpportunityLossType,
   type OpportunityType,
   type OpportunityConditional,
   type PeopleEntityRole,
@@ -72,13 +73,12 @@ const STAGE_OPTIONS = [
   { value: "cash_in", label: "Cash in" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityStage>>;
 
-const STATUS_OPTIONS = [
-  { value: "open", label: "Open" },
-  { value: "pledge", label: "Pledge" },
-  { value: "cash_in", label: "Cash in" },
+// `status` is fully calculated server-side and shown read-only. The only
+// user-settable override is `lossType` (None / Dormant / Lost).
+const LOSS_TYPE_OPTIONS = [
   { value: "dormant", label: "Dormant" },
   { value: "lost", label: "Lost" },
-] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityStatus>>;
+] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityLossType>>;
 
 const TYPE_OPTIONS = [
   { value: "solicitation", label: "Solicitation" },
@@ -407,17 +407,29 @@ function OppView({
     </>
   );
 
-  // Convenience: when closing a single opp that has no completion date yet,
-  // default to today so the user doesn't have to set it manually. (The
-  // bulk-edit path intentionally does NOT do this.)
-  const saveStatus = (next: OpportunityStatus | null) => {
-    const closed = next === "cash_in" || next === "lost" || next === "dormant";
-    const body: UpdateOpportunityOrPledgeBody = { status: next };
-    if (closed && !opp.actualCompletionDate) {
+  // `status` is fully calculated server-side; the only thing the user can
+  // set is the lossType override (dormant/lost). Convenience: when marking
+  // a single opp dormant/lost with no completion date yet, default to today
+  // so the user doesn't have to set it manually. (The bulk-edit path
+  // intentionally does NOT do this.)
+  const saveLossType = (next: OpportunityLossType | null) => {
+    const body: UpdateOpportunityOrPledgeBody = { lossType: next };
+    if (next && !opp.actualCompletionDate) {
       body.actualCompletionDate = new Date().toISOString().slice(0, 10);
     }
     return patch(body);
   };
+
+  const statusBadge = (status: OpportunityStatus | null) =>
+    status ? (
+      <Badge
+        variant={status === "cash_in" || status === "pledge" ? "default" : "outline"}
+      >
+        {formatEnum(status)}
+      </Badge>
+    ) : (
+      <span className="text-muted-foreground">—</span>
+    );
 
   // Each cell shows ONE of a pair (awarded over ask; actual over projected)
   // but on edit exposes BOTH underlying fields.
@@ -427,29 +439,27 @@ function OppView({
   const highlights: Highlight[] = [
     {
       label: "Status",
+      // Read-only: fully calculated server-side from stage + payments +
+      // loss type. Use the "Loss type" control below to mark dormant/lost.
+      value: (
+        <div data-testid="text-opp-status" className="flex justify-start">
+          {statusBadge(opp.status ?? null)}
+        </div>
+      ),
+    },
+    {
+      label: "Loss type",
       value: (
         <InlineEditSelect
           align="left"
-          label="Status"
-          testIdBase="opp-status"
-          value={opp.status ?? null}
-          options={STATUS_OPTIONS}
-          display={
-            opp.status ? (
-              <Badge
-                variant={
-                  opp.status === "cash_in" || opp.status === "pledge"
-                    ? "default"
-                    : "outline"
-                }
-              >
-                {formatEnum(opp.status)}
-              </Badge>
-            ) : (
-              "—"
-            )
-          }
-          onSave={saveStatus}
+          label="Loss type"
+          testIdBase="opp-loss-type"
+          value={opp.lossType ?? null}
+          options={LOSS_TYPE_OPTIONS}
+          allowNull
+          nullLabel="— None —"
+          display={opp.lossType ? formatEnum(opp.lossType) : "—"}
+          onSave={saveLossType}
         />
       ),
     },

@@ -162,14 +162,14 @@ export const HOUSEHOLDS_BULK_FIELDS: ReadonlyArray<BulkField> = [
 export const OPPORTUNITIES_BULK_FIELDS: ReadonlyArray<BulkField> = [
   { kind: "owner", key: "ownerUserId", label: "Owner", nullable: true },
   {
+    // `status` is fully calculated server-side; the only settable override
+    // is `lossType` (clear it via — None — to return the row to the
+    // calculated funnel).
     kind: "enum",
-    key: "status",
-    label: "Status",
+    key: "lossType",
+    label: "Loss type",
     nullable: true,
     options: [
-      { value: "open", label: "Open" },
-      { value: "pledge", label: "Pledge" },
-      { value: "cash_in", label: "Cash in" },
       { value: "lost", label: "Lost", destructive: true },
       { value: "dormant", label: "Dormant", destructive: true },
     ],

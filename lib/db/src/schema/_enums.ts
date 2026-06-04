@@ -44,19 +44,34 @@ export const peopleRoleCurrentEnum = pgEnum("people_role_current", [
   "past",
 ]);
 
-// Lifecycle status of an opportunity/pledge row.
+// Lifecycle status of an opportunity/pledge row. FULLY CALCULATED — never
+// set directly by users. Derived from stage + payments + loss_type:
+//   loss_type set                         → status = loss_type (dormant|lost)
+//   else fully paid (paid≥awarded) or stage=cash_in → cash_in
+//   else stage ∈ (verbal_commitment, written_commitment)            → pledge
+//   else                                                             → open
 //   open    — actively in the funnel, not yet committed
-//   pledge  — funder has committed (stage in conditional/verbal/written)
+//   pledge  — funder has committed (stage in verbal/written)
 //   cash_in — fully paid (stage=cash_in or sum of payments >= awarded)
-//   dormant — paused; sticky user override
-//   lost    — declined/withdrawn; sticky user override
-// Status is auto-derived from stage + payments on every write EXCEPT when
-// the row is already dormant/lost (those are sticky and only clear when
-// the user explicitly picks a different value).
+//   dormant — paused (mirrors loss_type='dormant')
+//   lost    — declined/withdrawn (mirrors loss_type='lost')
+// The dormant/lost override now lives in the separate `loss_type` column;
+// status simply reports it. See opportunityLossTypeEnum below.
 export const opportunityStatusEnum = pgEnum("opportunity_status", [
   "open",
   "pledge",
   "cash_in",
+  "dormant",
+  "lost",
+]);
+
+// User-set override that pulls an opportunity/pledge out of the calculated
+// funnel. Nullable on the table: null while the row is open/pledge/cash_in;
+// set to 'dormant' (paused) or 'lost' (declined/withdrawn) when the user
+// marks it so. This is the ONLY user-settable part of the old `status`
+// overload — `status` itself is now fully calculated from stage + payments
+// + this value.
+export const opportunityLossTypeEnum = pgEnum("opportunity_loss_type", [
   "dormant",
   "lost",
 ]);

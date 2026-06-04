@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import {
   opportunityStatusEnum,
+  opportunityLossTypeEnum,
   opportunityTypeEnum,
   opportunityStageEnum,
   opportunityConditionalEnum,
@@ -33,6 +34,14 @@ import { households } from "./households";
 // become the canonical record. This keeps a single shape across the
 // opportunity → pledge → payment lifecycle instead of duplicating scope
 // fields at every level.
+//
+// ─── status vs loss_type ──────────────────────────────────────────────
+// `status` is FULLY CALCULATED (never set directly by users) from
+// stage + payments + loss_type. `loss_type` is the only user-settable
+// override: null while the row is open/pledge/cash_in; set to
+// 'dormant' or 'lost' to pull the row out of the funnel. When loss_type
+// is set, status mirrors it; otherwise status derives from stage +
+// payments. See deriveOppFields / applyDerivedOppFields in the API.
 //
 // ─── Column validity by status ────────────────────────────────────────
 // The same row is used across two lifecycle phases (opportunity, then
@@ -113,7 +122,14 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
     (): AnyPgColumn => opportunitiesAndPledges.id,
     { onDelete: "set null" },
   ),
+  // FULLY CALCULATED — derived server-side from stage + payments +
+  // loss_type on every write (see applyDerivedOppFields). Not a
+  // user-writable field.
   status: opportunityStatusEnum("status"),
+  // User-set override. Null while open/pledge/cash_in; 'dormant' or
+  // 'lost' pulls the row out of the funnel. When set, `status` mirrors
+  // it. The only settable half of the old status overload.
+  lossType: opportunityLossTypeEnum("loss_type"),
   // RESTRICT + archive workflow on users (see users.archivedAt).
   ownerUserId: text("owner_user_id").references(() => users.id, {
     onDelete: "restrict",

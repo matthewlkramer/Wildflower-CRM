@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { deriveOppFields } from "../lib/pledgeStage";
+import { deriveOppFields, canonicalWinProbability } from "../lib/pledgeStage";
 
 const base = {
   stage: "qualified" as string | null,
-  status: "open" as string | null,
+  lossType: null as string | null,
   wasPledge: false as boolean | null,
   grantLetterUrl: null as string | null,
   awardedAmount: 1000,
@@ -11,7 +11,7 @@ const base = {
 };
 
 describe("deriveOppFields", () => {
-  describe("status derivation matrix", () => {
+  describe("status derivation matrix (loss_type unset)", () => {
     it("open stage + unpaid → status=open", () => {
       const r = deriveOppFields({ ...base, stage: "qualified" });
       expect(r.status).toBe("open");
@@ -62,27 +62,49 @@ describe("deriveOppFields", () => {
     });
   });
 
-  describe("dormant/lost stickiness", () => {
-    it("dormant stays dormant even when stage promotes to written", () => {
+  describe("loss_type override drives status", () => {
+    it("lossType=dormant → status=dormant even when stage is written", () => {
       const r = deriveOppFields({
         ...base,
-        status: "dormant",
+        lossType: "dormant",
         stage: "written_commitment",
       });
       expect(r.status).toBe("dormant");
     });
-    it("lost stays lost even when fully paid", () => {
+    it("lossType=lost → status=lost even when fully paid", () => {
       const r = deriveOppFields({
         ...base,
-        status: "lost",
+        lossType: "lost",
         stage: "written_commitment",
         paidAmount: 1000,
       });
       expect(r.status).toBe("lost");
     });
-    it("lost stays lost on plain open stage", () => {
-      const r = deriveOppFields({ ...base, status: "lost", stage: "qualified" });
+    it("lossType=lost → status=lost on plain open stage", () => {
+      const r = deriveOppFields({
+        ...base,
+        lossType: "lost",
+        stage: "qualified",
+      });
       expect(r.status).toBe("lost");
+    });
+    it("clearing lossType (null) re-calculates status from stage/payments", () => {
+      const r = deriveOppFields({
+        ...base,
+        lossType: null,
+        stage: "verbal_commitment",
+      });
+      expect(r.status).toBe("pledge");
+    });
+    it("lossType=lost on fully-paid written → status=lost (override beats cash_in), but stage still advances", () => {
+      const r = deriveOppFields({
+        ...base,
+        lossType: "lost",
+        stage: "written_commitment",
+        paidAmount: 1000,
+      });
+      expect(r.status).toBe("lost");
+      expect(r.stage).toBe("cash_in");
     });
   });
 
@@ -120,15 +142,40 @@ describe("deriveOppFields", () => {
       });
       expect(r.wasPledge).toBe(true);
     });
-    it("stays true even when status is overridden dormant/lost", () => {
+    it("stays true even when lossType pulls status to dormant/lost", () => {
       const r = deriveOppFields({
         ...base,
-        status: "dormant",
+        lossType: "dormant",
         stage: "verbal_commitment",
         wasPledge: true,
       });
       expect(r.wasPledge).toBe(true);
       expect(r.status).toBe("dormant");
     });
+  });
+});
+
+describe("canonicalWinProbability", () => {
+  it("dormant/lost calculated status → 0.0000", () => {
+    expect(canonicalWinProbability("dormant", "verbal_commitment")).toBe("0.0000");
+    expect(canonicalWinProbability("lost", "cash_in")).toBe("0.0000");
+  });
+  it("calculated status overrides stage for pledge/cash_in", () => {
+    expect(canonicalWinProbability("pledge", "cold_lead")).toBe("0.9000");
+    expect(canonicalWinProbability("cash_in", "cold_lead")).toBe("1.0000");
+  });
+  it("falls through to stage when status is open", () => {
+    expect(canonicalWinProbability("open", "in_conversation")).toBe("0.2000");
+    expect(canonicalWinProbability("open", "convince")).toBe("0.4000");
+  });
+  it("returns null when neither matches", () => {
+    expect(canonicalWinProbability(null, null)).toBeNull();
+  });
+
+  it("win probability tracks the loss_type-derived status end-to-end", () => {
+    const lost = deriveOppFields({ ...base, lossType: "lost", stage: "verbal_commitment" });
+    expect(canonicalWinProbability(lost.status, lost.stage)).toBe("0.0000");
+    const open = deriveOppFields({ ...base, lossType: null, stage: "in_conversation" });
+    expect(canonicalWinProbability(open.status, open.stage)).toBe("0.2000");
   });
 });

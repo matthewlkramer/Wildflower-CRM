@@ -86,7 +86,11 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { applyDerivedOppFields, canonicalWinProbability } from "../lib/pledgeStage";
+import {
+  applyDerivedOppFields,
+  canonicalWinProbability,
+  deriveOppFields,
+} from "../lib/pledgeStage";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -299,7 +303,7 @@ router.post(
       entity: "opportunities_and_pledges",
       table: opportunitiesAndPledges,
       bodySchema: BulkUpdateOpportunitiesAndPledgesBody,
-      allowedFields: ["ownerUserId", "status", "stage", "type", "wasPledge", "actualCompletionDate"],
+      allowedFields: ["ownerUserId", "lossType", "stage", "type", "wasPledge", "actualCompletionDate"],
       // Allocation-table reconciliation fields — not columns on
       // opportunities_and_pledges, so they go through extraApply and
       // are excluded from the column SET.
@@ -410,14 +414,25 @@ router.post(
     const body = parseOrBadRequest(CreateOpportunityOrPledgeBodyRefined, req.body, res);
     if (!body) return;
     // Stamp canonical win_probability on insert when caller provided a
-    // stage/status but no explicit win_probability — same rule as the
-    // PATCH path. Explicit winProbability in the body always wins.
+    // stage/lossType but no explicit win_probability — same rule as the
+    // PATCH path. status is fully calculated, so derive it first and key
+    // win_probability off the derived value. Explicit winProbability in
+    // the body always wins. (applyDerivedOppFields below is authoritative
+    // and re-canonicalises once payments are known.)
     const writeValues: typeof body & { winProbability?: string | null } = { ...body };
     if (
-      (body.stage !== undefined || body.status !== undefined) &&
+      (body.stage !== undefined || body.lossType !== undefined) &&
       body.winProbability === undefined
     ) {
-      const wp = canonicalWinProbability(body.status ?? null, body.stage ?? null);
+      const derivedStatus = deriveOppFields({
+        stage: body.stage ?? null,
+        lossType: body.lossType ?? null,
+        wasPledge: body.wasPledge ?? null,
+        grantLetterUrl: body.grantLetterUrl ?? null,
+        awardedAmount: body.awardedAmount ?? null,
+        paidAmount: 0,
+      }).status;
+      const wp = canonicalWinProbability(derivedStatus, body.stage ?? null);
       if (wp !== null) writeValues.winProbability = wp;
     }
     const [row] = await db
@@ -458,17 +473,27 @@ router.patch(
     if (issues.length) return respondInvariantFailure(res, issues);
 
     // Canonical-win-probability rule: whenever the PATCH touches stage
-    // or status, re-derive win_probability from the new (status, stage)
-    // pair — overwriting any past user override. If the same PATCH
-    // also explicitly sets winProbability, let the explicit value win
-    // (atomic override + stage change on the same edit).
-    const stageOrStatusInBody =
-      body.stage !== undefined || body.status !== undefined;
+    // or lossType, re-derive win_probability from the new (calculated
+    // status, stage) pair — overwriting any past user override. status
+    // is fully calculated, so derive it from the merged lossType + stage
+    // first. If the same PATCH also explicitly sets winProbability, let
+    // the explicit value win. (applyDerivedOppFields below is
+    // authoritative and re-canonicalises once payments are known.)
+    const stageOrLossTypeInBody =
+      body.stage !== undefined || body.lossType !== undefined;
     const writeData: typeof body & { winProbability?: string | null } = {
       ...body,
     };
-    if (stageOrStatusInBody && body.winProbability === undefined) {
-      const wp = canonicalWinProbability(merged.status, merged.stage);
+    if (stageOrLossTypeInBody && body.winProbability === undefined) {
+      const derivedStatus = deriveOppFields({
+        stage: merged.stage ?? null,
+        lossType: merged.lossType ?? null,
+        wasPledge: merged.wasPledge ?? null,
+        grantLetterUrl: merged.grantLetterUrl ?? null,
+        awardedAmount: merged.awardedAmount ?? null,
+        paidAmount: 0,
+      }).status;
+      const wp = canonicalWinProbability(derivedStatus, merged.stage);
       if (wp !== null) writeData.winProbability = wp;
     }
 

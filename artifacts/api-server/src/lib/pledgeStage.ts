@@ -10,10 +10,13 @@ const PLEDGE_STAGES = new Set([
   "written_commitment",
 ]);
 
-// Canonical win-probability mapping. Status takes precedence over stage
-// for the four "terminal-ish" statuses (pledge/cash_in/dormant/lost);
-// for 'open' (or null), we fall through to the stage table. Values are
-// stored as numeric strings to match the DB column type (NUMERIC(5,4)).
+// Canonical win-probability mapping. The calculated status takes
+// precedence over stage for the "terminal-ish" statuses
+// (pledge/cash_in/dormant/lost); for 'open' (or null), we fall through
+// to the stage table. dormant/lost only appear as a status when the
+// loss_type override is set, so keying off the calculated status keeps
+// this in sync. Values are stored as numeric strings to match the DB
+// column type (NUMERIC(5,4)).
 const STATUS_WIN_PROBABILITY: Record<string, string> = {
   pledge: "0.9000",
   cash_in: "1.0000",
@@ -54,7 +57,9 @@ export function canonicalWinProbability(
 
 export interface DeriveInput {
   stage: string | null;
-  status: string | null;
+  // User-set override (null | 'dormant' | 'lost'). When set, status
+  // mirrors it; otherwise status is computed from stage + payments.
+  lossType: string | null;
   wasPledge: boolean | null;
   grantLetterUrl: string | null;
   awardedAmount: string | number | null;
@@ -63,14 +68,20 @@ export interface DeriveInput {
 
 export interface DeriveOutput {
   stage: string | null;
+  // Fully calculated — never an input. See deriveOppFields.
   status: string | null;
   wasPledge: boolean;
 }
 
 /**
  * Pure derivation of (status, stage, wasPledge) from current row state +
- * total paid against the pledge. Mirrors the logic in applyDerivedOppFields
- * so it can be unit-tested without touching the DB.
+ * total paid against the pledge. `status` is FULLY CALCULATED:
+ *   loss_type set                                  → status = loss_type
+ *   else fully paid (paid≥awarded) OR stage=cash_in → 'cash_in'
+ *   else stage ∈ (verbal, written)                  → 'pledge'
+ *   else                                            → 'open'
+ * Mirrors the logic in applyDerivedOppFields so it can be unit-tested
+ * without touching the DB.
  */
 export function deriveOppFields(input: DeriveInput): DeriveOutput {
   const paidNum = Number(input.paidAmount ?? 0);
@@ -85,18 +96,18 @@ export function deriveOppFields(input: DeriveInput): DeriveOutput {
     wasPledge = true;
   }
 
-  let status = input.status;
-  if (status !== "dormant" && status !== "lost") {
-    if (fullyPaid || input.stage === "cash_in") {
-      status = "cash_in";
-    } else if (
-      input.stage === "verbal_commitment" ||
-      input.stage === "written_commitment"
-    ) {
-      status = "pledge";
-    } else {
-      status = "open";
-    }
+  let status: string | null;
+  if (input.lossType === "dormant" || input.lossType === "lost") {
+    status = input.lossType;
+  } else if (fullyPaid || input.stage === "cash_in") {
+    status = "cash_in";
+  } else if (
+    input.stage === "verbal_commitment" ||
+    input.stage === "written_commitment"
+  ) {
+    status = "pledge";
+  } else {
+    status = "open";
   }
 
   let stage = input.stage;
@@ -114,9 +125,9 @@ export function deriveOppFields(input: DeriveInput): DeriveOutput {
  *     conditional/verbal/written or when a grant letter is on file.
  *     Never auto-flipped back to false (users can clear it via PATCH).
  *
- *   status: auto-derived EXCEPT when current value is 'dormant' or
- *     'lost' (those are sticky user overrides — only cleared when the
- *     user explicitly picks a non-sticky value via PATCH).
+ *   status: FULLY CALCULATED — never user-set. The dormant/lost override
+ *     now lives in the separate `loss_type` column; status reports it.
+ *       loss_type set                                → loss_type value
  *       fully paid (paid≥awarded) OR stage='cash_in' → 'cash_in'
  *       stage ∈ (verbal, written)                    → 'pledge'
  *       everything else                              → 'open'
@@ -148,7 +159,7 @@ export async function applyDerivedOppFields(
 
   const { status, stage, wasPledge } = deriveOppFields({
     stage: row.stage,
-    status: row.status,
+    lossType: row.lossType,
     wasPledge: row.wasPledge,
     grantLetterUrl: row.grantLetterUrl,
     awardedAmount: row.awardedAmount,

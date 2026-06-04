@@ -303,15 +303,20 @@ export const OrganizationType = {
 } as const;
 
 /**
- * Lifecycle status of an opportunity/pledge row.
+ * Lifecycle status of an opportunity/pledge row. FULLY CALCULATED and
+read-only — never set this directly. Derived server-side from stage +
+payments + lossType on every write:
+  lossType set                                  → status = lossType
+  else fully paid (paid≥awarded) or stage=cash_in → cash_in
+  else stage ∈ (verbal_commitment, written_commitment) → pledge
+  else                                                 → open
+Values:
   open    — actively in the funnel, not yet committed
-  pledge  — funder has committed (stage in conditional/verbal/written)
+  pledge  — funder has committed (stage in verbal/written)
   cash_in — fully paid (stage=cash_in or sum of payments >= awarded)
-  dormant — paused; sticky user override
-  lost    — declined/withdrawn; sticky user override
-Status is auto-derived from stage + payments on every write EXCEPT when
-the row is already dormant/lost (sticky overrides — only clear when the
-user explicitly picks a different value).
+  dormant — paused (mirrors lossType='dormant')
+  lost    — declined/withdrawn (mirrors lossType='lost')
+To mark a row dormant/lost, set the `lossType` field instead.
 
  */
 export type OpportunityStatus =
@@ -321,6 +326,21 @@ export const OpportunityStatus = {
   open: "open",
   pledge: "pledge",
   cash_in: "cash_in",
+  dormant: "dormant",
+  lost: "lost",
+} as const;
+
+/**
+ * User-set override that pulls an opportunity/pledge out of the
+calculated funnel. Null while open/pledge/cash_in; set to 'dormant'
+(paused) or 'lost' (declined/withdrawn). The only user-settable half
+of the old status overload — when set, `status` mirrors it.
+
+ */
+export type OpportunityLossType =
+  (typeof OpportunityLossType)[keyof typeof OpportunityLossType];
+
+export const OpportunityLossType = {
   dormant: "dormant",
   lost: "lost",
 } as const;
@@ -1282,7 +1302,8 @@ export interface OpportunityOrPledge {
   individualGiverPersonId?: string | null;
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;
-  status?: OpportunityStatus | null;
+  readonly status?: OpportunityStatus | null;
+  lossType?: OpportunityLossType | null;
   projectedCloseDate?: string | null;
   actualCompletionDate?: string | null;
   winProbability?: string | null;
@@ -1403,7 +1424,7 @@ export interface CreateOpportunityOrPledgeBody {
   individualGiverPersonId?: string;
   individualAdvisorPersonId?: string;
   matchId?: string;
-  status?: OpportunityStatus;
+  lossType?: OpportunityLossType;
   projectedCloseDate?: string;
   actualCompletionDate?: string;
   winProbability?: string;
@@ -1434,7 +1455,7 @@ export interface UpdateOpportunityOrPledgeBody {
   individualGiverPersonId?: string | null;
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;
-  status?: OpportunityStatus | null;
+  lossType?: OpportunityLossType | null;
   projectedCloseDate?: string | null;
   actualCompletionDate?: string | null;
   winProbability?: string | null;
@@ -2537,11 +2558,11 @@ export const BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode = {
 
 export interface BulkUpdateOpportunitiesPatch {
   ownerUserId?: string | null;
-  status?: OpportunityStatus | null;
+  lossType?: OpportunityLossType | null;
   stage?: OpportunityStage | null;
   type?: OpportunityType | null;
   wasPledge?: boolean | null;
-  /** Optional close date when bulk-setting status to cash_in/lost. Left null is allowed to support historical cleanup workflows. */
+  /** Optional close date when bulk-setting lossType to lost (or stage to cash_in). Left null is allowed to support historical cleanup workflows. */
   actualCompletionDate?: string | null;
   /** Set of fiscal-year slugs (e.g. 'fy2026') to attach to each opportunity via pledge_allocations. Combined with coveredFiscalYearsMode. */
   coveredFiscalYears?: string[];
