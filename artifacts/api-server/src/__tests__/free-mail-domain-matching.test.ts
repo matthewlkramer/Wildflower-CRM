@@ -114,3 +114,41 @@ describe("matchEmails — direct address matches are unaffected by the free-doma
     expect(state.orgQueried).toBe(false);
   });
 });
+
+describe("matchEmails — internal domains are dropped before matching", () => {
+  it("drops @wildflowerschools.org staff addresses", async () => {
+    // Even if an org mistakenly had this domain in email_domain it must
+    // never be reached — internal addresses are stripped first.
+    state.orgRows = [{ organizationId: "org-internal" }];
+
+    const result = await matchEmails(["staff@wildflowerschools.org"], null);
+
+    expect(result.personIds).toEqual([]);
+    expect(result.organizationIds).toEqual([]);
+    expect(result.householdIds).toEqual([]);
+    expect(state.orgQueried).toBe(false);
+  });
+
+  it("drops @blackwildflowers.org staff addresses (second internal domain)", async () => {
+    state.orgRows = [{ organizationId: "org-internal" }];
+
+    const result = await matchEmails(["staff@blackwildflowers.org"], null);
+
+    expect(result.personIds).toEqual([]);
+    expect(result.organizationIds).toEqual([]);
+    expect(result.householdIds).toEqual([]);
+    expect(state.orgQueried).toBe(false);
+  });
+
+  it("keeps an outside donor while dropping a @blackwildflowers.org address", async () => {
+    state.orgRows = [{ organizationId: "org-real" }];
+
+    const result = await matchEmails(
+      ["staff@blackwildflowers.org", "officer@realfunder.org"],
+      null,
+    );
+
+    expect(result.organizationIds).toEqual(["org-real"]);
+    expect(state.orgQueried).toBe(true);
+  });
+});

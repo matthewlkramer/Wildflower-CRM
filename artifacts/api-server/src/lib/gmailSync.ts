@@ -66,7 +66,8 @@ import {
  *      or `email_sync_skip`.
  *   b. Fetch metadata-only (From/To/Cc/Bcc/Subject/Date).
  *   c. Match participants against the `emails` table (matcher drops
- *      the mailbox owner + @wildflowerschools.org).
+ *      the mailbox owner + internal domains @wildflowerschools.org /
+ *      @blackwildflowers.org).
  *   d. If matched: fetch full message, persist body + headers (ON
  *      CONFLICT DO NOTHING on the (mailbox, gmail_id) unique index),
  *      download + store attachments (each insert ON CONFLICT DO

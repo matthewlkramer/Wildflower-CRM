@@ -12,11 +12,12 @@ import { isFreeMailDomain } from "./freeMailDomains";
  * Filters:
  *   - mailboxOwnerEmail is dropped (don't match the sync user
  *     against themselves)
- *   - any address in `@wildflowerschools.org` is dropped — internal
- *     staff-to-staff threads pollute the donor timeline and the
- *     user explicitly opted them out at the matching layer (we
- *     still sync the message, we just route unmatched copies to
- *     the skip table — see the session plan note).
+ *   - any address in an internal domain (`@wildflowerschools.org` or
+ *     `@blackwildflowers.org`) is dropped — internal staff-to-staff
+ *     threads pollute the donor timeline and the user explicitly
+ *     opted them out at the matching layer (we still sync the
+ *     message, we just route unmatched copies to the skip table —
+ *     see the session plan note).
  *   - addresses are lowercased + deduped before query.
  *   - personIds whose suppression window covers `messageDate` are
  *     excluded — e.g. a Wildflower staff member's personal address
@@ -34,7 +35,10 @@ import { isFreeMailDomain } from "./freeMailDomains";
  * touching callers.
  */
 
-const INTERNAL_DOMAINS = new Set(["wildflowerschools.org"]);
+const INTERNAL_DOMAINS = new Set([
+  "wildflowerschools.org",
+  "blackwildflowers.org",
+]);
 
 export interface EmailMatchResult {
   personIds: string[];

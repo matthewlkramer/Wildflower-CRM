@@ -43,8 +43,8 @@ import { shouldSuppressMeeting, loadMeetingFilterConfig, type MeetingFilterConfi
  *
  * Per-event pipeline (`processOneEvent`):
  *   a. Resolve attendee emails (organizer + attendees, lowercased,
- *      deduped). Drop owner + @wildflowerschools.org via the
- *      shared `matchEmails` matcher.
+ *      deduped). Drop owner + internal domains @wildflowerschools.org
+ *      / @blackwildflowers.org via the shared `matchEmails` matcher.
  *   b. If unmatched → silently skip. Calendar doesn't need a skip
  *      table — `syncToken` only re-emits a given event when Google
  *      thinks it changed.

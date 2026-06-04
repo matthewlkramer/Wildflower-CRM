@@ -197,6 +197,12 @@ describe("normalizeForMatching", () => {
     ]);
   });
 
+  it("strips internal @blackwildflowers.org addresses", () => {
+    expect(normalizeForMatching(["staff@blackwildflowers.org", "donor@outside.org"], null)).toEqual([
+      "donor@outside.org",
+    ]);
+  });
+
   it("dedupes addresses", () => {
     expect(normalizeForMatching(["x@y.com", "X@Y.com", "x@y.com"], null)).toEqual(["x@y.com"]);
   });
