@@ -618,14 +618,29 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                   onSave={(next) => patch({ regionIds: next })}
                 />
               </TagEditRow>
-              {org.priorityAreasNotes && (
-                <div>
-                  <div className="text-xs font-medium text-muted-foreground mb-1">
-                    Priority areas notes
-                  </div>
-                  <p className="whitespace-pre-wrap">{org.priorityAreasNotes}</p>
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">
+                  Priority areas notes
                 </div>
-              )}
+                <InlineEditTextarea
+                  label="Priority areas notes"
+                  testIdBase="organization-priority-areas-notes"
+                  value={org.priorityAreasNotes ?? null}
+                  placeholder="Add priority areas notes…"
+                  display={
+                    org.priorityAreasNotes ? (
+                      <p className="whitespace-pre-wrap text-left text-sm text-foreground">
+                        {org.priorityAreasNotes}
+                      </p>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        Add priority areas notes…
+                      </span>
+                    )
+                  }
+                  onSave={(next) => patch({ priorityAreasNotes: next })}
+                />
+              </div>
             </div>
           </FieldCard>
 
