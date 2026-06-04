@@ -150,7 +150,6 @@ import { PriorityTooltip } from "@/components/priority-tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { DerivedRow } from "@/components/derived-row";
 import {
   EmailsEditor,
   PhoneNumbersEditor,
@@ -694,9 +693,25 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                   onSave={(next) => patch({ orgEmail: next })}
                 />
               </Row>
-              <DerivedRow label="Domain" hint="derived from email">
-                {org.emailDomain ?? "—"}
-              </DerivedRow>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="flex flex-col">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Domain
+                  </span>
+                  <span className="text-[10px] italic text-muted-foreground/70">
+                    auto-derived from email when blank
+                  </span>
+                </span>
+                <span className="text-right">
+                  <InlineEditText
+                    label="Domain"
+                    testIdBase="organization-email-domain"
+                    value={org.emailDomain ?? null}
+                    display={org.emailDomain ?? "—"}
+                    onSave={(next) => patch({ emailDomain: next })}
+                  />
+                </span>
+              </div>
               <Row label="LinkedIn">
                 <InlineEditText
                   label="LinkedIn"
