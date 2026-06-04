@@ -419,30 +419,41 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       backLabel="Back to funders"
       title={title}
       typeBadge="Organization"
-      subtitle={<div>{formatEnum(org.entityType)}</div>}
+      subtitle={
+        <div className="w-full space-y-2">
+          <InlineEditSelect
+            label="Subtype"
+            testIdBase="organization-subtype"
+            value={org.entityType ?? null}
+            options={SUBTYPE_OPTIONS}
+            display={formatEnum(org.entityType)}
+            onSave={(next) => patch({ entityType: next })}
+            align="left"
+          />
+          <InlineEditTextarea
+            label="About"
+            testIdBase="organization-about"
+            value={org.about ?? null}
+            placeholder="Add an overview of this organization…"
+            display={
+              org.about ? (
+                <p className="whitespace-pre-wrap text-left text-sm text-foreground">
+                  {org.about}
+                </p>
+              ) : (
+                <span className="text-muted-foreground">Add an overview…</span>
+              )
+            }
+            onSave={(next) => patch({ about: next })}
+          />
+        </div>
+      }
       actions={actions}
       highlights={highlights}
       left={
         <>
           <FieldCard title="Details">
             <div className="space-y-4">
-              <InlineEditTextarea
-                label="About"
-                testIdBase="organization-about"
-                value={org.about ?? null}
-                placeholder="Add an overview of this organization…"
-                display={
-                  org.about ? (
-                    <p className="whitespace-pre-wrap text-left text-sm text-foreground">
-                      {org.about}
-                    </p>
-                  ) : (
-                    <span className="text-muted-foreground">Add an overview…</span>
-                  )
-                }
-                onSave={(next) => patch({ about: next })}
-              />
-              <Separator />
               <div className="space-y-1">
                 <Row label="Active">
                   <InlineEditSelect
@@ -460,16 +471,6 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                       )
                     }
                     onSave={(next) => patch({ activeStatus: next })}
-                  />
-                </Row>
-                <Row label="Subtype">
-                  <InlineEditSelect
-                    label="Subtype"
-                    testIdBase="organization-subtype"
-                    value={org.entityType ?? null}
-                    options={SUBTYPE_OPTIONS}
-                    display={formatEnum(org.entityType)}
-                    onSave={(next) => patch({ entityType: next })}
                   />
                 </Row>
                 <Row label="Employees">
