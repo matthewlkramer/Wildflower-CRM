@@ -80,7 +80,7 @@ export default function GrantsCalendar() {
           projectedClose: (o) => o.projectedCloseDate ?? null,
           name: (o) => (o.name ?? "").toLowerCase(),
           funder: (o) =>
-            (o.funderName ?? o.householdName ?? o.individualGiverPersonName ?? "").toLowerCase(),
+            (o.organizationName ?? o.householdName ?? o.individualGiverPersonName ?? "").toLowerCase(),
           primaryContact: (o) => o.primaryContactPersonName?.toLowerCase() ?? null,
           stage: (o) => (o.stage ? (STAGE_ORDER[o.stage] ?? 0) : null),
           ask: (o) => (o.askAmount != null ? Number(o.askAmount) : null),
@@ -138,9 +138,9 @@ export default function GrantsCalendar() {
                   </TableCell>
                   <TableCell>
                     <DonorCell
-                      funderId={o.funderId}
-                      funderName={o.funderName}
-                      funderPriority={o.funderPriority}
+                      organizationId={o.organizationId}
+                      organizationName={o.organizationName}
+                      organizationPriority={o.organizationPriority}
                       householdId={o.householdId}
                       householdName={o.householdName}
                       individualGiverPersonId={o.individualGiverPersonId}

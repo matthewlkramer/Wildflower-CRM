@@ -5,7 +5,7 @@ import * as schema from "@workspace/db/schema";
 import {
   unionArrays,
   computePrimaryUpdates,
-  FUNDER_MERGE_CONFIG,
+  ORGANIZATION_MERGE_CONFIG,
   PERSON_MERGE_CONFIG,
 } from "../lib/mergeEntities";
 
@@ -60,11 +60,11 @@ describe("unionArrays", () => {
   });
 });
 
-describe("computePrimaryUpdates — funders", () => {
+describe("computePrimaryUpdates — organizations", () => {
   it("applies only whitelisted scalar overrides", () => {
     const primary = { id: "f1", name: "Primary", regionIds: [] };
     const set = computePrimaryUpdates(
-      FUNDER_MERGE_CONFIG,
+      ORGANIZATION_MERGE_CONFIG,
       primary,
       [{ id: "f2", name: "Loser", regionIds: [] }],
       { name: "Chosen", id: "hacker", notAField: "x", priority: "high" },
@@ -96,7 +96,7 @@ describe("computePrimaryUpdates — funders", () => {
         historicalNames: [],
       },
     ];
-    const set = computePrimaryUpdates(FUNDER_MERGE_CONFIG, primary, losers, {});
+    const set = computePrimaryUpdates(ORGANIZATION_MERGE_CONFIG, primary, losers, {});
     expect(set.regionIds).toEqual(["r1", "r2"]);
     expect(set.interestsThematic).toEqual(["arts", "stem"]);
     expect(set.interestsAges).toEqual(["k12"]);
@@ -132,7 +132,7 @@ describe("computePrimaryUpdates — funders", () => {
         historicalNames: [],
       },
     ];
-    const set = computePrimaryUpdates(FUNDER_MERGE_CONFIG, primary, losers, {});
+    const set = computePrimaryUpdates(ORGANIZATION_MERGE_CONFIG, primary, losers, {});
     // "Acme Foundation" (== final name) excluded; "Old Acme", "Legacy Co",
     // and "Acme Fund" retained in first-seen order.
     expect(set.historicalNames).toEqual(["Old Acme", "Legacy Co", "Acme Fund"]);
@@ -159,7 +159,7 @@ describe("computePrimaryUpdates — funders", () => {
         historicalNames: [],
       },
     ];
-    const set = computePrimaryUpdates(FUNDER_MERGE_CONFIG, primary, losers, {
+    const set = computePrimaryUpdates(ORGANIZATION_MERGE_CONFIG, primary, losers, {
       name: "Winner Name",
     });
     expect(set.name).toBe("Winner Name");
@@ -206,15 +206,15 @@ describe("merge config inventory", () => {
   // rows or cascade-deleting data on merge.
   const EXPECTED_FK_OMISSIONS: Record<string, string[]> = {
     // (none today — both entities reassign every id-targeting FK)
-    funders: [],
+    organizations: [],
     people: [],
   };
 
-  it("funder fkRefs exactly match every schema FK targeting funders.id", () => {
-    const derived = derivedFkRefs("funders");
-    for (const omit of EXPECTED_FK_OMISSIONS.funders) derived.delete(omit);
+  it("organization fkRefs exactly match every schema FK targeting funders.id", () => {
+    const derived = derivedFkRefs("organizations");
+    for (const omit of EXPECTED_FK_OMISSIONS.organizations) derived.delete(omit);
     const configured = new Set(
-      FUNDER_MERGE_CONFIG.fkRefs.map((r) => `${r.table}.${r.col}`),
+      ORGANIZATION_MERGE_CONFIG.fkRefs.map((r) => `${r.table}.${r.col}`),
     );
     expect([...configured].sort()).toEqual([...derived].sort());
   });
@@ -229,16 +229,16 @@ describe("merge config inventory", () => {
   });
 
   it("funder arrayRefs cover the known text[] slug-array references", () => {
-    const arr = FUNDER_MERGE_CONFIG.arrayRefs.map((r) => `${r.table}.${r.col}`);
+    const arr = ORGANIZATION_MERGE_CONFIG.arrayRefs.map((r) => `${r.table}.${r.col}`);
     expect(arr.sort()).toEqual(
       [
-        "calendar_events.matched_funder_ids",
-        "email_messages.matched_funder_ids",
-        "interactions.funder_ids",
-        "media_mentions.funder_ids",
-        "notes.funder_ids",
-        "tasks.funder_ids",
-        "tracked_emails.recipient_funder_ids",
+        "calendar_events.matched_organization_ids",
+        "email_messages.matched_organization_ids",
+        "interactions.organization_ids",
+        "media_mentions.organization_ids",
+        "notes.organization_ids",
+        "tasks.organization_ids",
+        "tracked_emails.recipient_organization_ids",
       ].sort(),
     );
   });
@@ -259,11 +259,11 @@ describe("merge config inventory", () => {
   });
 
   it("self-ref columns are configured and included in fkRefs", () => {
-    expect(FUNDER_MERGE_CONFIG.selfRefCol).toBe("parent_funder_id");
+    expect(ORGANIZATION_MERGE_CONFIG.selfRefCol).toBe("parent_organization_id");
     expect(PERSON_MERGE_CONFIG.selfRefCol).toBe("assistant_person_id");
     expect(
-      FUNDER_MERGE_CONFIG.fkRefs.some(
-        (r) => r.table === "funders" && r.col === "parent_funder_id",
+      ORGANIZATION_MERGE_CONFIG.fkRefs.some(
+        (r) => r.table === "organizations" && r.col === "parent_organization_id",
       ),
     ).toBe(true);
     expect(

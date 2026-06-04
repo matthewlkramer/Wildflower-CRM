@@ -38,7 +38,7 @@ export const interactions = pgTable(
       onDelete: "restrict",
     }),
     personIds: text("person_ids").array(),
-    funderIds: text("funder_ids").array(),
+    organizationIds: text("organization_ids").array(),
     householdIds: text("household_ids").array(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -47,7 +47,7 @@ export const interactions = pgTable(
     index("interactions_owner_user_id_idx").on(t.ownerUserId),
     index("interactions_occurred_at_idx").on(t.occurredAt),
     index("interactions_person_ids_gin_idx").using("gin", t.personIds),
-    index("interactions_funder_ids_gin_idx").using("gin", t.funderIds),
+    index("interactions_organization_ids_gin_idx").using("gin", t.organizationIds),
     index("interactions_household_ids_gin_idx").using("gin", t.householdIds),
   ],
 );

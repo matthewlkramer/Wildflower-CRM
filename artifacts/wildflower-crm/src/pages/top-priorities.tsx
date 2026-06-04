@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import {
   useGetTopPriorities,
   useGetCurrentUser,
-  type TopPriorityFunder,
+  type TopPriorityOrganization,
   type TopPriorityPerson,
   type TopPriorityAffiliate,
 } from "@workspace/api-client-react";
@@ -41,11 +41,11 @@ function SkeletonRows({ cols }: { cols: number }) {
 }
 
 // Names are already masked server-side; render the label as-is.
-function FunderNameCell({ funder }: { funder: TopPriorityFunder }) {
+function FunderNameCell({ funder }: { funder: TopPriorityOrganization }) {
   return (
     <div className="flex items-center gap-1.5">
       <PriorityStar priority="top" size="sm" />
-      <Link href={`/funding-entities/${funder.id}`} className="text-primary hover:underline font-medium">
+      <Link href={`/organizations/${funder.id}`} className="text-primary hover:underline font-medium">
         {funder.name}
       </Link>
     </div>
@@ -95,7 +95,7 @@ function FundersTable({
   viewer,
   loading,
 }: {
-  funders: TopPriorityFunder[];
+  funders: TopPriorityOrganization[];
   viewer: Viewer;
   loading: boolean;
 }) {
@@ -282,7 +282,7 @@ export default function TopPrioritiesPage() {
   const { data: currentUser } = useGetCurrentUser();
   const viewer: Viewer = currentUser ?? null;
 
-  const funders = data?.funders ?? [];
+  const funders = data?.organizations ?? [];
   const individuals = data?.individuals ?? [];
 
   return (

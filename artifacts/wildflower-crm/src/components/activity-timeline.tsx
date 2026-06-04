@@ -46,7 +46,7 @@ import {
 
 interface Props {
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
 }
 
@@ -108,7 +108,7 @@ function fmtWhen(iso: string) {
 
 const PAGE_SIZE = 50;
 
-export function ActivityTimeline({ personId, funderId, householdId }: Props) {
+export function ActivityTimeline({ personId, organizationId, householdId }: Props) {
   // Per-source limit grows by PAGE_SIZE on each "Load more" click.
   // We over-fetch (4 sources * limit) but the alternative — a unified
   // server-side merged endpoint — is more plumbing than this UI warrants
@@ -119,7 +119,7 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
   // above the feed (the "tabs above" pattern from the roadmap).
   const [activeSource, setActiveSource] = useState<Source | null>(null);
 
-  const filters = { personId, funderId, householdId, limit };
+  const filters = { personId, organizationId, householdId, limit };
   const ints = useListInteractions(filters);
   const emails = useListEmailMessages(filters);
   const cals = useListCalendarEvents(filters);
@@ -130,8 +130,8 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
   // when scoped to a person or funder. Skipped queries are gated via
   // `enabled` so we don't waste a request returning the caller's
   // entire proposal queue.
-  const proposalsEnabled = !!(personId || funderId);
-  const proposalParams = { personId, funderId, limit, status: "pending" as const };
+  const proposalsEnabled = !!(personId || organizationId);
+  const proposalParams = { personId, organizationId, limit, status: "pending" as const };
   const proposals = useListEmailProposals(proposalParams, {
     query: {
       enabled: proposalsEnabled,
@@ -234,11 +234,11 @@ export function ActivityTimeline({ personId, funderId, householdId }: Props) {
         <CardTitle className="text-lg">Activity</CardTitle>
         <div className="flex items-center gap-2">
           <AddMeetingNoteDialog
-            ctx={{ personId, funderId, householdId } as MeetingContext}
+            ctx={{ personId, organizationId, householdId } as MeetingContext}
           />
           <LogInteractionDialog
             prefillPersonId={personId}
-            prefillFunderId={funderId}
+            prefillFunderId={organizationId}
             prefillHouseholdId={householdId}
             compact
           />

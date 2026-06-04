@@ -86,7 +86,7 @@ import {
 
 interface NotesContext {
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   opportunityId?: string;
   giftId?: string;
@@ -98,7 +98,7 @@ interface Props {
   // Relationship scope for interactions / emails / calendar / meetings /
   // intel — these sources only link to a person, funder, or household.
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   // Scope for notes & tasks. Defaults to the relationship scope, but pages
   // like opportunity/gift override it: their activity is the donor's, while
@@ -204,7 +204,7 @@ const PAGE_SIZE = 50;
 
 export function UnifiedActivityFeed({
   personId,
-  funderId,
+  organizationId,
   householdId,
   notesContext,
   hideTasks = false,
@@ -215,13 +215,13 @@ export function UnifiedActivityFeed({
 
   // Notes/tasks scope — falls back to the relationship scope when no
   // explicit context is given (the common funder/person/household case).
-  const nt: NotesContext = notesContext ?? { personId, funderId, householdId };
+  const nt: NotesContext = notesContext ?? { personId, organizationId, householdId };
 
   // Interactions / emails / calendar / meetings are only linkable to a
   // person, funder, or household — never to an opportunity or gift. Gate
   // those queries so opportunity/gift pages don't fetch global lists.
-  const relationScoped = !!(personId || funderId || householdId);
-  const relParams = { personId, funderId, householdId, limit };
+  const relationScoped = !!(personId || organizationId || householdId);
+  const relParams = { personId, organizationId, householdId, limit };
 
   const ints = useListInteractions(relParams, {
     query: {
@@ -249,10 +249,10 @@ export function UnifiedActivityFeed({
   });
 
   // Email-intelligence proposals target a single person or funder.
-  const proposalsEnabled = !!(personId || funderId);
+  const proposalsEnabled = !!(personId || organizationId);
   const proposalParams = {
     personId,
-    funderId,
+    organizationId,
     limit,
     status: "pending" as const,
   };
@@ -266,7 +266,7 @@ export function UnifiedActivityFeed({
   // Notes + tasks support every context (person/funder/household/opp/gift).
   const noteTaskParams = {
     personId: nt.personId,
-    funderId: nt.funderId,
+    organizationId: nt.organizationId,
     householdId: nt.householdId,
     opportunityId: nt.opportunityId,
     giftId: nt.giftId,
@@ -283,8 +283,8 @@ export function UnifiedActivityFeed({
   });
 
   // Media mentions only ever link to a person or funder.
-  const mediaEnabled = !!(personId || funderId);
-  const mediaParams = { personId, funderId, limit };
+  const mediaEnabled = !!(personId || organizationId);
+  const mediaParams = { personId, organizationId, limit };
   const media = useListMediaMentions(mediaParams, {
     query: {
       enabled: mediaEnabled,
@@ -327,7 +327,7 @@ export function UnifiedActivityFeed({
       data: {
         body,
         personIds: pinnedIds([nt.personId]),
-        funderIds: pinnedIds([nt.funderId]),
+        organizationIds: pinnedIds([nt.organizationId]),
         householdIds: pinnedIds([nt.householdId]),
         opportunityIds: pinnedIds([nt.opportunityId]),
         giftIds: pinnedIds([nt.giftId]),
@@ -551,12 +551,12 @@ export function UnifiedActivityFeed({
                 <>
                   <LogInteractionDialog
                     prefillPersonId={personId}
-                    prefillFunderId={funderId}
+                    prefillFunderId={organizationId}
                     prefillHouseholdId={householdId}
                     compact
                   />
                   <AddMeetingNoteDialog
-                    ctx={{ personId, funderId, householdId } as MeetingContext}
+                    ctx={{ personId, organizationId, householdId } as MeetingContext}
                     trigger={
                       <Button
                         type="button"

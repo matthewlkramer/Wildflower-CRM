@@ -3,11 +3,11 @@ import { useLocation } from "wouter";
 import { Check, ChevronsUpDown, Link2, Plus, X } from "lucide-react";
 import {
   useCreateGiftOrPayment,
-  useCreateFunder,
+  useCreateOrganization,
   useUpdateOpportunityOrPledge,
   useListOpportunitiesAndPledges,
   getListGiftsAndPaymentsQueryKey,
-  getListFundersQueryKey,
+  getListOrganizationsQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
   type OpportunityOrPledge,
   type OpportunityStage,
@@ -67,7 +67,7 @@ function buildScopeParams(
   scope: LinkedRecordsScope | undefined,
 ): Record<string, string> {
   if (!scope) return {};
-  if ("funderId" in scope) return { funderId: scope.funderId };
+  if ("organizationId" in scope) return { organizationId: scope.organizationId };
   if ("householdId" in scope) return { householdId: scope.householdId };
   return { individualGiverPersonId: scope.individualGiverPersonId };
 }
@@ -76,7 +76,7 @@ function donorFromScope(scope: LinkedRecordsScope): {
   type: DonorType;
   id: string;
 } {
-  if ("funderId" in scope) return { type: "funder", id: scope.funderId };
+  if ("organizationId" in scope) return { type: "organization", id: scope.organizationId };
   if ("householdId" in scope)
     return { type: "household", id: scope.householdId };
   return { type: "individual", id: scope.individualGiverPersonId };
@@ -88,7 +88,7 @@ function donorFromScope(scope: LinkedRecordsScope): {
  * fall back to the ID. The gift-detail page will show the resolved name.
  */
 function oppDonorLabel(opp: OpportunityOrPledge): string {
-  if (opp.funderName) return opp.funderName;
+  if (opp.organizationName) return opp.organizationName;
   if (opp.householdName) return opp.householdName;
   if (opp.individualGiverPersonId)
     return `Individual (${opp.individualGiverPersonId})`;
@@ -100,11 +100,11 @@ function oppDonorLabel(opp: OpportunityOrPledge): string {
  * an opportunity has been selected. Exactly one field will be set.
  */
 function oppDonorFields(opp: OpportunityOrPledge): {
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   individualGiverPersonId?: string;
 } {
-  if (opp.funderId) return { funderId: opp.funderId };
+  if (opp.organizationId) return { organizationId: opp.organizationId };
   if (opp.householdId) return { householdId: opp.householdId };
   if (opp.individualGiverPersonId)
     return { individualGiverPersonId: opp.individualGiverPersonId };
@@ -387,7 +387,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
   // Manual donor picker fields (used when donorMode === "manual")
   const initialDonor = scope ? donorFromScope(scope) : null;
   const [donorType, setDonorType] = useState<DonorType>(
-    initialDonor?.type ?? "funder",
+    initialDonor?.type ?? "organization",
   );
   const [donorId, setDonorId] = useState<string | null>(
     initialDonor?.id ?? null,
@@ -416,7 +416,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
       setDonorType(d.type);
       setDonorId(d.id);
     } else {
-      setDonorType("funder");
+      setDonorType("organization");
       setDonorId(null);
     }
   }
@@ -443,16 +443,16 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
 
   // ── Inline funder creation ────────────────────────────────────────────────
 
-  const createFunder = useCreateFunder({
+  const createFunder = useCreateOrganization({
     mutation: {
       onSuccess: async () => {
         await queryClient.invalidateQueries({
-          queryKey: getListFundersQueryKey(),
+          queryKey: getListOrganizationsQueryKey(),
         });
       },
       onError: (err: unknown) => {
         toast({
-          title: "Create funder failed",
+          title: "Create organization failed",
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
         });
@@ -460,12 +460,12 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     },
   });
 
-  const onCreateFunder = async (
-    funderName: string,
+  const onCreateOrganization = async (
+    organizationName: string,
   ): Promise<string | null> => {
     return new Promise((resolve) => {
       createFunder.mutate(
-        { data: { name: funderName } },
+        { data: { name: organizationName } },
         {
           onSuccess: (created) => resolve(created?.id ?? null),
           onError: () => resolve(null),
@@ -516,7 +516,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     if (!trimmed) return false;
     if (linkedOpp !== null) {
       const d = oppDonorFields(linkedOpp);
-      return !!(d.funderId || d.householdId || d.individualGiverPersonId);
+      return !!(d.organizationId || d.householdId || d.individualGiverPersonId);
     }
     if (donorMode === "manual") return !!donorId;
     return false;
@@ -531,7 +531,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     const date = dateReceived.trim();
 
     let donorFields: {
-      funderId?: string;
+      organizationId?: string;
       householdId?: string;
       individualGiverPersonId?: string;
     };
@@ -541,7 +541,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     } else {
       const body = donorBodyFor(donorType, donorId);
       donorFields = {
-        ...(body.funderId != null ? { funderId: body.funderId } : {}),
+        ...(body.organizationId != null ? { organizationId: body.organizationId } : {}),
         ...(body.householdId != null ? { householdId: body.householdId } : {}),
         ...(body.individualGiverPersonId != null
           ? { individualGiverPersonId: body.individualGiverPersonId }
@@ -657,16 +657,16 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                   }}
                   testIdBase="new-gift-donor"
                   disabled={create.isPending}
-                  onCreateFunder={onCreateFunder}
+                  onCreateOrganization={onCreateOrganization}
                 />
                 {scope ? (
                   <p className="text-xs text-muted-foreground">
-                    Defaults to this record; pick a different funder,
+                    Defaults to this record; pick a different organization,
                     household, or individual to file it elsewhere.
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Required — choose the funder, household, or individual
+                    Required — choose the organization, household, or individual
                     this payment is from.
                   </p>
                 )}

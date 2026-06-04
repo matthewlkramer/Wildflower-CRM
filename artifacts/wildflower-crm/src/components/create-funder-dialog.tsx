@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import {
-  useCreateFunder,
-  getListFundersQueryKey,
+  useCreateOrganization,
+  getListOrganizationsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -19,20 +19,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function CreateFunderDialog() {
+export function CreateOrganizationDialog() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const create = useCreateFunder({
+  const create = useCreateOrganization({
     mutation: {
       onSuccess: async (created) => {
-        await queryClient.invalidateQueries({ queryKey: getListFundersQueryKey() });
+        await queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() });
         toast({ title: "Funding entity created" });
         setOpen(false);
         setName("");
-        if (created?.id) navigate(`/funding-entities/${created.id}`);
+        if (created?.id) navigate(`/organizations/${created.id}`);
       },
       onError: (err: unknown) => {
         toast({
@@ -53,7 +53,7 @@ export function CreateFunderDialog() {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New funding entity</DialogTitle>
+          <DialogTitle>New organization</DialogTitle>
           <DialogDescription>
             You can fill in the rest of the details after creating it.
           </DialogDescription>

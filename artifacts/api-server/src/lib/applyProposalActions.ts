@@ -1,6 +1,5 @@
 import {
   emails as emailsTable,
-  funders,
   organizations,
   opportunitiesAndPledges,
   paymentIntermediaries,
@@ -66,7 +65,7 @@ export function validateAction(raw: unknown): { ok: true; action: ProposedAction
       break;
     case "create_per":
       if (!stringField("personId")) return { ok: false, message: "create_per needs personId." };
-      if (!optString("funderId") || !optString("organizationId") || !optString("paymentIntermediaryId") || !optString("householdId") || !optString("connection") || !optString("externalTitleOrRole")) {
+      if (!optString("organizationId") || !optString("paymentIntermediaryId") || !optString("householdId") || !optString("connection") || !optString("externalTitleOrRole")) {
         return { ok: false, message: "create_per has invalid field type." };
       }
       break;
@@ -74,7 +73,7 @@ export function validateAction(raw: unknown): { ok: true; action: ProposedAction
       if (!stringField("firstName") || !stringField("lastName")) {
         return { ok: false, message: "create_person_with_per needs firstName + lastName." };
       }
-      if (!optString("emailAddress") || !optString("funderId") || !optString("organizationId") || !optString("connection") || !optString("externalTitleOrRole")) {
+      if (!optString("emailAddress") || !optString("organizationId") || !optString("connection") || !optString("externalTitleOrRole")) {
         return { ok: false, message: "create_person_with_per has invalid field type." };
       }
       break;
@@ -115,7 +114,7 @@ export function validateAction(raw: unknown): { ok: true; action: ProposedAction
       break;
     case "create_grant_opportunity":
       if (!stringField("title")) return { ok: false, message: "create_grant_opportunity needs title." };
-      if (!optString("funderId") || !optString("funderName") || !optNumber("askAmount") || !optString("deadline") || !optString("stage")) {
+      if (!optString("organizationId") || !optString("organizationName") || !optNumber("askAmount") || !optString("deadline") || !optString("stage")) {
         return { ok: false, message: "create_grant_opportunity has invalid field type." };
       }
       break;
@@ -218,14 +217,13 @@ async function applyCreatePer(
   // multiple — the DB CHECK would catch it anyway but the message is
   // clearer here.
   const setKeys = [
-    ["funder", a.funderId],
-    ["non_funding_organization", a.organizationId],
+    ["organization", a.organizationId],
     ["payment_intermediary", a.paymentIntermediaryId],
     ["household", a.householdId],
   ].filter(([, v]) => !!v) as [string, string][];
   if (setKeys.length === 0) {
     // The AI proposed creating a personnel role but couldn't tie it to
-    // a funder/organization in the CRM (the entity FK is optional in
+    // an organization in the CRM (the entity FK is optional in
     // the tool schema). A role row can't exist without an entity, so
     // there's nothing to apply — skip it (don't hard-fail) so the rest
     // of the card's actions (e.g. set_phone) still go through.
@@ -277,8 +275,7 @@ async function applyCreatePer(
   await tx.insert(peopleEntityRoles).values({
     id,
     personId: a.personId,
-    entityType: entityType as "funder" | "non_funding_organization" | "payment_intermediary" | "household",
-    funderId: a.funderId ?? null,
+    entityType: entityType as "organization" | "payment_intermediary" | "household",
     organizationId: a.organizationId ?? null,
     paymentIntermediaryId: a.paymentIntermediaryId ?? null,
     householdId: a.householdId ?? null,
@@ -313,16 +310,8 @@ async function applyCreatePersonWithPer(
   }
 
   const setKeys = [
-    ["funder", a.funderId],
-    ["non_funding_organization", a.organizationId],
+    ["organization", a.organizationId],
   ].filter(([, v]) => !!v) as [string, string][];
-  if (setKeys.length > 1) {
-    return {
-      type: a.type,
-      status: "failed",
-      message: "create_person_with_per accepts at most one of funderId / organizationId.",
-    };
-  }
 
   const personId = newId();
   await tx.insert(people).values({
@@ -351,8 +340,7 @@ async function applyCreatePersonWithPer(
       await tx.insert(peopleEntityRoles).values({
         id: createdPerId,
         personId,
-        entityType: entityType as "funder" | "non_funding_organization",
-        funderId: a.funderId ?? null,
+        entityType: entityType as "organization",
         organizationId: a.organizationId ?? null,
         connection: a.connection ?? null,
         externalTitleOrRole: a.externalTitleOrRole ?? null,
@@ -371,15 +359,14 @@ async function applyCreatePersonWithPer(
 
 // Attach a current role to an entity that ALREADY exists (no entity
 // insert), deduping the (person, entity) current role. Used by the
-// cross-table dedupe branches so an org/funder action that turns out to
-// match the other table lands on the right entity.
+// cross-table dedupe branches so an action that turns out to
+// match an existing entity lands on the right entity.
 async function attachRoleToEntity(
   tx: Tx,
   args: {
     type: ProposedAction["type"];
     personId: string;
-    entityType: "funder" | "non_funding_organization";
-    entityIdColumn: "funderId" | "organizationId";
+    entityType: "organization" | "payment_intermediary" | "household";
     entityId: string;
     connection?: string;
     externalTitleOrRole?: string;
@@ -401,11 +388,17 @@ async function attachRoleToEntity(
     };
   }
   const roleId = newId();
+  const idCol =
+    args.entityType === "organization"
+      ? { organizationId: args.entityId }
+      : args.entityType === "payment_intermediary"
+        ? { paymentIntermediaryId: args.entityId }
+        : { householdId: args.entityId };
   await tx.insert(peopleEntityRoles).values({
     id: roleId,
     personId: args.personId,
     entityType: args.entityType,
-    [args.entityIdColumn]: args.entityId,
+    ...idCol,
     connection: args.connection ?? null,
     externalTitleOrRole: args.externalTitleOrRole ?? null,
     current: "current",
@@ -435,31 +428,8 @@ async function applyCreateOrgWithPer(
     return { type: a.type, status: "failed", message: `Person ${a.personId} not found.` };
   }
 
-  // Cross-table dedupe (funder wins, mirroring reconcileCreateOrgWithPer):
-  // if a FUNDER of this name already exists, the employer is really that
-  // funder — attach the role there instead of creating a duplicate org.
-  // Guards against CRM state drift between proposal generation and accept.
-  const [crossFunder] = await tx
-    .select({ id: funders.id })
-    .from(funders)
-    .where(sql`lower(${funders.name}) = lower(${a.organizationName})`)
-    .limit(1);
-  if (crossFunder) {
-    return attachRoleToEntity(tx, {
-      type: a.type,
-      personId: a.personId,
-      entityType: "funder",
-      entityIdColumn: "funderId",
-      entityId: crossFunder.id,
-      connection: a.connection,
-      externalTitleOrRole: a.externalTitleOrRole,
-      entityLabel: `existing funder "${a.organizationName}"`,
-    });
-  }
-
-  // Reuse an existing org with the same name (case-insensitive) instead
-  // of creating a duplicate — the org may have been added since the
-  // proposal was generated.
+  // Reuse any existing organization with the same name (case-insensitive)
+  // — it may have been added since the proposal was generated.
   const [existingOrg] = await tx
     .select({ id: organizations.id })
     .from(organizations)
@@ -473,7 +443,10 @@ async function applyCreateOrgWithPer(
     await tx.insert(organizations).values({
       id: organizationId,
       name: a.organizationName,
-      type: a.organizationType ?? null,
+      // Cast to string first: "cmo" was removed from the union but may still appear
+      // in serialized actions from before this migration. Normalize defensively at runtime.
+      entityType: ((a.organizationType as string | undefined) === "cmo" ? "school_network" : (a.organizationType ?? null)),
+      issuesGrants: false,
       emailDomain: a.emailDomain ?? null,
       ownerUserId: ctx.mailboxUserId,
     });
@@ -484,7 +457,7 @@ async function applyCreateOrgWithPer(
   const existingRole = await findExistingCurrentPer(
     tx,
     a.personId,
-    "non_funding_organization",
+    "organization",
     organizationId,
   );
   if (existingRole) {
@@ -502,7 +475,7 @@ async function applyCreateOrgWithPer(
   await tx.insert(peopleEntityRoles).values({
     id: roleId,
     personId: a.personId,
-    entityType: "non_funding_organization",
+    entityType: "organization",
     organizationId,
     connection: a.connection ?? null,
     externalTitleOrRole: a.externalTitleOrRole ?? null,
@@ -535,61 +508,38 @@ async function applyCreateFunderWithPer(
     return { type: a.type, status: "failed", message: `Person ${a.personId} not found.` };
   }
 
-  // Reuse an existing funder with the same name (case-insensitive) instead
-  // of creating a duplicate — one may have been added since the proposal
-  // was generated.
-  const [existingFunder] = await tx
-    .select({ id: funders.id })
-    .from(funders)
-    .where(sql`lower(${funders.name}) = lower(${a.funderName})`)
+  // Reuse any existing organization with the same name (case-insensitive).
+  // All entities are now in the `organizations` table; grantmakers have
+  // `issues_grants = true`, other orgs have `issues_grants = false`.
+  const [existingOrg] = await tx
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(sql`lower(${organizations.name}) = lower(${a.funderName})`)
     .limit(1);
 
-  // Cross-table dedupe (funder wins, then org): if no funder matched but
-  // an ORGANIZATION of this name already exists, attach the role there
-  // rather than minting a duplicate entity. Guards against CRM state drift
-  // between proposal generation and accept.
-  if (!existingFunder) {
-    const [crossOrg] = await tx
-      .select({ id: organizations.id })
-      .from(organizations)
-      .where(sql`lower(${organizations.name}) = lower(${a.funderName})`)
-      .limit(1);
-    if (crossOrg) {
-      return attachRoleToEntity(tx, {
-        type: a.type,
-        personId: a.personId,
-        entityType: "non_funding_organization",
-        entityIdColumn: "organizationId",
-        entityId: crossOrg.id,
-        connection: a.connection,
-        externalTitleOrRole: a.externalTitleOrRole,
-        entityLabel: `existing organization "${a.funderName}"`,
-      });
-    }
-  }
-
-  let funderId: string = existingFunder?.id ?? "";
-  let createdFunder = false;
-  if (!funderId) {
-    funderId = newId();
-    await tx.insert(funders).values({
-      id: funderId,
+  let organizationId: string = existingOrg?.id ?? "";
+  let createdOrg = false;
+  if (!organizationId) {
+    organizationId = newId();
+    await tx.insert(organizations).values({
+      id: organizationId,
       name: a.funderName,
+      issuesGrants: true,
       emailDomain: a.emailDomain ?? null,
       ownerUserId: ctx.mailboxUserId,
     });
-    createdFunder = true;
+    createdOrg = true;
   }
 
-  // Don't create a duplicate current role for the same (person, funder).
-  const existingRole = await findExistingCurrentPer(tx, a.personId, "funder", funderId);
+  // Don't create a duplicate current role for the same (person, org).
+  const existingRole = await findExistingCurrentPer(tx, a.personId, "organization", organizationId);
   if (existingRole) {
     return {
       type: a.type,
-      status: createdFunder ? "applied" : "skipped",
-      createdId: funderId,
-      message: createdFunder
-        ? `Funder created (${funderId}); role already existed.`
+      status: createdOrg ? "applied" : "skipped",
+      createdId: organizationId,
+      message: createdOrg
+        ? `Organization (grantmaker) created (${organizationId}); role already existed.`
         : `Role already exists (${existingRole}).`,
     };
   }
@@ -598,8 +548,8 @@ async function applyCreateFunderWithPer(
   await tx.insert(peopleEntityRoles).values({
     id: roleId,
     personId: a.personId,
-    entityType: "funder",
-    funderId,
+    entityType: "organization",
+    organizationId,
     connection: a.connection ?? null,
     externalTitleOrRole: a.externalTitleOrRole ?? null,
     current: "current",
@@ -608,10 +558,10 @@ async function applyCreateFunderWithPer(
   return {
     type: a.type,
     status: "applied",
-    createdId: funderId,
-    message: createdFunder
-      ? `Created funder "${a.funderName}" + role (${roleId}).`
-      : `Linked to existing funder; role ${roleId}.`,
+    createdId: organizationId,
+    message: createdOrg
+      ? `Created grantmaker "${a.funderName}" + role (${roleId}).`
+      : `Linked to existing organization; role ${roleId}.`,
   };
 }
 
@@ -727,37 +677,37 @@ async function applyCreateGrantOpportunity(
   a: Extract<ProposedAction, { type: "create_grant_opportunity" }>,
   ctx: { mailboxUserId: string },
 ): Promise<ApplyActionResult> {
-  let funderId = a.funderId ?? null;
-  if (!funderId && a.funderName) {
+  let organizationId = a.organizationId ?? null;
+  if (!organizationId && a.organizationName) {
     const [hit] = await tx
-      .select({ id: funders.id })
-      .from(funders)
-      .where(ilike(funders.name, `%${a.funderName}%`))
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(ilike(organizations.name, `%${a.organizationName}%`))
       .limit(1);
-    funderId = hit?.id ?? null;
+    organizationId = hit?.id ?? null;
   }
-  if (!funderId) {
+  if (!organizationId) {
     return {
       type: a.type,
       status: "skipped",
-      message: "No matching funder in CRM — create the funder first.",
+      message: "No matching organization in CRM — create the organization first.",
     };
   }
-  // Confirm the funder still exists (might have been deleted).
-  const [fOk] = await tx
-    .select({ id: funders.id })
-    .from(funders)
-    .where(eq(funders.id, funderId))
+  // Confirm the organization still exists (might have been deleted).
+  const [orgOk] = await tx
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
     .limit(1);
-  if (!fOk) {
-    return { type: a.type, status: "failed", message: `Funder ${funderId} not found.` };
+  if (!orgOk) {
+    return { type: a.type, status: "failed", message: `Organization ${organizationId} not found.` };
   }
 
   const oppId = newId();
   await tx.insert(opportunitiesAndPledges).values({
     id: oppId,
     name: a.title.slice(0, 200),
-    funderId,
+    organizationId,
     status: "open",
     stage: a.stage ?? "cold_lead",
     askAmount: a.askAmount != null ? String(a.askAmount) : null,
@@ -866,11 +816,7 @@ async function applyUpdatePerTitle(
 
 async function entityExists(tx: Tx, entityType: string, id: string): Promise<boolean> {
   switch (entityType) {
-    case "funder": {
-      const [r] = await tx.select({ id: funders.id }).from(funders).where(eq(funders.id, id)).limit(1);
-      return !!r;
-    }
-    case "non_funding_organization": {
+    case "organization": {
       const [r] = await tx.select({ id: organizations.id }).from(organizations).where(eq(organizations.id, id)).limit(1);
       return !!r;
     }
@@ -894,13 +840,11 @@ async function findExistingCurrentPer(
   entityId: string,
 ): Promise<string | null> {
   const col =
-    entityType === "funder"
-      ? peopleEntityRoles.funderId
-      : entityType === "non_funding_organization"
-        ? peopleEntityRoles.organizationId
-        : entityType === "payment_intermediary"
-          ? peopleEntityRoles.paymentIntermediaryId
-          : peopleEntityRoles.householdId;
+    entityType === "organization"
+      ? peopleEntityRoles.organizationId
+      : entityType === "payment_intermediary"
+        ? peopleEntityRoles.paymentIntermediaryId
+        : peopleEntityRoles.householdId;
   const [hit] = await tx
     .select({ id: peopleEntityRoles.id })
     .from(peopleEntityRoles)

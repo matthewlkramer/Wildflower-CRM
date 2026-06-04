@@ -33,7 +33,7 @@ router.get(
     }
     if (q.authorUserId) filters.push(eq(notes.authorUserId, q.authorUserId));
     if (q.personId) filters.push(sql`${notes.personIds} @> ARRAY[${q.personId}]::text[]`);
-    if (q.funderId) filters.push(sql`${notes.funderIds} @> ARRAY[${q.funderId}]::text[]`);
+    if (q.organizationId) filters.push(sql`${notes.organizationIds} @> ARRAY[${q.organizationId}]::text[]`);
     if (q.householdId) filters.push(sql`${notes.householdIds} @> ARRAY[${q.householdId}]::text[]`);
     if (q.opportunityId) filters.push(sql`${notes.opportunityIds} @> ARRAY[${q.opportunityId}]::text[]`);
     if (q.giftId) filters.push(sql`${notes.giftIds} @> ARRAY[${q.giftId}]::text[]`);

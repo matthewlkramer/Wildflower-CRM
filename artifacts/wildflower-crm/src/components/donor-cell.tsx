@@ -1,12 +1,12 @@
 import { Link } from "wouter";
 import type { Priority } from "@workspace/api-client-react";
-import { formatFunderNameShort } from "@/lib/format";
+import { formatOrganizationNameShort } from "@/lib/format";
 import { PriorityStar } from "@/components/priority-star";
 
 type Props = {
-  funderId?: string | null;
-  funderName?: string | null;
-  funderPriority?: Priority | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  organizationPriority?: Priority | null;
   householdId?: string | null;
   householdName?: string | null;
   individualGiverPersonId?: string | null;
@@ -23,25 +23,25 @@ type Props = {
  * server didn't return one (e.g. the parent row was deleted).
  */
 export function DonorCell({
-  funderId,
-  funderName,
-  funderPriority,
+  organizationId,
+  organizationName,
+  organizationPriority,
   householdId,
   householdName,
   individualGiverPersonId,
   individualGiverPersonName,
   individualGiverPersonPriority,
 }: Props) {
-  if (funderId) {
+  if (organizationId) {
     return (
       <span className="inline-flex items-center gap-1">
-        <PriorityStar priority={funderPriority} size="sm" />
+        <PriorityStar priority={organizationPriority} size="sm" />
         <Link
-          href={`/funding-entities/${funderId}`}
+          href={`/organizations/${organizationId}`}
           className="hover:underline"
           onClick={(e) => e.stopPropagation()}
         >
-          {funderName ? formatFunderNameShort(funderName) : funderId}
+          {organizationName ? formatOrganizationNameShort(organizationName) : organizationId}
         </Link>
       </span>
     );

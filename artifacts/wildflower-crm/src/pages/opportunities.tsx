@@ -101,9 +101,9 @@ function buildColumns(ctx: ColCtx): ColumnDef<OpportunityOrPledge>[] {
       label: "Donor",
       cell: (o) => (
         <DonorCell
-          funderId={o.funderId}
-          funderName={o.funderName}
-          funderPriority={o.funderPriority}
+          organizationId={o.organizationId}
+          organizationName={o.organizationName}
+          organizationPriority={o.organizationPriority}
           householdId={o.householdId}
           householdName={o.householdName}
           individualGiverPersonId={o.individualGiverPersonId}
@@ -483,7 +483,7 @@ export default function Opportunities({
         {
           name: (r) => (r.name ?? "").toLowerCase(),
           donor: (r) =>
-            (r.funderName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
+            (r.organizationName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
           stage: (r) => (r.stage ? (STAGE_ORDER[r.stage] ?? 0) : null),
           status: (r) => r.status ?? null,
           ask: (r) => (r.askAmount != null ? Number(r.askAmount) : null),

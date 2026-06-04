@@ -1,27 +1,27 @@
 import { useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import {
-  useGetFunder,
-  useListFunders,
-  useUpdateFunder,
-  useDeleteFunder,
+  useGetOrganization,
+  useListOrganizations,
+  useUpdateOrganization,
+  useDeleteOrganization,
   useGetCurrentUser,
-  getGetFunderQueryKey,
-  getListFundersQueryKey,
-  type FunderDetail,
-  type ListFundersParams,
-  type UpdateFunderBody,
+  getGetOrganizationQueryKey,
+  getListOrganizationsQueryKey,
+  type OrganizationDetail,
+  type ListOrganizationsParams,
+  type UpdateOrganizationBody,
   type ActiveStatus,
   type ConnectionStatus,
   type Enthusiasm,
   type StrategicAlignment,
-  type FundingEntitySubtype,
+  
   type NumberOfEmployees,
   type CapacityRating,
   type Priority,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
-import { canSeeIdentity, canManageIdentity, displayFunderName, ANONYMOUS_LABEL } from "@/lib/visibility";
+import { canSeeIdentity, canManageIdentity, displayOrganizationName, ANONYMOUS_LABEL } from "@/lib/visibility";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { PinnedMediaCard } from "@/components/media-mentions-panel";
 import { TasksPanel } from "@/components/tasks-panel";
@@ -30,8 +30,8 @@ import {
   LinkedOpportunitiesCard,
 } from "@/components/linked-records";
 import {
-  AddFunderPersonRoleDialog,
-  AddFunderRelationDialog,
+  AddOrganizationPersonRoleDialog,
+  AddOrganizationRelationDialog,
   EditPeopleEntityRoleDialog,
 } from "@/components/add-role-dialogs";
 import {
@@ -121,7 +121,7 @@ const SUBTYPE_OPTIONS = [
   { value: "public_private", label: "Public–private" },
   { value: "daf_platform", label: "DAF platform" },
   { value: "platform", label: "Platform" },
-] as const satisfies ReadonlyArray<InlineSelectOption<FundingEntitySubtype>>;
+] as const satisfies ReadonlyArray<InlineSelectOption<string>>;
 
 const EMPLOYEES_OPTIONS = [
   { value: "e_1", label: "1" },
@@ -160,62 +160,62 @@ import {
   AddressesEditor,
 } from "@/components/contact-info-editor";
 
-export default function FundingEntityDetail() {
-  const [, params] = useRoute("/funding-entities/:id");
+export default function OrganizationDetail() {
+  const [, params] = useRoute("/organizations/:id");
   const id = params?.id ?? "";
 
-  const { data, isLoading, isError, error } = useGetFunder(id, {
-    query: { queryKey: getGetFunderQueryKey(id), enabled: !!id },
+  const { data, isLoading, isError, error } = useGetOrganization(id, {
+    query: { queryKey: getGetOrganizationQueryKey(id), enabled: !!id },
   });
 
   if (isLoading) {
     return (
-      <div className="text-sm text-muted-foreground">Loading funder…</div>
+      <div className="text-sm text-muted-foreground">Loading organization…</div>
     );
   }
   if (isError || !data) {
     return (
       <div className="space-y-4">
         <Link
-          href="/funding-entities"
+          href="/organizations"
           className="text-sm text-primary hover:underline"
         >
           ← Back to funders
         </Link>
         <div className="text-sm text-destructive">
-          {error instanceof Error ? error.message : "Funder not found."}
+          {error instanceof Error ? error.message : "Organization not found."}
         </div>
       </div>
     );
   }
 
-  return <FunderView funder={data} />;
+  return <OrganizationView org={data} />;
 }
 
-function FunderView({ funder }: { funder: FunderDetail }) {
+function OrganizationView({ org }: { org: OrganizationDetail }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const userNames = useUserNameMap();
-  const ownerDisplay = funder.ownerUserId
-    ? (userNames.get(funder.ownerUserId) ?? funder.ownerUserId)
+  const ownerDisplay = org.ownerUserId
+    ? (userNames.get(org.ownerUserId) ?? org.ownerUserId)
     : "—";
 
   const viewer = useGetCurrentUser().data ?? null;
-  const canSeeName = canSeeIdentity(funder, viewer);
-  const displayName = canSeeName ? funder.name : ANONYMOUS_LABEL;
+  const canSeeName = canSeeIdentity(org, viewer);
+  const displayName = canSeeName ? org.name : ANONYMOUS_LABEL;
 
   const [editingName, setEditingName] = useState(false);
-  const [nameValue, setNameValue] = useState(funder.name);
+  const [nameValue, setNameValue] = useState(org.name);
 
-  const update = useUpdateFunder({
+  const update = useUpdateOrganization({
     mutation: {
       onSuccess: async () => {
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: getGetFunderQueryKey(funder.id) }),
-          queryClient.invalidateQueries({ queryKey: getListFundersQueryKey() }),
+          queryClient.invalidateQueries({ queryKey: getGetOrganizationQueryKey(org.id) }),
+          queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() }),
         ]);
-        toast({ title: "Funder updated" });
+        toast({ title: "Organization updated" });
       },
       onError: (err: unknown) => {
         toast({
@@ -227,12 +227,12 @@ function FunderView({ funder }: { funder: FunderDetail }) {
     },
   });
 
-  const del = useDeleteFunder({
+  const del = useDeleteOrganization({
     mutation: {
       onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: getListFundersQueryKey() });
-        toast({ title: "Funder deleted" });
-        navigate("/funding-entities");
+        await queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() });
+        toast({ title: "Organization deleted" });
+        navigate("/organizations");
       },
       onError: (err: unknown) => {
         toast({
@@ -244,13 +244,13 @@ function FunderView({ funder }: { funder: FunderDetail }) {
     },
   });
 
-  function patch(body: UpdateFunderBody) {
-    return update.mutateAsync({ id: funder.id, data: body });
+  function patch(body: UpdateOrganizationBody) {
+    return update.mutateAsync({ id: org.id, data: body });
   }
 
   async function saveName() {
     const trimmed = nameValue.trim();
-    if (!trimmed || trimmed === funder.name) {
+    if (!trimmed || trimmed === org.name) {
       setEditingName(false);
       return;
     }
@@ -263,8 +263,8 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       value={nameValue}
       onChange={(e) => setNameValue(e.target.value)}
       className="h-11 max-w-md font-serif text-2xl font-bold"
-      aria-label="Funder name"
-      data-testid="input-funder-name"
+      aria-label="Organization name"
+      data-testid="input-organization-name"
       autoFocus
     />
   ) : (
@@ -276,14 +276,14 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       <Button
         onClick={saveName}
         disabled={update.isPending}
-        data-testid="button-save-funder-name"
+        data-testid="button-save-organization-name"
       >
         {update.isPending ? "Saving…" : "Save"}
       </Button>
       <Button
         variant="ghost"
         onClick={() => {
-          setNameValue(funder.name);
+          setNameValue(org.name);
           setEditingName(false);
         }}
         disabled={update.isPending}
@@ -298,18 +298,18 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           variant="outline"
           size="sm"
           onClick={() => setEditingName(true)}
-          data-testid="button-edit-funder-name"
+          data-testid="button-edit-organization-name"
         >
           Edit name
         </Button>
       )}
       <ConfirmDeleteDialog
         title={`Delete ${displayName}?`}
-        description="This funder and any direct references to it will be removed. Linked opportunities and gifts may need to be reassigned."
-        onConfirm={() => del.mutateAsync({ id: funder.id })}
+        description="This organization and any direct references to it will be removed. Linked opportunities and gifts may need to be reassigned."
+        onConfirm={() => del.mutateAsync({ id: org.id })}
         disabled={del.isPending}
-        triggerTestId="button-delete-funder"
-        confirmTestId="button-confirm-delete-funder"
+        triggerTestId="button-delete-organization"
+        confirmTestId="button-confirm-delete-organization"
       />
     </>
   );
@@ -325,13 +325,13 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       value: (
         <InlineEditSelect
           label="Priority"
-          testIdBase="funder-priority"
-          value={funder.priority ?? null}
+          testIdBase="organization-priority"
+          value={org.priority ?? null}
           options={PRIORITY_OPTIONS}
           display={
-            funder.priority ? (
-              <Badge variant={funder.priority === "top" ? "default" : "outline"}>
-                {formatEnum(funder.priority)}
+            org.priority ? (
+              <Badge variant={org.priority === "top" ? "default" : "outline"}>
+                {formatEnum(org.priority)}
               </Badge>
             ) : (
               "—"
@@ -347,10 +347,10 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       value: (
         <InlineEditSelect
           label="Capacity rating"
-          testIdBase="funder-capacity"
-          value={funder.capacityRating ?? null}
+          testIdBase="organization-capacity"
+          value={org.capacityRating ?? null}
           options={CAPACITY_OPTIONS}
-          display={formatCapacity(funder.capacityRating)}
+          display={formatCapacity(org.capacityRating)}
           onSave={(next) => patch({ capacityRating: next })}
         />
       ),
@@ -360,10 +360,10 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       value: (
         <InlineEditSelect
           label="Connection status"
-          testIdBase="funder-connection"
-          value={funder.connectionStatus ?? null}
+          testIdBase="organization-connection"
+          value={org.connectionStatus ?? null}
           options={CONNECTION_STATUS_OPTIONS}
-          display={formatEnum(funder.connectionStatus)}
+          display={formatEnum(org.connectionStatus)}
           onSave={(next) => patch({ connectionStatus: next })}
         />
       ),
@@ -373,10 +373,10 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       value: (
         <InlineEditSelect
           label="Enthusiasm"
-          testIdBase="funder-enthusiasm"
-          value={funder.enthusiasm ?? null}
+          testIdBase="organization-enthusiasm"
+          value={org.enthusiasm ?? null}
           options={ENTHUSIASM_OPTIONS}
-          display={formatEnthusiasm(funder.enthusiasm)}
+          display={formatEnthusiasm(org.enthusiasm)}
           onSave={(next) => patch({ enthusiasm: next })}
         />
       ),
@@ -385,8 +385,8 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       label: "Owner",
       value: (
         <InlineEditUserPicker
-          testIdBase="funder-owner"
-          value={funder.ownerUserId ?? null}
+          testIdBase="organization-owner"
+          value={org.ownerUserId ?? null}
           display={ownerDisplay}
           onSave={(next) => patch({ ownerUserId: next })}
         />
@@ -394,11 +394,11 @@ function FunderView({ funder }: { funder: FunderDetail }) {
     },
     {
       label: "Lifetime giving",
-      value: formatCurrency(funder.lifetimeGiving),
+      value: formatCurrency(org.lifetimeGiving),
     },
   ];
 
-  const people = funder.people ?? [];
+  const people = org.people ?? [];
 
   const [hideInactivePeople, setHideInactivePeople] = useState(false);
   const hasInactivePeople = people.some((p) => p.current === "past");
@@ -415,11 +415,11 @@ function FunderView({ funder }: { funder: FunderDetail }) {
 
   return (
     <RecordLayout
-      backHref="/funding-entities"
+      backHref="/organizations"
       backLabel="Back to funders"
       title={title}
-      typeBadge="Funder"
-      subtitle={<div>{formatEnum(funder.fundingEntitySubtype)}</div>}
+      typeBadge="Organization"
+      subtitle={<div>{formatEnum(org.entityType)}</div>}
       actions={actions}
       highlights={highlights}
       left={
@@ -428,13 +428,13 @@ function FunderView({ funder }: { funder: FunderDetail }) {
             <div className="space-y-4">
               <InlineEditTextarea
                 label="About"
-                testIdBase="funder-about"
-                value={funder.about ?? null}
-                placeholder="Add an overview of this funder…"
+                testIdBase="organization-about"
+                value={org.about ?? null}
+                placeholder="Add an overview of this organization…"
                 display={
-                  funder.about ? (
+                  org.about ? (
                     <p className="whitespace-pre-wrap text-left text-sm text-foreground">
-                      {funder.about}
+                      {org.about}
                     </p>
                   ) : (
                     <span className="text-muted-foreground">Add an overview…</span>
@@ -447,13 +447,13 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                 <Row label="Active">
                   <InlineEditSelect
                     label="Active status"
-                    testIdBase="funder-active-status"
-                    value={funder.activeStatus ?? null}
+                    testIdBase="organization-active-status"
+                    value={org.activeStatus ?? null}
                     options={ACTIVE_STATUS_OPTIONS}
                     display={
-                      funder.activeStatus ? (
-                        <Badge variant={funder.activeStatus === "active" ? "default" : "outline"}>
-                          {formatEnum(funder.activeStatus)}
+                      org.activeStatus ? (
+                        <Badge variant={org.activeStatus === "active" ? "default" : "outline"}>
+                          {formatEnum(org.activeStatus)}
                         </Badge>
                       ) : (
                         "—"
@@ -465,21 +465,21 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                 <Row label="Subtype">
                   <InlineEditSelect
                     label="Subtype"
-                    testIdBase="funder-subtype"
-                    value={funder.fundingEntitySubtype ?? null}
+                    testIdBase="organization-subtype"
+                    value={org.entityType ?? null}
                     options={SUBTYPE_OPTIONS}
-                    display={formatEnum(funder.fundingEntitySubtype)}
-                    onSave={(next) => patch({ fundingEntitySubtype: next })}
+                    display={formatEnum(org.entityType)}
+                    onSave={(next) => patch({ entityType: next })}
                   />
                 </Row>
                 <Row label="Employees">
                   <InlineEditSelect
                     label="Number of employees"
-                    testIdBase="funder-employees"
-                    value={funder.numberOfEmployees ?? null}
+                    testIdBase="organization-employees"
+                    value={org.numberOfEmployees ?? null}
                     options={EMPLOYEES_OPTIONS}
                     display={
-                      EMPLOYEES_OPTIONS.find((o) => o.value === funder.numberOfEmployees)?.label ?? "—"
+                      EMPLOYEES_OPTIONS.find((o) => o.value === org.numberOfEmployees)?.label ?? "—"
                     }
                     onSave={(next) => patch({ numberOfEmployees: next })}
                   />
@@ -487,21 +487,21 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                 <Row label="Total assets">
                   <InlineEditCurrency
                     label="Total assets"
-                    testIdBase="funder-total-assets"
-                    value={funder.totalAssets ?? null}
-                    display={formatCurrency(funder.totalAssets)}
+                    testIdBase="organization-total-assets"
+                    value={org.totalAssets ?? null}
+                    display={formatCurrency(org.totalAssets)}
                     onSave={(next) => patch({ totalAssets: next })}
                   />
                 </Row>
                 <Row label="Makes PRIs">
                   <InlineEditBoolean
                     label="Makes PRIs"
-                    testIdBase="funder-makes-pris"
-                    value={funder.makesPris ?? null}
+                    testIdBase="organization-makes-pris"
+                    value={org.makesPris ?? null}
                     display={
-                      funder.makesPris == null
+                      org.makesPris == null
                         ? "—"
-                        : funder.makesPris
+                        : org.makesPris
                           ? "Yes"
                           : "No"
                     }
@@ -511,21 +511,21 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                 <Row label="Strategic alignment">
                   <InlineEditSelect
                     label="Strategic alignment"
-                    testIdBase="funder-alignment"
-                    value={funder.strategicAlignment ?? null}
+                    testIdBase="organization-alignment"
+                    value={org.strategicAlignment ?? null}
                     options={ALIGNMENT_OPTIONS}
-                    display={formatEnum(funder.strategicAlignment)}
+                    display={formatEnum(org.strategicAlignment)}
                     onSave={(next) => patch({ strategicAlignment: next })}
                   />
                 </Row>
-                {canManageIdentity(funder, viewer) && (
+                {canManageIdentity(org, viewer) && (
                   <Row label="Anonymous">
                     <InlineEditBoolean
                       label="Anonymous"
-                      testIdBase="funder-anonymous"
-                      value={funder.anonymous}
+                      testIdBase="organization-anonymous"
+                      value={org.anonymous}
                       allowNull={false}
-                      display={funder.anonymous ? "Yes" : "No"}
+                      display={org.anonymous ? "Yes" : "No"}
                       onSave={(next) => patch({ anonymous: next ?? false })}
                     />
                   </Row>
@@ -536,21 +536,21 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                 <Row label="Other names">
                   <InlineEditText
                     label="Other names"
-                    testIdBase="funder-other-names"
-                    value={funder.otherNames ?? null}
+                    testIdBase="organization-other-names"
+                    value={org.otherNames ?? null}
                     placeholder="Aliases, abbreviations…"
-                    display={funder.otherNames ?? "—"}
+                    display={org.otherNames ?? "—"}
                     onSave={(next) => patch({ otherNames: next })}
                   />
                 </Row>
-                <TagRow label="Historical names" values={funder.historicalNames} />
+                <TagRow label="Historical names" values={org.historicalNames} />
                 <Row label="Tags">
                   <InlineEditText
                     label="Tags"
-                    testIdBase="funder-tags"
-                    value={funder.tags ?? null}
+                    testIdBase="organization-tags"
+                    value={org.tags ?? null}
                     placeholder="Comma-separated tags"
-                    display={funder.tags ?? "—"}
+                    display={org.tags ?? "—"}
                     onSave={(next) => patch({ tags: next })}
                   />
                 </Row>
@@ -560,12 +560,12 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                   </div>
                   <InlineEditTextarea
                     label="Details"
-                    testIdBase="funder-details"
-                    value={funder.details ?? null}
+                    testIdBase="organization-details"
+                    value={org.details ?? null}
                     placeholder="Add details…"
                     display={
-                      funder.details ? (
-                        <p className="whitespace-pre-wrap text-left">{funder.details}</p>
+                      org.details ? (
+                        <p className="whitespace-pre-wrap text-left">{org.details}</p>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )
@@ -581,38 +581,38 @@ function FunderView({ funder }: { funder: FunderDetail }) {
             <div className="space-y-3">
               <TagEditRow label="Thematic">
                 <InlineEditInterestsThematic
-                  testIdBase="funder-interests-thematic"
-                  value={funder.interestsThematic ?? []}
+                  testIdBase="organization-interests-thematic"
+                  value={org.interestsThematic ?? []}
                   onSave={(next) => patch({ interestsThematic: next })}
                 />
               </TagEditRow>
               <TagEditRow label="Ages">
                 <InlineEditInterestsAges
-                  testIdBase="funder-interests-ages"
-                  value={funder.interestsAges ?? []}
+                  testIdBase="organization-interests-ages"
+                  value={org.interestsAges ?? []}
                   onSave={(next) => patch({ interestsAges: next })}
                 />
               </TagEditRow>
               <TagEditRow label="Gov models">
                 <InlineEditInterestsGovModels
-                  testIdBase="funder-interests-gov"
-                  value={funder.interestsGovModels ?? []}
+                  testIdBase="organization-interests-gov"
+                  value={org.interestsGovModels ?? []}
                   onSave={(next) => patch({ interestsGovModels: next })}
                 />
               </TagEditRow>
               <TagEditRow label="Regions">
                 <InlineEditMultiRegionPicker
-                  testIdBase="funder-regions"
-                  value={funder.regionIds ?? []}
+                  testIdBase="organization-regions"
+                  value={org.regionIds ?? []}
                   onSave={(next) => patch({ regionIds: next })}
                 />
               </TagEditRow>
-              {funder.priorityAreasNotes && (
+              {org.priorityAreasNotes && (
                 <div>
                   <div className="text-xs font-medium text-muted-foreground mb-1">
                     Priority areas notes
                   </div>
-                  <p className="whitespace-pre-wrap">{funder.priorityAreasNotes}</p>
+                  <p className="whitespace-pre-wrap">{org.priorityAreasNotes}</p>
                 </div>
               )}
             </div>
@@ -621,18 +621,18 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           <FieldCard title="Contact info">
             <div className="space-y-4">
               <EmailsEditor
-                owner={{ kind: "funder", id: funder.id }}
-                emails={funder.emails}
+                owner={{ kind: "organization", id: org.id }}
+                emails={org.emails}
               />
               <Separator />
               <PhoneNumbersEditor
-                owner={{ kind: "funder", id: funder.id }}
-                phoneNumbers={funder.phoneNumbers}
+                owner={{ kind: "organization", id: org.id }}
+                phoneNumbers={org.phoneNumbers}
               />
               <Separator />
               <AddressesEditor
-                owner={{ kind: "funder", id: funder.id }}
-                addresses={funder.addresses}
+                owner={{ kind: "organization", id: org.id }}
+                addresses={org.addresses}
               />
             </div>
           </FieldCard>
@@ -642,18 +642,18 @@ function FunderView({ funder }: { funder: FunderDetail }) {
               <Row label="Website">
                 <InlineEditText
                   label="Website"
-                  testIdBase="funder-website"
-                  value={funder.website ?? null}
+                  testIdBase="organization-website"
+                  value={org.website ?? null}
                   placeholder="https://…"
                   display={
-                    funder.website ? (
+                    org.website ? (
                       <a
-                        href={funder.website}
+                        href={org.website}
                         target="_blank"
                         rel="noreferrer"
                         className="text-primary hover:underline break-all"
                       >
-                        {funder.website}
+                        {org.website}
                       </a>
                     ) : (
                       "—"
@@ -665,29 +665,29 @@ function FunderView({ funder }: { funder: FunderDetail }) {
               <Row label="Email">
                 <InlineEditText
                   label="Email"
-                  testIdBase="funder-email"
-                  value={funder.orgEmail ?? null}
-                  display={funder.orgEmail ?? "—"}
+                  testIdBase="organization-email"
+                  value={org.orgEmail ?? null}
+                  display={org.orgEmail ?? "—"}
                   onSave={(next) => patch({ orgEmail: next })}
                 />
               </Row>
               <DerivedRow label="Domain" hint="derived from email">
-                {funder.emailDomain ?? "—"}
+                {org.emailDomain ?? "—"}
               </DerivedRow>
               <Row label="LinkedIn">
                 <InlineEditText
                   label="LinkedIn"
-                  testIdBase="funder-linkedin"
-                  value={funder.linkedin ?? null}
+                  testIdBase="organization-linkedin"
+                  value={org.linkedin ?? null}
                   display={
-                    funder.linkedin ? (
+                    org.linkedin ? (
                       <a
-                        href={funder.linkedin}
+                        href={org.linkedin}
                         target="_blank"
                         rel="noreferrer"
                         className="text-primary hover:underline truncate"
                       >
-                        {formatLinkedinHandle(funder.linkedin)}
+                        {formatLinkedinHandle(org.linkedin)}
                       </a>
                     ) : (
                       "—"
@@ -699,17 +699,17 @@ function FunderView({ funder }: { funder: FunderDetail }) {
               <Row label="Crunchbase">
                 <InlineEditText
                   label="Crunchbase"
-                  testIdBase="funder-crunchbase"
-                  value={funder.crunchbase ?? null}
+                  testIdBase="organization-crunchbase"
+                  value={org.crunchbase ?? null}
                   display={
-                    funder.crunchbase ? (
+                    org.crunchbase ? (
                       <a
-                        href={funder.crunchbase}
+                        href={org.crunchbase}
                         target="_blank"
                         rel="noreferrer"
                         className="text-primary hover:underline truncate"
                       >
-                        {formatCrunchbaseHandle(funder.crunchbase)}
+                        {formatCrunchbaseHandle(org.crunchbase)}
                       </a>
                     ) : (
                       "—"
@@ -721,17 +721,17 @@ function FunderView({ funder }: { funder: FunderDetail }) {
               <Row label="Facebook">
                 <InlineEditText
                   label="Facebook"
-                  testIdBase="funder-facebook"
-                  value={funder.facebook ?? null}
+                  testIdBase="organization-facebook"
+                  value={org.facebook ?? null}
                   display={
-                    funder.facebook ? (
+                    org.facebook ? (
                       <a
-                        href={funder.facebook}
+                        href={org.facebook}
                         target="_blank"
                         rel="noreferrer"
                         className="text-primary hover:underline truncate"
                       >
-                        {formatFacebookHandle(funder.facebook)}
+                        {formatFacebookHandle(org.facebook)}
                       </a>
                     ) : (
                       "—"
@@ -743,17 +743,17 @@ function FunderView({ funder }: { funder: FunderDetail }) {
               <Row label="Instagram">
                 <InlineEditText
                   label="Instagram"
-                  testIdBase="funder-instagram"
-                  value={funder.instagram ?? null}
+                  testIdBase="organization-instagram"
+                  value={org.instagram ?? null}
                   display={
-                    funder.instagram ? (
+                    org.instagram ? (
                       <a
-                        href={funder.instagram}
+                        href={org.instagram}
                         target="_blank"
                         rel="noreferrer"
                         className="text-primary hover:underline truncate"
                       >
-                        {formatInstagramHandle(funder.instagram)}
+                        {formatInstagramHandle(org.instagram)}
                       </a>
                     ) : (
                       "—"
@@ -766,23 +766,23 @@ function FunderView({ funder }: { funder: FunderDetail }) {
           </FieldCard>
 
           <div className="px-1 text-xs text-muted-foreground">
-            Created {formatDate(funder.createdAt)} • Updated{" "}
-            {formatDate(funder.updatedAt)}
+            Created {formatDate(org.createdAt)} • Updated{" "}
+            {formatDate(org.updatedAt)}
           </div>
         </>
       }
       center={
         (() => {
-          const primaryContact = (funder.people ?? []).find((p) => p.primaryContact);
-          const funderDefaultLinks: Partial<{ personIds: string[]; funderIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = primaryContact
+          const primaryContact = (org.people ?? []).find((p) => p.primaryContact);
+          const funderDefaultLinks: Partial<{ personIds: string[]; organizationIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = primaryContact
             ? { personIds: [primaryContact.personId] }
             : {};
           return (
             <>
-              <TasksPanel funderId={funder.id} defaultLinks={funderDefaultLinks} />
+              <TasksPanel organizationId={org.id} defaultLinks={funderDefaultLinks} />
               <UnifiedActivityFeed
-                funderId={funder.id}
-                notesContext={{ funderId: funder.id, defaultLinks: funderDefaultLinks }}
+                organizationId={org.id}
+                notesContext={{ organizationId: org.id, defaultLinks: funderDefaultLinks }}
                 hideTasks
               />
             </>
@@ -791,9 +791,9 @@ function FunderView({ funder }: { funder: FunderDetail }) {
       }
       right={
         <>
-          <PinnedMediaCard funderId={funder.id} />
+          <PinnedMediaCard organizationId={org.id} />
           <LinkedOpportunitiesCard
-            scope={{ funderId: funder.id }}
+            scope={{ organizationId: org.id }}
             title="Open opportunities"
             pledgeView="opportunities"
             status="open"
@@ -811,7 +811,7 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                     onToggle={() => setHideInactivePeople((v) => !v)}
                   />
                 ) : null}
-                <AddFunderPersonRoleDialog funderId={funder.id} />
+                <AddOrganizationPersonRoleDialog organizationId={org.id} />
               </div>
             }
           >
@@ -825,7 +825,7 @@ function FunderView({ funder }: { funder: FunderDetail }) {
                     [title, p.personEmail].filter(Boolean).join(" · ") ||
                     undefined;
                   return (
-                    <div key={p.id} data-testid={`row-funder-person-${p.id}`}>
+                    <div key={p.id} data-testid={`row-organization-person-${p.id}`}>
                       <AffiliationRow
                         name={p.personName ?? `Person ${p.personId}`}
                         href={`/individuals/${p.personId}`}
@@ -845,65 +845,65 @@ function FunderView({ funder }: { funder: FunderDetail }) {
             )}
           </RelatedCard>
 
-          <RelatedFundersCard funder={funder} patch={patch} />
+          <RelatedOrganizationsCard org={org} patch={patch} />
 
           <LinkedOpportunitiesCard
-            scope={{ funderId: funder.id }}
+            scope={{ organizationId: org.id }}
             title="Pledges"
             pledgeView="pledges"
-            emptyLabel="No pledges from this funder."
+            emptyLabel="No pledges from this organization."
           />
 
-          <LinkedGiftsCard scope={{ funderId: funder.id }} />
+          <LinkedGiftsCard scope={{ organizationId: org.id }} />
         </>
       }
     />
   );
 }
 
-function RelatedFundersCard({
-  funder,
+function RelatedOrganizationsCard({
+  org,
   patch,
 }: {
-  funder: FunderDetail;
-  patch: (body: UpdateFunderBody) => Promise<unknown>;
+  org: OrganizationDetail;
+  patch: (body: UpdateOrganizationBody) => Promise<unknown>;
 }) {
-  const childParams: ListFundersParams = {
-    parentFunderId: funder.id,
+  const childParams: ListOrganizationsParams = {
+    parentOrganizationId: org.id,
     limit: 100,
   };
-  const childrenQ = useListFunders(childParams, {
-    query: { queryKey: getListFundersQueryKey(childParams) },
+  const childrenQ = useListOrganizations(childParams, {
+    query: { queryKey: getListOrganizationsQueryKey(childParams) },
   });
   const viewer = useGetCurrentUser().data ?? null;
-  const parentId = funder.parentFunderId ?? "";
-  const parentQ = useGetFunder(parentId, {
+  const parentId = org.parentOrganizationId ?? "";
+  const parentQ = useGetOrganization(parentId, {
     query: {
-      queryKey: getGetFunderQueryKey(parentId),
-      enabled: !!funder.parentFunderId,
+      queryKey: getGetOrganizationQueryKey(parentId),
+      enabled: !!org.parentOrganizationId,
     },
   });
 
   const [hideInactive, setHideInactive] = useState(false);
   // Only explicitly defunct funders are treated as inactive — spenddown
   // funders are still active givers and stay visible.
-  const isInactiveFunder = (f: { activeStatus?: string | null }) =>
+  const isInactiveOrg = (f: { activeStatus?: string | null }) =>
     f.activeStatus === "defunct";
 
   const allChildren = childrenQ.data?.data ?? [];
-  const fullParent = funder.parentFunderId ? (parentQ.data ?? null) : null;
-  const intermediaryId = funder.paymentIntermediaryId ?? null;
+  const fullParent = org.parentOrganizationId ? (parentQ.data ?? null) : null;
+  const intermediaryId = org.paymentIntermediaryId ?? null;
   const resolvedIntermediaryName = useIntermediaryName(intermediaryId);
   const intermediaryName =
-    funder.paymentIntermediary?.name ?? resolvedIntermediaryName;
+    org.paymentIntermediary?.name ?? resolvedIntermediaryName;
 
   const hasInactive =
-    allChildren.some(isInactiveFunder) ||
-    (fullParent ? isInactiveFunder(fullParent) : false);
+    allChildren.some(isInactiveOrg) ||
+    (fullParent ? isInactiveOrg(fullParent) : false);
   const children =
-    hideInactive ? allChildren.filter((c) => !isInactiveFunder(c)) : allChildren;
+    hideInactive ? allChildren.filter((c) => !isInactiveOrg(c)) : allChildren;
   const parent =
-    fullParent && !(hideInactive && isInactiveFunder(fullParent))
+    fullParent && !(hideInactive && isInactiveOrg(fullParent))
       ? fullParent
       : null;
   const count = (parent ? 1 : 0) + children.length + (intermediaryId ? 1 : 0);
@@ -920,15 +920,15 @@ function RelatedFundersCard({
               onToggle={() => setHideInactive((v) => !v)}
             />
           ) : null}
-          <AddFunderRelationDialog funderId={funder.id} />
+          <AddOrganizationRelationDialog organizationId={org.id} />
         </div>
       }
     >
       <div>
         {parent ? (
           <AffiliationRow
-            name={displayFunderName(parent, viewer)}
-            href={`/funding-entities/${parent.id}`}
+            name={displayOrganizationName(parent, viewer)}
+            href={`/organizations/${parent.id}`}
             role="Parent organization"
             hideStatusBadge
           />
@@ -936,15 +936,15 @@ function RelatedFundersCard({
         {children.map((c) => (
           <AffiliationRow
             key={c.id}
-            name={displayFunderName(c, viewer)}
-            href={`/funding-entities/${c.id}`}
+            name={displayOrganizationName(c, viewer)}
+            href={`/organizations/${c.id}`}
             role="Subsidiary"
             hideStatusBadge
           />
         ))}
         <InlineEditIntermediaryPicker
           label="Payment intermediary"
-          testIdBase="funder-payment-intermediary"
+          testIdBase="organization-payment-intermediary"
           display={intermediaryName ?? undefined}
           value={intermediaryId}
           onSave={(next) => patch({ paymentIntermediaryId: next })}

@@ -3,20 +3,19 @@ import { Link } from "wouter";
 import { useQueries } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
-  useListFunders,
-  getListFundersQueryKey,
-  useBulkUpdateFunders,
-  useMergeFunders,
+  useListOrganizations,
+  getListOrganizationsQueryKey,
+  useBulkUpdateOrganizations,
+  useMergeOrganizations,
   useGetCurrentUser,
-  getGetFunderQueryOptions,
-  getGetFunderQueryKey,
-  type ListFundersParams,
-  type FundingEntitySubtype,
+  getGetOrganizationQueryOptions,
+  getGetOrganizationQueryKey,
+  type ListOrganizationsParams,
+  type Organization,
   type ConnectionStatus,
   type ActiveStatus,
   type CapacityRating,
   type Priority,
-  type Funder,
 } from "@workspace/api-client-react";
 import { MergeDialog, type MergeField, type MergeRecord } from "@/components/merge-dialog";
 import { useRowSelection } from "@/hooks/use-row-selection";
@@ -31,9 +30,9 @@ import { PresenceFilter, type PresenceValue } from "@/components/presence-filter
 import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
-import { FUNDERS_BULK_FIELDS } from "@/lib/bulk-fields";
+import { ORGANIZATIONS_BULK_FIELDS } from "@/lib/bulk-fields";
 import { Checkbox } from "@/components/ui/checkbox";
-import { formatCapacity, formatCurrency, formatDateShort, formatEnum, formatEnthusiasm, formatFunderNameShort } from "@/lib/format";
+import { formatCapacity, formatCurrency, formatDateShort, formatEnum, formatEnthusiasm, formatOrganizationNameShort } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
   Table,
@@ -46,14 +45,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { CreateFunderDialog } from "@/components/create-funder-dialog";
+import { CreateOrganizationDialog } from "@/components/create-funder-dialog";
 import { PriorityStar } from "@/components/priority-star";
 import { PriorityTooltip } from "@/components/priority-tooltip";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { RegionMultiFilter } from "@/components/region-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
-import { canSeeIdentity, displayFunderName, ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
+import { canSeeIdentity, displayOrganizationName, ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
 import { useRegionNameMap } from "@/components/region-picker";
 import {
   Pagination,
@@ -64,7 +63,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 
-const SUBTYPES: FundingEntitySubtype[] = [
+const SUBTYPES: string[] = [
   "family_foundation",
   "institutional_foundation",
   "corporate_foundation",
@@ -88,7 +87,7 @@ const SUBTYPES: FundingEntitySubtype[] = [
 // Subtypes excluded from the default Subtype filter. Fundraising users
 // almost never care about these in day-to-day list views; they can still
 // opt in by toggling them on (or clicking Clear and reselecting).
-const DEFAULT_EXCLUDED_SUBTYPES: FundingEntitySubtype[] = [
+const DEFAULT_EXCLUDED_SUBTYPES: string[] = [
   "nonprofit",
   "education_forprofit",
   "corporation",
@@ -96,7 +95,7 @@ const DEFAULT_EXCLUDED_SUBTYPES: FundingEntitySubtype[] = [
   "platform",
   "capital_provider",
 ];
-const DEFAULT_SUBTYPES: FundingEntitySubtype[] = SUBTYPES.filter(
+const DEFAULT_SUBTYPES: string[] = SUBTYPES.filter(
   (s) => !DEFAULT_EXCLUDED_SUBTYPES.includes(s),
 );
 
@@ -136,7 +135,7 @@ type ColCtx = {
   viewer: Viewer;
 };
 
-function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
+function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
   return [
     {
       key: "priority",
@@ -152,8 +151,8 @@ function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
       required: true,
       tdClassName: "font-medium",
       cell: (f) => (
-        <Link href={`/funding-entities/${f.id}`} className="block w-full">
-          {canSeeIdentity(f, ctx.viewer) ? formatFunderNameShort(f.name) : ANONYMOUS_LABEL}
+        <Link href={`/organizations/${f.id}`} className="block w-full">
+          {canSeeIdentity(f, ctx.viewer) ? formatOrganizationNameShort(f.name) : ANONYMOUS_LABEL}
         </Link>
       ),
     },
@@ -174,9 +173,9 @@ function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
         ),
     },
     {
-      key: "subtype",
-      label: "Subtype",
-      cell: (f) => formatEnum(f.fundingEntitySubtype),
+      key: "entityType",
+      label: "Type",
+      cell: (f) => formatEnum(f.entityType),
     },
     {
       key: "active",
@@ -307,11 +306,12 @@ function buildColumns(ctx: ColCtx): ColumnDef<Funder>[] {
   ];
 }
 
-export default function FundingEntities() {
+export default function Organizations() {
   // Filter state persists per-tab so back-navigation from a funder
   // detail restores the same filtered view.
   const [search, setSearch] = usePersistedState<string>("wf.list.funders.search", "");
   const debouncedSearch = useDebounce(search, 250);
+  const [issuesGrants, setIssuesGrants] = usePersistedState<boolean | undefined>("wf.list.funders.issuesGrants", undefined);
   const [subtypes, setSubtypes] = usePersistedState<string[]>("wf.list.funders.subtypes", DEFAULT_SUBTYPES);
   const [activeStatuses, setActiveStatuses] = usePersistedState<string[]>("wf.list.funders.activeStatuses", DEFAULT_ACTIVE_STATUSES);
   const [connectionStatuses, setConnectionStatuses] = usePersistedState<string[]>("wf.list.funders.connectionStatuses", []);
@@ -335,17 +335,18 @@ export default function FundingEntities() {
   );
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
-  const bulkMut = useBulkUpdateFunders();
+  const bulkMut = useBulkUpdateOrganizations();
   const [mergeOpen, setMergeOpen] = useState(false);
-  const mergeMut = useMergeFunders();
+  const mergeMut = useMergeOrganizations();
 
   const ts = useTableState("funding-entities");
   const sortActive = ts.sort.key !== null;
-  const params: ListFundersParams = {
+  const params: ListOrganizationsParams = {
     limit: sortActive ? 10000 : PAGE_SIZE,
     page: sortActive ? 1 : page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-    ...(subtypes.length > 0 ? { subtype: [...subtypes].sort() as FundingEntitySubtype[] } : {}),
+    ...(issuesGrants !== undefined ? { issuesGrants } : {}),
+    ...(subtypes.length > 0 ? { entityType: [...subtypes].sort() } : {}),
     ...(activeStatuses.length > 0
       ? { activeStatus: [...activeStatuses].sort() as ActiveStatus[] }
       : {}),
@@ -365,8 +366,8 @@ export default function FundingEntities() {
     ...(regionIdsSel.length > 0 ? { regionIds: [...regionIdsSel].sort() } : {}),
   };
 
-  const { data, isLoading, isError, error } = useListFunders(params, {
-    query: { queryKey: getListFundersQueryKey(params) },
+  const { data, isLoading, isError, error } = useListOrganizations(params, {
+    query: { queryKey: getListOrganizationsQueryKey(params) },
   });
 
   const rows = data?.data ?? [];
@@ -380,11 +381,11 @@ export default function FundingEntities() {
   const mergeSelected = mergeOpen ? selection.selectedIds : [];
   const mergeQueries = useQueries({
     queries: mergeSelected.map((id) =>
-      getGetFunderQueryOptions(id, {
+      getGetOrganizationQueryOptions(id, {
         query: {
           enabled: mergeOpen,
           staleTime: 30_000,
-          queryKey: getGetFunderQueryKey(id),
+          queryKey: getGetOrganizationQueryKey(id),
         },
       }),
     ),
@@ -393,7 +394,7 @@ export default function FundingEntities() {
     () =>
       mergeQueries
         .map((q) => q.data)
-        .filter((d): d is Funder => !!d)
+        .filter((d): d is Organization => !!d)
         .map((d) => d as unknown as MergeRecord),
     [mergeQueries],
   );
@@ -402,7 +403,7 @@ export default function FundingEntities() {
   const mergeFields = useMemo<MergeField[]>(
     () => [
       { key: "name", label: "Name" },
-      { key: "fundingEntitySubtype", label: "Subtype", display: (v) => formatEnum(v as string | null) },
+      { key: "entityType", label: "Type", display: (v) => formatEnum(v as string | null) },
       { key: "capacityRating", label: "Capacity", display: (v) => formatCapacity(v as string | null) },
       { key: "activeStatus", label: "Active status", display: (v) => formatEnum(v as string | null) },
       { key: "connectionStatus", label: "Connection", display: (v) => formatEnum(v as string | null) },
@@ -424,7 +425,7 @@ export default function FundingEntities() {
   );
 
   const mergeLabel = (r: MergeRecord): string => {
-    const f = r as unknown as Funder;
+    const f = r as unknown as Organization;
     return (f.name as string | null) || f.id;
   };
 
@@ -449,8 +450,31 @@ export default function FundingEntities() {
   const filterRegistry = useMemo<FilterDef[]>(
     () => [
       {
-        key: "subtype",
-        label: "Subtype",
+        key: "issuesGrants",
+        label: "Grant-making",
+        active: issuesGrants !== undefined,
+        clear: () => { setIssuesGrants(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <select
+            className="h-8 rounded border px-2 text-sm bg-background"
+            value={issuesGrants === undefined ? "" : String(issuesGrants)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setIssuesGrants(v === "" ? undefined : v === "true");
+              setPage(1);
+              selection.clear();
+            }}
+            data-testid="select-issues-grants"
+          >
+            <option value="">All organizations</option>
+            <option value="true">Grant-making only</option>
+            <option value="false">Non-grant-making only</option>
+          </select>
+        ),
+      },
+      {
+        key: "entityType",
+        label: "Type",
         active: !sameDefaultSubtypes,
         clear: () => { setSubtypes(DEFAULT_SUBTYPES); setPage(1); selection.clear(); },
         render: () => (
@@ -637,7 +661,7 @@ export default function FundingEntities() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, regionIdsSel],
+    [issuesGrants, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, regionIdsSel],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -655,8 +679,8 @@ export default function FundingEntities() {
         rows,
         {
           priority: (r) => (r.priority === "top" ? 1 : 0),
-          name: (r) => displayFunderName(r, viewer).toLowerCase(),
-          subtype: (r) => r.fundingEntitySubtype ?? null,
+          name: (r) => displayOrganizationName(r, viewer).toLowerCase(),
+          entityType: (r) => r.entityType ?? null,
           active: (r) => r.activeStatus ?? null,
           connection: (r) => r.connectionStatus ?? null,
           enthusiasm: (r) => r.enthusiasm ?? null,
@@ -689,6 +713,7 @@ export default function FundingEntities() {
 
   const hasActiveFilters =
     !!search ||
+    issuesGrants !== undefined ||
     !sameDefaultSubtypes ||
     !sameDefaultActiveStatuses ||
     connectionStatuses.length > 0 ||
@@ -705,6 +730,7 @@ export default function FundingEntities() {
   // ─── Saved views ─────────────────────────────────────────────────
   type FundersView = {
     search: string;
+    issuesGrants: boolean | undefined;
     subtypes: string[];
     activeStatuses: string[];
     connectionStatuses: string[];
@@ -723,6 +749,7 @@ export default function FundingEntities() {
   };
   const currentView: FundersView = {
     search,
+    issuesGrants,
     subtypes,
     activeStatuses,
     connectionStatuses,
@@ -741,6 +768,7 @@ export default function FundingEntities() {
   };
   const clearAll = () => {
     setSearch("");
+    setIssuesGrants(undefined);
     setSubtypes(DEFAULT_SUBTYPES);
     setActiveStatuses(DEFAULT_ACTIVE_STATUSES);
     setConnectionStatuses([]);
@@ -762,6 +790,7 @@ export default function FundingEntities() {
     current: currentView,
     apply: (s) => {
       setSearch(s.search ?? "");
+      setIssuesGrants(s.issuesGrants ?? undefined);
       setSubtypes(s.subtypes ?? DEFAULT_SUBTYPES);
       setActiveStatuses(s.activeStatuses ?? DEFAULT_ACTIVE_STATUSES);
       setConnectionStatuses(s.connectionStatuses ?? []);
@@ -785,6 +814,7 @@ export default function FundingEntities() {
       const sortedActiveStatuses = [...(s.activeStatuses ?? [])].sort().join(",");
       return (
         !s.search &&
+        s.issuesGrants === undefined &&
         sortedSubtypes === sortedDefaultSubtypes &&
         sortedActiveStatuses === sortedDefaultActiveStatuses &&
         (s.connectionStatuses?.length ?? 0) === 0 &&
@@ -815,7 +845,7 @@ export default function FundingEntities() {
             {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
           </p>
         </div>
-        <CreateFunderDialog />
+        <CreateOrganizationDialog />
       </div>
 
       <SavedViewsBar
@@ -936,13 +966,13 @@ export default function FundingEntities() {
                 <TableRow
                   key={f.id}
                   className="cursor-pointer hover:bg-muted/50 transition-colors"
-                  data-testid={`row-funder-${f.id}`}
+                  data-testid={`row-organization-${f.id}`}
                 >
                   <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={selection.isSelected(f.id)}
                       onCheckedChange={() => selection.toggle(f.id)}
-                      aria-label={`Select ${displayFunderName(f, viewer)}`}
+                      aria-label={`Select ${displayOrganizationName(f, viewer)}`}
                       data-testid={`checkbox-select-${f.id}`}
                     />
                   </TableCell>
@@ -963,17 +993,17 @@ export default function FundingEntities() {
         onEdit={() => setBulkOpen(true)}
         onMerge={() => setMergeOpen(true)}
         onClear={selection.clear}
-        entityNoun="funder"
+        entityNoun="organization"
       />
       {mergeOpen && !mergeLoading && mergeRecords.length >= 2 && (
         <MergeDialog
           open={mergeOpen}
           onOpenChange={setMergeOpen}
-          entityNoun="funding entity"
+          entityNoun="organization"
           records={mergeRecords}
           fields={mergeFields}
           recordLabel={mergeLabel}
-          invalidateKeys={[getListFundersQueryKey()]}
+          invalidateKeys={[getListOrganizationsQueryKey()]}
           onSubmit={async ({ primaryId, mergeIds, overrides }) =>
             mergeMut.mutateAsync({ data: { primaryId, mergeIds, overrides } })
           }
@@ -983,10 +1013,10 @@ export default function FundingEntities() {
       <BulkEditDialog
         open={bulkOpen}
         onOpenChange={setBulkOpen}
-        entityNoun="funder"
+        entityNoun="organization"
         selectedIds={selection.selectedIds}
-        fields={FUNDERS_BULK_FIELDS}
-        invalidateKeys={[getListFundersQueryKey()]}
+        fields={ORGANIZATIONS_BULK_FIELDS}
+        invalidateKeys={[getListOrganizationsQueryKey()]}
         onSubmit={async (patch) =>
           bulkMut.mutateAsync({
             data: { ids: selection.selectedIds, patch },

@@ -61,9 +61,9 @@ router.get(
         sql`${calendarEvents.matchedPersonIds} @> ARRAY[${q.personId}]::text[]`,
       );
     }
-    if (q.funderId) {
+    if (q.organizationId) {
       filters.push(
-        sql`${calendarEvents.matchedFunderIds} @> ARRAY[${q.funderId}]::text[]`,
+        sql`${calendarEvents.matchedOrganizationIds} @> ARRAY[${q.organizationId}]::text[]`,
       );
     }
     if (q.householdId) {

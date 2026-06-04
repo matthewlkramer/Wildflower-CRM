@@ -59,7 +59,7 @@ router.get(
     if (q.dueBefore) filters.push(lte(tasks.dueDate, q.dueBefore));
     if (q.dueAfter) filters.push(gte(tasks.dueDate, q.dueAfter));
     if (q.personId) filters.push(sql`${tasks.personIds} @> ARRAY[${q.personId}]::text[]`);
-    if (q.funderId) filters.push(sql`${tasks.funderIds} @> ARRAY[${q.funderId}]::text[]`);
+    if (q.organizationId) filters.push(sql`${tasks.organizationIds} @> ARRAY[${q.organizationId}]::text[]`);
     if (q.householdId) filters.push(sql`${tasks.householdIds} @> ARRAY[${q.householdId}]::text[]`);
     if (q.opportunityId) filters.push(sql`${tasks.opportunityIds} @> ARRAY[${q.opportunityId}]::text[]`);
     if (q.giftId) filters.push(sql`${tasks.giftIds} @> ARRAY[${q.giftId}]::text[]`);

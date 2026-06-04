@@ -60,7 +60,7 @@ export const calendarEvents = pgTable(
       { onDelete: "set null" },
     ),
     matchedPersonIds: text("matched_person_ids").array(),
-    matchedFunderIds: text("matched_funder_ids").array(),
+    matchedOrganizationIds: text("matched_organization_ids").array(),
     matchedHouseholdIds: text("matched_household_ids").array(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -75,9 +75,9 @@ export const calendarEvents = pgTable(
     index("calendar_events_matched_person_ids_idx")
       .using("gin", t.matchedPersonIds)
       .where(sql`${t.matchedPersonIds} is not null`),
-    index("calendar_events_matched_funder_ids_idx")
-      .using("gin", t.matchedFunderIds)
-      .where(sql`${t.matchedFunderIds} is not null`),
+    index("calendar_events_matched_organization_ids_idx")
+      .using("gin", t.matchedOrganizationIds)
+      .where(sql`${t.matchedOrganizationIds} is not null`),
     index("calendar_events_matched_household_ids_idx")
       .using("gin", t.matchedHouseholdIds)
       .where(sql`${t.matchedHouseholdIds} is not null`),

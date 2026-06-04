@@ -56,7 +56,7 @@ export const PEOPLE_BULK_FIELDS: ReadonlyArray<BulkField> = [
   },
 ];
 
-export const FUNDERS_BULK_FIELDS: ReadonlyArray<BulkField> = [
+export const ORGANIZATIONS_BULK_FIELDS: ReadonlyArray<BulkField> = [
   { kind: "owner", key: "ownerUserId", label: "Owner", nullable: true },
   {
     kind: "enum",
@@ -122,7 +122,7 @@ export const FUNDERS_BULK_FIELDS: ReadonlyArray<BulkField> = [
   },
   {
     kind: "enum",
-    key: "fundingEntitySubtype",
+    key: "entityType",
     label: "Funder subtype",
     nullable: true,
     options: [

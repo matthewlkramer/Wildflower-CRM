@@ -4,19 +4,16 @@ import {
   useCreatePeopleEntityRole,
   useUpdatePeopleEntityRole,
   useDeletePeopleEntityRole,
-  useUpdateFunder,
-  useCreateFunder,
+  useUpdateOrganization,
   useCreateOrganization,
   useCreatePerson,
   useCreateHousehold,
   getListPeopleQueryKey,
   getGetPersonQueryKey,
-  getGetFunderQueryKey,
   getGetOrganizationQueryKey,
   getGetHouseholdQueryKey,
   getListHouseholdsQueryKey,
   getGetPaymentIntermediaryQueryKey,
-  getListFundersQueryKey,
   getListOrganizationsQueryKey,
   getListPeopleEntityRolesQueryKey,
   EntityRoleType,
@@ -49,12 +46,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import {
   EntityCombobox,
-  useFunderSearch,
-  useFunderName,
-  usePersonSearch,
-  usePersonName,
   useOrganizationSearch,
   useOrganizationName,
+  usePersonSearch,
+  usePersonName,
   useIntermediarySearch,
   useIntermediaryName,
   useHouseholdSearch,
@@ -211,17 +206,16 @@ function splitPersonName(name: string): { firstName?: string; lastName?: string 
 /* Links the person to a funder / non-funding org / payment intermediary.    */
 /* ───────────────────────────────────────────────────────────────────────── */
 
-type OrgKind = "funder" | "non_funding_organization" | "payment_intermediary";
+type OrgKind = "organization" | "payment_intermediary";
 
 const ORG_KIND_LABEL: Record<OrgKind, string> = {
-  funder: "Funder",
-  non_funding_organization: "Organization",
-  payment_intermediary: "Payment intermediary",
+  organization: "Organization",
+  payment_intermediary: "Payment Intermediary",
 };
 
 export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
   const [open, setOpen] = useState(false);
-  const [kind, setKind] = useState<OrgKind>("funder");
+  const [kind, setKind] = useState<OrgKind>("organization");
   const [entityId, setEntityId] = useState<string | null>(null);
   const [connection, setConnection] = useState("");
   const [title, setTitle] = useState("");
@@ -233,7 +227,7 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
   const { toast } = useToast();
 
   const reset = () => {
-    setKind("funder");
+    setKind("organization");
     setEntityId(null);
     setConnection("");
     setTitle("");
@@ -241,28 +235,10 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
     setPrimary(false);
   };
 
-  const createFunder = useCreateFunder();
   const createOrganization = useCreateOrganization();
 
-  // Inline-create a funder from the picker: persist, prime the get-cache so
+  // Inline-create an organization from the picker: persist, prime the get-cache so
   // the resolved name shows immediately, refresh the list, return the new id.
-  const handleCreateFunder = async (name: string): Promise<string | null> => {
-    try {
-      const f = await createFunder.mutateAsync({ data: { name } });
-      queryClient.setQueryData(getGetFunderQueryKey(f.id), f);
-      await queryClient.invalidateQueries({ queryKey: getListFundersQueryKey() });
-      toast({ title: "Funder created" });
-      return f.id;
-    } catch (err: unknown) {
-      toast({
-        title: "Create failed",
-        description: err instanceof Error ? err.message : String(err),
-        variant: "destructive",
-      });
-      return null;
-    }
-  };
-
   const handleCreateOrganization = async (
     name: string,
   ): Promise<string | null> => {
@@ -311,9 +287,7 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
       data: {
         personId,
         entityType: kind as EntityRoleType,
-        funderId: kind === "funder" ? entityId : undefined,
-        organizationId:
-          kind === "non_funding_organization" ? entityId : undefined,
+        organizationId: kind === "organization" ? entityId : undefined,
         paymentIntermediaryId:
           kind === "payment_intermediary" ? entityId : undefined,
         ...attrs,
@@ -339,7 +313,7 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
         <DialogHeader>
           <DialogTitle>Link organization</DialogTitle>
           <DialogDescription>
-            Tie this person to a funder, organization, or payment intermediary.
+            Tie this person to an organization or payment intermediary.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -373,19 +347,7 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
             </div>
             <div className="space-y-1.5">
               <Label>{ORG_KIND_LABEL[kind]}</Label>
-              {kind === "funder" ? (
-                <EntityCombobox
-                  useSearch={useFunderSearch}
-                  useResolve={useFunderName}
-                  value={entityId}
-                  onChange={setEntityId}
-                  allowNull={false}
-                  placeholder="Search funders…"
-                  testId="select-person-org-entity"
-                  onCreate={handleCreateFunder}
-                  createNoun="funder"
-                />
-              ) : kind === "non_funding_organization" ? (
+              {kind === "organization" ? (
                 <EntityCombobox
                   useSearch={useOrganizationSearch}
                   useResolve={useOrganizationName}
@@ -452,7 +414,7 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
 /* Links a person to this funder.                                            */
 /* ───────────────────────────────────────────────────────────────────────── */
 
-export function AddFunderPersonRoleDialog({ funderId }: { funderId: string }) {
+export function AddOrganizationPersonRoleDialog({ organizationId }: { organizationId: string }) {
   const [open, setOpen] = useState(false);
   const [personId, setPersonId] = useState<string | null>(null);
   const [connection, setConnection] = useState("");
@@ -501,7 +463,7 @@ export function AddFunderPersonRoleDialog({ funderId }: { funderId: string }) {
     mutation: {
       onSuccess: async () => {
         await queryClient.invalidateQueries({
-          queryKey: getGetFunderQueryKey(funderId),
+          queryKey: getGetOrganizationQueryKey(organizationId),
         });
         toast({ title: "Person linked" });
         setOpen(false);
@@ -523,8 +485,8 @@ export function AddFunderPersonRoleDialog({ funderId }: { funderId: string }) {
     create.mutate({
       data: {
         personId,
-        entityType: EntityRoleType.funder,
-        funderId,
+        entityType: EntityRoleType.organization,
+        organizationId,
         ...attrs,
       },
     });
@@ -781,7 +743,7 @@ const RELATION_LABEL: Record<FunderRelation, string> = {
   payment_intermediary: "Payment intermediary",
 };
 
-export function AddFunderRelationDialog({ funderId }: { funderId: string }) {
+export function AddOrganizationRelationDialog({ organizationId }: { organizationId: string }) {
   const [open, setOpen] = useState(false);
   const [relation, setRelation] = useState<FunderRelation>("parent");
   const [entityId, setEntityId] = useState<string | null>(null);
@@ -793,26 +755,26 @@ export function AddFunderRelationDialog({ funderId }: { funderId: string }) {
     setEntityId(null);
   };
 
-  const invalidateFunders = async (otherFunderId?: string) => {
+  const invalidateOrganizations = async (otherFunderId?: string) => {
     await Promise.all([
       queryClient.invalidateQueries({
-        queryKey: getGetFunderQueryKey(funderId),
+        queryKey: getGetOrganizationQueryKey(organizationId),
       }),
-      queryClient.invalidateQueries({ queryKey: getListFundersQueryKey() }),
+      queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() }),
       ...(otherFunderId
         ? [
             queryClient.invalidateQueries({
-              queryKey: getGetFunderQueryKey(otherFunderId),
+              queryKey: getGetOrganizationQueryKey(otherFunderId),
             }),
           ]
         : []),
     ]);
   };
 
-  const update = useUpdateFunder({
+  const update = useUpdateOrganization({
     mutation: {
       onSuccess: async (_data, vars) => {
-        await invalidateFunders(vars.id === funderId ? undefined : vars.id);
+        await invalidateOrganizations(vars.id === organizationId ? undefined : vars.id);
         toast({ title: "Relationship added" });
         setOpen(false);
         reset();
@@ -830,13 +792,13 @@ export function AddFunderRelationDialog({ funderId }: { funderId: string }) {
   const submit = () => {
     if (!entityId || update.isPending) return;
     if (relation === "parent") {
-      update.mutate({ id: funderId, data: { parentFunderId: entityId } });
+      update.mutate({ id: organizationId, data: { parentOrganizationId: entityId } });
     } else if (relation === "child") {
       // The child funder gets this funder as its parent.
-      update.mutate({ id: entityId, data: { parentFunderId: funderId } });
+      update.mutate({ id: entityId, data: { parentOrganizationId: organizationId } });
     } else {
       update.mutate({
-        id: funderId,
+        id: organizationId,
         data: { paymentIntermediaryId: entityId },
       });
     }
@@ -894,14 +856,14 @@ export function AddFunderRelationDialog({ funderId }: { funderId: string }) {
             <Label>{RELATION_LABEL[relation]}</Label>
             {isFunderPick ? (
               <EntityCombobox
-                useSearch={useFunderSearch}
-                useResolve={useFunderName}
+                useSearch={useOrganizationSearch}
+                useResolve={useOrganizationName}
                 value={entityId}
                 onChange={setEntityId}
                 allowNull={false}
                 placeholder="Search funders…"
                 testId="select-funder-relation-entity"
-                excludeIds={[funderId]}
+                excludeIds={[organizationId]}
               />
             ) : (
               <EntityCombobox
@@ -998,7 +960,7 @@ export function EditPeopleEntityRoleDialog({
       getGetPersonQueryKey(role.personId),
       getListPeopleEntityRolesQueryKey(),
     ];
-    if (role.funderId) keys.push(getGetFunderQueryKey(role.funderId));
+    if (role.organizationId) keys.push(getGetOrganizationQueryKey(role.organizationId));
     if (role.organizationId)
       keys.push(getGetOrganizationQueryKey(role.organizationId));
     if (role.householdId) keys.push(getGetHouseholdQueryKey(role.householdId));

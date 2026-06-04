@@ -7,14 +7,14 @@ import {
 
 describe("donor XOR invariants", () => {
   const cases: Array<[string, Record<string, string | null>, boolean]> = [
-    ["funder only", { funderId: "f1" }, true],
+    ["funder only", { organizationId: "f1" }, true],
     ["individual only", { individualGiverPersonId: "p1" }, true],
     ["household only", { householdId: "h1" }, true],
     ["none set", {}, false],
-    ["funder + individual", { funderId: "f1", individualGiverPersonId: "p1" }, false],
-    ["funder + household", { funderId: "f1", householdId: "h1" }, false],
-    ["all three", { funderId: "f1", individualGiverPersonId: "p1", householdId: "h1" }, false],
-    ["funder = empty string still counts as set", { funderId: "" }, true],
+    ["funder + individual", { organizationId: "f1", individualGiverPersonId: "p1" }, false],
+    ["funder + household", { organizationId: "f1", householdId: "h1" }, false],
+    ["all three", { organizationId: "f1", individualGiverPersonId: "p1", householdId: "h1" }, false],
+    ["funder = empty string still counts as set", { organizationId: "" }, true],
   ];
 
   for (const [name, state, ok] of cases) {

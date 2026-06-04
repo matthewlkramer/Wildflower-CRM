@@ -34,7 +34,7 @@ router.get(
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.personId) filters.push(eq(meetingNotes.personId, q.personId));
-    if (q.funderId) filters.push(eq(meetingNotes.funderId, q.funderId));
+    if (q.organizationId) filters.push(eq(meetingNotes.organizationId, q.organizationId));
     if (q.householdId) filters.push(eq(meetingNotes.householdId, q.householdId));
     if (q.creatorUserId) filters.push(eq(meetingNotes.creatorUserId, q.creatorUserId));
     const where = filters.length ? and(...filters) : undefined;
@@ -112,7 +112,7 @@ router.post(
         actionItems: ai.actionItems as unknown as MeetingActionItem[],
         creatorUserId: user.id,
         personId: body.personId ?? null,
-        funderId: body.funderId ?? null,
+        organizationId: body.organizationId ?? null,
         householdId: body.householdId ?? null,
       })
       .returning();
@@ -134,7 +134,7 @@ router.patch(
     // Merge-then-validate so a partial PATCH can't bypass the contact xor.
     const merged = {
       personId: body.personId !== undefined ? body.personId : existing.personId,
-      funderId: body.funderId !== undefined ? body.funderId : existing.funderId,
+      organizationId: body.organizationId !== undefined ? body.organizationId : existing.organizationId,
       householdId:
         body.householdId !== undefined ? body.householdId : existing.householdId,
     };
@@ -154,7 +154,7 @@ router.patch(
     if (body.aiSummary !== undefined) patch.aiSummary = body.aiSummary;
     if (body.actionItems !== undefined) patch.actionItems = body.actionItems;
     if (body.personId !== undefined) patch.personId = body.personId;
-    if (body.funderId !== undefined) patch.funderId = body.funderId;
+    if (body.organizationId !== undefined) patch.organizationId = body.organizationId;
     if (body.householdId !== undefined) patch.householdId = body.householdId;
     const [row] = await db
       .update(meetingNotes)
@@ -235,7 +235,7 @@ router.post(
           assigneeUserId: body.assigneeUserId ?? null,
           createdByUserId: user.id,
           personIds: existing.personId ? [existing.personId] : null,
-          funderIds: existing.funderId ? [existing.funderId] : null,
+          organizationIds: existing.organizationId ? [existing.organizationId] : null,
           householdIds: existing.householdId ? [existing.householdId] : null,
         })
         .returning();

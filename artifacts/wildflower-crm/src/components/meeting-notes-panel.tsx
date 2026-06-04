@@ -7,11 +7,11 @@ import {
   usePromoteMeetingActionItem,
   useGetCurrentUser,
   useListPeople,
-  useListFunders,
+  useListOrganizations,
   useListHouseholds,
   getListMeetingNotesQueryKey,
   getListPeopleQueryKey,
-  getListFundersQueryKey,
+  getListOrganizationsQueryKey,
   getListHouseholdsQueryKey,
   getListTasksQueryKey,
   type MeetingNote,
@@ -61,7 +61,7 @@ import { useUserNameMap } from "@/components/user-picker";
 
 export interface MeetingContext {
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
 }
 
@@ -82,7 +82,7 @@ function formatWhen(iso: string): string {
 export function MeetingNotesPanel(ctx: MeetingContext) {
   const { data, isLoading } = useListMeetingNotes({
     personId: ctx.personId,
-    funderId: ctx.funderId,
+    organizationId: ctx.organizationId,
     householdId: ctx.householdId,
     limit: 50,
   });
@@ -601,7 +601,7 @@ export function AddMeetingNoteDialog({
   // Pinned ctx wins over the in-dialog picker. The picker is only shown
   // (and only matters) in unpinned mode.
   const effectivePerson = ctx?.personId ?? (picked?.kind === "person" ? picked.id : undefined);
-  const effectiveFunder = ctx?.funderId ?? (picked?.kind === "funder" ? picked.id : undefined);
+  const effectiveFunder = ctx?.organizationId ?? (picked?.kind === "organization" ? picked.id : undefined);
   const effectiveHousehold = ctx?.householdId ?? (picked?.kind === "household" ? picked.id : undefined);
   const contactCount =
     (effectivePerson ? 1 : 0) +
@@ -707,7 +707,7 @@ export function AddMeetingNoteDialog({
                   : undefined,
                 attendees: attendeesList.length ? attendeesList : undefined,
                 personId: effectivePerson,
-                funderId: effectiveFunder,
+                organizationId: effectiveFunder,
                 householdId: effectiveHousehold,
               },
             });
@@ -856,7 +856,7 @@ export function AddMeetingNoteDialog({
 /** Debounced cross-entity contact picker for the unpinned dialog. */
 type PickedContact =
   | { kind: "person"; id: string; label: string }
-  | { kind: "funder"; id: string; label: string }
+  | { kind: "organization"; id: string; label: string }
   | { kind: "household"; id: string; label: string };
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -882,8 +882,8 @@ function ContactPicker({
   const people = useListPeople(params, {
     query: { enabled, queryKey: getListPeopleQueryKey(params) },
   });
-  const funders = useListFunders(params, {
-    query: { enabled, queryKey: getListFundersQueryKey(params) },
+  const funders = useListOrganizations(params, {
+    query: { enabled, queryKey: getListOrganizationsQueryKey(params) },
   });
   const households = useListHouseholds(params, {
     query: { enabled, queryKey: getListHouseholdsQueryKey(params) },
@@ -903,7 +903,7 @@ function ContactPicker({
       });
     }
     for (const f of funders.data?.data ?? []) {
-      out.push({ kind: "funder", id: f.id, label: f.name });
+      out.push({ kind: "organization", id: f.id, label: f.name });
     }
     for (const h of households.data?.data ?? []) {
       out.push({ kind: "household", id: h.id, label: h.name });
@@ -988,7 +988,7 @@ function ContactPicker({
 
 function ContactKindIcon({ kind }: { kind: PickedContact["kind"] }) {
   const cls = "h-3.5 w-3.5 shrink-0 text-muted-foreground";
-  if (kind === "funder") return <Building2 className={cls} />;
+  if (kind === "organization") return <Building2 className={cls} />;
   if (kind === "household") return <Home className={cls} />;
   return <UsersIcon className={cls} />;
 }

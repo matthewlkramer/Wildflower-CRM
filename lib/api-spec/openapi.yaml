@@ -16,7 +16,7 @@ tags:
   - { name: fiscal-year-entity-goals }
   - { name: fundable-projects }
   - { name: fiscal-years }
-  - { name: funders }
+
   - { name: organizations }
   - { name: payment-intermediaries }
   - { name: households }
@@ -56,7 +56,7 @@ paths:
         - { name: status, in: query, schema: { $ref: "#/components/schemas/EmailProposalStatus" } }
         - { name: mailboxUserId, in: query, schema: { type: string } }
         - { name: personId, in: query, schema: { type: string }, description: "Filter to proposals targeting this person." }
-        - { name: funderId, in: query, schema: { type: string }, description: "Filter to proposals targeting this funder." }
+        - { name: organizationId, in: query, schema: { type: string }, description: "Filter to proposals targeting this funder." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -304,23 +304,19 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FiscalYear" } } } } }
 
-  # ─── Funders ───────────────────────────────────────────────────────────────
-  /funders:
+  # ─── Organizations ─────────────────────────────────────────────────────────
+  /organizations:
     get:
-      operationId: listFunders
-      tags: [funders]
+      operationId: listOrganizations
+      tags: [organizations]
       parameters:
         - { name: search, in: query, schema: { type: string } }
-        - { name: parentFunderId, in: query, description: "Filter to direct child funding entities of the given parent funder.", schema: { type: string } }
-        # Presence filters on computed rollup fields. `has` keeps rows with a
-        # value, `blank` keeps rows with none. Omit for no constraint.
-        - { name: lifetimeGivingPresence, in: query, required: false, description: "Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: issuesGrants, in: query, schema: { type: boolean }, description: "Filter to grant-making organizations only (true) or non-grant entities only (false). Omit for all." }
+        - { name: parentOrganizationId, in: query, description: "Filter to direct child organizations of the given parent.", schema: { type: string } }
+        - { name: lifetimeGivingPresence, in: query, required: false, description: "Rollup presence filter on lifetime giving (`has` = >0, `blank` = none). Only meaningful for issuesGrants=true.", schema: { type: string, enum: [has, blank] } }
         - { name: openAsksPresence, in: query, required: false, description: "Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }
         - { name: primaryContactPresence, in: query, required: false, description: "Presence filter on primary contact (`has` = set, `blank` = none).", schema: { type: string, enum: [has, blank] } }
-        # Filter params on nullable columns accept the literal `__blank__`
-        # to match rows where the column is NULL. Item type is plain string
-        # (not the enum ref) so the sentinel passes generated zod validation.
-        - name: subtype
+        - name: entityType
           in: query
           style: form
           explode: false
@@ -358,7 +354,7 @@ paths:
         - name: priority
           in: query
           description: |
-            Filter to funders whose `priority` tier is in the given set
+            Filter to organizations whose `priority` tier is in the given set
             (top/high/medium/low). Multi-value: repeat or comma-separate.
             Accepts the literal `__blank__` to match rows with no priority set.
           style: form
@@ -367,54 +363,16 @@ paths:
         - name: regionIds
           in: query
           description: |
-            Filter to funders whose `regionIds` array overlaps the given set
-            (any selected region appears in the funder's regions). Multi-value:
-            repeat or comma-separate.
+            Filter to organizations whose `regionIds` array overlaps the given set.
+            Multi-value: repeat or comma-separate.
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
-        - { $ref: "#/components/parameters/Limit" }
-        - { $ref: "#/components/parameters/Page" }
-      responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FunderList" } } } }
-    post:
-      operationId: createFunder
-      tags: [funders]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateFunderBody" } } } }
-      responses:
-        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Funder" } } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-  /funders/{id}:
-    get:
-      operationId: getFunder
-      tags: [funders]
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FunderDetail" } } } }
-        "404": { $ref: "#/components/responses/NotFound" }
-    patch:
-      operationId: updateFunder
-      tags: [funders]
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateFunderBody" } } } }
-      responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Funder" } } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "404": { $ref: "#/components/responses/NotFound" }
-    delete:
-      operationId: deleteFunder
-      tags: [funders]
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses: { "204": { description: Deleted } }
-
-  # ─── Organizations ─────────────────────────────────────────────────────────
-  /organizations:
-    get:
-      operationId: listOrganizations
-      tags: [organizations]
-      parameters:
-        - { name: search, in: query, schema: { type: string } }
-        - { name: type, in: query, schema: { $ref: "#/components/schemas/OrganizationType" } }
+        - name: type
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -637,7 +595,6 @@ paths:
       tags: [people-entity-roles]
       parameters:
         - { name: personId, in: query, schema: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
         - { name: organizationId, in: query, schema: { type: string } }
         - { name: paymentIntermediaryId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
@@ -675,7 +632,6 @@ paths:
       tags: [emails]
       parameters:
         - { name: personId, in: query, schema: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
         - { name: organizationId, in: query, schema: { type: string } }
         - { name: paymentIntermediaryId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
@@ -747,7 +703,6 @@ paths:
       tags: [addresses]
       parameters:
         - { name: personId, in: query, schema: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
         - { name: organizationId, in: query, schema: { type: string } }
         - { name: paymentIntermediaryId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
@@ -824,7 +779,7 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
         - name: ownerUserId
@@ -937,7 +892,7 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
         - { name: paymentOnPledgeId, in: query, schema: { type: string } }
@@ -1077,7 +1032,7 @@ paths:
       parameters:
         - { name: search, in: query, schema: { type: string } }
         - { name: personId, in: query, schema: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - name: ownerUserId
           in: query
@@ -1131,7 +1086,7 @@ paths:
       parameters:
         - { name: search, in: query, schema: { type: string } }
         - { name: personId, in: query, schema: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: opportunityId, in: query, schema: { type: string } }
         - { name: giftId, in: query, schema: { type: string } }
@@ -1179,7 +1134,7 @@ paths:
       parameters:
         - { name: search, in: query, schema: { type: string } }
         - { name: personId, in: query, schema: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
         - { name: pinned, in: query, schema: { type: boolean }, description: "Filter to pinned (true) or unpinned (false) mentions." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
@@ -1223,7 +1178,7 @@ paths:
       parameters:
         - { name: search, in: query, schema: { type: string } }
         - { name: personId, in: query, schema: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: opportunityId, in: query, schema: { type: string } }
         - { name: giftId, in: query, schema: { type: string } }
@@ -1283,7 +1238,7 @@ paths:
       tags: [meeting-notes]
       parameters:
         - { name: personId, in: query, schema: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: creatorUserId, in: query, schema: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
@@ -1438,10 +1393,10 @@ paths:
     get:
       operationId: listTrackedEmailsByContact
       tags: [email-tracking]
-      description: "Tracked sends linked to one CRM contact. Exactly one of personId / funderId / householdId required. Requires auth."
+      description: "Tracked sends linked to one CRM contact. Exactly one of personId / organizationId / householdId required. Requires auth."
       parameters:
         - { name: personId,    in: query, schema: { type: string } }
-        - { name: funderId,    in: query, schema: { type: string } }
+        - { name: organizationId,    in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TrackedEmailList" } } } }
@@ -1494,7 +1449,7 @@ paths:
         - { name: search, in: query, schema: { type: string } }
         - { name: mailboxUserId, in: query, schema: { type: string } }
         - { name: personId, in: query, schema: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
@@ -1540,7 +1495,7 @@ paths:
         - { name: search, in: query, schema: { type: string } }
         - { name: calendarUserId, in: query, schema: { type: string } }
         - { name: personId, in: query, schema: { type: string } }
-        - { name: funderId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: startAfter, in: query, schema: { type: string, format: date-time }, description: "Only events with startAt >= this timestamp." }
         - { name: startBefore, in: query, schema: { type: string, format: date-time }, description: "Only events with startAt < this timestamp." }
@@ -1634,11 +1589,11 @@ paths:
     get:
       operationId: getTopPriorities
       tags: [top-priorities]
-      summary: Top-priority funders and individuals for the fundraiser dashboard.
+      summary: Top-priority organizations and individuals for the fundraiser dashboard.
       description: |
-        Returns all funders with priority='top' and all people with priority='top'
-        who are NOT currently affiliated with a top-priority funder. Each row carries
-        computed open-opportunity count, open-task count, affiliated people (funders)
+        Returns all organizations with priority='top' and all people with priority='top'
+        who are NOT currently affiliated with a top-priority organization. Each row carries
+        computed open-opportunity count, open-task count, affiliated people (organizations)
         or last-gift info (both). Names are masked server-side for anonymous records
         when the viewer is not the owner or an admin.
       responses:
@@ -1727,19 +1682,19 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
-  /funders/bulk-update:
+  /organizations/bulk-update:
     post:
-      operationId: bulkUpdateFunders
-      tags: [funders]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateFundersBody" } } } }
+      operationId: bulkUpdateOrganizations
+      tags: [organizations]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateOrganizationsBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
-  /funders/merge:
+  /organizations/merge:
     post:
-      operationId: mergeFunders
-      tags: [funders]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MergeFundersBody" } } } }
+      operationId: mergeOrganizations
+      tags: [organizations]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MergeOrganizationsBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MergeResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -1911,7 +1866,7 @@ components:
 
     # ─── Enums ─────────────────────────────────────────────────────────────────
     RegionType: { type: string, enum: [state, metro_area, city, neighborhood, region_within_state, multi_state_region, country, continent] }
-    EntityRoleType: { type: string, enum: [funder, non_funding_organization, payment_intermediary, household] }
+    EntityRoleType: { type: string, enum: [organization, payment_intermediary, household] }
     ContactValidity: { type: string, enum: [valid, invalid, unknown] }
     EmailType: { type: string, enum: [work, personal, other] }
     PhoneType: { type: string, enum: [work, mobile, home, other] }
@@ -1923,6 +1878,7 @@ components:
     GovernanceModel: { type: string, enum: [independent, district, charter, exploring_charter, community_partnership] }
     UserRole: { type: string, enum: [admin, team_member, finance, read_only] }
     FundingEntitySubtype: { type: string, enum: [family_foundation, institutional_foundation, corporate_foundation, community_foundation, bank_foundation, family_office_trust, intermediary, government, nonprofit, corporation, capital_provider, philanthropic_advisor, cdfi, education_forprofit, competition, public_private, daf_platform, platform] }
+    EntityType: { type: string, enum: [family_foundation, institutional_foundation, corporate_foundation, community_foundation, bank_foundation, family_office_trust, intermediary, government, nonprofit, corporation, capital_provider, philanthropic_advisor, cdfi, education_forprofit, competition, public_private, daf_platform, platform, advocacy_membership_lobbyist, authorizer, education_vendor, elected_official, higher_ed, investor, law_firm, media, real_estate, school, school_district, school_network, small_business_consulting, tribal] }
     NumberOfEmployees: { type: string, enum: [e_1, e_2_10, e_11_50, e_51_250, e_251_1000, e_1001_10000, e_10000_plus] }
     CapacityRating: { type: string, enum: [tier_1k_10k, tier_10k_50k, tier_50k_250k, tier_250k_1m, tier_1m_plus] }
     ConnectionStatus: { type: string, enum: [connected, have_a_connector, no_connection] }
@@ -2102,10 +2058,9 @@ components:
     # ─── Analytics (aggregate read-only response shapes) ──────────────────────
     DashboardCounts:
       type: object
-      required: [people, funders, households, organizations, opportunities, openOpportunities, pledges, gifts]
+      required: [people, organizations, households, opportunities, openOpportunities, pledges, gifts]
       properties:
         people:            { type: integer }
-        funders:           { type: integer }
         households:        { type: integer }
         organizations:     { type: integer }
         opportunities:     { type: integer }
@@ -2171,7 +2126,7 @@ components:
         anonymous:   { type: boolean }
         ownerUserId: { type: string, nullable: true }
 
-    TopPriorityFunder:
+    TopPriorityOrganization:
       type: object
       required: [id, name, anonymous, ownerUserId, openOpportunityCount, openTaskCount, affiliatedPeople]
       properties:
@@ -2204,11 +2159,11 @@ components:
 
     TopPriorities:
       type: object
-      required: [funders, individuals]
+      required: [organizations, individuals]
       properties:
-        funders:
+        organizations:
           type: array
-          items: { $ref: "#/components/schemas/TopPriorityFunder" }
+          items: { $ref: "#/components/schemas/TopPriorityOrganization" }
         individuals:
           type: array
           items: { $ref: "#/components/schemas/TopPriorityPerson" }
@@ -2228,13 +2183,13 @@ components:
         giftType:                   { type: string, nullable: true }
         dateReceived:               { type: string, format: date, nullable: true }
         giftAmount:                 { type: string, nullable: true, description: "Parent gift's total amount (numeric string)." }
-        funderId:                   { type: string, nullable: true }
-        funderName:                 { type: string, nullable: true }
+        organizationId:                   { type: string, nullable: true }
+        organizationName:                 { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
         householdName:              { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         individualGiverPersonName:  { type: string, nullable: true }
-        funderPriority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
+        organizationPriority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         individualGiverPersonPriority:  { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
     FiscalYearOpenRow:
       type: object
@@ -2253,13 +2208,13 @@ components:
         opportunityStage:           { type: string, nullable: true }
         winProbability:             { type: string, nullable: true, description: "Parent opp's win_probability (0–1, numeric string)." }
         projectedCloseDate:         { type: string, format: date, nullable: true }
-        funderId:                   { type: string, nullable: true }
-        funderName:                 { type: string, nullable: true }
+        organizationId:                   { type: string, nullable: true }
+        organizationName:                 { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
         householdName:              { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         individualGiverPersonName:  { type: string, nullable: true }
-        funderPriority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
+        organizationPriority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         individualGiverPersonPriority:  { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
     FiscalYearBreakdown:
       type: object
@@ -2285,27 +2240,30 @@ components:
             totalWeighted: { type: string, description: "SUM(weightedAmount) across the rows (numeric string)." }
             rows:          { type: array, items: { $ref: "#/components/schemas/FiscalYearOpenRow" } }
 
-    # ─── Funders ───────────────────────────────────────────────────────────────
-    Funder:
+    # ─── Organizations ─────────────────────────────────────────────────────────
+    # Unified table — consolidates former `funders` (issuesGrants=true) and
+    # `organizations` (issuesGrants=false, advisors/partners/etc.).
+    Organization:
       type: object
-      required: [id, name, anonymous, createdAt, updatedAt]
+      required: [id, name, issuesGrants, anonymous, createdAt, updatedAt]
       properties:
         id:                    { type: string }
         name:                  { type: string }
-        fundingEntitySubtype:  { allOf: [ { $ref: "#/components/schemas/FundingEntitySubtype" } ], nullable: true }
+        issuesGrants:          { type: boolean, description: "True for grant-making organizations (formerly 'funders'); false for non-grant entities." }
+        entityType:            { allOf: [ { $ref: "#/components/schemas/EntityType" } ], nullable: true, description: "Normalized entity type (school_network, nonprofit, etc.)." }
         makesPris:             { type: boolean, nullable: true }
         numberOfEmployees:     { allOf: [ { $ref: "#/components/schemas/NumberOfEmployees" } ], nullable: true }
         capacityRating:        { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         totalAssets:           { type: string, nullable: true, description: "Estimated total assets / endowment size. Decimal as string." }
         priorityAreasNotes:    { type: string, nullable: true }
-        about:                 { type: string, nullable: true, description: "Free-form long-text overview of the funder." }
+        about:                 { type: string, nullable: true }
         activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
         otherNames:            { type: string, nullable: true }
         historicalNames:       { type: array, items: { type: string }, nullable: true }
         details:               { type: string, nullable: true }
         emailDomain:           { type: string, nullable: true }
         orgEmail:              { type: string, nullable: true }
-        ownerUserId:                 { type: string, nullable: true }
+        ownerUserId:           { type: string, nullable: true }
         tags:                  { type: string, nullable: true }
         website:               { type: string, nullable: true }
         connectionStatus:      { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
@@ -2315,9 +2273,9 @@ components:
         interestsAges:         { type: array, items: { type: string }, nullable: true }
         interestsGovModels:    { type: array, items: { type: string }, nullable: true }
         regionIds:             { type: array, items: { type: string }, nullable: true }
-        parentFunderId:        { type: string, nullable: true }
-        paymentIntermediaryId: { type: string, nullable: true, description: "Payment intermediary (e.g. a DAF) this funder gives through." }
-        anonymous:             { type: boolean, description: "When true, hide the funder's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned." }
+        parentOrganizationId:  { type: string, nullable: true }
+        paymentIntermediaryId: { type: string, nullable: true, description: "Payment intermediary (e.g. a DAF) this organization gives through." }
+        anonymous:             { type: boolean, description: "When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned." }
         lastContacted:         { type: string, format: date, nullable: true }
         x:                     { type: string, nullable: true }
         linkedin:              { type: string, nullable: true }
@@ -2325,131 +2283,24 @@ components:
         instagram:             { type: string, nullable: true }
         youtube:               { type: string, nullable: true }
         crunchbase:            { type: string, nullable: true }
-        priority:              { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, description: "Solicitation priority tier (top/high/medium/low). The 'top' band is surfaced as a star on the funders table and on opportunities/gifts where this funder is the donor." }
-        # Server-computed aggregates for the funders list view.
-        primaryContactPersonId:   { type: string, nullable: true, readOnly: true, description: "people_entity_roles row with primary_contact=true for this funder, if any." }
+        priority:              { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, description: "Solicitation priority tier (top/high/medium/low)." }
+        # Server-computed aggregates for the organizations list view.
+        primaryContactPersonId:   { type: string, nullable: true, readOnly: true }
         primaryContactPersonName: { type: string, nullable: true, readOnly: true }
-        lifetimeGiving:           { type: string, nullable: true, readOnly: true, description: "Sum of gifts.amount where funder_id matches. Decimal as string." }
-        openOpportunityCount:     { type: integer, nullable: true, readOnly: true, description: "Count of opportunities_and_pledges where funder_id matches and status='open'." }
+        lifetimeGiving:           { type: string, nullable: true, readOnly: true, description: "Sum of gifts.amount where organization_id matches. Decimal as string." }
+        openOpportunityCount:     { type: integer, nullable: true, readOnly: true, description: "Count of opportunities_and_pledges where organization_id matches and status='open'." }
         createdAt:             { type: string, format: date-time }
         updatedAt:             { type: string, format: date-time }
-    FunderDetail:
+    OrganizationDetail:
       allOf:
-        - { $ref: "#/components/schemas/Funder" }
+        - { $ref: "#/components/schemas/Organization" }
         - type: object
           properties:
             people:       { type: array, items: { $ref: "#/components/schemas/PeopleEntityRole" } }
             emails:       { type: array, items: { $ref: "#/components/schemas/Email" } }
             phoneNumbers: { type: array, items: { $ref: "#/components/schemas/PhoneNumber" } }
             addresses:    { type: array, items: { $ref: "#/components/schemas/Address" } }
-            paymentIntermediary: { allOf: [ { $ref: "#/components/schemas/PaymentIntermediary" } ], nullable: true, readOnly: true, description: "Resolved payment intermediary referenced by paymentIntermediaryId, if set." }
-    FunderList:
-      type: object
-      required: [data, pagination]
-      properties:
-        data:       { type: array, items: { $ref: "#/components/schemas/Funder" } }
-        pagination: { $ref: "#/components/schemas/Pagination" }
-    CreateFunderBody:
-      type: object
-      required: [name]
-      properties:
-        name:                  { type: string }
-        fundingEntitySubtype:  { $ref: "#/components/schemas/FundingEntitySubtype" }
-        makesPris:             { type: boolean }
-        numberOfEmployees:     { $ref: "#/components/schemas/NumberOfEmployees" }
-        capacityRating:        { $ref: "#/components/schemas/CapacityRating" }
-        totalAssets:           { type: string, description: "Estimated total assets / endowment size. Decimal as string." }
-        priorityAreasNotes:    { type: string }
-        about:                 { type: string, description: "Free-form long-text overview of the funder." }
-        activeStatus:          { $ref: "#/components/schemas/ActiveStatus" }
-        otherNames:            { type: string }
-        historicalNames:       { type: array, items: { type: string } }
-        details:               { type: string }
-        emailDomain:           { type: string }
-        orgEmail:              { type: string }
-        ownerUserId:                 { type: string }
-        tags:                  { type: string }
-        website:               { type: string }
-        connectionStatus:      { $ref: "#/components/schemas/ConnectionStatus" }
-        enthusiasm:            { $ref: "#/components/schemas/Enthusiasm" }
-        strategicAlignment:    { $ref: "#/components/schemas/StrategicAlignment" }
-        interestsThematic:     { type: array, items: { type: string } }
-        interestsAges:         { type: array, items: { type: string } }
-        interestsGovModels:    { type: array, items: { type: string } }
-        regionIds:             { type: array, items: { type: string } }
-        parentFunderId:        { type: string }
-        paymentIntermediaryId: { type: string }
-        x:                     { type: string }
-        linkedin:              { type: string }
-        facebook:              { type: string }
-        instagram:             { type: string }
-        youtube:               { type: string }
-        crunchbase:            { type: string }
-        priority:              { $ref: "#/components/schemas/Priority" }
-        anonymous:             { type: boolean }
-    UpdateFunderBody:
-      type: object
-      properties:
-        name:                  { type: string }
-        fundingEntitySubtype:  { allOf: [ { $ref: "#/components/schemas/FundingEntitySubtype" } ], nullable: true }
-        makesPris:             { type: boolean, nullable: true }
-        numberOfEmployees:     { allOf: [ { $ref: "#/components/schemas/NumberOfEmployees" } ], nullable: true }
-        capacityRating:        { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
-        totalAssets:           { type: string, nullable: true, description: "Estimated total assets / endowment size. Decimal as string." }
-        priorityAreasNotes:    { type: string, nullable: true }
-        about:                 { type: string, nullable: true, description: "Free-form long-text overview of the funder." }
-        activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
-        otherNames:            { type: string, nullable: true }
-        historicalNames:       { type: array, items: { type: string }, nullable: true }
-        details:               { type: string, nullable: true }
-        emailDomain:           { type: string, nullable: true }
-        orgEmail:              { type: string, nullable: true }
-        ownerUserId:                 { type: string, nullable: true }
-        tags:                  { type: string, nullable: true }
-        website:               { type: string, nullable: true }
-        connectionStatus:      { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
-        enthusiasm:            { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
-        strategicAlignment:    { allOf: [ { $ref: "#/components/schemas/StrategicAlignment" } ], nullable: true }
-        interestsThematic:     { type: array, items: { type: string }, nullable: true }
-        interestsAges:         { type: array, items: { type: string }, nullable: true }
-        interestsGovModels:    { type: array, items: { type: string }, nullable: true }
-        regionIds:             { type: array, items: { type: string }, nullable: true }
-        parentFunderId:        { type: string, nullable: true }
-        paymentIntermediaryId: { type: string, nullable: true }
-        x:                     { type: string, nullable: true }
-        linkedin:              { type: string, nullable: true }
-        facebook:              { type: string, nullable: true }
-        instagram:             { type: string, nullable: true }
-        youtube:               { type: string, nullable: true }
-        crunchbase:            { type: string, nullable: true }
-        priority:              { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
-        anonymous:             { type: boolean }
-
-    # ─── Organizations ─────────────────────────────────────────────────────────
-    Organization:
-      type: object
-      required: [id, name, createdAt, updatedAt]
-      properties:
-        id:              { type: string }
-        name:            { type: string }
-        type:            { allOf: [ { $ref: "#/components/schemas/OrganizationType" } ], nullable: true }
-        emailDomain:     { type: string, nullable: true }
-        tags:            { type: string, nullable: true }
-        website:         { type: string, nullable: true }
-        activeOrDefunct: { type: string, nullable: true }
-        otherNames:      { type: string, nullable: true }
-        historicalNames: { type: array, items: { type: string }, nullable: true }
-        parentOrgId:     { type: string, nullable: true }
-        createdAt:       { type: string, format: date-time }
-        updatedAt:       { type: string, format: date-time }
-    OrganizationDetail:
-      allOf:
-        - { $ref: "#/components/schemas/Organization" }
-        - type: object
-          properties:
-            people:    { type: array, items: { $ref: "#/components/schemas/PeopleEntityRole" } }
-            emails:    { type: array, items: { $ref: "#/components/schemas/Email" } }
-            addresses: { type: array, items: { $ref: "#/components/schemas/Address" } }
+            paymentIntermediary: { allOf: [ { $ref: "#/components/schemas/PaymentIntermediary" } ], nullable: true, readOnly: true }
     OrganizationList:
       type: object
       required: [data, pagination]
@@ -2460,27 +2311,79 @@ components:
       type: object
       required: [name]
       properties:
-        name:            { type: string }
-        type:            { $ref: "#/components/schemas/OrganizationType" }
-        emailDomain:     { type: string }
-        tags:            { type: string }
-        website:         { type: string }
-        activeOrDefunct: { type: string }
-        otherNames:      { type: string }
-        historicalNames: { type: array, items: { type: string } }
-        parentOrgId:     { type: string }
+        name:                  { type: string }
+        issuesGrants:          { type: boolean }
+        entityType:            { allOf: [ { $ref: "#/components/schemas/EntityType" } ], nullable: true }
+        makesPris:             { type: boolean }
+        numberOfEmployees:     { $ref: "#/components/schemas/NumberOfEmployees" }
+        capacityRating:        { $ref: "#/components/schemas/CapacityRating" }
+        totalAssets:           { type: string }
+        priorityAreasNotes:    { type: string }
+        about:                 { type: string }
+        activeStatus:          { $ref: "#/components/schemas/ActiveStatus" }
+        otherNames:            { type: string }
+        historicalNames:       { type: array, items: { type: string } }
+        details:               { type: string }
+        emailDomain:           { type: string }
+        orgEmail:              { type: string }
+        ownerUserId:           { type: string }
+        tags:                  { type: string }
+        website:               { type: string }
+        connectionStatus:      { $ref: "#/components/schemas/ConnectionStatus" }
+        enthusiasm:            { $ref: "#/components/schemas/Enthusiasm" }
+        strategicAlignment:    { $ref: "#/components/schemas/StrategicAlignment" }
+        interestsThematic:     { type: array, items: { type: string } }
+        interestsAges:         { type: array, items: { type: string } }
+        interestsGovModels:    { type: array, items: { type: string } }
+        regionIds:             { type: array, items: { type: string } }
+        parentOrganizationId:  { type: string }
+        paymentIntermediaryId: { type: string }
+        x:                     { type: string }
+        linkedin:              { type: string }
+        facebook:              { type: string }
+        instagram:             { type: string }
+        youtube:               { type: string }
+        crunchbase:            { type: string }
+        priority:              { $ref: "#/components/schemas/Priority" }
+        anonymous:             { type: boolean }
     UpdateOrganizationBody:
       type: object
       properties:
-        name:            { type: string }
-        type:            { allOf: [ { $ref: "#/components/schemas/OrganizationType" } ], nullable: true }
-        emailDomain:     { type: string, nullable: true }
-        tags:            { type: string, nullable: true }
-        website:         { type: string, nullable: true }
-        activeOrDefunct: { type: string, nullable: true }
-        otherNames:      { type: string, nullable: true }
-        historicalNames: { type: array, items: { type: string }, nullable: true }
-        parentOrgId:     { type: string, nullable: true }
+        name:                  { type: string }
+        issuesGrants:          { type: boolean }
+        entityType:            { allOf: [ { $ref: "#/components/schemas/EntityType" } ], nullable: true }
+        makesPris:             { type: boolean, nullable: true }
+        numberOfEmployees:     { allOf: [ { $ref: "#/components/schemas/NumberOfEmployees" } ], nullable: true }
+        capacityRating:        { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
+        totalAssets:           { type: string, nullable: true }
+        priorityAreasNotes:    { type: string, nullable: true }
+        about:                 { type: string, nullable: true }
+        activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
+        otherNames:            { type: string, nullable: true }
+        historicalNames:       { type: array, items: { type: string }, nullable: true }
+        details:               { type: string, nullable: true }
+        emailDomain:           { type: string, nullable: true }
+        orgEmail:              { type: string, nullable: true }
+        ownerUserId:           { type: string, nullable: true }
+        tags:                  { type: string, nullable: true }
+        website:               { type: string, nullable: true }
+        connectionStatus:      { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
+        enthusiasm:            { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
+        strategicAlignment:    { allOf: [ { $ref: "#/components/schemas/StrategicAlignment" } ], nullable: true }
+        interestsThematic:     { type: array, items: { type: string }, nullable: true }
+        interestsAges:         { type: array, items: { type: string }, nullable: true }
+        interestsGovModels:    { type: array, items: { type: string }, nullable: true }
+        regionIds:             { type: array, items: { type: string }, nullable: true }
+        parentOrganizationId:  { type: string, nullable: true }
+        paymentIntermediaryId: { type: string, nullable: true }
+        x:                     { type: string, nullable: true }
+        linkedin:              { type: string, nullable: true }
+        facebook:              { type: string, nullable: true }
+        instagram:             { type: string, nullable: true }
+        youtube:               { type: string, nullable: true }
+        crunchbase:            { type: string, nullable: true }
+        priority:              { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
+        anonymous:             { type: boolean }
 
     # ─── Payment intermediaries ────────────────────────────────────────────────
     PaymentIntermediary:
@@ -2608,10 +2511,8 @@ components:
         lifetimeGiving:           { type: string, nullable: true, readOnly: true, description: "Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string." }
         mostRecentGiftDate:       { type: string, format: date, nullable: true, readOnly: true, description: "Most recent date_received across direct individual gifts and gifts to households the person belongs to." }
         openOpportunityCount:     { type: integer, nullable: true, readOnly: true, description: "Count of opportunities_and_pledges where this person is the individual giver and status='open'." }
-        activeFunderNames:        { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of funders the person currently holds a role at (people_entity_roles.current='current')." }
-        activeOrganizationNames:  { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of non-funding organizations the person currently holds a role at (people_entity_roles.current='current')." }
-        pastFunderNames:          { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of funders the person previously held a role at (people_entity_roles.current='past')." }
-        pastOrganizationNames:    { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of non-funding organizations the person previously held a role at (people_entity_roles.current='past')." }
+        activeOrganizationNames:  { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of organizations the person currently holds a role at (people_entity_roles.current='current')." }
+        pastOrganizationNames:    { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of organizations the person previously held a role at (people_entity_roles.current='past')." }
         createdAt:                { type: string, format: date-time }
         updatedAt:                { type: string, format: date-time }
     PersonDetail:
@@ -2718,7 +2619,6 @@ components:
         personName:            { type: string, nullable: true }
         personEmail:           { type: string, nullable: true, readOnly: true, description: "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file." }
         entityType:            { $ref: "#/components/schemas/EntityRoleType" }
-        funderId:              { type: string, nullable: true }
         organizationId:        { type: string, nullable: true }
         paymentIntermediaryId: { type: string, nullable: true }
         householdId:           { type: string, nullable: true }
@@ -2741,7 +2641,6 @@ components:
       properties:
         personId:              { type: string }
         entityType:            { $ref: "#/components/schemas/EntityRoleType" }
-        funderId:              { type: string }
         organizationId:        { type: string }
         paymentIntermediaryId: { type: string }
         householdId:           { type: string }
@@ -2753,7 +2652,6 @@ components:
     UpdatePeopleEntityRoleBody:
       type: object
       properties:
-        funderId:              { type: string, nullable: true }
         organizationId:        { type: string, nullable: true }
         paymentIntermediaryId: { type: string, nullable: true }
         householdId:           { type: string, nullable: true }
@@ -2772,7 +2670,6 @@ components:
         email:                 { type: string }
         type:                  { allOf: [ { $ref: "#/components/schemas/EmailType" } ], nullable: true }
         personId:              { type: string, nullable: true }
-        funderId:              { type: string, nullable: true }
         organizationId:        { type: string, nullable: true }
         paymentIntermediaryId: { type: string, nullable: true }
         householdId:           { type: string, nullable: true }
@@ -2793,7 +2690,6 @@ components:
         email:                 { type: string }
         type:                  { $ref: "#/components/schemas/EmailType" }
         personId:              { type: string }
-        funderId:              { type: string }
         organizationId:        { type: string }
         paymentIntermediaryId: { type: string }
         householdId:           { type: string }
@@ -2815,7 +2711,6 @@ components:
         phoneNumber: { type: string }
         type:        { allOf: [ { $ref: "#/components/schemas/PhoneType" } ], nullable: true }
         personId:              { type: string, nullable: true }
-        funderId:              { type: string, nullable: true }
         organizationId:        { type: string, nullable: true }
         paymentIntermediaryId: { type: string, nullable: true }
         householdId:           { type: string, nullable: true }
@@ -2836,7 +2731,6 @@ components:
         phoneNumber: { type: string }
         type:        { $ref: "#/components/schemas/PhoneType" }
         personId:              { type: string }
-        funderId:              { type: string }
         organizationId:        { type: string }
         paymentIntermediaryId: { type: string }
         householdId:           { type: string }
@@ -2863,7 +2757,6 @@ components:
         postalCode:            { type: string, nullable: true }
         country:               { type: string, nullable: true }
         personId:              { type: string, nullable: true }
-        funderId:              { type: string, nullable: true }
         organizationId:        { type: string, nullable: true }
         paymentIntermediaryId: { type: string, nullable: true }
         householdId:           { type: string, nullable: true }
@@ -2886,7 +2779,6 @@ components:
         postalCode:            { type: string }
         country:               { type: string }
         personId:              { type: string }
-        funderId:              { type: string }
         organizationId:        { type: string }
         paymentIntermediaryId: { type: string }
         householdId:           { type: string }
@@ -2901,7 +2793,6 @@ components:
         postalCode:            { type: string, nullable: true }
         country:               { type: string, nullable: true }
         personId:              { type: string, nullable: true }
-        funderId:              { type: string, nullable: true }
         organizationId:        { type: string, nullable: true }
         paymentIntermediaryId: { type: string, nullable: true }
         householdId:           { type: string, nullable: true }
@@ -2913,7 +2804,7 @@ components:
       properties:
         id:                         { type: string }
         name:                       { type: string, nullable: true }
-        funderId:                   { type: string, nullable: true }
+        organizationId:                   { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
         askAmount:                  { type: string, nullable: true }
         awardedAmount:              { type: string, nullable: true }
@@ -2955,10 +2846,10 @@ components:
         # Denormalized display names, joined server-side from funders /
         # households / people. Present on list + detail responses so the
         # UI doesn't have to fire one fetch per row to resolve donor IDs.
-        funderName:                 { type: string, nullable: true }
+        organizationName:                 { type: string, nullable: true }
         householdName:              { type: string, nullable: true }
         individualGiverPersonName:  { type: string, nullable: true }
-        funderPriority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
+        organizationPriority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         individualGiverPersonPriority:  { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         # Display name of primary_contact_person_id, joined server-side.
         # Used by the grants calendar's contact column.
@@ -3000,7 +2891,7 @@ components:
       type: object
       properties:
         name:                       { type: string }
-        funderId:                   { type: string }
+        organizationId:                   { type: string }
         householdId:                { type: string }
         askAmount:                  { type: string }
         awardedAmount:              { type: string }
@@ -3031,7 +2922,7 @@ components:
       type: object
       properties:
         name:                       { type: string, nullable: true }
-        funderId:                   { type: string, nullable: true }
+        organizationId:                   { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
         askAmount:                  { type: string, nullable: true }
         awardedAmount:              { type: string, nullable: true }
@@ -3125,7 +3016,7 @@ components:
         dateReceived:               { type: string, format: date, nullable: true }
         paymentMethod:              { allOf: [ { $ref: "#/components/schemas/GiftPaymentMethod" } ], nullable: true }
         amount:                     { type: string, nullable: true }
-        funderId:                   { type: string, nullable: true }
+        organizationId:                   { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
@@ -3148,10 +3039,10 @@ components:
           items: { $ref: "#/components/schemas/ThankYouAttachment" }
         # Denormalized display names, joined server-side. See
         # OpportunityOrPledge for rationale.
-        funderName:                 { type: string, nullable: true }
+        organizationName:                 { type: string, nullable: true }
         householdName:              { type: string, nullable: true }
         individualGiverPersonName:  { type: string, nullable: true }
-        funderPriority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
+        organizationPriority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         individualGiverPersonPriority:  { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         # Aggregates across this gift's gift_allocations rows. All three
         # arrays are de-duplicated and may be empty.
@@ -3181,7 +3072,7 @@ components:
         dateReceived:               { type: string, format: date }
         paymentMethod:              { $ref: "#/components/schemas/GiftPaymentMethod" }
         amount:                     { type: string }
-        funderId:                   { type: string }
+        organizationId:                   { type: string }
         individualGiverPersonId:    { type: string }
         householdId:                { type: string }
         type:                       { $ref: "#/components/schemas/GiftType" }
@@ -3203,7 +3094,7 @@ components:
         dateReceived:               { type: string, format: date, nullable: true }
         paymentMethod:              { allOf: [ { $ref: "#/components/schemas/GiftPaymentMethod" } ], nullable: true }
         amount:                     { type: string, nullable: true }
-        funderId:                   { type: string, nullable: true }
+        organizationId:                   { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
@@ -3325,7 +3216,7 @@ components:
         notes:            { type: string, nullable: true }
         ownerUserId:      { type: string, nullable: true }
         personIds:        { type: array, items: { type: string }, nullable: true }
-        funderIds:        { type: array, items: { type: string }, nullable: true }
+        organizationIds:        { type: array, items: { type: string }, nullable: true }
         householdIds:     { type: array, items: { type: string }, nullable: true }
         createdAt:        { type: string, format: date-time }
         updatedAt:        { type: string, format: date-time }
@@ -3347,7 +3238,7 @@ components:
         notes:            { type: string }
         ownerUserId:      { type: string }
         personIds:        { type: array, items: { type: string } }
-        funderIds:        { type: array, items: { type: string } }
+        organizationIds:        { type: array, items: { type: string } }
         householdIds:     { type: array, items: { type: string } }
     UpdateInteractionBody:
       type: object
@@ -3360,7 +3251,7 @@ components:
         notes:            { type: string, nullable: true }
         ownerUserId:      { type: string, nullable: true }
         personIds:        { type: array, items: { type: string }, nullable: true }
-        funderIds:        { type: array, items: { type: string }, nullable: true }
+        organizationIds:        { type: array, items: { type: string }, nullable: true }
         householdIds:     { type: array, items: { type: string }, nullable: true }
 
     # ─── Email messages + attachments + calendar events ──────────────────────
@@ -3384,11 +3275,11 @@ components:
         isPrivate:           { type: boolean }
         privateSetByUserId:  { type: string, nullable: true }
         matchedPersonIds:    { type: array, items: { type: string }, nullable: true }
-        matchedFunderIds:    { type: array, items: { type: string }, nullable: true }
+        matchedOrganizationIds:    { type: array, items: { type: string }, nullable: true }
         matchedHouseholdIds: { type: array, items: { type: string }, nullable: true }
         aiSummary:           { type: string, nullable: true, description: "One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent." }
         isTracked:           { type: boolean, readOnly: true, description: "True when this sent message matches an open-tracking pixel record. Only ever true for sent messages." }
-        trackingTotalViews:  { type: integer, nullable: true, readOnly: true, description: "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId/funderId/householdId), this counts opens by that contact only. Null when not tracked." }
+        trackingTotalViews:  { type: integer, nullable: true, readOnly: true, description: "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId/organizationId/householdId), this counts opens by that contact only. Null when not tracked." }
         trackingLastOpenedAt: { type: string, format: date-time, nullable: true, readOnly: true, description: "Most recent tracked open timestamp. Null when not tracked or not yet opened." }
     EmailMessageDetail:
       allOf:
@@ -3440,7 +3331,7 @@ components:
         isPrivate:           { type: boolean }
         privateSetByUserId:  { type: string, nullable: true }
         matchedPersonIds:    { type: array, items: { type: string }, nullable: true }
-        matchedFunderIds:    { type: array, items: { type: string }, nullable: true }
+        matchedOrganizationIds:    { type: array, items: { type: string }, nullable: true }
         matchedHouseholdIds: { type: array, items: { type: string }, nullable: true }
     CalendarEventList:
       type: object
@@ -3590,7 +3481,7 @@ components:
         status:             { $ref: "#/components/schemas/EmailProposalStatus" }
         sourceMessageId:    { type: string, nullable: true }
         targetPersonId:     { type: string, nullable: true }
-        targetFunderId:     { type: string, nullable: true }
+        targetOrganizationId:     { type: string, nullable: true }
         targetEmailId:      { type: string, nullable: true }
         subjectEmail:       { type: string, nullable: true }
         subjectName:        { type: string, nullable: true }
@@ -3730,7 +3621,7 @@ components:
         body:            { type: string }
         authorUserId:    { type: string }
         personIds:       { type: array, items: { type: string }, nullable: true }
-        funderIds:       { type: array, items: { type: string }, nullable: true }
+        organizationIds:       { type: array, items: { type: string }, nullable: true }
         householdIds:    { type: array, items: { type: string }, nullable: true }
         opportunityIds:  { type: array, items: { type: string }, nullable: true }
         giftIds:         { type: array, items: { type: string }, nullable: true }
@@ -3749,7 +3640,7 @@ components:
       properties:
         body:            { type: string }
         personIds:       { type: array, items: { type: string } }
-        funderIds:       { type: array, items: { type: string } }
+        organizationIds:       { type: array, items: { type: string } }
         householdIds:    { type: array, items: { type: string } }
         opportunityIds:  { type: array, items: { type: string } }
         giftIds:         { type: array, items: { type: string } }
@@ -3759,7 +3650,7 @@ components:
       properties:
         body:            { type: string }
         personIds:       { type: array, items: { type: string }, nullable: true }
-        funderIds:       { type: array, items: { type: string }, nullable: true }
+        organizationIds:       { type: array, items: { type: string }, nullable: true }
         householdIds:    { type: array, items: { type: string }, nullable: true }
         opportunityIds:  { type: array, items: { type: string }, nullable: true }
         giftIds:         { type: array, items: { type: string }, nullable: true }
@@ -3780,7 +3671,7 @@ components:
         source:          { type: string, nullable: true }
         pinned:          { type: boolean }
         personIds:       { type: array, items: { type: string }, nullable: true }
-        funderIds:       { type: array, items: { type: string }, nullable: true }
+        organizationIds:       { type: array, items: { type: string }, nullable: true }
         createdAt:       { type: string, format: date-time }
         updatedAt:       { type: string, format: date-time }
     MediaMentionList:
@@ -3802,7 +3693,7 @@ components:
         source:          { type: string }
         pinned:          { type: boolean }
         personIds:       { type: array, items: { type: string } }
-        funderIds:       { type: array, items: { type: string } }
+        organizationIds:       { type: array, items: { type: string } }
     MediaMentionUpdate:
       type: object
       properties:
@@ -3815,7 +3706,7 @@ components:
         source:          { type: string, nullable: true }
         pinned:          { type: boolean }
         personIds:       { type: array, items: { type: string }, nullable: true }
-        funderIds:       { type: array, items: { type: string }, nullable: true }
+        organizationIds:       { type: array, items: { type: string }, nullable: true }
 
     # ─── Tasks ───────────────────────────────────────────────────────────────
     TaskStatus:
@@ -3838,7 +3729,7 @@ components:
         assigneeUserId:   { type: string, nullable: true }
         createdByUserId:  { type: string }
         personIds:        { type: array, items: { type: string }, nullable: true }
-        funderIds:        { type: array, items: { type: string }, nullable: true }
+        organizationIds:        { type: array, items: { type: string }, nullable: true }
         householdIds:     { type: array, items: { type: string }, nullable: true }
         opportunityIds:   { type: array, items: { type: string }, nullable: true }
         giftIds:          { type: array, items: { type: string }, nullable: true }
@@ -3862,7 +3753,7 @@ components:
         status:          { $ref: "#/components/schemas/TaskStatus" }
         assigneeUserId:  { type: string }
         personIds:       { type: array, items: { type: string } }
-        funderIds:       { type: array, items: { type: string } }
+        organizationIds:       { type: array, items: { type: string } }
         householdIds:    { type: array, items: { type: string } }
         opportunityIds:  { type: array, items: { type: string } }
         giftIds:         { type: array, items: { type: string } }
@@ -3877,7 +3768,7 @@ components:
         status:          { $ref: "#/components/schemas/TaskStatus" }
         assigneeUserId:  { type: string, nullable: true }
         personIds:       { type: array, items: { type: string }, nullable: true }
-        funderIds:       { type: array, items: { type: string }, nullable: true }
+        organizationIds:       { type: array, items: { type: string }, nullable: true }
         householdIds:    { type: array, items: { type: string }, nullable: true }
         opportunityIds:  { type: array, items: { type: string }, nullable: true }
         giftIds:         { type: array, items: { type: string }, nullable: true }
@@ -3909,7 +3800,7 @@ components:
           items: { $ref: "#/components/schemas/MeetingActionItem" }
         creatorUserId:    { type: string }
         personId:         { type: string, nullable: true }
-        funderId:         { type: string, nullable: true }
+        organizationId:         { type: string, nullable: true }
         householdId:      { type: string, nullable: true }
         createdAt:        { type: string, format: date-time }
         updatedAt:        { type: string, format: date-time }
@@ -3929,7 +3820,7 @@ components:
         meetingDate:     { type: string, format: date-time, description: "Defaults to now if omitted." }
         attendees:       { type: array, items: { type: string } }
         personId:        { type: string }
-        funderId:        { type: string }
+        organizationId:        { type: string }
         householdId:     { type: string }
     UpdateMeetingNoteBody:
       type: object
@@ -3943,7 +3834,7 @@ components:
           nullable: true
           items: { $ref: "#/components/schemas/MeetingActionItem" }
         personId:        { type: string, nullable: true }
-        funderId:        { type: string, nullable: true }
+        organizationId:        { type: string, nullable: true }
         householdId:     { type: string, nullable: true }
     PromoteActionItemBody:
       type: object
@@ -3994,7 +3885,7 @@ components:
     # ─── Email tracking (Magio-compatible) ─────────────────────────────────
     TrackedEmail:
       type: object
-      required: [id, subject, recipient, sender, recipientPersonIds, recipientFunderIds, recipientHouseholdIds, createdAt]
+      required: [id, subject, recipient, sender, recipientPersonIds, recipientOrganizationIds, recipientHouseholdIds, createdAt]
       properties:
         id:                       { type: string }
         subject:                  { type: string }
@@ -4002,7 +3893,7 @@ components:
         sender:                   { type: string }
         senderIp:                 { type: string, nullable: true }
         recipientPersonIds:       { type: array, items: { type: string } }
-        recipientFunderIds:       { type: array, items: { type: string } }
+        recipientOrganizationIds:       { type: array, items: { type: string } }
         recipientHouseholdIds:    { type: array, items: { type: string } }
         groupId:                  { type: string, nullable: true, description: "Shared across per-recipient copies of one group send; null for legacy single-pixel sends." }
         gmailMessageId:           { type: string, nullable: true }
@@ -4110,7 +4001,7 @@ components:
       properties:
         primaryId: { type: string, description: "The surviving record id." }
         mergedIds: { type: array, items: { type: string }, description: "Duplicate record ids that were merged into the primary and deleted." }
-    MergeFundersBody:
+    MergeOrganizationsBody:
       type: object
       required: [primaryId, mergeIds]
       description: "Collapse `mergeIds` (duplicates) into `primaryId` (survivor). `overrides` supplies the user-chosen winning value for each scalar field; only whitelisted funder columns are applied."
@@ -4141,7 +4032,7 @@ components:
       properties:
         ids:   { type: array, items: { type: string }, minItems: 1, maxItems: 1000 }
         patch: { $ref: "#/components/schemas/BulkUpdatePeoplePatch" }
-    BulkUpdateFundersPatch:
+    BulkUpdateOrganizationsPatch:
       type: object
       properties:
         ownerUserId:          { type: string, nullable: true }
@@ -4150,13 +4041,14 @@ components:
         capacityRating:       { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         enthusiasm:           { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
         priority:             { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
-        fundingEntitySubtype: { allOf: [ { $ref: "#/components/schemas/FundingEntitySubtype" } ], nullable: true }
-    BulkUpdateFundersBody:
+        entityType:           { type: string, nullable: true }
+        issuesGrants:         { type: boolean }
+    BulkUpdateOrganizationsBody:
       type: object
       required: [ids, patch]
       properties:
         ids:   { type: array, items: { type: string }, minItems: 1, maxItems: 1000 }
-        patch: { $ref: "#/components/schemas/BulkUpdateFundersPatch" }
+        patch: { $ref: "#/components/schemas/BulkUpdateOrganizationsPatch" }
     BulkUpdateHouseholdsPatch:
       type: object
       properties:

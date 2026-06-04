@@ -2,7 +2,6 @@ export * from "./_enums";
 export * from "./users";
 export * from "./regions";
 export * from "./schools";
-export * from "./funders";
 export * from "./organizations";
 export * from "./paymentIntermediaries";
 export * from "./households";

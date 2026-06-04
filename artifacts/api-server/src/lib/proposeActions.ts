@@ -2,7 +2,6 @@ import { db } from "@workspace/db";
 import {
   emailProposals,
   emails as emailsTable,
-  funders,
   households,
   organizations,
   paymentIntermediaries,
@@ -60,9 +59,8 @@ export type ProposedAction =
   | {
       type: "create_per";
       personId: string;
-      // Exactly one of these four must be set; matches the
+      // Exactly one of these three must be set; matches the
       // per_entity_discriminator check on people_entity_roles.
-      funderId?: string;
       organizationId?: string;
       paymentIntermediaryId?: string;
       householdId?: string;
@@ -86,7 +84,6 @@ export type ProposedAction =
       firstName: string;
       lastName: string;
       emailAddress?: string;
-      funderId?: string;
       organizationId?: string;
       connection?:
         | "employee"
@@ -112,7 +109,6 @@ export type ProposedAction =
       organizationType?:
         | "advocacy_membership_lobbyist"
         | "authorizer"
-        | "cmo"
         | "capital_provider"
         | "government"
         | "corporation"
@@ -193,8 +189,8 @@ export type ProposedAction =
     }
   | {
       type: "create_grant_opportunity";
-      funderId?: string;
-      funderName?: string;
+      organizationId?: string;
+      organizationName?: string;
       title: string;
       askAmount?: number;
       deadline?: string; // ISO yyyy-mm-dd
@@ -256,7 +252,6 @@ const ACTION_TOOL_SCHEMA = {
               properties: {
                 type: { const: "create_per" },
                 personId: { type: "string", description: "Existing person ID this new role attaches to." },
-                funderId: { type: "string" },
                 organizationId: { type: "string" },
                 paymentIntermediaryId: { type: "string" },
                 householdId: { type: "string" },
@@ -273,7 +268,6 @@ const ACTION_TOOL_SCHEMA = {
                 firstName: { type: "string" },
                 lastName: { type: "string" },
                 emailAddress: { type: "string" },
-                funderId: { type: "string" },
                 organizationId: { type: "string" },
                 connection: { type: "string", enum: ["employee", "principal", "board_member", "partner", "professor", "donor_advisor", "elected_official"] },
                 externalTitleOrRole: { type: "string" },
@@ -286,11 +280,11 @@ const ACTION_TOOL_SCHEMA = {
               properties: {
                 type: { const: "create_org_with_per" },
                 personId: { type: "string", description: "Existing person ID this new role attaches to." },
-                organizationName: { type: "string", description: "Name of the NON-FUNDER organization to create (charter school, school network, nonprofit, company, etc.). Goes in the organizations table, never funders." },
+                organizationName: { type: "string", description: "Name of the non-grantmaking organization to create (charter school, school network, nonprofit, company, etc.). Set issuesGrants=false internally." },
                 organizationType: {
                   type: "string",
-                  enum: ["advocacy_membership_lobbyist", "authorizer", "cmo", "capital_provider", "government", "corporation", "education_vendor", "elected_official", "higher_ed", "investor", "law_firm", "media", "nonprofit", "philanthropic_advisor", "real_estate", "school", "school_district", "school_network", "small_business_consulting", "tribal"],
-                  description: "Best-fit org type when clear. A single charter school → school; a charter school network / CMO → cmo or school_network; a school district → school_district.",
+                  enum: ["advocacy_membership_lobbyist", "authorizer", "capital_provider", "government", "corporation", "education_vendor", "elected_official", "higher_ed", "investor", "law_firm", "media", "nonprofit", "philanthropic_advisor", "real_estate", "school", "school_district", "school_network", "small_business_consulting", "tribal"],
+                  description: "Best-fit org type when clear. A single charter school → school; a charter school network / CMO → school_network; a school district → school_district.",
                 },
                 emailDomain: { type: "string", description: "The org's email domain if evident from the sender address (e.g. phoenixcharteracademy.org)." },
                 connection: { type: "string", enum: ["employee", "principal", "board_member", "partner", "professor", "donor_advisor", "elected_official"] },
@@ -304,8 +298,8 @@ const ACTION_TOOL_SCHEMA = {
               properties: {
                 type: { const: "create_funder_with_per" },
                 personId: { type: "string", description: "Existing person ID this new role attaches to." },
-                funderName: { type: "string", description: "Name of the philanthropic GRANTMAKER to create — an entity whose role is to give grants/money to grantees (private/community/family foundation, grantmaking trust, corporate giving program). Goes in the funders table. Do NOT use this for an operating nonprofit, a Wildflower sub-entity, or any org that merely has 'Fund'/'Foundation' in its name — those are create_org_with_per." },
-                emailDomain: { type: "string", description: "The funder's email domain if evident from the sender address." },
+                funderName: { type: "string", description: "Name of the philanthropic GRANTMAKER to create — an entity whose role is to give grants/money to grantees (private/community/family foundation, grantmaking trust, corporate giving program). Set issuesGrants=true internally. Do NOT use this for an operating nonprofit, a Wildflower sub-entity, or any org that merely has 'Fund'/'Foundation' in its name — those are create_org_with_per." },
+                emailDomain: { type: "string", description: "The grantmaker's email domain if evident from the sender address." },
                 connection: { type: "string", enum: ["employee", "principal", "board_member", "partner", "professor", "donor_advisor", "elected_official"] },
                 externalTitleOrRole: { type: "string" },
                 reason: { type: "string" },
@@ -348,8 +342,8 @@ const ACTION_TOOL_SCHEMA = {
               required: ["type", "title", "reason"],
               properties: {
                 type: { const: "create_grant_opportunity" },
-                funderId: { type: "string" },
-                funderName: { type: "string" },
+                organizationId: { type: "string" },
+                organizationName: { type: "string" },
                 title: { type: "string" },
                 askAmount: { type: "number" },
                 deadline: { type: "string", description: "ISO yyyy-mm-dd if known." },
@@ -402,7 +396,6 @@ interface PersonContext {
     id: string;
     entityType: string;
     entityName: string | null;
-    funderId: string | null;
     organizationId: string | null;
     connection: string | null;
     externalTitleOrRole: string | null;
@@ -441,8 +434,6 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
       .select({
         id: peopleEntityRoles.id,
         entityType: peopleEntityRoles.entityType,
-        funderId: peopleEntityRoles.funderId,
-        funderName: funders.name,
         organizationId: peopleEntityRoles.organizationId,
         organizationName: organizations.name,
         connection: peopleEntityRoles.connection,
@@ -450,7 +441,6 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
         current: peopleEntityRoles.current,
       })
       .from(peopleEntityRoles)
-      .leftJoin(funders, eq(funders.id, peopleEntityRoles.funderId))
       .leftJoin(organizations, eq(organizations.id, peopleEntityRoles.organizationId))
       .where(eq(peopleEntityRoles.personId, personId)),
   ]);
@@ -473,8 +463,7 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
     roles: roleRows.map((r) => ({
       id: r.id,
       entityType: r.entityType,
-      entityName: r.funderName ?? r.organizationName ?? null,
-      funderId: r.funderId,
+      entityName: r.organizationName ?? null,
       organizationId: r.organizationId,
       connection: r.connection,
       externalTitleOrRole: r.externalTitleOrRole,
@@ -483,47 +472,22 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
   };
 }
 
-interface FunderCandidate {
-  id: string;
-  name: string;
-}
-
-async function findFunderCandidates(name: string | null | undefined): Promise<FunderCandidate[]> {
-  if (!name || name.trim().length < 3) return [];
-  const term = name.trim().toLowerCase();
-  // Two-pass: exact-ish first, then loose substring. Cap at 5 so the
-  // prompt stays small.
-  const rows = await db
-    .select({ id: funders.id, name: funders.name })
-    .from(funders)
-    .where(
-      or(
-        ilike(funders.name, term),
-        ilike(funders.name, `%${term}%`),
-      ),
-    )
-    .limit(5);
-  return rows
-    .filter((r): r is { id: string; name: string } => r.name !== null)
-    .map((r) => ({ id: r.id, name: r.name }));
-}
-
 interface OrganizationCandidate {
   id: string;
   name: string;
+  issuesGrants: boolean;
 }
 
-// Mirror of findFunderCandidates for non-funding organizations. The
-// action schema lets create_per / create_person_with_per target an
-// organizationId, but without this lookup the model never sees a valid
-// org id and so can't propose a role change to a non-funder employer.
+// Search organizations table by name — covers both grantmakers (issuesGrants=true)
+// and non-grantmakers (issuesGrants=false). Two-pass: exact-ish first, then loose
+// substring. Cap at 5 so the prompt stays small.
 async function findOrganizationCandidates(
   name: string | null | undefined,
 ): Promise<OrganizationCandidate[]> {
   if (!name || name.trim().length < 3) return [];
   const term = name.trim().toLowerCase();
   const rows = await db
-    .select({ id: organizations.id, name: organizations.name })
+    .select({ id: organizations.id, name: organizations.name, issuesGrants: organizations.issuesGrants })
     .from(organizations)
     .where(
       or(
@@ -533,20 +497,18 @@ async function findOrganizationCandidates(
     )
     .limit(5);
   return rows
-    .filter((r): r is { id: string; name: string } => r.name !== null)
-    .map((r) => ({ id: r.id, name: r.name }));
+    .filter((r): r is { id: string; name: string; issuesGrants: boolean } => r.name !== null)
+    .map((r) => ({ id: r.id, name: r.name, issuesGrants: r.issuesGrants }));
 }
 
 // Dedupe "create a new employer + attach role" actions against the CRM.
 // Both create_org_with_per and create_funder_with_per name an employer the
 // model believes is missing. Before we propose creating it, look the name
-// up: if a funder OR an organization of that name already exists, rewrite
-// to a plain create_per against that existing entity so we never propose a
-// duplicate. A funder match takes precedence over an organization match.
-// Matching is case-insensitive exact on the trimmed name; % / _ are
-// escaped so names can't act as LIKE wildcards. With no match the action
-// is kept exactly as the model emitted it — the model (which has the email
-// context) owns the funder-vs-organization call, not a name heuristic.
+// up in the organizations table: if any organization of that name already
+// exists, rewrite to a plain create_per against that existing entity so we
+// never propose a duplicate. Matching is case-insensitive exact on the
+// trimmed name; % / _ are escaped so names can't act as LIKE wildcards.
+// With no match the action is kept exactly as the model emitted it.
 async function reconcileCreateOrgWithPer(
   actions: ProposedAction[],
 ): Promise<ProposedAction[]> {
@@ -569,23 +531,6 @@ async function reconcileCreateOrgWithPer(
       continue;
     }
     const pattern = escapeLike(name);
-    const [funderMatch] = await db
-      .select({ id: funders.id })
-      .from(funders)
-      .where(ilike(funders.name, pattern))
-      .limit(1);
-    if (funderMatch) {
-      out.push({
-        type: "create_per",
-        personId: action.personId,
-        funderId: funderMatch.id,
-        entityName: name,
-        connection: action.connection,
-        externalTitleOrRole: action.externalTitleOrRole,
-        reason: `${action.reason} (linked to existing funder "${name}" already in CRM)`,
-      });
-      continue;
-    }
     const [orgMatch] = await db
       .select({ id: organizations.id })
       .from(organizations)
@@ -603,9 +548,8 @@ async function reconcileCreateOrgWithPer(
       });
       continue;
     }
-    // No existing funder or organization of that name — keep the model's
-    // action as-is. The model decides funder vs organization from the email
-    // context; nothing is created until a reviewer accepts.
+    // No existing organization of that name — keep the model's action
+    // as-is. Nothing is created until a reviewer accepts.
     out.push(action);
   }
   return out;
@@ -626,14 +570,12 @@ async function enrichCreatePerEntityNames(
   if (creates.length === 0) return actions;
 
   const ids = {
-    funder: new Set<string>(),
     organization: new Set<string>(),
     paymentIntermediary: new Set<string>(),
     household: new Set<string>(),
   };
   for (const a of creates) {
-    if (a.funderId) ids.funder.add(a.funderId);
-    else if (a.organizationId) ids.organization.add(a.organizationId);
+    if (a.organizationId) ids.organization.add(a.organizationId);
     else if (a.paymentIntermediaryId) ids.paymentIntermediary.add(a.paymentIntermediaryId);
     else if (a.householdId) ids.household.add(a.householdId);
   }
@@ -641,7 +583,7 @@ async function enrichCreatePerEntityNames(
   const nameOf = new Map<string, string>();
   const load = async (
     set: Set<string>,
-    table: typeof funders | typeof organizations | typeof paymentIntermediaries | typeof households,
+    table: typeof organizations | typeof paymentIntermediaries | typeof households,
   ) => {
     if (set.size === 0) return;
     const rows = await db
@@ -651,7 +593,6 @@ async function enrichCreatePerEntityNames(
     for (const r of rows) if (r.name) nameOf.set(r.id, r.name);
   };
   await Promise.all([
-    load(ids.funder, funders),
     load(ids.organization, organizations),
     load(ids.paymentIntermediary, paymentIntermediaries),
     load(ids.household, households),
@@ -660,7 +601,7 @@ async function enrichCreatePerEntityNames(
   return actions.map((a) => {
     if (a.type !== "create_per") return a;
     const id =
-      a.funderId ?? a.organizationId ?? a.paymentIntermediaryId ?? a.householdId;
+      a.organizationId ?? a.paymentIntermediaryId ?? a.householdId;
     const name = id ? nameOf.get(id) : undefined;
     return name ? { ...a, entityName: name } : a;
   });
@@ -692,7 +633,7 @@ function buildSystemPrompt(): string {
     "• Never emit `create_per` for a role the person already holds (same entity, current). If only the title differs, use `update_per_title`. Don't contradict yourself: if your reason says the person already has the role, emit no action for it.",
     "• For bounce messages: emit `mark_email_invalid` only for hard bounces. Soft bounces are review-only — return an empty actions array. Only mark an address invalid if it appears verbatim under the matched person's 'Emails on file' — never invalidate an address that isn't in the CRM context.",
     "• Never emit both `add_email` and `set_primary_email` for the same new address — use a single `add_email` with setPrimary=true instead.",
-    "• For grant opportunities: emit one `create_grant_opportunity` per distinct RFP / grant program named, with funderId only if the funder appears in context. Use cold_lead unless the message indicates an active invitation (then warm_lead). Don't invent ask amounts — only set askAmount if the message states one. NEVER create a grant opportunity whose application deadline is already in the past relative to TODAY'S DATE shown below — skip it entirely.",
+    "• For grant opportunities: emit one `create_grant_opportunity` per distinct RFP / grant program named, with organizationId only if the grant-making organization appears in context. Use cold_lead unless the message indicates an active invitation (then warm_lead). Don't invent ask amounts — only set askAmount if the message states one. NEVER create a grant opportunity whose application deadline is already in the past relative to TODAY'S DATE shown below — skip it entirely.",
     "",
     "Suppression (separate from actions):",
     "• Set `suppress.shouldSuppress=true` when the WHOLE proposal is noise the reviewer should never see. Concretely: grant WINNER / recipient announcements (celebrating awards already made, not a new opening); promo / newsletter / event-registration / sponsorship blasts; an RFP to hire a vendor/contractor/consultant (the sender is buying services, not offering grant funding); a grant whose application DEADLINE has already passed relative to TODAY'S DATE shown below; a plain out-of-office / vacation auto-reply where the person is still at their org (only a genuine departure or new-job move is worth surfacing); a signature_update whose parsed name clearly belongs to a different person than the highlighted CRM person; a signature_update where every parsed field (email / phone / title / company) already matches the CRM state so there is nothing new for the reviewer to do.",
@@ -706,13 +647,12 @@ function buildSystemPrompt(): string {
 function buildUserPrompt(args: {
   proposal: EmailProposal;
   personContext: PersonContext | null;
-  funderCandidates: FunderCandidate[];
   organizationCandidates: OrganizationCandidate[];
-  funderTargetId: string | null;
-  funderTargetName: string | null;
+  targetOrgId: string | null;
+  targetOrgName: string | null;
   messageBody: string | null;
 }): string {
-  const { proposal, personContext, funderCandidates, organizationCandidates, funderTargetId, funderTargetName, messageBody } = args;
+  const { proposal, personContext, organizationCandidates, targetOrgId, targetOrgName, messageBody } = args;
   const lines: string[] = [];
   lines.push(`PROPOSAL KIND: ${proposal.kind}`);
   lines.push(`PROPOSAL SUBJECT: ${proposal.subjectName ?? proposal.subjectEmail ?? "(none)"}`);
@@ -745,25 +685,19 @@ function buildUserPrompt(args: {
     if (personContext.roles.length === 0) lines.push("    (none)");
     for (const r of personContext.roles) {
       lines.push(
-        `    - id=${r.id} ${r.current.toUpperCase()} at ${r.entityName ?? "?"} (${r.entityType}, ${r.connection ?? "?"})${r.externalTitleOrRole ? ` title="${r.externalTitleOrRole}"` : ""}${r.funderId ? ` funderId=${r.funderId}` : ""}${r.organizationId ? ` organizationId=${r.organizationId}` : ""}`,
+        `    - id=${r.id} ${r.current.toUpperCase()} at ${r.entityName ?? "?"} (${r.entityType}, ${r.connection ?? "?"})${r.externalTitleOrRole ? ` title="${r.externalTitleOrRole}"` : ""}${r.organizationId ? ` organizationId=${r.organizationId}` : ""}`,
       );
     }
   } else {
     lines.push("No matched person on file.");
   }
-  if (funderTargetId) {
-    lines.push(`Matched funder: id=${funderTargetId} name=${funderTargetName ?? "?"}`);
-  }
-  if (funderCandidates.length > 0) {
-    lines.push(`Funder candidates by name lookup:`);
-    for (const f of funderCandidates) {
-      lines.push(`  - id=${f.id} ${f.name}`);
-    }
+  if (targetOrgId) {
+    lines.push(`Matched organization: id=${targetOrgId} name=${targetOrgName ?? "?"}`);
   }
   if (organizationCandidates.length > 0) {
-    lines.push(`Organization candidates by name lookup (non-funder employers):`);
+    lines.push(`Organization candidates by name lookup:`);
     for (const o of organizationCandidates) {
-      lines.push(`  - id=${o.id} ${o.name}`);
+      lines.push(`  - id=${o.id} ${o.name}${o.issuesGrants ? " [grantmaker]" : ""}`);
     }
   }
   if (messageBody) {
@@ -825,18 +759,18 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
       ? await loadPersonContext(proposal.targetPersonId)
       : null;
 
-    // For the funder side: prefer the detector-emitted hint
-    // (targetFunderId), else attempt a name lookup against payload
-    // hints (newCompany / funderName / sender name).
-    let funderTargetId = proposal.targetFunderId;
-    let funderTargetName: string | null = null;
-    if (funderTargetId) {
-      const [f] = await db
-        .select({ name: funders.name })
-        .from(funders)
-        .where(eq(funders.id, funderTargetId))
+    // For the organization side: prefer the detector-emitted hint
+    // (targetFunderId, stored legacy name), else attempt a name lookup
+    // against payload hints (newCompany / funderName / sender name).
+    let targetOrgId = proposal.targetOrganizationId;
+    let targetOrgName: string | null = null;
+    if (targetOrgId) {
+      const [o] = await db
+        .select({ name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, targetOrgId))
         .limit(1);
-      funderTargetName = f?.name ?? null;
+      targetOrgName = o?.name ?? null;
     }
     const payload = (proposal.payload ?? {}) as Record<string, unknown>;
     const candidateNames = [
@@ -844,21 +778,14 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
       payload.funderName,
       proposal.subjectName,
     ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
-    const [funderCandidatesNested, organizationCandidatesNested] = await Promise.all([
-      Promise.all(candidateNames.slice(0, 2).map((n) => findFunderCandidates(n))),
-      Promise.all(candidateNames.slice(0, 2).map((n) => findOrganizationCandidates(n))),
-    ]);
-    const dedupedById = new Map<string, FunderCandidate>();
-    for (const list of funderCandidatesNested) {
-      for (const c of list) dedupedById.set(c.id, c);
-    }
-    if (funderTargetId) dedupedById.delete(funderTargetId);
-    const funderCandidates = Array.from(dedupedById.values()).slice(0, 8);
-
+    const organizationCandidatesNested = await Promise.all(
+      candidateNames.slice(0, 2).map((n) => findOrganizationCandidates(n)),
+    );
     const dedupedOrgsById = new Map<string, OrganizationCandidate>();
     for (const list of organizationCandidatesNested) {
       for (const c of list) dedupedOrgsById.set(c.id, c);
     }
+    if (targetOrgId) dedupedOrgsById.delete(targetOrgId);
     const organizationCandidates = Array.from(dedupedOrgsById.values()).slice(0, 8);
 
     // Pull the source message body for prompt context. Some payloads
@@ -869,10 +796,9 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
     const userPrompt = buildUserPrompt({
       proposal,
       personContext,
-      funderCandidates,
       organizationCandidates,
-      funderTargetId,
-      funderTargetName,
+      targetOrgId,
+      targetOrgName,
       messageBody,
     });
 

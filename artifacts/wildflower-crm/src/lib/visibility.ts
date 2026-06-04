@@ -1,4 +1,4 @@
-import type { Funder, Person } from "@workspace/api-client-react";
+import type { Organization, Person } from "@workspace/api-client-react";
 import { personDisplayName } from "@/lib/person";
 
 /**
@@ -41,11 +41,11 @@ export function canManageIdentity(
   return !!viewer.id && viewer.id === entity.ownerUserId;
 }
 
-export function displayFunderName(
-  funder: Pick<Funder, "name" | "anonymous" | "ownerUserId">,
+export function displayOrganizationName(
+  org: Pick<Organization, "name" | "anonymous" | "ownerUserId">,
   viewer: Viewer,
 ): string {
-  return canSeeIdentity(funder, viewer) ? funder.name : ANONYMOUS_LABEL;
+  return canSeeIdentity(org, viewer) ? org.name : ANONYMOUS_LABEL;
 }
 
 export function displayPersonName(

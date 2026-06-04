@@ -40,8 +40,7 @@ export type EntityRoleType =
   (typeof EntityRoleType)[keyof typeof EntityRoleType];
 
 export const EntityRoleType = {
-  funder: "funder",
-  non_funding_organization: "non_funding_organization",
+  organization: "organization",
   payment_intermediary: "payment_intermediary",
   household: "household",
 } as const;
@@ -167,6 +166,43 @@ export const FundingEntitySubtype = {
   public_private: "public_private",
   daf_platform: "daf_platform",
   platform: "platform",
+} as const;
+
+export type EntityType = (typeof EntityType)[keyof typeof EntityType];
+
+export const EntityType = {
+  family_foundation: "family_foundation",
+  institutional_foundation: "institutional_foundation",
+  corporate_foundation: "corporate_foundation",
+  community_foundation: "community_foundation",
+  bank_foundation: "bank_foundation",
+  family_office_trust: "family_office_trust",
+  intermediary: "intermediary",
+  government: "government",
+  nonprofit: "nonprofit",
+  corporation: "corporation",
+  capital_provider: "capital_provider",
+  philanthropic_advisor: "philanthropic_advisor",
+  cdfi: "cdfi",
+  education_forprofit: "education_forprofit",
+  competition: "competition",
+  public_private: "public_private",
+  daf_platform: "daf_platform",
+  platform: "platform",
+  advocacy_membership_lobbyist: "advocacy_membership_lobbyist",
+  authorizer: "authorizer",
+  education_vendor: "education_vendor",
+  elected_official: "elected_official",
+  higher_ed: "higher_ed",
+  investor: "investor",
+  law_firm: "law_firm",
+  media: "media",
+  real_estate: "real_estate",
+  school: "school",
+  school_district: "school_district",
+  school_network: "school_network",
+  small_business_consulting: "small_business_consulting",
+  tribal: "tribal",
 } as const;
 
 export type NumberOfEmployees =
@@ -518,7 +554,6 @@ export interface FiscalYear {
 
 export interface DashboardCounts {
   people: number;
-  funders: number;
   households: number;
   organizations: number;
   opportunities: number;
@@ -585,7 +620,7 @@ export interface TopPriorityAffiliate {
   ownerUserId: string | null;
 }
 
-export interface TopPriorityFunder {
+export interface TopPriorityOrganization {
   id: string;
   name: string;
   anonymous: boolean;
@@ -611,7 +646,7 @@ export interface TopPriorityPerson {
 }
 
 export interface TopPriorities {
-  funders: TopPriorityFunder[];
+  organizations: TopPriorityOrganization[];
   individuals: TopPriorityPerson[];
 }
 
@@ -632,13 +667,13 @@ export interface FiscalYearReceivedRow {
   dateReceived?: string | null;
   /** Parent gift's total amount (numeric string). */
   giftAmount?: string | null;
-  funderId?: string | null;
-  funderName?: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
   householdId?: string | null;
   householdName?: string | null;
   individualGiverPersonId?: string | null;
   individualGiverPersonName?: string | null;
-  readonly funderPriority?: Priority | null;
+  readonly organizationPriority?: Priority | null;
   readonly individualGiverPersonPriority?: Priority | null;
 }
 
@@ -661,13 +696,13 @@ export interface FiscalYearOpenRow {
   /** Parent opp's win_probability (0–1, numeric string). */
   winProbability?: string | null;
   projectedCloseDate?: string | null;
-  funderId?: string | null;
-  funderName?: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
   householdId?: string | null;
   householdName?: string | null;
   individualGiverPersonId?: string | null;
   individualGiverPersonName?: string | null;
-  readonly funderPriority?: Priority | null;
+  readonly organizationPriority?: Priority | null;
   readonly individualGiverPersonPriority?: Priority | null;
 }
 
@@ -698,17 +733,19 @@ export interface FiscalYearBreakdown {
   openPipeline: FiscalYearBreakdownOpenPipeline;
 }
 
-export interface Funder {
+export interface Organization {
   id: string;
   name: string;
-  fundingEntitySubtype?: FundingEntitySubtype | null;
+  /** True for grant-making organizations (formerly 'funders'); false for non-grant entities. */
+  issuesGrants: boolean;
+  /** Normalized entity type (school_network, nonprofit, etc.). */
+  entityType?: EntityType | null;
   makesPris?: boolean | null;
   numberOfEmployees?: NumberOfEmployees | null;
   capacityRating?: CapacityRating | null;
   /** Estimated total assets / endowment size. Decimal as string. */
   totalAssets?: string | null;
   priorityAreasNotes?: string | null;
-  /** Free-form long-text overview of the funder. */
   about?: string | null;
   activeStatus?: ActiveStatus | null;
   otherNames?: string | null;
@@ -726,10 +763,10 @@ export interface Funder {
   interestsAges?: string[] | null;
   interestsGovModels?: string[] | null;
   regionIds?: string[] | null;
-  parentFunderId?: string | null;
-  /** Payment intermediary (e.g. a DAF) this funder gives through. */
+  parentOrganizationId?: string | null;
+  /** Payment intermediary (e.g. a DAF) this organization gives through. */
   paymentIntermediaryId?: string | null;
-  /** When true, hide the funder's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned. */
+  /** When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned. */
   anonymous: boolean;
   lastContacted?: string | null;
   x?: string | null;
@@ -738,14 +775,13 @@ export interface Funder {
   instagram?: string | null;
   youtube?: string | null;
   crunchbase?: string | null;
-  /** Solicitation priority tier (top/high/medium/low). The 'top' band is surfaced as a star on the funders table and on opportunities/gifts where this funder is the donor. */
+  /** Solicitation priority tier (top/high/medium/low). */
   priority?: Priority | null;
-  /** people_entity_roles row with primary_contact=true for this funder, if any. */
   readonly primaryContactPersonId?: string | null;
   readonly primaryContactPersonName?: string | null;
-  /** Sum of gifts.amount where funder_id matches. Decimal as string. */
+  /** Sum of gifts.amount where organization_id matches. Decimal as string. */
   readonly lifetimeGiving?: string | null;
-  /** Count of opportunities_and_pledges where funder_id matches and status='open'. */
+  /** Count of opportunities_and_pledges where organization_id matches and status='open'. */
   readonly openOpportunityCount?: number | null;
   createdAt: string;
   updatedAt: string;
@@ -758,7 +794,6 @@ export interface PeopleEntityRole {
   /** Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file. */
   readonly personEmail?: string | null;
   entityType: EntityRoleType;
-  funderId?: string | null;
   organizationId?: string | null;
   paymentIntermediaryId?: string | null;
   householdId?: string | null;
@@ -776,7 +811,6 @@ export interface Email {
   email: string;
   type?: EmailType | null;
   personId?: string | null;
-  funderId?: string | null;
   organizationId?: string | null;
   paymentIntermediaryId?: string | null;
   householdId?: string | null;
@@ -791,7 +825,6 @@ export interface PhoneNumber {
   phoneNumber: string;
   type?: PhoneType | null;
   personId?: string | null;
-  funderId?: string | null;
   organizationId?: string | null;
   paymentIntermediaryId?: string | null;
   householdId?: string | null;
@@ -811,7 +844,6 @@ export interface Address {
   postalCode?: string | null;
   country?: string | null;
   personId?: string | null;
-  funderId?: string | null;
   organizationId?: string | null;
   paymentIntermediaryId?: string | null;
   householdId?: string | null;
@@ -827,30 +859,28 @@ export interface PaymentIntermediary {
   updatedAt: string;
 }
 
-export type FunderDetail = Funder & {
+export type OrganizationDetail = Organization & {
   people?: PeopleEntityRole[];
   emails?: Email[];
   phoneNumbers?: PhoneNumber[];
   addresses?: Address[];
-  /** Resolved payment intermediary referenced by paymentIntermediaryId, if set. */
   readonly paymentIntermediary?: PaymentIntermediary | null;
 };
 
-export interface FunderList {
-  data: Funder[];
+export interface OrganizationList {
+  data: Organization[];
   pagination: Pagination;
 }
 
-export interface CreateFunderBody {
+export interface CreateOrganizationBody {
   name: string;
-  fundingEntitySubtype?: FundingEntitySubtype;
+  issuesGrants?: boolean;
+  entityType?: EntityType | null;
   makesPris?: boolean;
   numberOfEmployees?: NumberOfEmployees;
   capacityRating?: CapacityRating;
-  /** Estimated total assets / endowment size. Decimal as string. */
   totalAssets?: string;
   priorityAreasNotes?: string;
-  /** Free-form long-text overview of the funder. */
   about?: string;
   activeStatus?: ActiveStatus;
   otherNames?: string;
@@ -868,7 +898,7 @@ export interface CreateFunderBody {
   interestsAges?: string[];
   interestsGovModels?: string[];
   regionIds?: string[];
-  parentFunderId?: string;
+  parentOrganizationId?: string;
   paymentIntermediaryId?: string;
   x?: string;
   linkedin?: string;
@@ -880,16 +910,15 @@ export interface CreateFunderBody {
   anonymous?: boolean;
 }
 
-export interface UpdateFunderBody {
+export interface UpdateOrganizationBody {
   name?: string;
-  fundingEntitySubtype?: FundingEntitySubtype | null;
+  issuesGrants?: boolean;
+  entityType?: EntityType | null;
   makesPris?: boolean | null;
   numberOfEmployees?: NumberOfEmployees | null;
   capacityRating?: CapacityRating | null;
-  /** Estimated total assets / endowment size. Decimal as string. */
   totalAssets?: string | null;
   priorityAreasNotes?: string | null;
-  /** Free-form long-text overview of the funder. */
   about?: string | null;
   activeStatus?: ActiveStatus | null;
   otherNames?: string | null;
@@ -907,7 +936,7 @@ export interface UpdateFunderBody {
   interestsAges?: string[] | null;
   interestsGovModels?: string[] | null;
   regionIds?: string[] | null;
-  parentFunderId?: string | null;
+  parentOrganizationId?: string | null;
   paymentIntermediaryId?: string | null;
   x?: string | null;
   linkedin?: string | null;
@@ -917,56 +946,6 @@ export interface UpdateFunderBody {
   crunchbase?: string | null;
   priority?: Priority | null;
   anonymous?: boolean;
-}
-
-export interface Organization {
-  id: string;
-  name: string;
-  type?: OrganizationType | null;
-  emailDomain?: string | null;
-  tags?: string | null;
-  website?: string | null;
-  activeOrDefunct?: string | null;
-  otherNames?: string | null;
-  historicalNames?: string[] | null;
-  parentOrgId?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type OrganizationDetail = Organization & {
-  people?: PeopleEntityRole[];
-  emails?: Email[];
-  addresses?: Address[];
-};
-
-export interface OrganizationList {
-  data: Organization[];
-  pagination: Pagination;
-}
-
-export interface CreateOrganizationBody {
-  name: string;
-  type?: OrganizationType;
-  emailDomain?: string;
-  tags?: string;
-  website?: string;
-  activeOrDefunct?: string;
-  otherNames?: string;
-  historicalNames?: string[];
-  parentOrgId?: string;
-}
-
-export interface UpdateOrganizationBody {
-  name?: string;
-  type?: OrganizationType | null;
-  emailDomain?: string | null;
-  tags?: string | null;
-  website?: string | null;
-  activeOrDefunct?: string | null;
-  otherNames?: string | null;
-  historicalNames?: string[] | null;
-  parentOrgId?: string | null;
 }
 
 export type PaymentIntermediaryDetail = PaymentIntermediary & {
@@ -1073,13 +1052,9 @@ export interface Person {
   readonly mostRecentGiftDate?: string | null;
   /** Count of opportunities_and_pledges where this person is the individual giver and status='open'. */
   readonly openOpportunityCount?: number | null;
-  /** Names of funders the person currently holds a role at (people_entity_roles.current='current'). */
-  readonly activeFunderNames?: readonly string[] | null;
-  /** Names of non-funding organizations the person currently holds a role at (people_entity_roles.current='current'). */
+  /** Names of organizations the person currently holds a role at (people_entity_roles.current='current'). */
   readonly activeOrganizationNames?: readonly string[] | null;
-  /** Names of funders the person previously held a role at (people_entity_roles.current='past'). */
-  readonly pastFunderNames?: readonly string[] | null;
-  /** Names of non-funding organizations the person previously held a role at (people_entity_roles.current='past'). */
+  /** Names of organizations the person previously held a role at (people_entity_roles.current='past'). */
   readonly pastOrganizationNames?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
@@ -1185,7 +1160,6 @@ export interface PeopleEntityRoleList {
 export interface CreatePeopleEntityRoleBody {
   personId: string;
   entityType: EntityRoleType;
-  funderId?: string;
   organizationId?: string;
   paymentIntermediaryId?: string;
   householdId?: string;
@@ -1197,7 +1171,6 @@ export interface CreatePeopleEntityRoleBody {
 }
 
 export interface UpdatePeopleEntityRoleBody {
-  funderId?: string | null;
   organizationId?: string | null;
   paymentIntermediaryId?: string | null;
   householdId?: string | null;
@@ -1217,7 +1190,6 @@ export interface CreateEmailBody {
   email: string;
   type?: EmailType;
   personId?: string;
-  funderId?: string;
   organizationId?: string;
   paymentIntermediaryId?: string;
   householdId?: string;
@@ -1241,7 +1213,6 @@ export interface CreatePhoneNumberBody {
   phoneNumber: string;
   type?: PhoneType;
   personId?: string;
-  funderId?: string;
   organizationId?: string;
   paymentIntermediaryId?: string;
   householdId?: string;
@@ -1270,7 +1241,6 @@ export interface CreateAddressBody {
   postalCode?: string;
   country?: string;
   personId?: string;
-  funderId?: string;
   organizationId?: string;
   paymentIntermediaryId?: string;
   householdId?: string;
@@ -1285,7 +1255,6 @@ export interface UpdateAddressBody {
   postalCode?: string | null;
   country?: string | null;
   personId?: string | null;
-  funderId?: string | null;
   organizationId?: string | null;
   paymentIntermediaryId?: string | null;
   householdId?: string | null;
@@ -1294,7 +1263,7 @@ export interface UpdateAddressBody {
 export interface OpportunityOrPledge {
   id: string;
   name?: string | null;
-  funderId?: string | null;
+  organizationId?: string | null;
   householdId?: string | null;
   askAmount?: string | null;
   awardedAmount?: string | null;
@@ -1322,10 +1291,10 @@ export interface OpportunityOrPledge {
   grantLetterUploadedAt?: string | null;
   primaryContactPersonId?: string | null;
   ownerUserId?: string | null;
-  funderName?: string | null;
+  organizationName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
-  readonly funderPriority?: Priority | null;
+  readonly organizationPriority?: Priority | null;
   readonly individualGiverPersonPriority?: Priority | null;
   readonly primaryContactPersonName?: string | null;
   readonly fiscalYear?: string | null;
@@ -1370,7 +1339,7 @@ export interface GiftOrPayment {
   dateReceived?: string | null;
   paymentMethod?: GiftPaymentMethod | null;
   amount?: string | null;
-  funderId?: string | null;
+  organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
   type?: GiftType | null;
@@ -1389,10 +1358,10 @@ export interface GiftOrPayment {
   thankYouEmailMessageId?: string | null;
   /** Document attachments on the linked thank-you email (PDF / DOCX / etc.). Populated only on the detail endpoint. */
   readonly thankYouAttachments?: readonly ThankYouAttachment[] | null;
-  funderName?: string | null;
+  organizationName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
-  readonly funderPriority?: Priority | null;
+  readonly organizationPriority?: Priority | null;
   readonly individualGiverPersonPriority?: Priority | null;
   /** Distinct entity_id values from gift_allocations. */
   readonly entityIds?: readonly string[] | null;
@@ -1416,7 +1385,7 @@ export interface OpportunityOrPledgeList {
 
 export interface CreateOpportunityOrPledgeBody {
   name?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   askAmount?: string;
   awardedAmount?: string;
@@ -1447,7 +1416,7 @@ export interface CreateOpportunityOrPledgeBody {
 
 export interface UpdateOpportunityOrPledgeBody {
   name?: string | null;
-  funderId?: string | null;
+  organizationId?: string | null;
   householdId?: string | null;
   askAmount?: string | null;
   awardedAmount?: string | null;
@@ -1545,7 +1514,7 @@ export interface CreateGiftOrPaymentBody {
   dateReceived?: string;
   paymentMethod?: GiftPaymentMethod;
   amount?: string;
-  funderId?: string;
+  organizationId?: string;
   individualGiverPersonId?: string;
   householdId?: string;
   type?: GiftType;
@@ -1567,7 +1536,7 @@ export interface UpdateGiftOrPaymentBody {
   dateReceived?: string | null;
   paymentMethod?: GiftPaymentMethod | null;
   amount?: string | null;
-  funderId?: string | null;
+  organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
   type?: GiftType | null;
@@ -1660,7 +1629,7 @@ export interface Interaction {
   notes?: string | null;
   ownerUserId?: string | null;
   personIds?: string[] | null;
-  funderIds?: string[] | null;
+  organizationIds?: string[] | null;
   householdIds?: string[] | null;
   createdAt: string;
   updatedAt: string;
@@ -1680,7 +1649,7 @@ export interface CreateInteractionBody {
   notes?: string;
   ownerUserId?: string;
   personIds?: string[];
-  funderIds?: string[];
+  organizationIds?: string[];
   householdIds?: string[];
 }
 
@@ -1693,7 +1662,7 @@ export interface UpdateInteractionBody {
   notes?: string | null;
   ownerUserId?: string | null;
   personIds?: string[] | null;
-  funderIds?: string[] | null;
+  organizationIds?: string[] | null;
   householdIds?: string[] | null;
 }
 
@@ -1722,13 +1691,13 @@ export interface EmailMessage {
   isPrivate: boolean;
   privateSetByUserId?: string | null;
   matchedPersonIds?: string[] | null;
-  matchedFunderIds?: string[] | null;
+  matchedOrganizationIds?: string[] | null;
   matchedHouseholdIds?: string[] | null;
   /** One-line topic summary. Populated only when the mailbox owner is in `summary_only` mode; in that case it is the ONLY content stored for the message — `snippet`, `bodyText`, `bodyHtml`, and attachments are all absent. */
   aiSummary?: string | null;
   /** True when this sent message matches an open-tracking pixel record. Only ever true for sent messages. */
   readonly isTracked?: boolean;
-  /** Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId/funderId/householdId), this counts opens by that contact only. Null when not tracked. */
+  /** Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId/organizationId/householdId), this counts opens by that contact only. Null when not tracked. */
   readonly trackingTotalViews?: number | null;
   /** Most recent tracked open timestamp. Null when not tracked or not yet opened. */
   readonly trackingLastOpenedAt?: string | null;
@@ -1774,7 +1743,7 @@ export interface CalendarEvent {
   isPrivate: boolean;
   privateSetByUserId?: string | null;
   matchedPersonIds?: string[] | null;
-  matchedFunderIds?: string[] | null;
+  matchedOrganizationIds?: string[] | null;
   matchedHouseholdIds?: string[] | null;
 }
 
@@ -1984,7 +1953,7 @@ export interface EmailProposal {
   status: EmailProposalStatus;
   sourceMessageId?: string | null;
   targetPersonId?: string | null;
-  targetFunderId?: string | null;
+  targetOrganizationId?: string | null;
   targetEmailId?: string | null;
   subjectEmail?: string | null;
   subjectName?: string | null;
@@ -2070,7 +2039,7 @@ export interface Note {
   body: string;
   authorUserId: string;
   personIds?: string[] | null;
-  funderIds?: string[] | null;
+  organizationIds?: string[] | null;
   householdIds?: string[] | null;
   opportunityIds?: string[] | null;
   giftIds?: string[] | null;
@@ -2087,7 +2056,7 @@ export interface NoteList {
 export interface CreateNoteBody {
   body: string;
   personIds?: string[];
-  funderIds?: string[];
+  organizationIds?: string[];
   householdIds?: string[];
   opportunityIds?: string[];
   giftIds?: string[];
@@ -2097,7 +2066,7 @@ export interface CreateNoteBody {
 export interface UpdateNoteBody {
   body?: string;
   personIds?: string[] | null;
-  funderIds?: string[] | null;
+  organizationIds?: string[] | null;
   householdIds?: string[] | null;
   opportunityIds?: string[] | null;
   giftIds?: string[] | null;
@@ -2115,7 +2084,7 @@ export interface MediaMention {
   source?: string | null;
   pinned: boolean;
   personIds?: string[] | null;
-  funderIds?: string[] | null;
+  organizationIds?: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2137,7 +2106,7 @@ export interface MediaMentionInput {
   source?: string;
   pinned?: boolean;
   personIds?: string[];
-  funderIds?: string[];
+  organizationIds?: string[];
 }
 
 export interface MediaMentionUpdate {
@@ -2152,7 +2121,7 @@ export interface MediaMentionUpdate {
   source?: string | null;
   pinned?: boolean;
   personIds?: string[] | null;
-  funderIds?: string[] | null;
+  organizationIds?: string[] | null;
 }
 
 export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
@@ -2183,7 +2152,7 @@ export interface Task {
   assigneeUserId?: string | null;
   createdByUserId: string;
   personIds?: string[] | null;
-  funderIds?: string[] | null;
+  organizationIds?: string[] | null;
   householdIds?: string[] | null;
   opportunityIds?: string[] | null;
   giftIds?: string[] | null;
@@ -2205,7 +2174,7 @@ export interface CreateTaskBody {
   status?: TaskStatus;
   assigneeUserId?: string;
   personIds?: string[];
-  funderIds?: string[];
+  organizationIds?: string[];
   householdIds?: string[];
   opportunityIds?: string[];
   giftIds?: string[];
@@ -2220,7 +2189,7 @@ export interface UpdateTaskBody {
   status?: TaskStatus;
   assigneeUserId?: string | null;
   personIds?: string[] | null;
-  funderIds?: string[] | null;
+  organizationIds?: string[] | null;
   householdIds?: string[] | null;
   opportunityIds?: string[] | null;
   giftIds?: string[] | null;
@@ -2249,7 +2218,7 @@ export interface MeetingNote {
   actionItems?: MeetingActionItem[] | null;
   creatorUserId: string;
   personId?: string | null;
-  funderId?: string | null;
+  organizationId?: string | null;
   householdId?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -2273,7 +2242,7 @@ export interface CreateMeetingNoteBody {
   meetingDate?: string;
   attendees?: string[];
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
 }
 
@@ -2284,7 +2253,7 @@ export interface UpdateMeetingNoteBody {
   aiSummary?: string | null;
   actionItems?: MeetingActionItem[] | null;
   personId?: string | null;
-  funderId?: string | null;
+  organizationId?: string | null;
   householdId?: string | null;
 }
 
@@ -2356,7 +2325,7 @@ export interface TrackedEmail {
   sender: string;
   senderIp?: string | null;
   recipientPersonIds: string[];
-  recipientFunderIds: string[];
+  recipientOrganizationIds: string[];
   recipientHouseholdIds: string[];
   /** Shared across per-recipient copies of one group send; null for legacy single-pixel sends. */
   groupId?: string | null;
@@ -2465,19 +2434,19 @@ export interface MergeResult {
   mergedIds: string[];
 }
 
-export type MergeFundersBodyOverrides = { [key: string]: unknown } | null;
+export type MergeOrganizationsBodyOverrides = { [key: string]: unknown } | null;
 
 /**
  * Collapse `mergeIds` (duplicates) into `primaryId` (survivor). `overrides` supplies the user-chosen winning value for each scalar field; only whitelisted funder columns are applied.
  */
-export interface MergeFundersBody {
+export interface MergeOrganizationsBody {
   primaryId: string;
   /**
    * @minItems 1
    * @maxItems 49
    */
   mergeIds: string[];
-  overrides?: MergeFundersBodyOverrides;
+  overrides?: MergeOrganizationsBodyOverrides;
 }
 
 export type MergePeopleBodyOverrides = { [key: string]: unknown } | null;
@@ -2515,23 +2484,24 @@ export interface BulkUpdatePeopleBody {
   patch: BulkUpdatePeoplePatch;
 }
 
-export interface BulkUpdateFundersPatch {
+export interface BulkUpdateOrganizationsPatch {
   ownerUserId?: string | null;
   activeStatus?: ActiveStatus | null;
   connectionStatus?: ConnectionStatus | null;
   capacityRating?: CapacityRating | null;
   enthusiasm?: Enthusiasm | null;
   priority?: Priority | null;
-  fundingEntitySubtype?: FundingEntitySubtype | null;
+  entityType?: string | null;
+  issuesGrants?: boolean;
 }
 
-export interface BulkUpdateFundersBody {
+export interface BulkUpdateOrganizationsBody {
   /**
    * @minItems 1
    * @maxItems 1000
    */
   ids: string[];
-  patch: BulkUpdateFundersPatch;
+  patch: BulkUpdateOrganizationsPatch;
 }
 
 export interface BulkUpdateHouseholdsPatch {
@@ -2703,7 +2673,7 @@ export type ListEmailProposalsParams = {
   /**
    * Filter to proposals targeting this funder.
    */
-  funderId?: string;
+  organizationId?: string;
   /**
    * @minimum 1
    * @maximum 10000
@@ -2768,25 +2738,29 @@ export type ListFiscalYearEntityGoalsParams = {
   entityId?: string;
 };
 
-export type ListFundersParams = {
+export type ListOrganizationsParams = {
   search?: string;
   /**
-   * Filter to direct child funding entities of the given parent funder.
+   * Filter to grant-making organizations only (true) or non-grant entities only (false). Omit for all.
    */
-  parentFunderId?: string;
+  issuesGrants?: boolean;
   /**
-   * Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).
+   * Filter to direct child organizations of the given parent.
    */
-  lifetimeGivingPresence?: ListFundersLifetimeGivingPresence;
+  parentOrganizationId?: string;
+  /**
+   * Rollup presence filter on lifetime giving (`has` = >0, `blank` = none). Only meaningful for issuesGrants=true.
+   */
+  lifetimeGivingPresence?: ListOrganizationsLifetimeGivingPresence;
   /**
    * Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).
    */
-  openAsksPresence?: ListFundersOpenAsksPresence;
+  openAsksPresence?: ListOrganizationsOpenAsksPresence;
   /**
    * Presence filter on primary contact (`has` = set, `blank` = none).
    */
-  primaryContactPresence?: ListFundersPrimaryContactPresence;
-  subtype?: string[];
+  primaryContactPresence?: ListOrganizationsPrimaryContactPresence;
+  entityType?: string[];
   activeStatus?: string[];
   connectionStatus?: string[];
   enthusiasm?: string[];
@@ -2794,19 +2768,19 @@ export type ListFundersParams = {
   capacityRating?: string[];
   ownerUserId?: string[];
   /**
- * Filter to funders whose `priority` tier is in the given set
+ * Filter to organizations whose `priority` tier is in the given set
 (top/high/medium/low). Multi-value: repeat or comma-separate.
 Accepts the literal `__blank__` to match rows with no priority set.
 
  */
   priority?: string[];
   /**
- * Filter to funders whose `regionIds` array overlaps the given set
-(any selected region appears in the funder's regions). Multi-value:
-repeat or comma-separate.
+ * Filter to organizations whose `regionIds` array overlaps the given set.
+Multi-value: repeat or comma-separate.
 
  */
   regionIds?: string[];
+  type?: string[];
   /**
    * @minimum 1
    * @maximum 10000
@@ -2818,43 +2792,29 @@ repeat or comma-separate.
   page?: PageParameter;
 };
 
-export type ListFundersLifetimeGivingPresence =
-  (typeof ListFundersLifetimeGivingPresence)[keyof typeof ListFundersLifetimeGivingPresence];
+export type ListOrganizationsLifetimeGivingPresence =
+  (typeof ListOrganizationsLifetimeGivingPresence)[keyof typeof ListOrganizationsLifetimeGivingPresence];
 
-export const ListFundersLifetimeGivingPresence = {
+export const ListOrganizationsLifetimeGivingPresence = {
   has: "has",
   blank: "blank",
 } as const;
 
-export type ListFundersOpenAsksPresence =
-  (typeof ListFundersOpenAsksPresence)[keyof typeof ListFundersOpenAsksPresence];
+export type ListOrganizationsOpenAsksPresence =
+  (typeof ListOrganizationsOpenAsksPresence)[keyof typeof ListOrganizationsOpenAsksPresence];
 
-export const ListFundersOpenAsksPresence = {
+export const ListOrganizationsOpenAsksPresence = {
   has: "has",
   blank: "blank",
 } as const;
 
-export type ListFundersPrimaryContactPresence =
-  (typeof ListFundersPrimaryContactPresence)[keyof typeof ListFundersPrimaryContactPresence];
+export type ListOrganizationsPrimaryContactPresence =
+  (typeof ListOrganizationsPrimaryContactPresence)[keyof typeof ListOrganizationsPrimaryContactPresence];
 
-export const ListFundersPrimaryContactPresence = {
+export const ListOrganizationsPrimaryContactPresence = {
   has: "has",
   blank: "blank",
 } as const;
-
-export type ListOrganizationsParams = {
-  search?: string;
-  type?: OrganizationType;
-  /**
-   * @minimum 1
-   * @maximum 10000
-   */
-  limit?: LimitParameter;
-  /**
-   * @minimum 1
-   */
-  page?: PageParameter;
-};
 
 export type ListPaymentIntermediariesParams = {
   search?: string;
@@ -2983,7 +2943,6 @@ export const ListPeopleActiveAffiliationPresence = {
 
 export type ListPeopleEntityRolesParams = {
   personId?: string;
-  funderId?: string;
   organizationId?: string;
   paymentIntermediaryId?: string;
   householdId?: string;
@@ -3000,7 +2959,6 @@ export type ListPeopleEntityRolesParams = {
 
 export type ListEmailsParams = {
   personId?: string;
-  funderId?: string;
   organizationId?: string;
   paymentIntermediaryId?: string;
   householdId?: string;
@@ -3030,7 +2988,6 @@ export type ListPhoneNumbersParams = {
 
 export type ListAddressesParams = {
   personId?: string;
-  funderId?: string;
   organizationId?: string;
   paymentIntermediaryId?: string;
   householdId?: string;
@@ -3076,7 +3033,7 @@ Omit to include all rows.
    */
   wasPledge?: boolean;
   type?: string[];
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   individualGiverPersonId?: string;
   ownerUserId?: string[];
@@ -3165,7 +3122,7 @@ export type ListGiftsAndPaymentsParams = {
    */
   grantYearsPresence?: ListGiftsAndPaymentsGrantYearsPresence;
   type?: string[];
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   individualGiverPersonId?: string;
   paymentOnPledgeId?: string;
@@ -3248,7 +3205,7 @@ export type ListGiftAllocationsParams = {
 export type ListInteractionsParams = {
   search?: string;
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   ownerUserId?: string[];
   kind?: InteractionKind[];
@@ -3266,7 +3223,7 @@ export type ListInteractionsParams = {
 export type ListNotesParams = {
   search?: string;
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   opportunityId?: string;
   giftId?: string;
@@ -3289,7 +3246,7 @@ export type ListNotesParams = {
 export type ListMediaMentionsParams = {
   search?: string;
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   /**
    * Filter to pinned (true) or unpinned (false) mentions.
    */
@@ -3308,7 +3265,7 @@ export type ListMediaMentionsParams = {
 export type ListTasksParams = {
   search?: string;
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   opportunityId?: string;
   giftId?: string;
@@ -3338,7 +3295,7 @@ export type ListTasksParams = {
 
 export type ListMeetingNotesParams = {
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   creatorUserId?: string;
   /**
@@ -3373,7 +3330,7 @@ export type SearchTrackedEmailParams = {
 
 export type ListTrackedEmailsByContactParams = {
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
 };
 
@@ -3385,7 +3342,7 @@ export type ListEmailMessagesParams = {
   search?: string;
   mailboxUserId?: string;
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   /**
    * @minimum 1
@@ -3402,7 +3359,7 @@ export type ListCalendarEventsParams = {
   search?: string;
   calendarUserId?: string;
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   /**
    * Only events with startAt >= this timestamp.

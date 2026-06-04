@@ -5,10 +5,10 @@ import {
   useUpdateOpportunityOrPledge,
   useDeleteOpportunityOrPledge,
   useListEntities,
-  useGetFunder,
+  useGetOrganization,
   useGetHousehold,
   getGetOpportunityOrPledgeQueryKey,
-  getGetFunderQueryKey,
+  getGetOrganizationQueryKey,
   getGetHouseholdQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
   type OpportunityOrPledgeDetail,
@@ -41,10 +41,10 @@ import {
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import {
   InlineEditPersonPicker,
-  InlineEditFunderPicker,
+  InlineEditOrganizationPicker,
   InlineEditHouseholdPicker,
   usePersonName,
-  useFunderName,
+  useOrganizationName,
   useHouseholdName,
 } from "@/components/entity-picker";
 import {
@@ -214,7 +214,7 @@ function OppView({
     ? (userNames.get(opp.ownerUserId) ?? opp.ownerUserId)
     : "—";
 
-  const funderName = useFunderName(opp.funderId ?? null);
+  const funderName = useOrganizationName(opp.organizationId ?? null);
   const giverName = usePersonName(opp.individualGiverPersonId ?? null);
   const householdName = useHouseholdName(opp.householdId ?? null);
   const advisorName = usePersonName(opp.individualAdvisorPersonId ?? null);
@@ -222,10 +222,10 @@ function OppView({
 
   // Fetch the linked donor entities so the People card can list the people
   // associated with the funder / household (mirrors the gift-detail layout).
-  const funderDetail = useGetFunder(opp.funderId ?? "", {
+  const funderDetail = useGetOrganization(opp.organizationId ?? "", {
     query: {
-      queryKey: getGetFunderQueryKey(opp.funderId ?? ""),
-      enabled: !!opp.funderId,
+      queryKey: getGetOrganizationQueryKey(opp.organizationId ?? ""),
+      enabled: !!opp.organizationId,
     },
   });
   const householdDetail = useGetHousehold(opp.householdId ?? "", {
@@ -255,15 +255,15 @@ function OppView({
   let donorDisplay: ReactNode = (
     <span className="text-muted-foreground">No donor linked.</span>
   );
-  if (opp.funderId) {
+  if (opp.organizationId) {
     donorDisplay = (
       <span>
         <span className="text-muted-foreground mr-1">Funder:</span>
         <Link
-          href={`/funding-entities/${opp.funderId}`}
+          href={`/organizations/${opp.organizationId}`}
           className="text-primary hover:underline"
         >
-          {funderName ?? opp.funderId}
+          {funderName ?? opp.organizationId}
         </Link>
       </span>
     );
@@ -313,12 +313,12 @@ function OppView({
     "—"
   );
 
-  const funderLinkDisplay: ReactNode = opp.funderId ? (
+  const funderLinkDisplay: ReactNode = opp.organizationId ? (
     <Link
-      href={`/funding-entities/${opp.funderId}`}
+      href={`/organizations/${opp.organizationId}`}
       className="text-primary hover:underline"
     >
-      {funderName ?? opp.funderId}
+      {funderName ?? opp.organizationId}
     </Link>
   ) : (
     "—"
@@ -347,11 +347,11 @@ function OppView({
   // The donor is one of (funder, individual giver, household), DB-enforced XOR.
   // Each setter sends all three FK fields so exactly one stays populated.
   const setFunderDonor = (next: string | null) =>
-    patch({ funderId: next, individualGiverPersonId: null, householdId: null });
+    patch({ organizationId: next, individualGiverPersonId: null, householdId: null });
   const setHouseholdDonor = (next: string | null) =>
-    patch({ householdId: next, funderId: null, individualGiverPersonId: null });
+    patch({ householdId: next, organizationId: null, individualGiverPersonId: null });
   const setIndividualDonor = (next: string | null) =>
-    patch({ individualGiverPersonId: next, funderId: null, householdId: null });
+    patch({ individualGiverPersonId: next, organizationId: null, householdId: null });
 
   const title = editingName ? (
     <Input
@@ -745,8 +745,8 @@ function OppView({
             if (opp.primaryContactPersonId && opp.primaryContactPersonId !== opp.individualGiverPersonId) {
               personIds.push(opp.primaryContactPersonId);
             }
-            const oppDefaultLinks: Partial<{ personIds: string[]; funderIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = {
-              ...(opp.funderId ? { funderIds: [opp.funderId] } : {}),
+            const oppDefaultLinks: Partial<{ personIds: string[]; organizationIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = {
+              ...(opp.organizationId ? { organizationIds: [opp.organizationId] } : {}),
               ...(opp.householdId ? { householdIds: [opp.householdId] } : {}),
               ...(personIds.length > 0 ? { personIds } : {}),
             };
@@ -754,7 +754,7 @@ function OppView({
               <>
                 <TasksPanel opportunityId={opp.id} defaultLinks={oppDefaultLinks} />
                 <UnifiedActivityFeed
-                  funderId={opp.funderId ?? undefined}
+                  organizationId={opp.organizationId ?? undefined}
                   personId={opp.individualGiverPersonId ?? undefined}
                   householdId={opp.householdId ?? undefined}
                   notesContext={{ opportunityId: opp.id, defaultLinks: oppDefaultLinks }}
@@ -769,9 +769,9 @@ function OppView({
             <RelatedCard title="Organizations">
               <div className="space-y-1 px-2 py-1">
                 <Row label="Funder">
-                  <InlineEditFunderPicker
+                  <InlineEditOrganizationPicker
                     testIdBase="opp-funder"
-                    value={opp.funderId ?? null}
+                    value={opp.organizationId ?? null}
                     display={funderLinkDisplay}
                     onSave={setFunderDonor}
                     allowNull={false}

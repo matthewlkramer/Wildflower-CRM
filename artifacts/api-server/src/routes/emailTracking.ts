@@ -101,31 +101,31 @@ function parseRecipients(raw: string): string[] {
  */
 async function resolveLinks(addresses: string[]): Promise<{
   personIds: string[];
-  funderIds: string[];
+  organizationIds: string[];
   householdIds: string[];
 }> {
   if (addresses.length === 0) {
-    return { personIds: [], funderIds: [], householdIds: [] };
+    return { personIds: [], organizationIds: [], householdIds: [] };
   }
   const rows = await db
     .select({
       personId: emailsTable.personId,
-      funderId: emailsTable.funderId,
+      organizationId: emailsTable.organizationId,
       householdId: emailsTable.householdId,
     })
     .from(emailsTable)
     .where(inArray(sql`lower(${emailsTable.email})`, addresses));
   const personIds = new Set<string>();
-  const funderIds = new Set<string>();
+  const organizationIds = new Set<string>();
   const householdIds = new Set<string>();
   for (const r of rows) {
     if (r.personId) personIds.add(r.personId);
-    if (r.funderId) funderIds.add(r.funderId);
+    if (r.organizationId) organizationIds.add(r.organizationId);
     if (r.householdId) householdIds.add(r.householdId);
   }
   return {
     personIds: Array.from(personIds),
-    funderIds: Array.from(funderIds),
+    organizationIds: Array.from(organizationIds),
     householdIds: Array.from(householdIds),
   };
 }
@@ -160,7 +160,7 @@ function shapeWithViews(
     sender: email.sender,
     senderIp: email.senderIp,
     recipientPersonIds: email.recipientPersonIds,
-    recipientFunderIds: email.recipientFunderIds,
+    recipientOrganizationIds: email.recipientOrganizationIds,
     recipientHouseholdIds: email.recipientHouseholdIds,
     createdAt: email.createdAt.toISOString(),
     totalViews: views.length,
@@ -353,7 +353,7 @@ router.post(
         sender: parsed.data.sender.trim().toLowerCase(),
         senderIp,
         recipientPersonIds: links.personIds,
-        recipientFunderIds: links.funderIds,
+        recipientOrganizationIds: links.organizationIds,
         recipientHouseholdIds: links.householdIds,
       })
       .returning();
@@ -365,7 +365,7 @@ router.post(
       sender: row.sender,
       senderIp: row.senderIp,
       recipientPersonIds: row.recipientPersonIds,
-      recipientFunderIds: row.recipientFunderIds,
+      recipientOrganizationIds: row.recipientOrganizationIds,
       recipientHouseholdIds: row.recipientHouseholdIds,
       createdAt: row.createdAt.toISOString(),
     });
@@ -479,7 +479,7 @@ router.post(
         gmailMessageId: sent.id,
         gmailThreadId: sent.threadId,
         recipientPersonIds: links.personIds,
-        recipientFunderIds: links.funderIds,
+        recipientOrganizationIds: links.organizationIds,
         recipientHouseholdIds: links.householdIds,
       });
       out.push({ id: pixelId, recipient });
@@ -573,7 +573,7 @@ router.get(
         sender: trackedEmails.sender,
         senderIp: trackedEmails.senderIp,
         recipientPersonIds: trackedEmails.recipientPersonIds,
-        recipientFunderIds: trackedEmails.recipientFunderIds,
+        recipientOrganizationIds: trackedEmails.recipientOrganizationIds,
         recipientHouseholdIds: trackedEmails.recipientHouseholdIds,
         createdAt: trackedEmails.createdAt,
         totalViews: sql<number>`COUNT(${trackedEmailViews.id})::int`,
@@ -596,7 +596,7 @@ router.get(
         sender: r.sender,
         senderIp: r.senderIp,
         recipientPersonIds: r.recipientPersonIds,
-        recipientFunderIds: r.recipientFunderIds,
+        recipientOrganizationIds: r.recipientOrganizationIds,
         recipientHouseholdIds: r.recipientHouseholdIds,
         createdAt: r.createdAt.toISOString(),
         totalViews: r.totalViews ?? 0,
@@ -612,27 +612,27 @@ router.get(
   asyncHandler(async (req, res) => {
     const personId =
       typeof req.query.personId === "string" ? req.query.personId : undefined;
-    const funderId =
-      typeof req.query.funderId === "string" ? req.query.funderId : undefined;
+    const organizationId =
+      typeof req.query.organizationId === "string" ? req.query.organizationId : undefined;
     const householdId =
       typeof req.query.householdId === "string"
         ? req.query.householdId
         : undefined;
-    const presentCount = [personId, funderId, householdId].filter(
+    const presentCount = [personId, organizationId, householdId].filter(
       (x) => !!x,
     ).length;
     if (presentCount !== 1) {
       res.status(400).json({
         error: "validation_error",
         message:
-          "Exactly one of personId, funderId, householdId is required.",
+          "Exactly one of personId, organizationId, householdId is required.",
       });
       return;
     }
     const whereExpr = personId
       ? sql`${trackedEmails.recipientPersonIds} @> ARRAY[${personId}]::text[]`
-      : funderId
-        ? sql`${trackedEmails.recipientFunderIds} @> ARRAY[${funderId}]::text[]`
+      : organizationId
+        ? sql`${trackedEmails.recipientOrganizationIds} @> ARRAY[${organizationId}]::text[]`
         : sql`${trackedEmails.recipientHouseholdIds} @> ARRAY[${householdId}]::text[]`;
 
     const rows = await db
@@ -643,7 +643,7 @@ router.get(
         sender: trackedEmails.sender,
         senderIp: trackedEmails.senderIp,
         recipientPersonIds: trackedEmails.recipientPersonIds,
-        recipientFunderIds: trackedEmails.recipientFunderIds,
+        recipientOrganizationIds: trackedEmails.recipientOrganizationIds,
         recipientHouseholdIds: trackedEmails.recipientHouseholdIds,
         createdAt: trackedEmails.createdAt,
         totalViews: sql<number>`COUNT(${trackedEmailViews.id})::int`,
@@ -666,7 +666,7 @@ router.get(
         sender: r.sender,
         senderIp: r.senderIp,
         recipientPersonIds: r.recipientPersonIds,
-        recipientFunderIds: r.recipientFunderIds,
+        recipientOrganizationIds: r.recipientOrganizationIds,
         recipientHouseholdIds: r.recipientHouseholdIds,
         createdAt: r.createdAt.toISOString(),
         totalViews: r.totalViews ?? 0,

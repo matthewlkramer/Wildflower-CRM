@@ -86,16 +86,7 @@ const peopleListSelect = {
   mostRecentGiftDate: sql<string | null>`${peopleMostRecentGiftExpr}`.as("most_recent_gift_date"),
   openOpportunityCount: sql<number>`${peopleOpenOppCountExpr}`.as("open_opportunity_count"),
   // DISTINCT to dedupe in case a person has multiple current role rows
-  // at the same funder (different role titles, etc.).
-  activeFunderNames: sql<string[] | null>`(
-    SELECT ARRAY_AGG(DISTINCT f.name ORDER BY f.name)
-    FROM people_entity_roles per
-    JOIN funders f ON f.id = per.funder_id
-    WHERE per.person_id = ${PEOPLE_ID}
-      AND per.current = 'current'
-      AND per.funder_id IS NOT NULL
-  )`.as("active_funder_names"),
-  // Current non-funding organization roles, mirroring activeFunderNames.
+  // at the same organization (different role titles, etc.).
   activeOrganizationNames: sql<string[] | null>`(
     SELECT ARRAY_AGG(DISTINCT o.name ORDER BY o.name)
     FROM people_entity_roles per
@@ -104,16 +95,7 @@ const peopleListSelect = {
       AND per.current = 'current'
       AND per.organization_id IS NOT NULL
   )`.as("active_organization_names"),
-  // Past funder roles (current='past') — used as fallback in the list column.
-  pastFunderNames: sql<string[] | null>`(
-    SELECT ARRAY_AGG(DISTINCT f.name ORDER BY f.name)
-    FROM people_entity_roles per
-    JOIN funders f ON f.id = per.funder_id
-    WHERE per.person_id = ${PEOPLE_ID}
-      AND per.current = 'past'
-      AND per.funder_id IS NOT NULL
-  )`.as("past_funder_names"),
-  // Past non-funding organization roles — fallback alongside pastFunderNames.
+  // Past organization roles — fallback in the list column.
   pastOrganizationNames: sql<string[] | null>`(
     SELECT ARRAY_AGG(DISTINCT o.name ORDER BY o.name)
     FROM people_entity_roles per

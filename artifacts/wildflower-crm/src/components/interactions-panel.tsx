@@ -30,16 +30,16 @@ function formatWhen(iso: string): string {
 
 interface Props {
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
 }
 
-export function InteractionsPanel({ personId, funderId, householdId }: Props) {
+export function InteractionsPanel({ personId, organizationId, householdId }: Props) {
   // List endpoint scopes by exactly one of these. Detail pages pass the
   // one that matches their entity.
   const { data, isLoading } = useListInteractions({
     personId,
-    funderId,
+    organizationId,
     householdId,
     limit: 25,
   });
@@ -50,7 +50,7 @@ export function InteractionsPanel({ personId, funderId, householdId }: Props) {
         <CardTitle className="text-lg">Interactions</CardTitle>
         <LogInteractionDialog
           prefillPersonId={personId}
-          prefillFunderId={funderId}
+          prefillFunderId={organizationId}
           prefillHouseholdId={householdId}
           compact
         />

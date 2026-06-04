@@ -71,7 +71,7 @@ function formatDate(iso?: string | null): string {
 
 interface PanelContext {
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   opportunityId?: string;
   giftId?: string;
@@ -82,7 +82,7 @@ interface PanelContext {
 export function TasksPanel(ctx: PanelContext) {
   const { data, isLoading } = useListTasks({
     personId: ctx.personId,
-    funderId: ctx.funderId,
+    organizationId: ctx.organizationId,
     householdId: ctx.householdId,
     opportunityId: ctx.opportunityId,
     giftId: ctx.giftId,
@@ -285,7 +285,7 @@ export function AddTaskDialog({
                 dueDate: dueDate || undefined,
                 assigneeUserId: assigneeUserId || undefined,
                 personIds: mergeLinks(pinned.personIds, links.personIds),
-                funderIds: mergeLinks(pinned.funderIds, links.funderIds),
+                organizationIds: mergeLinks(pinned.organizationIds, links.organizationIds),
                 householdIds: mergeLinks(pinned.householdIds, links.householdIds),
                 opportunityIds: mergeLinks(pinned.opportunityIds, links.opportunityIds),
                 giftIds: mergeLinks(pinned.giftIds, links.giftIds),
@@ -380,7 +380,7 @@ export function AddTaskDialog({
 function pinnedFromCtx(ctx: PanelContext): EntityLinks {
   return {
     personIds: ctx.personId ? [ctx.personId] : [],
-    funderIds: ctx.funderId ? [ctx.funderId] : [],
+    organizationIds: ctx.organizationId ? [ctx.organizationId] : [],
     householdIds: ctx.householdId ? [ctx.householdId] : [],
     opportunityIds: ctx.opportunityId ? [ctx.opportunityId] : [],
     giftIds: ctx.giftId ? [ctx.giftId] : [],
@@ -396,7 +396,7 @@ function linksFromDefault(defaultLinks?: Partial<EntityLinks>): EntityLinks {
   if (!defaultLinks) return EMPTY_LINKS;
   return {
     personIds: defaultLinks.personIds ?? [],
-    funderIds: defaultLinks.funderIds ?? [],
+    organizationIds: defaultLinks.organizationIds ?? [],
     householdIds: defaultLinks.householdIds ?? [],
     opportunityIds: defaultLinks.opportunityIds ?? [],
     giftIds: defaultLinks.giftIds ?? [],

@@ -5,12 +5,12 @@ import {
   useGetCurrentUser,
   useListTasks,
   useListNotes,
-  useListFunders,
+  useListOrganizations,
   getListTasksQueryKey,
   getListNotesQueryKey,
-  getListFundersQueryKey,
+  getListOrganizationsQueryKey,
   type TaskStatus,
-  type ListFundersParams,
+  type ListOrganizationsParams,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,7 +50,7 @@ export default function Dashboard() {
 
   const countTiles = [
     { label: "People", value: counts?.people, href: "/individuals", testId: "tile-people" },
-    { label: "Funding entities", value: counts?.funders, href: "/funding-entities", testId: "tile-funders" },
+    { label: "Funding entities", value: counts?.organizations, href: "/organizations", testId: "tile-funders" },
     { label: "Organizations", value: counts?.organizations, href: "/organizations", testId: "tile-orgs" },
     { label: "Opportunities", value: counts?.opportunities, href: "/opportunities", testId: "tile-opps" },
     { label: "Open opps", value: counts?.openOpportunities, href: "/opportunities", testId: "tile-open-opps" },
@@ -239,15 +239,15 @@ export default function Dashboard() {
 function TopPrioritiesRow() {
   const { data: me } = useGetCurrentUser();
   const userId = me?.id;
-  const teamParams: ListFundersParams = { priority: ["top"], limit: 100 };
-  const mineParams: ListFundersParams = userId
+  const teamParams: ListOrganizationsParams = { priority: ["top"], limit: 100 };
+  const mineParams: ListOrganizationsParams = userId
     ? { priority: ["top"], ownerUserId: [userId], limit: 100 }
     : { priority: ["top"], limit: 0 };
-  const { data: teamData } = useListFunders(teamParams, {
-    query: { queryKey: getListFundersQueryKey(teamParams) },
+  const { data: teamData } = useListOrganizations(teamParams, {
+    query: { queryKey: getListOrganizationsQueryKey(teamParams) },
   });
-  const { data: mineData } = useListFunders(mineParams, {
-    query: { enabled: !!userId, queryKey: getListFundersQueryKey(mineParams) },
+  const { data: mineData } = useListOrganizations(mineParams, {
+    query: { enabled: !!userId, queryKey: getListOrganizationsQueryKey(mineParams) },
   });
   const team = teamData?.data ?? [];
   const mine = mineData?.data ?? [];
@@ -258,7 +258,7 @@ function TopPrioritiesRow() {
       <ul className="space-y-1">
         {rows.map((f) => (
           <li key={f.id} className="text-sm border rounded-md p-2 hover:bg-muted/50 transition-colors">
-            <Link href={`/funding-entities/${f.id}`} className="block truncate" data-testid={`dash-top-priority-${f.id}`}>
+            <Link href={`/organizations/${f.id}`} className="block truncate" data-testid={`dash-top-priority-${f.id}`}>
               {f.name}
             </Link>
           </li>
@@ -272,7 +272,7 @@ function TopPrioritiesRow() {
           <CardTitle className="text-lg">My top priorities</CardTitle>
         </CardHeader>
         <CardContent>
-          {renderList(mine, "No top-priority funders assigned to you.")}
+          {renderList(mine, "No top-priority organizations assigned to you.")}
         </CardContent>
       </Card>
       <Card data-testid="card-team-top-priorities">
@@ -280,7 +280,7 @@ function TopPrioritiesRow() {
           <CardTitle className="text-lg">Team top priorities</CardTitle>
         </CardHeader>
         <CardContent>
-          {renderList(team, "No top-priority funders.")}
+          {renderList(team, "No top-priority organizations.")}
         </CardContent>
       </Card>
     </div>

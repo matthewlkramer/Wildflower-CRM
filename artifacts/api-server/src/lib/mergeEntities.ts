@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { db } from "@workspace/db";
-import { funders, people, bulkOperations } from "@workspace/db/schema";
+import { organizations, people, bulkOperations } from "@workspace/db/schema";
 import { inArray, sql, type SQL } from "drizzle-orm";
 import { newId } from "./helpers";
 import { getAppUser } from "./appRequest";
@@ -37,7 +37,7 @@ export interface MergeRef {
 }
 
 export interface MergeEntityConfig {
-  kind: "funders" | "people";
+  kind: "organizations" | "people";
   /** Audit-log entity name, e.g. "funders_merge". */
   entity: string;
   /** Drizzle table for the entity itself (funders / people). */
@@ -68,26 +68,26 @@ export interface MergeEntityConfig {
   overrideFields: ReadonlyArray<string>;
 }
 
-const FUNDER_FK_REFS: ReadonlyArray<MergeRef> = [
-  { table: "funders", col: "parent_funder_id" },
-  { table: "opportunities_and_pledges", col: "funder_id" },
-  { table: "gifts_and_payments", col: "funder_id" },
-  { table: "people_entity_roles", col: "funder_id" },
-  { table: "addresses", col: "funder_id" },
-  { table: "emails", col: "funder_id" },
-  { table: "phone_numbers", col: "funder_id" },
-  { table: "meeting_notes", col: "funder_id" },
-  { table: "email_proposals", col: "target_funder_id" },
+const ORGANIZATION_FK_REFS: ReadonlyArray<MergeRef> = [
+  { table: "organizations", col: "parent_organization_id" },
+  { table: "opportunities_and_pledges", col: "organization_id" },
+  { table: "gifts_and_payments", col: "organization_id" },
+  { table: "people_entity_roles", col: "organization_id" },
+  { table: "addresses", col: "organization_id" },
+  { table: "emails", col: "organization_id" },
+  { table: "phone_numbers", col: "organization_id" },
+  { table: "meeting_notes", col: "organization_id" },
+  { table: "email_proposals", col: "target_organization_id" },
 ];
 
-const FUNDER_ARRAY_REFS: ReadonlyArray<MergeRef> = [
-  { table: "notes", col: "funder_ids" },
-  { table: "interactions", col: "funder_ids" },
-  { table: "tasks", col: "funder_ids" },
-  { table: "media_mentions", col: "funder_ids" },
-  { table: "calendar_events", col: "matched_funder_ids" },
-  { table: "email_messages", col: "matched_funder_ids" },
-  { table: "tracked_emails", col: "recipient_funder_ids" },
+const ORGANIZATION_ARRAY_REFS: ReadonlyArray<MergeRef> = [
+  { table: "notes", col: "organization_ids" },
+  { table: "interactions", col: "organization_ids" },
+  { table: "tasks", col: "organization_ids" },
+  { table: "media_mentions", col: "organization_ids" },
+  { table: "calendar_events", col: "matched_organization_ids" },
+  { table: "email_messages", col: "matched_organization_ids" },
+  { table: "tracked_emails", col: "recipient_organization_ids" },
 ];
 
 const PERSON_FK_REFS: ReadonlyArray<MergeRef> = [
@@ -117,9 +117,10 @@ const PERSON_ARRAY_REFS: ReadonlyArray<MergeRef> = [
   { table: "tracked_emails", col: "recipient_person_ids" },
 ];
 
-const FUNDER_OVERRIDE_FIELDS: ReadonlyArray<string> = [
+const ORGANIZATION_OVERRIDE_FIELDS: ReadonlyArray<string> = [
   "name",
-  "fundingEntitySubtype",
+  "entityType",
+  "issuesGrants",
   "makesPris",
   "numberOfEmployees",
   "capacityRating",
@@ -144,7 +145,7 @@ const FUNDER_OVERRIDE_FIELDS: ReadonlyArray<string> = [
   "connectionStatus",
   "enthusiasm",
   "strategicAlignment",
-  "parentFunderId",
+  "parentOrganizationId",
   "paymentIntermediaryId",
   "priority",
 ];
@@ -183,13 +184,13 @@ const PERSON_OVERRIDE_FIELDS: ReadonlyArray<string> = [
   "priority",
 ];
 
-export const FUNDER_MERGE_CONFIG: MergeEntityConfig = {
-  kind: "funders",
-  entity: "funders_merge",
-  table: funders,
-  selfRefCol: "parent_funder_id",
-  fkRefs: FUNDER_FK_REFS,
-  arrayRefs: FUNDER_ARRAY_REFS,
+export const ORGANIZATION_MERGE_CONFIG: MergeEntityConfig = {
+  kind: "organizations",
+  entity: "organizations_merge",
+  table: organizations,
+  selfRefCol: "parent_organization_id",
+  fkRefs: ORGANIZATION_FK_REFS,
+  arrayRefs: ORGANIZATION_ARRAY_REFS,
   ownArrayCols: [
     "regionIds",
     "interestsThematic",
@@ -198,7 +199,7 @@ export const FUNDER_MERGE_CONFIG: MergeEntityConfig = {
     "historicalNames",
   ],
   appendNameToHistorical: true,
-  overrideFields: FUNDER_OVERRIDE_FIELDS,
+  overrideFields: ORGANIZATION_OVERRIDE_FIELDS,
 };
 
 export const PERSON_MERGE_CONFIG: MergeEntityConfig = {
@@ -446,7 +447,7 @@ export async function mergeEntity(
     // 4. Self-reference cleanup: the primary must never point at itself
     //    or at a (soon-to-be-deleted) loser.
     await tx.execute(sql`
-      UPDATE ${ident(cfg.kind === "funders" ? "funders" : "people")}
+      UPDATE ${ident(cfg.kind === "organizations" ? "organizations" : "people")}
       SET ${ident(cfg.selfRefCol)} = NULL
       WHERE id = ${primaryId}
         AND (${ident(cfg.selfRefCol)} = ${primaryId} OR ${ident(cfg.selfRefCol)} = ANY(${idArray(loserIds)}))

@@ -20,18 +20,18 @@ import {
 } from "@/components/ui/command";
 import {
   useListPeople,
-  useListFunders,
+  useListOrganizations,
   useListHouseholds,
   useListOpportunitiesAndPledges,
   useListGiftsAndPayments,
   getListPeopleQueryKey,
-  getListFundersQueryKey,
+  getListOrganizationsQueryKey,
   getListHouseholdsQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
   getListGiftsAndPaymentsQueryKey,
   useGetCurrentUser,
 } from "@workspace/api-client-react";
-import { displayPersonName, displayFunderName } from "@/lib/visibility";
+import { displayPersonName, displayOrganizationName } from "@/lib/visibility";
 import {
   Building2,
   Gift,
@@ -94,8 +94,8 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
   const people = useListPeople(params, {
     query: { enabled, queryKey: getListPeopleQueryKey(params) },
   });
-  const funders = useListFunders(params, {
-    query: { enabled, queryKey: getListFundersQueryKey(params) },
+  const funders = useListOrganizations(params, {
+    query: { enabled, queryKey: getListOrganizationsQueryKey(params) },
   });
   const households = useListHouseholds(params, {
     query: { enabled, queryKey: getListHouseholdsQueryKey(params) },
@@ -168,11 +168,11 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
                 <CommandItem
                   key={`fnd-${f.id}`}
                   value={`fnd-${f.id}`}
-                  onSelect={() => go(`/funding-entities/${f.id}`)}
+                  onSelect={() => go(`/organizations/${f.id}`)}
                   data-testid={`palette-funder-${f.id}`}
                 >
                   <Building2 />
-                  <span className="truncate">{displayFunderName(f, viewer)}</span>
+                  <span className="truncate">{displayOrganizationName(f, viewer)}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

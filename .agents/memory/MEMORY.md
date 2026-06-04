@@ -1,4 +1,5 @@
-- [wildflower-crm detail routes](wildflower-crm-routes.md) — funders live at /funding-entities, not /funders; pledge detail inherits opportunity.
+- [wildflower-crm detail routes](wildflower-crm-routes.md) — organizations live at /organizations (was /funding-entities); pledge detail inherits opportunity.
+- [funders→organizations consolidation](funders-organizations-consolidation.md) — funders+organizations merged; issuesGrants flag distinguishes grant-makers; DonorType "funder"→"organization"; Airtable importer still needs updating.
 - [wildflower-crm activity feed scoping](wildflower-activity-feed-scoping.md) — keep notes/tasks scope separate from donor-relationship scope; API list filters AND together.
 - [wildflower list-page chooser pattern](wildflower-list-chooser-pattern.md) — 4 list pages share filter/column choosers; saved views persist null at default, known/hidden keeps opt-in filters hidden for predating views.
 - [media-mention GDELT dedupe](media-ingest-dedupe.md) — dedupe must stay DB-atomic ON CONFLICT upsert; manual script goes through the lock; never AI-summarize auto headlines.

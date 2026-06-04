@@ -451,7 +451,7 @@ async function processOneEvent(
         status: event.status ?? null,
         htmlLink: event.htmlLink ?? null,
         matchedPersonIds: match.personIds,
-        matchedFunderIds: match.funderIds,
+        matchedOrganizationIds: match.organizationIds,
         matchedHouseholdIds: match.householdIds,
       })
       .onConflictDoUpdate({
@@ -471,7 +471,7 @@ async function processOneEvent(
           status: event.status ?? null,
           htmlLink: event.htmlLink ?? null,
           matchedPersonIds: match.personIds,
-          matchedFunderIds: match.funderIds,
+          matchedOrganizationIds: match.organizationIds,
           matchedHouseholdIds: match.householdIds,
           updatedAt: new Date(),
         },

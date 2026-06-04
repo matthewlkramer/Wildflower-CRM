@@ -76,7 +76,7 @@ export function MergeDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Singular noun, e.g. "funding entity" / "person". */
+  /** Singular noun, e.g. "organization" / "person". */
   entityNoun: string;
   /** Full records for the selected ids (scalar fields read for conflicts). */
   records: ReadonlyArray<MergeRecord>;

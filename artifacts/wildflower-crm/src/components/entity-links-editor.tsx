@@ -13,10 +13,10 @@ import {
 } from "@/components/ui/command";
 import {
   usePersonSearch,
-  useFunderSearch,
+  useOrganizationSearch,
   useHouseholdSearch,
   usePersonName,
-  useFunderName,
+  useOrganizationName,
   useHouseholdName,
   type PickerItem,
 } from "@/components/entity-picker";
@@ -70,11 +70,11 @@ function useGiftName(id: string | null): string | null {
   return data ? giftLabel(data) : null;
 }
 
-type EntityType = "person" | "funder" | "household" | "opportunity" | "gift";
+type EntityType = "person" | "organization" | "household" | "opportunity" | "gift";
 
 const TYPE_LABEL: Record<EntityType, string> = {
   person: "Person",
-  funder: "Funder",
+  organization: "Organization",
   household: "Household",
   opportunity: "Opportunity",
   gift: "Gift",
@@ -82,7 +82,7 @@ const TYPE_LABEL: Record<EntityType, string> = {
 
 export interface EntityLinks {
   personIds: string[];
-  funderIds: string[];
+  organizationIds: string[];
   householdIds: string[];
   opportunityIds: string[];
   giftIds: string[];
@@ -90,7 +90,7 @@ export interface EntityLinks {
 
 export const EMPTY_LINKS: EntityLinks = {
   personIds: [],
-  funderIds: [],
+  organizationIds: [],
   householdIds: [],
   opportunityIds: [],
   giftIds: [],
@@ -99,7 +99,7 @@ export const EMPTY_LINKS: EntityLinks = {
 function FieldOf(t: EntityType): keyof EntityLinks {
   return ({
     person: "personIds",
-    funder: "funderIds",
+    organization: "organizationIds",
     household: "householdIds",
     opportunity: "opportunityIds",
     gift: "giftIds",
@@ -118,7 +118,7 @@ function AddPicker({
   const search = (() => {
     switch (type) {
       case "person": return usePersonSearch;
-      case "funder": return useFunderSearch;
+      case "organization": return useOrganizationSearch;
       case "household": return useHouseholdSearch;
       case "opportunity": return useOpportunitySearch;
       case "gift": return useGiftSearch;
@@ -209,7 +209,7 @@ function ResolvedChip({ type, id, onRemove }: { type: EntityType; id: string; on
   const resolver = (() => {
     switch (type) {
       case "person": return usePersonName;
-      case "funder": return useFunderName;
+      case "organization": return useOrganizationName;
       case "household": return useHouseholdName;
       case "opportunity": return useOpportunityName;
       case "gift": return useGiftName;
@@ -229,7 +229,7 @@ export function EntityLinksEditor({
   /** IDs that came from page context — shown but not removable. */
   pinned?: Partial<EntityLinks>;
 }) {
-  const types: EntityType[] = ["person", "funder", "household", "opportunity", "gift"];
+  const types: EntityType[] = ["person", "organization", "household", "opportunity", "gift"];
   const pin = pinned ?? {};
   function add(type: EntityType, id: string) {
     const field = FieldOf(type);

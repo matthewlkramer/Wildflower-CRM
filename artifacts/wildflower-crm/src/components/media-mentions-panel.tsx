@@ -196,15 +196,15 @@ export function MediaMentionRow({ row }: { row: MediaMention }) {
  */
 export function PinnedMediaCard({
   personId,
-  funderId,
+  organizationId,
 }: {
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
 }) {
-  const params = { personId, funderId, pinned: true, limit: 50 };
+  const params = { personId, organizationId, pinned: true, limit: 50 };
   const { data, isLoading } = useListMediaMentions(params, {
     query: {
-      enabled: !!(personId || funderId),
+      enabled: !!(personId || organizationId),
       queryKey: getListMediaMentionsQueryKey(params),
     },
   });

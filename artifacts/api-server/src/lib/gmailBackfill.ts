@@ -322,7 +322,7 @@ async function promoteSkipToMatched(
       hasAttachments: !summaryOnly && parts.attachments.length > 0,
       attachmentsComplete: summaryOnly || parts.attachments.length === 0,
       matchedPersonIds: match.personIds,
-      matchedFunderIds: match.funderIds,
+      matchedOrganizationIds: match.organizationIds,
       matchedHouseholdIds: match.householdIds,
     })
     .onConflictDoNothing({

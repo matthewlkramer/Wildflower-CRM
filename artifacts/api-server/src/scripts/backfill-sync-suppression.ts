@@ -125,7 +125,7 @@ async function backfillPersonWindows(): Promise<void> {
       sentAt: emailMessages.sentAt,
       fromEmail: emailMessages.fromEmail,
       matchedPersonIds: emailMessages.matchedPersonIds,
-      matchedFunderIds: emailMessages.matchedFunderIds,
+      matchedOrganizationIds: emailMessages.matchedOrganizationIds,
       matchedHouseholdIds: emailMessages.matchedHouseholdIds,
     })
     .from(emailMessages)
@@ -151,7 +151,7 @@ async function backfillPersonWindows(): Promise<void> {
     // Only move to skip when ALL three match dimensions are empty — an email
     // matched to a funder or household that also happens to include a suppressed
     // person must stay in email_messages with its person array trimmed.
-    const hasFunderMatch = (row.matchedFunderIds ?? []).length > 0;
+    const hasFunderMatch = (row.matchedOrganizationIds ?? []).length > 0;
     const hasHouseholdMatch = (row.matchedHouseholdIds ?? []).length > 0;
     const fullyUnmatched = cleaned.length === 0 && !hasFunderMatch && !hasHouseholdMatch;
 

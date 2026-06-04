@@ -70,9 +70,9 @@ router.get(
         sql`${emailMessages.matchedPersonIds} @> ARRAY[${q.personId}]::text[]`,
       );
     }
-    if (q.funderId) {
+    if (q.organizationId) {
       filters.push(
-        sql`${emailMessages.matchedFunderIds} @> ARRAY[${q.funderId}]::text[]`,
+        sql`${emailMessages.matchedOrganizationIds} @> ARRAY[${q.organizationId}]::text[]`,
       );
     }
     if (q.householdId) {
@@ -99,7 +99,7 @@ router.get(
           hasAttachments: emailMessages.hasAttachments,
           isPrivate: emailMessages.isPrivate,
           matchedPersonIds: emailMessages.matchedPersonIds,
-          matchedFunderIds: emailMessages.matchedFunderIds,
+          matchedOrganizationIds: emailMessages.matchedOrganizationIds,
           matchedHouseholdIds: emailMessages.matchedHouseholdIds,
           aiSummary: emailMessages.aiSummary,
         })
@@ -112,7 +112,7 @@ router.get(
     ]);
     const trackingMap = await computeTracking(rows, {
       personId: q.personId,
-      funderId: q.funderId,
+      organizationId: q.organizationId,
       householdId: q.householdId,
     });
     const data = rows.map((r) => {

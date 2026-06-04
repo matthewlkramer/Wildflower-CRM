@@ -1,9 +1,9 @@
 import { db } from "@workspace/db";
-import { emails, funders, personSuppressionWindows } from "@workspace/db/schema";
-import { and, inArray, lte, or, sql, isNull, gte } from "drizzle-orm";
+import { emails, organizations, personSuppressionWindows } from "@workspace/db/schema";
+import { and, eq, inArray, lte, or, sql, isNull, gte } from "drizzle-orm";
 
 /**
- * Lookup which people / funders / households in the CRM are
+ * Lookup which people / organizations / households in the CRM are
  * associated with the given set of email addresses. Used by the
  * Gmail + Calendar sync workers to decide whether a message /
  * event is worth keeping.
@@ -26,10 +26,10 @@ import { and, inArray, lte, or, sql, isNull, gte } from "drizzle-orm";
  * skip path.
  *
  * NB: the `emails` table allows owners across five entity types
- * (person/funder/organization/payment_intermediary/household) but
- * the timeline surface only renders against people / funders /
- * households, so org / PI ownership is ignored on purpose. If we
- * ever want org timelines we'll add a fourth array here without
+ * (person/organization/payment_intermediary/household) but
+ * the timeline surface only renders against people / organizations /
+ * households, so PI ownership is ignored on purpose. If we
+ * ever want PI timelines we'll add a fourth array here without
  * touching callers.
  */
 
@@ -37,13 +37,13 @@ const INTERNAL_DOMAINS = new Set(["wildflowerschools.org"]);
 
 export interface EmailMatchResult {
   personIds: string[];
-  funderIds: string[];
+  organizationIds: string[];
   householdIds: string[];
 }
 
 export const EMPTY_MATCH: EmailMatchResult = {
   personIds: [],
-  funderIds: [],
+  organizationIds: [],
   householdIds: [],
 };
 
@@ -115,10 +115,10 @@ export async function matchEmails(
   const cleaned = normalizeForMatching(addresses, mailboxOwnerEmail);
   if (cleaned.length === 0) return EMPTY_MATCH;
 
-  // Domains we'll match against funders.email_domain so that mail
-  // to/from an unrecognized person at a known funder org (e.g. a
+  // Domains we'll match against organizations.email_domain so that mail
+  // to/from an unrecognized person at a known org (e.g. a
   // new program officer we haven't added yet) still threads onto
-  // the funder timeline. Internal domains are already stripped by
+  // the organization timeline. Internal domains are already stripped by
   // normalizeForMatching above.
   const domains = [...new Set(cleaned.map(domainOf).filter((d): d is string => !!d))];
 
@@ -130,34 +130,34 @@ export async function matchEmails(
     db
       .select({
         personId: emails.personId,
-        funderId: emails.funderId,
+        organizationId: emails.organizationId,
         householdId: emails.householdId,
       })
       .from(emails)
       .where(inArray(sql`lower(${emails.email})`, cleaned)),
     domains.length === 0
-      ? Promise.resolve([] as Array<{ funderId: string }>)
+      ? Promise.resolve([] as Array<{ organizationId: string }>)
       : db
-          .select({ funderId: funders.id })
-          .from(funders)
-          .where(inArray(sql`lower(${funders.emailDomain})`, domains)),
+          .select({ organizationId: organizations.id })
+          .from(organizations)
+          .where(inArray(sql`lower(${organizations.emailDomain})`, domains)),
     loadSuppressedPersonIds(messageDate),
   ]);
 
   const personIds = new Set<string>();
-  const funderIds = new Set<string>();
+  const organizationIds = new Set<string>();
   const householdIds = new Set<string>();
   for (const r of addrRows) {
     if (r.personId && !suppressedIds.has(r.personId)) personIds.add(r.personId);
-    if (r.funderId) funderIds.add(r.funderId);
+    if (r.organizationId) organizationIds.add(r.organizationId);
     if (r.householdId) householdIds.add(r.householdId);
   }
   for (const r of domainRows) {
-    if (r.funderId) funderIds.add(r.funderId);
+    if (r.organizationId) organizationIds.add(r.organizationId);
   }
   return {
     personIds: [...personIds].sort(),
-    funderIds: [...funderIds].sort(),
+    organizationIds: [...organizationIds].sort(),
     householdIds: [...householdIds].sort(),
   };
 }
@@ -165,7 +165,7 @@ export async function matchEmails(
 export function isMatchEmpty(m: EmailMatchResult): boolean {
   return (
     m.personIds.length === 0 &&
-    m.funderIds.length === 0 &&
+    m.organizationIds.length === 0 &&
     m.householdIds.length === 0
   );
 }

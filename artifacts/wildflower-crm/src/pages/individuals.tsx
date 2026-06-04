@@ -37,7 +37,7 @@ import {
   formatDateShort,
   formatEnum,
   formatEnthusiasm,
-  formatFunderNameShort,
+  formatOrganizationNameShort,
 } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useRegionNameMap } from "@/components/region-picker";
@@ -197,9 +197,9 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
       label: "Active funders / orgs",
       tdClassName: "text-xs text-muted-foreground max-w-[240px]",
       cell: (p) => {
-        const activeFunders = p.activeFunderNames ?? [];
+        const activeFunders = p.activeOrganizationNames ?? [];
         if (activeFunders.length > 0)
-          return activeFunders.map(formatFunderNameShort).join(", ");
+          return activeFunders.map(formatOrganizationNameShort).join(", ");
 
         const activeOrgs = p.activeOrganizationNames ?? [];
         if (activeOrgs.length > 0)
@@ -209,7 +209,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
             </span>
           );
 
-        const pastFunders = (p.pastFunderNames ?? []).map(formatFunderNameShort);
+        const pastFunders = (p.pastOrganizationNames ?? []).map(formatOrganizationNameShort);
         const pastOrgs = p.pastOrganizationNames ?? [];
         const past = [...pastFunders, ...pastOrgs];
         if (past.length > 0)
@@ -642,7 +642,7 @@ export default function Individuals() {
             r.lifetimeGiving != null ? Number(r.lifetimeGiving) : null,
           lastGift: (r) => r.mostRecentGiftDate ?? null,
           openAsks: (r) => r.openOpportunityCount ?? null,
-          activeFunders: (r) => (r.activeFunderNames ?? []).length || null,
+          activeFunders: (r) => (r.activeOrganizationNames ?? []).length || null,
           connectionStatus: (r) => r.connectionStatus ?? null,
           enthusiasm: (r) => r.enthusiasm ?? null,
           owner: (r) =>

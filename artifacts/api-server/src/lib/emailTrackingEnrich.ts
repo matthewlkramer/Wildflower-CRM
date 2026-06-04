@@ -113,7 +113,7 @@ export function matchSentEmailTracking(
 
 export interface TrackingScope {
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
 }
 
@@ -134,9 +134,9 @@ export async function computeTracking(
     scopePreds.push(
       sql`${trackedEmails.recipientPersonIds} @> ARRAY[${scope.personId}]::text[]`,
     );
-  if (scope.funderId)
+  if (scope.organizationId)
     scopePreds.push(
-      sql`${trackedEmails.recipientFunderIds} @> ARRAY[${scope.funderId}]::text[]`,
+      sql`${trackedEmails.recipientOrganizationIds} @> ARRAY[${scope.organizationId}]::text[]`,
     );
   if (scope.householdId)
     scopePreds.push(

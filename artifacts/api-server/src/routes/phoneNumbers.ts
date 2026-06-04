@@ -41,7 +41,6 @@ router.post(
     // the API returns 400 instead of letting the DB raise a 500.
     const ownerCount = [
       body.personId,
-      body.funderId,
       body.organizationId,
       body.paymentIntermediaryId,
       body.householdId,
@@ -49,7 +48,7 @@ router.post(
     if (ownerCount !== 1) {
       res.status(400).json({
         error:
-          "exactly one of personId / funderId / organizationId / paymentIntermediaryId / householdId is required",
+          "exactly one of personId / organizationId / paymentIntermediaryId / householdId is required",
       });
       return;
     }

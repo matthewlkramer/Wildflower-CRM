@@ -11,7 +11,7 @@ import {
   useUpdateAddress,
   useDeleteAddress,
   getGetPersonQueryKey,
-  getGetFunderQueryKey,
+  getGetOrganizationQueryKey,
   type Email,
   type PhoneNumber,
   type Address,
@@ -59,18 +59,18 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
  */
 export type ContactOwner =
   | { kind: "person"; id: string }
-  | { kind: "funder"; id: string };
+  | { kind: "organization"; id: string };
 
-function ownerCreateField(owner: ContactOwner): { personId: string } | { funderId: string } {
+function ownerCreateField(owner: ContactOwner): { personId: string } | { organizationId: string } {
   return owner.kind === "person"
     ? { personId: owner.id }
-    : { funderId: owner.id };
+    : { organizationId: owner.id };
 }
 
 function ownerQueryKey(owner: ContactOwner): QueryKey {
   return owner.kind === "person"
     ? getGetPersonQueryKey(owner.id)
-    : getGetFunderQueryKey(owner.id);
+    : getGetOrganizationQueryKey(owner.id);
 }
 
 const VALIDITY_OPTIONS: { value: ContactValidity; label: string }[] = [

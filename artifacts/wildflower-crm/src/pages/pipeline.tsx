@@ -335,9 +335,9 @@ function OppCard({
       </div>
       <div className="mt-1 text-xs text-muted-foreground">
         <DonorCell
-          funderId={opp.funderId}
-          funderName={opp.funderName}
-          funderPriority={opp.funderPriority}
+          organizationId={opp.organizationId}
+          organizationName={opp.organizationName}
+          organizationPriority={opp.organizationPriority}
           householdId={opp.householdId}
           householdName={opp.householdName}
           individualGiverPersonId={opp.individualGiverPersonId}

@@ -30,7 +30,7 @@ export const ListEmailProposalsQueryParams = zod.object({
     .string()
     .optional()
     .describe("Filter to proposals targeting this person."),
-  funderId: zod.coerce
+  organizationId: zod.coerce
     .string()
     .optional()
     .describe("Filter to proposals targeting this funder."),
@@ -59,7 +59,7 @@ export const ListEmailProposalsResponse = zod.object({
       status: zod.enum(["pending", "applied", "rejected", "ignored"]),
       sourceMessageId: zod.string().nullish(),
       targetPersonId: zod.string().nullish(),
-      targetFunderId: zod.string().nullish(),
+      targetOrganizationId: zod.string().nullish(),
       targetEmailId: zod.string().nullish(),
       subjectEmail: zod.string().nullish(),
       subjectName: zod.string().nullish(),
@@ -152,7 +152,7 @@ export const AcceptEmailProposalResponse = zod.object({
   status: zod.enum(["pending", "applied", "rejected", "ignored"]),
   sourceMessageId: zod.string().nullish(),
   targetPersonId: zod.string().nullish(),
-  targetFunderId: zod.string().nullish(),
+  targetOrganizationId: zod.string().nullish(),
   targetEmailId: zod.string().nullish(),
   subjectEmail: zod.string().nullish(),
   subjectName: zod.string().nullish(),
@@ -219,7 +219,7 @@ export const RejectEmailProposalResponse = zod.object({
   status: zod.enum(["pending", "applied", "rejected", "ignored"]),
   sourceMessageId: zod.string().nullish(),
   targetPersonId: zod.string().nullish(),
-  targetFunderId: zod.string().nullish(),
+  targetOrganizationId: zod.string().nullish(),
   targetEmailId: zod.string().nullish(),
   subjectEmail: zod.string().nullish(),
   subjectName: zod.string().nullish(),
@@ -760,24 +760,28 @@ export const ListFiscalYearsResponseItem = zod.object({
 });
 export const ListFiscalYearsResponse = zod.array(ListFiscalYearsResponseItem);
 
-export const listFundersQueryLimitDefault = 50;
-export const listFundersQueryLimitMax = 10000;
+export const listOrganizationsQueryLimitDefault = 50;
+export const listOrganizationsQueryLimitMax = 10000;
 
-export const listFundersQueryPageDefault = 1;
+export const listOrganizationsQueryPageDefault = 1;
 
-export const ListFundersQueryParams = zod.object({
+export const ListOrganizationsQueryParams = zod.object({
   search: zod.coerce.string().optional(),
-  parentFunderId: zod.coerce
-    .string()
+  issuesGrants: zod.coerce
+    .boolean()
     .optional()
     .describe(
-      "Filter to direct child funding entities of the given parent funder.",
+      "Filter to grant-making organizations only (true) or non-grant entities only (false). Omit for all.",
     ),
+  parentOrganizationId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to direct child organizations of the given parent."),
   lifetimeGivingPresence: zod
     .enum(["has", "blank"])
     .optional()
     .describe(
-      "Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).",
+      "Rollup presence filter on lifetime giving (`has` = >0, `blank` = none). Only meaningful for issuesGrants=true.",
     ),
   openAsksPresence: zod
     .enum(["has", "blank"])
@@ -791,7 +795,7 @@ export const ListFundersQueryParams = zod.object({
     .describe(
       "Presence filter on primary contact (`has` = set, `blank` = none).",
     ),
-  subtype: zod.array(zod.coerce.string()).optional(),
+  entityType: zod.array(zod.coerce.string()).optional(),
   activeStatus: zod.array(zod.coerce.string()).optional(),
   connectionStatus: zod.array(zod.coerce.string()).optional(),
   enthusiasm: zod.array(zod.coerce.string()).optional(),
@@ -802,28 +806,34 @@ export const ListFundersQueryParams = zod.object({
     .array(zod.coerce.string())
     .optional()
     .describe(
-      "Filter to funders whose `priority` tier is in the given set\n(top\/high\/medium\/low). Multi-value: repeat or comma-separate.\nAccepts the literal `__blank__` to match rows with no priority set.\n",
+      "Filter to organizations whose `priority` tier is in the given set\n(top\/high\/medium\/low). Multi-value: repeat or comma-separate.\nAccepts the literal `__blank__` to match rows with no priority set.\n",
     ),
   regionIds: zod
     .array(zod.coerce.string())
     .optional()
     .describe(
-      "Filter to funders whose `regionIds` array overlaps the given set\n(any selected region appears in the funder's regions). Multi-value:\nrepeat or comma-separate.\n",
+      "Filter to organizations whose `regionIds` array overlaps the given set.\nMulti-value: repeat or comma-separate.\n",
     ),
+  type: zod.array(zod.coerce.string()).optional(),
   limit: zod.coerce
     .number()
     .min(1)
-    .max(listFundersQueryLimitMax)
-    .default(listFundersQueryLimitDefault),
-  page: zod.coerce.number().min(1).default(listFundersQueryPageDefault),
+    .max(listOrganizationsQueryLimitMax)
+    .default(listOrganizationsQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listOrganizationsQueryPageDefault),
 });
 
-export const ListFundersResponse = zod.object({
+export const ListOrganizationsResponse = zod.object({
   data: zod.array(
     zod.object({
       id: zod.string(),
       name: zod.string(),
-      fundingEntitySubtype: zod
+      issuesGrants: zod
+        .boolean()
+        .describe(
+          "True for grant-making organizations (formerly 'funders'); false for non-grant entities.",
+        ),
+      entityType: zod
         .enum([
           "family_foundation",
           "institutional_foundation",
@@ -843,8 +853,23 @@ export const ListFundersResponse = zod.object({
           "public_private",
           "daf_platform",
           "platform",
+          "advocacy_membership_lobbyist",
+          "authorizer",
+          "education_vendor",
+          "elected_official",
+          "higher_ed",
+          "investor",
+          "law_firm",
+          "media",
+          "real_estate",
+          "school",
+          "school_district",
+          "school_network",
+          "small_business_consulting",
+          "tribal",
         ])
-        .nullish(),
+        .nullish()
+        .describe("Normalized entity type (school_network, nonprofit, etc.)."),
       makesPris: zod.boolean().nullish(),
       numberOfEmployees: zod
         .enum([
@@ -873,10 +898,7 @@ export const ListFundersResponse = zod.object({
           "Estimated total assets \/ endowment size. Decimal as string.",
         ),
       priorityAreasNotes: zod.string().nullish(),
-      about: zod
-        .string()
-        .nullish()
-        .describe("Free-form long-text overview of the funder."),
+      about: zod.string().nullish(),
       activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
       otherNames: zod.string().nullish(),
       historicalNames: zod.array(zod.string()).nullish(),
@@ -905,17 +927,17 @@ export const ListFundersResponse = zod.object({
       interestsAges: zod.array(zod.string()).nullish(),
       interestsGovModels: zod.array(zod.string()).nullish(),
       regionIds: zod.array(zod.string()).nullish(),
-      parentFunderId: zod.string().nullish(),
+      parentOrganizationId: zod.string().nullish(),
       paymentIntermediaryId: zod
         .string()
         .nullish()
         .describe(
-          "Payment intermediary (e.g. a DAF) this funder gives through.",
+          "Payment intermediary (e.g. a DAF) this organization gives through.",
         ),
       anonymous: zod
         .boolean()
         .describe(
-          "When true, hide the funder's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
+          "When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
         ),
       lastContacted: zod.string().date().nullish(),
       x: zod.string().nullish(),
@@ -927,27 +949,20 @@ export const ListFundersResponse = zod.object({
       priority: zod
         .enum(["top", "high", "medium", "low"])
         .nullish()
-        .describe(
-          "Solicitation priority tier (top\/high\/medium\/low). The 'top' band is surfaced as a star on the funders table and on opportunities\/gifts where this funder is the donor.",
-        ),
-      primaryContactPersonId: zod
-        .string()
-        .nullish()
-        .describe(
-          "people_entity_roles row with primary_contact=true for this funder, if any.",
-        ),
+        .describe("Solicitation priority tier (top\/high\/medium\/low)."),
+      primaryContactPersonId: zod.string().nullish(),
       primaryContactPersonName: zod.string().nullish(),
       lifetimeGiving: zod
         .string()
         .nullish()
         .describe(
-          "Sum of gifts.amount where funder_id matches. Decimal as string.",
+          "Sum of gifts.amount where organization_id matches. Decimal as string.",
         ),
       openOpportunityCount: zod
         .number()
         .nullish()
         .describe(
-          "Count of opportunities_and_pledges where funder_id matches and status='open'.",
+          "Count of opportunities_and_pledges where organization_id matches and status='open'.",
         ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -960,9 +975,10 @@ export const ListFundersResponse = zod.object({
   }),
 });
 
-export const CreateFunderBody = zod.object({
+export const CreateOrganizationBody = zod.object({
   name: zod.string(),
-  fundingEntitySubtype: zod
+  issuesGrants: zod.boolean().optional(),
+  entityType: zod
     .enum([
       "family_foundation",
       "institutional_foundation",
@@ -982,8 +998,22 @@ export const CreateFunderBody = zod.object({
       "public_private",
       "daf_platform",
       "platform",
+      "advocacy_membership_lobbyist",
+      "authorizer",
+      "education_vendor",
+      "elected_official",
+      "higher_ed",
+      "investor",
+      "law_firm",
+      "media",
+      "real_estate",
+      "school",
+      "school_district",
+      "school_network",
+      "small_business_consulting",
+      "tribal",
     ])
-    .optional(),
+    .nullish(),
   makesPris: zod.boolean().optional(),
   numberOfEmployees: zod
     .enum([
@@ -1005,15 +1035,9 @@ export const CreateFunderBody = zod.object({
       "tier_1m_plus",
     ])
     .optional(),
-  totalAssets: zod
-    .string()
-    .optional()
-    .describe("Estimated total assets \/ endowment size. Decimal as string."),
+  totalAssets: zod.string().optional(),
   priorityAreasNotes: zod.string().optional(),
-  about: zod
-    .string()
-    .optional()
-    .describe("Free-form long-text overview of the funder."),
+  about: zod.string().optional(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).optional(),
   otherNames: zod.string().optional(),
   historicalNames: zod.array(zod.string()).optional(),
@@ -1042,7 +1066,7 @@ export const CreateFunderBody = zod.object({
   interestsAges: zod.array(zod.string()).optional(),
   interestsGovModels: zod.array(zod.string()).optional(),
   regionIds: zod.array(zod.string()).optional(),
-  parentFunderId: zod.string().optional(),
+  parentOrganizationId: zod.string().optional(),
   paymentIntermediaryId: zod.string().optional(),
   x: zod.string().optional(),
   linkedin: zod.string().optional(),
@@ -1054,15 +1078,20 @@ export const CreateFunderBody = zod.object({
   anonymous: zod.boolean().optional(),
 });
 
-export const GetFunderParams = zod.object({
+export const GetOrganizationParams = zod.object({
   id: zod.coerce.string(),
 });
 
-export const GetFunderResponse = zod
+export const GetOrganizationResponse = zod
   .object({
     id: zod.string(),
     name: zod.string(),
-    fundingEntitySubtype: zod
+    issuesGrants: zod
+      .boolean()
+      .describe(
+        "True for grant-making organizations (formerly 'funders'); false for non-grant entities.",
+      ),
+    entityType: zod
       .enum([
         "family_foundation",
         "institutional_foundation",
@@ -1082,8 +1111,23 @@ export const GetFunderResponse = zod
         "public_private",
         "daf_platform",
         "platform",
+        "advocacy_membership_lobbyist",
+        "authorizer",
+        "education_vendor",
+        "elected_official",
+        "higher_ed",
+        "investor",
+        "law_firm",
+        "media",
+        "real_estate",
+        "school",
+        "school_district",
+        "school_network",
+        "small_business_consulting",
+        "tribal",
       ])
-      .nullish(),
+      .nullish()
+      .describe("Normalized entity type (school_network, nonprofit, etc.)."),
     makesPris: zod.boolean().nullish(),
     numberOfEmployees: zod
       .enum([
@@ -1110,10 +1154,7 @@ export const GetFunderResponse = zod
       .nullish()
       .describe("Estimated total assets \/ endowment size. Decimal as string."),
     priorityAreasNotes: zod.string().nullish(),
-    about: zod
-      .string()
-      .nullish()
-      .describe("Free-form long-text overview of the funder."),
+    about: zod.string().nullish(),
     activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
     otherNames: zod.string().nullish(),
     historicalNames: zod.array(zod.string()).nullish(),
@@ -1142,15 +1183,17 @@ export const GetFunderResponse = zod
     interestsAges: zod.array(zod.string()).nullish(),
     interestsGovModels: zod.array(zod.string()).nullish(),
     regionIds: zod.array(zod.string()).nullish(),
-    parentFunderId: zod.string().nullish(),
+    parentOrganizationId: zod.string().nullish(),
     paymentIntermediaryId: zod
       .string()
       .nullish()
-      .describe("Payment intermediary (e.g. a DAF) this funder gives through."),
+      .describe(
+        "Payment intermediary (e.g. a DAF) this organization gives through.",
+      ),
     anonymous: zod
       .boolean()
       .describe(
-        "When true, hide the funder's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
+        "When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
       ),
     lastContacted: zod.string().date().nullish(),
     x: zod.string().nullish(),
@@ -1162,27 +1205,20 @@ export const GetFunderResponse = zod
     priority: zod
       .enum(["top", "high", "medium", "low"])
       .nullish()
-      .describe(
-        "Solicitation priority tier (top\/high\/medium\/low). The 'top' band is surfaced as a star on the funders table and on opportunities\/gifts where this funder is the donor.",
-      ),
-    primaryContactPersonId: zod
-      .string()
-      .nullish()
-      .describe(
-        "people_entity_roles row with primary_contact=true for this funder, if any.",
-      ),
+      .describe("Solicitation priority tier (top\/high\/medium\/low)."),
+    primaryContactPersonId: zod.string().nullish(),
     primaryContactPersonName: zod.string().nullish(),
     lifetimeGiving: zod
       .string()
       .nullish()
       .describe(
-        "Sum of gifts.amount where funder_id matches. Decimal as string.",
+        "Sum of gifts.amount where organization_id matches. Decimal as string.",
       ),
     openOpportunityCount: zod
       .number()
       .nullish()
       .describe(
-        "Count of opportunities_and_pledges where funder_id matches and status='open'.",
+        "Count of opportunities_and_pledges where organization_id matches and status='open'.",
       ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
@@ -1202,12 +1238,10 @@ export const GetFunderResponse = zod
                 "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
               ),
             entityType: zod.enum([
-              "funder",
-              "non_funding_organization",
+              "organization",
               "payment_intermediary",
               "household",
             ]),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -1238,7 +1272,6 @@ export const GetFunderResponse = zod
             email: zod.string(),
             type: zod.enum(["work", "personal", "other"]).nullish(),
             personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -1256,7 +1289,6 @@ export const GetFunderResponse = zod
             phoneNumber: zod.string(),
             type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
             personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -1279,7 +1311,6 @@ export const GetFunderResponse = zod
             postalCode: zod.string().nullish(),
             country: zod.string().nullish(),
             personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -1298,20 +1329,18 @@ export const GetFunderResponse = zod
           createdAt: zod.string().datetime({}),
           updatedAt: zod.string().datetime({}),
         })
-        .nullish()
-        .describe(
-          "Resolved payment intermediary referenced by paymentIntermediaryId, if set.",
-        ),
+        .nullish(),
     }),
   );
 
-export const UpdateFunderParams = zod.object({
+export const UpdateOrganizationParams = zod.object({
   id: zod.coerce.string(),
 });
 
-export const UpdateFunderBody = zod.object({
+export const UpdateOrganizationBody = zod.object({
   name: zod.string().optional(),
-  fundingEntitySubtype: zod
+  issuesGrants: zod.boolean().optional(),
+  entityType: zod
     .enum([
       "family_foundation",
       "institutional_foundation",
@@ -1331,6 +1360,20 @@ export const UpdateFunderBody = zod.object({
       "public_private",
       "daf_platform",
       "platform",
+      "advocacy_membership_lobbyist",
+      "authorizer",
+      "education_vendor",
+      "elected_official",
+      "higher_ed",
+      "investor",
+      "law_firm",
+      "media",
+      "real_estate",
+      "school",
+      "school_district",
+      "school_network",
+      "small_business_consulting",
+      "tribal",
     ])
     .nullish(),
   makesPris: zod.boolean().nullish(),
@@ -1354,15 +1397,9 @@ export const UpdateFunderBody = zod.object({
       "tier_1m_plus",
     ])
     .nullish(),
-  totalAssets: zod
-    .string()
-    .nullish()
-    .describe("Estimated total assets \/ endowment size. Decimal as string."),
+  totalAssets: zod.string().nullish(),
   priorityAreasNotes: zod.string().nullish(),
-  about: zod
-    .string()
-    .nullish()
-    .describe("Free-form long-text overview of the funder."),
+  about: zod.string().nullish(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
   otherNames: zod.string().nullish(),
   historicalNames: zod.array(zod.string()).nullish(),
@@ -1391,7 +1428,7 @@ export const UpdateFunderBody = zod.object({
   interestsAges: zod.array(zod.string()).nullish(),
   interestsGovModels: zod.array(zod.string()).nullish(),
   regionIds: zod.array(zod.string()).nullish(),
-  parentFunderId: zod.string().nullish(),
+  parentOrganizationId: zod.string().nullish(),
   paymentIntermediaryId: zod.string().nullish(),
   x: zod.string().nullish(),
   linkedin: zod.string().nullish(),
@@ -1403,10 +1440,15 @@ export const UpdateFunderBody = zod.object({
   anonymous: zod.boolean().optional(),
 });
 
-export const UpdateFunderResponse = zod.object({
+export const UpdateOrganizationResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
-  fundingEntitySubtype: zod
+  issuesGrants: zod
+    .boolean()
+    .describe(
+      "True for grant-making organizations (formerly 'funders'); false for non-grant entities.",
+    ),
+  entityType: zod
     .enum([
       "family_foundation",
       "institutional_foundation",
@@ -1426,8 +1468,23 @@ export const UpdateFunderResponse = zod.object({
       "public_private",
       "daf_platform",
       "platform",
+      "advocacy_membership_lobbyist",
+      "authorizer",
+      "education_vendor",
+      "elected_official",
+      "higher_ed",
+      "investor",
+      "law_firm",
+      "media",
+      "real_estate",
+      "school",
+      "school_district",
+      "school_network",
+      "small_business_consulting",
+      "tribal",
     ])
-    .nullish(),
+    .nullish()
+    .describe("Normalized entity type (school_network, nonprofit, etc.)."),
   makesPris: zod.boolean().nullish(),
   numberOfEmployees: zod
     .enum([
@@ -1454,10 +1511,7 @@ export const UpdateFunderResponse = zod.object({
     .nullish()
     .describe("Estimated total assets \/ endowment size. Decimal as string."),
   priorityAreasNotes: zod.string().nullish(),
-  about: zod
-    .string()
-    .nullish()
-    .describe("Free-form long-text overview of the funder."),
+  about: zod.string().nullish(),
   activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
   otherNames: zod.string().nullish(),
   historicalNames: zod.array(zod.string()).nullish(),
@@ -1486,15 +1540,17 @@ export const UpdateFunderResponse = zod.object({
   interestsAges: zod.array(zod.string()).nullish(),
   interestsGovModels: zod.array(zod.string()).nullish(),
   regionIds: zod.array(zod.string()).nullish(),
-  parentFunderId: zod.string().nullish(),
+  parentOrganizationId: zod.string().nullish(),
   paymentIntermediaryId: zod
     .string()
     .nullish()
-    .describe("Payment intermediary (e.g. a DAF) this funder gives through."),
+    .describe(
+      "Payment intermediary (e.g. a DAF) this organization gives through.",
+    ),
   anonymous: zod
     .boolean()
     .describe(
-      "When true, hide the funder's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
+      "When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
     ),
   lastContacted: zod.string().date().nullish(),
   x: zod.string().nullish(),
@@ -1506,358 +1562,21 @@ export const UpdateFunderResponse = zod.object({
   priority: zod
     .enum(["top", "high", "medium", "low"])
     .nullish()
-    .describe(
-      "Solicitation priority tier (top\/high\/medium\/low). The 'top' band is surfaced as a star on the funders table and on opportunities\/gifts where this funder is the donor.",
-    ),
-  primaryContactPersonId: zod
-    .string()
-    .nullish()
-    .describe(
-      "people_entity_roles row with primary_contact=true for this funder, if any.",
-    ),
+    .describe("Solicitation priority tier (top\/high\/medium\/low)."),
+  primaryContactPersonId: zod.string().nullish(),
   primaryContactPersonName: zod.string().nullish(),
   lifetimeGiving: zod
     .string()
     .nullish()
     .describe(
-      "Sum of gifts.amount where funder_id matches. Decimal as string.",
+      "Sum of gifts.amount where organization_id matches. Decimal as string.",
     ),
   openOpportunityCount: zod
     .number()
     .nullish()
     .describe(
-      "Count of opportunities_and_pledges where funder_id matches and status='open'.",
+      "Count of opportunities_and_pledges where organization_id matches and status='open'.",
     ),
-  createdAt: zod.string().datetime({}),
-  updatedAt: zod.string().datetime({}),
-});
-
-export const DeleteFunderParams = zod.object({
-  id: zod.coerce.string(),
-});
-
-export const listOrganizationsQueryLimitDefault = 50;
-export const listOrganizationsQueryLimitMax = 10000;
-
-export const listOrganizationsQueryPageDefault = 1;
-
-export const ListOrganizationsQueryParams = zod.object({
-  search: zod.coerce.string().optional(),
-  type: zod
-    .enum([
-      "advocacy_membership_lobbyist",
-      "authorizer",
-      "cmo",
-      "capital_provider",
-      "government",
-      "corporation",
-      "education_vendor",
-      "elected_official",
-      "higher_ed",
-      "investor",
-      "law_firm",
-      "media",
-      "nonprofit",
-      "philanthropic_advisor",
-      "real_estate",
-      "school",
-      "school_district",
-      "school_network",
-      "small_business_consulting",
-      "tribal",
-    ])
-    .optional(),
-  limit: zod.coerce
-    .number()
-    .min(1)
-    .max(listOrganizationsQueryLimitMax)
-    .default(listOrganizationsQueryLimitDefault),
-  page: zod.coerce.number().min(1).default(listOrganizationsQueryPageDefault),
-});
-
-export const ListOrganizationsResponse = zod.object({
-  data: zod.array(
-    zod.object({
-      id: zod.string(),
-      name: zod.string(),
-      type: zod
-        .enum([
-          "advocacy_membership_lobbyist",
-          "authorizer",
-          "cmo",
-          "capital_provider",
-          "government",
-          "corporation",
-          "education_vendor",
-          "elected_official",
-          "higher_ed",
-          "investor",
-          "law_firm",
-          "media",
-          "nonprofit",
-          "philanthropic_advisor",
-          "real_estate",
-          "school",
-          "school_district",
-          "school_network",
-          "small_business_consulting",
-          "tribal",
-        ])
-        .nullish(),
-      emailDomain: zod.string().nullish(),
-      tags: zod.string().nullish(),
-      website: zod.string().nullish(),
-      activeOrDefunct: zod.string().nullish(),
-      otherNames: zod.string().nullish(),
-      historicalNames: zod.array(zod.string()).nullish(),
-      parentOrgId: zod.string().nullish(),
-      createdAt: zod.string().datetime({}),
-      updatedAt: zod.string().datetime({}),
-    }),
-  ),
-  pagination: zod.object({
-    page: zod.number(),
-    limit: zod.number(),
-    total: zod.number(),
-  }),
-});
-
-export const CreateOrganizationBody = zod.object({
-  name: zod.string(),
-  type: zod
-    .enum([
-      "advocacy_membership_lobbyist",
-      "authorizer",
-      "cmo",
-      "capital_provider",
-      "government",
-      "corporation",
-      "education_vendor",
-      "elected_official",
-      "higher_ed",
-      "investor",
-      "law_firm",
-      "media",
-      "nonprofit",
-      "philanthropic_advisor",
-      "real_estate",
-      "school",
-      "school_district",
-      "school_network",
-      "small_business_consulting",
-      "tribal",
-    ])
-    .optional(),
-  emailDomain: zod.string().optional(),
-  tags: zod.string().optional(),
-  website: zod.string().optional(),
-  activeOrDefunct: zod.string().optional(),
-  otherNames: zod.string().optional(),
-  historicalNames: zod.array(zod.string()).optional(),
-  parentOrgId: zod.string().optional(),
-});
-
-export const GetOrganizationParams = zod.object({
-  id: zod.coerce.string(),
-});
-
-export const GetOrganizationResponse = zod
-  .object({
-    id: zod.string(),
-    name: zod.string(),
-    type: zod
-      .enum([
-        "advocacy_membership_lobbyist",
-        "authorizer",
-        "cmo",
-        "capital_provider",
-        "government",
-        "corporation",
-        "education_vendor",
-        "elected_official",
-        "higher_ed",
-        "investor",
-        "law_firm",
-        "media",
-        "nonprofit",
-        "philanthropic_advisor",
-        "real_estate",
-        "school",
-        "school_district",
-        "school_network",
-        "small_business_consulting",
-        "tribal",
-      ])
-      .nullish(),
-    emailDomain: zod.string().nullish(),
-    tags: zod.string().nullish(),
-    website: zod.string().nullish(),
-    activeOrDefunct: zod.string().nullish(),
-    otherNames: zod.string().nullish(),
-    historicalNames: zod.array(zod.string()).nullish(),
-    parentOrgId: zod.string().nullish(),
-    createdAt: zod.string().datetime({}),
-    updatedAt: zod.string().datetime({}),
-  })
-  .and(
-    zod.object({
-      people: zod
-        .array(
-          zod.object({
-            id: zod.string(),
-            personId: zod.string(),
-            personName: zod.string().nullish(),
-            personEmail: zod
-              .string()
-              .nullish()
-              .describe(
-                "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
-              ),
-            entityType: zod.enum([
-              "funder",
-              "non_funding_organization",
-              "payment_intermediary",
-              "household",
-            ]),
-            funderId: zod.string().nullish(),
-            organizationId: zod.string().nullish(),
-            paymentIntermediaryId: zod.string().nullish(),
-            householdId: zod.string().nullish(),
-            connection: zod
-              .enum([
-                "employee",
-                "principal",
-                "board_member",
-                "partner",
-                "professor",
-                "donor_advisor",
-                "elected_official",
-              ])
-              .nullish(),
-            notes: zod.string().nullish(),
-            externalTitleOrRole: zod.string().nullish(),
-            current: zod.enum(["current", "past"]),
-            primaryContact: zod.boolean(),
-            createdAt: zod.string().datetime({}),
-            updatedAt: zod.string().datetime({}),
-          }),
-        )
-        .optional(),
-      emails: zod
-        .array(
-          zod.object({
-            id: zod.string(),
-            email: zod.string(),
-            type: zod.enum(["work", "personal", "other"]).nullish(),
-            personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
-            organizationId: zod.string().nullish(),
-            paymentIntermediaryId: zod.string().nullish(),
-            householdId: zod.string().nullish(),
-            validity: zod.enum(["valid", "invalid", "unknown"]),
-            isPreferred: zod.boolean(),
-            createdAt: zod.string().datetime({}),
-            updatedAt: zod.string().datetime({}),
-          }),
-        )
-        .optional(),
-      addresses: zod
-        .array(
-          zod.object({
-            id: zod.string(),
-            street: zod.string().nullish(),
-            cityRegionId: zod.string().nullish(),
-            cityName: zod.string().nullish(),
-            stateRegionId: zod.string().nullish(),
-            stateCode: zod.string().nullish(),
-            postalCode: zod.string().nullish(),
-            country: zod.string().nullish(),
-            personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
-            organizationId: zod.string().nullish(),
-            paymentIntermediaryId: zod.string().nullish(),
-            householdId: zod.string().nullish(),
-            createdAt: zod.string().datetime({}),
-            updatedAt: zod.string().datetime({}),
-          }),
-        )
-        .optional(),
-    }),
-  );
-
-export const UpdateOrganizationParams = zod.object({
-  id: zod.coerce.string(),
-});
-
-export const UpdateOrganizationBody = zod.object({
-  name: zod.string().optional(),
-  type: zod
-    .enum([
-      "advocacy_membership_lobbyist",
-      "authorizer",
-      "cmo",
-      "capital_provider",
-      "government",
-      "corporation",
-      "education_vendor",
-      "elected_official",
-      "higher_ed",
-      "investor",
-      "law_firm",
-      "media",
-      "nonprofit",
-      "philanthropic_advisor",
-      "real_estate",
-      "school",
-      "school_district",
-      "school_network",
-      "small_business_consulting",
-      "tribal",
-    ])
-    .nullish(),
-  emailDomain: zod.string().nullish(),
-  tags: zod.string().nullish(),
-  website: zod.string().nullish(),
-  activeOrDefunct: zod.string().nullish(),
-  otherNames: zod.string().nullish(),
-  historicalNames: zod.array(zod.string()).nullish(),
-  parentOrgId: zod.string().nullish(),
-});
-
-export const UpdateOrganizationResponse = zod.object({
-  id: zod.string(),
-  name: zod.string(),
-  type: zod
-    .enum([
-      "advocacy_membership_lobbyist",
-      "authorizer",
-      "cmo",
-      "capital_provider",
-      "government",
-      "corporation",
-      "education_vendor",
-      "elected_official",
-      "higher_ed",
-      "investor",
-      "law_firm",
-      "media",
-      "nonprofit",
-      "philanthropic_advisor",
-      "real_estate",
-      "school",
-      "school_district",
-      "school_network",
-      "small_business_consulting",
-      "tribal",
-    ])
-    .nullish(),
-  emailDomain: zod.string().nullish(),
-  tags: zod.string().nullish(),
-  website: zod.string().nullish(),
-  activeOrDefunct: zod.string().nullish(),
-  otherNames: zod.string().nullish(),
-  historicalNames: zod.array(zod.string()).nullish(),
-  parentOrgId: zod.string().nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -1942,12 +1661,10 @@ export const GetPaymentIntermediaryResponse = zod
                 "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
               ),
             entityType: zod.enum([
-              "funder",
-              "non_funding_organization",
+              "organization",
               "payment_intermediary",
               "household",
             ]),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -1978,7 +1695,6 @@ export const GetPaymentIntermediaryResponse = zod
             email: zod.string(),
             type: zod.enum(["work", "personal", "other"]).nullish(),
             personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -2001,7 +1717,6 @@ export const GetPaymentIntermediaryResponse = zod
             postalCode: zod.string().nullish(),
             country: zod.string().nullish(),
             personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -2141,12 +1856,10 @@ export const GetHouseholdResponse = zod
                 "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
               ),
             entityType: zod.enum([
-              "funder",
-              "non_funding_organization",
+              "organization",
               "payment_intermediary",
               "household",
             ]),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -2177,7 +1890,6 @@ export const GetHouseholdResponse = zod
             email: zod.string(),
             type: zod.enum(["work", "personal", "other"]).nullish(),
             personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -2200,7 +1912,6 @@ export const GetHouseholdResponse = zod
             postalCode: zod.string().nullish(),
             country: zod.string().nullish(),
             personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -2420,29 +2131,17 @@ export const ListPeopleResponse = zod.object({
         .describe(
           "Count of opportunities_and_pledges where this person is the individual giver and status='open'.",
         ),
-      activeFunderNames: zod
-        .array(zod.string())
-        .nullish()
-        .describe(
-          "Names of funders the person currently holds a role at (people_entity_roles.current='current').",
-        ),
       activeOrganizationNames: zod
         .array(zod.string())
         .nullish()
         .describe(
-          "Names of non-funding organizations the person currently holds a role at (people_entity_roles.current='current').",
-        ),
-      pastFunderNames: zod
-        .array(zod.string())
-        .nullish()
-        .describe(
-          "Names of funders the person previously held a role at (people_entity_roles.current='past').",
+          "Names of organizations the person currently holds a role at (people_entity_roles.current='current').",
         ),
       pastOrganizationNames: zod
         .array(zod.string())
         .nullish()
         .describe(
-          "Names of non-funding organizations the person previously held a role at (people_entity_roles.current='past').",
+          "Names of organizations the person previously held a role at (people_entity_roles.current='past').",
         ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -2616,29 +2315,17 @@ export const GetPersonResponse = zod
       .describe(
         "Count of opportunities_and_pledges where this person is the individual giver and status='open'.",
       ),
-    activeFunderNames: zod
-      .array(zod.string())
-      .nullish()
-      .describe(
-        "Names of funders the person currently holds a role at (people_entity_roles.current='current').",
-      ),
     activeOrganizationNames: zod
       .array(zod.string())
       .nullish()
       .describe(
-        "Names of non-funding organizations the person currently holds a role at (people_entity_roles.current='current').",
-      ),
-    pastFunderNames: zod
-      .array(zod.string())
-      .nullish()
-      .describe(
-        "Names of funders the person previously held a role at (people_entity_roles.current='past').",
+        "Names of organizations the person currently holds a role at (people_entity_roles.current='current').",
       ),
     pastOrganizationNames: zod
       .array(zod.string())
       .nullish()
       .describe(
-        "Names of non-funding organizations the person previously held a role at (people_entity_roles.current='past').",
+        "Names of organizations the person previously held a role at (people_entity_roles.current='past').",
       ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
@@ -2658,12 +2345,10 @@ export const GetPersonResponse = zod
                 "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
               ),
             entityType: zod.enum([
-              "funder",
-              "non_funding_organization",
+              "organization",
               "payment_intermediary",
               "household",
             ]),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -2694,7 +2379,6 @@ export const GetPersonResponse = zod
             email: zod.string(),
             type: zod.enum(["work", "personal", "other"]).nullish(),
             personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -2712,7 +2396,6 @@ export const GetPersonResponse = zod
             phoneNumber: zod.string(),
             type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
             personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -2735,7 +2418,6 @@ export const GetPersonResponse = zod
             postalCode: zod.string().nullish(),
             country: zod.string().nullish(),
             personId: zod.string().nullish(),
-            funderId: zod.string().nullish(),
             organizationId: zod.string().nullish(),
             paymentIntermediaryId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -2907,29 +2589,17 @@ export const UpdatePersonResponse = zod.object({
     .describe(
       "Count of opportunities_and_pledges where this person is the individual giver and status='open'.",
     ),
-  activeFunderNames: zod
-    .array(zod.string())
-    .nullish()
-    .describe(
-      "Names of funders the person currently holds a role at (people_entity_roles.current='current').",
-    ),
   activeOrganizationNames: zod
     .array(zod.string())
     .nullish()
     .describe(
-      "Names of non-funding organizations the person currently holds a role at (people_entity_roles.current='current').",
-    ),
-  pastFunderNames: zod
-    .array(zod.string())
-    .nullish()
-    .describe(
-      "Names of funders the person previously held a role at (people_entity_roles.current='past').",
+      "Names of organizations the person currently holds a role at (people_entity_roles.current='current').",
     ),
   pastOrganizationNames: zod
     .array(zod.string())
     .nullish()
     .describe(
-      "Names of non-funding organizations the person previously held a role at (people_entity_roles.current='past').",
+      "Names of organizations the person previously held a role at (people_entity_roles.current='past').",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -2946,7 +2616,6 @@ export const listPeopleEntityRolesQueryPageDefault = 1;
 
 export const ListPeopleEntityRolesQueryParams = zod.object({
   personId: zod.coerce.string().optional(),
-  funderId: zod.coerce.string().optional(),
   organizationId: zod.coerce.string().optional(),
   paymentIntermediaryId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
@@ -2974,12 +2643,10 @@ export const ListPeopleEntityRolesResponse = zod.object({
           "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
         ),
       entityType: zod.enum([
-        "funder",
-        "non_funding_organization",
+        "organization",
         "payment_intermediary",
         "household",
       ]),
-      funderId: zod.string().nullish(),
       organizationId: zod.string().nullish(),
       paymentIntermediaryId: zod.string().nullish(),
       householdId: zod.string().nullish(),
@@ -3011,13 +2678,7 @@ export const ListPeopleEntityRolesResponse = zod.object({
 
 export const CreatePeopleEntityRoleBody = zod.object({
   personId: zod.string(),
-  entityType: zod.enum([
-    "funder",
-    "non_funding_organization",
-    "payment_intermediary",
-    "household",
-  ]),
-  funderId: zod.string().optional(),
+  entityType: zod.enum(["organization", "payment_intermediary", "household"]),
   organizationId: zod.string().optional(),
   paymentIntermediaryId: zod.string().optional(),
   householdId: zod.string().optional(),
@@ -3043,7 +2704,6 @@ export const UpdatePeopleEntityRoleParams = zod.object({
 });
 
 export const UpdatePeopleEntityRoleBody = zod.object({
-  funderId: zod.string().nullish(),
   organizationId: zod.string().nullish(),
   paymentIntermediaryId: zod.string().nullish(),
   householdId: zod.string().nullish(),
@@ -3074,13 +2734,7 @@ export const UpdatePeopleEntityRoleResponse = zod.object({
     .describe(
       "Preferred email for the linked person (falls back to any email on the person if none is marked preferred). Null if the person has no emails on file.",
     ),
-  entityType: zod.enum([
-    "funder",
-    "non_funding_organization",
-    "payment_intermediary",
-    "household",
-  ]),
-  funderId: zod.string().nullish(),
+  entityType: zod.enum(["organization", "payment_intermediary", "household"]),
   organizationId: zod.string().nullish(),
   paymentIntermediaryId: zod.string().nullish(),
   householdId: zod.string().nullish(),
@@ -3114,7 +2768,6 @@ export const listEmailsQueryPageDefault = 1;
 
 export const ListEmailsQueryParams = zod.object({
   personId: zod.coerce.string().optional(),
-  funderId: zod.coerce.string().optional(),
   organizationId: zod.coerce.string().optional(),
   paymentIntermediaryId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
@@ -3133,7 +2786,6 @@ export const ListEmailsResponse = zod.object({
       email: zod.string(),
       type: zod.enum(["work", "personal", "other"]).nullish(),
       personId: zod.string().nullish(),
-      funderId: zod.string().nullish(),
       organizationId: zod.string().nullish(),
       paymentIntermediaryId: zod.string().nullish(),
       householdId: zod.string().nullish(),
@@ -3154,7 +2806,6 @@ export const CreateEmailBody = zod.object({
   email: zod.string(),
   type: zod.enum(["work", "personal", "other"]).optional(),
   personId: zod.string().optional(),
-  funderId: zod.string().optional(),
   organizationId: zod.string().optional(),
   paymentIntermediaryId: zod.string().optional(),
   householdId: zod.string().optional(),
@@ -3178,7 +2829,6 @@ export const UpdateEmailResponse = zod.object({
   email: zod.string(),
   type: zod.enum(["work", "personal", "other"]).nullish(),
   personId: zod.string().nullish(),
-  funderId: zod.string().nullish(),
   organizationId: zod.string().nullish(),
   paymentIntermediaryId: zod.string().nullish(),
   householdId: zod.string().nullish(),
@@ -3214,7 +2864,6 @@ export const ListPhoneNumbersResponse = zod.object({
       phoneNumber: zod.string(),
       type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
       personId: zod.string().nullish(),
-      funderId: zod.string().nullish(),
       organizationId: zod.string().nullish(),
       paymentIntermediaryId: zod.string().nullish(),
       householdId: zod.string().nullish(),
@@ -3235,7 +2884,6 @@ export const CreatePhoneNumberBody = zod.object({
   phoneNumber: zod.string(),
   type: zod.enum(["work", "mobile", "home", "other"]).optional(),
   personId: zod.string().optional(),
-  funderId: zod.string().optional(),
   organizationId: zod.string().optional(),
   paymentIntermediaryId: zod.string().optional(),
   householdId: zod.string().optional(),
@@ -3259,7 +2907,6 @@ export const UpdatePhoneNumberResponse = zod.object({
   phoneNumber: zod.string(),
   type: zod.enum(["work", "mobile", "home", "other"]).nullish(),
   personId: zod.string().nullish(),
-  funderId: zod.string().nullish(),
   organizationId: zod.string().nullish(),
   paymentIntermediaryId: zod.string().nullish(),
   householdId: zod.string().nullish(),
@@ -3280,7 +2927,6 @@ export const listAddressesQueryPageDefault = 1;
 
 export const ListAddressesQueryParams = zod.object({
   personId: zod.coerce.string().optional(),
-  funderId: zod.coerce.string().optional(),
   organizationId: zod.coerce.string().optional(),
   paymentIntermediaryId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
@@ -3304,7 +2950,6 @@ export const ListAddressesResponse = zod.object({
       postalCode: zod.string().nullish(),
       country: zod.string().nullish(),
       personId: zod.string().nullish(),
-      funderId: zod.string().nullish(),
       organizationId: zod.string().nullish(),
       paymentIntermediaryId: zod.string().nullish(),
       householdId: zod.string().nullish(),
@@ -3328,7 +2973,6 @@ export const CreateAddressBody = zod.object({
   postalCode: zod.string().optional(),
   country: zod.string().optional(),
   personId: zod.string().optional(),
-  funderId: zod.string().optional(),
   organizationId: zod.string().optional(),
   paymentIntermediaryId: zod.string().optional(),
   householdId: zod.string().optional(),
@@ -3347,7 +2991,6 @@ export const UpdateAddressBody = zod.object({
   postalCode: zod.string().nullish(),
   country: zod.string().nullish(),
   personId: zod.string().nullish(),
-  funderId: zod.string().nullish(),
   organizationId: zod.string().nullish(),
   paymentIntermediaryId: zod.string().nullish(),
   householdId: zod.string().nullish(),
@@ -3363,7 +3006,6 @@ export const UpdateAddressResponse = zod.object({
   postalCode: zod.string().nullish(),
   country: zod.string().nullish(),
   personId: zod.string().nullish(),
-  funderId: zod.string().nullish(),
   organizationId: zod.string().nullish(),
   paymentIntermediaryId: zod.string().nullish(),
   householdId: zod.string().nullish(),
@@ -3413,7 +3055,7 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
     .optional()
     .describe("Filter strictly on the was_pledge column."),
   type: zod.array(zod.coerce.string()).optional(),
-  funderId: zod.coerce.string().optional(),
+  organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   individualGiverPersonId: zod.coerce.string().optional(),
   ownerUserId: zod.array(zod.coerce.string()).optional(),
@@ -3445,7 +3087,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
     zod.object({
       id: zod.string(),
       name: zod.string().nullish(),
-      funderId: zod.string().nullish(),
+      organizationId: zod.string().nullish(),
       householdId: zod.string().nullish(),
       askAmount: zod.string().nullish(),
       awardedAmount: zod.string().nullish(),
@@ -3498,10 +3140,12 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       grantLetterUploadedAt: zod.string().datetime({}).nullish(),
       primaryContactPersonId: zod.string().nullish(),
       ownerUserId: zod.string().nullish(),
-      funderName: zod.string().nullish(),
+      organizationName: zod.string().nullish(),
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
-      funderPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+      organizationPriority: zod
+        .enum(["top", "high", "medium", "low"])
+        .nullish(),
       individualGiverPersonPriority: zod
         .enum(["top", "high", "medium", "low"])
         .nullish(),
@@ -3523,7 +3167,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
 
 export const CreateOpportunityOrPledgeBody = zod.object({
   name: zod.string().optional(),
-  funderId: zod.string().optional(),
+  organizationId: zod.string().optional(),
   householdId: zod.string().optional(),
   askAmount: zod.string().optional(),
   awardedAmount: zod.string().optional(),
@@ -3585,7 +3229,7 @@ export const GetOpportunityOrPledgeResponse = zod
   .object({
     id: zod.string(),
     name: zod.string().nullish(),
-    funderId: zod.string().nullish(),
+    organizationId: zod.string().nullish(),
     householdId: zod.string().nullish(),
     askAmount: zod.string().nullish(),
     awardedAmount: zod.string().nullish(),
@@ -3638,10 +3282,10 @@ export const GetOpportunityOrPledgeResponse = zod
     grantLetterUploadedAt: zod.string().datetime({}).nullish(),
     primaryContactPersonId: zod.string().nullish(),
     ownerUserId: zod.string().nullish(),
-    funderName: zod.string().nullish(),
+    organizationName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
-    funderPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+    organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
     individualGiverPersonPriority: zod
       .enum(["top", "high", "medium", "low"])
       .nullish(),
@@ -3714,7 +3358,7 @@ export const GetOpportunityOrPledgeResponse = zod
               ])
               .nullish(),
             amount: zod.string().nullish(),
-            funderId: zod.string().nullish(),
+            organizationId: zod.string().nullish(),
             individualGiverPersonId: zod.string().nullish(),
             householdId: zod.string().nullish(),
             type: zod
@@ -3764,10 +3408,10 @@ export const GetOpportunityOrPledgeResponse = zod
               .describe(
                 "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
               ),
-            funderName: zod.string().nullish(),
+            organizationName: zod.string().nullish(),
             householdName: zod.string().nullish(),
             individualGiverPersonName: zod.string().nullish(),
-            funderPriority: zod
+            organizationPriority: zod
               .enum(["top", "high", "medium", "low"])
               .nullish(),
             individualGiverPersonPriority: zod
@@ -3801,7 +3445,7 @@ export const UpdateOpportunityOrPledgeParams = zod.object({
 
 export const UpdateOpportunityOrPledgeBody = zod.object({
   name: zod.string().nullish(),
-  funderId: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
   householdId: zod.string().nullish(),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
@@ -3858,7 +3502,7 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
 export const UpdateOpportunityOrPledgeResponse = zod.object({
   id: zod.string(),
   name: zod.string().nullish(),
-  funderId: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
   householdId: zod.string().nullish(),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
@@ -3911,10 +3555,10 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   grantLetterUploadedAt: zod.string().datetime({}).nullish(),
   primaryContactPersonId: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
-  funderName: zod.string().nullish(),
+  organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
-  funderPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+  organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
   individualGiverPersonPriority: zod
     .enum(["top", "high", "medium", "low"])
     .nullish(),
@@ -4124,7 +3768,7 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
     .optional()
     .describe("Presence filter on grant years (`has` = any, `blank` = none)."),
   type: zod.array(zod.coerce.string()).optional(),
-  funderId: zod.coerce.string().optional(),
+  organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   individualGiverPersonId: zod.coerce.string().optional(),
   paymentOnPledgeId: zod.coerce.string().optional(),
@@ -4180,7 +3824,7 @@ export const ListGiftsAndPaymentsResponse = zod.object({
         ])
         .nullish(),
       amount: zod.string().nullish(),
-      funderId: zod.string().nullish(),
+      organizationId: zod.string().nullish(),
       individualGiverPersonId: zod.string().nullish(),
       householdId: zod.string().nullish(),
       type: zod
@@ -4230,10 +3874,12 @@ export const ListGiftsAndPaymentsResponse = zod.object({
         .describe(
           "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
         ),
-      funderName: zod.string().nullish(),
+      organizationName: zod.string().nullish(),
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
-      funderPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+      organizationPriority: zod
+        .enum(["top", "high", "medium", "low"])
+        .nullish(),
       individualGiverPersonPriority: zod
         .enum(["top", "high", "medium", "low"])
         .nullish(),
@@ -4280,7 +3926,7 @@ export const CreateGiftOrPaymentBody = zod.object({
     ])
     .optional(),
   amount: zod.string().optional(),
-  funderId: zod.string().optional(),
+  organizationId: zod.string().optional(),
   individualGiverPersonId: zod.string().optional(),
   householdId: zod.string().optional(),
   type: zod
@@ -4327,7 +3973,7 @@ export const GetGiftOrPaymentResponse = zod
       ])
       .nullish(),
     amount: zod.string().nullish(),
-    funderId: zod.string().nullish(),
+    organizationId: zod.string().nullish(),
     individualGiverPersonId: zod.string().nullish(),
     householdId: zod.string().nullish(),
     type: zod
@@ -4377,10 +4023,10 @@ export const GetGiftOrPaymentResponse = zod
       .describe(
         "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
       ),
-    funderName: zod.string().nullish(),
+    organizationName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
-    funderPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+    organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
     individualGiverPersonPriority: zod
       .enum(["top", "high", "medium", "low"])
       .nullish(),
@@ -4463,7 +4109,7 @@ export const UpdateGiftOrPaymentBody = zod.object({
     ])
     .nullish(),
   amount: zod.string().nullish(),
-  funderId: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
   type: zod
@@ -4505,7 +4151,7 @@ export const UpdateGiftOrPaymentResponse = zod.object({
     ])
     .nullish(),
   amount: zod.string().nullish(),
-  funderId: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
   type: zod
@@ -4555,10 +4201,10 @@ export const UpdateGiftOrPaymentResponse = zod.object({
     .describe(
       "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
     ),
-  funderName: zod.string().nullish(),
+  organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
-  funderPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+  organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
   individualGiverPersonPriority: zod
     .enum(["top", "high", "medium", "low"])
     .nullish(),
@@ -4646,7 +4292,7 @@ export const LinkThankYouEmailResponse = zod
       ])
       .nullish(),
     amount: zod.string().nullish(),
-    funderId: zod.string().nullish(),
+    organizationId: zod.string().nullish(),
     individualGiverPersonId: zod.string().nullish(),
     householdId: zod.string().nullish(),
     type: zod
@@ -4696,10 +4342,10 @@ export const LinkThankYouEmailResponse = zod
       .describe(
         "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
       ),
-    funderName: zod.string().nullish(),
+    organizationName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
-    funderPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+    organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
     individualGiverPersonPriority: zod
       .enum(["top", "high", "medium", "low"])
       .nullish(),
@@ -4914,7 +4560,7 @@ export const listInteractionsQueryPageDefault = 1;
 export const ListInteractionsQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   personId: zod.coerce.string().optional(),
-  funderId: zod.coerce.string().optional(),
+  organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   ownerUserId: zod.array(zod.coerce.string()).optional(),
   kind: zod
@@ -4948,7 +4594,7 @@ export const ListInteractionsResponse = zod.object({
       notes: zod.string().nullish(),
       ownerUserId: zod.string().nullish(),
       personIds: zod.array(zod.string()).nullish(),
-      funderIds: zod.array(zod.string()).nullish(),
+      organizationIds: zod.array(zod.string()).nullish(),
       householdIds: zod.array(zod.string()).nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -4976,7 +4622,7 @@ export const CreateInteractionBody = zod.object({
   notes: zod.string().optional(),
   ownerUserId: zod.string().optional(),
   personIds: zod.array(zod.string()).optional(),
-  funderIds: zod.array(zod.string()).optional(),
+  organizationIds: zod.array(zod.string()).optional(),
   householdIds: zod.array(zod.string()).optional(),
 });
 
@@ -5000,7 +4646,7 @@ export const GetInteractionResponse = zod.object({
   notes: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
   householdIds: zod.array(zod.string()).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -5021,7 +4667,7 @@ export const UpdateInteractionBody = zod.object({
   notes: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
   householdIds: zod.array(zod.string()).nullish(),
 });
 
@@ -5041,7 +4687,7 @@ export const UpdateInteractionResponse = zod.object({
   notes: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
   householdIds: zod.array(zod.string()).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -5059,7 +4705,7 @@ export const listNotesQueryPageDefault = 1;
 export const ListNotesQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   personId: zod.coerce.string().optional(),
-  funderId: zod.coerce.string().optional(),
+  organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   opportunityId: zod.coerce.string().optional(),
   giftId: zod.coerce.string().optional(),
@@ -5083,7 +4729,7 @@ export const ListNotesResponse = zod.object({
       body: zod.string(),
       authorUserId: zod.string(),
       personIds: zod.array(zod.string()).nullish(),
-      funderIds: zod.array(zod.string()).nullish(),
+      organizationIds: zod.array(zod.string()).nullish(),
       householdIds: zod.array(zod.string()).nullish(),
       opportunityIds: zod.array(zod.string()).nullish(),
       giftIds: zod.array(zod.string()).nullish(),
@@ -5102,7 +4748,7 @@ export const ListNotesResponse = zod.object({
 export const CreateNoteBody = zod.object({
   body: zod.string(),
   personIds: zod.array(zod.string()).optional(),
-  funderIds: zod.array(zod.string()).optional(),
+  organizationIds: zod.array(zod.string()).optional(),
   householdIds: zod.array(zod.string()).optional(),
   opportunityIds: zod.array(zod.string()).optional(),
   giftIds: zod.array(zod.string()).optional(),
@@ -5118,7 +4764,7 @@ export const GetNoteResponse = zod.object({
   body: zod.string(),
   authorUserId: zod.string(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
   householdIds: zod.array(zod.string()).nullish(),
   opportunityIds: zod.array(zod.string()).nullish(),
   giftIds: zod.array(zod.string()).nullish(),
@@ -5134,7 +4780,7 @@ export const UpdateNoteParams = zod.object({
 export const UpdateNoteBody = zod.object({
   body: zod.string().optional(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
   householdIds: zod.array(zod.string()).nullish(),
   opportunityIds: zod.array(zod.string()).nullish(),
   giftIds: zod.array(zod.string()).nullish(),
@@ -5146,7 +4792,7 @@ export const UpdateNoteResponse = zod.object({
   body: zod.string(),
   authorUserId: zod.string(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
   householdIds: zod.array(zod.string()).nullish(),
   opportunityIds: zod.array(zod.string()).nullish(),
   giftIds: zod.array(zod.string()).nullish(),
@@ -5167,7 +4813,7 @@ export const listMediaMentionsQueryPageDefault = 1;
 export const ListMediaMentionsQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   personId: zod.coerce.string().optional(),
-  funderId: zod.coerce.string().optional(),
+  organizationId: zod.coerce.string().optional(),
   pinned: zod.coerce
     .boolean()
     .optional()
@@ -5193,7 +4839,7 @@ export const ListMediaMentionsResponse = zod.object({
       source: zod.string().nullish(),
       pinned: zod.boolean(),
       personIds: zod.array(zod.string()).nullish(),
-      funderIds: zod.array(zod.string()).nullish(),
+      organizationIds: zod.array(zod.string()).nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -5215,7 +4861,7 @@ export const CreateMediaMentionBody = zod.object({
   source: zod.string().optional(),
   pinned: zod.boolean().optional(),
   personIds: zod.array(zod.string()).optional(),
-  funderIds: zod.array(zod.string()).optional(),
+  organizationIds: zod.array(zod.string()).optional(),
 });
 
 export const GetMediaMentionParams = zod.object({
@@ -5233,7 +4879,7 @@ export const GetMediaMentionResponse = zod.object({
   source: zod.string().nullish(),
   pinned: zod.boolean(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -5252,7 +4898,7 @@ export const UpdateMediaMentionBody = zod.object({
   source: zod.string().nullish(),
   pinned: zod.boolean().optional(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
 });
 
 export const UpdateMediaMentionResponse = zod.object({
@@ -5266,7 +4912,7 @@ export const UpdateMediaMentionResponse = zod.object({
   source: zod.string().nullish(),
   pinned: zod.boolean(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -5283,7 +4929,7 @@ export const listTasksQueryPageDefault = 1;
 export const ListTasksQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   personId: zod.coerce.string().optional(),
-  funderId: zod.coerce.string().optional(),
+  organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   opportunityId: zod.coerce.string().optional(),
   giftId: zod.coerce.string().optional(),
@@ -5327,7 +4973,7 @@ export const ListTasksResponse = zod.object({
       assigneeUserId: zod.string().nullish(),
       createdByUserId: zod.string(),
       personIds: zod.array(zod.string()).nullish(),
-      funderIds: zod.array(zod.string()).nullish(),
+      organizationIds: zod.array(zod.string()).nullish(),
       householdIds: zod.array(zod.string()).nullish(),
       opportunityIds: zod.array(zod.string()).nullish(),
       giftIds: zod.array(zod.string()).nullish(),
@@ -5353,7 +4999,7 @@ export const CreateTaskBody = zod.object({
   status: zod.enum(["open", "waiting", "done", "cancelled"]).optional(),
   assigneeUserId: zod.string().optional(),
   personIds: zod.array(zod.string()).optional(),
-  funderIds: zod.array(zod.string()).optional(),
+  organizationIds: zod.array(zod.string()).optional(),
   householdIds: zod.array(zod.string()).optional(),
   opportunityIds: zod.array(zod.string()).optional(),
   giftIds: zod.array(zod.string()).optional(),
@@ -5375,7 +5021,7 @@ export const GetTaskResponse = zod.object({
   assigneeUserId: zod.string().nullish(),
   createdByUserId: zod.string(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
   householdIds: zod.array(zod.string()).nullish(),
   opportunityIds: zod.array(zod.string()).nullish(),
   giftIds: zod.array(zod.string()).nullish(),
@@ -5398,7 +5044,7 @@ export const UpdateTaskBody = zod.object({
   status: zod.enum(["open", "waiting", "done", "cancelled"]).optional(),
   assigneeUserId: zod.string().nullish(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
   householdIds: zod.array(zod.string()).nullish(),
   opportunityIds: zod.array(zod.string()).nullish(),
   giftIds: zod.array(zod.string()).nullish(),
@@ -5416,7 +5062,7 @@ export const UpdateTaskResponse = zod.object({
   assigneeUserId: zod.string().nullish(),
   createdByUserId: zod.string(),
   personIds: zod.array(zod.string()).nullish(),
-  funderIds: zod.array(zod.string()).nullish(),
+  organizationIds: zod.array(zod.string()).nullish(),
   householdIds: zod.array(zod.string()).nullish(),
   opportunityIds: zod.array(zod.string()).nullish(),
   giftIds: zod.array(zod.string()).nullish(),
@@ -5436,7 +5082,7 @@ export const listMeetingNotesQueryPageDefault = 1;
 
 export const ListMeetingNotesQueryParams = zod.object({
   personId: zod.coerce.string().optional(),
-  funderId: zod.coerce.string().optional(),
+  organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   creatorUserId: zod.coerce.string().optional(),
   limit: zod.coerce
@@ -5486,7 +5132,7 @@ export const ListMeetingNotesResponse = zod.object({
         .nullish(),
       creatorUserId: zod.string(),
       personId: zod.string().nullish(),
-      funderId: zod.string().nullish(),
+      organizationId: zod.string().nullish(),
       householdId: zod.string().nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -5521,7 +5167,7 @@ export const CreateMeetingNoteBody = zod
       .describe("Defaults to now if omitted."),
     attendees: zod.array(zod.string()).optional(),
     personId: zod.string().optional(),
-    funderId: zod.string().optional(),
+    organizationId: zod.string().optional(),
     householdId: zod.string().optional(),
   })
   .describe(
@@ -5569,7 +5215,7 @@ export const GetMeetingNoteResponse = zod.object({
     .nullish(),
   creatorUserId: zod.string(),
   personId: zod.string().nullish(),
-  funderId: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
   householdId: zod.string().nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -5605,7 +5251,7 @@ export const UpdateMeetingNoteBody = zod.object({
     )
     .nullish(),
   personId: zod.string().nullish(),
-  funderId: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
   householdId: zod.string().nullish(),
 });
 
@@ -5646,7 +5292,7 @@ export const UpdateMeetingNoteResponse = zod.object({
     .nullish(),
   creatorUserId: zod.string(),
   personId: zod.string().nullish(),
-  funderId: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
   householdId: zod.string().nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -5785,7 +5431,7 @@ export const ListTrackedEmailsResponse = zod.object({
       sender: zod.string(),
       senderIp: zod.string().nullish(),
       recipientPersonIds: zod.array(zod.string()),
-      recipientFunderIds: zod.array(zod.string()),
+      recipientOrganizationIds: zod.array(zod.string()),
       recipientHouseholdIds: zod.array(zod.string()),
       groupId: zod
         .string()
@@ -5864,7 +5510,7 @@ export const SearchTrackedEmailResponse = zod.union([
       sender: zod.string(),
       senderIp: zod.string().nullish(),
       recipientPersonIds: zod.array(zod.string()),
-      recipientFunderIds: zod.array(zod.string()),
+      recipientOrganizationIds: zod.array(zod.string()),
       recipientHouseholdIds: zod.array(zod.string()),
       groupId: zod
         .string()
@@ -5925,11 +5571,11 @@ export const ListTrackedEmailStatusesResponse = zod.array(
 );
 
 /**
- * Tracked sends linked to one CRM contact. Exactly one of personId / funderId / householdId required. Requires auth.
+ * Tracked sends linked to one CRM contact. Exactly one of personId / organizationId / householdId required. Requires auth.
  */
 export const ListTrackedEmailsByContactQueryParams = zod.object({
   personId: zod.coerce.string().optional(),
-  funderId: zod.coerce.string().optional(),
+  organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
 });
 
@@ -5946,7 +5592,7 @@ export const ListTrackedEmailsByContactResponse = zod.object({
       sender: zod.string(),
       senderIp: zod.string().nullish(),
       recipientPersonIds: zod.array(zod.string()),
-      recipientFunderIds: zod.array(zod.string()),
+      recipientOrganizationIds: zod.array(zod.string()),
       recipientHouseholdIds: zod.array(zod.string()),
       groupId: zod
         .string()
@@ -6005,7 +5651,7 @@ export const GetTrackedEmailResponse = zod
     sender: zod.string(),
     senderIp: zod.string().nullish(),
     recipientPersonIds: zod.array(zod.string()),
-    recipientFunderIds: zod.array(zod.string()),
+    recipientOrganizationIds: zod.array(zod.string()),
     recipientHouseholdIds: zod.array(zod.string()),
     groupId: zod
       .string()
@@ -6072,7 +5718,7 @@ export const ListEmailMessagesQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   mailboxUserId: zod.coerce.string().optional(),
   personId: zod.coerce.string().optional(),
-  funderId: zod.coerce.string().optional(),
+  organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   limit: zod.coerce
     .number()
@@ -6101,7 +5747,7 @@ export const ListEmailMessagesResponse = zod.object({
       isPrivate: zod.boolean(),
       privateSetByUserId: zod.string().nullish(),
       matchedPersonIds: zod.array(zod.string()).nullish(),
-      matchedFunderIds: zod.array(zod.string()).nullish(),
+      matchedOrganizationIds: zod.array(zod.string()).nullish(),
       matchedHouseholdIds: zod.array(zod.string()).nullish(),
       aiSummary: zod
         .string()
@@ -6119,7 +5765,7 @@ export const ListEmailMessagesResponse = zod.object({
         .number()
         .nullish()
         .describe(
-          "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId\/funderId\/householdId), this counts opens by that contact only. Null when not tracked.",
+          "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId\/organizationId\/householdId), this counts opens by that contact only. Null when not tracked.",
         ),
       trackingLastOpenedAt: zod
         .string()
@@ -6159,7 +5805,7 @@ export const GetEmailMessageResponse = zod
     isPrivate: zod.boolean(),
     privateSetByUserId: zod.string().nullish(),
     matchedPersonIds: zod.array(zod.string()).nullish(),
-    matchedFunderIds: zod.array(zod.string()).nullish(),
+    matchedOrganizationIds: zod.array(zod.string()).nullish(),
     matchedHouseholdIds: zod.array(zod.string()).nullish(),
     aiSummary: zod
       .string()
@@ -6177,7 +5823,7 @@ export const GetEmailMessageResponse = zod
       .number()
       .nullish()
       .describe(
-        "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId\/funderId\/householdId), this counts opens by that contact only. Null when not tracked.",
+        "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId\/organizationId\/householdId), this counts opens by that contact only. Null when not tracked.",
       ),
     trackingLastOpenedAt: zod
       .string()
@@ -6230,7 +5876,7 @@ export const UpdateEmailMessagePrivacyResponse = zod.object({
   isPrivate: zod.boolean(),
   privateSetByUserId: zod.string().nullish(),
   matchedPersonIds: zod.array(zod.string()).nullish(),
-  matchedFunderIds: zod.array(zod.string()).nullish(),
+  matchedOrganizationIds: zod.array(zod.string()).nullish(),
   matchedHouseholdIds: zod.array(zod.string()).nullish(),
   aiSummary: zod
     .string()
@@ -6248,7 +5894,7 @@ export const UpdateEmailMessagePrivacyResponse = zod.object({
     .number()
     .nullish()
     .describe(
-      "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId\/funderId\/householdId), this counts opens by that contact only. Null when not tracked.",
+      "Total tracking-pixel opens recorded for this message. When the list is contact-scoped (personId\/organizationId\/householdId), this counts opens by that contact only. Null when not tracked.",
     ),
   trackingLastOpenedAt: zod
     .string()
@@ -6273,7 +5919,7 @@ export const ListCalendarEventsQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   calendarUserId: zod.coerce.string().optional(),
   personId: zod.coerce.string().optional(),
-  funderId: zod.coerce.string().optional(),
+  organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   startAfter: zod.coerce
     .string()
@@ -6316,7 +5962,7 @@ export const ListCalendarEventsResponse = zod.object({
       isPrivate: zod.boolean(),
       privateSetByUserId: zod.string().nullish(),
       matchedPersonIds: zod.array(zod.string()).nullish(),
-      matchedFunderIds: zod.array(zod.string()).nullish(),
+      matchedOrganizationIds: zod.array(zod.string()).nullish(),
       matchedHouseholdIds: zod.array(zod.string()).nullish(),
     }),
   ),
@@ -6348,7 +5994,7 @@ export const GetCalendarEventResponse = zod.object({
   isPrivate: zod.boolean(),
   privateSetByUserId: zod.string().nullish(),
   matchedPersonIds: zod.array(zod.string()).nullish(),
-  matchedFunderIds: zod.array(zod.string()).nullish(),
+  matchedOrganizationIds: zod.array(zod.string()).nullish(),
   matchedHouseholdIds: zod.array(zod.string()).nullish(),
 });
 
@@ -6377,7 +6023,7 @@ export const UpdateCalendarEventPrivacyResponse = zod.object({
   isPrivate: zod.boolean(),
   privateSetByUserId: zod.string().nullish(),
   matchedPersonIds: zod.array(zod.string()).nullish(),
-  matchedFunderIds: zod.array(zod.string()).nullish(),
+  matchedOrganizationIds: zod.array(zod.string()).nullish(),
   matchedHouseholdIds: zod.array(zod.string()).nullish(),
 });
 
@@ -6523,15 +6169,16 @@ export const RunCalendarSyncResponse = zod.object({
 });
 
 /**
- * Returns all funders with priority='top' and all people with priority='top'
-who are NOT currently affiliated with a top-priority funder. Each row carries
-computed open-opportunity count, open-task count, affiliated people (funders)
-or last-gift info (both). Anonymous masking applied to names.
+ * Returns all organizations with priority='top' and all people with priority='top'
+who are NOT currently affiliated with a top-priority organization. Each row carries
+computed open-opportunity count, open-task count, affiliated people (organizations)
+or last-gift info (both). Names are masked server-side for anonymous records
+when the viewer is not the owner or an admin.
 
- * @summary Top-priority funders and individuals for the fundraiser dashboard.
+ * @summary Top-priority organizations and individuals for the fundraiser dashboard.
  */
 export const GetTopPrioritiesResponse = zod.object({
-  funders: zod.array(
+  organizations: zod.array(
     zod.object({
       id: zod.string(),
       name: zod.string(),
@@ -6582,7 +6229,6 @@ export const GetDashboardSummaryQueryParams = zod.object({
 export const GetDashboardSummaryResponse = zod.object({
   counts: zod.object({
     people: zod.number(),
-    funders: zod.number(),
     households: zod.number(),
     organizations: zod.number(),
     opportunities: zod.number(),
@@ -6737,13 +6383,13 @@ export const GetFiscalYearBreakdownResponse = zod
               .string()
               .nullish()
               .describe("Parent gift's total amount (numeric string)."),
-            funderId: zod.string().nullish(),
-            funderName: zod.string().nullish(),
+            organizationId: zod.string().nullish(),
+            organizationName: zod.string().nullish(),
             householdId: zod.string().nullish(),
             householdName: zod.string().nullish(),
             individualGiverPersonId: zod.string().nullish(),
             individualGiverPersonName: zod.string().nullish(),
-            funderPriority: zod
+            organizationPriority: zod
               .enum(["top", "high", "medium", "low"])
               .nullish(),
             individualGiverPersonPriority: zod
@@ -6786,13 +6432,13 @@ export const GetFiscalYearBreakdownResponse = zod
               .nullish()
               .describe("Parent opp's win_probability (0–1, numeric string)."),
             projectedCloseDate: zod.string().date().nullish(),
-            funderId: zod.string().nullish(),
-            funderName: zod.string().nullish(),
+            organizationId: zod.string().nullish(),
+            organizationName: zod.string().nullish(),
             householdId: zod.string().nullish(),
             householdName: zod.string().nullish(),
             individualGiverPersonId: zod.string().nullish(),
             individualGiverPersonName: zod.string().nullish(),
-            funderPriority: zod
+            organizationPriority: zod
               .enum(["top", "high", "medium", "low"])
               .nullish(),
             individualGiverPersonPriority: zod
@@ -6845,10 +6491,10 @@ export const BulkUpdatePeopleResponse = zod.object({
   ),
 });
 
-export const bulkUpdateFundersBodyIdsMax = 1000;
+export const bulkUpdateOrganizationsBodyIdsMax = 1000;
 
-export const BulkUpdateFundersBody = zod.object({
-  ids: zod.array(zod.string()).min(1).max(bulkUpdateFundersBodyIdsMax),
+export const BulkUpdateOrganizationsBody = zod.object({
+  ids: zod.array(zod.string()).min(1).max(bulkUpdateOrganizationsBodyIdsMax),
   patch: zod.object({
     ownerUserId: zod.string().nullish(),
     activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
@@ -6876,32 +6522,12 @@ export const BulkUpdateFundersBody = zod.object({
       ])
       .nullish(),
     priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
-    fundingEntitySubtype: zod
-      .enum([
-        "family_foundation",
-        "institutional_foundation",
-        "corporate_foundation",
-        "community_foundation",
-        "bank_foundation",
-        "family_office_trust",
-        "intermediary",
-        "government",
-        "nonprofit",
-        "corporation",
-        "capital_provider",
-        "philanthropic_advisor",
-        "cdfi",
-        "education_forprofit",
-        "competition",
-        "public_private",
-        "daf_platform",
-        "platform",
-      ])
-      .nullish(),
+    entityType: zod.string().nullish(),
+    issuesGrants: zod.boolean().optional(),
   }),
 });
 
-export const BulkUpdateFundersResponse = zod.object({
+export const BulkUpdateOrganizationsResponse = zod.object({
   requested: zod.number().describe("Number of ids in the request."),
   succeededIds: zod.array(zod.string()),
   failed: zod.array(
@@ -6912,19 +6538,22 @@ export const BulkUpdateFundersResponse = zod.object({
   ),
 });
 
-export const mergeFundersBodyMergeIdsMax = 49;
+export const mergeOrganizationsBodyMergeIdsMax = 49;
 
-export const MergeFundersBody = zod
+export const MergeOrganizationsBody = zod
   .object({
     primaryId: zod.string(),
-    mergeIds: zod.array(zod.string()).min(1).max(mergeFundersBodyMergeIdsMax),
+    mergeIds: zod
+      .array(zod.string())
+      .min(1)
+      .max(mergeOrganizationsBodyMergeIdsMax),
     overrides: zod.record(zod.string(), zod.unknown()).nullish(),
   })
   .describe(
     "Collapse `mergeIds` (duplicates) into `primaryId` (survivor). `overrides` supplies the user-chosen winning value for each scalar field; only whitelisted funder columns are applied.",
   );
 
-export const MergeFundersResponse = zod.object({
+export const MergeOrganizationsResponse = zod.object({
   primaryId: zod.string().describe("The surviving record id."),
   mergedIds: zod
     .array(zod.string())

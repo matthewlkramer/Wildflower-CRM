@@ -306,7 +306,7 @@ function ReceivedTable({
         {
           dateReceived: (r) => r.dateReceived ?? null,
           donor: (r) =>
-            (r.funderName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
+            (r.organizationName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
           usage: (r) => r.displayUsage?.toLowerCase() ?? null,
           amount: (r) => (r.subAmount != null ? Number(r.subAmount) : null),
         },
@@ -341,9 +341,9 @@ function ReceivedTable({
                   </TableCell>
                   <TableCell>
                     <DonorCell
-                      funderId={r.funderId}
-                      funderName={r.funderName}
-                      funderPriority={r.funderPriority}
+                      organizationId={r.organizationId}
+                      organizationName={r.organizationName}
+                      organizationPriority={r.organizationPriority}
                       householdId={r.householdId}
                       householdName={r.householdName}
                       individualGiverPersonId={r.individualGiverPersonId}
@@ -389,7 +389,7 @@ function OpenTable({
         {
           projectedClose: (r) => r.projectedCloseDate ?? null,
           donor: (r) =>
-            (r.funderName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
+            (r.organizationName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
           opportunity: (r) => (r.opportunityName ?? r.opportunityId ?? "").toLowerCase(),
           stage: (r) => r.opportunityStage ?? null,
           winProb: (r) => (r.winProbability != null ? Number(r.winProbability) : null),
@@ -426,9 +426,9 @@ function OpenTable({
                   <TableCell className="whitespace-nowrap">{fmtDate(r.projectedCloseDate)}</TableCell>
                   <TableCell>
                     <DonorCell
-                      funderId={r.funderId}
-                      funderName={r.funderName}
-                      funderPriority={r.funderPriority}
+                      organizationId={r.organizationId}
+                      organizationName={r.organizationName}
+                      organizationPriority={r.organizationPriority}
                       householdId={r.householdId}
                       householdName={r.householdName}
                       individualGiverPersonId={r.individualGiverPersonId}

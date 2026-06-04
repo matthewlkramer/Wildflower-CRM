@@ -13,7 +13,7 @@ import {
  * `notes` denormalized link pattern: each linkable entity type gets its own
  * `text[]` array column with a GIN index so detail pages can filter cheaply
  * via `WHERE person_ids @> ARRAY[$1]`. A mention can reference individuals
- * (people) and/or funders.
+ * (people) and/or organizations.
  *
  * `pinned` lets a user surface a particular mention in a dedicated card on
  * the linked record's detail page. The table is populated separately (e.g.
@@ -36,7 +36,7 @@ export const mediaMentions = pgTable(
     source: text("source"),
     pinned: boolean("pinned").notNull().default(false),
     personIds: text("person_ids").array(),
-    funderIds: text("funder_ids").array(),
+    organizationIds: text("organization_ids").array(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -49,7 +49,7 @@ export const mediaMentions = pgTable(
     index("media_mentions_publication_date_idx").on(t.publicationDate),
     index("media_mentions_pinned_idx").on(t.pinned),
     index("media_mentions_person_ids_gin_idx").using("gin", t.personIds),
-    index("media_mentions_funder_ids_gin_idx").using("gin", t.funderIds),
+    index("media_mentions_organization_ids_gin_idx").using("gin", t.organizationIds),
     // URL is the dedupe key for the GDELT ingestion upsert. A unique index
     // lets the importer use `INSERT ... ON CONFLICT (url) DO UPDATE` so that
     // concurrent runs can't create duplicate rows or drop entity-link merges.

@@ -1,27 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronsUpDown, Pencil, Plus, X } from "lucide-react";
 import {
-  useListFunders,
+  useListOrganizations,
   useListPeople,
   useListHouseholds,
   useListPaymentIntermediaries,
-  useListOrganizations,
-  useGetFunder,
+  useGetOrganization,
   useGetPerson,
   useGetHousehold,
   useGetPaymentIntermediary,
-  useGetOrganization,
-  getListFundersQueryKey,
+  getListOrganizationsQueryKey,
   getListPeopleQueryKey,
   getListHouseholdsQueryKey,
   getListPaymentIntermediariesQueryKey,
-  getListOrganizationsQueryKey,
-  getGetFunderQueryKey,
+  getGetOrganizationQueryKey,
   getGetPersonQueryKey,
   getGetHouseholdQueryKey,
   getGetPaymentIntermediaryQueryKey,
-  getGetOrganizationQueryKey,
-  type Funder,
   type Person,
   type Household,
   type PaymentIntermediary,
@@ -429,39 +424,6 @@ export function usePersonName(id: string | null): string | null {
   return id && q.data ? personDisplayName(q.data) : null;
 }
 
-export function funderDisplayName(f: Funder): string {
-  return f.name?.trim() || f.id;
-}
-
-export function useFunderSearch(query: string) {
-  const params = query
-    ? { search: query, limit: SEARCH_LIMIT }
-    : { limit: SEARCH_LIMIT };
-  const q = useListFunders(params, {
-    query: { queryKey: getListFundersQueryKey(params), staleTime: SEARCH_STALE },
-  });
-  const items: PickerItem[] = useMemo(
-    () =>
-      (q.data?.data ?? []).map((f) => ({
-        id: f.id,
-        label: funderDisplayName(f),
-      })),
-    [q.data],
-  );
-  return { items, isLoading: q.isLoading };
-}
-
-export function useFunderName(id: string | null): string | null {
-  const q = useGetFunder(id ?? "", {
-    query: {
-      queryKey: getGetFunderQueryKey(id ?? ""),
-      enabled: !!id,
-      staleTime: 5 * 60_000,
-    },
-  });
-  return id && q.data ? funderDisplayName(q.data) : null;
-}
-
 export function householdDisplayName(h: Household): string {
   return h.name?.trim() || h.id;
 }
@@ -505,7 +467,7 @@ export function intermediaryDisplayName(p: PaymentIntermediary): string {
 export function useIntermediarySearch(_query: string) {
   // Only ~35 records — no server-side search needed; cmdk filters locally.
   // NOTE: keep this to exactly 2 hooks (useQuery + useMemo) to match the
-  // hook count of useFunderSearch / useHouseholdSearch / etc. Both pickers
+  // hook count of useOrganizationSearch / useHouseholdSearch / etc. Both pickers
   // share the same EntityCombobox instance (same tree position), so React
   // reuses the component and the hook call count must stay identical across
   // all useSearch implementations or a "rendered more hooks" error fires.
@@ -606,16 +568,16 @@ export function InlineEditPersonPicker(props: EntityPickerProps) {
   );
 }
 
-export function InlineEditFunderPicker(props: EntityPickerProps) {
+export function InlineEditOrganizationPicker(props: EntityPickerProps) {
   return (
     <InlineEditEntityPicker
-      label={props.label ?? "Funder"}
+      label={props.label ?? "Organization"}
       testIdBase={props.testIdBase}
       display={props.display}
       value={props.value}
       onSave={props.onSave}
-      useSearch={useFunderSearch}
-      useResolve={useFunderName}
+      useSearch={useOrganizationSearch}
+      useResolve={useOrganizationName}
       allowNull={props.allowNull}
       placeholder="Search funders…"
     />
@@ -658,16 +620,16 @@ export function InlineEditIntermediaryPicker(props: EntityPickerProps) {
 /* Donor composite picker — enforces donor_xor invariant                    */
 /* ──────────────────────────────────────────────────────────────────────── */
 
-export type DonorType = "funder" | "individual" | "household";
+export type DonorType = "organization" | "individual" | "household";
 
 export interface DonorValue {
-  funderId: string | null;
+  organizationId: string | null;
   individualGiverPersonId: string | null;
   householdId: string | null;
 }
 
 export interface DonorSaveBody {
-  funderId: string | null;
+  organizationId: string | null;
   individualGiverPersonId: string | null;
   householdId: string | null;
 }
@@ -677,7 +639,7 @@ export interface DonorSaveBody {
 // string ID is "set" from the DB CHECK's perspective, so the UI must
 // treat it the same way to avoid divergent client/server state.
 function currentDonorType(v: DonorValue): DonorType | null {
-  if (v.funderId != null) return "funder";
+  if (v.organizationId != null) return "organization";
   if (v.individualGiverPersonId != null) return "individual";
   if (v.householdId != null) return "household";
   return null;
@@ -685,21 +647,21 @@ function currentDonorType(v: DonorValue): DonorType | null {
 
 function donorIdForType(v: DonorValue, t: DonorType | null): string | null {
   if (!t) return null;
-  if (t === "funder") return v.funderId;
+  if (t === "organization") return v.organizationId;
   if (t === "individual") return v.individualGiverPersonId;
   return v.householdId;
 }
 
 function buildDonorBody(t: DonorType | null, id: string | null): DonorSaveBody {
   return {
-    funderId: t === "funder" ? id : null,
+    organizationId: t === "organization" ? id : null,
     individualGiverPersonId: t === "individual" ? id : null,
     householdId: t === "household" ? id : null,
   };
 }
 
 const DONOR_TYPE_LABEL: Record<DonorType, string> = {
-  funder: "Funder",
+  organization: "Organization",
   individual: "Individual",
   household: "Household",
 };
@@ -733,12 +695,12 @@ export function InlineEditDonor({
   const { busy, run } = useSaveRunner();
   const initialType = currentDonorType(value);
   const initialId = donorIdForType(value, initialType);
-  const [type, setType] = useState<DonorType>(initialType ?? "funder");
+  const [type, setType] = useState<DonorType>(initialType ?? "organization");
   const [pickedId, setPickedId] = useState<string | null>(initialId);
 
   useEffect(() => {
     if (editing) {
-      const t0 = currentDonorType(value) ?? "funder";
+      const t0 = currentDonorType(value) ?? "organization";
       setType(t0);
       setPickedId(donorIdForType(value, t0));
     }
@@ -765,7 +727,7 @@ export function InlineEditDonor({
 
   const body = buildDonorBody(type, pickedId);
   const dirty =
-    body.funderId !== (value.funderId ?? null) ||
+    body.organizationId !== (value.organizationId ?? null) ||
     body.individualGiverPersonId !== (value.individualGiverPersonId ?? null) ||
     body.householdId !== (value.householdId ?? null);
   const canSave = dirty && pickedId !== null && !busy;
@@ -777,7 +739,7 @@ export function InlineEditDonor({
   return (
     <div className="flex flex-col gap-2 min-w-0">
       <div className="flex gap-1">
-        {(["funder", "individual", "household"] as const).map((t) => (
+        {(["organization", "individual", "household"] as const).map((t) => (
           <Button
             key={t}
             type="button"
@@ -800,10 +762,10 @@ export function InlineEditDonor({
         ))}
       </div>
       <div className="flex items-center gap-1 min-w-0">
-        {type === "funder" ? (
+        {type === "organization" ? (
           <EntityCombobox
-            useSearch={useFunderSearch}
-            useResolve={useFunderName}
+            useSearch={useOrganizationSearch}
+            useResolve={useOrganizationName}
             value={pickedId}
             onChange={setPickedId}
             allowNull={false}
@@ -898,7 +860,7 @@ export function DonorFieldPicker({
   testIdBase,
   individualLabel = "Individual",
   disabled,
-  onCreateFunder,
+  onCreateOrganization,
 }: {
   type: DonorType;
   id: string | null;
@@ -911,12 +873,12 @@ export function DonorFieldPicker({
    * funder combobox when the search query has no exact match. The callback
    * should create the funder and return its new id (or null on failure).
    */
-  onCreateFunder?: (name: string) => Promise<string | null>;
+  onCreateOrganization?: (name: string) => Promise<string | null>;
 }) {
   return (
     <div className="flex flex-col gap-2 min-w-0">
       <div className="flex gap-1">
-        {(["funder", "individual", "household"] as const).map((t) => (
+        {(["organization", "individual", "household"] as const).map((t) => (
           <Button
             key={t}
             type="button"
@@ -935,18 +897,18 @@ export function DonorFieldPicker({
           </Button>
         ))}
       </div>
-      {type === "funder" ? (
+      {type === "organization" ? (
         <EntityCombobox
-          useSearch={useFunderSearch}
-          useResolve={useFunderName}
+          useSearch={useOrganizationSearch}
+          useResolve={useOrganizationName}
           value={id}
-          onChange={(next) => onChange("funder", next)}
+          onChange={(next) => onChange("organization", next)}
           allowNull={false}
           placeholder="Search funders…"
           disabled={disabled}
           testId={testIdBase ? `select-${testIdBase}` : undefined}
-          onCreate={onCreateFunder}
-          createNoun="funder"
+          onCreate={onCreateOrganization}
+          createNoun="organization"
         />
       ) : type === "individual" ? (
         <EntityCombobox

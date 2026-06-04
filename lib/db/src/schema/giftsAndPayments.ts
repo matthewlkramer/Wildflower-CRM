@@ -14,7 +14,7 @@ import {
   giftTypeEnum,
   giftPaymentMethodEnum,
 } from "./_enums";
-import { funders } from "./funders";
+import { organizations } from "./organizations";
 import { people } from "./people";
 import { opportunitiesAndPledges } from "./opportunitiesAndPledges";
 import { paymentIntermediaries } from "./paymentIntermediaries";
@@ -36,8 +36,8 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   dateReceived: date("date_received"),
   paymentMethod: giftPaymentMethodEnum("payment_method"),
   amount: numeric("amount", { precision: 14, scale: 2 }),
-  // RESTRICT: the funder is the giver of record.
-  funderId: text("funder_id").references(() => funders.id, {
+  // RESTRICT: the organization is the giver of record.
+  organizationId: text("organization_id").references(() => organizations.id, {
     onDelete: "restrict",
   }),
   // RESTRICT: the individual giver is part of the money-trail record.
@@ -46,7 +46,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
     { onDelete: "restrict" },
   ),
   // RESTRICT: a household giver (joint checking / joint card) is part of the
-  // money-trail record. Convention: exactly one of {funderId,
+  // money-trail record. Convention: exactly one of {organizationId,
   // individualGiverPersonId, householdId} is set per row.
   householdId: text("household_id").references(() => households.id, {
     onDelete: "restrict",
@@ -62,7 +62,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
     onDelete: "set null",
   }),
   // FK to fiscal_years.id (slug, e.g. 'fy2024'). Single fiscal year per
-  // gift/payment; if a single funder check legitimately covers multiple FY
+  // gift/payment; if a single org check legitimately covers multiple FY
   // bookings, split it across multiple gift_allocations rows.
   grantYear: text("grant_year").references(() => fiscalYears.id, {
     onDelete: "restrict",
@@ -107,7 +107,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
-  index("gifts_and_payments_funder_id_idx").on(t.funderId),
+  index("gifts_and_payments_organization_id_idx").on(t.organizationId),
   index("gifts_and_payments_individual_giver_person_id_idx").on(t.individualGiverPersonId),
   index("gifts_and_payments_household_id_idx").on(t.householdId),
   index("gifts_and_payments_payment_on_pledge_id_idx").on(t.paymentOnPledgeId),
@@ -119,10 +119,10 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_grant_year_idx").on(t.grantYear),
   index("gifts_and_payments_thank_you_email_msg_idx").on(t.thankYouEmailMessageId),
   index("gifts_and_payments_thank_you_sent_at_idx").on(t.thankYouSentAt),
-  // Donor exclusivity: exactly one of funder / individual-giver / household.
+  // Donor exclusivity: exactly one of organization / individual-giver / household.
   check(
     "gifts_and_payments_donor_xor",
-    sql`num_nonnulls(${t.funderId}, ${t.individualGiverPersonId}, ${t.householdId}) = 1`,
+    sql`num_nonnulls(${t.organizationId}, ${t.individualGiverPersonId}, ${t.householdId}) = 1`,
   ),
 ]);
 

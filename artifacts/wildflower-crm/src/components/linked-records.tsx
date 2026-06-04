@@ -49,12 +49,12 @@ const PAGE_SIZE = 50;
  * unrelated donor's lists into one card.
  */
 export type LinkedRecordsScope =
-  | { funderId: string }
+  | { organizationId: string }
   | { householdId: string }
   | { individualGiverPersonId: string };
 
 function buildBaseParams(scope: LinkedRecordsScope) {
-  if ("funderId" in scope) return { funderId: scope.funderId };
+  if ("organizationId" in scope) return { organizationId: scope.organizationId };
   if ("householdId" in scope) return { householdId: scope.householdId };
   return { individualGiverPersonId: scope.individualGiverPersonId };
 }
@@ -229,18 +229,18 @@ const TASK_STATUS_VARIANT: Record<
  */
 export function LinkedTasksCard({
   personId,
-  funderId,
+  organizationId,
   householdId,
   opportunityId,
   giftId,
 }: {
   personId?: string;
-  funderId?: string;
+  organizationId?: string;
   householdId?: string;
   opportunityId?: string;
   giftId?: string;
 }) {
-  const ctx = { personId, funderId, householdId, opportunityId, giftId };
+  const ctx = { personId, organizationId, householdId, opportunityId, giftId };
   const params: ListTasksParams = { ...ctx, limit: PAGE_SIZE, page: 1 };
   const { data, isLoading, isError, error } = useListTasks(params, {
     query: { queryKey: getListTasksQueryKey(params) },

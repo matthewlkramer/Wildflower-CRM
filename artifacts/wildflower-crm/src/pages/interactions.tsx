@@ -53,7 +53,7 @@ function formatWhen(iso: string): string {
 function participantCount(r: Interaction): number {
   return (
     (r.personIds?.length ?? 0) +
-    (r.funderIds?.length ?? 0) +
+    (r.organizationIds?.length ?? 0) +
     (r.householdIds?.length ?? 0)
   );
 }

@@ -22,7 +22,7 @@ router.get(
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.personId) filters.push(eq(peopleEntityRoles.personId, q.personId));
-    if (q.funderId) filters.push(eq(peopleEntityRoles.funderId, q.funderId));
+    
     if (q.organizationId) filters.push(eq(peopleEntityRoles.organizationId, q.organizationId));
     if (q.paymentIntermediaryId) filters.push(eq(peopleEntityRoles.paymentIntermediaryId, q.paymentIntermediaryId));
     if (q.householdId) filters.push(eq(peopleEntityRoles.householdId, q.householdId));

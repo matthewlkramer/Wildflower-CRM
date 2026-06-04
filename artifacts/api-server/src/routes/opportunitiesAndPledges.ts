@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
-import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, funders, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
+import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, organizations, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
 import { alias } from "drizzle-orm/pg-core";
 import { and, count, desc, eq, exists, getTableColumns, ilike, inArray, isNull, notExists, or, sql, type SQL } from "drizzle-orm";
 
@@ -18,7 +18,7 @@ const primaryContact = alias(people, "primary_contact_person");
 // COALESCE(full_name, trim(first||' '||last)).
 const donorJoinSelect = {
   ...getTableColumns(opportunitiesAndPledges),
-  funderName: funders.name,
+  organizationName: organizations.name,
   householdName: households.name,
   individualGiverPersonName: sql<string | null>`
     COALESCE(
@@ -28,9 +28,9 @@ const donorJoinSelect = {
   `.as("individual_giver_person_name"),
   // Denormalized priority tier so the donor cell can render a star
   // (when priority === 'top') without an extra fetch. NULL when the
-  // corresponding ID isn't set (xor — only one of funder / household /
+  // corresponding ID isn't set (xor — only one of organization / household /
   // person is non-null per row).
-  funderPriority: funders.priority,
+  organizationPriority: organizations.priority,
   individualGiverPersonPriority: people.priority,
   primaryContactPersonName: sql<string | null>`
     COALESCE(
@@ -149,7 +149,7 @@ router.get(
       else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.type));
       else if (f.values.length > 0) filters.push(inArray(opportunitiesAndPledges.type, f.values as never[]));
     }
-    if (q.funderId) filters.push(eq(opportunitiesAndPledges.funderId, q.funderId));
+    if (q.organizationId) filters.push(eq(opportunitiesAndPledges.organizationId, q.organizationId));
     if (q.householdId) filters.push(eq(opportunitiesAndPledges.householdId, q.householdId));
     if (q.individualGiverPersonId) filters.push(eq(opportunitiesAndPledges.individualGiverPersonId, q.individualGiverPersonId));
     {
@@ -256,7 +256,7 @@ router.get(
       db
         .select(donorJoinSelect)
         .from(opportunitiesAndPledges)
-        .leftJoin(funders, eq(funders.id, opportunitiesAndPledges.funderId))
+        .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
         .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
         .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
         .leftJoin(primaryContact, eq(primaryContact.id, opportunitiesAndPledges.primaryContactPersonId))
@@ -277,7 +277,7 @@ router.get(
     const row = await db
       .select(donorJoinSelect)
       .from(opportunitiesAndPledges)
-      .leftJoin(funders, eq(funders.id, opportunitiesAndPledges.funderId))
+      .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
       .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
       .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
       .leftJoin(primaryContact, eq(primaryContact.id, opportunitiesAndPledges.primaryContactPersonId))
@@ -312,7 +312,7 @@ router.post(
       validateRow: (existing, patch) => {
         const merged = { ...existing, ...patch } as Record<string, unknown>;
         const issues = validateOppInvariants({
-          funderId: merged.funderId as string | null | undefined,
+          organizationId: merged.organizationId as string | null | undefined,
           individualGiverPersonId: merged.individualGiverPersonId as string | null | undefined,
           householdId: merged.householdId as string | null | undefined,
           status: merged.status as string | null | undefined,
@@ -449,7 +449,7 @@ router.patch(
     // 400 instead of letting a partial PATCH trip the CHECK constraint as a 500.
     const merged = { ...existing, ...body };
     const issues = validateOppInvariants({
-      funderId: merged.funderId,
+      organizationId: merged.organizationId,
       individualGiverPersonId: merged.individualGiverPersonId,
       householdId: merged.householdId,
       status: merged.status,

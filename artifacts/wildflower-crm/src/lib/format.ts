@@ -199,7 +199,7 @@ export function formatCapacity(capacity: string | null | undefined): string {
  *   "Anonymous"         → "Anon"
  * Match is case-insensitive; the abbreviated form is emitted as written.
  */
-export function formatFunderNameShort(
+export function formatOrganizationNameShort(
   name: string | null | undefined,
 ): string {
   if (!name) return "";

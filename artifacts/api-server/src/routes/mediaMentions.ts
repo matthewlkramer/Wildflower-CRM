@@ -47,8 +47,8 @@ router.get(
     }
     if (q.personId)
       filters.push(sql`${mediaMentions.personIds} @> ARRAY[${q.personId}]::text[]`);
-    if (q.funderId)
-      filters.push(sql`${mediaMentions.funderIds} @> ARRAY[${q.funderId}]::text[]`);
+    if (q.organizationId)
+      filters.push(sql`${mediaMentions.organizationIds} @> ARRAY[${q.organizationId}]::text[]`);
     if (q.pinned !== undefined) filters.push(eq(mediaMentions.pinned, q.pinned));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([

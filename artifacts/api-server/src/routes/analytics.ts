@@ -2,7 +2,6 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
   people,
-  funders,
   households,
   organizations,
   opportunitiesAndPledges,
@@ -169,9 +168,8 @@ router.get(
 
     const [
       [{ value: peopleCt }],
-      [{ value: fundersCt }],
-      [{ value: householdsCt }],
       [{ value: orgsCt }],
+      [{ value: householdsCt }],
       [{ value: oppsCt }],
       [{ value: openCt }],
       [{ value: pledgesCt }],
@@ -180,9 +178,8 @@ router.get(
       nextFyMetrics,
     ] = await Promise.all([
       db.select({ value: count() }).from(people),
-      db.select({ value: count() }).from(funders),
-      db.select({ value: count() }).from(households),
       db.select({ value: count() }).from(organizations),
+      db.select({ value: count() }).from(households),
       db.select({ value: count() }).from(opportunitiesAndPledges),
       db
         .select({ value: count() })
@@ -204,9 +201,8 @@ router.get(
     res.json({
       counts: {
         people: Number(peopleCt),
-        funders: Number(fundersCt),
-        households: Number(householdsCt),
         organizations: Number(orgsCt),
+        households: Number(householdsCt),
         opportunities: Number(oppsCt),
         openOpportunities: Number(openCt),
         pledges: Number(pledgesCt),
@@ -284,18 +280,18 @@ router.get(
           giftType: sql<string | null>`${giftsAndPayments.type}::text`,
           dateReceived: sql<string | null>`${giftsAndPayments.dateReceived}::text`,
           giftAmount: sql<string | null>`${giftsAndPayments.amount}::text`,
-          funderId: giftsAndPayments.funderId,
-          funderName: funders.name,
+          organizationId: giftsAndPayments.organizationId,
+          organizationName: organizations.name,
           householdId: giftsAndPayments.householdId,
           householdName: households.name,
           individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
           individualGiverPersonName: personDisplayNameSql,
-          funderPriority: funders.priority,
+          organizationPriority: organizations.priority,
           individualGiverPersonPriority: people.priority,
         })
         .from(giftAllocations)
         .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
-        .leftJoin(funders, eq(funders.id, giftsAndPayments.funderId))
+        .leftJoin(organizations, eq(organizations.id, giftsAndPayments.organizationId))
         .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
         .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
         .where(
@@ -319,13 +315,13 @@ router.get(
           opportunityStage: sql<string | null>`${opportunitiesAndPledges.stage}::text`,
           winProbability: sql<string | null>`${opportunitiesAndPledges.winProbability}::text`,
           projectedCloseDate: sql<string | null>`${opportunitiesAndPledges.projectedCloseDate}::text`,
-          funderId: opportunitiesAndPledges.funderId,
-          funderName: funders.name,
+          organizationId: opportunitiesAndPledges.organizationId,
+          organizationName: organizations.name,
           householdId: opportunitiesAndPledges.householdId,
           householdName: households.name,
           individualGiverPersonId: opportunitiesAndPledges.individualGiverPersonId,
           individualGiverPersonName: personDisplayNameSql,
-          funderPriority: funders.priority,
+          organizationPriority: organizations.priority,
           individualGiverPersonPriority: people.priority,
         })
         .from(pledgeAllocations)
@@ -333,7 +329,7 @@ router.get(
           opportunitiesAndPledges,
           eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
         )
-        .leftJoin(funders, eq(funders.id, opportunitiesAndPledges.funderId))
+        .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
         .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
         .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
         .where(

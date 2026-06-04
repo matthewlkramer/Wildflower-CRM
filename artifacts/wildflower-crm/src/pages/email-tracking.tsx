@@ -102,7 +102,7 @@ function EmailDetailDialog({
             </div>
 
             {(data.recipientPersonIds.length > 0 ||
-              data.recipientFunderIds.length > 0 ||
+              data.recipientOrganizationIds.length > 0 ||
               data.recipientHouseholdIds.length > 0) && (
               <div>
                 <div className="text-xs uppercase text-muted-foreground mb-1">
@@ -116,10 +116,10 @@ function EmailDetailDialog({
                       </Badge>
                     </Link>
                   ))}
-                  {data.recipientFunderIds.map((fid) => (
-                    <Link key={fid} href={`/funding-entities/${fid}`}>
+                  {data.recipientOrganizationIds.map((fid) => (
+                    <Link key={fid} href={`/organizations/${fid}`}>
                       <Badge variant="secondary" className="cursor-pointer">
-                        Funder
+                        Organization
                       </Badge>
                     </Link>
                   ))}

@@ -12,8 +12,7 @@ export const regionTypeEnum = pgEnum("region_type", [
 ]);
 
 export const entityRoleTypeEnum = pgEnum("entity_role_type", [
-  "funder",
-  "non_funding_organization",
+  "organization",
   "payment_intermediary",
   "household",
 ]);
@@ -88,7 +87,43 @@ export const paymentIntermediaryTypeEnum = pgEnum("payment_intermediary_type", [
   "private_wealth_manager",
 ]);
 
-// ---- Funder enums ----
+// ---- Unified entity type (replaces fundingEntitySubtype + organizationType) ----
+export const entityTypeEnum = pgEnum("entity_type", [
+  "family_foundation",
+  "institutional_foundation",
+  "corporate_foundation",
+  "community_foundation",
+  "bank_foundation",
+  "family_office_trust",
+  "intermediary",
+  "government",
+  "nonprofit",
+  "corporation",
+  "capital_provider",
+  "philanthropic_advisor",
+  "cdfi",
+  "education_forprofit",
+  "competition",
+  "public_private",
+  "daf_platform",
+  "platform",
+  "advocacy_membership_lobbyist",
+  "authorizer",
+  "education_vendor",
+  "elected_official",
+  "higher_ed",
+  "investor",
+  "law_firm",
+  "media",
+  "real_estate",
+  "school",
+  "school_district",
+  "school_network",
+  "small_business_consulting",
+  "tribal",
+]);
+
+// ---- Funder enums (kept for migration compatibility — removed after Phase 2 push) ----
 export const fundingEntitySubtypeEnum = pgEnum("funding_entity_subtype", [
   "family_foundation",
   "institutional_foundation",

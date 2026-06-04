@@ -595,7 +595,7 @@ function describeAction(a: ProposedActionView): string {
     case "create_per": {
       const named = s("entityName");
       const where =
-        s("funderId") ? `funder ${named ? `"${named}"` : s("funderId")}` :
+        s("organizationId") ? `funder ${named ? `"${named}"` : s("organizationId")}` :
         s("organizationId") ? `organization ${named ? `"${named}"` : s("organizationId")}` :
         s("paymentIntermediaryId") ? `payment intermediary ${named ? `"${named}"` : s("paymentIntermediaryId")}` :
         s("householdId") ? `household ${named ? `"${named}"` : s("householdId")}` : "(entity?)";
@@ -603,7 +603,7 @@ function describeAction(a: ProposedActionView): string {
     }
     case "create_person_with_per": {
       const where =
-        s("funderId") ? ` at funder ${s("funderId")}` :
+        s("organizationId") ? ` at funder ${s("organizationId")}` :
         s("organizationId") ? ` at organization ${s("organizationId")}` : "";
       const role = s("externalTitleOrRole") ? ` as "${s("externalTitleOrRole")}"` : "";
       const email = s("emailAddress") ? ` (${s("emailAddress")})` : "";
@@ -627,7 +627,7 @@ function describeAction(a: ProposedActionView): string {
     case "create_grant_opportunity": {
       const amt = n("askAmount");
       const parts = [`Create grant opportunity "${s("title")}"`];
-      if (s("funderId") || s("funderName")) parts.push(`at ${s("funderName") ?? s("funderId")}`);
+      if (s("organizationId") || s("funderName")) parts.push(`at ${s("funderName") ?? s("organizationId")}`);
       if (amt) parts.push(`ask $${amt.toLocaleString()}`);
       if (s("deadline")) parts.push(`due ${s("deadline")}`);
       return parts.join(", ");

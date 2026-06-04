@@ -36,7 +36,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/top-priorities", label: "Top Priorities", icon: Star },
   { href: "/individuals", label: "Individuals", icon: Users },
-  { href: "/funding-entities", label: "Funding Entities", icon: Building2 },
+  { href: "/organizations", label: "Organizations", icon: Building2 },
   { href: "/payment-intermediaries", label: "Payment Intermediaries", icon: Landmark },
   { href: "/opportunities", label: "Opportunities", icon: Target },
   { href: "/pipeline", label: "Pipeline", icon: Columns3 },

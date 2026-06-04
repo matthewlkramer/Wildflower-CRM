@@ -29,7 +29,7 @@ export const notes = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     personIds: text("person_ids").array(),
-    funderIds: text("funder_ids").array(),
+    organizationIds: text("organization_ids").array(),
     householdIds: text("household_ids").array(),
     opportunityIds: text("opportunity_ids").array(),
     giftIds: text("gift_ids").array(),
@@ -45,7 +45,7 @@ export const notes = pgTable(
     index("notes_author_user_id_idx").on(t.authorUserId),
     index("notes_created_at_idx").on(t.createdAt),
     index("notes_person_ids_gin_idx").using("gin", t.personIds),
-    index("notes_funder_ids_gin_idx").using("gin", t.funderIds),
+    index("notes_organization_ids_gin_idx").using("gin", t.organizationIds),
     index("notes_household_ids_gin_idx").using("gin", t.householdIds),
     index("notes_opportunity_ids_gin_idx").using("gin", t.opportunityIds),
     index("notes_gift_ids_gin_idx").using("gin", t.giftIds),

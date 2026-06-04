@@ -16,7 +16,7 @@ import {
   opportunityStageEnum,
   opportunityConditionalEnum,
 } from "./_enums";
-import { funders } from "./funders";
+import { organizations } from "./organizations";
 import { people } from "./people";
 import { users } from "./users";
 import { households } from "./households";
@@ -48,7 +48,7 @@ import { households } from "./households";
 //     IGNORED : awarded_amount, actual_completion_date, conditions_met,
 //               loss_reason
 //
-//   status='pledge' (funder committed; money may or may not be in)
+//   status='pledge' (organization committed; money may or may not be in)
 //     EXPECTED: awarded_amount, conditional, conditions, conditions_met,
 //               payment_details, grant_letter_url (foundation grants)
 //     IGNORED : win_probability, projected_close_date, loss_reason
@@ -73,14 +73,14 @@ import { households } from "./households";
 //
 // Partial indexes below match the two hot read paths: "open pipeline"
 // (filter by status='open', sorted by projected_close_date, often
-// scoped by funder) and "cash-in grants in a given period" (filter by
+// scoped by organization) and "cash-in grants in a given period" (filter by
 // status='cash_in', sorted by actual_completion_date).
 export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   id: text("id").primaryKey(),
   name: text("name"),
-  // RESTRICT: the funder is the giver of record on this opportunity/pledge.
+  // RESTRICT: the organization is the giver of record on this opportunity/pledge.
   // Deleting them must explicitly clean up dependent rows first.
-  funderId: text("funder_id").references(() => funders.id, {
+  organizationId: text("organization_id").references(() => organizations.id, {
     onDelete: "restrict",
   }),
   askAmount: numeric("ask_amount", { precision: 14, scale: 2 }),
@@ -95,7 +95,7 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
     { onDelete: "restrict" },
   ),
   // RESTRICT: a household giver (joint checking / joint card) is part of the
-  // money-trail record. Convention: exactly one of {funderId,
+  // money-trail record. Convention: exactly one of {organizationId,
   // individualGiverPersonId, householdId} is set per row.
   householdId: text("household_id").references(() => households.id, {
     onDelete: "restrict",
@@ -152,7 +152,7 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
-  index("opportunities_and_pledges_funder_id_idx").on(t.funderId),
+  index("opportunities_and_pledges_organization_id_idx").on(t.organizationId),
   index("opportunities_and_pledges_individual_giver_person_id_idx").on(t.individualGiverPersonId),
   index("opportunities_and_pledges_household_id_idx").on(t.householdId),
   index("opportunities_and_pledges_individual_advisor_person_id_idx").on(t.individualAdvisorPersonId),
@@ -162,15 +162,15 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // Partial indexes for the two phase-specific hot paths. See
   // "Column validity by status" comment above.
   index("opportunities_and_pledges_open_pipeline_idx")
-    .on(t.funderId, t.projectedCloseDate)
+    .on(t.organizationId, t.projectedCloseDate)
     .where(sql`${t.status} = 'open'`),
   index("opportunities_and_pledges_cash_in_completed_idx")
     .on(t.actualCompletionDate)
     .where(sql`${t.status} = 'cash_in'`),
-  // Donor exclusivity: exactly one of funder / individual-giver / household.
+  // Donor exclusivity: exactly one of organization / individual-giver / household.
   check(
     "opportunities_and_pledges_donor_xor",
-    sql`num_nonnulls(${t.funderId}, ${t.individualGiverPersonId}, ${t.householdId}) = 1`,
+    sql`num_nonnulls(${t.organizationId}, ${t.individualGiverPersonId}, ${t.householdId}) = 1`,
   ),
   // NOTE: previously had a `closed_requires_completion_date` CHECK that
   // forced won/lost rows to carry an actualCompletionDate. Dropped to

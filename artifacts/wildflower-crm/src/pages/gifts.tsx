@@ -97,9 +97,9 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       label: "Donor",
       cell: (g) => (
         <DonorCell
-          funderId={g.funderId}
-          funderName={g.funderName}
-          funderPriority={g.funderPriority}
+          organizationId={g.organizationId}
+          organizationName={g.organizationName}
+          organizationPriority={g.organizationPriority}
           householdId={g.householdId}
           householdName={g.householdName}
           individualGiverPersonId={g.individualGiverPersonId}
@@ -396,7 +396,7 @@ export default function Gifts() {
         {
           name: (r) => (r.name ?? "").toLowerCase(),
           donor: (r) =>
-            (r.funderName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
+            (r.organizationName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
           dateReceived: (r) => r.dateReceived ?? null,
           type: (r) => r.type ?? null,
           amount: (r) => (r.amount != null ? Number(r.amount) : null),

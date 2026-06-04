@@ -5,7 +5,6 @@ import {
   useUpdatePerson,
   useDeletePerson,
   useGetHousehold,
-  useGetFunder,
   useGetOrganization,
   useGetPaymentIntermediary,
   useGetCurrentUser,
@@ -15,7 +14,6 @@ import {
   useDeletePersonSuppressionWindow,
   getGetPersonQueryKey,
   getGetHouseholdQueryKey,
-  getGetFunderQueryKey,
   getGetOrganizationQueryKey,
   getGetPaymentIntermediaryQueryKey,
   getListPeopleQueryKey,
@@ -68,10 +66,9 @@ import {
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import { InlineEditRegionPicker } from "@/components/region-picker";
 import {
-  useFunderName,
+  useOrganizationName,
   useHouseholdName,
   useIntermediaryName,
-  useOrganizationName,
 } from "@/components/entity-picker";
 import type { PeopleEntityRole } from "@workspace/api-client-react";
 import {
@@ -87,7 +84,7 @@ import {
   formatDate,
   formatEnum,
   formatEnthusiasm,
-  formatFunderNameShort,
+  formatOrganizationNameShort,
   formatFacebookHandle,
   formatInstagramHandle,
   formatLinkedinHandle,
@@ -799,7 +796,7 @@ function PersonView({ person }: { person: PersonDetail }) {
           const householdRole = (person.roles ?? []).find(
             (r) => r.entityType === "household" && r.householdId && r.current === "current",
           );
-          const personDefaultLinks: Partial<{ personIds: string[]; funderIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = householdRole?.householdId
+          const personDefaultLinks: Partial<{ personIds: string[]; organizationIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = householdRole?.householdId
             ? { householdIds: [householdRole.householdId] }
             : {};
           return (
@@ -851,24 +848,21 @@ function RoleRow({ role: r }: { role: PeopleEntityRole }) {
   // Call all four resolvers unconditionally to keep hook order stable; only
   // one of the four IDs is populated per role (per-entity discriminator
   // CHECK in the DB), so only one returns a non-null name.
-  const funderName = useFunderName(r.funderId ?? null);
-  const orgName = useOrganizationName(r.organizationId ?? null);
+  const organizationName = useOrganizationName(r.organizationId ?? null);
   const householdName = useHouseholdName(r.householdId ?? null);
   const intermediaryName = useIntermediaryName(r.paymentIntermediaryId ?? null);
-  const entityHref = r.funderId
-    ? `/funding-entities/${r.funderId}`
+  const entityHref = r.organizationId
+    ? `/organizations/${r.organizationId}`
     : r.householdId
       ? `/households/${r.householdId}`
       : null;
-  // RoleRow is a per-row list-style display (funder/org/household per role),
-  // so funder names get the compact abbreviation. Detail pages for the
+  // RoleRow is a per-row list-style display (organization/household per role),
+  // so organization names get the compact abbreviation. Detail pages for the
   // funder/household themselves still show the full name.
   const entityLabel =
-    (funderName ? formatFunderNameShort(funderName) : null) ??
-    orgName ??
+    (organizationName ? formatOrganizationNameShort(organizationName) : null) ??
     householdName ??
     intermediaryName ??
-    r.funderId ??
     r.organizationId ??
     r.householdId ??
     r.paymentIntermediaryId ??
@@ -968,7 +962,7 @@ function PeopleCard({ person }: { person: PersonDetail }) {
   for (const r of roles) {
     if (r.entityType === "household") continue;
     const entityId =
-      r.funderId ?? r.organizationId ?? r.paymentIntermediaryId ?? null;
+      r.organizationId ?? r.organizationId ?? r.paymentIntermediaryId ?? null;
     if (!entityId) continue;
     const key = `${r.entityType}:${entityId}`;
     const isCurrent = r.current === "current";
@@ -1167,16 +1161,10 @@ function ColleagueMembers({
 }) {
   // All three resolvers are called unconditionally to keep hook order stable;
   // only the one matching this entity's type is enabled.
-  const funderQ = useGetFunder(entityId, {
-    query: {
-      queryKey: getGetFunderQueryKey(entityId),
-      enabled: entityType === "funder",
-    },
-  });
   const orgQ = useGetOrganization(entityId, {
     query: {
       queryKey: getGetOrganizationQueryKey(entityId),
-      enabled: entityType === "non_funding_organization",
+      enabled: entityType === "organization",
     },
   });
   const piQ = useGetPaymentIntermediary(entityId, {
@@ -1185,12 +1173,7 @@ function ColleagueMembers({
       enabled: entityType === "payment_intermediary",
     },
   });
-  const active =
-    entityType === "funder"
-      ? funderQ
-      : entityType === "non_funding_organization"
-        ? orgQ
-        : piQ;
+  const active = entityType === "organization" ? orgQ : piQ;
   const { data, isLoading, isError } = active;
   if (isLoading) {
     return <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>;

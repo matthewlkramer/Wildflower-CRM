@@ -9,7 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users } from "./users";
-import { funders } from "./funders";
+import { organizations } from "./organizations";
 import { people } from "./people";
 import { households } from "./households";
 
@@ -28,8 +28,8 @@ import { households } from "./households";
  * creator owns the privacy decision and it's irreversible per-record.
  *
  * Contact xor: a meeting note is always about exactly ONE primary
- * contact — a person, a household, or a funder. DB-enforced via the
- * `meeting_notes_contact_xor` CHECK constraint. Routes pre-validate
+ * contact — a person, a household, or an organization. DB-enforced via
+ * the `meeting_notes_contact_xor` CHECK constraint. Routes pre-validate
  * the same invariant to return 400 instead of 500.
  */
 export const meetingNotes = pgTable(
@@ -50,14 +50,14 @@ export const meetingNotes = pgTable(
       .references(() => users.id, { onDelete: "restrict" }),
     // FKs are RESTRICT, not SET NULL — the contact_xor CHECK requires
     // exactly one non-null contact, so an ON DELETE SET NULL would turn
-    // a routine person/funder/household delete into a CHECK violation
+    // a routine person/org/household delete into a CHECK violation
     // and refuse the delete (or leave the meeting note in a forbidden
     // state). Forcing the user to delete the meeting note first keeps
     // the invariant clean.
     personId: text("person_id").references(() => people.id, {
       onDelete: "restrict",
     }),
-    funderId: text("funder_id").references(() => funders.id, {
+    organizationId: text("organization_id").references(() => organizations.id, {
       onDelete: "restrict",
     }),
     householdId: text("household_id").references(() => households.id, {
@@ -74,11 +74,11 @@ export const meetingNotes = pgTable(
     index("meeting_notes_creator_user_id_idx").on(t.creatorUserId),
     index("meeting_notes_meeting_date_idx").on(t.meetingDate),
     index("meeting_notes_person_id_idx").on(t.personId),
-    index("meeting_notes_funder_id_idx").on(t.funderId),
+    index("meeting_notes_organization_id_idx").on(t.organizationId),
     index("meeting_notes_household_id_idx").on(t.householdId),
     check(
       "meeting_notes_contact_xor",
-      sql`num_nonnulls(${t.personId}, ${t.funderId}, ${t.householdId}) = 1`,
+      sql`num_nonnulls(${t.personId}, ${t.organizationId}, ${t.householdId}) = 1`,
     ),
   ],
 );

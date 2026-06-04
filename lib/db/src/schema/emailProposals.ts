@@ -10,7 +10,7 @@ import {
 import { users } from "./users";
 import { emailMessages } from "./emailMessages";
 import { people } from "./people";
-import { funders } from "./funders";
+import { organizations } from "./organizations";
 import { emails } from "./emails";
 import {
   emailProposalKindEnum,
@@ -43,7 +43,7 @@ import {
  *       enhancedCode?, reason? }
  *   - signature_update: { name?, title?, company?, phone?,
  *       email?, current: {title?, primaryOrg?} }
- *   - grant_opportunity: { title, funderName?, deadline?, amount?,
+ *   - grant_opportunity: { title, organizationName?, deadline?, amount?,
  *       url?, snippet, sourceDigest? }
  */
 export const emailProposals = pgTable(
@@ -62,7 +62,7 @@ export const emailProposals = pgTable(
     targetPersonId: text("target_person_id").references(() => people.id, {
       onDelete: "set null",
     }),
-    targetFunderId: text("target_funder_id").references(() => funders.id, {
+    targetOrganizationId: text("target_organization_id").references(() => organizations.id, {
       onDelete: "set null",
     }),
     targetEmailId: text("target_email_id").references(() => emails.id, {
@@ -126,7 +126,7 @@ export const emailProposals = pgTable(
       t.kind,
     ),
     index("email_proposals_target_person_idx").on(t.targetPersonId),
-    index("email_proposals_target_funder_idx").on(t.targetFunderId),
+    index("email_proposals_target_organization_idx").on(t.targetOrganizationId),
   ],
 );
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   canSeeIdentity,
   canManageIdentity,
-  displayFunderName,
+  displayOrganizationName,
   displayPersonName,
   ANONYMOUS_LABEL,
 } from "./visibility";
@@ -52,10 +52,10 @@ describe("canManageIdentity", () => {
 });
 
 describe("display helpers", () => {
-  it("masks funder name for unauthorized viewers", () => {
+  it("masks organization name for unauthorized viewers", () => {
     const funder = { name: "Acme Foundation", anonymous: true, ownerUserId: "u1" };
-    expect(displayFunderName(funder, otherUser)).toBe(ANONYMOUS_LABEL);
-    expect(displayFunderName(funder, owner)).toBe("Acme Foundation");
+    expect(displayOrganizationName(funder, otherUser)).toBe(ANONYMOUS_LABEL);
+    expect(displayOrganizationName(funder, owner)).toBe("Acme Foundation");
   });
 
   it("masks person name for unauthorized viewers", () => {

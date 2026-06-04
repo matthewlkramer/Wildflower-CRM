@@ -56,14 +56,14 @@ const TYPE_OPTIONS: { value: OpportunityType; label: string }[] = [
 
 /**
  * Maps a donor-scoping object to an initial (type, id) pair for the donor
- * picker. Exactly one of funderId / householdId / individualGiverPersonId is
+ * picker. Exactly one of organizationId / householdId / individualGiverPersonId is
  * set on the scope, mirroring the donor XOR invariant enforced by the API/DB.
  */
 function donorFromScope(scope: LinkedRecordsScope): {
   type: DonorType;
   id: string;
 } {
-  if ("funderId" in scope) return { type: "funder", id: scope.funderId };
+  if ("organizationId" in scope) return { type: "organization", id: scope.organizationId };
   if ("householdId" in scope)
     return { type: "household", id: scope.householdId };
   return { type: "individual", id: scope.individualGiverPersonId };
@@ -98,7 +98,7 @@ export function CreateOpportunityDialog({
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const initialDonor = scope ? donorFromScope(scope) : null;
   const [donorType, setDonorType] = useState<DonorType>(
-    initialDonor?.type ?? "funder",
+    initialDonor?.type ?? "organization",
   );
   const [donorId, setDonorId] = useState<string | null>(
     initialDonor?.id ?? null,
@@ -114,7 +114,7 @@ export function CreateOpportunityDialog({
       setDonorType(d.type);
       setDonorId(d.id);
     } else {
-      setDonorType("funder");
+      setDonorType("organization");
       setDonorId(null);
     }
   }
@@ -176,7 +176,7 @@ export function CreateOpportunityDialog({
     create.mutate({
       data: {
         name: trimmedName,
-        funderId: donor.funderId ?? undefined,
+        organizationId: donor.organizationId ?? undefined,
         individualGiverPersonId: donor.individualGiverPersonId ?? undefined,
         householdId: donor.householdId ?? undefined,
         ...(isPledge ? { wasPledge: true } : {}),

@@ -24,10 +24,10 @@ import {
  */
 
 export const DONOR_XOR_MESSAGE =
-  "Exactly one of funderId, individualGiverPersonId, or householdId must be set (donor XOR).";
+  "Exactly one of organizationId, individualGiverPersonId, or householdId must be set (donor XOR).";
 
 export interface DonorState {
-  funderId?: string | null;
+  organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
 }
@@ -44,11 +44,11 @@ export interface InvariantIssue {
 
 // Match Postgres `num_nonnulls(...)` semantics used by the donor_xor CHECK
 // constraints: count any value that is neither null nor undefined, including
-// empty strings. Truthiness would let `{ funderId: "" }` slip through the API
+// empty strings. Truthiness would let `{ organizationId: "" }` slip through the API
 // check and trip the DB constraint as a 500.
 function donorCount(s: DonorState): number {
   return (
-    (s.funderId != null ? 1 : 0) +
+    (s.organizationId != null ? 1 : 0) +
     (s.individualGiverPersonId != null ? 1 : 0) +
     (s.householdId != null ? 1 : 0)
   );
@@ -59,7 +59,7 @@ export function validateOppInvariants(
 ): InvariantIssue[] {
   const issues: InvariantIssue[] = [];
   if (donorCount(state) !== 1) {
-    issues.push({ path: "funderId", message: DONOR_XOR_MESSAGE });
+    issues.push({ path: "organizationId", message: DONOR_XOR_MESSAGE });
   }
   return issues;
 }
@@ -67,7 +67,7 @@ export function validateOppInvariants(
 export function validateGiftInvariants(state: DonorState): InvariantIssue[] {
   const issues: InvariantIssue[] = [];
   if (donorCount(state) !== 1) {
-    issues.push({ path: "funderId", message: DONOR_XOR_MESSAGE });
+    issues.push({ path: "organizationId", message: DONOR_XOR_MESSAGE });
   }
   return issues;
 }
@@ -112,18 +112,18 @@ export const CreateGiftOrPaymentBodyRefined =
  * post-update state (un-refined `UpdateMeetingNoteBody` from generated/api).
  */
 export const MEETING_CONTACT_XOR_MESSAGE =
-  "Exactly one of personId, funderId, or householdId must be set (contact XOR).";
+  "Exactly one of personId, organizationId, or householdId must be set (contact XOR).";
 
 export interface MeetingContactState {
   personId?: string | null;
-  funderId?: string | null;
+  organizationId?: string | null;
   householdId?: string | null;
 }
 
 function meetingContactCount(s: MeetingContactState): number {
   return (
     (s.personId != null ? 1 : 0) +
-    (s.funderId != null ? 1 : 0) +
+    (s.organizationId != null ? 1 : 0) +
     (s.householdId != null ? 1 : 0)
   );
 }

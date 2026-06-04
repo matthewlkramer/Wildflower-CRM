@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
-import { funders, people } from "@workspace/db/schema";
-import { inArray, sql } from "drizzle-orm";
+import { organizations, people } from "@workspace/db/schema";
+import { eq, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
 import { searchGdelt } from "./gdelt";
@@ -34,7 +34,7 @@ const CORPORATE_FOUNDATION_SUBTYPES = [
 const FOUNDATION_MARKER = /foundation|fundaci[oó]n|\.org|philanthrop|\bfund\b/i;
 
 export interface IngestTarget {
-  kind: "funder" | "person";
+  kind: "organization" | "person";
   id: string;
   name: string;
 }
@@ -133,17 +133,18 @@ export function mergeEntityId(
   return [...arr, id];
 }
 
-/** Build the full target list: all funders + monitored-capacity people. */
+/** Build the full target list: all grant-issuing organizations + monitored-capacity people. */
 export async function buildIngestTargets(): Promise<IngestTarget[]> {
   const corporateSubtypes = new Set<string>(CORPORATE_FOUNDATION_SUBTYPES);
-  const [funderRows, personRows] = await Promise.all([
+  const [orgRows, personRows] = await Promise.all([
     db
       .select({
-        id: funders.id,
-        name: funders.name,
-        subtype: funders.fundingEntitySubtype,
+        id: organizations.id,
+        name: organizations.name,
+        entityType: organizations.entityType,
       })
-      .from(funders),
+      .from(organizations)
+      .where(eq(organizations.issuesGrants, true)),
     db
       .select({
         id: people.id,
@@ -156,16 +157,16 @@ export async function buildIngestTargets(): Promise<IngestTarget[]> {
   ]);
 
   const targets: IngestTarget[] = [];
-  for (const f of funderRows) {
+  for (const f of orgRows) {
     const raw = f.name?.trim();
     if (!raw) continue;
     // Corporate/bank foundations: search the foundation, not the parent
     // corporation, to avoid drowning in unrelated company/market news.
     const name =
-      f.subtype && corporateSubtypes.has(f.subtype)
+      f.entityType && corporateSubtypes.has(f.entityType)
         ? foundationSearchName(raw)
         : raw;
-    targets.push({ kind: "funder", id: f.id, name });
+    targets.push({ kind: "organization", id: f.id, name });
   }
   for (const p of personRows) {
     const name = personDisplayName(p);
@@ -190,7 +191,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * distinguishes a fresh insert ("created") from an array merge ("linked").
  */
 const ENTITY_COLUMN = {
-  funder: "funder_ids",
+  organization: "organization_ids",
   person: "person_ids",
 } as const;
 

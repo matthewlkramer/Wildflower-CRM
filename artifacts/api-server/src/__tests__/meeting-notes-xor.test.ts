@@ -7,14 +7,14 @@ import {
 describe("meeting-notes contact XOR", () => {
   const cases: Array<[string, Record<string, string | null | undefined>, boolean]> = [
     ["person only", { personId: "p1" }, true],
-    ["funder only", { funderId: "f1" }, true],
+    ["funder only", { organizationId: "f1" }, true],
     ["household only", { householdId: "h1" }, true],
     ["none set", {}, false],
-    ["all null", { personId: null, funderId: null, householdId: null }, false],
-    ["person + funder", { personId: "p1", funderId: "f1" }, false],
+    ["all null", { personId: null, organizationId: null, householdId: null }, false],
+    ["person + funder", { personId: "p1", organizationId: "f1" }, false],
     ["person + household", { personId: "p1", householdId: "h1" }, false],
-    ["funder + household", { funderId: "f1", householdId: "h1" }, false],
-    ["all three", { personId: "p1", funderId: "f1", householdId: "h1" }, false],
+    ["funder + household", { organizationId: "f1", householdId: "h1" }, false],
+    ["all three", { personId: "p1", organizationId: "f1", householdId: "h1" }, false],
     // Empty string still counts as "set" — same semantics as donor-xor.
     // Routes use parseOrBadRequest which gates on the field actually
     // being present, so this branch is defensive but consistent.

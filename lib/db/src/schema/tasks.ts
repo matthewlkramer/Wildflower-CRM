@@ -41,7 +41,7 @@ export const tasks = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     personIds: text("person_ids").array(),
-    funderIds: text("funder_ids").array(),
+    organizationIds: text("organization_ids").array(),
     householdIds: text("household_ids").array(),
     opportunityIds: text("opportunity_ids").array(),
     giftIds: text("gift_ids").array(),
@@ -60,7 +60,7 @@ export const tasks = pgTable(
     index("tasks_kind_idx").on(t.kind),
     index("tasks_due_date_idx").on(t.dueDate),
     index("tasks_person_ids_gin_idx").using("gin", t.personIds),
-    index("tasks_funder_ids_gin_idx").using("gin", t.funderIds),
+    index("tasks_organization_ids_gin_idx").using("gin", t.organizationIds),
     index("tasks_household_ids_gin_idx").using("gin", t.householdIds),
     index("tasks_opportunity_ids_gin_idx").using("gin", t.opportunityIds),
     index("tasks_gift_ids_gin_idx").using("gin", t.giftIds),

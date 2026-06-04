@@ -23,10 +23,10 @@ import type {
   AdminGoogleSyncList,
   AdminResyncGoogleUser200,
   BadRequestResponse,
-  BulkUpdateFundersBody,
   BulkUpdateGiftsBody,
   BulkUpdateHouseholdsBody,
   BulkUpdateOpportunitiesBody,
+  BulkUpdateOrganizationsBody,
   BulkUpdatePeopleBody,
   BulkUpdateResult,
   CalendarEvent,
@@ -39,7 +39,6 @@ import type {
   CreateEmailBody,
   CreateEntityBody,
   CreateFundableProjectBody,
-  CreateFunderBody,
   CreateGiftAllocationBody,
   CreateGiftOrPaymentBody,
   CreateHouseholdBody,
@@ -77,9 +76,6 @@ import type {
   FiscalYearEntityGoal,
   ForbiddenResponse,
   FundableProject,
-  Funder,
-  FunderDetail,
-  FunderList,
   GetDashboardSummaryParams,
   GetFiscalYearBreakdownParams,
   GetProjectionsByFyEntityParams,
@@ -104,7 +100,6 @@ import type {
   ListEmailProposalsParams,
   ListEmailsParams,
   ListFiscalYearEntityGoalsParams,
-  ListFundersParams,
   ListGiftAllocationsParams,
   ListGiftsAndPaymentsParams,
   ListHouseholdsParams,
@@ -133,7 +128,7 @@ import type {
   MediaMentionUpdate,
   MeetingNote,
   MeetingNoteList,
-  MergeFundersBody,
+  MergeOrganizationsBody,
   MergePeopleBody,
   MergeResult,
   NotFoundResponse,
@@ -189,7 +184,6 @@ import type {
   UpdateEmailMessagePrivacyBody,
   UpdateEntityBody,
   UpdateFundableProjectBody,
-  UpdateFunderBody,
   UpdateGiftAllocationBody,
   UpdateGiftOrPaymentBody,
   UpdateHouseholdBody,
@@ -2404,412 +2398,6 @@ export function useListFiscalYears<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-export const getListFundersUrl = (params?: ListFundersParams) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0
-    ? `/api/funders?${stringifiedParams}`
-    : `/api/funders`;
-};
-
-export const listFunders = async (
-  params?: ListFundersParams,
-  options?: RequestInit,
-): Promise<FunderList> => {
-  return customFetch<FunderList>(getListFundersUrl(params), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getListFundersQueryKey = (params?: ListFundersParams) => {
-  return [`/api/funders`, ...(params ? [params] : [])] as const;
-};
-
-export const getListFundersQueryOptions = <
-  TData = Awaited<ReturnType<typeof listFunders>>,
-  TError = ErrorType<unknown>,
->(
-  params?: ListFundersParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof listFunders>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getListFundersQueryKey(params);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof listFunders>>> = ({
-    signal,
-  }) => listFunders(params, { signal, ...requestOptions });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listFunders>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type ListFundersQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listFunders>>
->;
-export type ListFundersQueryError = ErrorType<unknown>;
-
-export function useListFunders<
-  TData = Awaited<ReturnType<typeof listFunders>>,
-  TError = ErrorType<unknown>,
->(
-  params?: ListFundersParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof listFunders>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListFundersQueryOptions(params, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-export const getCreateFunderUrl = () => {
-  return `/api/funders`;
-};
-
-export const createFunder = async (
-  createFunderBody: CreateFunderBody,
-  options?: RequestInit,
-): Promise<Funder> => {
-  return customFetch<Funder>(getCreateFunderUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(createFunderBody),
-  });
-};
-
-export const getCreateFunderMutationOptions = <
-  TError = ErrorType<BadRequestResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createFunder>>,
-    TError,
-    { data: BodyType<CreateFunderBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createFunder>>,
-  TError,
-  { data: BodyType<CreateFunderBody> },
-  TContext
-> => {
-  const mutationKey = ["createFunder"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createFunder>>,
-    { data: BodyType<CreateFunderBody> }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return createFunder(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type CreateFunderMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createFunder>>
->;
-export type CreateFunderMutationBody = BodyType<CreateFunderBody>;
-export type CreateFunderMutationError = ErrorType<BadRequestResponse>;
-
-export const useCreateFunder = <
-  TError = ErrorType<BadRequestResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createFunder>>,
-    TError,
-    { data: BodyType<CreateFunderBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof createFunder>>,
-  TError,
-  { data: BodyType<CreateFunderBody> },
-  TContext
-> => {
-  return useMutation(getCreateFunderMutationOptions(options));
-};
-
-export const getGetFunderUrl = (id: string) => {
-  return `/api/funders/${id}`;
-};
-
-export const getFunder = async (
-  id: string,
-  options?: RequestInit,
-): Promise<FunderDetail> => {
-  return customFetch<FunderDetail>(getGetFunderUrl(id), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getGetFunderQueryKey = (id: string) => {
-  return [`/api/funders/${id}`] as const;
-};
-
-export const getGetFunderQueryOptions = <
-  TData = Awaited<ReturnType<typeof getFunder>>,
-  TError = ErrorType<NotFoundResponse>,
->(
-  id: string,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getFunder>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetFunderQueryKey(id);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFunder>>> = ({
-    signal,
-  }) => getFunder(id, { signal, ...requestOptions });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: !!id,
-    ...queryOptions,
-  } as UseQueryOptions<Awaited<ReturnType<typeof getFunder>>, TError, TData> & {
-    queryKey: QueryKey;
-  };
-};
-
-export type GetFunderQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getFunder>>
->;
-export type GetFunderQueryError = ErrorType<NotFoundResponse>;
-
-export function useGetFunder<
-  TData = Awaited<ReturnType<typeof getFunder>>,
-  TError = ErrorType<NotFoundResponse>,
->(
-  id: string,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getFunder>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetFunderQueryOptions(id, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-export const getUpdateFunderUrl = (id: string) => {
-  return `/api/funders/${id}`;
-};
-
-export const updateFunder = async (
-  id: string,
-  updateFunderBody: UpdateFunderBody,
-  options?: RequestInit,
-): Promise<Funder> => {
-  return customFetch<Funder>(getUpdateFunderUrl(id), {
-    ...options,
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(updateFunderBody),
-  });
-};
-
-export const getUpdateFunderMutationOptions = <
-  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateFunder>>,
-    TError,
-    { id: string; data: BodyType<UpdateFunderBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof updateFunder>>,
-  TError,
-  { id: string; data: BodyType<UpdateFunderBody> },
-  TContext
-> => {
-  const mutationKey = ["updateFunder"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updateFunder>>,
-    { id: string; data: BodyType<UpdateFunderBody> }
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return updateFunder(id, data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type UpdateFunderMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updateFunder>>
->;
-export type UpdateFunderMutationBody = BodyType<UpdateFunderBody>;
-export type UpdateFunderMutationError = ErrorType<
-  BadRequestResponse | NotFoundResponse
->;
-
-export const useUpdateFunder = <
-  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateFunder>>,
-    TError,
-    { id: string; data: BodyType<UpdateFunderBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof updateFunder>>,
-  TError,
-  { id: string; data: BodyType<UpdateFunderBody> },
-  TContext
-> => {
-  return useMutation(getUpdateFunderMutationOptions(options));
-};
-
-export const getDeleteFunderUrl = (id: string) => {
-  return `/api/funders/${id}`;
-};
-
-export const deleteFunder = async (
-  id: string,
-  options?: RequestInit,
-): Promise<void> => {
-  return customFetch<void>(getDeleteFunderUrl(id), {
-    ...options,
-    method: "DELETE",
-  });
-};
-
-export const getDeleteFunderMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteFunder>>,
-    TError,
-    { id: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deleteFunder>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  const mutationKey = ["deleteFunder"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deleteFunder>>,
-    { id: string }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return deleteFunder(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type DeleteFunderMutationResult = NonNullable<
-  Awaited<ReturnType<typeof deleteFunder>>
->;
-
-export type DeleteFunderMutationError = ErrorType<unknown>;
-
-export const useDeleteFunder = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteFunder>>,
-    TError,
-    { id: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof deleteFunder>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  return useMutation(getDeleteFunderMutationOptions(options));
-};
 
 export const getListOrganizationsUrl = (params?: ListOrganizationsParams) => {
   const normalizedParams = new URLSearchParams();
@@ -10441,7 +10029,7 @@ export function useListTrackedEmailStatuses<
 }
 
 /**
- * Tracked sends linked to one CRM contact. Exactly one of personId / funderId / householdId required. Requires auth.
+ * Tracked sends linked to one CRM contact. Exactly one of personId / organizationId / householdId required. Requires auth.
  */
 export const getListTrackedEmailsByContactUrl = (
   params?: ListTrackedEmailsByContactParams,
@@ -11975,12 +11563,13 @@ export const useRunCalendarSync = <
 };
 
 /**
- * Returns all funders with priority='top' and all people with priority='top'
-who are NOT currently affiliated with a top-priority funder. Each row carries
-computed open-opportunity count, open-task count, affiliated people (funders)
-or last-gift info (both). Anonymous masking applied to names.
+ * Returns all organizations with priority='top' and all people with priority='top'
+who are NOT currently affiliated with a top-priority organization. Each row carries
+computed open-opportunity count, open-task count, affiliated people (organizations)
+or last-gift info (both). Names are masked server-side for anonymous records
+when the viewer is not the owner or an admin.
 
- * @summary Top-priority funders and individuals for the fundraiser dashboard.
+ * @summary Top-priority organizations and individuals for the fundraiser dashboard.
  */
 export const getGetTopPrioritiesUrl = () => {
   return `/api/top-priorities`;
@@ -12031,7 +11620,7 @@ export type GetTopPrioritiesQueryResult = NonNullable<
 export type GetTopPrioritiesQueryError = ErrorType<unknown>;
 
 /**
- * @summary Top-priority funders and individuals for the fundraiser dashboard.
+ * @summary Top-priority organizations and individuals for the fundraiser dashboard.
  */
 
 export function useGetTopPriorities<
@@ -12472,40 +12061,40 @@ export const useBulkUpdatePeople = <
   return useMutation(getBulkUpdatePeopleMutationOptions(options));
 };
 
-export const getBulkUpdateFundersUrl = () => {
-  return `/api/funders/bulk-update`;
+export const getBulkUpdateOrganizationsUrl = () => {
+  return `/api/organizations/bulk-update`;
 };
 
-export const bulkUpdateFunders = async (
-  bulkUpdateFundersBody: BulkUpdateFundersBody,
+export const bulkUpdateOrganizations = async (
+  bulkUpdateOrganizationsBody: BulkUpdateOrganizationsBody,
   options?: RequestInit,
 ): Promise<BulkUpdateResult> => {
-  return customFetch<BulkUpdateResult>(getBulkUpdateFundersUrl(), {
+  return customFetch<BulkUpdateResult>(getBulkUpdateOrganizationsUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(bulkUpdateFundersBody),
+    body: JSON.stringify(bulkUpdateOrganizationsBody),
   });
 };
 
-export const getBulkUpdateFundersMutationOptions = <
+export const getBulkUpdateOrganizationsMutationOptions = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof bulkUpdateFunders>>,
+    Awaited<ReturnType<typeof bulkUpdateOrganizations>>,
     TError,
-    { data: BodyType<BulkUpdateFundersBody> },
+    { data: BodyType<BulkUpdateOrganizationsBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof bulkUpdateFunders>>,
+  Awaited<ReturnType<typeof bulkUpdateOrganizations>>,
   TError,
-  { data: BodyType<BulkUpdateFundersBody> },
+  { data: BodyType<BulkUpdateOrganizationsBody> },
   TContext
 > => {
-  const mutationKey = ["bulkUpdateFunders"];
+  const mutationKey = ["bulkUpdateOrganizations"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -12515,77 +12104,79 @@ export const getBulkUpdateFundersMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof bulkUpdateFunders>>,
-    { data: BodyType<BulkUpdateFundersBody> }
+    Awaited<ReturnType<typeof bulkUpdateOrganizations>>,
+    { data: BodyType<BulkUpdateOrganizationsBody> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return bulkUpdateFunders(data, requestOptions);
+    return bulkUpdateOrganizations(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type BulkUpdateFundersMutationResult = NonNullable<
-  Awaited<ReturnType<typeof bulkUpdateFunders>>
+export type BulkUpdateOrganizationsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkUpdateOrganizations>>
 >;
-export type BulkUpdateFundersMutationBody = BodyType<BulkUpdateFundersBody>;
-export type BulkUpdateFundersMutationError = ErrorType<BadRequestResponse>;
+export type BulkUpdateOrganizationsMutationBody =
+  BodyType<BulkUpdateOrganizationsBody>;
+export type BulkUpdateOrganizationsMutationError =
+  ErrorType<BadRequestResponse>;
 
-export const useBulkUpdateFunders = <
+export const useBulkUpdateOrganizations = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof bulkUpdateFunders>>,
+    Awaited<ReturnType<typeof bulkUpdateOrganizations>>,
     TError,
-    { data: BodyType<BulkUpdateFundersBody> },
+    { data: BodyType<BulkUpdateOrganizationsBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof bulkUpdateFunders>>,
+  Awaited<ReturnType<typeof bulkUpdateOrganizations>>,
   TError,
-  { data: BodyType<BulkUpdateFundersBody> },
+  { data: BodyType<BulkUpdateOrganizationsBody> },
   TContext
 > => {
-  return useMutation(getBulkUpdateFundersMutationOptions(options));
+  return useMutation(getBulkUpdateOrganizationsMutationOptions(options));
 };
 
-export const getMergeFundersUrl = () => {
-  return `/api/funders/merge`;
+export const getMergeOrganizationsUrl = () => {
+  return `/api/organizations/merge`;
 };
 
-export const mergeFunders = async (
-  mergeFundersBody: MergeFundersBody,
+export const mergeOrganizations = async (
+  mergeOrganizationsBody: MergeOrganizationsBody,
   options?: RequestInit,
 ): Promise<MergeResult> => {
-  return customFetch<MergeResult>(getMergeFundersUrl(), {
+  return customFetch<MergeResult>(getMergeOrganizationsUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(mergeFundersBody),
+    body: JSON.stringify(mergeOrganizationsBody),
   });
 };
 
-export const getMergeFundersMutationOptions = <
+export const getMergeOrganizationsMutationOptions = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof mergeFunders>>,
+    Awaited<ReturnType<typeof mergeOrganizations>>,
     TError,
-    { data: BodyType<MergeFundersBody> },
+    { data: BodyType<MergeOrganizationsBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof mergeFunders>>,
+  Awaited<ReturnType<typeof mergeOrganizations>>,
   TError,
-  { data: BodyType<MergeFundersBody> },
+  { data: BodyType<MergeOrganizationsBody> },
   TContext
 > => {
-  const mutationKey = ["mergeFunders"];
+  const mutationKey = ["mergeOrganizations"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -12595,41 +12186,41 @@ export const getMergeFundersMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof mergeFunders>>,
-    { data: BodyType<MergeFundersBody> }
+    Awaited<ReturnType<typeof mergeOrganizations>>,
+    { data: BodyType<MergeOrganizationsBody> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return mergeFunders(data, requestOptions);
+    return mergeOrganizations(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type MergeFundersMutationResult = NonNullable<
-  Awaited<ReturnType<typeof mergeFunders>>
+export type MergeOrganizationsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mergeOrganizations>>
 >;
-export type MergeFundersMutationBody = BodyType<MergeFundersBody>;
-export type MergeFundersMutationError = ErrorType<BadRequestResponse>;
+export type MergeOrganizationsMutationBody = BodyType<MergeOrganizationsBody>;
+export type MergeOrganizationsMutationError = ErrorType<BadRequestResponse>;
 
-export const useMergeFunders = <
+export const useMergeOrganizations = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof mergeFunders>>,
+    Awaited<ReturnType<typeof mergeOrganizations>>,
     TError,
-    { data: BodyType<MergeFundersBody> },
+    { data: BodyType<MergeOrganizationsBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof mergeFunders>>,
+  Awaited<ReturnType<typeof mergeOrganizations>>,
   TError,
-  { data: BodyType<MergeFundersBody> },
+  { data: BodyType<MergeOrganizationsBody> },
   TContext
 > => {
-  return useMutation(getMergeFundersMutationOptions(options));
+  return useMutation(getMergeOrganizationsMutationOptions(options));
 };
 
 export const getMergePeopleUrl = () => {

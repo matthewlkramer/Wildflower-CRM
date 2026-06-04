@@ -4,11 +4,11 @@ import {
   useGetGiftOrPayment,
   useUpdateGiftOrPayment,
   useDeleteGiftOrPayment,
-  useGetFunder,
+  useGetOrganization,
   useGetHousehold,
   useGetPaymentIntermediary,
   getGetGiftOrPaymentQueryKey,
-  getGetFunderQueryKey,
+  getGetOrganizationQueryKey,
   getGetHouseholdQueryKey,
   getGetPaymentIntermediaryQueryKey,
   getListGiftsAndPaymentsQueryKey,
@@ -36,11 +36,11 @@ import {
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import {
   InlineEditPersonPicker,
-  InlineEditFunderPicker,
+  InlineEditOrganizationPicker,
   InlineEditHouseholdPicker,
   InlineEditIntermediaryPicker,
   usePersonName,
-  useFunderName,
+  useOrganizationName,
   useHouseholdName,
   useIntermediaryName,
 } from "@/components/entity-picker";
@@ -107,7 +107,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const ownerDisplay = gift.ownerUserId
     ? (userNames.get(gift.ownerUserId) ?? gift.ownerUserId)
     : "—";
-  const funderName = useFunderName(gift.funderId ?? null);
+  const organizationName = useOrganizationName(gift.organizationId ?? null);
   const giverName = usePersonName(gift.individualGiverPersonId ?? null);
   const householdName = useHouseholdName(gift.householdId ?? null);
   const advisorName = usePersonName(gift.advisorPersonId ?? null);
@@ -116,10 +116,10 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
 
   // Fetch the linked entities so we can list the people associated with each
   // (donor org / household / payment intermediary) in the People card.
-  const funderDetail = useGetFunder(gift.funderId ?? "", {
+  const funderDetail = useGetOrganization(gift.organizationId ?? "", {
     query: {
-      queryKey: getGetFunderQueryKey(gift.funderId ?? ""),
-      enabled: !!gift.funderId,
+      queryKey: getGetOrganizationQueryKey(gift.organizationId ?? ""),
+      enabled: !!gift.organizationId,
     },
   });
   const householdDetail = useGetHousehold(gift.householdId ?? "", {
@@ -159,15 +159,15 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   let donorDisplay: ReactNode = (
     <span className="text-muted-foreground">No donor linked.</span>
   );
-  if (gift.funderId) {
+  if (gift.organizationId) {
     donorDisplay = (
       <span>
         <span className="text-muted-foreground mr-1">Funder:</span>
         <Link
-          href={`/funding-entities/${gift.funderId}`}
+          href={`/organizations/${gift.organizationId}`}
           className="text-primary hover:underline"
         >
-          {funderName ?? gift.funderId}
+          {organizationName ?? gift.organizationId}
         </Link>
       </span>
     );
@@ -197,12 +197,12 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
     );
   }
 
-  const funderLinkDisplay: ReactNode = gift.funderId ? (
+  const funderLinkDisplay: ReactNode = gift.organizationId ? (
     <Link
-      href={`/funding-entities/${gift.funderId}`}
+      href={`/organizations/${gift.organizationId}`}
       className="text-primary hover:underline"
     >
-      {funderName ?? gift.funderId}
+      {organizationName ?? gift.organizationId}
     </Link>
   ) : (
     "—"
@@ -294,11 +294,11 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   // The donor is one of (funder, individual giver, household), DB-enforced XOR.
   // Each setter sends all three FK fields so exactly one stays populated.
   const setFunderDonor = (next: string | null) =>
-    patch({ funderId: next, individualGiverPersonId: null, householdId: null });
+    patch({ organizationId: next, individualGiverPersonId: null, householdId: null });
   const setHouseholdDonor = (next: string | null) =>
-    patch({ householdId: next, funderId: null, individualGiverPersonId: null });
+    patch({ householdId: next, organizationId: null, individualGiverPersonId: null });
   const setIndividualDonor = (next: string | null) =>
-    patch({ individualGiverPersonId: next, funderId: null, householdId: null });
+    patch({ individualGiverPersonId: next, organizationId: null, householdId: null });
 
   async function saveName() {
     const trimmed = nameValue.trim();
@@ -528,8 +528,8 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
           if (gift.primaryContactPersonId && gift.primaryContactPersonId !== gift.individualGiverPersonId) {
             giftPersonIds.push(gift.primaryContactPersonId);
           }
-          const giftDefaultLinks: Partial<{ personIds: string[]; funderIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = {
-            ...(gift.funderId ? { funderIds: [gift.funderId] } : {}),
+          const giftDefaultLinks: Partial<{ personIds: string[]; organizationIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = {
+            ...(gift.organizationId ? { organizationIds: [gift.organizationId] } : {}),
             ...(gift.householdId ? { householdIds: [gift.householdId] } : {}),
             ...(giftPersonIds.length > 0 ? { personIds: giftPersonIds } : {}),
             ...(gift.paymentOnPledgeId ? { opportunityIds: [gift.paymentOnPledgeId] } : {}),
@@ -538,7 +538,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
             <>
               <TasksPanel giftId={gift.id} defaultLinks={giftDefaultLinks} />
               <UnifiedActivityFeed
-                funderId={gift.funderId ?? undefined}
+                organizationId={gift.organizationId ?? undefined}
                 personId={gift.individualGiverPersonId ?? undefined}
                 householdId={gift.householdId ?? undefined}
                 notesContext={{ giftId: gift.id, defaultLinks: giftDefaultLinks }}
@@ -553,9 +553,9 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
           <RelatedCard title="Organizations">
             <div className="space-y-1 px-2 py-1">
               <Row label="Funder">
-                <InlineEditFunderPicker
-                  testIdBase="gift-funder"
-                  value={gift.funderId ?? null}
+                <InlineEditOrganizationPicker
+                  testIdBase="gift-organization"
+                  value={gift.organizationId ?? null}
                   display={funderLinkDisplay}
                   onSave={setFunderDonor}
                   allowNull={false}

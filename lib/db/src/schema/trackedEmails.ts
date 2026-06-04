@@ -52,7 +52,7 @@ export const trackedEmails = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
-    recipientFunderIds: text("recipient_funder_ids")
+    recipientOrganizationIds: text("recipient_organization_ids")
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
@@ -73,8 +73,8 @@ export const trackedEmails = pgTable(
     // operators (@>, &&) on contact-detail pages.
     index("tracked_emails_recipient_person_ids_gin")
       .using("gin", t.recipientPersonIds),
-    index("tracked_emails_recipient_funder_ids_gin")
-      .using("gin", t.recipientFunderIds),
+    index("tracked_emails_recipient_organization_ids_gin")
+      .using("gin", t.recipientOrganizationIds),
     index("tracked_emails_recipient_household_ids_gin")
       .using("gin", t.recipientHouseholdIds),
   ],

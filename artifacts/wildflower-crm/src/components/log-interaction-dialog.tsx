@@ -142,7 +142,7 @@ export function LogInteractionDialog({
                   ? Number(trimmedDuration)
                   : undefined,
                 personIds: prefillPersonId ? [prefillPersonId] : undefined,
-                funderIds: prefillFunderId ? [prefillFunderId] : undefined,
+                organizationIds: prefillFunderId ? [prefillFunderId] : undefined,
                 householdIds: prefillHouseholdId
                   ? [prefillHouseholdId]
                   : undefined,

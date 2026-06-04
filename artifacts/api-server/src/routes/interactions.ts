@@ -56,8 +56,8 @@ router.get(
     if (q.personId) {
       filters.push(sql`${interactions.personIds} @> ARRAY[${q.personId}]::text[]`);
     }
-    if (q.funderId) {
-      filters.push(sql`${interactions.funderIds} @> ARRAY[${q.funderId}]::text[]`);
+    if (q.organizationId) {
+      filters.push(sql`${interactions.organizationIds} @> ARRAY[${q.organizationId}]::text[]`);
     }
     if (q.householdId) {
       filters.push(

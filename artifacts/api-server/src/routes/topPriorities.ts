@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { funders, people } from "@workspace/db/schema";
+import { organizations, people } from "@workspace/db/schema";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler } from "../lib/helpers";
@@ -9,37 +9,37 @@ import { getAppUser } from "../lib/appRequest";
 const router: IRouter = Router();
 router.use(requireAuth);
 
-const FUNDERS_ID = sql.raw(`"funders"."id"`);
+const ORGS_ID = sql.raw(`"organizations"."id"`);
 const PEOPLE_ID = sql.raw(`"people"."id"`);
 
 const ANON_LABEL = "Anonymous";
 
-// ─── Correlated subquery fragments scoped to funders.id ───────────────────
+// ─── Correlated subquery fragments scoped to organizations.id ──────────────
 
-const funderOpenOppCountExpr = sql`(
+const orgOpenOppCountExpr = sql`(
   SELECT COUNT(*)::int FROM opportunities_and_pledges
-  WHERE funder_id = ${FUNDERS_ID} AND status = 'open'
+  WHERE organization_id = ${ORGS_ID} AND status = 'open'
 )`;
 
-const funderOpenTaskCountExpr = sql`(
+const orgOpenTaskCountExpr = sql`(
   SELECT COUNT(*)::int FROM tasks
-  WHERE ${FUNDERS_ID} = ANY(funder_ids) AND status = 'open'
+  WHERE ${ORGS_ID} = ANY(organization_ids) AND status = 'open'
 )`;
 
-const funderLastGiftDateExpr = sql`(
+const orgLastGiftDateExpr = sql`(
   SELECT MAX(date_received)::text FROM gifts_and_payments
-  WHERE funder_id = ${FUNDERS_ID}
+  WHERE organization_id = ${ORGS_ID}
 )`;
 
-const funderLastGiftAmountExpr = sql`(
+const orgLastGiftAmountExpr = sql`(
   SELECT amount::text FROM gifts_and_payments
-  WHERE funder_id = ${FUNDERS_ID}
+  WHERE organization_id = ${ORGS_ID}
   ORDER BY date_received DESC NULLS LAST
   LIMIT 1
 )`;
 
 // Aggregates current affiliated people as a JSON array.
-const funderAffiliatedPeopleExpr = sql`(
+const orgAffiliatedPeopleExpr = sql`(
   SELECT COALESCE(
     JSON_AGG(
       JSON_BUILD_OBJECT(
@@ -58,7 +58,7 @@ const funderAffiliatedPeopleExpr = sql`(
   )
   FROM people_entity_roles per
   JOIN people p ON p.id = per.person_id
-  WHERE per.funder_id = ${FUNDERS_ID}
+  WHERE per.organization_id = ${ORGS_ID}
     AND per.current = 'current'
 )`;
 
@@ -110,7 +110,7 @@ function canSeeIdentity(
   return viewerId === entity.ownerUserId;
 }
 
-function maskFunderName(name: string, anonymous: boolean, ownerUserId: string | null, viewerId: string, viewerRole: string): string {
+function maskOrgName(name: string, anonymous: boolean, ownerUserId: string | null, viewerId: string, viewerRole: string): string {
   return canSeeIdentity({ anonymous, ownerUserId }, viewerId, viewerRole) ? name : ANON_LABEL;
 }
 
@@ -134,22 +134,22 @@ router.get(
     const viewerId = viewer?.id ?? "";
     const viewerRole = viewer?.role ?? "";
 
-    const [funderRows, personRows] = await Promise.all([
+    const [orgRows, personRows] = await Promise.all([
       db
         .select({
-          id: funders.id,
-          name: funders.name,
-          anonymous: funders.anonymous,
-          ownerUserId: funders.ownerUserId,
-          openOpportunityCount: sql<number>`${funderOpenOppCountExpr}`.as("open_opportunity_count"),
-          openTaskCount: sql<number>`${funderOpenTaskCountExpr}`.as("open_task_count"),
-          affiliatedPeople: sql<Array<{ personId: string; personName: string; anonymous: boolean; ownerUserId: string | null }>>`${funderAffiliatedPeopleExpr}`.as("affiliated_people"),
-          lastGiftDate: sql<string | null>`${funderLastGiftDateExpr}`.as("last_gift_date"),
-          lastGiftAmount: sql<string | null>`${funderLastGiftAmountExpr}`.as("last_gift_amount"),
+          id: organizations.id,
+          name: organizations.name,
+          anonymous: organizations.anonymous,
+          ownerUserId: organizations.ownerUserId,
+          openOpportunityCount: sql<number>`${orgOpenOppCountExpr}`.as("open_opportunity_count"),
+          openTaskCount: sql<number>`${orgOpenTaskCountExpr}`.as("open_task_count"),
+          affiliatedPeople: sql<Array<{ personId: string; personName: string; anonymous: boolean; ownerUserId: string | null }>>`${orgAffiliatedPeopleExpr}`.as("affiliated_people"),
+          lastGiftDate: sql<string | null>`${orgLastGiftDateExpr}`.as("last_gift_date"),
+          lastGiftAmount: sql<string | null>`${orgLastGiftAmountExpr}`.as("last_gift_amount"),
         })
-        .from(funders)
-        .where(eq(funders.priority, "top"))
-        .orderBy(asc(funders.name)),
+        .from(organizations)
+        .where(eq(organizations.priority, "top"))
+        .orderBy(asc(organizations.name)),
 
       db
         .select({
@@ -170,10 +170,10 @@ router.get(
             eq(people.priority, "top"),
             sql`NOT EXISTS (
               SELECT 1 FROM people_entity_roles per
-              JOIN funders f ON f.id = per.funder_id
+              JOIN organizations o ON o.id = per.organization_id
               WHERE per.person_id = ${PEOPLE_ID}
                 AND per.current = 'current'
-                AND f.priority = 'top'
+                AND o.priority = 'top'
             )`,
           ),
         )
@@ -182,9 +182,9 @@ router.get(
 
     // Apply server-side anonymous masking so the API never exposes a real
     // name to a viewer who isn't the owner or an admin.
-    const maskedFunders = funderRows.map((f) => ({
+    const maskedOrgs = orgRows.map((f) => ({
       ...f,
-      name: maskFunderName(f.name, f.anonymous, f.ownerUserId, viewerId, viewerRole),
+      name: maskOrgName(f.name, f.anonymous, f.ownerUserId, viewerId, viewerRole),
       affiliatedPeople: (f.affiliatedPeople ?? []).map((p) => ({
         ...p,
         personName: canSeeIdentity({ anonymous: p.anonymous, ownerUserId: p.ownerUserId }, viewerId, viewerRole)
@@ -198,7 +198,7 @@ router.get(
       return { ...p, ...names };
     });
 
-    res.json({ funders: maskedFunders, individuals: maskedPeople });
+    res.json({ organizations: maskedOrgs, individuals: maskedPeople });
   }),
 );
 

@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import {
   giftsAndPayments,
   giftAllocations,
-  funders,
+  organizations,
   households,
   people,
   emailMessages,
@@ -22,7 +22,7 @@ import { getAppUser } from "../lib/appRequest";
 // fanning out per-row fetches.
 const donorJoinSelect = {
   ...getTableColumns(giftsAndPayments),
-  funderName: funders.name,
+  organizationName: organizations.name,
   householdName: households.name,
   individualGiverPersonName: sql<string | null>`
     COALESCE(
@@ -31,7 +31,7 @@ const donorJoinSelect = {
     )
   `.as("individual_giver_person_name"),
   // See opportunitiesAndPledges.ts donorJoinSelect for rationale.
-  funderPriority: funders.priority,
+  organizationPriority: organizations.priority,
   individualGiverPersonPriority: people.priority,
   entityIds: sql<string[] | null>`(
     SELECT ARRAY_AGG(DISTINCT ga.entity_id ORDER BY ga.entity_id)
@@ -94,7 +94,7 @@ router.get(
       else if (f.wantsBlank) filters.push(isNull(giftsAndPayments.type));
       else if (f.values.length > 0) filters.push(inArray(giftsAndPayments.type, f.values as never[]));
     }
-    if (q.funderId) filters.push(eq(giftsAndPayments.funderId, q.funderId));
+    if (q.organizationId) filters.push(eq(giftsAndPayments.organizationId, q.organizationId));
     if (q.householdId) filters.push(eq(giftsAndPayments.householdId, q.householdId));
     if (q.individualGiverPersonId) filters.push(eq(giftsAndPayments.individualGiverPersonId, q.individualGiverPersonId));
     if (q.paymentOnPledgeId) filters.push(eq(giftsAndPayments.paymentOnPledgeId, q.paymentOnPledgeId));
@@ -162,7 +162,7 @@ router.get(
       db
         .select(donorJoinSelect)
         .from(giftsAndPayments)
-        .leftJoin(funders, eq(funders.id, giftsAndPayments.funderId))
+        .leftJoin(organizations, eq(organizations.id, giftsAndPayments.organizationId))
         .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
         .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
         .where(where)
@@ -179,7 +179,7 @@ async function buildGiftDetail(id: string) {
   const row = await db
     .select(donorJoinSelect)
     .from(giftsAndPayments)
-    .leftJoin(funders, eq(funders.id, giftsAndPayments.funderId))
+    .leftJoin(organizations, eq(organizations.id, giftsAndPayments.organizationId))
     .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
     .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
     .where(eq(giftsAndPayments.id, id))
@@ -381,7 +381,7 @@ router.patch(
     // donor_xor DB CHECK and produce a 500.
     const merged = { ...existing, ...body };
     const issues = validateGiftInvariants({
-      funderId: merged.funderId,
+      organizationId: merged.organizationId,
       individualGiverPersonId: merged.individualGiverPersonId,
       householdId: merged.householdId,
     });
@@ -450,7 +450,7 @@ router.get(
     const gift = await db
       .select({
         id: giftsAndPayments.id,
-        funderId: giftsAndPayments.funderId,
+        organizationId: giftsAndPayments.organizationId,
         dateReceived: giftsAndPayments.dateReceived,
       })
       .from(giftsAndPayments)
@@ -458,11 +458,11 @@ router.get(
       .then((r) => r[0]);
     if (!gift) return notFound(res, "gift");
 
-    // Only funder-attached gifts have an obvious "thank the funder"
+    // Only organization-attached gifts have an obvious "thank the organization"
     // contact set. Household/individual gifts can use the manual link
     // path against the user's own search; we don't enumerate
     // candidates for them.
-    if (!gift.funderId || !gift.dateReceived) {
+    if (!gift.organizationId || !gift.dateReceived) {
       return res.json({ data: [] });
     }
 
@@ -473,20 +473,16 @@ router.get(
     const winStart = new Date(giftDate.getTime() - 90 * 24 * 60 * 60 * 1000);
     const winEnd = new Date(giftDate.getTime() + 90 * 24 * 60 * 60 * 1000);
 
-    // Resolve funder contacts: any email row directly on the funder,
-    // OR any email row of a person currently in a people_entity_role
-    // for this funder.
+    // Resolve organization contacts: any email row of a person currently in a
+    // people_entity_role for this organization.
     const contactRows = await db
       .selectDistinct({ email: sql<string>`lower(${emails.email})` })
       .from(emails)
-      .leftJoin(peopleEntityRoles, and(
+      .innerJoin(peopleEntityRoles, and(
         eq(peopleEntityRoles.personId, emails.personId),
         eq(peopleEntityRoles.current, "current"),
-        eq(peopleEntityRoles.funderId, gift.funderId),
-      ))
-      .where(
-        sql`${emails.funderId} = ${gift.funderId} OR ${peopleEntityRoles.id} IS NOT NULL`,
-      );
+        eq(peopleEntityRoles.organizationId, gift.organizationId!),
+      ));
     const contactEmails = contactRows.map((r) => r.email).filter(Boolean);
     if (contactEmails.length === 0) return res.json({ data: [] });
 

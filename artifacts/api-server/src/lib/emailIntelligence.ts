@@ -2,7 +2,6 @@ import { db } from "@workspace/db";
 import {
   emailProposals,
   people,
-  funders,
   organizations,
   peopleEntityRoles,
   emails,
@@ -350,28 +349,28 @@ async function handleGrants(args: {
       ].join(":");
     }
 
-    // Try to attach to a CRM funder if the parsed funder name matches
+    // Try to attach to a CRM organization if the parsed funder name matches
     // one we already know. Soft match — accept either direction of
     // substring so "Acme Family Foundation" matches "The Acme
     // Foundation" in the CRM. Returns the first hit (rare to have
-    // two funders with overlapping names; if so, reviewer can
+    // two organizations with overlapping names; if so, reviewer can
     // disambiguate on accept).
-    let targetFunderId: string | null = null;
+    let targetOrganizationId: string | null = null;
     if (it.funderName) {
       const hit = await db
-        .select({ id: funders.id })
-        .from(funders)
-        .where(ilike(funders.name, `%${it.funderName}%`))
+        .select({ id: organizations.id })
+        .from(organizations)
+        .where(ilike(organizations.name, `%${it.funderName}%`))
         .limit(1)
         .then((r) => r[0]);
-      if (hit) targetFunderId = hit.id;
+      if (hit) targetOrganizationId = hit.id;
     }
 
     await upsertProposal({
       mailboxUserId: args.mailboxUserId,
       kind: "grant_opportunity",
       dedupeKey,
-      targetFunderId,
+      targetOrganizationId,
       subjectName: it.funderName,
       subjectDomain: domainOf(args.fromEmail),
       subjectEmail: args.fromEmail?.toLowerCase() ?? null,
@@ -496,9 +495,8 @@ async function handleSignature(
     // (e.g. American Montessori Society) was always flagged as "company
     // changed" even when the signature matched their org exactly.
     const currentEntityRows = await db
-      .select({ funderName: funders.name, orgName: organizations.name })
+      .select({ orgName: organizations.name })
       .from(peopleEntityRoles)
-      .leftJoin(funders, eq(funders.id, peopleEntityRoles.funderId))
       .leftJoin(organizations, eq(organizations.id, peopleEntityRoles.organizationId))
       .where(
         and(
@@ -507,7 +505,7 @@ async function handleSignature(
         ),
       );
     const currentNames = currentEntityRows
-      .map((r) => r.funderName ?? r.orgName)
+      .map((r) => r.orgName)
       .filter((n): n is string => !!n);
     const sigLower = sig.company.toLowerCase();
     const matched = currentNames.some(
@@ -549,7 +547,7 @@ async function upsertProposal(args: {
   dedupeKey: string;
   sourceMessageId?: string | null;
   targetPersonId?: string | null;
-  targetFunderId?: string | null;
+  targetOrganizationId?: string | null;
   targetEmailId?: string | null;
   subjectEmail?: string | null;
   subjectName?: string | null;
@@ -567,7 +565,7 @@ async function upsertProposal(args: {
       dedupeKey: args.dedupeKey,
       sourceMessageId: args.sourceMessageId ?? null,
       targetPersonId: args.targetPersonId ?? null,
-      targetFunderId: args.targetFunderId ?? null,
+      targetOrganizationId: args.targetOrganizationId ?? null,
       targetEmailId: args.targetEmailId ?? null,
       subjectEmail: args.subjectEmail ?? null,
       subjectName: args.subjectName ?? null,
@@ -666,9 +664,9 @@ async function isPersonAlreadyAtCompany(
 ): Promise<boolean> {
   if (!companyName) return false;
   const rows = await db
-    .select({ name: funders.name })
+    .select({ name: organizations.name })
     .from(peopleEntityRoles)
-    .innerJoin(funders, eq(funders.id, peopleEntityRoles.funderId))
+    .innerJoin(organizations, eq(organizations.id, peopleEntityRoles.organizationId))
     .where(
       and(
         eq(peopleEntityRoles.personId, personId),
@@ -766,29 +764,29 @@ async function detectThankYou(args: {
     .filter((r): r is string => !!r);
   if (recipients.length === 0) return;
 
-  // Resolve every recipient to a funder id, either directly (funder-
-  // level email row) or via people_entity_roles where current='current'.
-  // Returns the de-duped union.
-  const funderRows = await db.execute<{ funder_id: string }>(sql`
-    SELECT DISTINCT funder_id FROM (
-      SELECT e.funder_id
+  // Resolve every recipient to an organization id, either directly
+  // (organization-level email row) or via people_entity_roles where
+  // current='current'. Returns the de-duped union.
+  const orgRows = await db.execute<{ organization_id: string }>(sql`
+    SELECT DISTINCT organization_id FROM (
+      SELECT e.organization_id
       FROM emails e
       WHERE lower(e.email) = ANY(${recipients}::text[])
-        AND e.funder_id IS NOT NULL
+        AND e.organization_id IS NOT NULL
       UNION
-      SELECT per.funder_id
+      SELECT per.organization_id
       FROM emails e
       JOIN people_entity_roles per ON per.person_id = e.person_id
       WHERE lower(e.email) = ANY(${recipients}::text[])
         AND e.person_id IS NOT NULL
         AND per.current = 'current'
-        AND per.funder_id IS NOT NULL
+        AND per.organization_id IS NOT NULL
     ) t
   `);
-  const funderIds = funderRows.rows.map((r) => r.funder_id).filter(Boolean);
-  if (funderIds.length === 0) return;
+  const organizationIds = orgRows.rows.map((r) => r.organization_id).filter(Boolean);
+  if (organizationIds.length === 0) return;
 
-  // Find candidate gifts to those funders within ±30 days of the
+  // Find candidate gifts from those organizations within ±30 days of the
   // outbound email. Most often there is one and we link it directly;
   // when several match we emit one proposal per gift and let the
   // reviewer pick the right one — payload.giftId is the suggestion,
@@ -800,7 +798,7 @@ async function detectThankYou(args: {
   const candidateGifts = await db
     .select({
       id: giftsAndPayments.id,
-      funderId: giftsAndPayments.funderId,
+      organizationId: giftsAndPayments.organizationId,
       amount: giftsAndPayments.amount,
       dateReceived: giftsAndPayments.dateReceived,
       thankYouEmailMessageId: giftsAndPayments.thankYouEmailMessageId,
@@ -808,7 +806,7 @@ async function detectThankYou(args: {
     .from(giftsAndPayments)
     .where(
       and(
-        sql`${giftsAndPayments.funderId} = ANY(${funderIds}::text[])`,
+        sql`${giftsAndPayments.organizationId} = ANY(${organizationIds}::text[])`,
         gte(giftsAndPayments.dateReceived, startDate),
         lte(giftsAndPayments.dateReceived, endDate),
       ),
@@ -827,14 +825,14 @@ async function detectThankYou(args: {
       // partial unique index (status='pending') already enforces that.
       dedupeKey: `thankyou:${gift.id}:${args.messageRowId}`,
       sourceMessageId: args.messageRowId,
-      targetFunderId: gift.funderId,
+      targetOrganizationId: gift.organizationId,
       subjectEmail: recipients[0] ?? null,
       subjectDomain: domainOf(recipients[0] ?? null),
       subjectName: null,
       emailSentAt: args.sentAt,
       payload: {
         giftId: gift.id,
-        funderId: gift.funderId,
+        organizationId: gift.organizationId,
         giftAmount: gift.amount,
         giftDateReceived: gift.dateReceived,
         fromEmail: args.fromEmail,

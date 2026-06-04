@@ -12,22 +12,22 @@
  * Run with: pnpm --filter @workspace/api-server run backfill:email-domains
  */
 import { db } from "@workspace/db";
-import { funders, peopleEntityRoles, emails } from "@workspace/db/schema";
+import { organizations, peopleEntityRoles, emails } from "@workspace/db/schema";
 import { isNull, inArray, eq, and } from "drizzle-orm";
 import { domainOf, isFreeMailDomain } from "../lib/intelDetectors";
 
 async function main(): Promise<void> {
   const targets = await db
-    .select({ id: funders.id })
-    .from(funders)
-    .where(isNull(funders.emailDomain));
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(isNull(organizations.emailDomain));
 
   if (targets.length === 0) {
-    console.log("No funders with a blank email_domain — nothing to do.");
+    console.log("No organizations with a blank email_domain — nothing to do.");
     return;
   }
 
-  console.log(`Found ${targets.length} funders with no email_domain. Backfilling…`);
+  console.log(`Found ${targets.length} organizations with no email_domain. Backfilling…`);
 
   const BATCH = 200;
   let updated = 0;
@@ -38,7 +38,7 @@ async function main(): Promise<void> {
 
     const contactEmails = await db
       .select({
-        funderId: peopleEntityRoles.funderId,
+        organizationId: peopleEntityRoles.organizationId,
         primaryContact: peopleEntityRoles.primaryContact,
         email: emails.email,
         isPreferred: emails.isPreferred,
@@ -47,22 +47,22 @@ async function main(): Promise<void> {
       .innerJoin(emails, eq(emails.personId, peopleEntityRoles.personId))
       .where(
         and(
-          inArray(peopleEntityRoles.funderId, batch),
+          inArray(peopleEntityRoles.organizationId, batch),
           eq(peopleEntityRoles.current, "current"),
         ),
       );
 
     // Group by funder
-    const byFunder = new Map<string, typeof contactEmails>();
+    const byOrganization = new Map<string, typeof contactEmails>();
     for (const row of contactEmails) {
-      if (!row.funderId) continue;
-      const existing = byFunder.get(row.funderId) ?? [];
+      if (!row.organizationId) continue;
+      const existing = byOrganization.get(row.organizationId) ?? [];
       existing.push(row);
-      byFunder.set(row.funderId, existing);
+      byOrganization.set(row.organizationId, existing);
     }
 
-    for (const funderId of batch) {
-      const rows = byFunder.get(funderId) ?? [];
+    for (const orgId of batch) {
+      const rows = byOrganization.get(orgId) ?? [];
       if (rows.length === 0) {
         skipped++;
         continue;
@@ -104,9 +104,9 @@ async function main(): Promise<void> {
       }
 
       await db
-        .update(funders)
+        .update(organizations)
         .set({ emailDomain: domain })
-        .where(eq(funders.id, funderId));
+        .where(eq(organizations.id, orgId));
 
       updated++;
     }

@@ -13,8 +13,8 @@ import Dashboard from "@/pages/dashboard";
 import Individuals from "@/pages/individuals";
 import IndividualDetail from "@/pages/individual-detail";
 import HouseholdDetail from "@/pages/household-detail";
-import FundingEntities from "@/pages/funding-entities";
-import FundingEntityDetail from "@/pages/funding-entity-detail";
+import Organizations from "@/pages/funding-entities";
+import OrganizationDetail from "@/pages/funding-entity-detail";
 import Opportunities from "@/pages/opportunities";
 import Pipeline from "@/pages/pipeline";
 import OpportunityDetail from "@/pages/opportunity-detail";
@@ -191,8 +191,8 @@ function ClerkProviderWithRoutes() {
           
           <Route path="/households/:id"><ProtectedRoute component={HouseholdDetail} /></Route>
           
-          <Route path="/funding-entities"><ProtectedRoute component={FundingEntities} /></Route>
-          <Route path="/funding-entities/:id"><ProtectedRoute component={FundingEntityDetail} /></Route>
+          <Route path="/organizations"><ProtectedRoute component={Organizations} /></Route>
+          <Route path="/organizations/:id"><ProtectedRoute component={OrganizationDetail} /></Route>
           
           <Route path="/payment-intermediaries"><ProtectedRoute component={PaymentIntermediaries} /></Route>
           <Route path="/payment-intermediaries/:id"><ProtectedRoute component={PaymentIntermediaryDetail} /></Route>

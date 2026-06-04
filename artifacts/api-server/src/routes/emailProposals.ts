@@ -76,7 +76,7 @@ router.get(
     // are linked to a single target person OR funder (households aren't
     // a target type in the schema), so these filters are independent.
     if (q.personId) filters.push(eq(emailProposals.targetPersonId, q.personId));
-    if (q.funderId) filters.push(eq(emailProposals.targetFunderId, q.funderId));
+    if (q.organizationId) filters.push(eq(emailProposals.targetOrganizationId, q.organizationId));
     const where = and(...filters);
 
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
