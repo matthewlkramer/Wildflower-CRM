@@ -2126,9 +2126,16 @@ components:
         anonymous:   { type: boolean }
         ownerUserId: { type: string, nullable: true }
 
+    TopPriorityOpenAsk:
+      type: object
+      required: [opportunityId, opportunityName]
+      properties:
+        opportunityId:   { type: string }
+        opportunityName: { type: string }
+
     TopPriorityOrganization:
       type: object
-      required: [id, name, anonymous, ownerUserId, openOpportunityCount, openTaskCount, affiliatedPeople]
+      required: [id, name, anonymous, ownerUserId, openOpportunityCount, openTaskCount, openAsks, affiliatedPeople]
       properties:
         id:                   { type: string }
         name:                 { type: string }
@@ -2136,6 +2143,9 @@ components:
         ownerUserId:          { type: string, nullable: true }
         openOpportunityCount: { type: integer }
         openTaskCount:        { type: integer }
+        openAsks:
+          type: array
+          items: { $ref: "#/components/schemas/TopPriorityOpenAsk" }
         affiliatedPeople:
           type: array
           items: { $ref: "#/components/schemas/TopPriorityAffiliate" }
@@ -2144,7 +2154,7 @@ components:
 
     TopPriorityPerson:
       type: object
-      required: [id, firstName, lastName, anonymous, ownerUserId, openOpportunityCount, openTaskCount]
+      required: [id, firstName, lastName, anonymous, ownerUserId, openOpportunityCount, openTaskCount, openAsks]
       properties:
         id:                   { type: string }
         firstName:            { type: string, nullable: true }
@@ -2154,6 +2164,9 @@ components:
         ownerUserId:          { type: string, nullable: true }
         openOpportunityCount: { type: integer }
         openTaskCount:        { type: integer }
+        openAsks:
+          type: array
+          items: { $ref: "#/components/schemas/TopPriorityOpenAsk" }
         lastGiftDate:         { type: string, nullable: true }
         lastGiftAmount:       { type: string, nullable: true }
 

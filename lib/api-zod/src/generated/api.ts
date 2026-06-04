@@ -6186,6 +6186,12 @@ export const GetTopPrioritiesResponse = zod.object({
       ownerUserId: zod.string().nullable(),
       openOpportunityCount: zod.number(),
       openTaskCount: zod.number(),
+      openAsks: zod.array(
+        zod.object({
+          opportunityId: zod.string(),
+          opportunityName: zod.string(),
+        }),
+      ),
       affiliatedPeople: zod.array(
         zod.object({
           personId: zod.string(),
@@ -6208,6 +6214,12 @@ export const GetTopPrioritiesResponse = zod.object({
       ownerUserId: zod.string().nullable(),
       openOpportunityCount: zod.number(),
       openTaskCount: zod.number(),
+      openAsks: zod.array(
+        zod.object({
+          opportunityId: zod.string(),
+          opportunityName: zod.string(),
+        }),
+      ),
       lastGiftDate: zod.string().nullish(),
       lastGiftAmount: zod.string().nullish(),
     }),

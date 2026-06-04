@@ -620,6 +620,11 @@ export interface TopPriorityAffiliate {
   ownerUserId: string | null;
 }
 
+export interface TopPriorityOpenAsk {
+  opportunityId: string;
+  opportunityName: string;
+}
+
 export interface TopPriorityOrganization {
   id: string;
   name: string;
@@ -627,6 +632,7 @@ export interface TopPriorityOrganization {
   ownerUserId: string | null;
   openOpportunityCount: number;
   openTaskCount: number;
+  openAsks: TopPriorityOpenAsk[];
   affiliatedPeople: TopPriorityAffiliate[];
   lastGiftDate?: string | null;
   lastGiftAmount?: string | null;
@@ -641,6 +647,7 @@ export interface TopPriorityPerson {
   ownerUserId: string | null;
   openOpportunityCount: number;
   openTaskCount: number;
+  openAsks: TopPriorityOpenAsk[];
   lastGiftDate?: string | null;
   lastGiftAmount?: string | null;
 }

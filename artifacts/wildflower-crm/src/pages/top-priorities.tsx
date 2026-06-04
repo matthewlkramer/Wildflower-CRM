@@ -6,6 +6,7 @@ import {
   type TopPriorityOrganization,
   type TopPriorityPerson,
   type TopPriorityAffiliate,
+  type TopPriorityOpenAsk,
 } from "@workspace/api-client-react";
 import {
   Table,
@@ -90,6 +91,22 @@ function AffiliatedPeopleCell({ people }: { people: TopPriorityAffiliate[] }) {
   );
 }
 
+function OpenAsksCell({ asks }: { asks: TopPriorityOpenAsk[] }) {
+  if (!asks || asks.length === 0) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="flex flex-wrap gap-x-1">
+      {asks.map((a, idx) => (
+        <span key={a.opportunityId}>
+          <Link href={`/opportunities/${a.opportunityId}`} className="text-primary hover:underline">
+            {a.opportunityName}
+          </Link>
+          {idx < asks.length - 1 && <span className="text-muted-foreground">, </span>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function FundersTable({
   funders,
   viewer,
@@ -105,7 +122,6 @@ function FundersTable({
     () =>
       sortRows(funders, {
         name: (f) => f.name,
-        openOpportunityCount: (f) => f.openOpportunityCount,
         openTaskCount: (f) => f.openTaskCount,
         lastGiftDate: (f) => f.lastGiftDate,
         lastGiftAmount: (f) => (f.lastGiftAmount != null ? Number(f.lastGiftAmount) : null),
@@ -129,7 +145,7 @@ function FundersTable({
           <TableHeader>
             <TableRow>
               <SortableTH colKey="name" {...ts} className="pl-6">Funder</SortableTH>
-              <SortableTH colKey="openOpportunityCount" {...ts} align="right" className="w-28">Open Asks</SortableTH>
+              <TableHead>Open Asks</TableHead>
               <SortableTH colKey="openTaskCount" {...ts} align="right" className="w-28">Open Tasks</SortableTH>
               <TableHead>Affiliated People</TableHead>
               <SortableTH colKey="lastGiftDate" {...ts} align="right" className="w-28">Last Gift</SortableTH>
@@ -151,12 +167,8 @@ function FundersTable({
                   <TableCell className="pl-6">
                     <FunderNameCell funder={f} />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {f.openOpportunityCount > 0 ? (
-                      <span className="font-medium">{f.openOpportunityCount}</span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
+                  <TableCell>
+                    <OpenAsksCell asks={f.openAsks ?? []} />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {f.openTaskCount > 0 ? (
@@ -202,7 +214,6 @@ function IndividualsTable({
           p.fullName ||
           [p.firstName, p.lastName].filter(Boolean).join(" ") ||
           p.id,
-        openOpportunityCount: (p) => p.openOpportunityCount,
         openTaskCount: (p) => p.openTaskCount,
         lastGiftDate: (p) => p.lastGiftDate,
         lastGiftAmount: (p) => (p.lastGiftAmount != null ? Number(p.lastGiftAmount) : null),
@@ -226,7 +237,7 @@ function IndividualsTable({
           <TableHeader>
             <TableRow>
               <SortableTH colKey="name" {...ts} className="pl-6">Individual</SortableTH>
-              <SortableTH colKey="openOpportunityCount" {...ts} align="right" className="w-28">Open Asks</SortableTH>
+              <TableHead>Open Asks</TableHead>
               <SortableTH colKey="openTaskCount" {...ts} align="right" className="w-28">Open Tasks</SortableTH>
               <SortableTH colKey="lastGiftDate" {...ts} align="right" className="w-28">Last Gift</SortableTH>
               <SortableTH colKey="lastGiftAmount" {...ts} align="right" className="w-28 pr-6">Last Gift $</SortableTH>
@@ -247,12 +258,8 @@ function IndividualsTable({
                   <TableCell className="pl-6">
                     <PersonNameCell person={p} viewer={viewer} />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {p.openOpportunityCount > 0 ? (
-                      <span className="font-medium">{p.openOpportunityCount}</span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
+                  <TableCell>
+                    <OpenAsksCell asks={p.openAsks ?? []} />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {p.openTaskCount > 0 ? (

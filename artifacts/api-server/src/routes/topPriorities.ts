@@ -26,6 +26,22 @@ const orgOpenTaskCountExpr = sql`(
   WHERE ${ORGS_ID} = ANY(organization_ids) AND status = 'open'
 )`;
 
+// Aggregates this org's open opportunities (asks) as a JSON array.
+const orgOpenAsksExpr = sql`(
+  SELECT COALESCE(
+    JSON_AGG(
+      JSON_BUILD_OBJECT(
+        'opportunityId',   o.id,
+        'opportunityName', COALESCE(NULLIF(TRIM(o.name), ''), 'Untitled ' || o.id)
+      )
+      ORDER BY o.name NULLS LAST, o.id
+    ),
+    '[]'::json
+  )
+  FROM opportunities_and_pledges o
+  WHERE o.organization_id = ${ORGS_ID} AND o.status = 'open'
+)`;
+
 const orgLastGiftDateExpr = sql`(
   SELECT MAX(date_received)::text FROM gifts_and_payments
   WHERE organization_id = ${ORGS_ID}
@@ -72,6 +88,22 @@ const personOpenOppCountExpr = sql`(
 const personOpenTaskCountExpr = sql`(
   SELECT COUNT(*)::int FROM tasks
   WHERE ${PEOPLE_ID} = ANY(person_ids) AND status = 'open'
+)`;
+
+// Aggregates this person's open opportunities (asks, as individual giver) as a JSON array.
+const personOpenAsksExpr = sql`(
+  SELECT COALESCE(
+    JSON_AGG(
+      JSON_BUILD_OBJECT(
+        'opportunityId',   o.id,
+        'opportunityName', COALESCE(NULLIF(TRIM(o.name), ''), 'Untitled ' || o.id)
+      )
+      ORDER BY o.name NULLS LAST, o.id
+    ),
+    '[]'::json
+  )
+  FROM opportunities_and_pledges o
+  WHERE o.individual_giver_person_id = ${PEOPLE_ID} AND o.status = 'open'
 )`;
 
 const personLastGiftDateExpr = sql`(
@@ -143,6 +175,7 @@ router.get(
           ownerUserId: organizations.ownerUserId,
           openOpportunityCount: sql<number>`${orgOpenOppCountExpr}`.as("open_opportunity_count"),
           openTaskCount: sql<number>`${orgOpenTaskCountExpr}`.as("open_task_count"),
+          openAsks: sql<Array<{ opportunityId: string; opportunityName: string }>>`${orgOpenAsksExpr}`.as("open_asks"),
           affiliatedPeople: sql<Array<{ personId: string; personName: string; anonymous: boolean; ownerUserId: string | null }>>`${orgAffiliatedPeopleExpr}`.as("affiliated_people"),
           lastGiftDate: sql<string | null>`${orgLastGiftDateExpr}`.as("last_gift_date"),
           lastGiftAmount: sql<string | null>`${orgLastGiftAmountExpr}`.as("last_gift_amount"),
@@ -161,6 +194,7 @@ router.get(
           ownerUserId: people.ownerUserId,
           openOpportunityCount: sql<number>`${personOpenOppCountExpr}`.as("open_opportunity_count"),
           openTaskCount: sql<number>`${personOpenTaskCountExpr}`.as("open_task_count"),
+          openAsks: sql<Array<{ opportunityId: string; opportunityName: string }>>`${personOpenAsksExpr}`.as("open_asks"),
           lastGiftDate: sql<string | null>`${personLastGiftDateExpr}`.as("last_gift_date"),
           lastGiftAmount: sql<string | null>`${personLastGiftAmountExpr}`.as("last_gift_amount"),
         })
@@ -182,20 +216,32 @@ router.get(
 
     // Apply server-side anonymous masking so the API never exposes a real
     // name to a viewer who isn't the owner or an admin.
-    const maskedOrgs = orgRows.map((f) => ({
-      ...f,
-      name: maskOrgName(f.name, f.anonymous, f.ownerUserId, viewerId, viewerRole),
-      affiliatedPeople: (f.affiliatedPeople ?? []).map((p) => ({
-        ...p,
-        personName: canSeeIdentity({ anonymous: p.anonymous, ownerUserId: p.ownerUserId }, viewerId, viewerRole)
-          ? p.personName
-          : ANON_LABEL,
-      })),
-    }));
+    const maskedOrgs = orgRows.map((f) => {
+      // Opportunity titles often embed the donor name (e.g. "FY27 Arthur Rock
+      // gift"), so mask them in lockstep with the parent org's name visibility.
+      const orgVisible = canSeeIdentity({ anonymous: f.anonymous, ownerUserId: f.ownerUserId }, viewerId, viewerRole);
+      return {
+        ...f,
+        name: maskOrgName(f.name, f.anonymous, f.ownerUserId, viewerId, viewerRole),
+        openAsks: orgVisible
+          ? (f.openAsks ?? [])
+          : (f.openAsks ?? []).map((a) => ({ ...a, opportunityName: ANON_LABEL })),
+        affiliatedPeople: (f.affiliatedPeople ?? []).map((p) => ({
+          ...p,
+          personName: canSeeIdentity({ anonymous: p.anonymous, ownerUserId: p.ownerUserId }, viewerId, viewerRole)
+            ? p.personName
+            : ANON_LABEL,
+        })),
+      };
+    });
 
     const maskedPeople = personRows.map((p) => {
       const names = maskPersonName(p, p.anonymous, p.ownerUserId, viewerId, viewerRole);
-      return { ...p, ...names };
+      const personVisible = canSeeIdentity({ anonymous: p.anonymous, ownerUserId: p.ownerUserId }, viewerId, viewerRole);
+      const openAsks = personVisible
+        ? (p.openAsks ?? [])
+        : (p.openAsks ?? []).map((a) => ({ ...a, opportunityName: ANON_LABEL }));
+      return { ...p, ...names, openAsks };
     });
 
     res.json({ organizations: maskedOrgs, individuals: maskedPeople });
