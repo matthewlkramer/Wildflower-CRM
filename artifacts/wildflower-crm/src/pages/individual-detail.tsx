@@ -795,10 +795,24 @@ function PersonView({ person }: { person: PersonDetail }) {
         </>
       }
       center={
-        <>
-          <TasksPanel personId={person.id} />
-          <UnifiedActivityFeed personId={person.id} hideTasks />
-        </>
+        (() => {
+          const householdRole = (person.roles ?? []).find(
+            (r) => r.entityType === "household" && r.householdId && r.current === "current",
+          );
+          const personDefaultLinks: Partial<{ personIds: string[]; funderIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = householdRole?.householdId
+            ? { householdIds: [householdRole.householdId] }
+            : {};
+          return (
+            <>
+              <TasksPanel personId={person.id} defaultLinks={personDefaultLinks} />
+              <UnifiedActivityFeed
+                personId={person.id}
+                notesContext={{ personId: person.id, defaultLinks: personDefaultLinks }}
+                hideTasks
+              />
+            </>
+          );
+        })()
       }
       right={
         <>

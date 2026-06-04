@@ -739,16 +739,30 @@ function OppView({
           // whichever donor this opportunity is linked to — opportunities
           // don't have their own activity arrays — while notes & tasks link
           // to the opportunity itself. Tasks sit above the activity feed.
-          <>
-            <TasksPanel opportunityId={opp.id} />
-            <UnifiedActivityFeed
-              funderId={opp.funderId ?? undefined}
-              personId={opp.individualGiverPersonId ?? undefined}
-              householdId={opp.householdId ?? undefined}
-              notesContext={{ opportunityId: opp.id }}
-              hideTasks
-            />
-          </>
+          (() => {
+            const personIds: string[] = [];
+            if (opp.individualGiverPersonId) personIds.push(opp.individualGiverPersonId);
+            if (opp.primaryContactPersonId && opp.primaryContactPersonId !== opp.individualGiverPersonId) {
+              personIds.push(opp.primaryContactPersonId);
+            }
+            const oppDefaultLinks: Partial<{ personIds: string[]; funderIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = {
+              ...(opp.funderId ? { funderIds: [opp.funderId] } : {}),
+              ...(opp.householdId ? { householdIds: [opp.householdId] } : {}),
+              ...(personIds.length > 0 ? { personIds } : {}),
+            };
+            return (
+              <>
+                <TasksPanel opportunityId={opp.id} defaultLinks={oppDefaultLinks} />
+                <UnifiedActivityFeed
+                  funderId={opp.funderId ?? undefined}
+                  personId={opp.individualGiverPersonId ?? undefined}
+                  householdId={opp.householdId ?? undefined}
+                  notesContext={{ opportunityId: opp.id, defaultLinks: oppDefaultLinks }}
+                  hideTasks
+                />
+              </>
+            );
+          })()
         }
         right={
           <>

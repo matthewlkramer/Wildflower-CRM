@@ -41,6 +41,7 @@ import {
 } from "@/components/meeting-notes-panel";
 import { AddNoteDialog } from "@/components/notes-panel";
 import { AddTaskDialog } from "@/components/tasks-panel";
+import { type EntityLinks } from "@/components/entity-links-editor";
 import { MediaMentionRow } from "@/components/media-mentions-panel";
 import {
   Card,
@@ -89,6 +90,8 @@ interface NotesContext {
   householdId?: string;
   opportunityId?: string;
   giftId?: string;
+  /** Additional IDs to pre-fill (checked but removable) in Add note / Add task dialogs. */
+  defaultLinks?: Partial<EntityLinks>;
 }
 
 interface Props {

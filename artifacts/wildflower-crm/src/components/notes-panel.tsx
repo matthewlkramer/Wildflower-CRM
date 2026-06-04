@@ -52,6 +52,8 @@ interface PanelContext {
   householdId?: string;
   opportunityId?: string;
   giftId?: string;
+  /** Additional IDs to pre-fill (checked but removable) when the dialog opens. */
+  defaultLinks?: Partial<EntityLinks>;
 }
 
 export function NotesPanel(ctx: PanelContext) {
@@ -133,7 +135,7 @@ export function NotesPanel(ctx: PanelContext) {
 export function AddNoteDialog({ ctx }: { ctx: PanelContext }) {
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
-  const [links, setLinks] = useState<EntityLinks>(EMPTY_LINKS);
+  const [links, setLinks] = useState<EntityLinks>(() => linksFromDefault(ctx.defaultLinks));
   const [mentions, setMentions] = useState<string[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -148,7 +150,7 @@ export function AddNoteDialog({ ctx }: { ctx: PanelContext }) {
         toast({ title: "Note saved" });
         setOpen(false);
         setBody("");
-        setLinks(EMPTY_LINKS);
+        setLinks(linksFromDefault(ctx.defaultLinks));
         setMentions([]);
       },
       onError: (err: unknown) => {
@@ -166,7 +168,10 @@ export function AddNoteDialog({ ctx }: { ctx: PanelContext }) {
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        if (!create.isPending) setOpen(v);
+        if (!create.isPending) {
+          if (v) setLinks(linksFromDefault(ctx.defaultLinks));
+          setOpen(v);
+        }
       }}
     >
       <DialogTrigger asChild>
@@ -255,4 +260,15 @@ function pinnedFromCtx(ctx: PanelContext): EntityLinks {
 function mergeLinks(pinned: string[], user: string[]): string[] | undefined {
   const merged = Array.from(new Set([...pinned, ...user]));
   return merged.length > 0 ? merged : undefined;
+}
+
+function linksFromDefault(defaultLinks?: Partial<EntityLinks>): EntityLinks {
+  if (!defaultLinks) return EMPTY_LINKS;
+  return {
+    personIds: defaultLinks.personIds ?? [],
+    funderIds: defaultLinks.funderIds ?? [],
+    householdIds: defaultLinks.householdIds ?? [],
+    opportunityIds: defaultLinks.opportunityIds ?? [],
+    giftIds: defaultLinks.giftIds ?? [],
+  };
 }

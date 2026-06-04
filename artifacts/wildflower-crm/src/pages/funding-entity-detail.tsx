@@ -772,10 +772,22 @@ function FunderView({ funder }: { funder: FunderDetail }) {
         </>
       }
       center={
-        <>
-          <TasksPanel funderId={funder.id} />
-          <UnifiedActivityFeed funderId={funder.id} hideTasks />
-        </>
+        (() => {
+          const primaryContact = (funder.people ?? []).find((p) => p.primaryContact);
+          const funderDefaultLinks: Partial<{ personIds: string[]; funderIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = primaryContact
+            ? { personIds: [primaryContact.personId] }
+            : {};
+          return (
+            <>
+              <TasksPanel funderId={funder.id} defaultLinks={funderDefaultLinks} />
+              <UnifiedActivityFeed
+                funderId={funder.id}
+                notesContext={{ funderId: funder.id, defaultLinks: funderDefaultLinks }}
+                hideTasks
+              />
+            </>
+          );
+        })()
       }
       right={
         <>

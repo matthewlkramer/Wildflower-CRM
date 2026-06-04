@@ -522,16 +522,31 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
         // meetings only link to a person/funder/household); notes link to the
         // gift itself. The Tasks card sits above the activity feed, which hides
         // tasks to avoid duplication.
-        <>
-          <TasksPanel giftId={gift.id} />
-          <UnifiedActivityFeed
-            funderId={gift.funderId ?? undefined}
-            personId={gift.individualGiverPersonId ?? undefined}
-            householdId={gift.householdId ?? undefined}
-            notesContext={{ giftId: gift.id }}
-            hideTasks
-          />
-        </>
+        (() => {
+          const giftPersonIds: string[] = [];
+          if (gift.individualGiverPersonId) giftPersonIds.push(gift.individualGiverPersonId);
+          if (gift.primaryContactPersonId && gift.primaryContactPersonId !== gift.individualGiverPersonId) {
+            giftPersonIds.push(gift.primaryContactPersonId);
+          }
+          const giftDefaultLinks: Partial<{ personIds: string[]; funderIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = {
+            ...(gift.funderId ? { funderIds: [gift.funderId] } : {}),
+            ...(gift.householdId ? { householdIds: [gift.householdId] } : {}),
+            ...(giftPersonIds.length > 0 ? { personIds: giftPersonIds } : {}),
+            ...(gift.paymentOnPledgeId ? { opportunityIds: [gift.paymentOnPledgeId] } : {}),
+          };
+          return (
+            <>
+              <TasksPanel giftId={gift.id} defaultLinks={giftDefaultLinks} />
+              <UnifiedActivityFeed
+                funderId={gift.funderId ?? undefined}
+                personId={gift.individualGiverPersonId ?? undefined}
+                householdId={gift.householdId ?? undefined}
+                notesContext={{ giftId: gift.id, defaultLinks: giftDefaultLinks }}
+                hideTasks
+              />
+            </>
+          );
+        })()
       }
       right={
         <>
