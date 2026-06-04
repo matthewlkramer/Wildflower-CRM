@@ -33,6 +33,30 @@ async function run() {
   try {
     logger.info("Starting organizations migration...");
 
+    // ── Guard: this migration only runs against the pre-Phase-2 schema, where the
+    // `funders` table and scalar `funder_id` columns still exist (it copies them into
+    // organizations / organization_id). After the Phase 2 schema push drops them,
+    // running this again is meaningless and should fail fast with a clear message.
+    const guard = await client.query<{ funders: string | null; funder_col: number | null }>(`
+      SELECT to_regclass('public.funders')::text AS funders,
+             (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'opportunities_and_pledges' AND column_name = 'funder_id') AS funder_col
+    `);
+    if (!guard.rows[0].funders || !guard.rows[0].funder_col) {
+      throw new Error(
+        "Pre-Phase-2 artifacts missing (funders table / funder_id columns). " +
+          "This migration only runs against the pre-Phase-2 schema. Aborting.",
+      );
+    }
+
+    // ── Pre-step: ensure the entity_role_type enum has the unified 'organization'
+    // value. MUST run outside the main transaction — a newly-added enum value cannot
+    // be used (Step 5) in the same transaction that adds it. Idempotent.
+    await client.query(
+      `ALTER TYPE entity_role_type ADD VALUE IF NOT EXISTS 'organization'`,
+    );
+    logger.info("Pre-step complete: ensured 'organization' on entity_role_type enum");
+
     await client.query("BEGIN");
 
     // ── Step 0: Add new columns to organizations if they don't already exist ──
@@ -208,6 +232,27 @@ async function run() {
     `);
     logger.info(`Step 3 complete: updated ${updated.rowCount} pre-existing organization rows`);
 
+    // ── Step 3.5: Drop XOR/discriminator CHECK constraints that forbid funder_id
+    // and organization_id both being non-null. Phase 1 intentionally populates BOTH
+    // (funder_id is retained until the Phase 2 schema push drops it), so these come
+    // off now; the Phase 2 schema re-creates them keyed on organization_id. The
+    // donor-XOR constraints on opps/gifts/meeting_notes do NOT count organization_id,
+    // so they stay in place. Idempotent (IF EXISTS).
+    const xorConstraintsToDrop: Array<{ table: string; constraint: string }> = [
+      { table: "addresses",           constraint: "addresses_exactly_one_owner" },
+      { table: "emails",              constraint: "emails_exactly_one_owner" },
+      { table: "phone_numbers",       constraint: "phone_numbers_exactly_one_owner" },
+      { table: "people_entity_roles", constraint: "per_entity_discriminator" },
+    ];
+    for (const { table, constraint } of xorConstraintsToDrop) {
+      await client.query(
+        `ALTER TABLE ${table} DROP CONSTRAINT IF EXISTS ${constraint}`,
+      );
+    }
+    logger.info(
+      "Step 3.5 complete: dropped transitional XOR constraints (funder_id + organization_id both set)",
+    );
+
     // ── Step 4: Rewire scalar FKs: funder_id → organization_id ──
     const scalarRewires: Array<{ table: string; fromCol: string; toCol: string }> = [
       { table: "opportunities_and_pledges", fromCol: "funder_id",        toCol: "organization_id" },
@@ -226,6 +271,21 @@ async function run() {
         WHERE ${fromCol} IS NOT NULL AND (${toCol} IS NULL OR ${toCol} != ${fromCol})
       `);
       logger.info(`  Rewired ${r.rowCount} rows in ${table}.${fromCol} → ${toCol}`);
+    }
+
+    // Assert every scalar rewire fully completed — abort (rollback) if any row still
+    // has the old FK set but no new organization_id. Covers all rewired tables, not
+    // just opps/gifts.
+    for (const { table, fromCol, toCol } of scalarRewires) {
+      const left = await client.query<{ c: string }>(
+        `SELECT COUNT(*)::text AS c FROM ${table} WHERE ${fromCol} IS NOT NULL AND ${toCol} IS NULL`,
+      );
+      const remaining = parseInt(left.rows[0].c, 10);
+      if (remaining > 0) {
+        throw new Error(
+          `${remaining} rows in ${table} still have ${fromCol} but no ${toCol} after rewire`,
+        );
+      }
     }
 
     // ── Step 5: Update entity_type in people_entity_roles ──
