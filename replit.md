@@ -121,6 +121,18 @@ mid-run as noise (retry), not a blocker.
   approve/reject for dedupe. Tokens + realmId encrypted at rest; OAuth/token
   endpoints are env-shared, the data host is env-derived (`QUICKBOOKS_API_BASE`,
   defaults to the production Intuit host). Pull-only — never writes back to QB.
+- **Flodesk subscriber sync** — replaces the cancelled Mailchimp plan. Syncs
+  PEOPLE only into ONE Flodesk segment. Outbound (CRM → Flodesk) fires
+  fire-and-forget on person create/update: eligible people (`newsletter` true,
+  `unsubscribedToNewsletter` false, has a usable email) are upserted + added to
+  the segment; ineligible people are unsubscribed. Inbound reconcile (Flodesk →
+  CRM) runs daily off-hours (America/Chicago, advisory-locked) and is monotonic —
+  it only ever SETS `unsubscribedToNewsletter = true`. Precedence: a Flodesk
+  unsubscribe always wins (outbound mirrors it back instead of resurrecting the
+  subscriber). Config: `FLODESK_API_KEY` secret + `FLODESK_SEGMENT_ID` env (auth
+  defaults to HTTP Basic, override via `FLODESK_AUTH_SCHEME`); the sync is a safe
+  no-op until both are set. No campaign/open analytics (Flodesk's API has none).
+  Manual trigger: `pnpm --filter @workspace/api-server run sync:flodesk`.
 
 ## Known follow-ups (non-blocking)
 

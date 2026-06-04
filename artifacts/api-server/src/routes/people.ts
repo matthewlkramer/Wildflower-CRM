@@ -14,6 +14,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { mergeEntity, PERSON_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
+import { syncPersonToFlodeskInBackground } from "../lib/flodeskSync";
 
 const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus", "enthusiasm", "ownerUserId", "priority", "regionIds"] as const;
 
@@ -247,6 +248,9 @@ router.post(
     const body = parseOrBadRequest(CreatePersonBody, req.body, res);
     if (!body) return;
     const [row] = await db.insert(people).values({ id: newId(), ...body }).returning();
+    // Push newsletter membership to Flodesk (fire-and-forget; safe + no-op
+    // when Flodesk isn't configured or the person has no usable email).
+    if (row) syncPersonToFlodeskInBackground(row.id);
     res.status(201).json(row);
   }),
 );
@@ -262,6 +266,8 @@ router.patch(
       .where(eq(people.id, paramId(req)))
       .returning();
     if (!row) return notFound(res, "person");
+    // Propagate newsletter/unsubscribe changes out to Flodesk (fire-and-forget).
+    syncPersonToFlodeskInBackground(row.id);
     res.json(row);
   }),
 );

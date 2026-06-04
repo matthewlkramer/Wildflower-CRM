@@ -4,6 +4,7 @@ import { logger } from "./lib/logger";
 import { startSyncScheduler } from "./lib/syncScheduler";
 import { startMediaIngestScheduler } from "./lib/mediaIngestScheduler";
 import { startQuickbooksSyncScheduler } from "./lib/quickbooksSyncScheduler";
+import { startFlodeskSyncScheduler } from "./lib/flodeskSyncScheduler";
 import { startTaskSuggestionScheduler } from "./lib/taskSuggestionScheduler";
 import { runTaskSuggestionBackfillIfDue } from "./lib/taskSuggestionBackfill";
 import { backfillIntelForUser } from "./lib/gmailBackfill";
@@ -33,6 +34,7 @@ app.listen(port, (err) => {
   startSyncScheduler();
   startMediaIngestScheduler();
   startQuickbooksSyncScheduler();
+  startFlodeskSyncScheduler();
   startTaskSuggestionScheduler();
 
   // One-time upfront task-suggestion backfill: ensures every non-low-priority
