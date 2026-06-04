@@ -23,6 +23,12 @@ type Props = {
   disabled?: boolean;
   /** Custom trigger element. When provided, replaces the default Delete button. */
   trigger?: ReactNode;
+  /**
+   * Controlled open state. When provided, the dialog is driven externally and
+   * the default/custom trigger is omitted (open it via `onOpenChange`).
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 export function ConfirmDeleteDialog({
@@ -35,8 +41,16 @@ export function ConfirmDeleteDialog({
   onConfirm,
   disabled,
   trigger,
+  open: openProp,
+  onOpenChange,
 }: Props) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : openState;
+  const setOpen = (v: boolean) => {
+    if (!isControlled) setOpenState(v);
+    onOpenChange?.(v);
+  };
   const [busy, setBusy] = useState(false);
 
   async function handleConfirm() {
@@ -56,19 +70,21 @@ export function ConfirmDeleteDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={(v) => { if (!busy) setOpen(v); }}>
-      <AlertDialogTrigger asChild>
-        {trigger ?? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:text-destructive"
-            disabled={disabled}
-            data-testid={triggerTestId}
-          >
-            {triggerLabel}
-          </Button>
-        )}
-      </AlertDialogTrigger>
+      {isControlled ? null : (
+        <AlertDialogTrigger asChild>
+          {trigger ?? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              disabled={disabled}
+              data-testid={triggerTestId}
+            >
+              {triggerLabel}
+            </Button>
+          )}
+        </AlertDialogTrigger>
+      )}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>

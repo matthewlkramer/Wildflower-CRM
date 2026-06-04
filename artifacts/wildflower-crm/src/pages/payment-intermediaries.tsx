@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
+import { PaymentIntermediaryRowActions } from "@/components/payment-intermediary-row-actions";
 import {
   Pagination,
   PaginationContent,
@@ -73,6 +74,16 @@ function buildColumns(): ColumnDef<PaymentIntermediary>[] {
         ) : (
           "—"
         ),
+    },
+    {
+      key: "actions",
+      label: "",
+      required: true,
+      sortable: false,
+      align: "right",
+      thClassName: "w-12",
+      tdClassName: "text-right",
+      cell: (p) => <PaymentIntermediaryRowActions intermediary={p} />,
     },
   ];
 }
