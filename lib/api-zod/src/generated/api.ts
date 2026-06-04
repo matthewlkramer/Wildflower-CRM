@@ -773,6 +773,12 @@ export const ListOrganizationsQueryParams = zod.object({
     .describe(
       "Filter to grant-making organizations only (true) or non-grant entities only (false). Omit for all.",
     ),
+  makesPris: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Filter to organizations that make PRIs (true) or do not (false). Omit for all.",
+    ),
   parentOrganizationId: zod.coerce
     .string()
     .optional()

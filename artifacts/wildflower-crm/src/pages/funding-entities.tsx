@@ -178,6 +178,18 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
       cell: (f) => formatEnum(f.entityType),
     },
     {
+      key: "issuesGrants",
+      label: "Grant-making",
+      defaultVisible: false,
+      cell: (f) => (f.issuesGrants ? "Yes" : "No"),
+    },
+    {
+      key: "makesPris",
+      label: "Makes PRIs",
+      defaultVisible: false,
+      cell: (f) => (f.makesPris == null ? "—" : f.makesPris ? "Yes" : "No"),
+    },
+    {
       key: "active",
       label: "Active",
       cell: (f) =>
@@ -312,6 +324,7 @@ export default function Organizations() {
   const [search, setSearch] = usePersistedState<string>("wf.list.funders.search", "");
   const debouncedSearch = useDebounce(search, 250);
   const [issuesGrants, setIssuesGrants] = usePersistedState<boolean | undefined>("wf.list.funders.issuesGrants", undefined);
+  const [makesPris, setMakesPris] = usePersistedState<boolean | undefined>("wf.list.funders.makesPris", undefined);
   const [subtypes, setSubtypes] = usePersistedState<string[]>("wf.list.funders.subtypes", DEFAULT_SUBTYPES);
   const [activeStatuses, setActiveStatuses] = usePersistedState<string[]>("wf.list.funders.activeStatuses", DEFAULT_ACTIVE_STATUSES);
   const [connectionStatuses, setConnectionStatuses] = usePersistedState<string[]>("wf.list.funders.connectionStatuses", []);
@@ -346,6 +359,7 @@ export default function Organizations() {
     page: sortActive ? 1 : page,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(issuesGrants !== undefined ? { issuesGrants } : {}),
+    ...(makesPris !== undefined ? { makesPris } : {}),
     ...(subtypes.length > 0 ? { entityType: [...subtypes].sort() } : {}),
     ...(activeStatuses.length > 0
       ? { activeStatus: [...activeStatuses].sort() as ActiveStatus[] }
@@ -469,6 +483,30 @@ export default function Organizations() {
             <option value="">All organizations</option>
             <option value="true">Grant-making only</option>
             <option value="false">Non-grant-making only</option>
+          </select>
+        ),
+      },
+      {
+        key: "makesPris",
+        label: "Makes PRIs",
+        defaultVisible: false,
+        active: makesPris !== undefined,
+        clear: () => { setMakesPris(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <select
+            className="h-8 rounded border px-2 text-sm bg-background"
+            value={makesPris === undefined ? "" : String(makesPris)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setMakesPris(v === "" ? undefined : v === "true");
+              setPage(1);
+              selection.clear();
+            }}
+            data-testid="select-makes-pris"
+          >
+            <option value="">All organizations</option>
+            <option value="true">Makes PRIs only</option>
+            <option value="false">Doesn't make PRIs only</option>
           </select>
         ),
       },
@@ -661,7 +699,7 @@ export default function Organizations() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [issuesGrants, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, regionIdsSel],
+    [issuesGrants, makesPris, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, regionIdsSel],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -714,6 +752,7 @@ export default function Organizations() {
   const hasActiveFilters =
     !!search ||
     issuesGrants !== undefined ||
+    makesPris !== undefined ||
     !sameDefaultSubtypes ||
     !sameDefaultActiveStatuses ||
     connectionStatuses.length > 0 ||
@@ -731,6 +770,7 @@ export default function Organizations() {
   type FundersView = {
     search: string;
     issuesGrants: boolean | undefined;
+    makesPris: boolean | undefined;
     subtypes: string[];
     activeStatuses: string[];
     connectionStatuses: string[];
@@ -750,6 +790,7 @@ export default function Organizations() {
   const currentView: FundersView = {
     search,
     issuesGrants,
+    makesPris,
     subtypes,
     activeStatuses,
     connectionStatuses,
@@ -769,6 +810,7 @@ export default function Organizations() {
   const clearAll = () => {
     setSearch("");
     setIssuesGrants(undefined);
+    setMakesPris(undefined);
     setSubtypes(DEFAULT_SUBTYPES);
     setActiveStatuses(DEFAULT_ACTIVE_STATUSES);
     setConnectionStatuses([]);
@@ -791,6 +833,7 @@ export default function Organizations() {
     apply: (s) => {
       setSearch(s.search ?? "");
       setIssuesGrants(s.issuesGrants ?? undefined);
+      setMakesPris(s.makesPris ?? undefined);
       setSubtypes(s.subtypes ?? DEFAULT_SUBTYPES);
       setActiveStatuses(s.activeStatuses ?? DEFAULT_ACTIVE_STATUSES);
       setConnectionStatuses(s.connectionStatuses ?? []);
@@ -815,6 +858,7 @@ export default function Organizations() {
       return (
         !s.search &&
         s.issuesGrants === undefined &&
+        s.makesPris === undefined &&
         sortedSubtypes === sortedDefaultSubtypes &&
         sortedActiveStatuses === sortedDefaultActiveStatuses &&
         (s.connectionStatuses?.length ?? 0) === 0 &&
@@ -879,6 +923,8 @@ export default function Organizations() {
             size="sm"
             onClick={() => {
               setSearch("");
+              setIssuesGrants(undefined);
+              setMakesPris(undefined);
               setSubtypes(DEFAULT_SUBTYPES);
               setActiveStatuses(DEFAULT_ACTIVE_STATUSES);
               setConnectionStatuses([]);

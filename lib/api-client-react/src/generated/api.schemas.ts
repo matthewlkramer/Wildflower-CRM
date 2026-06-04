@@ -2752,6 +2752,10 @@ export type ListOrganizationsParams = {
    */
   issuesGrants?: boolean;
   /**
+   * Filter to organizations that make PRIs (true) or do not (false). Omit for all.
+   */
+  makesPris?: boolean;
+  /**
    * Filter to direct child organizations of the given parent.
    */
   parentOrganizationId?: string;

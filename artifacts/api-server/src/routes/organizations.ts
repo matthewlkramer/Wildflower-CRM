@@ -33,6 +33,7 @@ import {
   newId,
   normalizeArrayQuery,
   notFound,
+  parseBoolQuery,
   parseOrBadRequest,
   parsePagination,
   paramId,
@@ -126,8 +127,14 @@ router.get(
       filters.push(
         eq(organizations.parentOrganizationId, q.parentOrganizationId),
       );
-    if (q.issuesGrants != null)
-      filters.push(eq(organizations.issuesGrants, q.issuesGrants));
+    // Booleans must be read from the raw query — orval emits
+    // zod.coerce.boolean() which turns the string "false" into `true`.
+    const issuesGrants = parseBoolQuery(req, "issuesGrants");
+    if (issuesGrants != null)
+      filters.push(eq(organizations.issuesGrants, issuesGrants));
+    const makesPris = parseBoolQuery(req, "makesPris");
+    if (makesPris != null)
+      filters.push(eq(organizations.makesPris, makesPris));
 
     // Array-enum filters (support __blank__ sentinel via splitBlank).
     {

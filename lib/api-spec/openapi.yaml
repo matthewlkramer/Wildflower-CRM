@@ -312,6 +312,7 @@ paths:
       parameters:
         - { name: search, in: query, schema: { type: string } }
         - { name: issuesGrants, in: query, schema: { type: boolean }, description: "Filter to grant-making organizations only (true) or non-grant entities only (false). Omit for all." }
+        - { name: makesPris, in: query, schema: { type: boolean }, description: "Filter to organizations that make PRIs (true) or do not (false). Omit for all." }
         - { name: parentOrganizationId, in: query, description: "Filter to direct child organizations of the given parent.", schema: { type: string } }
         - { name: lifetimeGivingPresence, in: query, required: false, description: "Rollup presence filter on lifetime giving (`has` = >0, `blank` = none). Only meaningful for issuesGrants=true.", schema: { type: string, enum: [has, blank] } }
         - { name: openAsksPresence, in: query, required: false, description: "Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }
