@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
+import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
 import {
   giftsAndPayments,
   giftAllocations,
@@ -360,6 +361,14 @@ router.post(
     if (!body) return;
     const [row] = await db.insert(giftsAndPayments).values({ id: newId(), ...body }).returning();
     await applyDerivedOppFieldsMany(row?.paymentOnPledgeId);
+    if (row) {
+      // New gift is a fresh relationship signal — refresh the donor's
+      // cached next-step suggestion (debounced + priority-gated downstream).
+      enqueueDonorSignal({
+        organizationId: row.organizationId,
+        individualGiverPersonId: row.individualGiverPersonId,
+      });
+    }
     res.status(201).json(row);
   }),
 );

@@ -7,6 +7,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
+import { enqueueMatchedSignal } from "./taskSuggestionQueue";
 import {
   listEvents,
   extractAttendeeEmails,
@@ -489,8 +490,15 @@ async function processOneEvent(
 
     const row = upserted[0];
     if (row) {
-      if (row.wasInsert) report.matched++;
-      else report.updated++;
+      if (row.wasInsert) {
+        report.matched++;
+        // New matched meeting is a fresh relationship signal — refresh the
+        // matched entities' cached next-step suggestions (debounced).
+        enqueueMatchedSignal({
+          personIds: match.personIds,
+          organizationIds: match.organizationIds,
+        });
+      } else report.updated++;
     }
     return true;
   } catch (e) {

@@ -3,6 +3,8 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startSyncScheduler } from "./lib/syncScheduler";
 import { startMediaIngestScheduler } from "./lib/mediaIngestScheduler";
+import { startTaskSuggestionScheduler } from "./lib/taskSuggestionScheduler";
+import { runTaskSuggestionBackfillIfDue } from "./lib/taskSuggestionBackfill";
 import { backfillIntelForUser } from "./lib/gmailBackfill";
 import { analyzePendingForUser } from "./lib/analyzePending";
 
@@ -29,6 +31,36 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
   startSyncScheduler();
   startMediaIngestScheduler();
+  startTaskSuggestionScheduler();
+
+  // One-time upfront task-suggestion backfill: ensures every non-low-priority
+  // person + organization has a cached next-step suggestion. Triggered by
+  // writing to /tmp/backfill-task-suggestions/trigger and restarting the
+  // workflow. Runs in-process (advisory-locked + resumable) so the long sweep
+  // survives parent-shell teardown the way a standalone tsx script doesn't in
+  // this sandbox. The trigger file is consumed on read so a later restart
+  // won't re-run. Errors are logged but don't take the server down.
+  const taskBackfillTriggerPath = "/tmp/backfill-task-suggestions/trigger";
+  if (existsSync(taskBackfillTriggerPath)) {
+    try {
+      unlinkSync(taskBackfillTriggerPath);
+      logger.info(
+        "Task-suggestion backfill trigger found — starting in-process backfill",
+      );
+      void runTaskSuggestionBackfillIfDue()
+        .then((summary) =>
+          logger.info({ summary }, "Task-suggestion backfill complete"),
+        )
+        .catch((err) => {
+          logger.error({ err }, "In-process task-suggestion backfill: failed");
+        });
+    } catch (err) {
+      logger.warn(
+        { err, triggerPath: taskBackfillTriggerPath },
+        "Failed to read task-suggestion backfill trigger",
+      );
+    }
+  }
 
   // One-time email-intelligence backfill, triggered by writing a
   // userId to /tmp/backfill/trigger and restarting the workflow.

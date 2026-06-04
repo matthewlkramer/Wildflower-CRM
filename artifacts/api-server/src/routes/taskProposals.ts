@@ -1,12 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import {
-  taskProposals,
-  tasks,
-  people,
-  organizations,
-} from "@workspace/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { taskProposals, tasks } from "@workspace/db/schema";
+import { and, eq } from "drizzle-orm";
 import {
   GetTaskProposalQueryParams,
   RefreshTaskProposalBody,
@@ -23,6 +18,15 @@ import {
   parseOrBadRequest,
 } from "../lib/helpers";
 import { generateTaskProposal } from "../lib/proposeTask";
+import {
+  type EntityRef,
+  dedupeKeyForEntity,
+  loadEntityPriority,
+  findPendingProposal,
+  hasAnyProposal,
+  loadProposalById,
+  createAndGenerate,
+} from "../lib/taskProposalEngine";
 
 /**
  * Task intelligence — AI-suggested next-step cultivation tasks surfaced
@@ -48,131 +52,23 @@ router.use(requireAuth);
  */
 class ProposalRaceLost extends Error {}
 
-type EntityTarget =
-  | { kind: "person"; personId: string; organizationId: null }
-  | { kind: "organization"; personId: null; organizationId: string };
-
 /**
  * Resolve exactly one of personId / organizationId into a normalized
- * target. Returns null (and the caller should 400) when neither or both
- * are supplied.
+ * entity ref. Returns null (and the caller should 400) when neither or both
+ * are supplied. The per-entity bookkeeping (dedupe / priority / find /
+ * create) lives in `../lib/taskProposalEngine` and is shared with the
+ * automated backfill, signal, and monthly-refresh paths.
  */
 function resolveTarget(
   personId: string | undefined,
   organizationId: string | undefined,
-): EntityTarget | null {
+): EntityRef | null {
   const hasPerson = typeof personId === "string" && personId.length > 0;
   const hasOrg =
     typeof organizationId === "string" && organizationId.length > 0;
   if (hasPerson === hasOrg) return null; // neither or both
-  if (hasPerson) {
-    return { kind: "person", personId: personId!, organizationId: null };
-  }
-  return { kind: "organization", personId: null, organizationId: organizationId! };
-}
-
-function dedupeKeyFor(target: EntityTarget): string {
-  return target.kind === "person"
-    ? `person:${target.personId}`
-    : `org:${target.organizationId}`;
-}
-
-/**
- * Look up the entity's priority. Low-priority entities are skipped per the
- * task spec. Returns `{ found, priority }`; `found:false` means the entity
- * id doesn't resolve.
- */
-async function loadPriority(
-  target: EntityTarget,
-): Promise<{ found: boolean; priority: string | null }> {
-  if (target.kind === "person") {
-    const [row] = await db
-      .select({ priority: people.priority })
-      .from(people)
-      .where(eq(people.id, target.personId))
-      .limit(1);
-    return { found: !!row, priority: row?.priority ?? null };
-  }
-  const [row] = await db
-    .select({ priority: organizations.priority })
-    .from(organizations)
-    .where(eq(organizations.id, target.organizationId))
-    .limit(1);
-  return { found: !!row, priority: row?.priority ?? null };
-}
-
-async function findPending(
-  dedupeKey: string,
-): Promise<typeof taskProposals.$inferSelect | undefined> {
-  const [row] = await db
-    .select()
-    .from(taskProposals)
-    .where(
-      and(
-        eq(taskProposals.dedupeKey, dedupeKey),
-        eq(taskProposals.status, "pending"),
-      ),
-    )
-    .limit(1);
-  return row;
-}
-
-/**
- * True when ANY proposal (pending or resolved) already exists for this
- * entity. Used by GET to distinguish a true first view (auto-generate) from
- * a return visit after the user already accepted/dismissed a suggestion
- * (don't silently spend another AI call — let them hit Refresh).
- */
-async function hasAnyProposal(dedupeKey: string): Promise<boolean> {
-  const [row] = await db
-    .select({ id: taskProposals.id })
-    .from(taskProposals)
-    .where(eq(taskProposals.dedupeKey, dedupeKey))
-    .limit(1);
-  return !!row;
-}
-
-async function loadById(
-  id: string,
-): Promise<typeof taskProposals.$inferSelect | undefined> {
-  const [row] = await db
-    .select()
-    .from(taskProposals)
-    .where(eq(taskProposals.id, id))
-    .limit(1);
-  return row;
-}
-
-/**
- * Create a fresh pending row for an entity and run AI generation in place.
- * Uses onConflictDoNothing against the partial-unique pending index to win
- * the race when two views fire simultaneously — the loser re-reads the
- * winner's row.
- */
-async function createAndGenerate(
-  target: EntityTarget,
-  dedupeKey: string,
-): Promise<typeof taskProposals.$inferSelect | undefined> {
-  const id = newId();
-  const inserted = await db
-    .insert(taskProposals)
-    .values({
-      id,
-      status: "pending",
-      targetPersonId: target.personId,
-      targetOrganizationId: target.organizationId,
-      dedupeKey,
-    })
-    .onConflictDoNothing()
-    .returning();
-
-  if (inserted.length === 0) {
-    // Lost the race — another request already created the pending row.
-    return findPending(dedupeKey);
-  }
-
-  await generateTaskProposal(id);
-  return loadById(id);
+  if (hasPerson) return { kind: "person", id: personId! };
+  return { kind: "organization", id: organizationId! };
 }
 
 /**
@@ -198,9 +94,9 @@ router.get(
       });
       return;
     }
-    const dedupeKey = dedupeKeyFor(target);
+    const dedupeKey = dedupeKeyForEntity(target);
 
-    const existing = await findPending(dedupeKey);
+    const existing = await findPendingProposal(dedupeKey);
     if (existing) {
       res.json({ data: existing });
       return;
@@ -216,7 +112,7 @@ router.get(
     }
 
     // First view — gate on priority before spending an AI call.
-    const { found, priority } = await loadPriority(target);
+    const { found, priority } = await loadEntityPriority(target);
     if (!found) {
       res.status(404).json({ error: "entity not found" });
       return;
@@ -254,9 +150,9 @@ router.post(
       });
       return;
     }
-    const dedupeKey = dedupeKeyFor(target);
+    const dedupeKey = dedupeKeyForEntity(target);
 
-    const { found, priority } = await loadPriority(target);
+    const { found, priority } = await loadEntityPriority(target);
     if (!found) {
       res.status(404).json({ error: "entity not found" });
       return;
@@ -266,10 +162,10 @@ router.post(
       return;
     }
 
-    const existing = await findPending(dedupeKey);
+    const existing = await findPendingProposal(dedupeKey);
     if (existing) {
       await generateTaskProposal(existing.id);
-      const row = await loadById(existing.id);
+      const row = await loadProposalById(existing.id);
       res.json({ data: row ?? null });
       return;
     }
@@ -295,7 +191,7 @@ router.post(
     if (!body) return;
 
     const id = paramId(req);
-    const proposal = await loadById(id);
+    const proposal = await loadProposalById(id);
     if (!proposal) return notFound(res, "task proposal");
     if (proposal.status !== "pending") {
       res.status(400).json({ error: "proposal already resolved" });
@@ -375,7 +271,7 @@ router.post(
     if (!body) return;
 
     const id = paramId(req);
-    const proposal = await loadById(id);
+    const proposal = await loadProposalById(id);
     if (!proposal) return notFound(res, "task proposal");
     if (proposal.status !== "pending") {
       res.status(400).json({ error: "proposal already resolved" });

@@ -10,6 +10,7 @@ import {
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
+import { enqueueMatchedSignal } from "./taskSuggestionQueue";
 import { summarizeEmail } from "./summarizeEmail";
 import {
   getMessage,
@@ -696,6 +697,15 @@ async function processOneMessage(
     if (!existing) return false;
     messageRowId = existing.id;
     wasNewMessage = false;
+  }
+
+  if (wasNewMessage) {
+    // New matched email is a fresh relationship signal — refresh the matched
+    // entities' cached next-step suggestions (debounced + priority-gated).
+    enqueueMatchedSignal({
+      personIds: match.personIds,
+      organizationIds: match.organizationIds,
+    });
   }
 
   // Email-intelligence hook (matched path). Run only on first insert

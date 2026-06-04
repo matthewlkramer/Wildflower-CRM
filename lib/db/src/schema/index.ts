@@ -33,6 +33,7 @@ export * from "./correspondentIgnore";
 export * from "./notes";
 export * from "./mediaMentions";
 export * from "./mediaIngestState";
+export * from "./taskSuggestionState";
 export * from "./tasks";
 export * from "./taskProposals";
 export * from "./meetingNotes";

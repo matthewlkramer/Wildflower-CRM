@@ -15,6 +15,8 @@
     "backfill:user-identities": "tsx src/scripts/backfill-user-identities.ts",
     "backfill:sync-suppression": "tsx src/scripts/backfill-sync-suppression.ts",
     "backfill:email-domains": "tsx src/scripts/backfill-email-domains.ts",
+    "backfill:task-suggestions": "tsx src/scripts/backfill-task-suggestions.ts",
+    "refresh:task-suggestions": "tsx src/scripts/refresh-task-suggestions.ts",
     "migrate:organizations": "tsx src/scripts/migrate-organizations.ts"
   },
   "dependencies": {

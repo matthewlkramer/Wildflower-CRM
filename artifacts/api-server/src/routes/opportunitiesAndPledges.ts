@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
+import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
 import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, organizations, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
 import { alias } from "drizzle-orm/pg-core";
 import { and, count, desc, eq, exists, getTableColumns, ilike, inArray, isNull, notExists, or, sql, type SQL } from "drizzle-orm";
@@ -438,7 +439,15 @@ router.post(
       .insert(opportunitiesAndPledges)
       .values({ id: newId(), ...writeValues })
       .returning();
-    if (row) await applyDerivedOppFields(row.id);
+    if (row) {
+      await applyDerivedOppFields(row.id);
+      // New opportunity/pledge is a fresh relationship signal — refresh the
+      // donor's cached next-step suggestion (debounced + priority-gated).
+      enqueueDonorSignal({
+        organizationId: row.organizationId,
+        individualGiverPersonId: row.individualGiverPersonId,
+      });
+    }
     const final = row
       ? (await db.select().from(opportunitiesAndPledges).where(eq(opportunitiesAndPledges.id, row.id)).then((r) => r[0])) ?? row
       : row;

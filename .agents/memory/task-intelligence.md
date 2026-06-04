@@ -44,3 +44,40 @@ This relies on the dedupe unique index being partial (`WHERE status =
   check, failing the merge txn. The merge-config inventory test asserts config
   fkRefs == every schema FK to people.id/organizations.id, so it catches a
   missed table — mirror the `email_proposals` entries.
+
+## Rollout / automation (backfill + signal triggers + monthly refresh)
+
+The automation layer reuses the SAME generation entry point as the on-demand
+GET — there is ONE function (`runTaskSuggestion(entity, {trigger, mode})`) that
+all callers funnel through; it delegates the actual AI call to the existing
+`generateTaskProposal` (so aiProposalLimit + retry guardrails always apply).
+Never add a second generation path.
+
+- **Modes**: `ensure` (create only if NO proposal of any status — used by the
+  one-time backfill; idempotent/resumable), `refresh-pending` (regenerate the
+  existing pending row in place — monthly), `regenerate` (signal-triggered).
+  All modes still respect the "never resurface a resolved suggestion" rule — a
+  resolved (accepted/dismissed) entity is left alone unless an explicit refresh.
+- **priority gating**: only explicit `'low'` is skipped; NULL priority = not low.
+- **Single advisory lock** `(9002, 1)` is shared by BOTH the backfill and the
+  monthly refresh so the two heavy sweeps can never overlap. Signal-triggered
+  regenerations are continuous (not "runs") and do NOT take this lock or touch
+  the run-state row.
+- **Run-state** lives in singleton table `task_suggestion_state` (mirrors
+  `media_ingest_state`); the monthly scheduler reads `lastRunFinishedAt` to
+  enforce ~monthly throttle (MIN_DAYS_BETWEEN_RUNS=28, STALE_AFTER_DAYS=30).
+- **Off-hours window** = America/Chicago 02:00–05:00, mirroring media-ingestion.
+- **Signal hooks** enqueue into an in-process debounced queue (coalesces bursts:
+  ~10s debounce, 60s max wait) rather than generating inline: new gift, new
+  opportunity/pledge, new matched email (gmailSync), new matched meeting
+  (calendarSync), new/linked media mention (mediaIngest). Donor-XOR signals send
+  org/individual FKs; matched signals send personIds/organizationIds arrays.
+- **Disable flags**: NODE_ENV=test and DISABLE_TASK_SUGGESTIONS=1 (generation);
+  DISABLE_SYNC_SCHEDULER=1 also stops the monthly scheduler.
+- **Manual triggers**: in-process one-time backfill via writing
+  `/tmp/backfill-task-suggestions/trigger` + workflow restart (survives shell
+  teardown the way standalone tsx doesn't); CLI scripts `backfill:task-
+  suggestions` (--max N) and `refresh:task-suggestions` (--force) for bounded
+  verification.
+- **Known gap**: household donors aren't expanded to member people, so a gift to
+  a household doesn't trigger a person/org suggestion (follow-up).

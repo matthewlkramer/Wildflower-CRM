@@ -4,6 +4,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
 import { searchGdelt } from "./gdelt";
+import { enqueueTaskSuggestion } from "./taskSuggestionQueue";
 
 /**
  * GDELT media-mention ingestion. For every funder and every high-capacity
@@ -265,10 +266,25 @@ export async function ingestMediaMentions(
         maxRecords: maxRecordsPerEntity,
       });
       summary.articlesSeen += articles.length;
+      let touched = false;
       for (const article of articles) {
         const outcome = await upsertArticle(target, article);
-        if (outcome === "created") summary.mentionsCreated += 1;
-        else if (outcome === "linked") summary.mentionsLinked += 1;
+        if (outcome === "created") {
+          summary.mentionsCreated += 1;
+          touched = true;
+        } else if (outcome === "linked") {
+          summary.mentionsLinked += 1;
+          touched = true;
+        }
+      }
+      if (touched) {
+        // A new/linked media mention is a fresh relationship signal — refresh
+        // this entity's cached next-step suggestion (debounced + gated).
+        enqueueTaskSuggestion(
+          target.kind === "person"
+            ? { kind: "person", id: target.id }
+            : { kind: "organization", id: target.id },
+        );
       }
     } catch (err) {
       summary.errors += 1;
