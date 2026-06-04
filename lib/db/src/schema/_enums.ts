@@ -417,3 +417,33 @@ export const taskProposalStatusEnum = pgEnum("task_proposal_status", [
   "accepted",
   "dismissed",
 ]);
+
+// ──────────────────────────────────────────────────────────────────
+// QuickBooks Online payment sync
+// ──────────────────────────────────────────────────────────────────
+
+// Which QuickBooks "incoming money" entity a staged payment was pulled
+// from. Used together with the QB entity id for idempotent dedupe.
+export const quickbooksEntityTypeEnum = pgEnum("quickbooks_entity_type", [
+  "sales_receipt",
+  "payment",
+  "deposit",
+]);
+
+// Lifecycle of a staged QuickBooks payment in the review queue.
+//   pending  — awaiting fundraiser review (default)
+//   approved — turned into a gifts_and_payments row (createdGiftId set)
+//   rejected — explicitly discarded; kept so re-sync won't re-stage it
+export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
+  "pending",
+  "approved",
+  "rejected",
+]);
+
+// Result of auto-matching a staged payment to a CRM donor at sync time.
+//   matched   — a single confident donor was found and pre-filled
+//   unmatched — no confident match; fundraiser must pick a donor manually
+export const stagedPaymentMatchStatusEnum = pgEnum(
+  "staged_payment_match_status",
+  ["matched", "unmatched"],
+);

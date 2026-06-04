@@ -26,6 +26,7 @@ import type {
   AdminGoogleSyncList,
   AdminListEmailIntelFeedbackParams,
   AdminResyncGoogleUser200,
+  ApproveStagedPaymentResponse,
   BadRequestResponse,
   BulkUpdateGiftsBody,
   BulkUpdateHouseholdsBody,
@@ -65,6 +66,7 @@ import type {
   DashboardSummary,
   DeleteLatestTrackedEmailView200,
   DisconnectGoogleOauth200,
+  DisconnectQuickbooksOauth200,
   DismissTaskProposalBody,
   DonorPaymentIntermediary,
   DonorPaymentIntermediaryList,
@@ -132,6 +134,7 @@ import type {
   ListRegionsParams,
   ListSavedViewsParams,
   ListSchoolsParams,
+  ListStagedPaymentsParams,
   ListTasksParams,
   ListTrackedEmailsByContactParams,
   ListTrackedEmailsParams,
@@ -170,12 +173,15 @@ import type {
   PledgeAllocationList,
   ProjectionsByFyEntity,
   PromoteActionItemBody,
+  QuickbooksOauthStatus,
+  QuickbooksSyncSummary,
   RefreshTaskProposalBody,
   Region,
   RegionList,
   RejectEmailProposalBody,
   RequestUploadUrl200,
   RequestUploadUrlBody,
+  ResolveStagedPaymentBody,
   SaveEmailIntelPromptBody,
   SavedView,
   SavedViewList,
@@ -184,6 +190,9 @@ import type {
   SearchTrackedEmailParams,
   SendTrackedEmailBody,
   SendTrackedEmailResult,
+  StagedPayment,
+  StagedPaymentList,
+  StagedPaymentSummary,
   Task,
   TaskList,
   TaskProposal,
@@ -12903,6 +12912,659 @@ export const useRunCalendarSync = <
   TContext
 > => {
   return useMutation(getRunCalendarSyncMutationOptions(options));
+};
+
+export const getGetQuickbooksOauthStatusUrl = () => {
+  return `/api/quickbooks-oauth/status`;
+};
+
+export const getQuickbooksOauthStatus = async (
+  options?: RequestInit,
+): Promise<QuickbooksOauthStatus> => {
+  return customFetch<QuickbooksOauthStatus>(getGetQuickbooksOauthStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetQuickbooksOauthStatusQueryKey = () => {
+  return [`/api/quickbooks-oauth/status`] as const;
+};
+
+export const getGetQuickbooksOauthStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getQuickbooksOauthStatus>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getQuickbooksOauthStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetQuickbooksOauthStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getQuickbooksOauthStatus>>
+  > = ({ signal }) => getQuickbooksOauthStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getQuickbooksOauthStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetQuickbooksOauthStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getQuickbooksOauthStatus>>
+>;
+export type GetQuickbooksOauthStatusQueryError = ErrorType<ForbiddenResponse>;
+
+export function useGetQuickbooksOauthStatus<
+  TData = Awaited<ReturnType<typeof getQuickbooksOauthStatus>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getQuickbooksOauthStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetQuickbooksOauthStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getDisconnectQuickbooksOauthUrl = () => {
+  return `/api/quickbooks-oauth/disconnect`;
+};
+
+export const disconnectQuickbooksOauth = async (
+  options?: RequestInit,
+): Promise<DisconnectQuickbooksOauth200> => {
+  return customFetch<DisconnectQuickbooksOauth200>(
+    getDisconnectQuickbooksOauthUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getDisconnectQuickbooksOauthMutationOptions = <
+  TError = ErrorType<ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectQuickbooksOauth>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof disconnectQuickbooksOauth>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["disconnectQuickbooksOauth"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof disconnectQuickbooksOauth>>,
+    void
+  > = () => {
+    return disconnectQuickbooksOauth(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DisconnectQuickbooksOauthMutationResult = NonNullable<
+  Awaited<ReturnType<typeof disconnectQuickbooksOauth>>
+>;
+
+export type DisconnectQuickbooksOauthMutationError =
+  ErrorType<ForbiddenResponse>;
+
+export const useDisconnectQuickbooksOauth = <
+  TError = ErrorType<ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectQuickbooksOauth>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof disconnectQuickbooksOauth>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getDisconnectQuickbooksOauthMutationOptions(options));
+};
+
+/**
+ * @summary Trigger an immediate one-way QuickBooks → CRM payment pull.
+ */
+export const getRunQuickbooksSyncUrl = () => {
+  return `/api/quickbooks/sync`;
+};
+
+export const runQuickbooksSync = async (
+  options?: RequestInit,
+): Promise<QuickbooksSyncSummary> => {
+  return customFetch<QuickbooksSyncSummary>(getRunQuickbooksSyncUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRunQuickbooksSyncMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runQuickbooksSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runQuickbooksSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["runQuickbooksSync"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runQuickbooksSync>>,
+    void
+  > = () => {
+    return runQuickbooksSync(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunQuickbooksSyncMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runQuickbooksSync>>
+>;
+
+export type RunQuickbooksSyncMutationError =
+  ErrorType<ForbiddenResponse | void>;
+
+/**
+ * @summary Trigger an immediate one-way QuickBooks → CRM payment pull.
+ */
+export const useRunQuickbooksSync = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runQuickbooksSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runQuickbooksSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRunQuickbooksSyncMutationOptions(options));
+};
+
+export const getListStagedPaymentsUrl = (params?: ListStagedPaymentsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/staged-payments?${stringifiedParams}`
+    : `/api/staged-payments`;
+};
+
+export const listStagedPayments = async (
+  params?: ListStagedPaymentsParams,
+  options?: RequestInit,
+): Promise<StagedPaymentList> => {
+  return customFetch<StagedPaymentList>(getListStagedPaymentsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListStagedPaymentsQueryKey = (
+  params?: ListStagedPaymentsParams,
+) => {
+  return [`/api/staged-payments`, ...(params ? [params] : [])] as const;
+};
+
+export const getListStagedPaymentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStagedPayments>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListStagedPaymentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStagedPayments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListStagedPaymentsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listStagedPayments>>
+  > = ({ signal }) => listStagedPayments(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listStagedPayments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListStagedPaymentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listStagedPayments>>
+>;
+export type ListStagedPaymentsQueryError = ErrorType<unknown>;
+
+export function useListStagedPayments<
+  TData = Awaited<ReturnType<typeof listStagedPayments>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListStagedPaymentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStagedPayments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListStagedPaymentsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetStagedPaymentsSummaryUrl = () => {
+  return `/api/staged-payments-summary`;
+};
+
+export const getStagedPaymentsSummary = async (
+  options?: RequestInit,
+): Promise<StagedPaymentSummary> => {
+  return customFetch<StagedPaymentSummary>(getGetStagedPaymentsSummaryUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStagedPaymentsSummaryQueryKey = () => {
+  return [`/api/staged-payments-summary`] as const;
+};
+
+export const getGetStagedPaymentsSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStagedPaymentsSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getStagedPaymentsSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetStagedPaymentsSummaryQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getStagedPaymentsSummary>>
+  > = ({ signal }) => getStagedPaymentsSummary({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStagedPaymentsSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStagedPaymentsSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStagedPaymentsSummary>>
+>;
+export type GetStagedPaymentsSummaryQueryError = ErrorType<unknown>;
+
+export function useGetStagedPaymentsSummary<
+  TData = Awaited<ReturnType<typeof getStagedPaymentsSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getStagedPaymentsSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStagedPaymentsSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Set/fix the donor match on a pending staged payment (donor XOR).
+ */
+export const getResolveStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/resolve`;
+};
+
+export const resolveStagedPayment = async (
+  id: string,
+  resolveStagedPaymentBody: ResolveStagedPaymentBody,
+  options?: RequestInit,
+): Promise<StagedPayment> => {
+  return customFetch<StagedPayment>(getResolveStagedPaymentUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(resolveStagedPaymentBody),
+  });
+};
+
+export const getResolveStagedPaymentMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveStagedPayment>>,
+    TError,
+    { id: string; data: BodyType<ResolveStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resolveStagedPayment>>,
+  TError,
+  { id: string; data: BodyType<ResolveStagedPaymentBody> },
+  TContext
+> => {
+  const mutationKey = ["resolveStagedPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resolveStagedPayment>>,
+    { id: string; data: BodyType<ResolveStagedPaymentBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return resolveStagedPayment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResolveStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resolveStagedPayment>>
+>;
+export type ResolveStagedPaymentMutationBody =
+  BodyType<ResolveStagedPaymentBody>;
+export type ResolveStagedPaymentMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Set/fix the donor match on a pending staged payment (donor XOR).
+ */
+export const useResolveStagedPayment = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveStagedPayment>>,
+    TError,
+    { id: string; data: BodyType<ResolveStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resolveStagedPayment>>,
+  TError,
+  { id: string; data: BodyType<ResolveStagedPaymentBody> },
+  TContext
+> => {
+  return useMutation(getResolveStagedPaymentMutationOptions(options));
+};
+
+/**
+ * @summary Approve a staged payment — mints a gifts_and_payments row (donor XOR).
+ */
+export const getApproveStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/approve`;
+};
+
+export const approveStagedPayment = async (
+  id: string,
+  options?: RequestInit,
+): Promise<ApproveStagedPaymentResponse> => {
+  return customFetch<ApproveStagedPaymentResponse>(
+    getApproveStagedPaymentUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getApproveStagedPaymentMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveStagedPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveStagedPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["approveStagedPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveStagedPayment>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return approveStagedPayment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApproveStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveStagedPayment>>
+>;
+
+export type ApproveStagedPaymentMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Approve a staged payment — mints a gifts_and_payments row (donor XOR).
+ */
+export const useApproveStagedPayment = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveStagedPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof approveStagedPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getApproveStagedPaymentMutationOptions(options));
+};
+
+/**
+ * @summary Reject a staged payment (retained so re-sync won't re-stage it).
+ */
+export const getRejectStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/reject`;
+};
+
+export const rejectStagedPayment = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StagedPayment> => {
+  return customFetch<StagedPayment>(getRejectStagedPaymentUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRejectStagedPaymentMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectStagedPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectStagedPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["rejectStagedPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectStagedPayment>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return rejectStagedPayment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectStagedPayment>>
+>;
+
+export type RejectStagedPaymentMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Reject a staged payment (retained so re-sync won't re-stage it).
+ */
+export const useRejectStagedPayment = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectStagedPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rejectStagedPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getRejectStagedPaymentMutationOptions(options));
 };
 
 /**

@@ -110,6 +110,17 @@ mid-run as noise (retry), not a blocker.
 - **Anonymous records** — `anonymous` flag on organizations + people masks the
   name in the UI to "Anonymous" for everyone except the record owner and admins.
   UI-only by design (names are still in API responses).
+- **QuickBooks payment sync** — one-way QuickBooks Online → CRM pull. An admin
+  connects QuickBooks once via Intuit OAuth (Settings → QuickBooks). A scheduled
+  (30-min) + on-demand worker pulls incoming money (SalesReceipt / Payment /
+  Deposit) since a per-connection watermark, auto-matches CRM donors by name/email,
+  and stages rows in a review queue (`/staged-payments`, "QuickBooks Review" nav).
+  A fundraiser fixes the donor match and approves/rejects; approve mints a
+  `gifts_and_payments` row in a tx (Donor XOR via `validateGiftInvariants`).
+  Idempotent by `(realmId, qbEntityType, qbEntityId)`; staged rows retained after
+  approve/reject for dedupe. Tokens + realmId encrypted at rest; OAuth/token
+  endpoints are env-shared, the data host is env-derived (`QUICKBOOKS_API_BASE`,
+  defaults to the production Intuit host). Pull-only — never writes back to QB.
 
 ## Known follow-ups (non-blocking)
 

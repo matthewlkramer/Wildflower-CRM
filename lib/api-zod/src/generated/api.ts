@@ -3917,9 +3917,7 @@ export const GetOpportunityOrPledgeResponse = zod
                   filename: zod.string().nullish(),
                   mimeType: zod.string().nullish(),
                   sizeBytes: zod.number().nullish(),
-                  downloadUrl: zod
-                    .string()
-                    .describe("API path that streams the file. Auth-gated."),
+                  downloadUrl: zod.string(),
                 }),
               )
               .nullish()
@@ -4389,9 +4387,7 @@ export const ListGiftsAndPaymentsResponse = zod.object({
             filename: zod.string().nullish(),
             mimeType: zod.string().nullish(),
             sizeBytes: zod.number().nullish(),
-            downloadUrl: zod
-              .string()
-              .describe("API path that streams the file. Auth-gated."),
+            downloadUrl: zod.string(),
           }),
         )
         .nullish()
@@ -4538,9 +4534,7 @@ export const GetGiftOrPaymentResponse = zod
           filename: zod.string().nullish(),
           mimeType: zod.string().nullish(),
           sizeBytes: zod.number().nullish(),
-          downloadUrl: zod
-            .string()
-            .describe("API path that streams the file. Auth-gated."),
+          downloadUrl: zod.string(),
         }),
       )
       .nullish()
@@ -4716,9 +4710,7 @@ export const UpdateGiftOrPaymentResponse = zod.object({
         filename: zod.string().nullish(),
         mimeType: zod.string().nullish(),
         sizeBytes: zod.number().nullish(),
-        downloadUrl: zod
-          .string()
-          .describe("API path that streams the file. Auth-gated."),
+        downloadUrl: zod.string(),
       }),
     )
     .nullish()
@@ -4857,9 +4849,7 @@ export const LinkThankYouEmailResponse = zod
           filename: zod.string().nullish(),
           mimeType: zod.string().nullish(),
           sizeBytes: zod.number().nullish(),
-          downloadUrl: zod
-            .string()
-            .describe("API path that streams the file. Auth-gated."),
+          downloadUrl: zod.string(),
         }),
       )
       .nullish()
@@ -6693,6 +6683,180 @@ export const RunCalendarSyncResponse = zod.object({
       hasSyncToken: zod.boolean().optional(),
     })
     .optional(),
+});
+
+export const GetQuickbooksOauthStatusResponse = zod.object({
+  configured: zod
+    .boolean()
+    .describe("Server has QUICKBOOKS_CLIENT_ID\/SECRET set"),
+  connected: zod
+    .boolean()
+    .describe("An active, non-revoked company grant exists"),
+  realmId: zod.string().nullish(),
+  companyName: zod.string().nullish(),
+  grantedAt: zod.string().datetime({}).nullish(),
+  lastSyncedAt: zod.string().datetime({}).nullish(),
+  revokedAt: zod.string().datetime({}).nullish(),
+  lastError: zod.string().nullish(),
+});
+
+export const DisconnectQuickbooksOauthResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
+ * @summary Trigger an immediate one-way QuickBooks → CRM payment pull.
+ */
+export const RunQuickbooksSyncResponse = zod.object({
+  ran: zod
+    .boolean()
+    .describe("False when the sync was skipped (lock contended)."),
+  pulled: zod.number(),
+  staged: zod.number(),
+  matched: zod.number(),
+});
+
+export const listStagedPaymentsQueryLimitDefault = 50;
+export const listStagedPaymentsQueryLimitMax = 10000;
+
+export const listStagedPaymentsQueryPageDefault = 1;
+
+export const ListStagedPaymentsQueryParams = zod.object({
+  status: zod
+    .enum(["pending", "approved", "rejected"])
+    .optional()
+    .describe("Filter by review status (default pending)."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listStagedPaymentsQueryLimitMax)
+    .default(listStagedPaymentsQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listStagedPaymentsQueryPageDefault),
+});
+
+export const ListStagedPaymentsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      realmId: zod.string(),
+      qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
+      qbEntityId: zod.string(),
+      amount: zod.string().nullish(),
+      dateReceived: zod.string().date().nullish(),
+      payerName: zod.string().nullish(),
+      payerEmail: zod.string().nullish(),
+      rawReference: zod.string().nullish(),
+      status: zod.enum(["pending", "approved", "rejected"]),
+      matchStatus: zod.enum(["matched", "unmatched"]),
+      organizationId: zod.string().nullish(),
+      individualGiverPersonId: zod.string().nullish(),
+      householdId: zod.string().nullish(),
+      createdGiftId: zod.string().nullish(),
+      approvedByUserId: zod.string().nullish(),
+      approvedAt: zod.string().datetime({}).nullish(),
+      rejectedByUserId: zod.string().nullish(),
+      rejectedAt: zod.string().datetime({}).nullish(),
+      organizationName: zod.string().nullish(),
+      householdName: zod.string().nullish(),
+      individualGiverPersonName: zod.string().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const GetStagedPaymentsSummaryResponse = zod.object({
+  pending: zod.number(),
+  approved: zod.number(),
+  rejected: zod.number(),
+});
+
+/**
+ * @summary Set/fix the donor match on a pending staged payment (donor XOR).
+ */
+export const ResolveStagedPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ResolveStagedPaymentBody = zod
+  .object({
+    organizationId: zod.string().nullish(),
+    individualGiverPersonId: zod.string().nullish(),
+    householdId: zod.string().nullish(),
+  })
+  .describe("Set exactly one donor FK (donor XOR). Null the others.");
+
+export const ResolveStagedPaymentResponse = zod.object({
+  id: zod.string(),
+  realmId: zod.string(),
+  qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
+  qbEntityId: zod.string(),
+  amount: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  rawReference: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected"]),
+  matchStatus: zod.enum(["matched", "unmatched"]),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * @summary Approve a staged payment — mints a gifts_and_payments row (donor XOR).
+ */
+export const ApproveStagedPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary Reject a staged payment (retained so re-sync won't re-stage it).
+ */
+export const RejectStagedPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RejectStagedPaymentResponse = zod.object({
+  id: zod.string(),
+  realmId: zod.string(),
+  qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
+  qbEntityId: zod.string(),
+  amount: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  rawReference: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected"]),
+  matchStatus: zod.enum(["matched", "unmatched"]),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 /**

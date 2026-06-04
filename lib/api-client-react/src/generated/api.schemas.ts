@@ -1405,7 +1405,6 @@ export interface ThankYouAttachment {
   filename?: string | null;
   mimeType?: string | null;
   sizeBytes?: number | null;
-  /** API path that streams the file. Auth-gated. */
   downloadUrl: string;
 }
 
@@ -1627,6 +1626,107 @@ export interface UpdateGiftOrPaymentBody {
   ownerUserId?: string | null;
   designatedToSchool?: boolean;
   tags?: string | null;
+}
+
+export type QuickbooksEntityType =
+  (typeof QuickbooksEntityType)[keyof typeof QuickbooksEntityType];
+
+export const QuickbooksEntityType = {
+  sales_receipt: "sales_receipt",
+  payment: "payment",
+  deposit: "deposit",
+} as const;
+
+export type StagedPaymentStatus =
+  (typeof StagedPaymentStatus)[keyof typeof StagedPaymentStatus];
+
+export const StagedPaymentStatus = {
+  pending: "pending",
+  approved: "approved",
+  rejected: "rejected",
+} as const;
+
+export type StagedPaymentMatchStatus =
+  (typeof StagedPaymentMatchStatus)[keyof typeof StagedPaymentMatchStatus];
+
+export const StagedPaymentMatchStatus = {
+  matched: "matched",
+  unmatched: "unmatched",
+} as const;
+
+export interface QuickbooksOauthStatus {
+  /** Server has QUICKBOOKS_CLIENT_ID/SECRET set */
+  configured: boolean;
+  /** An active, non-revoked company grant exists */
+  connected: boolean;
+  realmId?: string | null;
+  companyName?: string | null;
+  grantedAt?: string | null;
+  lastSyncedAt?: string | null;
+  revokedAt?: string | null;
+  lastError?: string | null;
+}
+
+export interface QuickbooksSyncSummary {
+  /** False when the sync was skipped (lock contended). */
+  ran: boolean;
+  pulled: number;
+  staged: number;
+  matched: number;
+}
+
+export interface StagedPayment {
+  id: string;
+  realmId: string;
+  qbEntityType: QuickbooksEntityType;
+  qbEntityId: string;
+  amount?: string | null;
+  dateReceived?: string | null;
+  payerName?: string | null;
+  payerEmail?: string | null;
+  rawReference?: string | null;
+  status: StagedPaymentStatus;
+  matchStatus: StagedPaymentMatchStatus;
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+  createdGiftId?: string | null;
+  approvedByUserId?: string | null;
+  approvedAt?: string | null;
+  rejectedByUserId?: string | null;
+  rejectedAt?: string | null;
+  organizationName?: string | null;
+  householdName?: string | null;
+  individualGiverPersonName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StagedPaymentList {
+  data: StagedPayment[];
+  pagination: Pagination;
+}
+
+export interface StagedPaymentSummary {
+  pending: number;
+  approved: number;
+  rejected: number;
+}
+
+/**
+ * Set exactly one donor FK (donor XOR). Null the others.
+ */
+export interface ResolveStagedPaymentBody {
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+}
+
+export interface ApproveStagedPaymentResponse {
+  gift: GiftOrPayment;
+  stagedPaymentId: string;
+  /** API path that streams the file. Auth-gated. */
+  downloadUrl?: string;
 }
 
 export interface CandidateThankYouEmail {
@@ -3641,6 +3741,26 @@ export type AdminResyncGoogleUser200 = { [key: string]: unknown };
 
 export type DisconnectGoogleOauth200 = {
   ok: boolean;
+};
+
+export type DisconnectQuickbooksOauth200 = {
+  ok: boolean;
+};
+
+export type ListStagedPaymentsParams = {
+  /**
+   * Filter by review status (default pending).
+   */
+  status?: StagedPaymentStatus;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type GetDashboardSummaryParams = {

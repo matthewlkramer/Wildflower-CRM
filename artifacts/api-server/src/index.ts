@@ -3,6 +3,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startSyncScheduler } from "./lib/syncScheduler";
 import { startMediaIngestScheduler } from "./lib/mediaIngestScheduler";
+import { startQuickbooksSyncScheduler } from "./lib/quickbooksSyncScheduler";
 import { startTaskSuggestionScheduler } from "./lib/taskSuggestionScheduler";
 import { runTaskSuggestionBackfillIfDue } from "./lib/taskSuggestionBackfill";
 import { backfillIntelForUser } from "./lib/gmailBackfill";
@@ -31,6 +32,7 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
   startSyncScheduler();
   startMediaIngestScheduler();
+  startQuickbooksSyncScheduler();
   startTaskSuggestionScheduler();
 
   // One-time upfront task-suggestion backfill: ensures every non-low-priority

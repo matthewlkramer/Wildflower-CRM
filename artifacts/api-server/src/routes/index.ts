@@ -41,6 +41,8 @@ import emailTrackingRouter from "./emailTracking";
 import suppressionWindowsRouter from "./suppressionWindows";
 import calendarMeetingFiltersRouter from "./calendarMeetingFiltersRoute";
 import topPrioritiesRouter from "./topPriorities";
+import quickbooksOauthRouter from "./quickbooksOauth";
+import quickbooksRouter from "./quickbooks";
 
 const router: IRouter = Router();
 
@@ -96,5 +98,7 @@ router.use(storageRouter);
 router.use(suppressionWindowsRouter);
 router.use(calendarMeetingFiltersRouter);
 router.use(topPrioritiesRouter);
+router.use(quickbooksOauthRouter);
+router.use(quickbooksRouter);
 
 export default router;

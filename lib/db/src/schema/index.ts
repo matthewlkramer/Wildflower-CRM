@@ -42,3 +42,5 @@ export * from "./savedViews";
 export * from "./trackedEmails";
 export * from "./personSuppressionWindows";
 export * from "./calendarMeetingFilters";
+export * from "./quickbooksConnections";
+export * from "./stagedPayments";

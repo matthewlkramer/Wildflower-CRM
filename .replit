@@ -47,3 +47,5 @@ channel = "stable-25_05"
 
 [userenv.shared]
 COPPER_USER_EMAIL = "matthew.kramer@wildflowerschools.org"
+
+[userenv.development]

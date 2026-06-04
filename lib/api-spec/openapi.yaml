@@ -46,6 +46,9 @@ tags:
   - { name: suppression-windows }
   - { name: calendar-meeting-filters }
   - { name: top-priorities }
+  - { name: quickbooks-oauth }
+  - { name: quickbooks-sync }
+  - { name: staged-payments }
   - { name: admin }
 
 paths:
@@ -1750,6 +1753,89 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarSyncRunResponse" } } } }
         "409": { description: "Caller has no active Google grant" }
 
+  # ─── QuickBooks Online OAuth (admin-gated, org-wide single company) ────────
+  # NB: /quickbooks-oauth/start and /quickbooks-oauth/callback are browser
+  # navigations (302 redirects to/from Intuit), not API client calls, so only
+  # the status + disconnect endpoints are documented here.
+  /quickbooks-oauth/status:
+    get:
+      operationId: getQuickbooksOauthStatus
+      tags: [quickbooks-oauth]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickbooksOauthStatus" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /quickbooks-oauth/disconnect:
+    post:
+      operationId: disconnectQuickbooksOauth
+      tags: [quickbooks-oauth]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, required: [ok], properties: { ok: { type: boolean } } } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ─── QuickBooks sync (manual "sync now"; admin-gated) ─────────────────────
+  /quickbooks/sync:
+    post:
+      operationId: runQuickbooksSync
+      tags: [quickbooks-sync]
+      summary: Trigger an immediate one-way QuickBooks → CRM payment pull.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickbooksSyncSummary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { description: "QuickBooks sync failed" }
+
+  # ─── Staged payments (QuickBooks review queue) ────────────────────────────
+  /staged-payments:
+    get:
+      operationId: listStagedPayments
+      tags: [staged-payments]
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/StagedPaymentStatus" }, description: "Filter by review status (default pending)." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPaymentList" } } } }
+  /staged-payments-summary:
+    get:
+      operationId: getStagedPaymentsSummary
+      tags: [staged-payments]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPaymentSummary" } } } }
+  /staged-payments/{id}/resolve:
+    post:
+      operationId: resolveStagedPayment
+      tags: [staged-payments]
+      summary: Set/fix the donor match on a pending staged payment (donor XOR).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ResolveStagedPaymentBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Staged payment is not pending" }
+  /staged-payments/{id}/approve:
+    post:
+      operationId: approveStagedPayment
+      tags: [staged-payments]
+      summary: Approve a staged payment — mints a gifts_and_payments row (donor XOR).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ApproveStagedPaymentResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Staged payment is not pending" }
+  /staged-payments/{id}/reject:
+    post:
+      operationId: rejectStagedPayment
+      tags: [staged-payments]
+      summary: Reject a staged payment (retained so re-sync won't re-stage it).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Staged payment is not pending" }
+
   # ─── Top Priorities ────────────────────────────────────────────────────────
   /top-priorities:
     get:
@@ -3357,10 +3443,91 @@ components:
       type: object
       required: [id, downloadUrl]
       properties:
-        id:        { type: string }
-        filename:  { type: string, nullable: true }
-        mimeType:  { type: string, nullable: true }
-        sizeBytes: { type: integer, nullable: true }
+        id:          { type: string }
+        filename:    { type: string, nullable: true }
+        mimeType:    { type: string, nullable: true }
+        sizeBytes:   { type: integer, nullable: true }
+        downloadUrl: { type: string }
+
+    # ─── QuickBooks payment sync ──────────────────────────────────────────────
+    QuickbooksEntityType: { type: string, enum: [sales_receipt, payment, deposit] }
+    StagedPaymentStatus: { type: string, enum: [pending, approved, rejected] }
+    StagedPaymentMatchStatus: { type: string, enum: [matched, unmatched] }
+    QuickbooksOauthStatus:
+      type: object
+      required: [configured, connected]
+      properties:
+        configured:   { type: boolean, description: "Server has QUICKBOOKS_CLIENT_ID/SECRET set" }
+        connected:    { type: boolean, description: "An active, non-revoked company grant exists" }
+        realmId:      { type: string, nullable: true }
+        companyName:  { type: string, nullable: true }
+        grantedAt:    { type: string, format: date-time, nullable: true }
+        lastSyncedAt: { type: string, format: date-time, nullable: true }
+        revokedAt:    { type: string, format: date-time, nullable: true }
+        lastError:    { type: string, nullable: true }
+    QuickbooksSyncSummary:
+      type: object
+      required: [ran, pulled, staged, matched]
+      properties:
+        ran:     { type: boolean, description: "False when the sync was skipped (lock contended)." }
+        pulled:  { type: integer }
+        staged:  { type: integer }
+        matched: { type: integer }
+    StagedPayment:
+      type: object
+      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, createdAt, updatedAt]
+      properties:
+        id:                        { type: string }
+        realmId:                   { type: string }
+        qbEntityType:              { $ref: "#/components/schemas/QuickbooksEntityType" }
+        qbEntityId:                { type: string }
+        amount:                    { type: string, nullable: true }
+        dateReceived:              { type: string, format: date, nullable: true }
+        payerName:                 { type: string, nullable: true }
+        payerEmail:                { type: string, nullable: true }
+        rawReference:              { type: string, nullable: true }
+        status:                    { $ref: "#/components/schemas/StagedPaymentStatus" }
+        matchStatus:               { $ref: "#/components/schemas/StagedPaymentMatchStatus" }
+        organizationId:            { type: string, nullable: true }
+        individualGiverPersonId:   { type: string, nullable: true }
+        householdId:               { type: string, nullable: true }
+        createdGiftId:             { type: string, nullable: true }
+        approvedByUserId:          { type: string, nullable: true }
+        approvedAt:                { type: string, format: date-time, nullable: true }
+        rejectedByUserId:          { type: string, nullable: true }
+        rejectedAt:                { type: string, format: date-time, nullable: true }
+        # Denormalized donor display names, joined server-side for the queue UI.
+        organizationName:          { type: string, nullable: true }
+        householdName:             { type: string, nullable: true }
+        individualGiverPersonName: { type: string, nullable: true }
+        createdAt:                 { type: string, format: date-time }
+        updatedAt:                 { type: string, format: date-time }
+    StagedPaymentList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/StagedPayment" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    StagedPaymentSummary:
+      type: object
+      required: [pending, approved, rejected]
+      properties:
+        pending:  { type: integer }
+        approved: { type: integer }
+        rejected: { type: integer }
+    ResolveStagedPaymentBody:
+      type: object
+      description: "Set exactly one donor FK (donor XOR). Null the others."
+      properties:
+        organizationId:          { type: string, nullable: true }
+        individualGiverPersonId: { type: string, nullable: true }
+        householdId:             { type: string, nullable: true }
+    ApproveStagedPaymentResponse:
+      type: object
+      required: [gift, stagedPaymentId]
+      properties:
+        gift:            { $ref: "#/components/schemas/GiftOrPayment" }
+        stagedPaymentId: { type: string }
         downloadUrl: { type: string, description: "API path that streams the file. Auth-gated." }
     CandidateThankYouEmail:
       type: object

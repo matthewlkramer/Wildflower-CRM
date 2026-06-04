@@ -22,6 +22,7 @@ import {
   Landmark,
   Star,
   FolderKanban,
+  ReceiptText,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -43,6 +44,7 @@ const navItems = [
   { href: "/pipeline", label: "Pipeline", icon: Columns3 },
   { href: "/pledges", label: "Pledges", icon: HandCoins },
   { href: "/gifts", label: "Gifts", icon: Gift },
+  { href: "/staged-payments", label: "QuickBooks Review", icon: ReceiptText },
   { href: "/moves", label: "Moves", icon: Activity },
   { href: "/interactions", label: "Interactions", icon: MessageSquare },
   { href: "/projections", label: "Projections", icon: LineChart },

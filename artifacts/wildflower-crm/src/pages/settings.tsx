@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { EntityMultiSelect } from "@/components/entity-filter";
 import GoogleConnectSection from "@/components/google-connect-section";
 import GoogleSyncStatusSection from "@/components/google-sync-status-section";
+import QuickbooksConnectSection from "@/components/quickbooks-connect-section";
 import ExtensionTokenSection from "@/components/extension-token-section";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 
@@ -40,9 +41,21 @@ export default function Settings() {
       <EmailPrivacySection />
       <GoogleConnectSection returnTo="/settings" />
       <GoogleSyncStatusSection />
+      <QuickbooksAdminSection />
       <ExtensionTokenSection />
     </div>
   );
+}
+
+// QuickBooks is an org-wide connection configured once by an admin, so the
+// connect/disconnect controls are only shown to admins. The review queue
+// (where fundraisers approve payments) lives on its own page.
+function QuickbooksAdminSection() {
+  const { data: me } = useGetCurrentUser({
+    query: { queryKey: getGetCurrentUserQueryKey() },
+  });
+  if (me?.role !== "admin") return null;
+  return <QuickbooksConnectSection returnTo="/settings" />;
 }
 
 function EmailPrivacySection() {
