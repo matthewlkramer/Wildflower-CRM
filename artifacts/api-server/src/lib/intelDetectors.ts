@@ -13,41 +13,9 @@
 // Free-mail domains: addresses on these are never treated as
 // "domain-of-a-funder" signal and senders matching common bulk
 // patterns are filtered out of the unrecognized-correspondent panel.
-// Kept in sync with the funder-domain matcher's filter list.
-const FREE_MAIL_DOMAINS = new Set([
-  "gmail.com",
-  "yahoo.com",
-  "hotmail.com",
-  "outlook.com",
-  "aol.com",
-  "icloud.com",
-  "me.com",
-  "mac.com",
-  "proton.me",
-  "protonmail.com",
-  "ymail.com",
-  "live.com",
-  "msn.com",
-  "comcast.net",
-  "att.net",
-  "verizon.net",
-  "sbcglobal.net",
-  "cox.net",
-  "earthlink.net",
-  "mail.com",
-]);
-
-export function domainOf(email: string | null | undefined): string | null {
-  if (!email) return null;
-  const at = email.lastIndexOf("@");
-  if (at < 0) return null;
-  const d = email.slice(at + 1).trim().toLowerCase();
-  return d.length > 0 ? d : null;
-}
-
-export function isFreeMailDomain(domain: string | null | undefined): boolean {
-  return !!domain && FREE_MAIL_DOMAINS.has(domain.toLowerCase());
-}
+// The list now lives in freeMailDomains.ts (shared with the
+// emailMatcher domain branch) so the two can no longer drift apart.
+export { FREE_MAIL_DOMAINS, domainOf, isFreeMailDomain } from "./freeMailDomains";
 
 // ──────────────────────────────────────────────────────────────────
 // LinkedIn job-change detection

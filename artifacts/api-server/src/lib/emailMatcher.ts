@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
 import { emails, organizations, personSuppressionWindows } from "@workspace/db/schema";
 import { and, eq, inArray, lte, or, sql, isNull, gte } from "drizzle-orm";
+import { isFreeMailDomain } from "./freeMailDomains";
 
 /**
  * Lookup which people / organizations / households in the CRM are
@@ -119,8 +120,18 @@ export async function matchEmails(
   // to/from an unrecognized person at a known org (e.g. a
   // new program officer we haven't added yet) still threads onto
   // the organization timeline. Internal domains are already stripped by
-  // normalizeForMatching above.
-  const domains = [...new Set(cleaned.map(domainOf).filter((d): d is string => !!d))];
+  // normalizeForMatching above. Free-mail domains (gmail.com, yahoo.com,
+  // etc.) are excluded here so a free domain mistakenly stored in
+  // organizations.email_domain can never attach every consumer-mail
+  // attendee to that org — the exact-address lookup against `emails`
+  // below is left untouched, so jane@gmail.com still matches directly.
+  const domains = [
+    ...new Set(
+      cleaned
+        .map(domainOf)
+        .filter((d): d is string => !!d && !isFreeMailDomain(d)),
+    ),
+  ];
 
   // lower(email) IN (cleaned). We have no functional index on
   // lower(email) yet — for the read volumes this is fine (the
