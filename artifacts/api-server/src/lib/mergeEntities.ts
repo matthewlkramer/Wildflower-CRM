@@ -78,6 +78,7 @@ const ORGANIZATION_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "phone_numbers", col: "organization_id" },
   { table: "meeting_notes", col: "organization_id" },
   { table: "email_proposals", col: "target_organization_id" },
+  { table: "task_proposals", col: "target_organization_id" },
 ];
 
 const ORGANIZATION_ARRAY_REFS: ReadonlyArray<MergeRef> = [
@@ -104,6 +105,7 @@ const PERSON_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "phone_numbers", col: "person_id" },
   { table: "meeting_notes", col: "person_id" },
   { table: "email_proposals", col: "target_person_id" },
+  { table: "task_proposals", col: "target_person_id" },
   { table: "person_suppression_windows", col: "person_id" },
 ];
 

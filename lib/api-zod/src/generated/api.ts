@@ -264,6 +264,168 @@ export const RejectEmailProposalResponse = zod.object({
 });
 
 /**
+ * @summary Current AI-suggested next-step task for a person OR organization. Generates + caches one on first view when none exists and the entity isn't low-priority. Provide exactly one of personId / organizationId.
+ */
+export const GetTaskProposalQueryParams = zod.object({
+  personId: zod.coerce
+    .string()
+    .optional()
+    .describe("Entity to suggest a next step for (person)."),
+  organizationId: zod.coerce
+    .string()
+    .optional()
+    .describe("Entity to suggest a next step for (organization)."),
+});
+
+export const GetTaskProposalResponse = zod.object({
+  data: zod
+    .object({
+      id: zod.string(),
+      status: zod.enum(["pending", "accepted", "dismissed"]),
+      targetPersonId: zod.string().nullish(),
+      targetOrganizationId: zod.string().nullish(),
+      payload: zod.record(zod.string(), zod.unknown()),
+      title: zod.string().nullish(),
+      description: zod.string().nullish(),
+      suggestedDueDate: zod.string().date().nullish(),
+      rationale: zod.string().nullish(),
+      analyzedAt: zod.string().datetime({}).nullish(),
+      model: zod.string().nullish(),
+      error: zod.string().nullish(),
+      dedupeKey: zod.string(),
+      acceptedTaskId: zod.string().nullish(),
+      reviewerNote: zod.string().nullish(),
+      resolvedAt: zod.string().datetime({}).nullish(),
+      resolvedByUserId: zod.string().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    })
+    .nullable(),
+});
+
+/**
+ * @summary Regenerate the pending suggestion for an entity on demand.
+ */
+export const RefreshTaskProposalBody = zod.object({
+  personId: zod.string().optional(),
+  organizationId: zod.string().optional(),
+});
+
+export const RefreshTaskProposalResponse = zod.object({
+  data: zod
+    .object({
+      id: zod.string(),
+      status: zod.enum(["pending", "accepted", "dismissed"]),
+      targetPersonId: zod.string().nullish(),
+      targetOrganizationId: zod.string().nullish(),
+      payload: zod.record(zod.string(), zod.unknown()),
+      title: zod.string().nullish(),
+      description: zod.string().nullish(),
+      suggestedDueDate: zod.string().date().nullish(),
+      rationale: zod.string().nullish(),
+      analyzedAt: zod.string().datetime({}).nullish(),
+      model: zod.string().nullish(),
+      error: zod.string().nullish(),
+      dedupeKey: zod.string(),
+      acceptedTaskId: zod.string().nullish(),
+      reviewerNote: zod.string().nullish(),
+      resolvedAt: zod.string().datetime({}).nullish(),
+      resolvedByUserId: zod.string().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    })
+    .nullable(),
+});
+
+/**
+ * @summary Accept a suggestion — creates a real linked task and marks the proposal accepted.
+ */
+export const AcceptTaskProposalParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AcceptTaskProposalBody = zod.object({
+  assigneeUserId: zod.string().nullish(),
+  reviewerNote: zod.string().nullish(),
+});
+
+export const AcceptTaskProposalResponse = zod.object({
+  proposal: zod.object({
+    id: zod.string(),
+    status: zod.enum(["pending", "accepted", "dismissed"]),
+    targetPersonId: zod.string().nullish(),
+    targetOrganizationId: zod.string().nullish(),
+    payload: zod.record(zod.string(), zod.unknown()),
+    title: zod.string().nullish(),
+    description: zod.string().nullish(),
+    suggestedDueDate: zod.string().date().nullish(),
+    rationale: zod.string().nullish(),
+    analyzedAt: zod.string().datetime({}).nullish(),
+    model: zod.string().nullish(),
+    error: zod.string().nullish(),
+    dedupeKey: zod.string(),
+    acceptedTaskId: zod.string().nullish(),
+    reviewerNote: zod.string().nullish(),
+    resolvedAt: zod.string().datetime({}).nullish(),
+    resolvedByUserId: zod.string().nullish(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
+  }),
+  task: zod.object({
+    id: zod.string(),
+    title: zod.string(),
+    description: zod.string().nullish(),
+    dueDate: zod.string().date().nullish(),
+    kind: zod.enum(["general", "reporting_deadline", "thank_you_followup"]),
+    status: zod.enum(["open", "waiting", "done", "cancelled"]),
+    completedAt: zod.string().datetime({}).nullish(),
+    assigneeUserId: zod.string().nullish(),
+    createdByUserId: zod.string(),
+    personIds: zod.array(zod.string()).nullish(),
+    organizationIds: zod.array(zod.string()).nullish(),
+    householdIds: zod.array(zod.string()).nullish(),
+    opportunityIds: zod.array(zod.string()).nullish(),
+    giftIds: zod.array(zod.string()).nullish(),
+    mentionUserIds: zod.array(zod.string()).nullish(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
+  }),
+});
+
+/**
+ * @summary Dismiss a suggestion — marks it dismissed with an optional note (audit trail).
+ */
+export const DismissTaskProposalParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const DismissTaskProposalBody = zod.object({
+  reviewerNote: zod.string().nullish(),
+});
+
+export const DismissTaskProposalResponse = zod.object({
+  id: zod.string(),
+  status: zod.enum(["pending", "accepted", "dismissed"]),
+  targetPersonId: zod.string().nullish(),
+  targetOrganizationId: zod.string().nullish(),
+  payload: zod.record(zod.string(), zod.unknown()),
+  title: zod.string().nullish(),
+  description: zod.string().nullish(),
+  suggestedDueDate: zod.string().date().nullish(),
+  rationale: zod.string().nullish(),
+  analyzedAt: zod.string().datetime({}).nullish(),
+  model: zod.string().nullish(),
+  error: zod.string().nullish(),
+  dedupeKey: zod.string(),
+  acceptedTaskId: zod.string().nullish(),
+  reviewerNote: zod.string().nullish(),
+  resolvedAt: zod.string().datetime({}).nullish(),
+  resolvedByUserId: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
  * @summary Active AI prompt + draft + version history (admin only)
  */
 export const AdminListEmailIntelPromptsResponse = zod.object({

@@ -35,6 +35,7 @@ tags:
   - { name: google-oauth }
   - { name: google-sync }
   - { name: email-proposals }
+  - { name: task-proposals }
   - { name: correspondents }
   - { name: notes }
   - { name: tasks }
@@ -96,6 +97,58 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/RejectEmailProposalBody" } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposal" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Task intelligence (AI-suggested next-step cultivation tasks) ────────────
+  /task-proposals:
+    get:
+      operationId: getTaskProposal
+      tags: [task-proposals]
+      summary: >-
+        Current AI-suggested next-step task for a person OR organization.
+        Generates + caches one on first view when none exists and the entity
+        isn't low-priority. Provide exactly one of personId / organizationId.
+      parameters:
+        - { name: personId, in: query, schema: { type: string }, description: "Entity to suggest a next step for (person)." }
+        - { name: organizationId, in: query, schema: { type: string }, description: "Entity to suggest a next step for (organization)." }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TaskProposalResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /task-proposals/refresh:
+    post:
+      operationId: refreshTaskProposal
+      tags: [task-proposals]
+      summary: Regenerate the pending suggestion for an entity on demand.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RefreshTaskProposalBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TaskProposalResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /task-proposals/{id}/accept:
+    post:
+      operationId: acceptTaskProposal
+      tags: [task-proposals]
+      summary: Accept a suggestion — creates a real linked task and marks the proposal accepted.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/AcceptTaskProposalBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AcceptTaskProposalResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /task-proposals/{id}/dismiss:
+    post:
+      operationId: dismissTaskProposal
+      tags: [task-proposals]
+      summary: Dismiss a suggestion — marks it dismissed with an optional note (audit trail).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/DismissTaskProposalBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TaskProposal" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Email-intelligence admin console ──────────────────────────────────────
@@ -3780,6 +3833,67 @@ components:
       # Optional reviewer feedback captured at reject time. The whole
       # body is optional so existing clients that POST with no body keep
       # working unchanged.
+      type: object
+      properties:
+        reviewerNote: { type: string, nullable: true }
+
+    # ─── Task intelligence ──────────────────────────────────────────────────────
+    TaskProposalStatus:
+      type: string
+      enum: [pending, accepted, dismissed]
+    TaskProposal:
+      type: object
+      required: [id, status, payload, dedupeKey, createdAt, updatedAt]
+      properties:
+        id:                   { type: string }
+        status:               { $ref: "#/components/schemas/TaskProposalStatus" }
+        targetPersonId:       { type: string, nullable: true }
+        targetOrganizationId: { type: string, nullable: true }
+        # Signal bundle the AI reasoned over (recent gifts, open
+        # opportunities, last-contact dates, capacity/priority, media).
+        payload:              { type: object, additionalProperties: true }
+        title:                { type: string, nullable: true }
+        description:          { type: string, nullable: true }
+        suggestedDueDate:     { type: string, format: date, nullable: true }
+        rationale:            { type: string, nullable: true }
+        # analyzedAt IS NULL means generation is still in flight.
+        analyzedAt:           { type: string, format: date-time, nullable: true }
+        model:                { type: string, nullable: true }
+        error:                { type: string, nullable: true }
+        dedupeKey:            { type: string }
+        acceptedTaskId:       { type: string, nullable: true }
+        reviewerNote:         { type: string, nullable: true }
+        resolvedAt:           { type: string, format: date-time, nullable: true }
+        resolvedByUserId:     { type: string, nullable: true }
+        createdAt:            { type: string, format: date-time }
+        updatedAt:            { type: string, format: date-time }
+    TaskProposalResponse:
+      # `data` is null when the entity is low-priority (skipped) or has no
+      # suggestion yet.
+      type: object
+      required: [data]
+      properties:
+        data: { allOf: [ { $ref: "#/components/schemas/TaskProposal" } ], nullable: true }
+    RefreshTaskProposalBody:
+      # Provide exactly one of personId / organizationId.
+      type: object
+      properties:
+        personId:       { type: string }
+        organizationId: { type: string }
+    AcceptTaskProposalBody:
+      # All optional. assigneeUserId optionally assigns the created task;
+      # reviewerNote is stored on the proposal for feedback.
+      type: object
+      properties:
+        assigneeUserId: { type: string, nullable: true }
+        reviewerNote:   { type: string, nullable: true }
+    AcceptTaskProposalResult:
+      type: object
+      required: [proposal, task]
+      properties:
+        proposal: { $ref: "#/components/schemas/TaskProposal" }
+        task:     { $ref: "#/components/schemas/Task" }
+    DismissTaskProposalBody:
       type: object
       properties:
         reviewerNote: { type: string, nullable: true }

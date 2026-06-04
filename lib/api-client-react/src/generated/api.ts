@@ -18,6 +18,8 @@ import type {
 
 import type {
   AcceptEmailProposalBody,
+  AcceptTaskProposalBody,
+  AcceptTaskProposalResult,
   Address,
   AddressList,
   AdminDiscardEmailIntelPrompt200,
@@ -63,6 +65,7 @@ import type {
   DashboardSummary,
   DeleteLatestTrackedEmailView200,
   DisconnectGoogleOauth200,
+  DismissTaskProposalBody,
   DonorPaymentIntermediary,
   DonorPaymentIntermediaryList,
   Email,
@@ -88,6 +91,7 @@ import type {
   GetDashboardSummaryParams,
   GetFiscalYearBreakdownParams,
   GetProjectionsByFyEntityParams,
+  GetTaskProposalParams,
   GiftAllocation,
   GiftAllocationList,
   GiftOrPayment,
@@ -166,6 +170,7 @@ import type {
   PledgeAllocationList,
   ProjectionsByFyEntity,
   PromoteActionItemBody,
+  RefreshTaskProposalBody,
   Region,
   RegionList,
   RejectEmailProposalBody,
@@ -181,6 +186,8 @@ import type {
   SendTrackedEmailResult,
   Task,
   TaskList,
+  TaskProposal,
+  TaskProposalResponse,
   TopPriorities,
   TrackedEmail,
   TrackedEmailList,
@@ -549,6 +556,362 @@ export const useRejectEmailProposal = <
   TContext
 > => {
   return useMutation(getRejectEmailProposalMutationOptions(options));
+};
+
+/**
+ * @summary Current AI-suggested next-step task for a person OR organization. Generates + caches one on first view when none exists and the entity isn't low-priority. Provide exactly one of personId / organizationId.
+ */
+export const getGetTaskProposalUrl = (params?: GetTaskProposalParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/task-proposals?${stringifiedParams}`
+    : `/api/task-proposals`;
+};
+
+export const getTaskProposal = async (
+  params?: GetTaskProposalParams,
+  options?: RequestInit,
+): Promise<TaskProposalResponse> => {
+  return customFetch<TaskProposalResponse>(getGetTaskProposalUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTaskProposalQueryKey = (params?: GetTaskProposalParams) => {
+  return [`/api/task-proposals`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetTaskProposalQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTaskProposal>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  params?: GetTaskProposalParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTaskProposal>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTaskProposalQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTaskProposal>>> = ({
+    signal,
+  }) => getTaskProposal(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTaskProposal>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTaskProposalQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTaskProposal>>
+>;
+export type GetTaskProposalQueryError = ErrorType<BadRequestResponse>;
+
+/**
+ * @summary Current AI-suggested next-step task for a person OR organization. Generates + caches one on first view when none exists and the entity isn't low-priority. Provide exactly one of personId / organizationId.
+ */
+
+export function useGetTaskProposal<
+  TData = Awaited<ReturnType<typeof getTaskProposal>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  params?: GetTaskProposalParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTaskProposal>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTaskProposalQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Regenerate the pending suggestion for an entity on demand.
+ */
+export const getRefreshTaskProposalUrl = () => {
+  return `/api/task-proposals/refresh`;
+};
+
+export const refreshTaskProposal = async (
+  refreshTaskProposalBody: RefreshTaskProposalBody,
+  options?: RequestInit,
+): Promise<TaskProposalResponse> => {
+  return customFetch<TaskProposalResponse>(getRefreshTaskProposalUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(refreshTaskProposalBody),
+  });
+};
+
+export const getRefreshTaskProposalMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshTaskProposal>>,
+    TError,
+    { data: BodyType<RefreshTaskProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof refreshTaskProposal>>,
+  TError,
+  { data: BodyType<RefreshTaskProposalBody> },
+  TContext
+> => {
+  const mutationKey = ["refreshTaskProposal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof refreshTaskProposal>>,
+    { data: BodyType<RefreshTaskProposalBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return refreshTaskProposal(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshTaskProposalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof refreshTaskProposal>>
+>;
+export type RefreshTaskProposalMutationBody = BodyType<RefreshTaskProposalBody>;
+export type RefreshTaskProposalMutationError = ErrorType<BadRequestResponse>;
+
+/**
+ * @summary Regenerate the pending suggestion for an entity on demand.
+ */
+export const useRefreshTaskProposal = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshTaskProposal>>,
+    TError,
+    { data: BodyType<RefreshTaskProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof refreshTaskProposal>>,
+  TError,
+  { data: BodyType<RefreshTaskProposalBody> },
+  TContext
+> => {
+  return useMutation(getRefreshTaskProposalMutationOptions(options));
+};
+
+/**
+ * @summary Accept a suggestion — creates a real linked task and marks the proposal accepted.
+ */
+export const getAcceptTaskProposalUrl = (id: string) => {
+  return `/api/task-proposals/${id}/accept`;
+};
+
+export const acceptTaskProposal = async (
+  id: string,
+  acceptTaskProposalBody?: AcceptTaskProposalBody,
+  options?: RequestInit,
+): Promise<AcceptTaskProposalResult> => {
+  return customFetch<AcceptTaskProposalResult>(getAcceptTaskProposalUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(acceptTaskProposalBody),
+  });
+};
+
+export const getAcceptTaskProposalMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acceptTaskProposal>>,
+    TError,
+    { id: string; data: BodyType<AcceptTaskProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof acceptTaskProposal>>,
+  TError,
+  { id: string; data: BodyType<AcceptTaskProposalBody> },
+  TContext
+> => {
+  const mutationKey = ["acceptTaskProposal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof acceptTaskProposal>>,
+    { id: string; data: BodyType<AcceptTaskProposalBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return acceptTaskProposal(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AcceptTaskProposalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof acceptTaskProposal>>
+>;
+export type AcceptTaskProposalMutationBody = BodyType<AcceptTaskProposalBody>;
+export type AcceptTaskProposalMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Accept a suggestion — creates a real linked task and marks the proposal accepted.
+ */
+export const useAcceptTaskProposal = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acceptTaskProposal>>,
+    TError,
+    { id: string; data: BodyType<AcceptTaskProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof acceptTaskProposal>>,
+  TError,
+  { id: string; data: BodyType<AcceptTaskProposalBody> },
+  TContext
+> => {
+  return useMutation(getAcceptTaskProposalMutationOptions(options));
+};
+
+/**
+ * @summary Dismiss a suggestion — marks it dismissed with an optional note (audit trail).
+ */
+export const getDismissTaskProposalUrl = (id: string) => {
+  return `/api/task-proposals/${id}/dismiss`;
+};
+
+export const dismissTaskProposal = async (
+  id: string,
+  dismissTaskProposalBody?: DismissTaskProposalBody,
+  options?: RequestInit,
+): Promise<TaskProposal> => {
+  return customFetch<TaskProposal>(getDismissTaskProposalUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(dismissTaskProposalBody),
+  });
+};
+
+export const getDismissTaskProposalMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissTaskProposal>>,
+    TError,
+    { id: string; data: BodyType<DismissTaskProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dismissTaskProposal>>,
+  TError,
+  { id: string; data: BodyType<DismissTaskProposalBody> },
+  TContext
+> => {
+  const mutationKey = ["dismissTaskProposal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dismissTaskProposal>>,
+    { id: string; data: BodyType<DismissTaskProposalBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return dismissTaskProposal(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DismissTaskProposalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dismissTaskProposal>>
+>;
+export type DismissTaskProposalMutationBody = BodyType<DismissTaskProposalBody>;
+export type DismissTaskProposalMutationError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Dismiss a suggestion — marks it dismissed with an optional note (audit trail).
+ */
+export const useDismissTaskProposal = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissTaskProposal>>,
+    TError,
+    { id: string; data: BodyType<DismissTaskProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dismissTaskProposal>>,
+  TError,
+  { id: string; data: BodyType<DismissTaskProposalBody> },
+  TContext
+> => {
+  return useMutation(getDismissTaskProposalMutationOptions(options));
 };
 
 /**

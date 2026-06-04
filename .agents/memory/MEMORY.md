@@ -21,3 +21,4 @@
 - [opportunity status is calculated](wildflower-opp-status-calculated.md) — status fully derived server-side; only user override is loss_type (dormant/lost); never write status directly; enum keeps dormant/lost.
 - [Fundable projects page](fundable-projects-page.md) — management moved off Admin to /fundable-projects; timeframes+goal columns nullable; progress = sum gift_allocations.sub_amount per project.
 - [clerk admin-gated e2e testing](clerk-admin-e2e-testing.md) — testClerkAuth provisions team_member; add a [DB] step to promote to admin or admin cards silently 403/hide.
+- [task intelligence](task-intelligence.md) — AI next-step suggestions in Tasks card; auto-generate ONLY on true first view (hasAnyProposal=false), never regenerate after accept/dismiss; refresh is explicit.

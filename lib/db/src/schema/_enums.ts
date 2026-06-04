@@ -435,3 +435,9 @@ export const taskStatusEnum = pgEnum("task_status", [
   "done",
   "cancelled",
 ]);
+
+export const taskProposalStatusEnum = pgEnum("task_proposal_status", [
+  "pending",
+  "accepted",
+  "dismissed",
+]);

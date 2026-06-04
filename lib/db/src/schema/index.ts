@@ -34,6 +34,7 @@ export * from "./notes";
 export * from "./mediaMentions";
 export * from "./mediaIngestState";
 export * from "./tasks";
+export * from "./taskProposals";
 export * from "./meetingNotes";
 export * from "./bulkOperations";
 export * from "./savedViews";

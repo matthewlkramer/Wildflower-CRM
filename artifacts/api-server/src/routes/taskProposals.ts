@@ -1,0 +1,408 @@
+import { Router, type IRouter } from "express";
+import { db } from "@workspace/db";
+import {
+  taskProposals,
+  tasks,
+  people,
+  organizations,
+} from "@workspace/db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import {
+  GetTaskProposalQueryParams,
+  RefreshTaskProposalBody,
+  AcceptTaskProposalBody,
+  DismissTaskProposalBody,
+} from "@workspace/api-zod";
+import { requireAuth } from "../middlewares/requireAuth";
+import { getAppUser } from "../lib/appRequest";
+import {
+  asyncHandler,
+  newId,
+  notFound,
+  paramId,
+  parseOrBadRequest,
+} from "../lib/helpers";
+import { generateTaskProposal } from "../lib/proposeTask";
+
+/**
+ * Task intelligence — AI-suggested next-step cultivation tasks surfaced
+ * inside the Tasks card on person / organization detail pages.
+ *
+ * On-demand hybrid, modeled on email-intelligence: the first time a detail
+ * page renders we generate + cache one `pending` suggestion per entity;
+ * later views read the cached row so it's instant. A refresh regenerates
+ * the same pending row in place. Accepting spins up a real linked task and
+ * flips the proposal → accepted; dismissing flips it → dismissed with an
+ * optional note (audit trail). Low-priority entities are skipped (no row,
+ * no AI call) — GET returns `{ data: null }`.
+ */
+
+const router: IRouter = Router();
+router.use(requireAuth);
+
+/**
+ * Thrown inside the accept/dismiss transaction when the conditional
+ * `status = 'pending'` claim matches no row — i.e. a concurrent request
+ * already resolved the proposal. Caught by the handler to roll back and
+ * return 409 instead of producing duplicate/ambiguous resolutions.
+ */
+class ProposalRaceLost extends Error {}
+
+type EntityTarget =
+  | { kind: "person"; personId: string; organizationId: null }
+  | { kind: "organization"; personId: null; organizationId: string };
+
+/**
+ * Resolve exactly one of personId / organizationId into a normalized
+ * target. Returns null (and the caller should 400) when neither or both
+ * are supplied.
+ */
+function resolveTarget(
+  personId: string | undefined,
+  organizationId: string | undefined,
+): EntityTarget | null {
+  const hasPerson = typeof personId === "string" && personId.length > 0;
+  const hasOrg =
+    typeof organizationId === "string" && organizationId.length > 0;
+  if (hasPerson === hasOrg) return null; // neither or both
+  if (hasPerson) {
+    return { kind: "person", personId: personId!, organizationId: null };
+  }
+  return { kind: "organization", personId: null, organizationId: organizationId! };
+}
+
+function dedupeKeyFor(target: EntityTarget): string {
+  return target.kind === "person"
+    ? `person:${target.personId}`
+    : `org:${target.organizationId}`;
+}
+
+/**
+ * Look up the entity's priority. Low-priority entities are skipped per the
+ * task spec. Returns `{ found, priority }`; `found:false` means the entity
+ * id doesn't resolve.
+ */
+async function loadPriority(
+  target: EntityTarget,
+): Promise<{ found: boolean; priority: string | null }> {
+  if (target.kind === "person") {
+    const [row] = await db
+      .select({ priority: people.priority })
+      .from(people)
+      .where(eq(people.id, target.personId))
+      .limit(1);
+    return { found: !!row, priority: row?.priority ?? null };
+  }
+  const [row] = await db
+    .select({ priority: organizations.priority })
+    .from(organizations)
+    .where(eq(organizations.id, target.organizationId))
+    .limit(1);
+  return { found: !!row, priority: row?.priority ?? null };
+}
+
+async function findPending(
+  dedupeKey: string,
+): Promise<typeof taskProposals.$inferSelect | undefined> {
+  const [row] = await db
+    .select()
+    .from(taskProposals)
+    .where(
+      and(
+        eq(taskProposals.dedupeKey, dedupeKey),
+        eq(taskProposals.status, "pending"),
+      ),
+    )
+    .limit(1);
+  return row;
+}
+
+/**
+ * True when ANY proposal (pending or resolved) already exists for this
+ * entity. Used by GET to distinguish a true first view (auto-generate) from
+ * a return visit after the user already accepted/dismissed a suggestion
+ * (don't silently spend another AI call — let them hit Refresh).
+ */
+async function hasAnyProposal(dedupeKey: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: taskProposals.id })
+    .from(taskProposals)
+    .where(eq(taskProposals.dedupeKey, dedupeKey))
+    .limit(1);
+  return !!row;
+}
+
+async function loadById(
+  id: string,
+): Promise<typeof taskProposals.$inferSelect | undefined> {
+  const [row] = await db
+    .select()
+    .from(taskProposals)
+    .where(eq(taskProposals.id, id))
+    .limit(1);
+  return row;
+}
+
+/**
+ * Create a fresh pending row for an entity and run AI generation in place.
+ * Uses onConflictDoNothing against the partial-unique pending index to win
+ * the race when two views fire simultaneously — the loser re-reads the
+ * winner's row.
+ */
+async function createAndGenerate(
+  target: EntityTarget,
+  dedupeKey: string,
+): Promise<typeof taskProposals.$inferSelect | undefined> {
+  const id = newId();
+  const inserted = await db
+    .insert(taskProposals)
+    .values({
+      id,
+      status: "pending",
+      targetPersonId: target.personId,
+      targetOrganizationId: target.organizationId,
+      dedupeKey,
+    })
+    .onConflictDoNothing()
+    .returning();
+
+  if (inserted.length === 0) {
+    // Lost the race — another request already created the pending row.
+    return findPending(dedupeKey);
+  }
+
+  await generateTaskProposal(id);
+  return loadById(id);
+}
+
+/**
+ * GET /task-proposals?personId=&organizationId=
+ *
+ * Returns the current pending suggestion for an entity, generating + caching
+ * one on first view. Low-priority entities are skipped → { data: null }.
+ */
+router.get(
+  "/task-proposals",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const q = parseOrBadRequest(GetTaskProposalQueryParams, req.query, res);
+    if (!q) return;
+    const target = resolveTarget(q.personId, q.organizationId);
+    if (!target) {
+      res.status(400).json({
+        error: "Provide exactly one of personId or organizationId.",
+      });
+      return;
+    }
+    const dedupeKey = dedupeKeyFor(target);
+
+    const existing = await findPending(dedupeKey);
+    if (existing) {
+      res.json({ data: existing });
+      return;
+    }
+
+    // No pending suggestion. Only auto-generate on a TRUE first view: if the
+    // user already accepted/dismissed a prior suggestion for this entity we
+    // return null instead of silently burning another AI call — they can hit
+    // Refresh to get a fresh one.
+    if (await hasAnyProposal(dedupeKey)) {
+      res.json({ data: null });
+      return;
+    }
+
+    // First view — gate on priority before spending an AI call.
+    const { found, priority } = await loadPriority(target);
+    if (!found) {
+      res.status(404).json({ error: "entity not found" });
+      return;
+    }
+    if (priority === "low") {
+      res.json({ data: null });
+      return;
+    }
+
+    const row = await createAndGenerate(target, dedupeKey);
+    res.json({ data: row ?? null });
+  }),
+);
+
+/**
+ * POST /task-proposals/refresh
+ *
+ * Regenerate the suggestion for an entity. If a pending row exists, rerun
+ * generation in place; otherwise create one (unless low-priority).
+ */
+router.post(
+  "/task-proposals/refresh",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const body = parseOrBadRequest(RefreshTaskProposalBody, req.body, res);
+    if (!body) return;
+    const target = resolveTarget(body.personId, body.organizationId);
+    if (!target) {
+      res.status(400).json({
+        error: "Provide exactly one of personId or organizationId.",
+      });
+      return;
+    }
+    const dedupeKey = dedupeKeyFor(target);
+
+    const { found, priority } = await loadPriority(target);
+    if (!found) {
+      res.status(404).json({ error: "entity not found" });
+      return;
+    }
+    if (priority === "low") {
+      res.json({ data: null });
+      return;
+    }
+
+    const existing = await findPending(dedupeKey);
+    if (existing) {
+      await generateTaskProposal(existing.id);
+      const row = await loadById(existing.id);
+      res.json({ data: row ?? null });
+      return;
+    }
+
+    const row = await createAndGenerate(target, dedupeKey);
+    res.json({ data: row ?? null });
+  }),
+);
+
+/**
+ * POST /task-proposals/:id/accept
+ *
+ * Create a real linked task from the suggestion and flip the proposal to
+ * accepted. The created task inherits the suggested title / description /
+ * due date and links to the same target entity.
+ */
+router.post(
+  "/task-proposals/:id/accept",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) return notFound(res, "user");
+    const body = parseOrBadRequest(AcceptTaskProposalBody, req.body ?? {}, res);
+    if (!body) return;
+
+    const id = paramId(req);
+    const proposal = await loadById(id);
+    if (!proposal) return notFound(res, "task proposal");
+    if (proposal.status !== "pending") {
+      res.status(400).json({ error: "proposal already resolved" });
+      return;
+    }
+    if (!proposal.title) {
+      res.status(400).json({
+        error: "proposal has no suggestion to accept yet",
+      });
+      return;
+    }
+
+    let result: { task: typeof tasks.$inferSelect; proposal: typeof taskProposals.$inferSelect } | null = null;
+    try {
+      result = await db.transaction(async (tx) => {
+        const [task] = await tx
+          .insert(tasks)
+          .values({
+            id: newId(),
+            title: proposal.title!,
+            description: proposal.description ?? null,
+            dueDate: proposal.suggestedDueDate ?? null,
+            kind: "general",
+            status: "open",
+            createdByUserId: user.id,
+            assigneeUserId: body.assigneeUserId ?? null,
+            personIds: proposal.targetPersonId ? [proposal.targetPersonId] : null,
+            organizationIds: proposal.targetOrganizationId
+              ? [proposal.targetOrganizationId]
+              : null,
+          })
+          .returning();
+
+        // Atomically claim the proposal: only succeeds if it is still pending.
+        // A concurrent accept that already flipped it loses this race and the
+        // task insert above is rolled back, so we never create duplicate tasks.
+        const [updated] = await tx
+          .update(taskProposals)
+          .set({
+            status: "accepted",
+            acceptedTaskId: task.id,
+            reviewerNote: body.reviewerNote ?? proposal.reviewerNote ?? null,
+            resolvedAt: new Date(),
+            resolvedByUserId: user.id,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(taskProposals.id, id), eq(taskProposals.status, "pending")))
+          .returning();
+
+        if (!updated) throw new ProposalRaceLost();
+        return { task, proposal: updated };
+      });
+    } catch (err) {
+      if (err instanceof ProposalRaceLost) {
+        res.status(409).json({ error: "proposal already resolved" });
+        return;
+      }
+      throw err;
+    }
+
+    res.json(result);
+  }),
+);
+
+/**
+ * POST /task-proposals/:id/dismiss
+ *
+ * Flip the proposal to dismissed, recording an optional reviewer note for
+ * later prompt tuning. No real task is created.
+ */
+router.post(
+  "/task-proposals/:id/dismiss",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) return notFound(res, "user");
+    const body = parseOrBadRequest(DismissTaskProposalBody, req.body ?? {}, res);
+    if (!body) return;
+
+    const id = paramId(req);
+    const proposal = await loadById(id);
+    if (!proposal) return notFound(res, "task proposal");
+    if (proposal.status !== "pending") {
+      res.status(400).json({ error: "proposal already resolved" });
+      return;
+    }
+
+    // Atomically claim: only dismiss if still pending, so a competing
+    // accept/dismiss can't produce an ambiguous resolution.
+    const [updated] = await db
+      .update(taskProposals)
+      .set({
+        status: "dismissed",
+        reviewerNote: body.reviewerNote ?? null,
+        resolvedAt: new Date(),
+        resolvedByUserId: user.id,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(taskProposals.id, id), eq(taskProposals.status, "pending")))
+      .returning();
+
+    if (!updated) {
+      res.status(409).json({ error: "proposal already resolved" });
+      return;
+    }
+
+    res.json(updated);
+  }),
+);
+
+export default router;

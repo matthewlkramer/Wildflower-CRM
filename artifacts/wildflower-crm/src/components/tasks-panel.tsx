@@ -5,8 +5,14 @@ import {
   useUpdateTask,
   useDeleteTask,
   getListTasksQueryKey,
+  useGetTaskProposal,
+  useRefreshTaskProposal,
+  useAcceptTaskProposal,
+  useDismissTaskProposal,
+  getGetTaskProposalQueryKey,
   type Task,
   type TaskStatus,
+  type TaskProposal,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -50,7 +56,14 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { Trash2, Check, ChevronsUpDown } from "lucide-react";
+import {
+  Trash2,
+  Check,
+  ChevronsUpDown,
+  Sparkles,
+  RefreshCw,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   EntityLinksEditor,
@@ -215,8 +228,250 @@ export function TasksPanel(ctx: PanelContext) {
             ))}
           </ul>
         )}
+        {(ctx.personId || ctx.organizationId) ? (
+          <TaskSuggestion
+            personId={ctx.personId}
+            organizationId={ctx.organizationId}
+          />
+        ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * AI-suggested next-step cultivation task, surfaced below the real task list.
+ *
+ * On-demand hybrid: the GET generates + caches one pending suggestion per
+ * entity on first view, so this renders instantly on later visits. Accepting
+ * spins up a real task (which then shows in the list above); dismissing files
+ * the suggestion away with an optional note. Low-priority entities return
+ * `data: null` and we render nothing.
+ */
+function TaskSuggestion({
+  personId,
+  organizationId,
+}: {
+  personId?: string;
+  organizationId?: string;
+}) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [dismissNote, setDismissNote] = useState("");
+  const [dismissOpen, setDismissOpen] = useState(false);
+
+  const proposalParams = { personId, organizationId };
+  const { data, isLoading } = useGetTaskProposal(proposalParams);
+  const proposal: TaskProposal | null = data?.data ?? null;
+
+  const invalidate = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: getGetTaskProposalQueryKey(proposalParams),
+      }),
+      queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() }),
+    ]);
+  };
+
+  const refresh = useRefreshTaskProposal({
+    mutation: {
+      onSuccess: async () => {
+        await invalidate();
+      },
+      onError: (err: unknown) =>
+        toast({
+          title: "Couldn't refresh suggestion",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    },
+  });
+  const accept = useAcceptTaskProposal({
+    mutation: {
+      onSuccess: async () => {
+        await invalidate();
+        toast({ title: "Task created from suggestion" });
+      },
+      onError: (err: unknown) =>
+        toast({
+          title: "Couldn't accept suggestion",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    },
+  });
+  const dismiss = useDismissTaskProposal({
+    mutation: {
+      onSuccess: async () => {
+        await invalidate();
+        setDismissOpen(false);
+        setDismissNote("");
+        toast({ title: "Suggestion dismissed" });
+      },
+      onError: (err: unknown) =>
+        toast({
+          title: "Couldn't dismiss suggestion",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const busy = refresh.isPending || accept.isPending || dismiss.isPending;
+
+  // Nothing cached yet, still generating the very first one.
+  if (isLoading) {
+    return (
+      <div className="mb-3 rounded-md border border-dashed p-3">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Sparkles className="h-4 w-4 animate-pulse text-primary" />
+          Generating suggested next step…
+        </div>
+      </div>
+    );
+  }
+
+  // Low-priority entity (skipped) or no suggestion available.
+  if (!proposal) return null;
+
+  // Suggestion row exists but the AI call hasn't finished writing it yet.
+  const generating = !proposal.analyzedAt;
+  // The AI ran but judged no action warranted, or the call errored.
+  const noAction = proposal.error === "no_action_warranted";
+  const hadError = !!proposal.error && !noAction && !proposal.title;
+
+  return (
+    <div
+      className="mb-3 rounded-md border border-primary/30 bg-primary/5 p-3 space-y-2"
+      data-testid="task-suggestion"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge variant="secondary" className="gap-1">
+            <Sparkles className="h-3 w-3" />
+            Suggested
+          </Badge>
+          {!generating && !noAction && !hadError ? (
+            <span className="font-medium truncate" data-testid="text-suggestion-title">
+              {proposal.title}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 text-muted-foreground hover:text-primary"
+            onClick={() =>
+              refresh.mutate({ data: { personId, organizationId } })
+            }
+            disabled={busy}
+            aria-label="Refresh suggestion"
+            data-testid="button-refresh-suggestion"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", refresh.isPending && "animate-spin")} />
+          </Button>
+        </div>
+      </div>
+
+      {generating ? (
+        <p className="text-sm text-muted-foreground">Thinking through the next best step…</p>
+      ) : noAction ? (
+        <p className="text-sm text-muted-foreground">
+          No next step recommended right now.
+          {proposal.rationale ? ` ${proposal.rationale}` : ""}
+        </p>
+      ) : hadError ? (
+        <p className="text-sm text-muted-foreground">
+          Couldn't generate a suggestion. Try refreshing.
+        </p>
+      ) : (
+        <>
+          {proposal.description ? (
+            <p className="text-sm whitespace-pre-wrap text-foreground/90">
+              {proposal.description}
+            </p>
+          ) : null}
+          <div className="text-xs text-muted-foreground">
+            {proposal.suggestedDueDate ? (
+              <>Suggested due {formatDate(proposal.suggestedDueDate)}</>
+            ) : (
+              <>No suggested due date</>
+            )}
+          </div>
+          {proposal.rationale ? (
+            <p className="text-xs italic text-muted-foreground" data-testid="text-suggestion-rationale">
+              Why: {proposal.rationale}
+            </p>
+          ) : null}
+          <div className="flex items-center gap-2 pt-1">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => accept.mutate({ id: proposal.id, data: {} })}
+              disabled={busy}
+              data-testid="button-accept-suggestion"
+            >
+              <Check className="mr-1 h-3.5 w-3.5" />
+              {accept.isPending ? "Adding…" : "Accept"}
+            </Button>
+            <Popover open={dismissOpen} onOpenChange={setDismissOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  data-testid="button-dismiss-suggestion"
+                >
+                  <X className="mr-1 h-3.5 w-3.5" />
+                  Dismiss
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 space-y-2">
+                <Label htmlFor="dismiss-note" className="text-xs">
+                  Optional note (helps tune future suggestions)
+                </Label>
+                <Textarea
+                  id="dismiss-note"
+                  value={dismissNote}
+                  onChange={(e) => setDismissNote(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. already handled, not a priority…"
+                  data-testid="input-dismiss-note"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setDismissOpen(false)}
+                    disabled={dismiss.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() =>
+                      dismiss.mutate({
+                        id: proposal.id,
+                        data: { reviewerNote: dismissNote.trim() || undefined },
+                      })
+                    }
+                    disabled={dismiss.isPending}
+                    data-testid="button-confirm-dismiss"
+                  >
+                    {dismiss.isPending ? "Dismissing…" : "Dismiss"}
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

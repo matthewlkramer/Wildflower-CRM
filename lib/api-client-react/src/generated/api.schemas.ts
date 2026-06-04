@@ -2094,6 +2094,99 @@ export interface RejectEmailProposalBody {
   reviewerNote?: string | null;
 }
 
+export type TaskProposalStatus =
+  (typeof TaskProposalStatus)[keyof typeof TaskProposalStatus];
+
+export const TaskProposalStatus = {
+  pending: "pending",
+  accepted: "accepted",
+  dismissed: "dismissed",
+} as const;
+
+export type TaskProposalPayload = { [key: string]: unknown };
+
+export interface TaskProposal {
+  id: string;
+  status: TaskProposalStatus;
+  targetPersonId?: string | null;
+  targetOrganizationId?: string | null;
+  payload: TaskProposalPayload;
+  title?: string | null;
+  description?: string | null;
+  suggestedDueDate?: string | null;
+  rationale?: string | null;
+  analyzedAt?: string | null;
+  model?: string | null;
+  error?: string | null;
+  dedupeKey: string;
+  acceptedTaskId?: string | null;
+  reviewerNote?: string | null;
+  resolvedAt?: string | null;
+  resolvedByUserId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskProposalResponse {
+  data: TaskProposal | null;
+}
+
+export interface RefreshTaskProposalBody {
+  personId?: string;
+  organizationId?: string;
+}
+
+export interface AcceptTaskProposalBody {
+  assigneeUserId?: string | null;
+  reviewerNote?: string | null;
+}
+
+export type TaskKind = (typeof TaskKind)[keyof typeof TaskKind];
+
+export const TaskKind = {
+  general: "general",
+  reporting_deadline: "reporting_deadline",
+  thank_you_followup: "thank_you_followup",
+} as const;
+
+export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
+
+export const TaskStatus = {
+  open: "open",
+  waiting: "waiting",
+  done: "done",
+  cancelled: "cancelled",
+} as const;
+
+export interface Task {
+  id: string;
+  title: string;
+  description?: string | null;
+  dueDate?: string | null;
+  kind: TaskKind;
+  status: TaskStatus;
+  completedAt?: string | null;
+  assigneeUserId?: string | null;
+  createdByUserId: string;
+  personIds?: string[] | null;
+  organizationIds?: string[] | null;
+  householdIds?: string[] | null;
+  opportunityIds?: string[] | null;
+  giftIds?: string[] | null;
+  mentionUserIds?: string[] | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AcceptTaskProposalResult {
+  proposal: TaskProposal;
+  task: Task;
+}
+
+export interface DismissTaskProposalBody {
+  reviewerNote?: string | null;
+}
+
 export type EmailIntelPromptStatus =
   (typeof EmailIntelPromptStatus)[keyof typeof EmailIntelPromptStatus];
 
@@ -2271,43 +2364,6 @@ export interface MediaMentionUpdate {
   pinned?: boolean;
   personIds?: string[] | null;
   organizationIds?: string[] | null;
-}
-
-export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
-
-export const TaskStatus = {
-  open: "open",
-  waiting: "waiting",
-  done: "done",
-  cancelled: "cancelled",
-} as const;
-
-export type TaskKind = (typeof TaskKind)[keyof typeof TaskKind];
-
-export const TaskKind = {
-  general: "general",
-  reporting_deadline: "reporting_deadline",
-  thank_you_followup: "thank_you_followup",
-} as const;
-
-export interface Task {
-  id: string;
-  title: string;
-  description?: string | null;
-  dueDate?: string | null;
-  kind: TaskKind;
-  status: TaskStatus;
-  completedAt?: string | null;
-  assigneeUserId?: string | null;
-  createdByUserId: string;
-  personIds?: string[] | null;
-  organizationIds?: string[] | null;
-  householdIds?: string[] | null;
-  opportunityIds?: string[] | null;
-  giftIds?: string[] | null;
-  mentionUserIds?: string[] | null;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface TaskList {
@@ -2832,6 +2888,17 @@ export type ListEmailProposalsParams = {
    * @minimum 1
    */
   page?: PageParameter;
+};
+
+export type GetTaskProposalParams = {
+  /**
+   * Entity to suggest a next step for (person).
+   */
+  personId?: string;
+  /**
+   * Entity to suggest a next step for (organization).
+   */
+  organizationId?: string;
 };
 
 export type AdminDiscardEmailIntelPrompt200 = {
