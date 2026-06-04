@@ -438,16 +438,6 @@ function OppView({
 
   const highlights: Highlight[] = [
     {
-      label: "Status",
-      // Read-only: fully calculated server-side from stage + payments +
-      // loss type. Use the "Loss type" control below to mark dormant/lost.
-      value: (
-        <div data-testid="text-opp-status" className="flex justify-start">
-          {statusBadge(opp.status ?? null)}
-        </div>
-      ),
-    },
-    {
       label: "Loss type",
       value: (
         <InlineEditSelect
@@ -536,12 +526,24 @@ function OppView({
   const allocationsSum = allocations.reduce((s, a) => s + toNum(a.subAmount), 0);
   const paymentsSum = payments.reduce((s, p) => s + toNum(p.amount), 0);
 
-  // Fiscal-year pill shown next to the "Opportunity" type badge.
-  const headerBadges = opp.fiscalYear ? (
-    <Badge variant="outline" className="rounded-full" data-testid="badge-opp-fy">
-      {opp.fiscalYear}
-    </Badge>
-  ) : null;
+  // Status badge (calculated server-side) and fiscal-year pill shown next to
+  // the "Opportunity" type badge in the header.
+  const headerBadges = (
+    <>
+      <span data-testid="text-opp-status" className="flex items-center">
+        {statusBadge(opp.status ?? null)}
+      </span>
+      {opp.fiscalYear ? (
+        <Badge
+          variant="outline"
+          className="rounded-full"
+          data-testid="badge-opp-fy"
+        >
+          {opp.fiscalYear}
+        </Badge>
+      ) : null}
+    </>
+  );
 
   const subtitle = donorDisplay;
 
