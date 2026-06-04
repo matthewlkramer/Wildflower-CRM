@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
   useGetTopPriorities,
+  getGetTopPrioritiesQueryKey,
   useGetCurrentUser,
   type TopPriorityOrganization,
   type TopPriorityPerson,
@@ -285,7 +286,11 @@ function IndividualsTable({
 }
 
 export default function TopPrioritiesPage() {
-  const { data, isLoading } = useGetTopPriorities();
+  // Always revalidate when the user navigates back to this page (e.g. after
+  // editing a record elsewhere) instead of serving the 60s-stale cache.
+  const { data, isLoading } = useGetTopPriorities({
+    query: { queryKey: getGetTopPrioritiesQueryKey(), refetchOnMount: "always" },
+  });
   const { data: currentUser } = useGetCurrentUser();
   const viewer: Viewer = currentUser ?? null;
 
