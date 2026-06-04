@@ -31,6 +31,18 @@ needs a reviewed idempotent SQL migration applied to BOTH dev and prod by a huma
 (agent can't write prod) — and back-fill any orphan rows into the replacement
 column first.
 
+**Retirement pattern (when you do drop them):** make the SQL idempotent by
+checking column existence (`information_schema.columns`) before any backfill so a
+second run is a no-op; guard with a DO-block that counts rows where the legacy
+column is populated but its replacement is NULL and `RAISE EXCEPTION` if non-zero
+(never silently drop live data); backfill case-INSENSITively (the original
+funders→orgs consolidation matched capital `'Active'` but seed rows used
+lowercase `'active'`, which is exactly what stranded the synth-org rows). Dropping
+the column auto-removes its dependent index + FK; drop the now-unused enum too
+(verify single usage via `udt_name`). The 3 organizations columns
+(active_or_defunct/type/parent_org_id) + `organization_type` enum were retired
+this way (dev applied; prod pending human psql apply).
+
 **Publish note:** Publish diffs dev-DB vs prod-DB (not schema-vs-DB). As long as
 both DBs carry the same columns, Publish proposes no drop — the data-loss warnings
 in post-merge logs are dev-push-only and do not surface at Publish.

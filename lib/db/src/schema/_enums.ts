@@ -214,30 +214,6 @@ export const activeStatusEnum = pgEnum("active_status", [
   "spenddown",
 ]);
 
-// ---- Organization enums ----
-export const organizationTypeEnum = pgEnum("organization_type", [
-  "advocacy_membership_lobbyist",
-  "authorizer",
-  "cmo",
-  "capital_provider",
-  "government",
-  "corporation",
-  "education_vendor",
-  "elected_official",
-  "higher_ed",
-  "investor",
-  "law_firm",
-  "media",
-  "nonprofit",
-  "philanthropic_advisor",
-  "real_estate",
-  "school",
-  "school_district",
-  "school_network",
-  "small_business_consulting",
-  "tribal",
-]);
-
 // ---- Opportunity / pledge enums ----
 export const opportunityTypeEnum = pgEnum("opportunity_type", [
   "solicitation",

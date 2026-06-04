@@ -1051,7 +1051,7 @@ UPDATE opportunities_and_pledges o
 -- by `validity <> 'invalid'`.
 
 -- 16a — Add Wilson Sonsini Goodrich & Rosati as a law-firm org so Neil can link.
-INSERT INTO organizations (id, name, type, active_or_defunct, website)
+INSERT INTO organizations (id, name, entity_type, active_status, website)
 VALUES (
   'synth-org-wilson-sonsini-goodrich-rosati',
   'Wilson Sonsini Goodrich & Rosati',
@@ -1125,7 +1125,7 @@ DELETE FROM people
 -- (Upfront Ventures, VC) had no organization rows yet. Adding both,
 -- PER-linking Amanda as `past` (she's now at Penn Hill, per fixup #16)
 -- and Mark as `current`. All idempotent.
-INSERT INTO organizations (id, name, type, active_or_defunct, website)
+INSERT INTO organizations (id, name, entity_type, active_status, website)
 VALUES
   ('synth-org-caprock-strategies', 'Caprock Strategies', 'small_business_consulting', 'active', 'https://caprockstrategies.com'),
   ('synth-org-upfront-ventures',   'Upfront Ventures',   'investor',                  'active', 'https://upfront.com')
