@@ -26,3 +26,4 @@
 - [QuickBooks payment sync](quickbooks-payment-sync.md) — pull-only QBO→CRM; idempotent (realmId,type,id) rows retained; dev keys⇒sandbox host, prod keys⇒live; redirect URI exact-match per key set; approve mints gift w/ Donor XOR.
 - [internal email domains config](internal-email-domains-config.md) — staff domains moved from hardcoded Set to internal_email_domains singleton; matcher loads via cached loadInternalDomains; defaults seed/fallback keep sync unchanged on rollout.
 - [Flodesk subscriber sync](flodesk-subscriber-sync.md) — people→one segment; Basic auth (not Bearer)+User-Agent; no-op until API key+segment id set; inbound monotonic, Flodesk unsubscribe wins; advisory lock (9001,2).
+- [Gmail sync stall detection](gmail-sync-stuck-detection.md) — email_sync_state.no_progress_runs counts consecutive errored runs (cursor held); reset on clean run; admin panel flags >= threshold as stuck.

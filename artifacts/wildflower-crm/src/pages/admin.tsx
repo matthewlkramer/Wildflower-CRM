@@ -179,6 +179,7 @@ function AdminSyncSection() {
   if (errStatus === 403) return null;
 
   const rows = q.data?.data ?? [];
+  const stuckRows = rows.filter((r) => r.gmail.stuck);
 
   return (
     <Card data-testid="admin-sync-section">
@@ -191,6 +192,20 @@ function AdminSyncSection() {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {stuckRows.length > 0 ? (
+          <div
+            className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            data-testid="sync-stuck-banner"
+          >
+            <span className="font-medium">
+              ⚠ {stuckRows.length} mailbox{stuckRows.length === 1 ? "" : "es"} appear
+              stuck
+            </span>{" "}
+            — Gmail sync has made no forward progress for several consecutive
+            runs ({stuckRows.map((r) => r.userEmail).join(", ")}). Try "Resync
+            now"; if it persists, check the server logs.
+          </div>
+        ) : null}
         {q.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : rows.length === 0 ? (
@@ -233,6 +248,15 @@ function AdminSyncSection() {
                     {r.gmail.bootstrapInProgress ? (
                       <div className="text-xs text-amber-700">
                         Initial sync in progress
+                      </div>
+                    ) : null}
+                    {r.gmail.stuck ? (
+                      <div
+                        className="mt-1 inline-flex items-center gap-1 rounded bg-destructive px-1.5 py-0.5 text-xs font-medium text-destructive-foreground"
+                        title={`No forward progress for ${r.gmail.noProgressRuns} consecutive runs — sync appears stuck.`}
+                        data-testid={`gmail-stuck-${r.userId}`}
+                      >
+                        ⚠ Stuck — {r.gmail.noProgressRuns} runs without progress
                       </div>
                     ) : null}
                     {r.gmail.lastError ? (

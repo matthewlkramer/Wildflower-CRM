@@ -1961,6 +1961,10 @@ export interface AdminGoogleSyncSourceStatus {
   lastError?: string | null;
   bootstrapCompletedAt?: string | null;
   bootstrapInProgress: boolean;
+  /** Consecutive sync runs that made no forward progress (cursor pinned by errors). Resets to 0 on any clean run. */
+  noProgressRuns: number;
+  /** True once noProgressRuns crosses the stall threshold — the mailbox appears wedged and should be investigated. */
+  stuck: boolean;
 }
 
 export interface AdminGoogleSyncUserRow {

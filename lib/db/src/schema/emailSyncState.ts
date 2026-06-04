@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
 /**
@@ -51,6 +51,17 @@ export const emailSyncState = pgTable("email_sync_state", {
   backfillCompletedAt: timestamp("backfill_completed_at", {
     withTimezone: true,
   }),
+  // Consecutive sync runs where the mailbox made NO forward progress —
+  // i.e. the run finished with errors so its pagination cursor
+  // (`last_history_id` / page tokens) was deliberately held instead of
+  // advanced. A healthy idle mailbox (no new mail, no errors) resets
+  // this to 0 every run, so a sustained non-zero value isolates genuine
+  // stall conditions (a transient failure that never clears, a wedged
+  // message, repeated 5xx/network errors) from quiet inboxes. When it
+  // crosses STUCK_NO_PROGRESS_THRESHOLD the admin sync-health panel
+  // flags the mailbox as "stuck" so it can be investigated before a
+  // user notices missing email.
+  noProgressRuns: integer("no_progress_runs").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

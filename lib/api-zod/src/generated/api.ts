@@ -6565,12 +6565,32 @@ export const AdminListGoogleSyncResponse = zod.object({
         lastError: zod.string().nullish(),
         bootstrapCompletedAt: zod.string().datetime({}).nullish(),
         bootstrapInProgress: zod.boolean(),
+        noProgressRuns: zod
+          .number()
+          .describe(
+            "Consecutive sync runs that made no forward progress (cursor pinned by errors). Resets to 0 on any clean run.",
+          ),
+        stuck: zod
+          .boolean()
+          .describe(
+            "True once noProgressRuns crosses the stall threshold — the mailbox appears wedged and should be investigated.",
+          ),
       }),
       calendar: zod.object({
         lastSyncedAt: zod.string().datetime({}).nullish(),
         lastError: zod.string().nullish(),
         bootstrapCompletedAt: zod.string().datetime({}).nullish(),
         bootstrapInProgress: zod.boolean(),
+        noProgressRuns: zod
+          .number()
+          .describe(
+            "Consecutive sync runs that made no forward progress (cursor pinned by errors). Resets to 0 on any clean run.",
+          ),
+        stuck: zod
+          .boolean()
+          .describe(
+            "True once noProgressRuns crosses the stall threshold — the mailbox appears wedged and should be investigated.",
+          ),
       }),
     }),
   ),

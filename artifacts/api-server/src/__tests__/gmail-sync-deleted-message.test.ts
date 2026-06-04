@@ -104,6 +104,7 @@ function makeState(): EmailSyncState {
     bootstrapPageToken: null,
     incrementalPageToken: null,
     backfillCompletedAt: null,
+    noProgressRuns: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
   };

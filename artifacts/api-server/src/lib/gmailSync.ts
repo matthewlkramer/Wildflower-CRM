@@ -106,6 +106,19 @@ const BOOTSTRAP_PAGE_SIZE = 100;
 const BOOTSTRAP_MAX_PAGES_PER_RUN = 3;
 const HISTORY_MAX_PAGES_PER_RUN = 10;
 
+/**
+ * How many consecutive no-forward-progress runs a mailbox can rack up
+ * before the admin sync-health panel flags it as "stuck". A run counts
+ * as no-progress when it finishes with errors (its pagination cursor is
+ * held instead of advanced) or throws outright; a clean run (including a
+ * quiet idle mailbox with no new mail) resets the counter to 0. At the
+ * business-hours cadence (~15 min) the default of 5 means a mailbox must
+ * have failed every run for well over an hour before it's surfaced —
+ * long enough to ride out a brief Gmail blip, short enough to catch a
+ * genuine stall before a user notices missing email.
+ */
+export const STUCK_NO_PROGRESS_THRESHOLD = 5;
+
 export interface GmailSyncReport {
   mode: "bootstrap" | "incremental" | "rebootstrap";
   candidates: number;
@@ -176,6 +189,10 @@ export async function syncUserGmail(userId: string): Promise<GmailSyncOutcome> {
               bootstrapPageToken: null,
               incrementalPageToken: null,
               lastError: "Gmail history expired; re-bootstrapping on next run",
+              // Re-bootstrapping is a deliberate recovery, not a stall —
+              // clear the no-progress counter so a self-healed expired
+              // cursor doesn't read as stuck.
+              noProgressRuns: 0,
               lastSyncedAt: new Date(),
               updatedAt: new Date(),
             })
@@ -200,6 +217,13 @@ export async function syncUserGmail(userId: string): Promise<GmailSyncOutcome> {
         .where(eq(emailSyncState.mailboxUserId, userId));
     }
 
+    // Stall detection: a run that finished with per-message errors held
+    // its pagination cursor instead of advancing it (see the pass impls),
+    // so it made no forward progress — bump the consecutive no-progress
+    // counter. A clean run (including a quiet idle mailbox with no new
+    // mail) resets it to 0, which keeps healthy inboxes off the admin
+    // "stuck" radar. The counter crossing STUCK_NO_PROGRESS_THRESHOLD is
+    // what the admin sync-health panel surfaces.
     await db
       .update(emailSyncState)
       .set({
@@ -207,6 +231,10 @@ export async function syncUserGmail(userId: string): Promise<GmailSyncOutcome> {
         lastError: report.errors > 0
           ? `${report.errors} message(s) failed; will retry next run`
           : null,
+        noProgressRuns:
+          report.errors > 0
+            ? sql`${emailSyncState.noProgressRuns} + 1`
+            : 0,
         updatedAt: new Date(),
       })
       .where(eq(emailSyncState.mailboxUserId, userId));
@@ -215,9 +243,16 @@ export async function syncUserGmail(userId: string): Promise<GmailSyncOutcome> {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     logger.error({ err: e, userId }, "Gmail sync run failed");
+    // A thrown run never reached its terminal cursor write, so it made no
+    // forward progress either — count it toward the stall threshold.
     await db
       .update(emailSyncState)
-      .set({ lastError: msg, lastSyncedAt: new Date(), updatedAt: new Date() })
+      .set({
+        lastError: msg,
+        lastSyncedAt: new Date(),
+        noProgressRuns: sql`${emailSyncState.noProgressRuns} + 1`,
+        updatedAt: new Date(),
+      })
       .where(eq(emailSyncState.mailboxUserId, userId));
     return { ok: false, error: msg };
   }

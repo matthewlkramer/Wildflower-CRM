@@ -10,7 +10,7 @@ import { asc, eq, isNull } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, paramId } from "../lib/helpers";
 import { getAppUser } from "../lib/appRequest";
-import { syncUserGmail } from "../lib/gmailSync";
+import { syncUserGmail, STUCK_NO_PROGRESS_THRESHOLD } from "../lib/gmailSync";
 import { syncUserCalendar } from "../lib/calendarSync";
 import { withSyncLock } from "../lib/syncLock";
 import { backfillIntelForUser } from "../lib/gmailBackfill";
@@ -56,6 +56,7 @@ router.get(
         gmailLastError: emailSyncState.lastError,
         gmailBootstrapCompletedAt: emailSyncState.bootstrapCompletedAt,
         gmailBootstrapPageToken: emailSyncState.bootstrapPageToken,
+        gmailNoProgressRuns: emailSyncState.noProgressRuns,
         calendarLastSyncedAt: calendarSyncState.lastSyncedAt,
         calendarLastError: calendarSyncState.lastError,
         calendarBootstrapCompletedAt: calendarSyncState.bootstrapCompletedAt,
@@ -90,6 +91,12 @@ router.get(
             r.gmailBootstrapCompletedAt?.toISOString() ?? null,
           bootstrapInProgress:
             !r.gmailBootstrapCompletedAt && !!r.gmailBootstrapPageToken,
+          noProgressRuns: r.gmailNoProgressRuns ?? 0,
+          // "Stuck" = the mailbox's cursor has been pinned by errors for
+          // STUCK_NO_PROGRESS_THRESHOLD consecutive runs. Quiet idle
+          // mailboxes reset the counter every clean run, so this never
+          // false-positives on an inbox that simply has no new mail.
+          stuck: (r.gmailNoProgressRuns ?? 0) >= STUCK_NO_PROGRESS_THRESHOLD,
         },
         calendar: {
           lastSyncedAt: r.calendarLastSyncedAt?.toISOString() ?? null,
@@ -98,6 +105,10 @@ router.get(
             r.calendarBootstrapCompletedAt?.toISOString() ?? null,
           bootstrapInProgress:
             !r.calendarBootstrapCompletedAt && !!r.calendarBootstrapPageToken,
+          // Calendar sync doesn't track no-progress runs yet; report the
+          // shared shape as healthy so the admin panel stays consistent.
+          noProgressRuns: 0,
+          stuck: false,
         },
       })),
     });
