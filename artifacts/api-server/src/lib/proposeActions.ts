@@ -11,8 +11,9 @@ import {
   type EmailProposal,
 } from "@workspace/db/schema";
 import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, withRateLimitRetry } from "@workspace/integrations-anthropic-ai";
 import { deadlineHasPassed } from "./intelDetectors";
+import { aiProposalLimit } from "./aiConcurrency";
 import { logger } from "./logger";
 
 /**
@@ -802,35 +803,55 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
       messageBody,
     });
 
-    const response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 8192,
-      // Prompt caching: a single cache breakpoint on the system block
-      // caches everything before it in the request (the ~2.3k-token tool
-      // schema + this ~0.9k-token system prompt). Both are byte-identical
-      // on every call, so during bootstrapping batches we pay the full
-      // input rate once per ~5-minute window and a ~90%-discounted "cache
-      // read" rate thereafter. The per-proposal user prompt stays
-      // uncached (it changes every call).
-      system: [
+    // Route the AI call through (a) a process-global concurrency limiter so
+    // a sync's inline fan-out can't burst many simultaneous requests at the
+    // shared integration proxy, and (b) a rate-limit-aware retry that backs
+    // off on transient 429 / RATELIMIT_EXCEEDED / quota responses (honoring
+    // retry-after when the proxy sends it) instead of letting them land as a
+    // permanent actions_error. Non-rate-limit errors still fail fast and are
+    // recorded below. We disable the SDK's own retries (maxRetries: 0) so
+    // backoff is owned solely by withRateLimitRetry — no double-retrying.
+    const response = await aiProposalLimit(() =>
+      withRateLimitRetry(
+        () =>
+          anthropic.messages.create({
+            model: MODEL,
+            max_tokens: 8192,
+            // Prompt caching: a single cache breakpoint on the system block
+            // caches everything before it in the request (the ~2.3k-token
+            // tool schema + this ~0.9k-token system prompt). Both are
+            // byte-identical on every call, so during bootstrapping batches
+            // we pay the full input rate once per ~5-minute window and a
+            // ~90%-discounted "cache read" rate thereafter. The per-proposal
+            // user prompt stays uncached (it changes every call).
+            system: [
+              {
+                type: "text",
+                text: buildSystemPrompt(),
+                cache_control: { type: "ephemeral" },
+              },
+            ],
+            tools: [ACTION_TOOL_SCHEMA as unknown as Parameters<typeof anthropic.messages.create>[0]["tools"] extends (infer U)[] | undefined ? U : never],
+            tool_choice: { type: "tool", name: "propose_actions" },
+            messages: [{ role: "user", content: userPrompt }],
+          }, {
+            // Bound each call so an occasional stalled request on the
+            // integration proxy can't freeze a sequential sweep (or hold an
+            // inline fire-and-forget) for the SDK's 10-minute default. The
+            // retry/backoff is owned by withRateLimitRetry, so turn off the
+            // SDK's built-in retries to avoid stacking two backoff loops.
+            timeout: 60000,
+            maxRetries: 0,
+          }),
         {
-          type: "text",
-          text: buildSystemPrompt(),
-          cache_control: { type: "ephemeral" },
+          onRetry: ({ attempt, delayMs }) =>
+            logger.info(
+              { proposalId, attempt, delayMs },
+              "proposeActionsForProposal: rate-limited, backing off",
+            ),
         },
-      ],
-      tools: [ACTION_TOOL_SCHEMA as unknown as Parameters<typeof anthropic.messages.create>[0]["tools"] extends (infer U)[] | undefined ? U : never],
-      tool_choice: { type: "tool", name: "propose_actions" },
-      messages: [{ role: "user", content: userPrompt }],
-    }, {
-      // Bound each call so an occasional stalled request on the
-      // integration proxy can't freeze a sequential sweep (or hold an
-      // inline fire-and-forget) for the SDK's 10-minute default. On
-      // timeout the SDK retries (default maxRetries=2) and, if still
-      // unresolved, throws — recorded on the row's actions_error so the
-      // phase-D retry pass can pick it up later.
-      timeout: 60000,
-    });
+      ),
+    );
 
     let actions: ProposedAction[] = [];
     let suppress: { shouldSuppress?: boolean; reason?: string } | null = null;

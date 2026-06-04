@@ -52,33 +52,58 @@ export async function analyzePendingForUser(
     );
   }
 
-  while (true) {
-    const rows = await db
-      .select({ id: emailProposals.id })
-      .from(emailProposals)
-      .where(
-        and(
-          eq(emailProposals.mailboxUserId, userId),
-          eq(emailProposals.status, "pending"),
-          sql`${emailProposals.actionsAnalyzedAt} is null`,
-        ),
-      )
-      .limit(50);
-    if (rows.length === 0) break;
-    for (const { id } of rows) {
-      try {
-        const r = await proposeActionsForProposal(id);
-        if (r.error) errors++;
-        else analyzed++;
-      } catch (err) {
-        errors++;
-        logger.warn(
-          { err, userId, proposalId: id },
-          "analyze-pending: proposeActionsForProposal threw",
-        );
+  // Two phases, each strictly sequential:
+  //   - "fresh"  → rows never analyzed (actions_analyzed_at IS NULL).
+  //   - "retry"  → rows that previously errored (actions_error IS NOT NULL).
+  // Unlike the backfill's phase-D retry pass, this on-demand sweep does NOT
+  // gate retries on the 24h cooldown: it's an operator-triggered cleanup
+  // meant to drain the existing rate-limit error backlog immediately once
+  // the backoff fix is in. A per-phase seenIds set prevents reprocessing a
+  // row within the same sweep (a row that errors again would otherwise keep
+  // matching the retry predicate forever).
+  for (const phase of ["fresh", "retry"] as const) {
+    const seenIds = new Set<string>();
+    while (true) {
+      const rows = await db
+        .select({ id: emailProposals.id })
+        .from(emailProposals)
+        .where(
+          and(
+            eq(emailProposals.mailboxUserId, userId),
+            eq(emailProposals.status, "pending"),
+            phase === "fresh"
+              ? sql`${emailProposals.actionsAnalyzedAt} is null`
+              : sql`${emailProposals.actionsError} is not null`,
+          ),
+        )
+        .limit(50);
+      const fresh = rows.filter((r) => !seenIds.has(r.id));
+      if (fresh.length === 0) break;
+      for (const { id } of fresh) {
+        seenIds.add(id);
+        try {
+          // The retry phase's rows still carry a real actions_analyzed_at,
+          // so clear it first — proposeActionsForProposal's atomic claim
+          // only takes rows where actions_analyzed_at IS NULL.
+          if (phase === "retry") {
+            await db
+              .update(emailProposals)
+              .set({ actionsAnalyzedAt: null, updatedAt: new Date() })
+              .where(eq(emailProposals.id, id));
+          }
+          const r = await proposeActionsForProposal(id);
+          if (r.error) errors++;
+          else analyzed++;
+        } catch (err) {
+          errors++;
+          logger.warn(
+            { err, userId, proposalId: id, phase },
+            "analyze-pending: proposeActionsForProposal threw",
+          );
+        }
       }
+      logger.info({ userId, phase, analyzed, errors }, "analyze-pending progress");
     }
-    logger.info({ userId, analyzed, errors }, "analyze-pending progress");
   }
   return { analyzed, errors };
 }

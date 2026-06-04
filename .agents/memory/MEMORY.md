@@ -14,3 +14,4 @@
 - [Copper notes migration](copper-notes-migration.md) — one-time Copper→notes import; idempotent copper_<id>, strip-tags-before-decode, conservative matching, run via nohup (exceeds 120s).
 - [Per-recipient open tracking (Path A)](wildflower-per-recipient-tracking.md) — multi-recipient server-send guardrails (Bcc/attachment/reply fallback, region-scoped chip extraction, extension-token auth, gmail.send reconnect).
 - [prod→dev data sync](prod-dev-data-sync.md) — mirror prod rows into dev w/o reverting dev edits (funders.about ties); funders text overflows json_agg; apply via json_populate + replica mode; verify INCLUDE→EXCLUDE FKs first.
+- [AI proposal call resilience](wildflower-ai-proposal-resilience.md) — per-proposal Anthropic call must use withRateLimitRetry + shared aiProposalLimit; SDK maxRetries:0; sweep retry phase drains error backlog w/o 24h cooldown.

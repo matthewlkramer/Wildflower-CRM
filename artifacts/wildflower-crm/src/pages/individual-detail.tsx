@@ -452,7 +452,17 @@ function PersonView({ person }: { person: PersonDetail }) {
       label: "Lifetime giving",
       value: formatCurrency(person.lifetimeGiving),
     },
-    { label: "Last contacted", value: formatDate(person.lastContacted) },
+    {
+      label: "Owner",
+      value: (
+        <InlineEditUserPicker
+          testIdBase="person-owner-header"
+          value={person.ownerUserId ?? null}
+          display={ownerDisplay}
+          onSave={(next) => patch({ ownerUserId: next })}
+        />
+      ),
+    },
   ];
 
   const roles = person.roles ?? [];
