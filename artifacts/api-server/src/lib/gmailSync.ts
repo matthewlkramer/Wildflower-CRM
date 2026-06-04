@@ -77,7 +77,7 @@ import {
  *   e. If unmatched: insert into `email_sync_skip` ON CONFLICT DO
  *      NOTHING.
  *
- * Failure semantics: per-message transient failures (network blip,
+ * Failure semantics: per-message *transient* failures (network blip,
  * 5xx from Gmail, GCS write error) return `false` from
  * `processOneMessage` and bump `report.errors`. When any page has a
  * non-zero error count, that page's pagination cursor is NOT
@@ -85,6 +85,15 @@ import {
  * `filterUnseenIds` ensures already-stored messages aren't
  * re-processed, so only the failures get retried. This is the
  * simplest correct retry policy that loses nothing.
+ *
+ * Per-message *permanent* failures are different: a 404
+ * (`GmailNotFoundError`) means Gmail listed the id in its history feed
+ * but the message has since been deleted. It will never come back, so
+ * treating it as transient would pin the cursor forever and block all
+ * newer mail for that user. Instead `processOneMessage` records a
+ * permanent skip row (`recordPermanentSkip`) and returns `true`, so the
+ * id is filtered out next run and the cursor advances past the dead
+ * page.
  */
 
 // Empty query = bootstrap the entire mailbox (Gmail excludes Spam and
@@ -302,7 +311,8 @@ async function runBootstrapPass(
   }
 }
 
-async function runIncrementalPass(
+// Exported for regression tests (deleted-message cursor advancement).
+export async function runIncrementalPass(
   grant: ActiveGoogleGrant,
   state: EmailSyncState,
   report: GmailSyncReport,
@@ -426,6 +436,43 @@ async function filterUnseenIds(
 }
 
 /**
+ * Record a message as permanently skipped so it is filtered out of all
+ * future sync passes (via `filterUnseenIds`) and never re-fetched. Used
+ * when Gmail 404s a message id it had previously listed in its history
+ * feed — the message has been deleted and will never come back, so we
+ * must let the cursor move past it instead of replaying the dead page
+ * forever. Header fields are best-effort: on a metadata-fetch 404 we
+ * have nothing, on a full-fetch 404 we still have the metadata headers.
+ */
+async function recordPermanentSkip(
+  userId: string,
+  gmailId: string,
+  fields?: {
+    fromAddrs?: string[];
+    toAddrs?: string[];
+    ccAddrs?: string[];
+    bccAddrs?: string[];
+    subject?: string | null;
+    sentAt?: Date | null;
+  },
+): Promise<void> {
+  await db
+    .insert(emailSyncSkip)
+    .values({
+      mailboxUserId: userId,
+      gmailMessageId: gmailId,
+      // Omitted array columns fall back to their DB default ('{}').
+      ...(fields?.fromAddrs ? { fromAddrs: fields.fromAddrs } : {}),
+      ...(fields?.toAddrs ? { toAddrs: fields.toAddrs } : {}),
+      ...(fields?.ccAddrs ? { ccAddrs: fields.ccAddrs } : {}),
+      ...(fields?.bccAddrs ? { bccAddrs: fields.bccAddrs } : {}),
+      subject: fields?.subject ?? null,
+      sentAt: fields?.sentAt ?? null,
+    })
+    .onConflictDoNothing();
+}
+
+/**
  * Returns true if the message was fully processed (or was already
  * stored — in which case we still try to top up missing attachments
  * idempotently). Returns false on any per-message error worth
@@ -452,6 +499,25 @@ async function processOneMessage(
   try {
     meta = await getMessage(grant.accessToken, gmailId, "metadata");
   } catch (e) {
+    // Permanent (404 — the message Gmail listed in its history feed has
+    // since been deleted): if we returned false here we'd hold the page
+    // cursor forever, because `pageErrors > 0` blocks cursor
+    // advancement. A deleted message never comes back, so the page would
+    // fail every cycle and no newer emails would ever sync for this
+    // user. Record a permanent skip row (so this id is filtered next
+    // run) and return true so the pass advances past it. Logged once at
+    // info — not re-warned every cycle.
+    if (e instanceof GmailNotFoundError) {
+      await recordPermanentSkip(grant.userId, gmailId);
+      logger.info(
+        { userId: grant.userId, gmailId },
+        "Gmail message gone (404) on metadata fetch; recorded permanent skip",
+      );
+      report.skipped++;
+      return true;
+    }
+    // Transient (network blip, 5xx, rate limit): hold the cursor and
+    // retry next sync, unchanged.
     logger.warn(
       { err: e, userId: grant.userId, gmailId },
       "Failed to fetch Gmail metadata; will retry next sync",
@@ -601,6 +667,27 @@ async function processOneMessage(
   try {
     full = await getMessage(grant.accessToken, gmailId, "full");
   } catch (e) {
+    // Permanent (404): the message was deleted between the metadata and
+    // full fetch. Same reasoning as the metadata-fetch 404 above —
+    // record a permanent skip (with the headers we already have from
+    // metadata so a later re-match stays possible) and advance the
+    // cursor instead of blocking it forever.
+    if (e instanceof GmailNotFoundError) {
+      await recordPermanentSkip(grant.userId, gmailId, {
+        fromAddrs,
+        toAddrs,
+        ccAddrs,
+        bccAddrs,
+        subject: getHeader(meta.payload, "Subject") ?? null,
+        sentAt: Number.isNaN(messageDate.getTime()) ? null : messageDate,
+      });
+      logger.info(
+        { userId: grant.userId, gmailId },
+        "Gmail message gone (404) on full fetch; recorded permanent skip",
+      );
+      report.skipped++;
+      return true;
+    }
     logger.warn(
       { err: e, userId: grant.userId, gmailId },
       "Matched message but full fetch failed; will retry next sync",
