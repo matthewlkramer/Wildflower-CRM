@@ -23,6 +23,20 @@ ON CONFLICT form and the unique index. The manual script must call
 `runMediaIngestIfDue({force:true})` (shares the global advisory lock + state table),
 never `ingestMediaMentions()` directly — calling the inner fn bypasses the lock.
 
+## Rule: "deleting" a media mention is a soft-delete (dismissed tombstone)
+`media_mentions.dismissed` (boolean) is the soft-delete flag. The DELETE endpoint
+UPDATEs `dismissed = true` instead of removing the row; the list endpoint always
+filters `dismissed = false`; the ingest upsert's `DO UPDATE ... WHERE` guard adds
+`media_mentions.dismissed = false` so a dismissed url is never re-linked/un-dismissed.
+
+**Why:** a hard DELETE left the url free, so the next GDELT sweep re-inserted the
+same article (dedupe is by url) and the mention came back. Keeping the row as a
+url tombstone is the only way the dismissal survives a sync.
+
+**How to apply:** dismissal is GLOBAL per article (per url) — it hides the mention
+for every linked entity, by design. Keep the guard inside the single ON CONFLICT
+statement (don't add a read-then-write). No admin trash/undo UI yet.
+
 ## Rule: do NOT AI-summarize auto-ingested headlines
 Store the GDELT headline verbatim in `title`; leave `aiSummary` null for `source='gdelt'`.
 

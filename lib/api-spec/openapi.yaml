@@ -4035,7 +4035,7 @@ components:
     # ─── Media mentions ────────────────────────────────────────────────────────
     MediaMention:
       type: object
-      required: [id, publicationName, url, pinned, createdAt, updatedAt]
+      required: [id, publicationName, url, pinned, dismissed, createdAt, updatedAt]
       properties:
         id:              { type: string }
         publicationName: { type: string }
@@ -4046,6 +4046,10 @@ components:
         aiSummary:       { type: string, nullable: true }
         source:          { type: string, nullable: true }
         pinned:          { type: boolean }
+        # Soft-delete tombstone. Dismissed mentions are never returned by the
+        # list endpoint; the field is exposed for completeness on single-row
+        # reads. DELETE marks this true instead of removing the row.
+        dismissed:       { type: boolean }
         personIds:       { type: array, items: { type: string }, nullable: true }
         organizationIds:       { type: array, items: { type: string }, nullable: true }
         createdAt:       { type: string, format: date-time }

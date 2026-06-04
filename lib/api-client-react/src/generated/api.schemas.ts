@@ -2325,6 +2325,7 @@ export interface MediaMention {
   aiSummary?: string | null;
   source?: string | null;
   pinned: boolean;
+  dismissed: boolean;
   personIds?: string[] | null;
   organizationIds?: string[] | null;
   createdAt: string;

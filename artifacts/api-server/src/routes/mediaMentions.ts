@@ -36,7 +36,9 @@ router.get(
     const q = parseOrBadRequest(ListMediaMentionsQueryParams, req.query, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
-    const filters: SQL[] = [];
+    // Never surface dismissed (soft-deleted) mentions; counts/pagination
+    // must reflect this too, so it's part of the shared WHERE.
+    const filters: SQL[] = [eq(mediaMentions.dismissed, false)];
     if (q.search) {
       const search = or(
         ilike(mediaMentions.publicationName, `%${q.search}%`),
@@ -50,7 +52,7 @@ router.get(
     if (q.organizationId)
       filters.push(sql`${mediaMentions.organizationIds} @> ARRAY[${q.organizationId}]::text[]`);
     if (q.pinned !== undefined) filters.push(eq(mediaMentions.pinned, q.pinned));
-    const where = filters.length ? and(...filters) : undefined;
+    const where = and(...filters);
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
         .select()
@@ -126,10 +128,18 @@ router.patch(
   }),
 );
 
+// "Delete" is a SOFT delete: we mark the row dismissed instead of removing it.
+// Retaining the row keeps its `url` on record as a tombstone so a later GDELT
+// sweep can't re-insert/re-link the exact same article (see mediaIngest's
+// upsert guard). Dismissal is global per article — it hides the mention for
+// every linked entity, not just one. An admin trash/undo UI is out of scope.
 router.delete(
   "/media-mentions/:id",
   asyncHandler(async (req, res) => {
-    await db.delete(mediaMentions).where(eq(mediaMentions.id, paramId(req)));
+    await db
+      .update(mediaMentions)
+      .set({ dismissed: true, updatedAt: new Date() })
+      .where(eq(mediaMentions.id, paramId(req)));
     res.status(204).end();
   }),
 );

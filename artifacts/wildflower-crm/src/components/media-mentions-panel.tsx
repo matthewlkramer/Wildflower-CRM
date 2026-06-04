@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import {
   useUpdateMediaMention,
   useDeleteMediaMention,
@@ -8,6 +7,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import {
   Card,
   CardContent,
@@ -85,13 +85,13 @@ export function MediaPinButton({
 }
 
 /**
- * Trash-can delete button with a two-click arm-then-confirm pattern.
- * First click turns the icon red and starts a 3-second disarm timer.
- * Second click within that window fires the DELETE mutation.
+ * Trash-can delete button. A single click opens an explicit confirmation
+ * dialog (no hidden double-click); confirming fires the DELETE, which the
+ * server treats as a soft delete (the mention is marked dismissed so a future
+ * GDELT sync can't bring it back). On success we invalidate every
+ * media-mention list so the activity feed + pinned card drop the row.
  */
 export function MediaDeleteButton({ id }: { id: string }) {
-  const [armed, setArmed] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -113,40 +113,29 @@ export function MediaDeleteButton({ id }: { id: string }) {
     },
   });
 
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const handleClick = () => {
-    if (armed) {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      setArmed(false);
-      deleteMutation.mutate({ id });
-    } else {
-      setArmed(true);
-      timerRef.current = setTimeout(() => setArmed(false), 3000);
-    }
-  };
-
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={deleteMutation.isPending}
-      aria-label={armed ? "Click again to confirm delete" : "Delete media mention"}
-      title={armed ? "Click again to confirm delete" : "Delete this media mention"}
-      className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded p-0.5 transition-colors disabled:opacity-50",
-        armed
-          ? "text-destructive hover:text-destructive/80"
-          : "text-muted-foreground hover:text-destructive",
-      )}
-      data-testid={`button-delete-media-${id}`}
-    >
-      <Trash2 className="h-3.5 w-3.5" />
-    </button>
+    <ConfirmDeleteDialog
+      title="Remove this media mention?"
+      description="It will disappear from the activity feed and won't be brought back by a future news sync."
+      confirmLabel="Remove"
+      confirmTestId={`confirm-delete-media-${id}`}
+      onConfirm={() => deleteMutation.mutateAsync({ id })}
+      trigger={
+        <button
+          type="button"
+          disabled={deleteMutation.isPending}
+          aria-label="Delete media mention"
+          title="Delete this media mention"
+          className={cn(
+            "inline-flex shrink-0 items-center justify-center rounded p-0.5 transition-colors disabled:opacity-50",
+            "text-muted-foreground hover:text-destructive",
+          )}
+          data-testid={`button-delete-media-${id}`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      }
+    />
   );
 }
 

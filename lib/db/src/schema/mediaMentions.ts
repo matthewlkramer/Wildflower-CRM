@@ -35,6 +35,12 @@ export const mediaMentions = pgTable(
     // for hand-entered mentions. Lets the UI/cleanup distinguish the two.
     source: text("source"),
     pinned: boolean("pinned").notNull().default(false),
+    // Soft-delete tombstone. "Deleting" a mention sets this true rather than
+    // removing the row, so the URL stays on record as a dedupe key and a later
+    // GDELT sweep can't re-insert/re-link the same article. Dismissed rows are
+    // excluded from every list response. Dismissal is GLOBAL per article (per
+    // url), not per linked entity — hiding a mention hides it everywhere.
+    dismissed: boolean("dismissed").notNull().default(false),
     personIds: text("person_ids").array(),
     organizationIds: text("organization_ids").array(),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -48,6 +54,7 @@ export const mediaMentions = pgTable(
     index("media_mentions_created_at_idx").on(t.createdAt),
     index("media_mentions_publication_date_idx").on(t.publicationDate),
     index("media_mentions_pinned_idx").on(t.pinned),
+    index("media_mentions_dismissed_idx").on(t.dismissed),
     index("media_mentions_person_ids_gin_idx").using("gin", t.personIds),
     index("media_mentions_organization_ids_gin_idx").using("gin", t.organizationIds),
     // URL is the dedupe key for the GDELT ingestion upsert. A unique index

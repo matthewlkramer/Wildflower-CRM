@@ -217,7 +217,8 @@ async function upsertArticle(
     ON CONFLICT (url) DO UPDATE SET
       ${col} = array_append(coalesce(media_mentions.${col}, '{}'::text[]), ${target.id}),
       updated_at = now()
-    WHERE NOT (coalesce(media_mentions.${col}, '{}'::text[]) @> ARRAY[${target.id}]::text[])
+    WHERE media_mentions.dismissed = false
+      AND NOT (coalesce(media_mentions.${col}, '{}'::text[]) @> ARRAY[${target.id}]::text[])
     RETURNING (xmax = 0) AS inserted
   `);
 
