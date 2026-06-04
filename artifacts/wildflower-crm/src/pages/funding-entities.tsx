@@ -84,20 +84,9 @@ const SUBTYPES: string[] = [
   "platform",
 ];
 
-// Subtypes excluded from the default Subtype filter. Fundraising users
-// almost never care about these in day-to-day list views; they can still
-// opt in by toggling them on (or clicking Clear and reselecting).
-const DEFAULT_EXCLUDED_SUBTYPES: string[] = [
-  "nonprofit",
-  "education_forprofit",
-  "corporation",
-  "daf_platform",
-  "platform",
-  "capital_provider",
-];
-const DEFAULT_SUBTYPES: string[] = SUBTYPES.filter(
-  (s) => !DEFAULT_EXCLUDED_SUBTYPES.includes(s),
-);
+// The Type filter is unfiltered by default — all organization types show
+// until the user opts into a subset.
+const DEFAULT_SUBTYPES: string[] = [];
 
 const ACTIVE_STATUSES: ActiveStatus[] = ["active", "defunct", "spenddown"];
 const DEFAULT_ACTIVE_STATUSES: ActiveStatus[] = ["active", "spenddown"];
@@ -517,7 +506,7 @@ export default function Organizations() {
         clear: () => { setSubtypes(DEFAULT_SUBTYPES); setPage(1); selection.clear(); },
         render: () => (
           <MultiFilterSelect
-            label="Subtype"
+            label="Type"
             selected={subtypes}
             onChange={(v) => { setSubtypes(v); setPage(1); selection.clear(); }}
             options={SUBTYPES}
