@@ -11,6 +11,7 @@
     "test": "vitest run",
     "ingest:media": "tsx src/scripts/ingest-media-mentions.ts",
     "sync:flodesk": "tsx src/scripts/sync-flodesk.ts",
+    "backfill:flodesk": "tsx src/scripts/backfill-flodesk.ts",
     "backfill:derived-opps": "tsx src/scripts/backfill-derived-opp-fields.ts",
     "reconcile:unknown-users": "tsx src/scripts/reconcile-unknown-users.ts",
     "backfill:user-identities": "tsx src/scripts/backfill-user-identities.ts",
