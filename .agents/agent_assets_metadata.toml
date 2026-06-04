@@ -66,3 +66,15 @@ id = "EYOG0hqsEeVV2lbI_hrwj"
 uri = "file://review-samples/emails-skipped-sample.csv"
 type = "table"
 title = "Gmail Skipped — 1,000 random (no CRM match)"
+
+[[outputs]]
+id = "6SdamYbcevvMWifN9mHAT"
+uri = "file://.local/sync-review/dev-sync-changes.csv"
+type = "table"
+title = "Every proposed change to dev (376 rows)"
+
+[[outputs]]
+id = "1zU2NcdQCZRu9xV_U8CAR"
+uri = "file://.local/sync-review/dev-sync-summary.csv"
+type = "table"
+title = "Per-table summary + include/exclude list"
