@@ -419,8 +419,9 @@ export function InlineEditMultiSelect({
 /* ──────────────────────────────────────────────────────────────────────── */
 /* Suggestion sets for the interests* tag arrays                            */
 /*                                                                          */
-/* These are the union of distinct values observed across the funders +     */
-/* people tables in the seeded DB. Both columns are free-form text[]        */
+/* Canonical normalized set of distinct values across the organizations +    */
+/* people tables (legacy snake_case + casing duplicates were merged into     */
+/* these — see lib/db/migrations/0006). Both columns are free-form text[]    */
 /* server-side (no enum), so users can add new tags via the "Add 'X'"       */
 /* affordance — the lists here are just convenience suggestions.            */
 /* ──────────────────────────────────────────────────────────────────────── */
@@ -428,36 +429,23 @@ export function InlineEditMultiSelect({
 export const INTERESTS_THEMATIC_SUGGESTIONS: ReadonlyArray<MultiSelectOption> =
   [
     { value: "Black Wildflowers Fund", label: "Black Wildflowers Fund" },
+    { value: "Data accountability", label: "Data accountability" },
     { value: "Data-driven instruction", label: "Data-driven instruction" },
-    { value: "data_accountability", label: "Data accountability" },
-    { value: "Decentralized Governance", label: "Decentralized governance" },
+    { value: "Decentralized Governance", label: "Decentralized Governance" },
     { value: "ECE policy", label: "ECE policy" },
-    { value: "ece_policy", label: "ECE policy (legacy)" },
     { value: "Ed tech", label: "Ed tech" },
-    { value: "ed_tech", label: "Ed tech (legacy)" },
-    { value: "family_engagement", label: "Family engagement" },
     { value: "Geographic", label: "Geographic" },
     { value: "Intentional diversity", label: "Intentional diversity" },
-    { value: "intentional_diversity", label: "Intentional diversity (legacy)" },
     { value: "Microschools", label: "Microschools" },
-    {
-      value: "microschools_teacher_leadership",
-      label: "Microschools / teacher leadership",
-    },
     { value: "Montessori", label: "Montessori" },
-    { value: "montessori", label: "Montessori (legacy)" },
     { value: "Parent engagement", label: "Parent engagement" },
-    { value: "Platform Innovations", label: "Platform innovations" },
-    { value: "Racial Justice", label: "Racial justice" },
-    { value: "racial_equity", label: "Racial equity (legacy)" },
-    { value: "social_emotional", label: "Social-emotional" },
+    { value: "Platform Innovations", label: "Platform Innovations" },
+    { value: "Racial equity & justice", label: "Racial equity & justice" },
     { value: "Socio-emotional learning", label: "Socio-emotional learning" },
     { value: "Tax credits", label: "Tax credits" },
     { value: "Women", label: "Women" },
-    { value: "women", label: "Women (legacy)" },
     { value: "Workforce development", label: "Workforce development" },
-    { value: "workforce", label: "Workforce (legacy)" },
-    { value: "youth", label: "Youth" },
+    { value: "Youth", label: "Youth" },
   ];
 
 export const INTERESTS_AGES_SUGGESTIONS: ReadonlyArray<MultiSelectOption> = [
