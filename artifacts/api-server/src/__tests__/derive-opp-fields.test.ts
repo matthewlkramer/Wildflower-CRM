@@ -16,9 +16,9 @@ describe("deriveOppFields", () => {
       const r = deriveOppFields({ ...base, stage: "qualified" });
       expect(r.status).toBe("open");
     });
-    it("verbal_commitment unpaid → status=pledge", () => {
-      const r = deriveOppFields({ ...base, stage: "verbal_commitment" });
-      expect(r.status).toBe("pledge");
+    it("verbal_confirmation unpaid → status=open (treated as opportunity, not pledge)", () => {
+      const r = deriveOppFields({ ...base, stage: "verbal_confirmation" });
+      expect(r.status).toBe("open");
     });
     it("written_commitment unpaid → status=pledge, no stage advance", () => {
       const r = deriveOppFields({ ...base, stage: "written_commitment" });
@@ -46,7 +46,7 @@ describe("deriveOppFields", () => {
       const r = deriveOppFields({ ...base, stage: "cash_in" });
       expect(r.status).toBe("cash_in");
     });
-    it("conditional_commitment → status=open (only verbal/written promote to pledge)", () => {
+    it("conditional_commitment → status=open (only written promotes status to pledge)", () => {
       const r = deriveOppFields({ ...base, stage: "conditional_commitment" });
       expect(r.status).toBe("open");
     });
@@ -92,7 +92,7 @@ describe("deriveOppFields", () => {
       const r = deriveOppFields({
         ...base,
         lossType: null,
-        stage: "verbal_commitment",
+        stage: "written_commitment",
       });
       expect(r.status).toBe("pledge");
     });
@@ -113,9 +113,10 @@ describe("deriveOppFields", () => {
       const r = deriveOppFields({ ...base, stage: "conditional_commitment" });
       expect(r.wasPledge).toBe(true);
     });
-    it("flips false→true on verbal_commitment", () => {
-      const r = deriveOppFields({ ...base, stage: "verbal_commitment" });
-      expect(r.wasPledge).toBe(true);
+    it("does NOT flip wasPledge on verbal_confirmation (treated as opportunity)", () => {
+      const r = deriveOppFields({ ...base, stage: "verbal_confirmation" });
+      expect(r.wasPledge).toBe(false);
+      expect(r.status).toBe("open");
     });
     it("flips false→true on written_commitment", () => {
       const r = deriveOppFields({ ...base, stage: "written_commitment" });
@@ -146,7 +147,7 @@ describe("deriveOppFields", () => {
       const r = deriveOppFields({
         ...base,
         lossType: "dormant",
-        stage: "verbal_commitment",
+        stage: "written_commitment",
         wasPledge: true,
       });
       expect(r.wasPledge).toBe(true);
@@ -157,8 +158,11 @@ describe("deriveOppFields", () => {
 
 describe("canonicalWinProbability", () => {
   it("dormant/lost calculated status → 0.0000", () => {
-    expect(canonicalWinProbability("dormant", "verbal_commitment")).toBe("0.0000");
+    expect(canonicalWinProbability("dormant", "verbal_confirmation")).toBe("0.0000");
     expect(canonicalWinProbability("lost", "cash_in")).toBe("0.0000");
+  });
+  it("verbal_confirmation (open) keeps its 0.9000 stage default", () => {
+    expect(canonicalWinProbability("open", "verbal_confirmation")).toBe("0.9000");
   });
   it("calculated status overrides stage for pledge/cash_in", () => {
     expect(canonicalWinProbability("pledge", "cold_lead")).toBe("0.9000");
@@ -173,7 +177,7 @@ describe("canonicalWinProbability", () => {
   });
 
   it("win probability tracks the loss_type-derived status end-to-end", () => {
-    const lost = deriveOppFields({ ...base, lossType: "lost", stage: "verbal_commitment" });
+    const lost = deriveOppFields({ ...base, lossType: "lost", stage: "written_commitment" });
     expect(canonicalWinProbability(lost.status, lost.stage)).toBe("0.0000");
     const open = deriveOppFields({ ...base, lossType: null, stage: "in_conversation" });
     expect(canonicalWinProbability(open.status, open.stage)).toBe("0.2000");

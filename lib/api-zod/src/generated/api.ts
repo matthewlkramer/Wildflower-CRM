@@ -3116,7 +3116,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       status: zod
         .enum(["open", "pledge", "cash_in", "dormant", "lost"])
         .describe(
-          "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage ∈ (verbal_commitment, written_commitment) → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+          "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage = written_commitment                      → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage = written, or conditional\/grant-letter sticky flag)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
         )
         .nullish(),
       lossType: zod
@@ -3136,7 +3136,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
           "convince",
           "conditional_commitment",
           "probable_renewal",
-          "verbal_commitment",
+          "verbal_confirmation",
           "written_commitment",
           "cash_in",
         ])
@@ -3215,7 +3215,7 @@ export const CreateOpportunityOrPledgeBody = zod.object({
       "convince",
       "conditional_commitment",
       "probable_renewal",
-      "verbal_commitment",
+      "verbal_confirmation",
       "written_commitment",
       "cash_in",
     ])
@@ -3264,7 +3264,7 @@ export const GetOpportunityOrPledgeResponse = zod
     status: zod
       .enum(["open", "pledge", "cash_in", "dormant", "lost"])
       .describe(
-        "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage ∈ (verbal_commitment, written_commitment) → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+        "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage = written_commitment                      → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage = written, or conditional\/grant-letter sticky flag)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
       )
       .nullish(),
     lossType: zod
@@ -3284,7 +3284,7 @@ export const GetOpportunityOrPledgeResponse = zod
         "convince",
         "conditional_commitment",
         "probable_renewal",
-        "verbal_commitment",
+        "verbal_confirmation",
         "written_commitment",
         "cash_in",
       ])
@@ -3499,7 +3499,7 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
       "convince",
       "conditional_commitment",
       "probable_renewal",
-      "verbal_commitment",
+      "verbal_confirmation",
       "written_commitment",
       "cash_in",
     ])
@@ -3543,7 +3543,7 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   status: zod
     .enum(["open", "pledge", "cash_in", "dormant", "lost"])
     .describe(
-      "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage ∈ (verbal_commitment, written_commitment) → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage in verbal\/written)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+      "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage = written_commitment                      → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage = written, or conditional\/grant-letter sticky flag)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
     )
     .nullish(),
   lossType: zod
@@ -3563,7 +3563,7 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
       "convince",
       "conditional_commitment",
       "probable_renewal",
-      "verbal_commitment",
+      "verbal_confirmation",
       "written_commitment",
       "cash_in",
     ])
@@ -6662,7 +6662,7 @@ export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
         "convince",
         "conditional_commitment",
         "probable_renewal",
-        "verbal_commitment",
+        "verbal_confirmation",
         "written_commitment",
         "cash_in",
       ])

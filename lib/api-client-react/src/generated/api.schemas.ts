@@ -308,11 +308,11 @@ read-only — never set this directly. Derived server-side from stage +
 payments + lossType on every write:
   lossType set                                  → status = lossType
   else fully paid (paid≥awarded) or stage=cash_in → cash_in
-  else stage ∈ (verbal_commitment, written_commitment) → pledge
+  else stage = written_commitment                      → pledge
   else                                                 → open
 Values:
   open    — actively in the funnel, not yet committed
-  pledge  — funder has committed (stage in verbal/written)
+  pledge  — funder has committed (stage = written, or conditional/grant-letter sticky flag)
   cash_in — fully paid (stage=cash_in or sum of payments >= awarded)
   dormant — paused (mirrors lossType='dormant')
   lost    — declined/withdrawn (mirrors lossType='lost')
@@ -364,7 +364,7 @@ export const OpportunityStage = {
   convince: "convince",
   conditional_commitment: "conditional_commitment",
   probable_renewal: "probable_renewal",
-  verbal_commitment: "verbal_commitment",
+  verbal_confirmation: "verbal_confirmation",
   written_commitment: "written_commitment",
   cash_in: "cash_in",
 } as const;

@@ -113,10 +113,12 @@ mid-run as noise (retry), not a blocker.
 
 ## Known follow-ups (non-blocking)
 
-- **Production cutover** — prod is migrated by the Publish UI **"overwrite data"**
-  option (replaces prod data wholesale with dev's), not an agent script: the agent
-  can't write to prod and dev is a superset of prod. Re-publish with that option
-  after schema changes.
+- **Production data changes** — prod now holds **live data**, so the old "overwrite
+  data" cutover (replace prod wholesale with dev's) is no longer safe. The agent
+  cannot write to prod. Schema/code changes ship via the normal Publish flow;
+  every prod **data** change must be delivered as a reviewed, idempotent SQL file
+  (see `lib/db/migrations/` + its runbooks) and applied by a human with
+  `psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f <file>.sql`.
 - **Stale importer/docs** — `lib/db/src/import-airtable.mjs` and `lib/db/SCHEMA.md`
   still target the OLD split funders/organizations model; update them before any
   re-import (a re-import will otherwise fail).

@@ -6,7 +6,6 @@ import { eq, sql } from "drizzle-orm";
 // purposes of the Pledges page filter (wasPledge sticky-true).
 const PLEDGE_STAGES = new Set([
   "conditional_commitment",
-  "verbal_commitment",
   "written_commitment",
 ]);
 
@@ -31,7 +30,7 @@ const STAGE_WIN_PROBABILITY: Record<string, string> = {
   convince: "0.4000",
   conditional_commitment: "0.7500",
   probable_renewal: "0.7500",
-  verbal_commitment: "0.9000",
+  verbal_confirmation: "0.9000",
   written_commitment: "0.9000",
   cash_in: "1.0000",
 };
@@ -78,7 +77,7 @@ export interface DeriveOutput {
  * total paid against the pledge. `status` is FULLY CALCULATED:
  *   loss_type set                                  → status = loss_type
  *   else fully paid (paid≥awarded) OR stage=cash_in → 'cash_in'
- *   else stage ∈ (verbal, written)                  → 'pledge'
+ *   else stage = written_commitment                 → 'pledge'
  *   else                                            → 'open'
  * Mirrors the logic in applyDerivedOppFields so it can be unit-tested
  * without touching the DB.
@@ -101,10 +100,7 @@ export function deriveOppFields(input: DeriveInput): DeriveOutput {
     status = input.lossType;
   } else if (fullyPaid || input.stage === "cash_in") {
     status = "cash_in";
-  } else if (
-    input.stage === "verbal_commitment" ||
-    input.stage === "written_commitment"
-  ) {
+  } else if (input.stage === "written_commitment") {
     status = "pledge";
   } else {
     status = "open";
@@ -121,15 +117,15 @@ export function deriveOppFields(input: DeriveInput): DeriveOutput {
 /**
  * Recompute the derived fields on a single opportunity/pledge row.
  *
- *   was_pledge: sticky-true. Flips false→true when stage hits any of
- *     conditional/verbal/written or when a grant letter is on file.
+ *   was_pledge: sticky-true. Flips false→true when stage hits
+ *     conditional/written or when a grant letter is on file.
  *     Never auto-flipped back to false (users can clear it via PATCH).
  *
  *   status: FULLY CALCULATED — never user-set. The dormant/lost override
  *     now lives in the separate `loss_type` column; status reports it.
  *       loss_type set                                → loss_type value
  *       fully paid (paid≥awarded) OR stage='cash_in' → 'cash_in'
- *       stage ∈ (verbal, written)                    → 'pledge'
+ *       stage = written_commitment                   → 'pledge'
  *       everything else                              → 'open'
  *
  *   stage: when fully paid and currently 'written_commitment', advance

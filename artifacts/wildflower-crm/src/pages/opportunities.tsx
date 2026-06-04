@@ -63,7 +63,7 @@ const STAGES: OpportunityStage[] = [
   "convince",
   "conditional_commitment",
   "probable_renewal",
-  "verbal_commitment",
+  "verbal_confirmation",
   "written_commitment",
   "cash_in",
 ];
@@ -473,7 +473,7 @@ export default function Opportunities({
 
   const STAGE_ORDER: Record<string, number> = {
     cold_lead: 1, warm_lead: 2, in_conversation: 3, convince: 4,
-    conditional_commitment: 5, probable_renewal: 6, verbal_commitment: 7,
+    conditional_commitment: 5, probable_renewal: 6, verbal_confirmation: 7,
     written_commitment: 8, cash_in: 9,
   };
   const sortedRows = useMemo(

@@ -4,6 +4,7 @@
 - [wildflower list-page chooser pattern](wildflower-list-chooser-pattern.md) — 4 list pages share filter/column choosers; saved views persist null at default, known/hidden keeps opt-in filters hidden for predating views.
 - [media-mention GDELT dedupe](media-ingest-dedupe.md) — dedupe must stay DB-atomic ON CONFLICT upsert; manual script goes through the lock; never AI-summarize auto headlines.
 - [api-server runs a built bundle](wildflower-api-server-build.md) — schema/DB drift (e.g. "column X does not exist" 500) may be a stale build; restart rebuilds, check newest log.
+- [cross-env DB schema drift](cross-env-db-schema-drift.md) — successor task's dev DB lacks predecessor's new column (only code propagates); fix additively via SQL, never blunt push (drops unrelated drifted columns = data loss).
 - [api-zod must stay env-neutral](api-zod-cross-env.md) — imported by server AND browser; no URL/node/DOM globals; validate via pure regex + superRefine, PATCH re-validates merged state.
 - [wildflower email/calendar HTML entities](wildflower-html-entities.md) — Gmail/Calendar/Airtable text is HTML-escaped; decode at render via decodeHtmlEntities, not user-authored content.
 - [Donor XOR across split pickers](wildflower-donor-xor-pickers.md) — per-type donor pickers must send all 3 FK fields (null the rest) + allowNull=false to keep exactly-one invariant.

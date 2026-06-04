@@ -42,7 +42,7 @@ const STAGES: OpportunityStage[] = [
   "convince",
   "conditional_commitment",
   "probable_renewal",
-  "verbal_commitment",
+  "verbal_confirmation",
   "written_commitment",
   "cash_in",
 ];

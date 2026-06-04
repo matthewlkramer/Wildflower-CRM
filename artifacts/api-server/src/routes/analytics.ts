@@ -191,7 +191,7 @@ router.get(
         .select({ value: count() })
         .from(opportunitiesAndPledges)
         .where(
-          sql`(${opportunitiesAndPledges.wasPledge} = true OR ${opportunitiesAndPledges.stage} IN ('conditional_commitment','verbal_commitment','written_commitment'))`,
+          sql`(${opportunitiesAndPledges.wasPledge} = true OR ${opportunitiesAndPledges.stage} IN ('conditional_commitment','written_commitment'))`,
         ),
       db.select({ value: count() }).from(giftsAndPayments),
       fyMetricsFor(currentFy, entityIds),

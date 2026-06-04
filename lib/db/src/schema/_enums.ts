@@ -48,10 +48,11 @@ export const peopleRoleCurrentEnum = pgEnum("people_role_current", [
 // set directly by users. Derived from stage + payments + loss_type:
 //   loss_type set                         → status = loss_type (dormant|lost)
 //   else fully paid (paid≥awarded) or stage=cash_in → cash_in
-//   else stage ∈ (verbal_commitment, written_commitment)            → pledge
+//   else stage = written_commitment                                 → pledge
 //   else                                                             → open
 //   open    — actively in the funnel, not yet committed
-//   pledge  — funder has committed (stage in verbal/written)
+//   pledge  — funder has committed (stage = written, or conditional/
+//             grant-letter sticky flag)
 //   cash_in — fully paid (stage=cash_in or sum of payments >= awarded)
 //   dormant — paused (mirrors loss_type='dormant')
 //   lost    — declined/withdrawn (mirrors loss_type='lost')
@@ -252,7 +253,7 @@ export const opportunityStageEnum = pgEnum("opportunity_stage", [
   "convince",
   "conditional_commitment",
   "probable_renewal",
-  "verbal_commitment",
+  "verbal_confirmation",
   "written_commitment",
   "cash_in",
 ]);

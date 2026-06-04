@@ -173,7 +173,6 @@ export function LinkedOpportunitiesCard({
             // navigated in; everything else routes through /opportunities.
             const stageIsPledge =
               o.stage === "conditional_commitment" ||
-              o.stage === "verbal_commitment" ||
               o.stage === "written_commitment";
             const href =
               o.wasPledge || stageIsPledge

@@ -43,7 +43,7 @@ const STAGE_OPTIONS: { value: OpportunityStage; label: string }[] = [
   { value: "convince", label: "Convince" },
   { value: "conditional_commitment", label: "Conditional commitment" },
   { value: "probable_renewal", label: "Probable renewal" },
-  { value: "verbal_commitment", label: "Verbal commitment" },
+  { value: "verbal_confirmation", label: "Verbal confirmation" },
   { value: "written_commitment", label: "Written commitment" },
   { value: "cash_in", label: "Cash in" },
 ];

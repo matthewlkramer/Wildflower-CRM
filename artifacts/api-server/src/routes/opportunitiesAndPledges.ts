@@ -101,7 +101,6 @@ const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type", "ownerUserId"
 // Mirrors `PLEDGE_STAGES` in lib/pledgeStage.ts.
 const PLEDGE_STAGE_VALUES = [
   "conditional_commitment",
-  "verbal_commitment",
   "written_commitment",
 ] as const;
 
