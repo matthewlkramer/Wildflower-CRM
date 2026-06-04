@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import {
   entityTypeEnum,
+  organizationTypeEnum,
   numberOfEmployeesEnum,
   capacityRatingEnum,
   connectionStatusEnum,
@@ -93,9 +94,26 @@ export const organizations = pgTable("organizations", {
   anonymous: boolean("anonymous").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+
+  // ---- Deprecated (pre-consolidation) columns ------------------------------
+  // Superseded by activeStatus / entityType / parentOrganizationId during the
+  // funders→organizations consolidation, but still physically present in the
+  // dev AND prod databases. Re-declared here (like paymentIntermediaryId
+  // above) ONLY so `drizzle-kit push` sees no diff and does not try a
+  // data-loss DROP that aborts the entire post-merge push. Do NOT read or
+  // write these — a later reviewed migration will retire them from both DBs.
+  /** @deprecated superseded by activeStatus; retained to avoid push abort */
+  activeOrDefunct: text("active_or_defunct"),
+  /** @deprecated superseded by entityType; retained to avoid push abort */
+  type: organizationTypeEnum("type"),
+  /** @deprecated superseded by parentOrganizationId; retained to avoid push abort */
+  parentOrgId: text("parent_org_id").references((): AnyPgColumn => organizations.id, {
+    onDelete: "set null",
+  }),
 }, (t) => [
   index("organizations_owner_user_id_idx").on(t.ownerUserId),
   index("organizations_parent_organization_id_idx").on(t.parentOrganizationId),
+  index("organizations_parent_org_id_idx").on(t.parentOrgId),
   index("organizations_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
   index("organizations_priority_idx").on(t.priority),
   index("organizations_issues_grants_idx").on(t.issuesGrants),
