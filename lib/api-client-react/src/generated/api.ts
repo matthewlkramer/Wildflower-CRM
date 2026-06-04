@@ -13570,6 +13570,91 @@ export const useRejectStagedPayment = <
 };
 
 /**
+ * @summary Move an auto-excluded staged payment back to pending (false positive).
+ */
+export const getReIncludeStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/re-include`;
+};
+
+export const reIncludeStagedPayment = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StagedPayment> => {
+  return customFetch<StagedPayment>(getReIncludeStagedPaymentUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getReIncludeStagedPaymentMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reIncludeStagedPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reIncludeStagedPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["reIncludeStagedPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reIncludeStagedPayment>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return reIncludeStagedPayment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReIncludeStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reIncludeStagedPayment>>
+>;
+
+export type ReIncludeStagedPaymentMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Move an auto-excluded staged payment back to pending (false positive).
+ */
+export const useReIncludeStagedPayment = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reIncludeStagedPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reIncludeStagedPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getReIncludeStagedPaymentMutationOptions(options));
+};
+
+/**
  * Returns all organizations with priority='top' and all people with priority='top'
 who are NOT currently affiliated with a top-priority organization. Each row carries
 computed open-opportunity count, open-task count, affiliated people (organizations)

@@ -74,7 +74,9 @@ router.get(
     const rawStatus =
       typeof req.query["status"] === "string" ? req.query["status"] : "pending";
     const status =
-      rawStatus === "approved" || rawStatus === "rejected"
+      rawStatus === "approved" ||
+      rawStatus === "rejected" ||
+      rawStatus === "excluded"
         ? rawStatus
         : "pending";
     const { limit, offset, page } = parsePagination(req.query);
@@ -274,20 +276,74 @@ router.post(
   }),
 );
 
+// ─── POST /staged-payments/:id/re-include ──────────────────────────────────
+// Move an auto-excluded row back to the pending queue (false positive). Clears
+// the exclusion reason. Only an excluded row can be re-included.
+router.post(
+  "/staged-payments/:id/re-include",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const existing = await db
+      .select({ status: stagedPayments.status })
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (!existing) return notFound(res, "staged payment");
+    if (existing.status !== "excluded") {
+      res.status(409).json({
+        error: "not_excluded",
+        message: "Only excluded staged payments can be re-included.",
+      });
+      return;
+    }
+    const [row] = await db
+      .update(stagedPayments)
+      .set({
+        status: "pending",
+        exclusionReason: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(stagedPayments.id, id))
+      .returning();
+    res.json(row);
+  }),
+);
+
 // ─── GET /staged-payments-summary ──────────────────────────────────────────
 // Lightweight counts for badges.
 router.get(
   "/staged-payments-summary",
   asyncHandler(async (_req, res) => {
-    const rows = await db
-      .select({ status: stagedPayments.status, value: count() })
-      .from(stagedPayments)
-      .groupBy(stagedPayments.status);
-    const summary = { pending: 0, approved: 0, rejected: 0 };
-    for (const r of rows) {
-      summary[r.status as keyof typeof summary] = r.value;
+    const [statusRows, reasonRows] = await Promise.all([
+      db
+        .select({ status: stagedPayments.status, value: count() })
+        .from(stagedPayments)
+        .groupBy(stagedPayments.status),
+      db
+        .select({
+          reason: stagedPayments.exclusionReason,
+          value: count(),
+        })
+        .from(stagedPayments)
+        .where(eq(stagedPayments.status, "excluded"))
+        .groupBy(stagedPayments.exclusionReason),
+    ]);
+
+    const summary = { pending: 0, approved: 0, rejected: 0, excluded: 0 };
+    for (const r of statusRows) {
+      if (r.status in summary) {
+        summary[r.status as keyof typeof summary] = r.value;
+      }
     }
-    res.json(summary);
+
+    const excludedByReason = { zero_amount: 0, loan: 0, membership: 0 };
+    for (const r of reasonRows) {
+      if (r.reason && r.reason in excludedByReason) {
+        excludedByReason[r.reason as keyof typeof excludedByReason] = r.value;
+      }
+    }
+
+    res.json({ ...summary, excludedByReason });
   }),
 );
 

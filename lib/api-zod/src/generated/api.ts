@@ -6723,7 +6723,7 @@ export const listStagedPaymentsQueryPageDefault = 1;
 
 export const ListStagedPaymentsQueryParams = zod.object({
   status: zod
-    .enum(["pending", "approved", "rejected"])
+    .enum(["pending", "approved", "rejected", "excluded"])
     .optional()
     .describe("Filter by review status (default pending)."),
   limit: zod.coerce
@@ -6746,7 +6746,13 @@ export const ListStagedPaymentsResponse = zod.object({
       payerName: zod.string().nullish(),
       payerEmail: zod.string().nullish(),
       rawReference: zod.string().nullish(),
-      status: zod.enum(["pending", "approved", "rejected"]),
+      status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+      exclusionReason: zod
+        .enum(["zero_amount", "loan", "membership"])
+        .nullish(),
+      lineItemNames: zod.array(zod.string()).nullish(),
+      lineAccountNames: zod.array(zod.string()).nullish(),
+      lineClasses: zod.array(zod.string()).nullish(),
       matchStatus: zod.enum(["matched", "unmatched"]),
       organizationId: zod.string().nullish(),
       individualGiverPersonId: zod.string().nullish(),
@@ -6774,6 +6780,12 @@ export const GetStagedPaymentsSummaryResponse = zod.object({
   pending: zod.number(),
   approved: zod.number(),
   rejected: zod.number(),
+  excluded: zod.number(),
+  excludedByReason: zod.object({
+    zero_amount: zod.number(),
+    loan: zod.number(),
+    membership: zod.number(),
+  }),
 });
 
 /**
@@ -6801,7 +6813,11 @@ export const ResolveStagedPaymentResponse = zod.object({
   payerName: zod.string().nullish(),
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
-  status: zod.enum(["pending", "approved", "rejected"]),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod.enum(["zero_amount", "loan", "membership"]).nullish(),
+  lineItemNames: zod.array(zod.string()).nullish(),
+  lineAccountNames: zod.array(zod.string()).nullish(),
+  lineClasses: zod.array(zod.string()).nullish(),
   matchStatus: zod.enum(["matched", "unmatched"]),
   organizationId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),
@@ -6842,7 +6858,49 @@ export const RejectStagedPaymentResponse = zod.object({
   payerName: zod.string().nullish(),
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
-  status: zod.enum(["pending", "approved", "rejected"]),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod.enum(["zero_amount", "loan", "membership"]).nullish(),
+  lineItemNames: zod.array(zod.string()).nullish(),
+  lineAccountNames: zod.array(zod.string()).nullish(),
+  lineClasses: zod.array(zod.string()).nullish(),
+  matchStatus: zod.enum(["matched", "unmatched"]),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * @summary Move an auto-excluded staged payment back to pending (false positive).
+ */
+export const ReIncludeStagedPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ReIncludeStagedPaymentResponse = zod.object({
+  id: zod.string(),
+  realmId: zod.string(),
+  qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
+  qbEntityId: zod.string(),
+  amount: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  rawReference: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod.enum(["zero_amount", "loan", "membership"]).nullish(),
+  lineItemNames: zod.array(zod.string()).nullish(),
+  lineAccountNames: zod.array(zod.string()).nullish(),
+  lineClasses: zod.array(zod.string()).nullish(),
   matchStatus: zod.enum(["matched", "unmatched"]),
   organizationId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),

@@ -434,11 +434,24 @@ export const quickbooksEntityTypeEnum = pgEnum("quickbooks_entity_type", [
 //   pending  — awaiting fundraiser review (default)
 //   approved — turned into a gifts_and_payments row (createdGiftId set)
 //   rejected — explicitly discarded; kept so re-sync won't re-stage it
+//   excluded — auto-filtered noise (zero/loan/membership); kept + auditable,
+//              hidden from the default queue, re-includable to pending. Cannot
+//              be approved/rejected/resolved while excluded.
 export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
   "pending",
   "approved",
   "rejected",
+  "excluded",
 ]);
+
+// Why a staged QuickBooks payment was auto-excluded from the review queue.
+//   zero_amount — amount is null or <= 0
+//   loan        — school loan activity (loan account, repayment, guaranty fee)
+//   membership  — school membership dues (matched by QB item / income account)
+export const stagedPaymentExclusionReasonEnum = pgEnum(
+  "staged_payment_exclusion_reason",
+  ["zero_amount", "loan", "membership"],
+);
 
 // Result of auto-matching a staged payment to a CRM donor at sync time.
 //   matched   — a single confident donor was found and pre-filled

@@ -1644,6 +1644,16 @@ export const StagedPaymentStatus = {
   pending: "pending",
   approved: "approved",
   rejected: "rejected",
+  excluded: "excluded",
+} as const;
+
+export type StagedPaymentExclusionReason =
+  (typeof StagedPaymentExclusionReason)[keyof typeof StagedPaymentExclusionReason];
+
+export const StagedPaymentExclusionReason = {
+  zero_amount: "zero_amount",
+  loan: "loan",
+  membership: "membership",
 } as const;
 
 export type StagedPaymentMatchStatus =
@@ -1686,6 +1696,10 @@ export interface StagedPayment {
   payerEmail?: string | null;
   rawReference?: string | null;
   status: StagedPaymentStatus;
+  exclusionReason?: StagedPaymentExclusionReason | null;
+  lineItemNames?: string[] | null;
+  lineAccountNames?: string[] | null;
+  lineClasses?: string[] | null;
   matchStatus: StagedPaymentMatchStatus;
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
@@ -1707,10 +1721,18 @@ export interface StagedPaymentList {
   pagination: Pagination;
 }
 
+export type StagedPaymentSummaryExcludedByReason = {
+  zero_amount: number;
+  loan: number;
+  membership: number;
+};
+
 export interface StagedPaymentSummary {
   pending: number;
   approved: number;
   rejected: number;
+  excluded: number;
+  excludedByReason: StagedPaymentSummaryExcludedByReason;
 }
 
 /**

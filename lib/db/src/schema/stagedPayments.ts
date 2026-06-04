@@ -10,6 +10,7 @@ import {
 import {
   quickbooksEntityTypeEnum,
   stagedPaymentStatusEnum,
+  stagedPaymentExclusionReasonEnum,
   stagedPaymentMatchStatusEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
@@ -53,9 +54,20 @@ export const stagedPayments = pgTable(
     rawReference: text("raw_reference"),
 
     status: stagedPaymentStatusEnum("status").notNull().default("pending"),
+    // Set only when status = "excluded" — why the row was auto-filtered.
+    exclusionReason: stagedPaymentExclusionReasonEnum("exclusion_reason"),
     matchStatus: stagedPaymentMatchStatusEnum("match_status")
       .notNull()
       .default("unmatched"),
+
+    // QuickBooks line-item detail captured at pull time, used by the noise
+    // classifier (membership detection) and to make exclusions auditable.
+    // For Payment entities (which carry no lines of their own) these come from
+    // the linked Invoice's lines; for SalesReceipt/Deposit they come from the
+    // transaction's own lines. Arrays because a transaction can have many lines.
+    lineItemNames: text("line_item_names").array(),
+    lineAccountNames: text("line_account_names").array(),
+    lineClasses: text("line_classes").array(),
 
     // Donor match (XOR). Populated by auto-match at sync time and/or by the
     // fundraiser via the resolve endpoint. All FKs set-null on donor delete.

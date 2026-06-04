@@ -8,11 +8,13 @@ import {
   useResolveStagedPayment,
   useApproveStagedPayment,
   useRejectStagedPayment,
+  useReIncludeStagedPayment,
   useRunQuickbooksSync,
   useGetCurrentUser,
   getGetQuickbooksOauthStatusQueryKey,
   type StagedPayment,
   type StagedPaymentStatus,
+  type StagedPaymentExclusionReason,
   type QuickbooksEntityType,
 } from "@workspace/api-client-react";
 import {
@@ -35,7 +37,15 @@ const STATUS_TABS: { value: StagedPaymentStatus; label: string }[] = [
   { value: "pending", label: "Pending" },
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Rejected" },
+  { value: "excluded", label: "Excluded" },
 ];
+
+// Human-friendly labels for the auto-exclude reasons.
+const EXCLUSION_REASON_LABELS: Record<StagedPaymentExclusionReason, string> = {
+  zero_amount: "Zero amount",
+  loan: "Loan activity",
+  membership: "Membership dues",
+};
 
 // QuickBooks entity types are stored snake_case (matching the DB enum); show a
 // human-friendly label in the review queue.
@@ -152,7 +162,9 @@ export default function StagedPayments() {
               ? summary?.pending
               : tab.value === "approved"
                 ? summary?.approved
-                : summary?.rejected;
+                : tab.value === "rejected"
+                  ? summary?.rejected
+                  : summary?.excluded;
           return (
             <Button
               key={tab.value}
@@ -189,6 +201,7 @@ export default function StagedPayments() {
               key={row.id}
               row={row}
               editable={status === "pending"}
+              excluded={status === "excluded"}
               onChanged={invalidateAll}
             />
           ))}
@@ -201,10 +214,12 @@ export default function StagedPayments() {
 function StagedPaymentCard({
   row,
   editable,
+  excluded,
   onChanged,
 }: {
   row: StagedPayment;
   editable: boolean;
+  excluded: boolean;
   onChanged: () => void;
 }) {
   const { toast } = useToast();
@@ -259,8 +274,29 @@ function StagedPaymentCard({
         }),
     },
   });
+  const reInclude = useReIncludeStagedPayment({
+    mutation: {
+      onSuccess: () => {
+        onChanged();
+        toast({
+          title: "Re-included",
+          description: "Moved back to the pending queue.",
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Re-include failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
 
-  const busy = resolve.isPending || approve.isPending || reject.isPending;
+  const busy =
+    resolve.isPending ||
+    approve.isPending ||
+    reject.isPending ||
+    reInclude.isPending;
   const hasDonor = donorId != null;
 
   const handleSaveDonor = () => {
@@ -294,11 +330,18 @@ function StagedPaymentCard({
               {row.rawReference ? ` · ${row.rawReference}` : ""}
             </CardDescription>
           </div>
-          <Badge
-            variant={row.matchStatus === "matched" ? "default" : "secondary"}
-          >
-            {row.matchStatus}
-          </Badge>
+          {excluded && row.exclusionReason ? (
+            <Badge variant="secondary">
+              {EXCLUSION_REASON_LABELS[row.exclusionReason] ??
+                row.exclusionReason}
+            </Badge>
+          ) : (
+            <Badge
+              variant={row.matchStatus === "matched" ? "default" : "secondary"}
+            >
+              {row.matchStatus}
+            </Badge>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -353,6 +396,25 @@ function StagedPaymentCard({
               </p>
             ) : null}
           </>
+        ) : excluded ? (
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">
+              Auto-excluded as noise
+              {row.exclusionReason
+                ? ` (${EXCLUSION_REASON_LABELS[row.exclusionReason] ?? row.exclusionReason})`
+                : ""}
+              . Not deleted — re-include it if this was wrong.
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => reInclude.mutate({ id: row.id })}
+              disabled={busy}
+              data-testid={`staged-re-include-${row.id}`}
+            >
+              {reInclude.isPending ? "Re-including…" : "Re-include → pending"}
+            </Button>
+          </div>
         ) : (
           <div className="text-sm text-muted-foreground">
             Donor: {donorLabel ?? "—"}
