@@ -840,6 +840,18 @@ function StagedPaymentCard({
   const editable = queue === "needs_review";
   const isExcluded = queue === "excluded";
 
+  // Deposits are always staged PER LINE (the whole deposit is never staged), so
+  // every deposit row is really a single payment within that deposit — label it
+  // "Payment" and prefer the line's own description over the deposit-level
+  // reference/memo (falling back to it only when the line has no description).
+  const isDepositPayment = row.qbEntityType === "deposit";
+  const entityTypeLabel = isDepositPayment
+    ? "Payment"
+    : (QB_ENTITY_TYPE_LABELS[row.qbEntityType] ?? row.qbEntityType);
+  const referenceText = isDepositPayment
+    ? (row.lineDescription ?? row.rawReference)
+    : row.rawReference;
+
   const reInclude = useReIncludeStagedPayment({
     mutation: {
       onSuccess: () => {
@@ -966,10 +978,9 @@ function StagedPaymentCard({
               </span>
             </CardTitle>
             <CardDescription>
-              {QB_ENTITY_TYPE_LABELS[row.qbEntityType] ?? row.qbEntityType} ·{" "}
-              {row.dateReceived ?? "no date"}
+              {entityTypeLabel} · {row.dateReceived ?? "no date"}
               {row.payerEmail ? ` · ${row.payerEmail}` : ""}
-              {row.rawReference ? ` · ${row.rawReference}` : ""}
+              {referenceText ? ` · ${referenceText}` : ""}
             </CardDescription>
           </button>
           <div className="flex flex-wrap items-center gap-1.5">
