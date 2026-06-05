@@ -840,15 +840,16 @@ function StagedPaymentCard({
   const editable = queue === "needs_review";
   const isExcluded = queue === "excluded";
 
-  // Deposits are always staged PER LINE (the whole deposit is never staged), so
-  // every deposit row is really a single payment within that deposit — label it
-  // "Payment" and prefer the line's own description over the deposit-level
-  // reference/memo (falling back to it only when the line has no description).
-  const isDepositPayment = row.qbEntityType === "deposit";
-  const entityTypeLabel = isDepositPayment
-    ? "Payment"
-    : (QB_ENTITY_TYPE_LABELS[row.qbEntityType] ?? row.qbEntityType);
-  const referenceText = isDepositPayment
+  // A staged "deposit" row is a single direct deposit line with NO linked
+  // Payment/SalesReceipt (those are skipped at pull time) — i.e. an uncertain
+  // "might be an unrecorded donation" record. Keep it labeled "Deposit" so it
+  // stays visually distinct, but surface the line's OWN description (which
+  // usually carries the donor name / gift note) instead of the deposit-level
+  // memo/bank-account name.
+  const isDepositLine = row.qbEntityType === "deposit";
+  const entityTypeLabel =
+    QB_ENTITY_TYPE_LABELS[row.qbEntityType] ?? row.qbEntityType;
+  const referenceText = isDepositLine
     ? (row.lineDescription ?? row.rawReference)
     : row.rawReference;
 
