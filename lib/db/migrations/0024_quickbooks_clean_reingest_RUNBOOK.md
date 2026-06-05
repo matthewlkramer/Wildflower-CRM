@@ -20,6 +20,16 @@ real per-donor payments and never auto-apply.
 
 It does **not** touch `gifts_and_payments` or `gift_allocations`.
 
+> **Keep the wipe and the watermark reset together.** Deposit-derived coding
+> (account / class / memo) is folded onto a Payment/SalesReceipt from the deposit
+> that re-records it, and the upsert preserves already-stored coding on a
+> re-sync rather than re-deriving it from older, out-of-window deposits. So the
+> only way a row gets its full coding is the *first* pull that sees both it and
+> its deposit. Resetting the watermark to `NULL` forces that first pull to be the
+> full history. Never `DELETE FROM staged_payments` (or otherwise reseed rows)
+> without also resetting the watermark — a "first-seen" row inserted under an
+> advanced watermark can miss an older deposit's coding.
+
 ## Pre-checks (read-only)
 
 ```sql

@@ -108,6 +108,21 @@ describe("classifyStagedPayment", () => {
     ).toBe(false);
   });
 
+  it("keeps an uninvoiced payment whose only coding is deposit-derived revenue", () => {
+    // A bare Payment carries no lines of its own; for an uninvoiced one the
+    // ONLY coding is folded in from the deposit line that re-records it (a
+    // donation revenue account + memo). That deposit-derived signal must read
+    // as a donation, not get swept into an exclusion.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineItemNames: null,
+        lineAccountNames: ["4000 Unrestricted Donations"],
+        rawReference: "Deposit memo: annual gift",
+      }).excluded,
+    ).toBe(false);
+  });
+
   it("zero_amount and loan take precedence over membership", () => {
     expect(
       classifyStagedPayment({

@@ -25,6 +25,50 @@ function isUniqueViolation(e: unknown): boolean {
 }
 
 /**
+ * Idempotent upsert of one staged incoming-money UNIT (SalesReceipt / Payment /
+ * single Deposit line), keyed on (realmId, qbEntityType, qbEntityId, qbLineId).
+ *
+ * On conflict (a re-sync of a unit we've already staged) it refreshes ONLY the
+ * captured line detail + updatedAt, and only while the row is still
+ * pending/excluded — status, classification, donor match and scores are left
+ * untouched so a manual override is never clobbered.
+ *
+ * Crucially, the line-detail refresh is preserve-on-conflict: deposit-derived
+ * coding (account / class / memo) is folded onto a Payment/SalesReceipt from the
+ * *deposit* that re-records it, and deposits are pulled by the same
+ * LastUpdatedTime watermark as everything else. So on an incremental re-sync a
+ * Payment can be re-pulled (because it was edited) while its linked deposit is
+ * older than the watermark and therefore absent from this pull — leaving the
+ * freshly-pulled coding arrays empty. We must NOT let that empty pull clobber
+ * coding we already captured on a prior full sync, so each line field keeps the
+ * stored value whenever the incoming pull has nothing for it.
+ *
+ * Returns the drizzle builder so callers can chain `.returning(...)`; exported so
+ * the preserve-on-conflict semantics can be asserted in a regression test.
+ */
+export function buildStagedLineUpsert(values: typeof stagedPayments.$inferInsert) {
+  return db
+    .insert(stagedPayments)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [
+        stagedPayments.realmId,
+        stagedPayments.qbEntityType,
+        stagedPayments.qbEntityId,
+        stagedPayments.qbLineId,
+      ],
+      set: {
+        lineItemNames: sql`CASE WHEN coalesce(cardinality(excluded.line_item_names), 0) > 0 THEN excluded.line_item_names ELSE ${stagedPayments.lineItemNames} END`,
+        lineAccountNames: sql`CASE WHEN coalesce(cardinality(excluded.line_account_names), 0) > 0 THEN excluded.line_account_names ELSE ${stagedPayments.lineAccountNames} END`,
+        lineClasses: sql`CASE WHEN coalesce(cardinality(excluded.line_classes), 0) > 0 THEN excluded.line_classes ELSE ${stagedPayments.lineClasses} END`,
+        lineDescription: sql`coalesce(nullif(excluded.line_description, ''), ${stagedPayments.lineDescription})`,
+        updatedAt: new Date(),
+      },
+      setWhere: sql`${stagedPayments.status} in ('pending', 'excluded')`,
+    });
+}
+
+/**
  * One-way QuickBooks → CRM payment pull. Resolves the active company, pulls
  * incoming-money entities updated since the watermark, stages each incoming
  * UNIT (SalesReceipt / Payment / single Deposit LINE) as a review-queue row
@@ -134,57 +178,35 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
           ? scored.donor
           : { organizationId: null, individualGiverPersonId: null, householdId: null };
 
-      const inserted = await db
-        .insert(stagedPayments)
-        .values({
-          id: newId(),
-          realmId: conn.realmId,
-          qbEntityType: p.qbEntityType,
-          qbEntityId: p.qbEntityId,
-          qbLineId: p.qbLineId,
-          amount: p.amount,
-          dateReceived: p.dateReceived,
-          payerName: p.payerName,
-          payerEmail: p.payerEmail,
-          rawReference: p.rawReference,
-          lineDescription: p.lineDescription,
-          status: cls.excluded ? "excluded" : "pending",
-          exclusionReason: cls.reason,
-          classificationSource: "auto",
-          matchStatus,
-          matchScore: scored && scored.method ? scored.score : null,
-          matchMethod: scored ? scored.method : null,
-          organizationId: donor.organizationId,
-          individualGiverPersonId: donor.individualGiverPersonId,
-          householdId: donor.householdId,
-          matchedPaymentIntermediaryId: scored ? scored.intermediaryId : null,
-          lineItemNames: p.lineItemNames,
-          lineAccountNames: p.lineAccountNames,
-          lineClasses: p.lineClasses,
-        })
-        // Re-sync of an existing unit: refresh only the captured line detail
-        // (and updatedAt), only while pending/excluded. Status, classification,
-        // donor match and scores are intentionally left untouched.
-        .onConflictDoUpdate({
-          target: [
-            stagedPayments.realmId,
-            stagedPayments.qbEntityType,
-            stagedPayments.qbEntityId,
-            stagedPayments.qbLineId,
-          ],
-          set: {
-            lineItemNames: p.lineItemNames,
-            lineAccountNames: p.lineAccountNames,
-            lineClasses: p.lineClasses,
-            lineDescription: p.lineDescription,
-            updatedAt: new Date(),
-          },
-          setWhere: sql`${stagedPayments.status} in ('pending', 'excluded')`,
-        })
-        .returning({
-          id: stagedPayments.id,
-          isInsert: sql<boolean>`(xmax = 0)`,
-        });
+      const inserted = await buildStagedLineUpsert({
+        id: newId(),
+        realmId: conn.realmId,
+        qbEntityType: p.qbEntityType,
+        qbEntityId: p.qbEntityId,
+        qbLineId: p.qbLineId,
+        amount: p.amount,
+        dateReceived: p.dateReceived,
+        payerName: p.payerName,
+        payerEmail: p.payerEmail,
+        rawReference: p.rawReference,
+        lineDescription: p.lineDescription,
+        status: cls.excluded ? "excluded" : "pending",
+        exclusionReason: cls.reason,
+        classificationSource: "auto",
+        matchStatus,
+        matchScore: scored && scored.method ? scored.score : null,
+        matchMethod: scored ? scored.method : null,
+        organizationId: donor.organizationId,
+        individualGiverPersonId: donor.individualGiverPersonId,
+        householdId: donor.householdId,
+        matchedPaymentIntermediaryId: scored ? scored.intermediaryId : null,
+        lineItemNames: p.lineItemNames,
+        lineAccountNames: p.lineAccountNames,
+        lineClasses: p.lineClasses,
+      }).returning({
+        id: stagedPayments.id,
+        isInsert: sql<boolean>`(xmax = 0)`,
+      });
 
       const newRow = inserted[0];
       if (!newRow?.isInsert) continue;
