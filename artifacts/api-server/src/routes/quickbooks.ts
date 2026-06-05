@@ -314,9 +314,12 @@ router.post(
 );
 
 // ─── GET /staged-payments/:id/gift-candidates ──────────────────────────────
-// Existing gifts for the staged row's saved donor whose amount equals the
-// staged amount — so a fundraiser can link the QB record to a gift already in
-// the ledger instead of minting a duplicate. Empty list when the staged row
+// Existing gifts for the staged row's saved donor whose amount is at or just
+// above the staged amount — so a fundraiser can link the QB record to a gift
+// already in the ledger instead of minting a duplicate. The upper band absorbs
+// a payment-processor fee the platform (e.g. Donorbox) kept: the donor's gross
+// gift in the CRM is slightly larger than the net QuickBooks deposit (a QB
+// $47.25 should still surface a CRM $50 gift). Empty list when the staged row
 // has no donor or no amount. Flags candidates already linked to another staged
 // payment so the UI can disable double-linking.
 router.get(
@@ -374,8 +377,20 @@ router.get(
         people,
         eq(people.id, giftsAndPayments.individualGiverPersonId),
       )
-      .where(and(donorFilter, eq(giftsAndPayments.amount, staged.amount)))
+      .where(
+        and(
+          donorFilter,
+          // Gross CRM gift must be at the QB net amount (allow a cent of
+          // rounding) and no more than ~10% + $1 above it — wide enough to
+          // cover a Donorbox-style processing fee, tight enough to avoid
+          // sweeping in unrelated gifts.
+          sql`${giftsAndPayments.amount} >= ${staged.amount}::numeric - 0.01`,
+          sql`${giftsAndPayments.amount} <= ${staged.amount}::numeric * 1.10 + 1`,
+        ),
+      )
       .orderBy(
+        // Closest amount first (exact matches lead), then closest date.
+        sql`ABS(${giftsAndPayments.amount} - ${staged.amount}::numeric) ASC`,
         sql`ABS(${giftsAndPayments.dateReceived} - ${staged.dateReceived}::date) ASC NULLS LAST`,
         desc(giftsAndPayments.dateReceived),
       )

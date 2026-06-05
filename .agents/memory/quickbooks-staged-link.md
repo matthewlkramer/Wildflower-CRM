@@ -22,7 +22,18 @@ QB record to an already-recorded gift, no new row).
   keep that predicate (or finally add the partial unique index) or concurrent
   requests will double-link.
 
-- Candidate search matches **saved donor + exact amount** (numeric(14,2) equality
-  on both sides), ordered by date proximity. Donor mismatch is rejected on link;
-  amount equality is NOT re-enforced server-side (UI only surfaces exact matches).
-  Pure logic lives in `validateGiftLink` (api-server `lib/quickbooksLink.ts`).
+- Candidate search matches **saved donor + an amount BAND** (was exact): gift.amount
+  between `staged.amount - 0.01` and `staged.amount * 1.10 + 1`, ordered by amount
+  closeness then date proximity. **Why:** Donorbox-style platforms keep a processing
+  fee, so the CRM gross gift (e.g. $50) is slightly larger than the QB net deposit
+  (e.g. $47.25); exact equality hid the real match. Donor mismatch is still rejected
+  on link; amount is NOT re-enforced server-side. Pure logic in `validateGiftLink`
+  (`lib/quickbooksLink.ts`); the band lives in the gift-candidates route.
+
+- **Donor name often lives in the memo, not payer_name.** Donorbox→QuickBooks
+  deposits arrive with a blank CustomerRef (payer_name null) and the donor in
+  `raw_reference` (e.g. "Donation for BWF - Kathleen Rash"). `autoMatchDonor` has an
+  ADDITIVE fallback (`candidateNamesFromReference`) that fires only after email +
+  payerName miss and still requires a strict, unambiguous exact CRM name hit — so it
+  never weakens matching. Insert-time only; it won't retro-match already-staged rows,
+  and won't catch near-misses like "Fidelity Foundation" vs CRM "Fidelity Foundations".

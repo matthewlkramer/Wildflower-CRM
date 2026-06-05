@@ -86,6 +86,7 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
       const { match, matched: didMatch } = await autoMatchDonor(
         p.payerName,
         p.payerEmail,
+        p.rawReference,
       );
       // Auto-exclude noise (zero / loan / membership) at insert time.
       const cls = classifyStagedPayment({

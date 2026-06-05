@@ -96,12 +96,49 @@ async function matchByName(name: string): Promise<DonorMatch | null> {
 }
 
 /**
- * Attempt email match first, then name. Returns the donor match plus
- * whether it counts as "matched" (exactly one confident donor).
+ * Donor names embedded in a free-text reference/memo. Many Donorbox→QuickBooks
+ * deposits carry a blank CustomerRef and instead put the donor's name in the
+ * memo, e.g. "Donation for BWF - Kathleen Rash" or "Contribution from Fidelity
+ * Foundation". We pull the trailing segment after a dash and any name following
+ * a "from / for / by" keyword. Candidates are kept conservative — at least two
+ * whitespace-separated tokens — so acronyms and single common words never feed
+ * the (strict, exact, unambiguous) name matcher. Pure/synchronous for testing.
+ */
+export function candidateNamesFromReference(ref: string | null): string[] {
+  if (!ref) return [];
+  const norm = ref.replace(/\s+/g, " ").trim();
+  if (!norm) return [];
+
+  const out: string[] = [];
+  const add = (s: string | undefined | null): void => {
+    if (!s) return;
+    const v = s.trim();
+    // Require a multi-token, reasonably long string to stay conservative.
+    if (v.length >= 4 && /\s/.test(v)) out.push(v);
+  };
+
+  // "... - Kathleen Rash" → trailing segment after the LAST " - ".
+  const dash = norm.lastIndexOf(" - ");
+  if (dash !== -1) add(norm.slice(dash + 3));
+
+  // "Contribution from Fidelity Foundation" / "Donation for Jane Doe".
+  const kw = norm.match(/\b(?:from|for|by)\s+(.+)$/i);
+  if (kw) add(kw[1]);
+
+  return [...new Set(out)];
+}
+
+/**
+ * Attempt email match first, then payer name, then names embedded in the raw
+ * reference/memo. Returns the donor match plus whether it counts as "matched"
+ * (exactly one confident donor). The reference fallback is purely additive —
+ * it only fires when nothing else matched — and still requires a strict,
+ * unambiguous CRM name hit, so it never weakens the existing guarantees.
  */
 export async function autoMatchDonor(
   payerName: string | null,
   payerEmail: string | null,
+  rawReference: string | null = null,
 ): Promise<{ match: DonorMatch; matched: boolean }> {
   if (payerEmail) {
     const byEmail = await matchByEmail(payerEmail);
@@ -110,6 +147,10 @@ export async function autoMatchDonor(
   if (payerName) {
     const byName = await matchByName(payerName);
     if (byName) return { match: byName, matched: true };
+  }
+  for (const candidate of candidateNamesFromReference(rawReference)) {
+    const byRef = await matchByName(candidate);
+    if (byRef) return { match: byRef, matched: true };
   }
   return { match: NO_MATCH, matched: false };
 }

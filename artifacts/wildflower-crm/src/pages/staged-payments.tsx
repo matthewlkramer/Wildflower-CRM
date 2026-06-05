@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import {
   useListStagedPayments,
@@ -86,6 +86,31 @@ function formatAmount(amount: string | null | undefined): string {
     style: "currency",
     currency: "USD",
   });
+}
+
+function formatDateTime(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+}
+
+// When a candidate gift is larger than the QB net amount, surface the gap as a
+// likely processing fee so the fundraiser understands why a non-exact match
+// surfaced (e.g. CRM $50 gift vs. QB $47.25 deposit → "+$2.75 fee?").
+function feeDeltaLabel(
+  stagedAmount: string | null | undefined,
+  giftAmount: string | null | undefined,
+): string {
+  if (stagedAmount == null || giftAmount == null) return "";
+  const staged = Number(stagedAmount);
+  const gift = Number(giftAmount);
+  if (Number.isNaN(staged) || Number.isNaN(gift)) return "";
+  const delta = gift - staged;
+  if (delta <= 0.01) return "";
+  return ` · +${delta.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+  })} fee?`;
 }
 
 export default function StagedPayments() {
@@ -303,6 +328,7 @@ function StagedPaymentCard({
   });
 
   const [showCandidates, setShowCandidates] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const link = useLinkStagedPayment({
     mutation: {
       onSuccess: () => {
@@ -485,8 +511,111 @@ function StagedPaymentCard({
             Donor: {donorLabel ?? "—"}
           </div>
         )}
+        <StagedPaymentDetails
+          row={row}
+          donorLabel={donorLabel}
+          show={showDetails}
+          onToggle={() => setShowDetails((v) => !v)}
+        />
       </CardContent>
     </Card>
+  );
+}
+
+// Full, read-only dump of everything QuickBooks gave us for this row —
+// including the per-line item / account / class arrays — so a fundraiser can
+// see exactly what they are approving without leaving the page.
+function StagedPaymentDetails({
+  row,
+  donorLabel,
+  show,
+  onToggle,
+}: {
+  row: StagedPayment;
+  donorLabel: string | null;
+  show: boolean;
+  onToggle: () => void;
+}) {
+  const rows: { label: string; value: ReactNode }[] = [
+    {
+      label: "QuickBooks type",
+      value: QB_ENTITY_TYPE_LABELS[row.qbEntityType] ?? row.qbEntityType,
+    },
+    { label: "QuickBooks entity ID", value: row.qbEntityId },
+    { label: "Realm ID", value: row.realmId },
+    { label: "Amount", value: formatAmount(row.amount) },
+    { label: "Date received", value: row.dateReceived },
+    { label: "Payer name", value: row.payerName },
+    { label: "Payer email", value: row.payerEmail },
+    { label: "Reference / memo", value: row.rawReference },
+    { label: "Status", value: row.status },
+    { label: "Match status", value: row.matchStatus },
+    {
+      label: "Exclusion reason",
+      value: row.exclusionReason
+        ? (EXCLUSION_REASON_LABELS[row.exclusionReason] ?? row.exclusionReason)
+        : null,
+    },
+    { label: "Donor", value: donorLabel },
+    { label: "Created gift ID", value: row.createdGiftId },
+    { label: "Approved at", value: formatDateTime(row.approvedAt) },
+    { label: "Rejected at", value: formatDateTime(row.rejectedAt) },
+    { label: "First seen", value: formatDateTime(row.createdAt) },
+    { label: "Last updated", value: formatDateTime(row.updatedAt) },
+  ];
+
+  const lineGroups: { label: string; values: string[] | null | undefined }[] = [
+    { label: "Line items", values: row.lineItemNames },
+    { label: "Line accounts", values: row.lineAccountNames },
+    { label: "Line classes", values: row.lineClasses },
+  ];
+
+  return (
+    <div className="border-t pt-3">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="px-0 text-xs text-muted-foreground hover:bg-transparent"
+        onClick={onToggle}
+        data-testid={`staged-details-toggle-${row.id}`}
+      >
+        {show ? "Hide details" : "Show details"}
+      </Button>
+      {show ? (
+        <div className="mt-2 space-y-3" data-testid={`staged-details-${row.id}`}>
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+            {rows.map((d) => (
+              <div key={d.label} className="flex gap-2 text-sm">
+                <dt className="min-w-[7.5rem] shrink-0 text-muted-foreground">
+                  {d.label}
+                </dt>
+                <dd className="min-w-0 break-words">
+                  {d.value === null || d.value === undefined || d.value === ""
+                    ? "—"
+                    : d.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {lineGroups.map((g) => (
+            <div key={g.label} className="text-sm">
+              <div className="text-muted-foreground">{g.label}</div>
+              {g.values && g.values.length > 0 ? (
+                <ul className="ml-4 list-disc">
+                  {g.values.map((v, i) => (
+                    <li key={`${g.label}-${i}`} className="break-words">
+                      {v}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="ml-1">—</div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -544,6 +673,7 @@ function GiftCandidates({
                   <div className="truncate text-xs text-muted-foreground">
                     {c.dateReceived ?? "no date"}
                     {c.type ? ` · ${c.type}` : ""}
+                    {feeDeltaLabel(row.amount, c.amount)}
                     {alreadyLinked ? " · already linked to a QuickBooks payment" : ""}
                   </div>
                 </div>
