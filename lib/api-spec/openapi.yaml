@@ -1805,14 +1805,23 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "502": { description: "QuickBooks rematch failed" }
 
+  /quickbooks/reclassify:
+    post:
+      operationId: reclassifyStagedPayments
+      tags: [quickbooks-sync]
+      summary: Re-run the noise classifier over auto-classified pending/excluded staged payments (never touches manual overrides).
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickbooksReclassifySummary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { description: "QuickBooks reclassify failed" }
+
   # ─── Staged payments (QuickBooks review queue) ────────────────────────────
   /staged-payments:
     get:
       operationId: listStagedPayments
       tags: [staged-payments]
       parameters:
-        - { name: status, in: query, schema: { $ref: "#/components/schemas/StagedPaymentStatus" }, description: "Filter by review status (default pending)." }
-        - { name: matchState, in: query, schema: { $ref: "#/components/schemas/StagedPaymentMatchState" }, description: "Optionally narrow pending rows to unmatched vs. matched (system or human)." }
+        - { name: queue, in: query, schema: { $ref: "#/components/schemas/StagedPaymentQueue" }, description: "Which queue to list (default needs_review)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -1823,6 +1832,15 @@ paths:
       tags: [staged-payments]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPaymentSummary" } } } }
+  /staged-payments-donor-search:
+    get:
+      operationId: searchStagedPaymentDonors
+      tags: [staged-payments]
+      summary: Trigram donor search (organizations / people / households) for the reconciler picker.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string }, description: "Search query (min 2 chars)." }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DonorSearchList" } } } }
   /staged-payments/{id}/resolve:
     post:
       operationId: resolveStagedPayment
@@ -1837,14 +1855,14 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not pending" }
-  /staged-payments/{id}/approve:
+  /staged-payments/{id}/create-gift:
     post:
-      operationId: approveStagedPayment
+      operationId: createGiftFromStagedPayment
       tags: [staged-payments]
-      summary: Approve a staged payment — mints a gifts_and_payments row (donor XOR).
+      summary: Mint a new gifts_and_payments row from a pending staged payment (donor XOR).
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
-        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ApproveStagedPaymentResponse" } } } }
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/StagedGiftResponse" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not pending" }
@@ -1862,7 +1880,7 @@ paths:
     post:
       operationId: reIncludeStagedPayment
       tags: [staged-payments]
-      summary: Move an auto-excluded staged payment back to pending (false positive).
+      summary: Move an excluded staged payment back to pending (pins classification to manual).
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
@@ -1876,10 +1894,10 @@ paths:
       description: |
         Human-driven counterpart to the insert-time auto-exclude: files a staged
         payment under a non-gift category (membership, loan, etc.) and moves it to
-        the excluded bucket. Works on a pending row (exclude it) or an
-        already-excluded row (reclassify its category). The donor match is left
-        intact so re-include can restore it. Approved/rejected rows cannot be
-        excluded.
+        the excluded bucket, pinning classification_source='manual' so the
+        re-runnable classifier never re-includes it. Works on a pending row
+        (exclude it) or an already-excluded row (reclassify its category). The
+        donor match is left intact so re-include can restore it.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       requestBody:
         required: true
@@ -1893,36 +1911,52 @@ paths:
     get:
       operationId: listStagedPaymentGiftCandidates
       tags: [staged-payments]
-      summary: Existing gifts/payments that match this staged payment's donor + amount.
+      summary: Existing gifts for this staged payment's saved donor within the amount band.
       description: |
         Finds already-recorded gifts_and_payments rows for the staged payment's
-        saved donor whose amount equals the staged amount, so the fundraiser can
-        link the QuickBooks record to an existing gift instead of creating a
-        duplicate. Returns an empty list if the staged row has no donor or no
-        amount. Ordered by date proximity to the staged payment's date. Each
-        candidate flags whether it is already linked to another QuickBooks
-        staged payment.
+        saved donor whose amount is at or just above the staged amount (a
+        processor fee makes the CRM gross gift slightly larger than the QB net
+        deposit), so the fundraiser can reconcile to an existing gift instead of
+        minting a duplicate. Empty when the staged row has no donor or no amount.
+        Each candidate flags whether it is already linked to another staged
+        payment.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftCandidateList" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
-  /staged-payments/{id}/link:
-    post:
-      operationId: linkStagedPayment
+  /staged-payments/{id}/gift-window:
+    get:
+      operationId: listStagedPaymentGiftWindow
       tags: [staged-payments]
-      summary: Link a staged payment to an existing gift (no new gift is created).
+      summary: Existing gifts across ALL donors within the amount/date window (donor-agnostic).
       description: |
-        Ties the QuickBooks staged payment to an already-recorded
-        gifts_and_payments row instead of minting a new one. Marks the staged
-        row approved with createdGiftId pointing at the chosen gift. The gift's
-        donor must match the staged payment's saved donor, and the gift must not
-        already be linked to another staged payment.
+        Donor-agnostic reconcile entry point: existing gifts whose amount and
+        date sit in a window around the staged payment, so a fundraiser can
+        reconcile even when the donor wasn't auto-resolved. Empty when the staged
+        row has no amount.
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { name: days, in: query, schema: { type: integer, default: 30, minimum: 1, maximum: 365 }, description: "± days around the staged date (default 30)." }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftCandidateList" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /staged-payments/{id}/reconcile:
+    post:
+      operationId: reconcileStagedPayment
+      tags: [staged-payments]
+      summary: Reconcile a staged payment to an existing gift (no new gift is created).
+      description: |
+        Ties the staged payment to an already-recorded gifts_and_payments row by
+        setting matchedGiftId. Marks the row approved (autoApplied=false). If the
+        staged row has no donor yet it adopts the gift's donor; otherwise the
+        donors must match. The gift must not already be linked to another staged
+        payment.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/LinkStagedPaymentBody" } } }
+        content: { application/json: { schema: { $ref: "#/components/schemas/ReconcileStagedPaymentBody" } } }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ApproveStagedPaymentResponse" } } } }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedGiftResponse" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not pending, or the gift is already linked" }
@@ -1930,50 +1964,44 @@ paths:
     post:
       operationId: confirmStagedPaymentMatch
       tags: [staged-payments]
-      summary: Confirm a system-suggested donor match (system matched → human approved).
+      summary: Confirm a system-suggested or auto-applied donor match (→ human approved / done).
       description: |
-        Marks the donor match on a pending, matched staged payment as
-        human-confirmed (records match_confirmed_at / match_confirmed_by_user_id).
-        The row must be pending and already have a donor; this does not change
-        the donor or mint a gift.
+        Stamps the donor match as human-confirmed (match_confirmed_at /
+        match_confirmed_by_user_id). Works on a pending row with a donor OR an
+        auto-applied approved row (graduating it from "Auto-matched" to "Done").
+        Does not change the donor or mint a gift.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Staged payment is not pending, or has no donor to confirm" }
+        "409": { description: "Staged payment is not in a confirmable state, or has no donor" }
   /staged-payments/{id}/unmatch:
     post:
       operationId: unmatchStagedPayment
       tags: [staged-payments]
-      summary: Clear the donor match (any match → unmatched).
-      description: |
-        Removes the donor from a pending staged payment and resets it to
-        unmatched, clearing any human confirmation. Works on both
-        system-matched and human-approved rows. Only pending rows can be
-        unmatched.
+      summary: Clear the donor match (any match → unmatched). Pending rows only.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not pending" }
-  /staged-payments/{id}/unlink:
+  /staged-payments/{id}/revert:
     post:
-      operationId: unlinkStagedPayment
+      operationId: revertStagedPayment
       tags: [staged-payments]
-      summary: Undo a link to an existing gift (linked → pending).
+      summary: Undo an approved reconciliation/creation (approved → pending).
       description: |
-        Severs the tie between a staged payment and the pre-existing gift it was
-        linked to, returning the row to the pending queue (createdGiftId and the
-        approval stamps are cleared; the donor match is left intact). The
-        pre-existing gift itself is untouched. Only applies to rows that were
-        resolved via "Link to existing gift" (giftWasLinked = true) — a
-        minted-gift approval cannot be unlinked, since that would orphan the
-        newly created gift.
+        Returns an approved staged payment to the pending queue. If it was
+        reconciled to an existing gift (matchedGiftId), the link is cleared and
+        the pre-existing gift is untouched. If it was an auto-minted gift
+        (createdGiftId + autoApplied), the auto-created gift is deleted. A
+        manually created gift cannot be reverted (it would orphan a
+        fundraiser-created ledger row). The donor match is left intact.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Staged payment is not a linked-gift approval" }
+        "409": { description: "Staged payment cannot be reverted from its current state" }
 
   # ─── Top Priorities ────────────────────────────────────────────────────────
   /top-priorities:
@@ -3619,8 +3647,10 @@ components:
     QuickbooksEntityType: { type: string, enum: [sales_receipt, payment, deposit] }
     StagedPaymentStatus: { type: string, enum: [pending, approved, rejected, excluded] }
     StagedPaymentExclusionReason: { type: string, enum: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income] }
-    StagedPaymentMatchStatus: { type: string, enum: [matched, unmatched] }
-    StagedPaymentMatchState: { type: string, enum: [unmatched, matched] }
+    StagedPaymentMatchStatus: { type: string, enum: [matched, suggested, unmatched] }
+    StagedPaymentMatchMethod: { type: string, enum: [email, name, name_amount_date, amount_date, memo, intermediary, manual] }
+    StagedPaymentClassificationSource: { type: string, enum: [auto, manual] }
+    StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, rejected] }
     QuickbooksOauthStatus:
       type: object
       required: [configured, connected]
@@ -3635,53 +3665,75 @@ components:
         lastError:    { type: string, nullable: true }
     QuickbooksSyncSummary:
       type: object
-      required: [ran, pulled, staged, matched]
+      required: [ran, pulled, staged, matched, autoApplied]
       properties:
-        ran:     { type: boolean, description: "False when the sync was skipped (lock contended)." }
-        pulled:  { type: integer }
-        staged:  { type: integer }
-        matched: { type: integer }
+        ran:         { type: boolean, description: "False when the sync was skipped (lock contended)." }
+        pulled:      { type: integer }
+        staged:      { type: integer }
+        matched:     { type: integer }
+        autoApplied: { type: integer, description: "Newly-staged rows auto-reconciled or auto-minted at high confidence." }
     QuickbooksRematchSummary:
       type: object
       required: [ran, scanned, matched]
       properties:
         ran:     { type: boolean, description: "False when the rematch was skipped (a sync/rematch was already running)." }
         scanned: { type: integer, description: "Candidate rows examined (pending + unmatched + no donor)." }
-        matched: { type: integer, description: "Rows newly auto-matched by this run." }
+        matched: { type: integer, description: "Rows newly given a donor hint by this run." }
+    QuickbooksReclassifySummary:
+      type: object
+      required: [ran, scanned, excluded, included]
+      properties:
+        ran:      { type: boolean, description: "False when the reclassify was skipped (a sync/rematch/reclassify was already running)." }
+        scanned:  { type: integer, description: "Auto-classified pending/excluded rows examined." }
+        excluded: { type: integer, description: "Rows newly moved to excluded by this run." }
+        included: { type: integer, description: "Rows newly restored to pending by this run." }
     StagedPayment:
       type: object
-      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, giftWasLinked, createdAt, updatedAt]
+      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, classificationSource, createdAt, updatedAt]
       properties:
         id:                        { type: string }
         realmId:                   { type: string }
         qbEntityType:              { $ref: "#/components/schemas/QuickbooksEntityType" }
         qbEntityId:                { type: string }
+        qbLineId:                  { type: string, nullable: true }
         amount:                    { type: string, nullable: true }
         dateReceived:              { type: string, format: date, nullable: true }
         payerName:                 { type: string, nullable: true }
         payerEmail:                { type: string, nullable: true }
         rawReference:              { type: string, nullable: true }
+        lineDescription:           { type: string, nullable: true }
         status:                    { $ref: "#/components/schemas/StagedPaymentStatus" }
         exclusionReason:           { $ref: "#/components/schemas/StagedPaymentExclusionReason", nullable: true }
+        classificationSource:      { $ref: "#/components/schemas/StagedPaymentClassificationSource" }
         lineItemNames:             { type: array, items: { type: string }, nullable: true }
         lineAccountNames:          { type: array, items: { type: string }, nullable: true }
         lineClasses:               { type: array, items: { type: string }, nullable: true }
         matchStatus:               { $ref: "#/components/schemas/StagedPaymentMatchStatus" }
+        matchScore:                { type: integer, nullable: true }
+        matchMethod:               { $ref: "#/components/schemas/StagedPaymentMatchMethod", nullable: true }
         matchConfirmedByUserId:    { type: string, nullable: true }
         matchConfirmedAt:          { type: string, format: date-time, nullable: true }
         organizationId:            { type: string, nullable: true }
         individualGiverPersonId:   { type: string, nullable: true }
         householdId:               { type: string, nullable: true }
+        matchedPaymentIntermediaryId: { type: string, nullable: true }
+        matchedGiftId:             { type: string, nullable: true }
         createdGiftId:             { type: string, nullable: true }
-        giftWasLinked:             { type: boolean }
+        autoApplied:               { type: boolean }
         approvedByUserId:          { type: string, nullable: true }
         approvedAt:                { type: string, format: date-time, nullable: true }
         rejectedByUserId:          { type: string, nullable: true }
         rejectedAt:                { type: string, format: date-time, nullable: true }
-        # Denormalized donor display names, joined server-side for the queue UI.
+        # Derived queue bucket + denormalized display fields, joined server-side.
+        queue:                     { $ref: "#/components/schemas/StagedPaymentQueue" }
         organizationName:          { type: string, nullable: true }
         householdName:             { type: string, nullable: true }
         individualGiverPersonName: { type: string, nullable: true }
+        intermediaryName:          { type: string, nullable: true }
+        resolvedGiftId:            { type: string, nullable: true }
+        resolvedGiftName:          { type: string, nullable: true }
+        resolvedGiftAmount:        { type: string, nullable: true }
+        resolvedGiftDate:          { type: string, format: date, nullable: true }
         createdAt:                 { type: string, format: date-time }
         updatedAt:                 { type: string, format: date-time }
     StagedPaymentList:
@@ -3692,14 +3744,13 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     StagedPaymentSummary:
       type: object
-      required: [pending, pendingUnmatched, pendingMatched, approved, rejected, excluded, excludedByReason]
+      required: [needsReview, autoMatched, done, rejected, excluded, excludedByReason]
       properties:
-        pending:  { type: integer }
-        pendingUnmatched: { type: integer }
-        pendingMatched:   { type: integer }
-        approved: { type: integer }
-        rejected: { type: integer }
-        excluded: { type: integer }
+        needsReview: { type: integer }
+        autoMatched: { type: integer }
+        done:        { type: integer }
+        rejected:    { type: integer }
+        excluded:    { type: integer }
         excludedByReason:
           type: object
           required: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income]
@@ -3712,38 +3763,53 @@ components:
             tax_refund:              { type: integer }
             other_revenue:           { type: integer }
             earned_income:           { type: integer }
+    DonorSearchResult:
+      type: object
+      required: [id, kind, name]
+      properties:
+        id:   { type: string }
+        kind: { type: string, enum: [organization, person, household] }
+        name: { type: string }
+    DonorSearchList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/DonorSearchResult" } }
     ResolveStagedPaymentBody:
       type: object
-      description: "Set exactly one donor FK (donor XOR). Null the others."
+      description: "Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary."
       properties:
         organizationId:          { type: string, nullable: true }
         individualGiverPersonId: { type: string, nullable: true }
         householdId:             { type: string, nullable: true }
-    ApproveStagedPaymentResponse:
+        paymentIntermediaryId:   { type: string, nullable: true }
+    StagedGiftResponse:
       type: object
       required: [gift, stagedPaymentId]
       properties:
         gift:            { $ref: "#/components/schemas/GiftOrPayment" }
         stagedPaymentId: { type: string }
-        downloadUrl: { type: string, description: "API path that streams the file. Auth-gated." }
     GiftCandidate:
       allOf:
         - { $ref: "#/components/schemas/GiftOrPayment" }
         - type: object
           properties:
+            organizationName:          { type: string, nullable: true }
+            householdName:             { type: string, nullable: true }
+            individualGiverPersonName: { type: string, nullable: true }
             alreadyLinkedStagedPaymentId:
               type: string
               nullable: true
-              description: "Set when this gift is already the createdGiftId of another staged payment. The UI disables linking to it to avoid double-counting."
+              description: "Set when this gift is already reconciled/created by another staged payment. The UI disables linking to it to avoid double-counting."
     GiftCandidateList:
       type: object
       required: [data]
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/GiftCandidate" } }
-    LinkStagedPaymentBody:
+    ReconcileStagedPaymentBody:
       type: object
       required: [giftId]
-      description: "Link the staged payment to an existing gifts_and_payments row."
+      description: "Reconcile the staged payment to an existing gifts_and_payments row."
       properties:
         giftId: { type: string }
     ExcludeStagedPaymentBody:

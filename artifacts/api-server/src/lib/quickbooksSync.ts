@@ -1,36 +1,54 @@
 import { db } from "@workspace/db";
-import { quickbooksConnections, stagedPayments } from "@workspace/db/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import {
+  quickbooksConnections,
+  stagedPayments,
+  giftsAndPayments,
+} from "@workspace/db/schema";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { getValidQuickbooksAccessToken } from "./quickbooksTokenStore";
 import { pullIncomingPayments } from "./quickbooksClient";
-import { autoMatchDonor } from "./quickbooksMatch";
+import { scoreStagedPayment, type ScoredMatch } from "./quickbooksMatch";
 import { classifyStagedPayment } from "./quickbooksExclusionRules";
+import { buildGiftValuesFromStaged } from "./quickbooksGift";
+
+/** Postgres unique_violation — a concurrent staged row grabbed this gift first. */
+function isUniqueViolation(e: unknown): boolean {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    "code" in e &&
+    (e as { code?: string }).code === "23505"
+  );
+}
 
 /**
- * One-way QuickBooks → CRM payment pull. Resolves the active company,
- * pulls incoming-money entities updated since the watermark, stages each
- * as a review-queue row (idempotent via the unique index), runs donor
- * auto-match, and advances the watermark.
+ * One-way QuickBooks → CRM payment pull. Resolves the active company, pulls
+ * incoming-money entities updated since the watermark, stages each incoming
+ * UNIT (SalesReceipt / Payment / single Deposit LINE) as a review-queue row
+ * (idempotent via the unique index incl. qbLineId), scores it against CRM
+ * donors + existing gifts, auto-applies high-confidence matches, and advances
+ * the watermark. Pull-only: never writes back to QuickBooks.
  *
- * Pull-only: this never writes back to QuickBooks.
+ * Per newly-staged, non-excluded row the scored matcher returns a tier:
+ *   high      → auto-applied (assumed correct, reversible). Reconcile to the one
+ *               same-amount in-window gift if there is exactly one; mint a new
+ *               gift if there are none; otherwise leave for review (ambiguous).
+ *   suggested → staged pending with a donor hint (matchStatus 'suggested');
+ *               nothing applied to the ledger until a human acts.
+ *   none      → staged pending + unmatched.
  *
- * Noise filtering: each newly-staged row is run through the noise classifier
- * (zero-amount / loan / membership). Matching rows are inserted as `excluded`
- * with a reason instead of `pending`, so the default review queue stays clean.
- * Excluded rows are kept and auditable, never deleted.
+ * Noise (zero / loan / membership / …) is auto-excluded at insert time via the
+ * classifier; excluded rows skip scoring entirely.
  *
- * Re-syncs of an already-staged entity do NOT re-classify or change its status
- * (so a manual re-include is never clobbered): they only refresh the captured
- * line-item detail, and only for rows still in `pending`/`excluded` (never
- * touching approved/rejected). Classification of existing rows is a one-time
- * reclassification pass (backfill SQL), not an every-sync action.
+ * Re-syncs of an already-staged unit do NOT re-classify or change status/donor
+ * (so a manual override is never clobbered): they only refresh the captured
+ * line detail, and only while still pending/excluded.
  */
 
-// Org-wide lock key. QuickBooks is a single shared company connection, so
-// we use a fixed pseudo-user id for the per-(source,user) advisory lock.
+// Org-wide lock key — QuickBooks is a single shared company connection.
 const QB_LOCK_KEY = "quickbooks-global";
 
 export interface QuickbooksSyncSummary {
@@ -38,6 +56,7 @@ export interface QuickbooksSyncSummary {
   pulled: number;
   staged: number;
   matched: number;
+  autoApplied: number;
 }
 
 export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
@@ -45,10 +64,9 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
     const conn = await getValidQuickbooksAccessToken();
     if (!conn) {
       logger.debug("QuickBooks sync: no active connection, skipping");
-      return { pulled: 0, staged: 0, matched: 0 };
+      return { pulled: 0, staged: 0, matched: 0, autoApplied: 0 };
     }
 
-    // Read the persisted watermark for the incremental pull.
     const row = await db
       .select({ syncWatermark: quickbooksConnections.syncWatermark })
       .from(quickbooksConnections)
@@ -58,11 +76,7 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
 
     let pulled: Awaited<ReturnType<typeof pullIncomingPayments>>;
     try {
-      pulled = await pullIncomingPayments(
-        conn.accessToken,
-        conn.realmId,
-        since,
-      );
+      pulled = await pullIncomingPayments(conn.accessToken, conn.realmId, since);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await db
@@ -74,6 +88,7 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
 
     let staged = 0;
     let matched = 0;
+    let autoApplied = 0;
     let maxUpdated: number | null = since ? since.getTime() : null;
 
     for (const p of pulled) {
@@ -83,19 +98,42 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
           maxUpdated = t;
         }
       }
-      const { match, matched: didMatch } = await autoMatchDonor(
-        p.payerName,
-        p.payerEmail,
-        p.rawReference,
-      );
-      // Auto-exclude noise (zero / loan / membership) at insert time.
+
+      // Classify first — excluded noise skips the (costlier) scorer.
       const cls = classifyStagedPayment({
         amount: p.amount,
         payerName: p.payerName,
         lineItemNames: p.lineItemNames,
         lineAccountNames: p.lineAccountNames,
         rawReference: p.rawReference,
+        lineDescription: p.lineDescription,
       });
+
+      const scored: ScoredMatch | null = cls.excluded
+        ? null
+        : await scoreStagedPayment({
+            payerName: p.payerName,
+            payerEmail: p.payerEmail,
+            rawReference: p.rawReference,
+            lineDescription: p.lineDescription,
+            amount: p.amount,
+            dateReceived: p.dateReceived,
+          });
+
+      const matchStatus = cls.excluded
+        ? "unmatched"
+        : scored && scored.tier === "high"
+          ? "matched"
+          : scored && scored.tier === "suggested"
+            ? "suggested"
+            : "unmatched";
+      // Donor hint is recorded for high + suggested tiers (the system's best
+      // guess); a human confirms/overrides it in the reconciler.
+      const donor =
+        scored && scored.tier !== "none"
+          ? scored.donor
+          : { organizationId: null, individualGiverPersonId: null, householdId: null };
+
       const inserted = await db
         .insert(stagedPayments)
         .values({
@@ -103,55 +141,63 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
           realmId: conn.realmId,
           qbEntityType: p.qbEntityType,
           qbEntityId: p.qbEntityId,
+          qbLineId: p.qbLineId,
           amount: p.amount,
           dateReceived: p.dateReceived,
           payerName: p.payerName,
           payerEmail: p.payerEmail,
           rawReference: p.rawReference,
+          lineDescription: p.lineDescription,
           status: cls.excluded ? "excluded" : "pending",
           exclusionReason: cls.reason,
-          matchStatus: didMatch ? "matched" : "unmatched",
-          organizationId: match.organizationId,
-          individualGiverPersonId: match.individualGiverPersonId,
-          householdId: match.householdId,
+          classificationSource: "auto",
+          matchStatus,
+          matchScore: scored && scored.method ? scored.score : null,
+          matchMethod: scored ? scored.method : null,
+          organizationId: donor.organizationId,
+          individualGiverPersonId: donor.individualGiverPersonId,
+          householdId: donor.householdId,
+          matchedPaymentIntermediaryId: scored ? scored.intermediaryId : null,
           lineItemNames: p.lineItemNames,
           lineAccountNames: p.lineAccountNames,
           lineClasses: p.lineClasses,
         })
-        // On re-sync of an existing entity: refresh only the captured line
-        // detail (and updatedAt), and only while still pending/excluded.
-        // Status, reason, donor match are intentionally left untouched so a
-        // manual re-include or an approve/reject is never clobbered.
+        // Re-sync of an existing unit: refresh only the captured line detail
+        // (and updatedAt), only while pending/excluded. Status, classification,
+        // donor match and scores are intentionally left untouched.
         .onConflictDoUpdate({
           target: [
             stagedPayments.realmId,
             stagedPayments.qbEntityType,
             stagedPayments.qbEntityId,
+            stagedPayments.qbLineId,
           ],
           set: {
             lineItemNames: p.lineItemNames,
             lineAccountNames: p.lineAccountNames,
             lineClasses: p.lineClasses,
+            lineDescription: p.lineDescription,
             updatedAt: new Date(),
           },
           setWhere: sql`${stagedPayments.status} in ('pending', 'excluded')`,
         })
-        // xmax = 0 ⇒ this row was freshly INSERTed (not an ON CONFLICT update),
-        // so we only count genuinely new staged rows.
         .returning({
           id: stagedPayments.id,
           isInsert: sql<boolean>`(xmax = 0)`,
         });
-      if (inserted[0]?.isInsert) {
-        staged += 1;
-        if (didMatch) matched += 1;
+
+      const newRow = inserted[0];
+      if (!newRow?.isInsert) continue;
+      staged += 1;
+      if (scored && scored.method && scored.tier !== "none") matched += 1;
+
+      // ── Auto-apply high-confidence matches (reversible). ──
+      if (scored && scored.tier === "high") {
+        const did = await autoApply(newRow.id, p, scored);
+        if (did) autoApplied += 1;
       }
     }
 
-    // Advance the watermark. Use the max LastUpdatedTime we saw (so a
-    // future sync re-checks that boundary row, which the idempotent
-    // onConflict upsert makes harmless), falling back to now when nothing
-    // was pulled.
     const newWatermark =
       maxUpdated !== null ? new Date(maxUpdated) : since ?? new Date();
     await db
@@ -164,40 +210,136 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
       })
       .where(eq(quickbooksConnections.realmId, conn.realmId));
 
-    return { pulled: pulled.length, staged, matched };
+    return { pulled: pulled.length, staged, matched, autoApplied };
   });
 
   if (!outcome.ran) {
-    return { ran: false, pulled: 0, staged: 0, matched: 0 };
+    return { ran: false, pulled: 0, staged: 0, matched: 0, autoApplied: 0 };
   }
   return { ran: true, ...outcome.result! };
 }
 
+/**
+ * Apply a high-confidence match to the ledger inside a guarded transaction.
+ *   exactly one in-window gift → RECONCILE (matchedGiftId).
+ *   zero in-window gifts       → MINT a new gift (createdGiftId).
+ *   many                       → ambiguous; leave pending for review.
+ * Each write re-checks the row is still pending so a concurrent human action is
+ * never clobbered. Returns true when an action was applied.
+ */
+async function autoApply(
+  stagedId: string,
+  source: Awaited<ReturnType<typeof pullIncomingPayments>>[number],
+  scored: ScoredMatch,
+): Promise<boolean> {
+  const stillPending = and(
+    eq(stagedPayments.id, stagedId),
+    eq(stagedPayments.status, "pending"),
+  );
+
+  // RECONCILE to the single matching existing gift. Guard that no other staged
+  // row has already grabbed this gift (NOT EXISTS for the common case; the
+  // partial-unique index backstops a true race). On a race, leave the row
+  // pending for human review rather than double-linking the gift.
+  if (scored.matchedGiftId) {
+    const giftId = scored.matchedGiftId;
+    try {
+      const upd = await db
+        .update(stagedPayments)
+        .set({
+          status: "approved",
+          matchStatus: "matched",
+          matchedGiftId: giftId,
+          autoApplied: true,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            stillPending,
+            sql`NOT EXISTS (
+              SELECT 1 FROM staged_payments sp2
+              WHERE (sp2.matched_gift_id = ${giftId}
+                     OR sp2.created_gift_id = ${giftId})
+                AND sp2.id <> ${stagedId}
+            )`,
+          ),
+        )
+        .returning({ id: stagedPayments.id });
+      return upd.length > 0;
+    } catch (e) {
+      if (isUniqueViolation(e)) return false;
+      throw e;
+    }
+  }
+
+  // MINT a new gift only when there is no plausible existing one.
+  if (scored.giftCandidateCount === 0) {
+    const giftId = newId();
+    let applied = false;
+    await db.transaction(async (tx) => {
+      const locked = await tx
+        .select()
+        .from(stagedPayments)
+        .where(eq(stagedPayments.id, stagedId))
+        .for("update")
+        .then((r) => r[0]);
+      if (!locked || locked.status !== "pending") return;
+      await tx.insert(giftsAndPayments).values(
+        buildGiftValuesFromStaged(
+          giftId,
+          {
+            qbEntityType: source.qbEntityType,
+            qbEntityId: source.qbEntityId,
+            amount: locked.amount,
+            dateReceived: locked.dateReceived,
+            payerName: locked.payerName,
+            rawReference: locked.rawReference,
+            organizationId: locked.organizationId,
+            individualGiverPersonId: locked.individualGiverPersonId,
+            householdId: locked.householdId,
+            matchedPaymentIntermediaryId: locked.matchedPaymentIntermediaryId,
+          },
+          // Auto-created in the off-hours worker — no acting user.
+          null,
+        ),
+      );
+      await tx
+        .update(stagedPayments)
+        .set({
+          status: "approved",
+          matchStatus: "matched",
+          createdGiftId: giftId,
+          autoApplied: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(stagedPayments.id, stagedId));
+      applied = true;
+    });
+    return applied;
+  }
+
+  // Ambiguous (multiple candidate gifts): keep the confident donor but leave
+  // the row in "needs review" so a human picks the gift.
+  return false;
+}
+
 export interface QuickbooksRematchSummary {
-  /** False when the rematch was skipped (a sync/rematch was already running). */
   ran: boolean;
-  /** Candidate rows examined (pending + unmatched + no donor). */
   scanned: number;
-  /** Rows newly auto-matched by this run. */
   matched: number;
 }
 
-// Bounded fan-out so a few hundred candidates finish well within one request
-// without overwhelming the DB pool.
 const REMATCH_CONCURRENCY = 8;
 
 /**
- * On-demand backfill: re-run donor auto-match over staged payments that are
- * still `pending` AND `unmatched` AND have no donor set, applying the latest
- * matching logic (e.g. the memo/reference fallback) to rows staged before it
- * existed.
- *
- * Purely additive and safe to run repeatedly: it only ever SETS a confident,
- * unambiguous match. It never overwrites a donor a human already chose, never
- * un-matches a row, and never touches excluded/approved/rejected rows. Each
- * write is a guarded conditional UPDATE (still pending + unmatched + no donor),
- * so a concurrent human resolve is never clobbered. Advisory-locked under the
- * shared QuickBooks key so it can't race a sync or another rematch.
+ * On-demand backfill: re-score still-`pending` + `unmatched` + donor-less rows
+ * with the latest matching logic and record any donor hint it finds (matched /
+ * suggested). DONOR-ONLY by design — it never mints or reconciles a gift (that
+ * auto-apply happens only on fresh ingestion), so a manual "rematch" button can
+ * never bulk-write the ledger by surprise. Purely additive: each write is a
+ * guarded conditional UPDATE (still pending + unmatched + donor-less), so a
+ * concurrent human resolve is never clobbered. Advisory-locked under the shared
+ * QuickBooks key.
  */
 export async function rematchStagedPayments(): Promise<QuickbooksRematchSummary> {
   const outcome = await withSyncLock(QB_LOCK_KEY, "quickbooks", async () => {
@@ -207,6 +349,9 @@ export async function rematchStagedPayments(): Promise<QuickbooksRematchSummary>
         payerName: stagedPayments.payerName,
         payerEmail: stagedPayments.payerEmail,
         rawReference: stagedPayments.rawReference,
+        lineDescription: stagedPayments.lineDescription,
+        amount: stagedPayments.amount,
+        dateReceived: stagedPayments.dateReceived,
       })
       .from(stagedPayments)
       .where(
@@ -224,21 +369,27 @@ export async function rematchStagedPayments(): Promise<QuickbooksRematchSummary>
       const chunk = candidates.slice(i, i + REMATCH_CONCURRENCY);
       const results = await Promise.all(
         chunk.map(async (row) => {
-          const { match, matched: didMatch } = await autoMatchDonor(
-            row.payerName,
-            row.payerEmail,
-            row.rawReference,
-          );
-          if (!didMatch) return false;
-          // Re-check the guard at write time: only flip rows STILL pending +
-          // unmatched + donor-less, so a concurrent resolve is never clobbered.
+          const scored = await scoreStagedPayment({
+            payerName: row.payerName,
+            payerEmail: row.payerEmail,
+            rawReference: row.rawReference,
+            lineDescription: row.lineDescription,
+            amount: row.amount,
+            dateReceived: row.dateReceived,
+          });
+          if (scored.tier === "none" || !scored.method) return false;
+          const newMatchStatus =
+            scored.tier === "high" ? "matched" : "suggested";
           const upd = await db
             .update(stagedPayments)
             .set({
-              matchStatus: "matched",
-              organizationId: match.organizationId,
-              individualGiverPersonId: match.individualGiverPersonId,
-              householdId: match.householdId,
+              matchStatus: newMatchStatus,
+              matchScore: scored.score,
+              matchMethod: scored.method,
+              organizationId: scored.donor.organizationId,
+              individualGiverPersonId: scored.donor.individualGiverPersonId,
+              householdId: scored.donor.householdId,
+              matchedPaymentIntermediaryId: scored.intermediaryId,
               updatedAt: new Date(),
             })
             .where(
@@ -261,8 +412,100 @@ export async function rematchStagedPayments(): Promise<QuickbooksRematchSummary>
     return { scanned: candidates.length, matched };
   });
 
+  if (!outcome.ran) return { ran: false, scanned: 0, matched: 0 };
+  return { ran: true, ...outcome.result! };
+}
+
+export interface QuickbooksReclassifySummary {
+  ran: boolean;
+  scanned: number;
+  excluded: number;
+  included: number;
+}
+
+/**
+ * Re-runnable classifier pass. Re-applies the noise rules to rows whose
+ * classification is still `auto` AND status IN (pending, excluded), so refining
+ * the rules retroactively cleans up (or restores) already-staged rows. NEVER
+ * touches a `manual` row (a human include/exclude is permanent) or an
+ * approved/rejected row. Each write is guarded so it can't clobber a concurrent
+ * manual override. Advisory-locked under the shared QuickBooks key.
+ */
+export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySummary> {
+  const outcome = await withSyncLock(QB_LOCK_KEY, "quickbooks", async () => {
+    const candidates = await db
+      .select({
+        id: stagedPayments.id,
+        status: stagedPayments.status,
+        amount: stagedPayments.amount,
+        payerName: stagedPayments.payerName,
+        rawReference: stagedPayments.rawReference,
+        lineDescription: stagedPayments.lineDescription,
+        lineItemNames: stagedPayments.lineItemNames,
+        lineAccountNames: stagedPayments.lineAccountNames,
+      })
+      .from(stagedPayments)
+      .where(
+        and(
+          eq(stagedPayments.classificationSource, "auto"),
+          inArray(stagedPayments.status, ["pending", "excluded"]),
+        ),
+      );
+
+    const guard = (id: string) =>
+      and(
+        eq(stagedPayments.id, id),
+        eq(stagedPayments.classificationSource, "auto"),
+        inArray(stagedPayments.status, ["pending", "excluded"]),
+      );
+
+    let excluded = 0;
+    let included = 0;
+    for (const row of candidates) {
+      const cls = classifyStagedPayment({
+        amount: row.amount,
+        payerName: row.payerName,
+        lineItemNames: row.lineItemNames,
+        lineAccountNames: row.lineAccountNames,
+        rawReference: row.rawReference,
+        lineDescription: row.lineDescription,
+      });
+      if (cls.excluded && row.status !== "excluded") {
+        const upd = await db
+          .update(stagedPayments)
+          .set({
+            status: "excluded",
+            exclusionReason: cls.reason,
+            updatedAt: new Date(),
+          })
+          .where(guard(row.id))
+          .returning({ id: stagedPayments.id });
+        if (upd.length) excluded += 1;
+      } else if (cls.excluded && row.status === "excluded") {
+        // Already excluded — keep status, just refresh the reason if it drifted.
+        await db
+          .update(stagedPayments)
+          .set({ exclusionReason: cls.reason, updatedAt: new Date() })
+          .where(guard(row.id));
+      } else if (!cls.excluded && row.status === "excluded") {
+        const upd = await db
+          .update(stagedPayments)
+          .set({
+            status: "pending",
+            exclusionReason: null,
+            updatedAt: new Date(),
+          })
+          .where(guard(row.id))
+          .returning({ id: stagedPayments.id });
+        if (upd.length) included += 1;
+      }
+    }
+
+    return { scanned: candidates.length, excluded, included };
+  });
+
   if (!outcome.ran) {
-    return { ran: false, scanned: 0, matched: 0 };
+    return { ran: false, scanned: 0, excluded: 0, included: 0 };
   }
   return { ran: true, ...outcome.result! };
 }

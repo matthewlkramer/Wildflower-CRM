@@ -6,8 +6,10 @@ import {
   organizations,
   households,
   people,
+  paymentIntermediaries,
 } from "@workspace/db/schema";
 import { and, count, desc, eq, getTableColumns, sql } from "drizzle-orm";
+import { alias, type PgSelect } from "drizzle-orm/pg-core";
 import { requireAuth } from "../middlewares/requireAuth";
 import {
   asyncHandler,
@@ -20,19 +22,33 @@ import { getAppUser } from "../lib/appRequest";
 import { validateGiftInvariants, type InvariantIssue } from "@workspace/api-zod";
 import {
   ResolveStagedPaymentBody,
-  LinkStagedPaymentBody,
+  ReconcileStagedPaymentBody,
   ExcludeStagedPaymentBody,
 } from "@workspace/api-zod";
-import { donorOf, validateGiftLink } from "../lib/quickbooksLink";
+import { donorOf, donorsMatch, validateGiftLink } from "../lib/quickbooksLink";
+import { buildGiftValuesFromStaged } from "../lib/quickbooksGift";
 import { logger } from "../lib/logger";
-import { syncQuickbooks, rematchStagedPayments } from "../lib/quickbooksSync";
+import {
+  syncQuickbooks,
+  rematchStagedPayments,
+  reclassifyStagedPayments,
+} from "../lib/quickbooksSync";
 
 /**
- * Review queue for QuickBooks-sourced payments plus the manual "sync now"
- * trigger. Listing/resolving is open to any authenticated fundraiser;
- * triggering a sync and approving/rejecting that mints ledger rows are
- * the day-to-day fundraiser workflow (auth-gated). The connection itself
- * is admin-gated in quickbooksOauth.ts.
+ * Review queue for QuickBooks-sourced payments plus the manual sync / rematch /
+ * reclassify triggers. The queue is organized into three derived buckets:
+ *
+ *   Auto-matched : status='approved' AND autoApplied=true AND
+ *                  matchConfirmedAt IS NULL — high-confidence matches the system
+ *                  already applied (reconciled to an existing gift OR minted a
+ *                  new one). Reversible.
+ *   Needs review : status='pending' — uncertain; nothing applied to the ledger.
+ *   Excluded     : status='excluded' — non-donation noise (auto or manual).
+ *   (Done        : status='approved' that a human confirmed or created.)
+ *
+ * Listing/resolving is open to any authenticated fundraiser; sync / rematch /
+ * reclassify are admin-gated. The connection itself is admin-gated in
+ * quickbooksOauth.ts.
  */
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -59,9 +75,27 @@ function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void 
   });
 }
 
-// Donor display names joined for the review-queue UI.
+// The gift a staged row resolved to (reconciled OR minted), for display.
+const resolvedGift = alias(giftsAndPayments, "resolved_gift");
+
+// Derived queue bucket for a staged row (kept in sync with the where-clauses
+// in queueWhere below).
+const queueExpr = sql<string>`
+  CASE
+    WHEN ${stagedPayments.status} = 'excluded' THEN 'excluded'
+    WHEN ${stagedPayments.status} = 'rejected' THEN 'rejected'
+    WHEN ${stagedPayments.status} = 'pending'  THEN 'needs_review'
+    WHEN ${stagedPayments.status} = 'approved'
+         AND ${stagedPayments.autoApplied} = true
+         AND ${stagedPayments.matchConfirmedAt} IS NULL THEN 'auto_matched'
+    ELSE 'done'
+  END
+`.as("queue");
+
+// Donor + resolved-gift + intermediary display fields joined for the queue UI.
 const stagedSelect = {
   ...getTableColumns(stagedPayments),
+  queue: queueExpr,
   organizationName: organizations.name,
   householdName: households.name,
   individualGiverPersonName: sql<string | null>`
@@ -70,55 +104,73 @@ const stagedSelect = {
       NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
     )
   `.as("individual_giver_person_name"),
+  intermediaryName: paymentIntermediaries.name,
+  resolvedGiftId: resolvedGift.id,
+  resolvedGiftName: resolvedGift.name,
+  resolvedGiftAmount: resolvedGift.amount,
+  resolvedGiftDate: resolvedGift.dateReceived,
 };
+
+function withJoins<T extends PgSelect>(q: T) {
+  return q
+    .leftJoin(organizations, eq(organizations.id, stagedPayments.organizationId))
+    .leftJoin(households, eq(households.id, stagedPayments.householdId))
+    .leftJoin(people, eq(people.id, stagedPayments.individualGiverPersonId))
+    .leftJoin(
+      paymentIntermediaries,
+      eq(paymentIntermediaries.id, stagedPayments.matchedPaymentIntermediaryId),
+    )
+    .leftJoin(
+      resolvedGift,
+      sql`${resolvedGift.id} = COALESCE(${stagedPayments.matchedGiftId}, ${stagedPayments.createdGiftId})`,
+    );
+}
+
+type Queue = "needs_review" | "auto_matched" | "excluded" | "done" | "rejected";
+
+function queueWhere(queue: Queue) {
+  switch (queue) {
+    case "auto_matched":
+      return and(
+        eq(stagedPayments.status, "approved"),
+        eq(stagedPayments.autoApplied, true),
+        sql`${stagedPayments.matchConfirmedAt} IS NULL`,
+      );
+    case "done":
+      return and(
+        eq(stagedPayments.status, "approved"),
+        sql`(${stagedPayments.matchConfirmedAt} IS NOT NULL OR ${stagedPayments.autoApplied} = false)`,
+      );
+    case "excluded":
+      return eq(stagedPayments.status, "excluded");
+    case "rejected":
+      return eq(stagedPayments.status, "rejected");
+    case "needs_review":
+    default:
+      return eq(stagedPayments.status, "pending");
+  }
+}
 
 // ─── GET /staged-payments ──────────────────────────────────────────────────
 router.get(
   "/staged-payments",
   asyncHandler(async (req, res) => {
-    const rawStatus =
-      typeof req.query["status"] === "string" ? req.query["status"] : "pending";
-    const status =
-      rawStatus === "approved" ||
-      rawStatus === "rejected" ||
-      rawStatus === "excluded"
-        ? rawStatus
-        : "pending";
-    const rawMatchState =
-      typeof req.query["matchState"] === "string"
-        ? req.query["matchState"]
-        : null;
-    const matchState =
-      rawMatchState === "unmatched" || rawMatchState === "matched"
-        ? rawMatchState
-        : null;
+    const raw = typeof req.query["queue"] === "string" ? req.query["queue"] : "";
+    const queue: Queue = (
+      ["needs_review", "auto_matched", "excluded", "done", "rejected"] as const
+    ).includes(raw as Queue)
+      ? (raw as Queue)
+      : "needs_review";
     const { limit, offset, page } = parsePagination(req.query);
+    const where = queueWhere(queue);
 
-    const where =
-      matchState != null
-        ? and(
-            eq(stagedPayments.status, status),
-            eq(
-              stagedPayments.matchStatus,
-              matchState === "matched" ? "matched" : "unmatched",
-            ),
-          )
-        : eq(stagedPayments.status, status);
     const [rows, totalRow] = await Promise.all([
-      db
-        .select(stagedSelect)
-        .from(stagedPayments)
-        .leftJoin(
-          organizations,
-          eq(organizations.id, stagedPayments.organizationId),
-        )
-        .leftJoin(households, eq(households.id, stagedPayments.householdId))
-        .leftJoin(
-          people,
-          eq(people.id, stagedPayments.individualGiverPersonId),
-        )
+      withJoins(db.select(stagedSelect).from(stagedPayments).$dynamic())
         .where(where)
-        .orderBy(desc(stagedPayments.dateReceived), desc(stagedPayments.createdAt))
+        .orderBy(
+          desc(stagedPayments.dateReceived),
+          desc(stagedPayments.createdAt),
+        )
         .limit(limit)
         .offset(offset),
       db
@@ -135,9 +187,65 @@ router.get(
   }),
 );
 
+// ─── GET /staged-payments-summary ──────────────────────────────────────────
+router.get(
+  "/staged-payments-summary",
+  asyncHandler(async (_req, res) => {
+    const [statusRows, reasonRows, autoMatchedRow] = await Promise.all([
+      db
+        .select({ status: stagedPayments.status, value: count() })
+        .from(stagedPayments)
+        .groupBy(stagedPayments.status),
+      db
+        .select({ reason: stagedPayments.exclusionReason, value: count() })
+        .from(stagedPayments)
+        .where(eq(stagedPayments.status, "excluded"))
+        .groupBy(stagedPayments.exclusionReason),
+      db
+        .select({ value: count() })
+        .from(stagedPayments)
+        .where(queueWhere("auto_matched"))
+        .then((r) => r[0]),
+    ]);
+
+    const byStatus = { pending: 0, approved: 0, rejected: 0, excluded: 0 };
+    for (const r of statusRows) {
+      if (r.status in byStatus) {
+        byStatus[r.status as keyof typeof byStatus] = r.value;
+      }
+    }
+
+    const excludedByReason = {
+      zero_amount: 0,
+      loan: 0,
+      membership: 0,
+      interest: 0,
+      government_reimbursement: 0,
+      tax_refund: 0,
+      other_revenue: 0,
+      earned_income: 0,
+    };
+    for (const r of reasonRows) {
+      if (r.reason && r.reason in excludedByReason) {
+        excludedByReason[r.reason as keyof typeof excludedByReason] = r.value;
+      }
+    }
+
+    const autoMatched = autoMatchedRow?.value ?? 0;
+    res.json({
+      needsReview: byStatus.pending,
+      autoMatched,
+      done: byStatus.approved - autoMatched,
+      rejected: byStatus.rejected,
+      excluded: byStatus.excluded,
+      excludedByReason,
+    });
+  }),
+);
+
 // ─── POST /staged-payments/:id/resolve ─────────────────────────────────────
-// Fundraiser fixes the donor match (sets exactly one donor FK). Keeps the
-// row pending; switches matchStatus to "matched".
+// Fundraiser fixes the donor match (sets exactly one donor FK). Keeps the row
+// pending; switches matchStatus to "matched" and stamps human confirmation.
 router.post(
   "/staged-payments/:id/resolve",
   asyncHandler(async (req, res) => {
@@ -159,7 +267,7 @@ router.post(
     const body = parsed.data;
 
     const existing = await db
-      .select()
+      .select({ status: stagedPayments.status })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
@@ -180,15 +288,13 @@ router.post(
     const issues = validateGiftInvariants(donor);
     if (issues.length) return respondInvariantFailure(res, issues);
 
-    // A human picking the donor is itself a human-approved match, so stamp
-    // match confirmation here (not just on the dedicated confirm-match route).
-    // Conditional UPDATE on status='pending' so a concurrent approve/reject
-    // can't be clobbered between the precheck above and this write (TOCTOU).
     const [row] = await db
       .update(stagedPayments)
       .set({
         ...donor,
         matchStatus: "matched",
+        matchMethod: "manual",
+        matchedPaymentIntermediaryId: body.paymentIntermediaryId ?? null,
         matchConfirmedByUserId: user.id,
         matchConfirmedAt: new Date(),
         updatedAt: new Date(),
@@ -208,11 +314,11 @@ router.post(
   }),
 );
 
-// ─── POST /staged-payments/:id/approve ─────────────────────────────────────
-// Mint a real gifts_and_payments row from the staged payment, then mark
-// the staged row approved (idempotent: a second approve is a 409).
+// ─── POST /staged-payments/:id/create-gift ─────────────────────────────────
+// Mint a real gifts_and_payments row from the staged payment (donor XOR), then
+// mark the staged row approved + done (autoApplied=false, human-confirmed).
 router.post(
-  "/staged-payments/:id/approve",
+  "/staged-payments/:id/create-gift",
   asyncHandler(async (req, res) => {
     const user = getAppUser(req);
     if (!user) {
@@ -220,8 +326,6 @@ router.post(
       return;
     }
     const id = paramId(req);
-    // Cheap pre-read for friendly 404 / 409 / 400 before opening a tx. The
-    // authoritative checks happen under a row lock inside the tx below.
     const existing = await db
       .select()
       .from(stagedPayments)
@@ -243,11 +347,9 @@ router.post(
     if (preIssues.length) return respondInvariantFailure(res, preIssues);
 
     const giftId = newId();
-    // Lock + re-read the row inside the tx (SELECT ... FOR UPDATE) so the gift
-    // is always minted from the *fresh* donor snapshot. A concurrent unmatch /
-    // resolve can change or clear the donor while status stays 'pending'; the
-    // lock makes those serialize behind this tx and re-validation here means we
-    // never mint a gift from stale donor data (TOCTOU on the donor fields).
+    // Lock + re-read the row inside the tx so the gift is always minted from
+    // the *fresh* donor snapshot (a concurrent unmatch/resolve can change the
+    // donor while status stays pending → TOCTOU).
     const NOT_PENDING = "__staged_not_pending__";
     const INVARIANT = "__staged_invariant__";
     let lockedIssues: InvariantIssue[] = [];
@@ -259,9 +361,7 @@ router.post(
           .where(eq(stagedPayments.id, id))
           .for("update")
           .then((r) => r[0]);
-        if (!locked || locked.status !== "pending") {
-          throw new Error(NOT_PENDING);
-        }
+        if (!locked || locked.status !== "pending") throw new Error(NOT_PENDING);
         const donor = {
           organizationId: locked.organizationId,
           individualGiverPersonId: locked.individualGiverPersonId,
@@ -272,30 +372,34 @@ router.post(
           lockedIssues = issues;
           throw new Error(INVARIANT);
         }
-        const giftName =
-          locked.payerName ??
-          locked.rawReference ??
-          `QuickBooks ${locked.qbEntityType}`;
-        await tx.insert(giftsAndPayments).values({
-          id: giftId,
-          name: giftName,
-          amount: locked.amount,
-          dateReceived: locked.dateReceived,
-          organizationId: donor.organizationId,
-          individualGiverPersonId: donor.individualGiverPersonId,
-          householdId: donor.householdId,
-          details: `Imported from QuickBooks (${locked.qbEntityType} #${locked.qbEntityId}).`,
-          ownerUserId: user.id,
-        });
+        await tx.insert(giftsAndPayments).values(
+          buildGiftValuesFromStaged(
+            giftId,
+            {
+              qbEntityType: locked.qbEntityType,
+              qbEntityId: locked.qbEntityId,
+              amount: locked.amount,
+              dateReceived: locked.dateReceived,
+              payerName: locked.payerName,
+              rawReference: locked.rawReference,
+              organizationId: donor.organizationId,
+              individualGiverPersonId: donor.individualGiverPersonId,
+              householdId: donor.householdId,
+              matchedPaymentIntermediaryId: locked.matchedPaymentIntermediaryId,
+            },
+            user.id,
+          ),
+        );
         await tx
           .update(stagedPayments)
           .set({
             status: "approved",
             createdGiftId: giftId,
-            // Minted a NEW gift (not a link). Set false explicitly so the
-            // unlink guard can never mistake a minted approval for a linked one
-            // and orphan the gift, even if the row carried stale state.
-            giftWasLinked: false,
+            matchedGiftId: null,
+            autoApplied: false,
+            matchStatus: "matched",
+            matchConfirmedByUserId: user.id,
+            matchConfirmedAt: new Date(),
             approvedByUserId: user.id,
             approvedAt: new Date(),
             updatedAt: new Date(),
@@ -325,7 +429,6 @@ router.post(
 );
 
 // ─── POST /staged-payments/:id/reject ──────────────────────────────────────
-// Discard a staged payment. Kept (not deleted) so re-sync won't re-stage.
 router.post(
   "/staged-payments/:id/reject",
   asyncHandler(async (req, res) => {
@@ -348,8 +451,6 @@ router.post(
       });
       return;
     }
-    // Conditional UPDATE on status='pending' so a concurrent approve/reject
-    // can't overwrite an already-resolved row (TOCTOU).
     const [row] = await db
       .update(stagedPayments)
       .set({
@@ -374,8 +475,9 @@ router.post(
 );
 
 // ─── POST /staged-payments/:id/re-include ──────────────────────────────────
-// Move an auto-excluded row back to the pending queue (false positive). Clears
-// the exclusion reason. Only an excluded row can be re-included.
+// Move an excluded row back to the pending queue (false positive). Pins
+// classificationSource='manual' so the re-runnable classifier never re-excludes
+// it. Only an excluded row can be re-included.
 router.post(
   "/staged-payments/:id/re-include",
   asyncHandler(async (req, res) => {
@@ -398,22 +500,28 @@ router.post(
       .set({
         status: "pending",
         exclusionReason: null,
+        classificationSource: "manual",
         updatedAt: new Date(),
       })
-      .where(eq(stagedPayments.id, id))
+      .where(
+        and(eq(stagedPayments.id, id), eq(stagedPayments.status, "excluded")),
+      )
       .returning();
+    if (!row) {
+      res.status(409).json({
+        error: "not_excluded",
+        message: "This staged payment is no longer excluded. Refresh and retry.",
+      });
+      return;
+    }
     res.json(row);
   }),
 );
 
 // ─── POST /staged-payments/:id/exclude ─────────────────────────────────────
-// Human-driven counterpart to the insert-time auto-exclude: file a staged row
-// under a non-gift category (membership, loan, …) and move it to the excluded
-// bucket. Allowed from pending (exclude it) OR from excluded (reclassify its
-// category); approved/rejected rows are terminal and can't be excluded. The
-// donor match is left intact so re-include restores it. The status guard lives
-// in the UPDATE predicate (not just the pre-read) so a concurrent approve/reject
-// can't be clobbered (TOCTOU); 409 on zero rows.
+// Human-driven exclude: file a staged row under a non-gift category and move it
+// to the excluded bucket. Pins classificationSource='manual' so it survives the
+// re-runnable classifier. Allowed from pending or excluded (reclassify).
 router.post(
   "/staged-payments/:id/exclude",
   asyncHandler(async (req, res) => {
@@ -449,6 +557,7 @@ router.post(
       .set({
         status: "excluded",
         exclusionReason,
+        classificationSource: "manual",
         updatedAt: new Date(),
       })
       .where(
@@ -470,15 +579,37 @@ router.post(
   }),
 );
 
+// Shared candidate-gift select (donor names + already-linked flag).
+function giftCandidateSelect(excludeStagedId: string) {
+  return {
+    ...getTableColumns(giftsAndPayments),
+    organizationName: organizations.name,
+    householdName: households.name,
+    individualGiverPersonName: people.fullName,
+    alreadyLinkedStagedPaymentId: sql<string | null>`(
+      SELECT sp2.id FROM staged_payments sp2
+      WHERE (sp2.matched_gift_id = ${giftsAndPayments.id}
+             OR sp2.created_gift_id = ${giftsAndPayments.id})
+        AND sp2.id <> ${excludeStagedId}
+      LIMIT 1
+    )`,
+  };
+}
+
+function giftCandidateJoins<T extends PgSelect>(q: T) {
+  return q
+    .leftJoin(
+      organizations,
+      eq(organizations.id, giftsAndPayments.organizationId),
+    )
+    .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
+    .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId));
+}
+
 // ─── GET /staged-payments/:id/gift-candidates ──────────────────────────────
 // Existing gifts for the staged row's saved donor whose amount is at or just
-// above the staged amount — so a fundraiser can link the QB record to a gift
-// already in the ledger instead of minting a duplicate. The upper band absorbs
-// a payment-processor fee the platform (e.g. Donorbox) kept: the donor's gross
-// gift in the CRM is slightly larger than the net QuickBooks deposit (a QB
-// $47.25 should still surface a CRM $50 gift). Empty list when the staged row
-// has no donor or no amount. Flags candidates already linked to another staged
-// payment so the UI can disable double-linking.
+// above the staged amount (a Donorbox-style processor fee makes the CRM gross
+// gift slightly larger than the QB net deposit). Empty when no donor/amount.
 router.get(
   "/staged-payments/:id/gift-candidates",
   asyncHandler(async (req, res) => {
@@ -503,50 +634,22 @@ router.get(
             ? eq(giftsAndPayments.householdId, donor.householdId)
             : null;
 
-    // No donor or no amount → nothing to match against.
     if (donorFilter == null || staged.amount == null) {
       res.json({ data: [] });
       return;
     }
 
-    // Flag a gift already linked to a *different* staged payment via a
-    // correlated subquery (not a join) so a gift linked by multiple staged
-    // rows can't duplicate candidate rows.
-    const rows = await db
-      .select({
-        ...getTableColumns(giftsAndPayments),
-        organizationName: organizations.name,
-        householdName: households.name,
-        individualGiverPersonName: people.fullName,
-        alreadyLinkedStagedPaymentId: sql<string | null>`(
-          SELECT sp2.id FROM staged_payments sp2
-          WHERE sp2.created_gift_id = ${giftsAndPayments.id} AND sp2.id <> ${id}
-          LIMIT 1
-        )`,
-      })
-      .from(giftsAndPayments)
-      .leftJoin(
-        organizations,
-        eq(organizations.id, giftsAndPayments.organizationId),
-      )
-      .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
-      .leftJoin(
-        people,
-        eq(people.id, giftsAndPayments.individualGiverPersonId),
-      )
+    const rows = await giftCandidateJoins(
+      db.select(giftCandidateSelect(id)).from(giftsAndPayments).$dynamic(),
+    )
       .where(
         and(
           donorFilter,
-          // Gross CRM gift must be at the QB net amount (allow a cent of
-          // rounding) and no more than ~10% + $1 above it — wide enough to
-          // cover a Donorbox-style processing fee, tight enough to avoid
-          // sweeping in unrelated gifts.
           sql`${giftsAndPayments.amount} >= ${staged.amount}::numeric - 0.01`,
           sql`${giftsAndPayments.amount} <= ${staged.amount}::numeric * 1.10 + 1`,
         ),
       )
       .orderBy(
-        // Closest amount first (exact matches lead), then closest date.
         sql`ABS(${giftsAndPayments.amount} - ${staged.amount}::numeric) ASC`,
         sql`ABS(${giftsAndPayments.dateReceived} - ${staged.dateReceived}::date) ASC NULLS LAST`,
         desc(giftsAndPayments.dateReceived),
@@ -557,12 +660,101 @@ router.get(
   }),
 );
 
-// ─── POST /staged-payments/:id/link ────────────────────────────────────────
-// Tie a staged payment to an EXISTING gift instead of minting a new one. Marks
-// the row approved with createdGiftId → the chosen gift. Guards: row pending,
-// gift exists, donor matches, gift not already linked elsewhere.
+// ─── GET /staged-payments/:id/gift-window ──────────────────────────────────
+// Donor-AGNOSTIC entry point: existing gifts across ALL donors whose amount and
+// date sit in a window around the staged payment. Lets a fundraiser reconcile
+// to a gift even when the donor wasn't auto-resolved. Empty when no amount.
+router.get(
+  "/staged-payments/:id/gift-window",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const staged = await db
+      .select()
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (!staged) return notFound(res, "staged payment");
+    if (staged.amount == null) {
+      res.json({ data: [] });
+      return;
+    }
+    const days = Math.min(
+      365,
+      Math.max(
+        1,
+        Number(
+          typeof req.query["days"] === "string" ? req.query["days"] : 30,
+        ) || 30,
+      ),
+    );
+
+    const dateClause = staged.dateReceived
+      ? sql`AND (${giftsAndPayments.dateReceived} IS NULL OR ABS(${giftsAndPayments.dateReceived} - ${staged.dateReceived}::date) <= ${days})`
+      : sql``;
+
+    const rows = await giftCandidateJoins(
+      db.select(giftCandidateSelect(id)).from(giftsAndPayments).$dynamic(),
+    )
+      .where(
+        and(
+          sql`${giftsAndPayments.amount} >= ${staged.amount}::numeric - 0.01`,
+          sql`${giftsAndPayments.amount} <= ${staged.amount}::numeric * 1.10 + 1`,
+          dateClause,
+        ),
+      )
+      .orderBy(
+        sql`ABS(${giftsAndPayments.amount} - ${staged.amount}::numeric) ASC`,
+        sql`ABS(${giftsAndPayments.dateReceived} - ${staged.dateReceived}::date) ASC NULLS LAST`,
+        desc(giftsAndPayments.dateReceived),
+      )
+      .limit(50);
+
+    res.json({ data: rows });
+  }),
+);
+
+// ─── GET /staged-payments-donor-search ─────────────────────────────────────
+// Trigram donor search across organizations / people / households for the
+// reconciler's manual donor picker.
+router.get(
+  "/staged-payments-donor-search",
+  asyncHandler(async (req, res) => {
+    const q =
+      typeof req.query["q"] === "string" ? req.query["q"].trim() : "";
+    if (q.length < 2) {
+      res.json({ data: [] });
+      return;
+    }
+    const rows = (
+      await db.execute(sql`
+        SELECT id, kind, name, sim FROM (
+          SELECT id, 'organization' AS kind, name AS name,
+                 similarity(name, ${q}) AS sim
+            FROM organizations WHERE name % ${q}
+          UNION ALL
+          SELECT id, 'person' AS kind, full_name AS name,
+                 similarity(full_name, ${q}) AS sim
+            FROM people WHERE full_name IS NOT NULL AND full_name % ${q}
+          UNION ALL
+          SELECT id, 'household' AS kind, name AS name,
+                 similarity(name, ${q}) AS sim
+            FROM households WHERE name % ${q}
+        ) t
+        ORDER BY sim DESC
+        LIMIT 20
+      `)
+    ).rows as Array<{ id: string; kind: string; name: string }>;
+    res.json({ data: rows });
+  }),
+);
+
+// ─── POST /staged-payments/:id/reconcile ───────────────────────────────────
+// Tie a staged payment to an EXISTING gift (no new gift minted). Sets
+// matchedGiftId → the chosen gift, status approved, autoApplied=false. If the
+// staged row has no donor yet, it adopts the gift's donor; otherwise the donors
+// must match. Guards: row pending, gift exists, gift not already linked.
 router.post(
-  "/staged-payments/:id/link",
+  "/staged-payments/:id/reconcile",
   asyncHandler(async (req, res) => {
     const user = getAppUser(req);
     if (!user) {
@@ -570,7 +762,7 @@ router.post(
       return;
     }
     const id = paramId(req);
-    const parsed = LinkStagedPaymentBody.safeParse(req.body);
+    const parsed = ReconcileStagedPaymentBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
         error: "validation_error",
@@ -602,27 +794,25 @@ router.post(
       .then((r) => r[0]);
     if (!gift) return notFound(res, "gift");
 
-    // Is this gift already linked to a *different* staged payment?
-    const otherLink = await db
-      .select({ id: stagedPayments.id })
-      .from(stagedPayments)
-      .where(
-        and(
-          eq(stagedPayments.createdGiftId, giftId),
-          sql`${stagedPayments.id} <> ${id}`,
-        ),
-      )
-      .then((r) => r[0]);
+    const stagedDonor = donorOf(existing);
+    const giftDonor = donorOf(gift);
+    // Adopt the gift's donor when the staged row has no donor yet (window-based
+    // reconcile). Otherwise require the donors to match.
+    const stagedHasDonor =
+      stagedDonor.organizationId != null ||
+      stagedDonor.individualGiverPersonId != null ||
+      stagedDonor.householdId != null;
+    const finalDonor = stagedHasDonor ? stagedDonor : giftDonor;
 
-    const issues = validateGiftLink({
-      stagedDonor: donorOf(existing),
-      giftDonor: donorOf(gift),
-      alreadyLinkedStagedPaymentId: otherLink?.id ?? null,
-    });
-    if (issues.length) {
-      res.status(issues.some((i) => i.code === "already_linked") ? 409 : 400).json({
+    if (stagedHasDonor && !donorsMatch(stagedDonor, giftDonor)) {
+      const issues = validateGiftLink({
+        stagedDonor,
+        giftDonor,
+        alreadyLinkedStagedPaymentId: null,
+      });
+      res.status(400).json({
         error: "link_invalid",
-        message: "Cannot link this staged payment to that gift.",
+        message: "Cannot reconcile this staged payment to that gift.",
         details: {
           issues: issues.map((i) => ({ path: ["giftId"], message: i.message })),
         },
@@ -630,31 +820,56 @@ router.post(
       return;
     }
 
-    // Atomic write: only succeeds if the row is still pending AND no other
-    // staged payment has grabbed this gift since the pre-check. Without a
-    // DB unique constraint, this WHERE predicate is what prevents two
-    // concurrent links from double-counting one gift.
-    const updated = await db
-      .update(stagedPayments)
-      .set({
-        status: "approved",
-        createdGiftId: giftId,
-        giftWasLinked: true,
-        approvedByUserId: user.id,
-        approvedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(stagedPayments.id, id),
-          eq(stagedPayments.status, "pending"),
-          sql`NOT EXISTS (
-            SELECT 1 FROM staged_payments sp2
-            WHERE sp2.created_gift_id = ${giftId} AND sp2.id <> ${id}
-          )`,
-        ),
-      )
-      .returning({ id: stagedPayments.id });
+    // Atomic: only succeeds if still pending AND no other staged row has grabbed
+    // this gift (matched or created) since the pre-check. NOT EXISTS handles the
+    // common case; the partial-unique index on matched_gift_id backstops a true
+    // write-skew race (caught below as a 409).
+    let updated: Array<{ id: string }>;
+    try {
+      updated = await db
+        .update(stagedPayments)
+        .set({
+          ...finalDonor,
+          status: "approved",
+          matchedGiftId: giftId,
+          createdGiftId: null,
+          autoApplied: false,
+          matchStatus: "matched",
+          matchConfirmedByUserId: user.id,
+          matchConfirmedAt: new Date(),
+          approvedByUserId: user.id,
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(stagedPayments.id, id),
+            eq(stagedPayments.status, "pending"),
+            sql`NOT EXISTS (
+              SELECT 1 FROM staged_payments sp2
+              WHERE (sp2.matched_gift_id = ${giftId}
+                     OR sp2.created_gift_id = ${giftId})
+                AND sp2.id <> ${id}
+            )`,
+          ),
+        )
+        .returning({ id: stagedPayments.id });
+    } catch (e) {
+      if (
+        typeof e === "object" &&
+        e !== null &&
+        "code" in e &&
+        (e as { code?: string }).code === "23505"
+      ) {
+        res.status(409).json({
+          error: "link_conflict",
+          message:
+            "That gift was just linked to another payment. Refresh and try again.",
+        });
+        return;
+      }
+      throw e;
+    }
 
     if (updated.length === 0) {
       res.status(409).json({
@@ -670,10 +885,10 @@ router.post(
 );
 
 // ─── POST /staged-payments/:id/confirm-match ───────────────────────────────
-// Confirm a system-suggested donor match without changing the donor or minting
-// a gift: stamps match confirmation so the row reads "human approved" instead
-// of "system matched". Guarded conditional UPDATE: only a pending row that
-// still has a donor is confirmed.
+// Confirm a system-suggested donor match (auto-matched → human approved)
+// without changing the donor or minting a gift. For auto-applied rows this is
+// what graduates them from "Auto-matched" to "Done". Works on a pending row
+// with a donor OR an auto-applied approved row.
 router.post(
   "/staged-payments/:id/confirm-match",
   asyncHandler(async (req, res) => {
@@ -683,34 +898,6 @@ router.post(
       return;
     }
     const id = paramId(req);
-    const existing = await db
-      .select()
-      .from(stagedPayments)
-      .where(eq(stagedPayments.id, id))
-      .then((r) => r[0]);
-    if (!existing) return notFound(res, "staged payment");
-    if (existing.status !== "pending") {
-      res.status(409).json({
-        error: "not_pending",
-        message: "Only pending staged payments can be confirmed.",
-      });
-      return;
-    }
-    const hasDonor =
-      existing.organizationId != null ||
-      existing.individualGiverPersonId != null ||
-      existing.householdId != null;
-    if (!hasDonor) {
-      res.status(409).json({
-        error: "no_donor",
-        message: "Pick a donor before confirming the match.",
-      });
-      return;
-    }
-
-    // Guard the donor-present precondition in the UPDATE itself (not just the
-    // pre-read) so a concurrent unmatch between read and write can't leave a
-    // matched/human-approved row with no donor (TOCTOU).
     const [row] = await db
       .update(stagedPayments)
       .set({
@@ -722,16 +909,23 @@ router.post(
       .where(
         and(
           eq(stagedPayments.id, id),
-          eq(stagedPayments.status, "pending"),
           sql`num_nonnulls(${stagedPayments.organizationId}, ${stagedPayments.individualGiverPersonId}, ${stagedPayments.householdId}) >= 1`,
+          sql`(${stagedPayments.status} = 'pending'
+               OR (${stagedPayments.status} = 'approved' AND ${stagedPayments.autoApplied} = true))`,
         ),
       )
       .returning();
     if (!row) {
+      const exists = await db
+        .select({ id: stagedPayments.id })
+        .from(stagedPayments)
+        .where(eq(stagedPayments.id, id))
+        .then((r) => r[0]);
+      if (!exists) return notFound(res, "staged payment");
       res.status(409).json({
         error: "conflict",
         message:
-          "This staged payment changed before it could be confirmed. Refresh and retry.",
+          "This staged payment can't be confirmed (no donor, or not in a confirmable state). Refresh and retry.",
       });
       return;
     }
@@ -740,8 +934,7 @@ router.post(
 );
 
 // ─── POST /staged-payments/:id/unmatch ─────────────────────────────────────
-// Clear the donor match (system OR human) and reset the row to unmatched,
-// dropping any human confirmation. Only a pending row can be unmatched.
+// Clear the donor match and reset to unmatched. Only a pending row.
 router.post(
   "/staged-payments/:id/unmatch",
   asyncHandler(async (req, res) => {
@@ -759,23 +952,22 @@ router.post(
       });
       return;
     }
-
     const [row] = await db
       .update(stagedPayments)
       .set({
         organizationId: null,
         individualGiverPersonId: null,
         householdId: null,
+        matchedPaymentIntermediaryId: null,
         matchStatus: "unmatched",
+        matchScore: null,
+        matchMethod: null,
         matchConfirmedByUserId: null,
         matchConfirmedAt: null,
         updatedAt: new Date(),
       })
       .where(
-        and(
-          eq(stagedPayments.id, id),
-          eq(stagedPayments.status, "pending"),
-        ),
+        and(eq(stagedPayments.id, id), eq(stagedPayments.status, "pending")),
       )
       .returning();
     if (!row) {
@@ -789,16 +981,16 @@ router.post(
   }),
 );
 
-// ─── POST /staged-payments/:id/unlink ──────────────────────────────────────
-// Undo a "link to existing gift" resolution: clear the tie to the pre-existing
-// gift and return the row to the pending queue. The donor match is left intact
-// so the fundraiser can re-link or approve. Only a linked-gift approval may be
-// unlinked — a minted-gift approval (giftWasLinked = false) must not be, since
-// unlinking would leave its freshly created gift orphaned in the ledger. The
-// guard lives in the UPDATE predicate (not just the pre-read) so a concurrent
-// resolution can't slip through (TOCTOU); 409 on zero rows.
+// ─── POST /staged-payments/:id/revert ──────────────────────────────────────
+// Undo an approved reconciliation/creation, returning the row to the pending
+// queue. Reversible cases:
+//   - matchedGiftId set  → clear the link (pre-existing gift untouched).
+//   - createdGiftId + autoApplied → delete the auto-minted gift + clear it.
+// A MANUALLY created gift (createdGiftId, autoApplied=false) cannot be reverted
+// — deleting it would orphan a fundraiser-created ledger row. The donor match
+// is left intact so the row can be re-resolved.
 router.post(
-  "/staged-payments/:id/unlink",
+  "/staged-payments/:id/revert",
   asyncHandler(async (req, res) => {
     const user = getAppUser(req);
     if (!user) {
@@ -806,115 +998,68 @@ router.post(
       return;
     }
     const id = paramId(req);
-    const existing = await db
-      .select({
-        status: stagedPayments.status,
-        giftWasLinked: stagedPayments.giftWasLinked,
-      })
-      .from(stagedPayments)
-      .where(eq(stagedPayments.id, id))
-      .then((r) => r[0]);
-    if (!existing) return notFound(res, "staged payment");
-    if (existing.status !== "approved" || !existing.giftWasLinked) {
-      res.status(409).json({
-        error: "not_linked",
-        message:
-          "Only a staged payment linked to an existing gift can be unlinked.",
+
+    const NOT_REVERTIBLE = "__not_revertible__";
+    let result: typeof stagedPayments.$inferSelect | null = null;
+    try {
+      await db.transaction(async (tx) => {
+        const locked = await tx
+          .select()
+          .from(stagedPayments)
+          .where(eq(stagedPayments.id, id))
+          .for("update")
+          .then((r) => r[0]);
+        if (!locked) throw new Error("__not_found__");
+        if (locked.status !== "approved") throw new Error(NOT_REVERTIBLE);
+
+        const isReconcile = locked.matchedGiftId != null;
+        const isAutoMint =
+          locked.createdGiftId != null && locked.autoApplied === true;
+        if (!isReconcile && !isAutoMint) throw new Error(NOT_REVERTIBLE);
+
+        if (isAutoMint && locked.createdGiftId) {
+          await tx
+            .delete(giftsAndPayments)
+            .where(eq(giftsAndPayments.id, locked.createdGiftId));
+        }
+
+        const [row] = await tx
+          .update(stagedPayments)
+          .set({
+            status: "pending",
+            matchedGiftId: null,
+            createdGiftId: null,
+            autoApplied: false,
+            matchConfirmedByUserId: null,
+            matchConfirmedAt: null,
+            approvedByUserId: null,
+            approvedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(stagedPayments.id, id))
+          .returning();
+        result = row ?? null;
       });
-      return;
-    }
-
-    const [row] = await db
-      .update(stagedPayments)
-      .set({
-        status: "pending",
-        createdGiftId: null,
-        giftWasLinked: false,
-        approvedByUserId: null,
-        approvedAt: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(stagedPayments.id, id),
-          eq(stagedPayments.status, "approved"),
-          eq(stagedPayments.giftWasLinked, true),
-        ),
-      )
-      .returning();
-    if (!row) {
-      res.status(409).json({
-        error: "not_linked",
-        message:
-          "This staged payment is no longer a linked-gift approval. Refresh and retry.",
-      });
-      return;
-    }
-    res.json(row);
-  }),
-);
-
-// ─── GET /staged-payments-summary ──────────────────────────────────────────
-// Lightweight counts for badges.
-router.get(
-  "/staged-payments-summary",
-  asyncHandler(async (_req, res) => {
-    const [statusRows, reasonRows, pendingMatchRows] = await Promise.all([
-      db
-        .select({ status: stagedPayments.status, value: count() })
-        .from(stagedPayments)
-        .groupBy(stagedPayments.status),
-      db
-        .select({
-          reason: stagedPayments.exclusionReason,
-          value: count(),
-        })
-        .from(stagedPayments)
-        .where(eq(stagedPayments.status, "excluded"))
-        .groupBy(stagedPayments.exclusionReason),
-      db
-        .select({ matchStatus: stagedPayments.matchStatus, value: count() })
-        .from(stagedPayments)
-        .where(eq(stagedPayments.status, "pending"))
-        .groupBy(stagedPayments.matchStatus),
-    ]);
-
-    const summary = { pending: 0, approved: 0, rejected: 0, excluded: 0 };
-    for (const r of statusRows) {
-      if (r.status in summary) {
-        summary[r.status as keyof typeof summary] = r.value;
+    } catch (e) {
+      if (e instanceof Error && e.message === "__not_found__") {
+        return notFound(res, "staged payment");
       }
-    }
-
-    let pendingUnmatched = 0;
-    let pendingMatched = 0;
-    for (const r of pendingMatchRows) {
-      if (r.matchStatus === "matched") pendingMatched = r.value;
-      else pendingUnmatched = r.value;
-    }
-
-    const excludedByReason = {
-      zero_amount: 0,
-      loan: 0,
-      membership: 0,
-      interest: 0,
-      government_reimbursement: 0,
-      tax_refund: 0,
-      other_revenue: 0,
-      earned_income: 0,
-    };
-    for (const r of reasonRows) {
-      if (r.reason && r.reason in excludedByReason) {
-        excludedByReason[r.reason as keyof typeof excludedByReason] = r.value;
+      if (e instanceof Error && e.message === NOT_REVERTIBLE) {
+        res.status(409).json({
+          error: "not_revertible",
+          message:
+            "Only an auto-matched row or a reconciled-to-existing-gift row can be reverted.",
+        });
+        return;
       }
+      throw e;
     }
-
-    res.json({ ...summary, pendingUnmatched, pendingMatched, excludedByReason });
+    void user;
+    res.json(result);
   }),
 );
 
 // ─── POST /quickbooks/sync ─────────────────────────────────────────────────
-// Manual "sync now". Admin-gated. Same code path as the scheduler.
 router.post(
   "/quickbooks/sync",
   asyncHandler(async (req, res) => {
@@ -933,9 +1078,6 @@ router.post(
 );
 
 // ─── POST /quickbooks/rematch ──────────────────────────────────────────────
-// Admin-gated backfill: re-run donor auto-match over still-unmatched pending
-// rows so the latest matching logic applies to rows staged before it existed.
-// Additive only — never overwrites a human match or un-matches a row.
 router.post(
   "/quickbooks/rematch",
   asyncHandler(async (req, res) => {
@@ -952,6 +1094,36 @@ router.post(
       res.status(502).json({
         error: "rematch_failed",
         message: e instanceof Error ? e.message : "QuickBooks rematch failed",
+      });
+    }
+  }),
+);
+
+// ─── POST /quickbooks/reclassify ───────────────────────────────────────────
+// Admin-gated: re-run the noise classifier over auto-classified pending/excluded
+// rows so refined rules retroactively clean up (or restore) staged rows. Never
+// touches a manual include/exclude.
+router.post(
+  "/quickbooks/reclassify",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const summary = await reclassifyStagedPayments();
+      req.log.info(
+        {
+          ran: summary.ran,
+          scanned: summary.scanned,
+          excluded: summary.excluded,
+          included: summary.included,
+        },
+        "QuickBooks staged-payment reclassify run",
+      );
+      res.json(summary);
+    } catch (e) {
+      logger.error({ err: e }, "QuickBooks reclassify failed");
+      res.status(502).json({
+        error: "reclassify_failed",
+        message: e instanceof Error ? e.message : "QuickBooks reclassify failed",
       });
     }
   }),

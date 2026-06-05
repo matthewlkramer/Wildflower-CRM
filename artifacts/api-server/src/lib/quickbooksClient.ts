@@ -19,11 +19,17 @@ export type QuickbooksEntityType = "sales_receipt" | "payment" | "deposit";
 export interface NormalizedQuickbooksPayment {
   qbEntityType: QuickbooksEntityType;
   qbEntityId: string;
+  // QuickBooks line id, for deposits staged PER LINE. Empty string (not null)
+  // for SalesReceipt/Payment so each is a single idempotent unit.
+  qbLineId: string;
   amount: string | null;
   dateReceived: string | null;
   payerName: string | null;
   payerEmail: string | null;
   rawReference: string | null;
+  // Per-line / per-entity free-text description or memo (deposit line
+  // Description, deposit PrivateNote, SalesReceipt CustomerMemo).
+  lineDescription: string | null;
   lastUpdatedTime: string | null;
   // QuickBooks line-item detail used by the noise classifier (membership
   // detection) and for auditing exclusions. For SalesReceipt/Deposit these come
@@ -73,13 +79,24 @@ async function runQuery(
 
 type QbRef = { value?: string; name?: string } | undefined;
 
-// A QuickBooks transaction line. Only the detail relevant to noise
-// classification is typed: the Product/Service item (SalesItemLineDetail),
-// the posting account (DepositLineDetail), and the class (ClassRef) on either.
+// A QuickBooks transaction line. Beyond the detail relevant to noise
+// classification — the Product/Service item (SalesItemLineDetail), the
+// posting account (DepositLineDetail), and the class (ClassRef) on either —
+// deposit lines also carry their own Id / Amount / Description, the payer
+// (DepositLineDetail.Entity), and a LinkedTxn back-reference when the line
+// merely re-records an already-ingested Payment/SalesReceipt.
 interface QbLine {
+  Id?: string;
+  Amount?: number;
+  Description?: string;
   DetailType?: string;
+  LinkedTxn?: QbLinkedTxn[];
   SalesItemLineDetail?: { ItemRef?: QbRef; ClassRef?: QbRef };
-  DepositLineDetail?: { AccountRef?: QbRef; ClassRef?: QbRef };
+  DepositLineDetail?: {
+    AccountRef?: QbRef;
+    ClassRef?: QbRef;
+    Entity?: QbRef;
+  };
 }
 
 interface QbSalesReceipt {
@@ -244,12 +261,13 @@ export async function pullIncomingPayments(
       out.push({
         qbEntityType: "sales_receipt",
         qbEntityId: row.Id,
+        qbLineId: "",
         amount: num(row.TotalAmt),
         dateReceived: row.TxnDate ?? null,
         payerName: row.CustomerRef?.name ?? null,
         payerEmail: row.BillEmail?.Address ?? null,
-        rawReference:
-          row.DocNumber ?? row.CustomerMemo?.value ?? null,
+        rawReference: row.DocNumber ?? row.CustomerMemo?.value ?? null,
+        lineDescription: row.CustomerMemo?.value ?? null,
         lastUpdatedTime: row.MetaData?.LastUpdatedTime ?? null,
         lineItemNames: detail.itemNames,
         lineAccountNames: detail.accountNames,
@@ -291,11 +309,13 @@ export async function pullIncomingPayments(
     out.push({
       qbEntityType: "payment",
       qbEntityId: row.Id,
+      qbLineId: "",
       amount: num(row.TotalAmt),
       dateReceived: row.TxnDate ?? null,
       payerName: row.CustomerRef?.name ?? null,
       payerEmail: null,
       rawReference: row.PaymentRefNum ?? null,
+      lineDescription: null,
       lastUpdatedTime: row.MetaData?.LastUpdatedTime ?? null,
       lineItemNames: detail.itemNames,
       lineAccountNames: detail.accountNames,
@@ -303,28 +323,53 @@ export async function pullIncomingPayments(
     });
   }
 
-  // Deposit
+  // Deposit — a bank deposit bundles MANY donors, one per line, each with its
+  // own payer (DepositLineDetail.Entity), amount and description. So we stage
+  // PER LINE, not per deposit. Lines that merely re-record an already-ingested
+  // Payment/SalesReceipt (LinkedTxn present) are SKIPPED so the same money is
+  // never staged twice (the linked Payment/SalesReceipt is pulled on its own).
   for (let start = 1; ; start += PAGE_SIZE) {
     const q = `SELECT * FROM Deposit${whereClause}${orderClause} STARTPOSITION ${start} MAXRESULTS ${PAGE_SIZE}`;
     const resp = await runQuery(accessToken, realmId, q);
     const rows = (resp.QueryResponse?.["Deposit"] ?? []) as QbDeposit[];
     for (const row of rows) {
-      // Deposit carries its own lines → read posting account/class directly.
-      const detail = extractLineDetail(row.Line);
-      out.push({
-        qbEntityType: "deposit",
-        qbEntityId: row.Id,
-        amount: num(row.TotalAmt),
-        dateReceived: row.TxnDate ?? null,
-        // Deposits have no customer; payer is unknown → always unmatched.
-        payerName: null,
-        payerEmail: null,
-        rawReference: row.PrivateNote ?? row.DepositToAccountRef?.name ?? null,
-        lastUpdatedTime: row.MetaData?.LastUpdatedTime ?? null,
-        lineItemNames: detail.itemNames,
-        lineAccountNames: detail.accountNames,
-        lineClasses: detail.classes,
-      });
+      const depositMemo = row.PrivateNote ?? null;
+      for (const line of row.Line ?? []) {
+        // Skip ONLY lines that link back to a Payment/SalesReceipt — that money
+        // is ingested via its own entity, so staging the deposit line too would
+        // double-count it. Lines linked to other txn types (e.g. transfers,
+        // journal entries) are NOT a duplicate of an ingested unit, so they are
+        // still staged as their own direct deposit line.
+        if (
+          (line.LinkedTxn ?? []).some(
+            (lt) => lt.TxnType === "Payment" || lt.TxnType === "SalesReceipt",
+          )
+        )
+          continue;
+        // Each direct deposit line is its own matching unit.
+        const detail = extractLineDetail([line]);
+        out.push({
+          qbEntityType: "deposit",
+          qbEntityId: row.Id,
+          qbLineId: line.Id ?? "",
+          amount: num(line.Amount),
+          dateReceived: row.TxnDate ?? null,
+          // The payer for a direct deposit line is its Entity (Customer /
+          // Vendor / Employee ref); null when QuickBooks recorded none.
+          payerName: line.DepositLineDetail?.Entity?.name ?? null,
+          payerEmail: null,
+          // Deposit memo (PrivateNote) for context; falls back to the bank
+          // account when there is no memo.
+          rawReference: depositMemo ?? row.DepositToAccountRef?.name ?? null,
+          // The per-line description carries the most specific free text
+          // (often the donor name or gift note) — used by the memo matcher.
+          lineDescription: line.Description ?? null,
+          lastUpdatedTime: row.MetaData?.LastUpdatedTime ?? null,
+          lineItemNames: detail.itemNames,
+          lineAccountNames: detail.accountNames,
+          lineClasses: detail.classes,
+        });
+      }
     }
     if (rows.length < PAGE_SIZE) break;
   }

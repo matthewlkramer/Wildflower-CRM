@@ -467,10 +467,46 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
   ],
 );
 
-// Result of auto-matching a staged payment to a CRM donor at sync time.
-//   matched   — a single confident donor was found and pre-filled
-//   unmatched — no confident match; fundraiser must pick a donor manually
+// Result of scoring a staged payment against CRM donors / existing gifts.
+//   matched   — high-confidence; the system auto-applied it (or a human
+//               confirmed it). Lives in the "Auto-matched" review queue until
+//               a human looks at it (autoApplied=true, matchConfirmedAt null)
+//               or is fully done (human-confirmed).
+//   suggested — a plausible candidate was found but below the auto-apply
+//               threshold; surfaced as a hint in the "Needs review" queue but
+//               NOT applied (treated as unmatched until a human acts).
+//   unmatched — no plausible candidate at all; "Needs review" queue.
 export const stagedPaymentMatchStatusEnum = pgEnum(
   "staged_payment_match_status",
-  ["matched", "unmatched"],
+  ["matched", "suggested", "unmatched"],
+);
+
+// How a staged payment's donor/gift match was derived (audit + UI badge).
+//   email            — exact email hit (strongest)
+//   name             — fuzzy/exact CRM name hit (trigram)
+//   name_amount_date — name plus corroborating amount + date proximity
+//   amount_date      — amount + date proximity to an existing CRM gift
+//   memo             — donor name parsed out of a free-text memo/reference
+//   intermediary     — payer resolved to a payment intermediary, donor via memo
+//   manual           — a human picked the donor/gift in the reconciler
+export const stagedPaymentMatchMethodEnum = pgEnum(
+  "staged_payment_match_method",
+  [
+    "email",
+    "name",
+    "name_amount_date",
+    "amount_date",
+    "memo",
+    "intermediary",
+    "manual",
+  ],
+);
+
+// Whether a staged payment's exclusion classification was set by the
+// re-runnable auto-classifier (`auto`) or pinned by a human (`manual`).
+// The classifier never overwrites a `manual` row, so a manual include /
+// reclassify survives every re-run.
+export const stagedPaymentClassificationSourceEnum = pgEnum(
+  "staged_payment_classification_source",
+  ["auto", "manual"],
 );

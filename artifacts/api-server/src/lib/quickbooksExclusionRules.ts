@@ -70,6 +70,13 @@ export interface ClassifierInput {
    * bank-account activity) by their memo wording.
    */
   rawReference: string | null;
+  /**
+   * Per-line free-text description (deposit line Description, CustomerMemo).
+   * Folded into the memo the `other_revenue` rule reads, since for per-line
+   * deposit staging the noise wording often lives on the line, not the
+   * deposit-level PrivateNote. Optional for backward compatibility.
+   */
+  lineDescription?: string | null;
 }
 
 export interface ClassificationResult {
@@ -285,7 +292,9 @@ function isOtherRevenueNonGift(input: ClassifierInput): boolean {
   ) {
     return false;
   }
-  const memo = input.rawReference ?? "";
+  const memo = [input.rawReference, input.lineDescription]
+    .filter((s): s is string => !!s)
+    .join(" ");
   return OTHER_REVENUE_NONGIFT_MEMO_PATTERNS.some((re) => re.test(memo));
 }
 

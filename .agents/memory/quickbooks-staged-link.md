@@ -1,59 +1,59 @@
 ---
-name: QuickBooks staged-payment "link to existing gift"
-description: Why staged_payments.created_gift_id is overloaded for created-vs-linked, and the no-DB-constraint double-link guard.
+name: QuickBooks staged-payment ↔ gift linkage invariants
+description: How a staged QB payment resolves to a gift — distinct matched/created columns, DB-level one-to-one uniqueness, and mint-gate vs reconcile-target semantics.
 ---
 
-The staged-payments review queue supports two resolutions: "Approve → create
-gift" (mints a new gifts_and_payments row) and "Link to existing gift" (ties the
-QB record to an already-recorded gift, no new row).
+The staged-payments review queue resolves each QB incoming-money unit to a gift in
+exactly one of two mutually-exclusive ways:
 
-- **created_gift_id is overloaded** — both flows set `staged_payments.created_gift_id`
-  to the resulting gift; "linked" reuses the same FK as "created". To tell them
-  apart there is now `staged_payments.gift_was_linked` (boolean, NOT NULL DEFAULT
-  false): true only for the link endpoint, explicitly false on the mint/approve
-  path. **Never infer linked-vs-minted from created_gift_id** — read the flag.
+- **`matched_gift_id`** — RECONCILE: linked to a PRE-EXISTING gifts_and_payments
+  row (no new ledger row).
+- **`created_gift_id`** — MINT: a NEW gift was created from the staged row.
 
-- **Unlink only ever severs a LINKED approval, never a minted one.** Unlinking a
-  minted approval would orphan the gift it created, so the unlink endpoint's guard
-  is `WHERE status='approved' AND gift_was_linked=true` (in the UPDATE predicate,
-  not just the pre-read; 409 on rowCount 0). It clears created_gift_id + approval
-  stamps and returns the row to `status='pending'`, leaving donor FKs / matchStatus
-  intact so it lands back in Pending·Matched. **Why the flag was needed:** without
-  it the queue couldn't distinguish a linked approval (safe to undo) from a minted
-  one (unsafe). **History caveat:** approvals predating the column all read false,
-  so historically-linked rows are intentionally NOT unlinkable (no reliable way to
-  reconstruct the resolution after the fact).
+**These are separate columns** (an earlier design overloaded one `created_gift_id`
+with a `gift_was_linked` flag — that is gone). Unlinking is only valid for
+`matched_gift_id` (unlinking a minted gift would orphan it).
 
-- **One gift ↔ one staged payment is enforced in app code, not the DB.** There is
-  no unique index on `created_gift_id`. The link endpoint guards double-counting
-  with an atomic conditional UPDATE: `WHERE id=:id AND status='pending' AND NOT
-  EXISTS (other staged row with same created_gift_id)`, and 409s on rowCount 0.
-  **How to apply:** any new path that links/approves a staged row to a gift must
-  keep that predicate (or finally add the partial unique index) or concurrent
-  requests will double-link.
+- **One staged row ↔ one gift is enforced at the DB level.** Partial-unique indexes
+  on `matched_gift_id` and `created_gift_id` (each `WHERE ... IS NOT NULL`, so the
+  many NULL/unresolved rows don't collide) guarantee at most one staged row links to
+  or mints any given gift. **Why:** under READ COMMITTED, two concurrent reconciles
+  each pass a `NOT EXISTS` pre-check and both commit (write-skew) — the index is the
+  only hard backstop. **How to apply:** every link/reconcile/mint path keeps BOTH a
+  `NOT EXISTS (other staged row with same matched/created gift)` predicate in its
+  conditional UPDATE (fast common-case 409 / leave-pending) AND catches Postgres
+  `23505` — manual reconcile route → 409, auto-apply worker → return false (row
+  stays pending). Don't rely on the predicate alone, and don't drop the index.
 
-- Candidate search matches **saved donor + an amount BAND** (was exact): gift.amount
-  between `staged.amount - 0.01` and `staged.amount * 1.10 + 1`, ordered by amount
-  closeness then date proximity. **Why:** Donorbox-style platforms keep a processing
-  fee, so the CRM gross gift (e.g. $50) is slightly larger than the QB net deposit
-  (e.g. $47.25); exact equality hid the real match. Donor mismatch is still rejected
-  on link; amount is NOT re-enforced server-side. Pure logic in `validateGiftLink`
-  (`lib/quickbooksLink.ts`); the band lives in the gift-candidates route.
+- **Mint-gate and reconcile-target are DIFFERENT predicates** (do not conflate):
+  - *Reconcile target* (`matchedGiftId`): set only when there is EXACTLY ONE
+    exact-amount gift (within $0.01).
+  - *Mint gate* (`giftCandidateCount === 0`): auto-mint only when NO *plausible*
+    gift exists, where plausible = the fee BAND (`amount >= staged-0.01 AND <=
+    staged*1.10+1`). **Why:** Donorbox-style platforms keep a processing fee, so the
+    CRM gross gift is slightly larger than the QB net deposit; an exact-only mint
+    gate would mint a duplicate next to the real fee-different gift. So `giftsInWindow`
+    returns `{ exact[], plausibleCount }` and excludes already-linked gifts (NOT
+    EXISTS) so a claimed gift never counts as a reconcile target nor blocks a mint.
 
-- **Donor name often lives in the memo, not payer_name.** Donorbox→QuickBooks
-  deposits arrive with a blank CustomerRef (payer_name null) and the donor in
-  `raw_reference` (e.g. "Donation for <Project> - <Donor Name>"). `autoMatchDonor` has an
-  ADDITIVE fallback (`candidateNamesFromReference`) that fires only after email +
-  payerName miss and still requires a strict, unambiguous exact CRM name hit — so it
-  never weakens matching. Won't catch near-misses like "Fidelity Foundation" vs CRM
-  "Fidelity Foundations".
+- **`matchConfirmedAt` is the SOLE "confirmed" signal in the UI.** `matchStatus`
+  can be `'matched'` while still only a system guess (the high-tier rematch path
+  sets `matched` on pending rows without confirming). The reconciler's `matchStateOf`
+  must treat unconfirmed `matched` as `suggested` (offer Confirm), never as confirmed.
 
-- **Auto-match runs at INSERT only; sync never re-matches existing rows.** The sync
-  onConflict deliberately leaves donor match/status untouched on re-sync. To apply an
-  improved matcher to already-staged rows there is a separate admin-gated backfill
-  (`rematchStagedPayments` / POST /quickbooks/rematch, "Re-run matching" button).
-  **Why:** agent can't write prod; the backfill runs IN the prod server when an admin
-  clicks it. It's additive/idempotent — only rows still pending+unmatched+donor-less,
-  guarded conditional UPDATE re-checks that predicate so a concurrent human resolve is
-  never clobbered, never un-matches, shares the QB advisory lock (ran=false if a
-  sync/rematch is already running).
+- **Donor name often lives in the memo, not payer_name.** Donorbox→QB deposits
+  arrive with a blank CustomerRef (payer_name null) and the donor in `raw_reference`
+  / line description. The matcher has an additive `candidateNamesFromReference`
+  fallback that fires only after email + payerName miss and requires a strict exact
+  CRM name hit, so it never weakens matching.
+
+- **Deposit ingestion is per-line; skip ONLY lines linked to a Payment/SalesReceipt.**
+  A deposit bundles many donors (one per line). A line's LinkedTxn is a duplicate of
+  an already-ingested unit only when its `TxnType` is `"Payment"` or `"SalesReceipt"`
+  — skipping ANY linked line (older bug) drops legitimate direct deposit lines.
+
+- **Auto-match runs at INSERT + an explicit admin rematch; sync never re-matches on
+  re-sync.** The sync onConflict leaves donor match/status untouched. Improved
+  matchers reach already-staged rows via the admin-gated backfill (POST
+  /quickbooks/rematch), which is additive/idempotent, only touches still
+  pending+unmatched+donor-less rows, and is DONOR-ONLY (never mints/reconciles a gift).

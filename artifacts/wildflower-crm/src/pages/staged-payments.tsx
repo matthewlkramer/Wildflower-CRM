@@ -6,27 +6,30 @@ import {
   getGetStagedPaymentsSummaryQueryKey,
   useGetStagedPaymentsSummary,
   useResolveStagedPayment,
-  useApproveStagedPayment,
+  useCreateGiftFromStagedPayment,
   useRejectStagedPayment,
   useReIncludeStagedPayment,
-  useLinkStagedPayment,
-  useUnlinkStagedPayment,
+  useReconcileStagedPayment,
+  useRevertStagedPayment,
   useExcludeStagedPayment,
   useConfirmStagedPaymentMatch,
   useUnmatchStagedPayment,
   useListStagedPaymentGiftCandidates,
   getListStagedPaymentGiftCandidatesQueryKey,
+  useListStagedPaymentGiftWindow,
+  getListStagedPaymentGiftWindowQueryKey,
   useRunQuickbooksSync,
   useRematchStagedPayments,
+  useReclassifyStagedPayments,
   useGetCurrentUser,
   useCreateOrganization,
   useCreatePerson,
   useCreateHousehold,
   getGetQuickbooksOauthStatusQueryKey,
   type StagedPayment,
-  type StagedPaymentStatus,
-  type StagedPaymentMatchState,
+  type StagedPaymentQueue,
   type StagedPaymentExclusionReason,
+  type StagedPaymentMatchMethod,
   type QuickbooksEntityType,
   type GiftCandidate,
   type GiftCandidateList,
@@ -54,37 +57,16 @@ import {
 } from "@/components/entity-picker";
 import { useToast } from "@/hooks/use-toast";
 
-// The four review states, but with Pending split into two sub-tabs by match
-// state (unmatched vs. matched). `status` is what the list/summary filter on;
-// `matchState` further narrows the two pending tabs.
-type TabKey =
-  | "pending-unmatched"
-  | "pending-matched"
-  | "approved"
-  | "rejected"
-  | "excluded";
-
-const TABS: {
-  value: TabKey;
-  label: string;
-  status: StagedPaymentStatus;
-  matchState?: StagedPaymentMatchState;
-}[] = [
-  {
-    value: "pending-unmatched",
-    label: "Pending · Unmatched",
-    status: "pending",
-    matchState: "unmatched",
-  },
-  {
-    value: "pending-matched",
-    label: "Pending · Matched",
-    status: "pending",
-    matchState: "matched",
-  },
-  { value: "approved", label: "Approved", status: "approved" },
-  { value: "rejected", label: "Rejected", status: "rejected" },
-  { value: "excluded", label: "Excluded", status: "excluded" },
+// The five reconciliation queues. `needs_review` holds uncertain pending rows;
+// `auto_matched` holds high-confidence rows the system already applied (awaiting
+// a quick human confirm); `done` holds confirmed / manually-resolved rows;
+// `excluded` holds non-gift noise; `rejected` holds discarded rows.
+const QUEUES: { value: StagedPaymentQueue; label: string }[] = [
+  { value: "needs_review", label: "Needs review" },
+  { value: "auto_matched", label: "Auto-matched" },
+  { value: "done", label: "Done" },
+  { value: "excluded", label: "Excluded" },
+  { value: "rejected", label: "Rejected" },
 ];
 
 // Human-friendly labels for the auto-exclude reasons.
@@ -107,21 +89,15 @@ const QB_ENTITY_TYPE_LABELS: Record<QuickbooksEntityType, string> = {
   deposit: "Deposit",
 };
 
-// Three derived match states for the badge / actions:
-//   unmatched       — no donor picked yet (matchStatus "unmatched")
-//   system_matched  — auto-matched donor, not yet human-confirmed
-//   human_approved  — a human picked/confirmed the donor (matchConfirmedAt set)
-type MatchState = "unmatched" | "system_matched" | "human_approved";
-
-function matchStateOf(row: StagedPayment): MatchState {
-  if (row.matchStatus !== "matched") return "unmatched";
-  return row.matchConfirmedAt != null ? "human_approved" : "system_matched";
-}
-
-const MATCH_STATE_LABEL: Record<MatchState, string> = {
-  unmatched: "Unmatched",
-  system_matched: "System matched",
-  human_approved: "Human approved",
+// How the scored matcher arrived at the donor/gift suggestion.
+const MATCH_METHOD_LABELS: Record<StagedPaymentMatchMethod, string> = {
+  email: "Email match",
+  name: "Name match",
+  name_amount_date: "Name + amount + date",
+  amount_date: "Amount + date",
+  memo: "Memo match",
+  intermediary: "Payment intermediary",
+  manual: "Manual",
 };
 
 function donorTypeFromRow(row: StagedPayment): DonorType {
@@ -135,6 +111,15 @@ function donorIdFromRow(row: StagedPayment, t: DonorType): string | null {
   if (t === "organization") return row.organizationId ?? null;
   if (t === "individual") return row.individualGiverPersonId ?? null;
   return row.householdId ?? null;
+}
+
+function donorNameFromRow(row: StagedPayment): string | null {
+  return (
+    row.organizationName ??
+    row.individualGiverPersonName ??
+    row.householdName ??
+    null
+  );
 }
 
 function formatAmount(amount: string | null | undefined): string {
@@ -172,24 +157,43 @@ function feeDeltaLabel(
   })} fee?`;
 }
 
+// Three derived donor-match states for the badge / actions:
+//   unmatched  — no donor (matchStatus "unmatched")
+//   suggested  — system suggested a donor, not yet human-confirmed
+//   confirmed  — a human picked/confirmed the donor (matchConfirmedAt set)
+type MatchState = "unmatched" | "suggested" | "confirmed";
+
+function matchStateOf(row: StagedPayment): MatchState {
+  // matchConfirmedAt is the ONLY signal for "confirmed" — a human acted. A
+  // system-set matchStatus of "matched" (e.g. the high-tier rematch path) is
+  // still only a suggestion until confirmed, so it must offer the Confirm action
+  // rather than masquerade as confirmed.
+  if (row.matchConfirmedAt != null) return "confirmed";
+  const hasDonor =
+    row.organizationId != null ||
+    row.individualGiverPersonId != null ||
+    row.householdId != null;
+  if (!hasDonor || row.matchStatus === "unmatched") return "unmatched";
+  return "suggested";
+}
+
+const MATCH_STATE_LABEL: Record<MatchState, string> = {
+  unmatched: "Unmatched",
+  suggested: "Suggested",
+  confirmed: "Confirmed",
+};
+
 export default function StagedPayments() {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<TabKey>("pending-unmatched");
-  const activeTab = TABS.find((t) => t.value === tab) ?? TABS[0];
-  const status = activeTab.status;
-  const matchState = activeTab.matchState;
+  const [queue, setQueue] = useState<StagedPaymentQueue>("needs_review");
 
   const me = useGetCurrentUser().data ?? null;
   const isAdmin = me?.role === "admin";
 
-  const listParams = matchState
-    ? { status, matchState, limit: 200 }
-    : { status, limit: 200 };
+  const listParams = { queue, limit: 200 };
   const listQ = useListStagedPayments(listParams, {
-    query: {
-      queryKey: getListStagedPaymentsQueryKey(listParams),
-    },
+    query: { queryKey: getListStagedPaymentsQueryKey(listParams) },
   });
   const summaryQ = useGetStagedPaymentsSummary({
     query: { queryKey: getGetStagedPaymentsSummaryQueryKey() },
@@ -197,9 +201,7 @@ export default function StagedPayments() {
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ["/staged-payments"] });
-    qc.invalidateQueries({
-      queryKey: getGetStagedPaymentsSummaryQueryKey(),
-    });
+    qc.invalidateQueries({ queryKey: getGetStagedPaymentsSummaryQueryKey() });
   };
 
   // ── Inline donor creation (org / person / household) ──────────────────────
@@ -271,7 +273,7 @@ export default function StagedPayments() {
         toast({
           title: "Sync complete",
           description: data.ran
-            ? `Pulled ${data.pulled}, staged ${data.staged} new (${data.matched} auto-matched).`
+            ? `Pulled ${data.pulled}, staged ${data.staged} new (${data.autoApplied} auto-applied, ${data.matched} matched).`
             : "A sync was already in progress.",
         });
       },
@@ -292,7 +294,7 @@ export default function StagedPayments() {
         toast({
           title: data.ran ? "Re-match complete" : "Re-match skipped",
           description: data.ran
-            ? `Checked ${data.scanned} unmatched, newly matched ${data.matched}.`
+            ? `Checked ${data.scanned} unmatched, newly suggested ${data.matched}.`
             : "A sync or re-match was already in progress.",
         });
       },
@@ -306,35 +308,91 @@ export default function StagedPayments() {
     },
   });
 
+  const reclassify = useReclassifyStagedPayments({
+    mutation: {
+      onSuccess: (data) => {
+        invalidateAll();
+        toast({
+          title: data.ran ? "Reclassify complete" : "Reclassify skipped",
+          description: data.ran
+            ? `Scanned ${data.scanned}; excluded ${data.excluded}, restored ${data.included}.`
+            : "A sync, re-match, or reclassify was already in progress.",
+        });
+      },
+      onError: (e: unknown) => {
+        toast({
+          title: "Reclassify failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
   const rows = listQ.data?.data ?? [];
   const summary = summaryQ.data;
+
+  const countFor = (q: StagedPaymentQueue): number | undefined => {
+    if (!summary) return undefined;
+    switch (q) {
+      case "needs_review":
+        return summary.needsReview;
+      case "auto_matched":
+        return summary.autoMatched;
+      case "done":
+        return summary.done;
+      case "excluded":
+        return summary.excluded;
+      case "rejected":
+        return summary.rejected;
+    }
+  };
+
+  const activeLabel =
+    QUEUES.find((q) => q.value === queue)?.label.toLowerCase() ?? "";
 
   return (
     <div className="space-y-6 max-w-5xl">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">
-            QuickBooks Review Queue
+            QuickBooks Reconciliation
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Incoming payments pulled from QuickBooks. Confirm the donor match
-            and approve to create a gift, or reject to discard.
+            Incoming payments pulled from QuickBooks. High-confidence matches are
+            applied automatically (reversible); uncertain ones land in “Needs
+            review” for you to reconcile to an existing gift or record a new one.
           </p>
         </div>
         {isAdmin ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => reclassify.mutate()}
+              disabled={
+                reclassify.isPending || rematch.isPending || syncNow.isPending
+              }
+              data-testid="staged-reclassify"
+              title="Re-run the non-gift classifier over auto-classified rows. Never touches a category you set by hand."
+            >
+              {reclassify.isPending ? "Reclassifying…" : "Reclassify"}
+            </Button>
             <Button
               variant="outline"
               onClick={() => rematch.mutate()}
-              disabled={rematch.isPending || syncNow.isPending}
+              disabled={
+                rematch.isPending || syncNow.isPending || reclassify.isPending
+              }
               data-testid="staged-rematch"
-              title="Re-run donor auto-match over still-unmatched pending rows. Never overwrites a match you've already made."
+              title="Re-run donor auto-match over still-unmatched rows. Never overwrites a match you've already made."
             >
               {rematch.isPending ? "Re-matching…" : "Re-run matching"}
             </Button>
             <Button
               onClick={() => syncNow.mutate()}
-              disabled={syncNow.isPending || rematch.isPending}
+              disabled={
+                syncNow.isPending || rematch.isPending || reclassify.isPending
+              }
               data-testid="staged-sync-now"
             >
               {syncNow.isPending ? "Syncing…" : "Sync now"}
@@ -344,26 +402,17 @@ export default function StagedPayments() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {TABS.map((t) => {
-          const c =
-            t.value === "pending-unmatched"
-              ? summary?.pendingUnmatched
-              : t.value === "pending-matched"
-                ? summary?.pendingMatched
-                : t.value === "approved"
-                  ? summary?.approved
-                  : t.value === "rejected"
-                    ? summary?.rejected
-                    : summary?.excluded;
+        {QUEUES.map((q) => {
+          const c = countFor(q.value);
           return (
             <Button
-              key={t.value}
-              variant={tab === t.value ? "default" : "outline"}
+              key={q.value}
+              variant={queue === q.value ? "default" : "outline"}
               size="sm"
-              onClick={() => setTab(t.value)}
-              data-testid={`staged-tab-${t.value}`}
+              onClick={() => setQueue(q.value)}
+              data-testid={`staged-tab-${q.value}`}
             >
-              {t.label}
+              {q.label}
               {typeof c === "number" ? (
                 <span className="ml-2 text-xs opacity-70">{c}</span>
               ) : null}
@@ -375,13 +424,11 @@ export default function StagedPayments() {
       {listQ.isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : listQ.isError ? (
-        <p className="text-sm text-red-700">
-          Failed to load staged payments.
-        </p>
+        <p className="text-sm text-red-700">Failed to load staged payments.</p>
       ) : rows.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No {activeTab.label.toLowerCase()} payments.
+            No {activeLabel} payments.
           </CardContent>
         </Card>
       ) : (
@@ -390,8 +437,7 @@ export default function StagedPayments() {
             <StagedPaymentCard
               key={row.id}
               row={row}
-              editable={status === "pending"}
-              excluded={status === "excluded"}
+              queue={queue}
               onChanged={invalidateAll}
               onCreateOrganization={onCreateOrganization}
               onCreatePerson={onCreatePerson}
@@ -406,16 +452,14 @@ export default function StagedPayments() {
 
 function StagedPaymentCard({
   row,
-  editable,
-  excluded,
+  queue,
   onChanged,
   onCreateOrganization,
   onCreatePerson,
   onCreateHousehold,
 }: {
   row: StagedPayment;
-  editable: boolean;
-  excluded: boolean;
+  queue: StagedPaymentQueue;
   onChanged: () => void;
   onCreateOrganization: (name: string) => Promise<string | null>;
   onCreatePerson: (name: string) => Promise<string | null>;
@@ -427,6 +471,20 @@ function StagedPaymentCard({
   const [donorId, setDonorId] = useState<string | null>(
     donorIdFromRow(row, initialType),
   );
+  // Keep local donor selection in sync if the server row changes underneath us.
+  useEffect(() => {
+    const t = donorTypeFromRow(row);
+    setDonorType(t);
+    setDonorId(donorIdFromRow(row, t));
+  }, [
+    row.id,
+    row.organizationId,
+    row.individualGiverPersonId,
+    row.householdId,
+  ]);
+
+  const editable = queue === "needs_review";
+  const isExcluded = queue === "excluded";
 
   const resolve = useResolveStagedPayment({
     mutation: {
@@ -442,18 +500,18 @@ function StagedPaymentCard({
         }),
     },
   });
-  const approve = useApproveStagedPayment({
+  const createGift = useCreateGiftFromStagedPayment({
     mutation: {
       onSuccess: () => {
         onChanged();
         toast({
-          title: "Approved",
-          description: "A gift was created from this payment.",
+          title: "Gift created",
+          description: "A new gift was recorded from this payment.",
         });
       },
       onError: (e: unknown) =>
         toast({
-          title: "Approve failed",
+          title: "Create gift failed",
           description: e instanceof Error ? e.message : "Unknown error",
           variant: "destructive",
         }),
@@ -479,7 +537,7 @@ function StagedPaymentCard({
         onChanged();
         toast({
           title: "Re-included",
-          description: "Moved back to the pending queue.",
+          description: "Moved back to the needs-review queue.",
         });
       },
       onError: (e: unknown) =>
@@ -518,14 +576,46 @@ function StagedPaymentCard({
         }),
     },
   });
-  // Seeded from the row so re-classifying an already-excluded row pre-selects its
-  // current category; pending rows start blank to force an explicit choice.
+  const reconcile = useReconcileStagedPayment({
+    mutation: {
+      onSuccess: () => {
+        onChanged();
+        toast({
+          title: "Reconciled",
+          description: "Tied to an existing gift — no new gift was created.",
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Reconcile failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+  const revert = useRevertStagedPayment({
+    mutation: {
+      onSuccess: () => {
+        onChanged();
+        toast({
+          title: "Reverted",
+          description: "Returned to the needs-review queue.",
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Revert failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  // Seeded from the row so re-classifying an already-excluded row pre-selects
+  // its current category; pending rows start blank to force an explicit choice.
   const [excludeReason, setExcludeReason] = useState<
     StagedPaymentExclusionReason | ""
   >(row.exclusionReason ?? "");
-  // Resync the local pick when the server's classification changes out from
-  // under us (a re-sync, another admin, or this row's own reclassify landing),
-  // so the Select never drifts from server truth on a persisted card instance.
   useEffect(() => {
     setExcludeReason(row.exclusionReason ?? "");
   }, [row.id, row.exclusionReason]);
@@ -547,82 +637,38 @@ function StagedPaymentCard({
     },
   });
 
-  const [showCandidates, setShowCandidates] = useState(false);
+  const [showReconciler, setShowReconciler] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const link = useLinkStagedPayment({
-    mutation: {
-      onSuccess: () => {
-        onChanged();
-        toast({
-          title: "Linked",
-          description: "Tied to an existing gift — no new gift was created.",
-        });
-      },
-      onError: (e: unknown) =>
-        toast({
-          title: "Link failed",
-          description: e instanceof Error ? e.message : "Unknown error",
-          variant: "destructive",
-        }),
-    },
-  });
-  const unlink = useUnlinkStagedPayment({
-    mutation: {
-      onSuccess: () => {
-        onChanged();
-        toast({
-          title: "Unlinked",
-          description: "Returned to the pending queue. The gift was untouched.",
-        });
-      },
-      onError: (e: unknown) =>
-        toast({
-          title: "Unlink failed",
-          description: e instanceof Error ? e.message : "Unknown error",
-          variant: "destructive",
-        }),
-    },
-  });
-  // The server matches candidates against the SAVED donor on the row, so only
-  // fetch once a donor is persisted (matchStatus flips to "matched" on save).
-  const candidates = useListStagedPaymentGiftCandidates(row.id, {
-    query: {
-      enabled: showCandidates,
-      queryKey: getListStagedPaymentGiftCandidatesQueryKey(row.id),
-    },
-  });
 
   const busy =
     resolve.isPending ||
-    approve.isPending ||
+    createGift.isPending ||
     reject.isPending ||
     reInclude.isPending ||
     exclude.isPending ||
     confirmMatch.isPending ||
     unmatch.isPending ||
-    link.isPending ||
-    unlink.isPending;
+    reconcile.isPending ||
+    revert.isPending;
+
   const hasDonor = donorId != null;
   const matchState = matchStateOf(row);
-  // A donor persisted on the row (not just picked locally) is required for the
-  // candidate search, since the server reads the saved donor FKs.
   const hasSavedDonor =
     row.organizationId != null ||
     row.individualGiverPersonId != null ||
     row.householdId != null;
 
   const handleSaveDonor = () => {
-    resolve.mutate({
-      id: row.id,
-      data: donorBodyFor(donorType, donorId),
-    });
+    resolve.mutate({ id: row.id, data: donorBodyFor(donorType, donorId) });
   };
 
-  const donorLabel =
-    row.organizationName ??
-    row.individualGiverPersonName ??
-    row.householdName ??
-    null;
+  const donorLabel = donorNameFromRow(row);
+
+  // Revert is allowed for reconciled rows (link cleared) and auto-minted gifts
+  // (gift deleted), but not for a manually created gift (would orphan a row).
+  const wasReconciled = row.matchedGiftId != null;
+  const wasAutoMinted = row.createdGiftId != null && row.autoApplied;
+  const canRevert = wasReconciled || wasAutoMinted;
 
   return (
     <Card data-testid={`staged-payment-${row.id}`}>
@@ -642,25 +688,45 @@ function StagedPaymentCard({
               {row.rawReference ? ` · ${row.rawReference}` : ""}
             </CardDescription>
           </div>
-          {excluded && row.exclusionReason ? (
-            <Badge variant="secondary">
-              {EXCLUSION_REASON_LABELS[row.exclusionReason] ??
-                row.exclusionReason}
-            </Badge>
-          ) : (
-            <Badge
-              variant={
-                matchState === "human_approved"
-                  ? "default"
-                  : matchState === "system_matched"
-                    ? "outline"
-                    : "secondary"
-              }
-              data-testid={`staged-match-state-${row.id}`}
-            >
-              {MATCH_STATE_LABEL[matchState]}
-            </Badge>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {row.autoApplied && (queue === "auto_matched" || queue === "done") ? (
+              <Badge variant="outline" data-testid={`staged-auto-${row.id}`}>
+                Auto-applied
+              </Badge>
+            ) : null}
+            {typeof row.matchScore === "number" ? (
+              <Badge
+                variant="secondary"
+                data-testid={`staged-score-${row.id}`}
+                title={
+                  row.matchMethod
+                    ? MATCH_METHOD_LABELS[row.matchMethod] ?? row.matchMethod
+                    : undefined
+                }
+              >
+                {row.matchScore}% match
+              </Badge>
+            ) : null}
+            {isExcluded && row.exclusionReason ? (
+              <Badge variant="secondary">
+                {EXCLUSION_REASON_LABELS[row.exclusionReason] ??
+                  row.exclusionReason}
+              </Badge>
+            ) : !isExcluded && queue !== "rejected" ? (
+              <Badge
+                variant={
+                  matchState === "confirmed"
+                    ? "default"
+                    : matchState === "suggested"
+                      ? "outline"
+                      : "secondary"
+                }
+                data-testid={`staged-match-state-${row.id}`}
+              >
+                {MATCH_STATE_LABEL[matchState]}
+              </Badge>
+            ) : null}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -694,7 +760,7 @@ function StagedPaymentCard({
               >
                 Save donor
               </Button>
-              {matchState === "system_matched" ? (
+              {matchState === "suggested" ? (
                 <Button
                   variant="outline"
                   size="sm"
@@ -703,7 +769,7 @@ function StagedPaymentCard({
                   data-testid={`staged-confirm-match-${row.id}`}
                   title="Confirm the system-suggested donor as human-approved."
                 >
-                  {confirmMatch.isPending ? "Confirming…" : "Confirm match"}
+                  {confirmMatch.isPending ? "Confirming…" : "Confirm donor"}
                 </Button>
               ) : null}
               {matchState !== "unmatched" ? (
@@ -721,19 +787,21 @@ function StagedPaymentCard({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setShowCandidates((v) => !v)}
-                disabled={busy || !hasSavedDonor}
-                data-testid={`staged-find-gift-${row.id}`}
+                onClick={() => setShowReconciler((v) => !v)}
+                disabled={busy}
+                data-testid={`staged-reconcile-toggle-${row.id}`}
               >
-                {showCandidates ? "Hide existing gifts" : "Find existing gift"}
+                {showReconciler
+                  ? "Hide existing gifts"
+                  : "Reconcile to existing gift"}
               </Button>
               <Button
                 size="sm"
-                onClick={() => approve.mutate({ id: row.id })}
+                onClick={() => createGift.mutate({ id: row.id })}
                 disabled={busy || !hasDonor}
-                data-testid={`staged-approve-${row.id}`}
+                data-testid={`staged-create-gift-${row.id}`}
               >
-                {approve.isPending ? "Approving…" : "Approve → create gift"}
+                {createGift.isPending ? "Creating…" : "Create new gift"}
               </Button>
               <Button
                 variant="ghost"
@@ -791,29 +859,31 @@ function StagedPaymentCard({
             </div>
             {!hasDonor ? (
               <p className="text-xs text-muted-foreground">
-                Pick a donor before approving.
-              </p>
-            ) : !hasSavedDonor ? (
-              <p className="text-xs text-muted-foreground">
-                Save the donor first to search for a matching existing gift.
+                Pick a donor before creating a new gift, or reconcile to an
+                existing gift below (which can adopt the gift’s donor).
               </p>
             ) : null}
-            {showCandidates ? (
-              <GiftCandidates
+            {showReconciler ? (
+              <Reconciler
                 row={row}
-                query={candidates}
-                onLink={(giftId) => link.mutate({ id: row.id, data: { giftId } })}
-                linking={link.isPending}
+                hasSavedDonor={hasSavedDonor}
+                onReconcile={(giftId) =>
+                  reconcile.mutate({ id: row.id, data: { giftId } })
+                }
+                reconciling={reconcile.isPending}
               />
             ) : null}
           </>
-        ) : excluded ? (
+        ) : isExcluded ? (
           <div className="space-y-3">
             <div className="text-sm text-muted-foreground">
               Excluded as a non-gift
               {row.exclusionReason
                 ? ` (${EXCLUSION_REASON_LABELS[row.exclusionReason] ?? row.exclusionReason})`
                 : ""}
+              {row.classificationSource === "manual"
+                ? " — set by hand"
+                : " — auto-classified"}
               . Not deleted — re-include it, or change its category below.
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -824,7 +894,7 @@ function StagedPaymentCard({
                 disabled={busy}
                 data-testid={`staged-re-include-${row.id}`}
               >
-                {reInclude.isPending ? "Re-including…" : "Re-include → pending"}
+                {reInclude.isPending ? "Re-including…" : "Re-include → review"}
               </Button>
               <Select
                 value={excludeReason}
@@ -872,31 +942,24 @@ function StagedPaymentCard({
               </Button>
             </div>
           </div>
-        ) : row.giftWasLinked ? (
-          <div className="space-y-3">
-            <div className="text-sm text-muted-foreground">
-              Donor: {donorLabel ?? "—"}
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm text-muted-foreground">
-                Linked to an existing gift — no new gift was created.
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => unlink.mutate({ id: row.id })}
-                disabled={busy}
-                data-testid={`staged-unlink-${row.id}`}
-                title="Undo the link and return this payment to the pending queue. The existing gift is left untouched."
-              >
-                {unlink.isPending ? "Unlinking…" : "Unlink gift"}
-              </Button>
-            </div>
+        ) : queue === "rejected" ? (
+          <div className="text-sm text-muted-foreground">
+            Rejected{row.rejectedAt ? ` · ${formatDateTime(row.rejectedAt)}` : ""}
+            . Retained so a future sync won’t re-stage it.
           </div>
         ) : (
-          <div className="text-sm text-muted-foreground">
-            Donor: {donorLabel ?? "—"}
-          </div>
+          // auto_matched + done: show the applied result + confirm / revert.
+          <ResolvedSummary
+            row={row}
+            queue={queue}
+            donorLabel={donorLabel}
+            busy={busy}
+            canRevert={canRevert}
+            confirming={confirmMatch.isPending}
+            reverting={revert.isPending}
+            onConfirm={() => confirmMatch.mutate({ id: row.id })}
+            onRevert={() => revert.mutate({ id: row.id })}
+          />
         )}
         <StagedPaymentDetails
           row={row}
@@ -909,9 +972,279 @@ function StagedPaymentCard({
   );
 }
 
+// Summary of an applied (approved) row for the Auto-matched / Done queues:
+// what gift it was tied to, plus Confirm (auto_matched → done) and Revert.
+function ResolvedSummary({
+  row,
+  queue,
+  donorLabel,
+  busy,
+  canRevert,
+  confirming,
+  reverting,
+  onConfirm,
+  onRevert,
+}: {
+  row: StagedPayment;
+  queue: StagedPaymentQueue;
+  donorLabel: string | null;
+  busy: boolean;
+  canRevert: boolean;
+  confirming: boolean;
+  reverting: boolean;
+  onConfirm: () => void;
+  onRevert: () => void;
+}) {
+  const reconciled = row.matchedGiftId != null;
+  return (
+    <div className="space-y-3">
+      <div className="text-sm text-muted-foreground">
+        Donor: {donorLabel ?? "—"}
+        {row.intermediaryName ? ` · via ${row.intermediaryName}` : ""}
+      </div>
+      <div className="text-sm">
+        {reconciled
+          ? "Reconciled to an existing gift"
+          : "New gift created from this payment"}
+        {row.resolvedGiftName ? (
+          <span className="text-muted-foreground">
+            {" — "}
+            {row.resolvedGiftName}
+            {row.resolvedGiftAmount
+              ? ` · ${formatAmount(row.resolvedGiftAmount)}`
+              : ""}
+            {row.resolvedGiftDate ? ` · ${row.resolvedGiftDate}` : ""}
+          </span>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {queue === "auto_matched" ? (
+          <Button
+            size="sm"
+            onClick={onConfirm}
+            disabled={busy}
+            data-testid={`staged-confirm-auto-${row.id}`}
+            title="Confirm this auto-applied match as reviewed; moves it to Done."
+          >
+            {confirming ? "Confirming…" : "Looks right → confirm"}
+          </Button>
+        ) : null}
+        {canRevert ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRevert}
+            disabled={busy}
+            data-testid={`staged-revert-${row.id}`}
+            title={
+              reconciled
+                ? "Undo the link and return to review. The existing gift is untouched."
+                : "Delete the auto-created gift and return to review."
+            }
+          >
+            {reverting ? "Reverting…" : "Revert"}
+          </Button>
+        ) : (
+          <span className="text-xs text-muted-foreground self-center">
+            Manually created gift — revert from the gift record.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Two-column reconciler: left lists candidate existing gifts, sourced either
+// from the saved donor (tight amount band) or a donor-agnostic amount/date
+// window. The fundraiser reconciles the staged payment to one of them.
+function Reconciler({
+  row,
+  hasSavedDonor,
+  onReconcile,
+  reconciling,
+}: {
+  row: StagedPayment;
+  hasSavedDonor: boolean;
+  onReconcile: (giftId: string) => void;
+  reconciling: boolean;
+}) {
+  const [source, setSource] = useState<"donor" | "window">(
+    hasSavedDonor ? "donor" : "window",
+  );
+  useEffect(() => {
+    if (!hasSavedDonor) setSource("window");
+  }, [hasSavedDonor]);
+
+  const donorQ = useListStagedPaymentGiftCandidates(row.id, {
+    query: {
+      enabled: source === "donor" && hasSavedDonor,
+      queryKey: getListStagedPaymentGiftCandidatesQueryKey(row.id),
+    },
+  });
+  const windowParams = { days: 30 };
+  const windowQ = useListStagedPaymentGiftWindow(row.id, windowParams, {
+    query: {
+      enabled: source === "window",
+      queryKey: getListStagedPaymentGiftWindowQueryKey(row.id, windowParams),
+    },
+  });
+  const activeQ = source === "donor" ? donorQ : windowQ;
+
+  return (
+    <div
+      className="rounded-md border"
+      data-testid={`staged-reconciler-${row.id}`}
+    >
+      <div className="grid grid-cols-1 md:grid-cols-2">
+        {/* Left column: the QuickBooks payment we're reconciling. */}
+        <div className="border-b p-3 md:border-b-0 md:border-r">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            QuickBooks payment
+          </div>
+          <div className="text-sm font-medium">
+            {row.payerName ?? "Unknown payer"} {formatAmount(row.amount)}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {QB_ENTITY_TYPE_LABELS[row.qbEntityType] ?? row.qbEntityType} ·{" "}
+            {row.dateReceived ?? "no date"}
+          </div>
+          {row.lineDescription ? (
+            <div className="mt-1 text-xs text-muted-foreground break-words">
+              {row.lineDescription}
+            </div>
+          ) : null}
+        </div>
+
+        {/* Right column: candidate existing gifts. */}
+        <div className="p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Existing gifts
+            </div>
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant={source === "donor" ? "default" : "outline"}
+                className="h-7 px-2 text-xs"
+                onClick={() => setSource("donor")}
+                disabled={!hasSavedDonor}
+                data-testid={`staged-reconciler-source-donor-${row.id}`}
+                title={
+                  hasSavedDonor
+                    ? "Gifts for the saved donor near this amount."
+                    : "Save a donor first to search their gifts."
+                }
+              >
+                This donor
+              </Button>
+              <Button
+                size="sm"
+                variant={source === "window" ? "default" : "outline"}
+                className="h-7 px-2 text-xs"
+                onClick={() => setSource("window")}
+                data-testid={`staged-reconciler-source-window-${row.id}`}
+                title="Any donor's gifts within ±30 days and this amount."
+              >
+                Amount + date
+              </Button>
+            </div>
+          </div>
+          <GiftCandidateList
+            row={row}
+            query={activeQ}
+            showDonor={source === "window"}
+            onReconcile={onReconcile}
+            reconciling={reconciling}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GiftCandidateList({
+  row,
+  query,
+  showDonor,
+  onReconcile,
+  reconciling,
+}: {
+  row: StagedPayment;
+  query: UseQueryResult<GiftCandidateList>;
+  showDonor: boolean;
+  onReconcile: (giftId: string) => void;
+  reconciling: boolean;
+}) {
+  const candidates: GiftCandidate[] = query.data?.data ?? [];
+
+  if (query.isLoading) {
+    return <p className="text-xs text-muted-foreground">Searching…</p>;
+  }
+  if (query.isError) {
+    return (
+      <p className="text-xs text-destructive">
+        Could not load candidates. Try again.
+      </p>
+    );
+  }
+  if (candidates.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        No matching gift found. Use “Create new gift” to record one.
+      </p>
+    );
+  }
+  return (
+    <ul className="space-y-2">
+      {candidates.map((c) => {
+        const alreadyLinked = c.alreadyLinkedStagedPaymentId != null;
+        const donorName =
+          c.organizationName ??
+          c.individualGiverPersonName ??
+          c.householdName ??
+          null;
+        return (
+          <li
+            key={c.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5"
+            data-testid={`staged-candidate-${row.id}-${c.id}`}
+          >
+            <div className="min-w-0">
+              <div className="truncate text-sm">
+                {c.name ?? "Untitled gift"}
+                <span className="ml-2 text-muted-foreground">
+                  {formatAmount(c.amount)}
+                </span>
+              </div>
+              <div className="truncate text-xs text-muted-foreground">
+                {showDonor && donorName ? `${donorName} · ` : ""}
+                {c.dateReceived ?? "no date"}
+                {c.type ? ` · ${c.type}` : ""}
+                {feeDeltaLabel(row.amount, c.amount)}
+                {alreadyLinked
+                  ? " · already linked to a QuickBooks payment"
+                  : ""}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onReconcile(c.id)}
+              disabled={reconciling || alreadyLinked}
+              data-testid={`staged-reconcile-${row.id}-${c.id}`}
+            >
+              {alreadyLinked ? "Linked" : "Reconcile"}
+            </Button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 // Full, read-only dump of everything QuickBooks gave us for this row —
 // including the per-line item / account / class arrays — so a fundraiser can
-// see exactly what they are approving without leaving the page.
+// see exactly what they are reconciling without leaving the page.
 function StagedPaymentDetails({
   row,
   donorLabel,
@@ -929,14 +1262,27 @@ function StagedPaymentDetails({
       value: QB_ENTITY_TYPE_LABELS[row.qbEntityType] ?? row.qbEntityType,
     },
     { label: "QuickBooks entity ID", value: row.qbEntityId },
+    { label: "QuickBooks line ID", value: row.qbLineId },
     { label: "Realm ID", value: row.realmId },
     { label: "Amount", value: formatAmount(row.amount) },
     { label: "Date received", value: row.dateReceived },
     { label: "Payer name", value: row.payerName },
     { label: "Payer email", value: row.payerEmail },
     { label: "Reference / memo", value: row.rawReference },
+    { label: "Line description", value: row.lineDescription },
     { label: "Status", value: row.status },
     { label: "Match status", value: row.matchStatus },
+    {
+      label: "Match method",
+      value: row.matchMethod
+        ? (MATCH_METHOD_LABELS[row.matchMethod] ?? row.matchMethod)
+        : null,
+    },
+    {
+      label: "Match score",
+      value: typeof row.matchScore === "number" ? `${row.matchScore}%` : null,
+    },
+    { label: "Classification", value: row.classificationSource },
     {
       label: "Exclusion reason",
       value: row.exclusionReason
@@ -944,7 +1290,11 @@ function StagedPaymentDetails({
         : null,
     },
     { label: "Donor", value: donorLabel },
+    { label: "Intermediary", value: row.intermediaryName },
+    { label: "Reconciled gift ID", value: row.matchedGiftId },
     { label: "Created gift ID", value: row.createdGiftId },
+    { label: "Auto-applied", value: row.autoApplied ? "Yes" : "No" },
+    { label: "Confirmed at", value: formatDateTime(row.matchConfirmedAt) },
     { label: "Approved at", value: formatDateTime(row.approvedAt) },
     { label: "Rejected at", value: formatDateTime(row.rejectedAt) },
     { label: "First seen", value: formatDateTime(row.createdAt) },
@@ -1002,82 +1352,6 @@ function StagedPaymentDetails({
           ))}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-// Existing gifts that match this staged payment's donor + amount. Linking ties
-// the QuickBooks record to one of these instead of minting a new gift.
-function GiftCandidates({
-  row,
-  query,
-  onLink,
-  linking,
-}: {
-  row: StagedPayment;
-  query: UseQueryResult<GiftCandidateList>;
-  onLink: (giftId: string) => void;
-  linking: boolean;
-}) {
-  const candidates: GiftCandidate[] = query.data?.data ?? [];
-
-  return (
-    <div
-      className="rounded-md border p-3"
-      data-testid={`staged-candidates-${row.id}`}
-    >
-      <div className="mb-2 text-sm font-medium">
-        Existing gifts matching {formatAmount(row.amount)} for this donor
-      </div>
-      {query.isLoading ? (
-        <p className="text-xs text-muted-foreground">Searching…</p>
-      ) : query.isError ? (
-        <p className="text-xs text-destructive">
-          Could not load candidates. Try again.
-        </p>
-      ) : candidates.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          No matching gift found. Use “Approve → create gift” to record a new
-          one.
-        </p>
-      ) : (
-        <ul className="space-y-2">
-          {candidates.map((c) => {
-            const alreadyLinked = c.alreadyLinkedStagedPaymentId != null;
-            return (
-              <li
-                key={c.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5"
-                data-testid={`staged-candidate-${row.id}-${c.id}`}
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm">
-                    {c.name ?? "Untitled gift"}
-                    <span className="ml-2 text-muted-foreground">
-                      {formatAmount(c.amount)}
-                    </span>
-                  </div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {c.dateReceived ?? "no date"}
-                    {c.type ? ` · ${c.type}` : ""}
-                    {feeDeltaLabel(row.amount, c.amount)}
-                    {alreadyLinked ? " · already linked to a QuickBooks payment" : ""}
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onLink(c.id)}
-                  disabled={linking || alreadyLinked}
-                  data-testid={`staged-link-${row.id}-${c.id}`}
-                >
-                  {alreadyLinked ? "Linked" : "Link"}
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
     </div>
   );
 }

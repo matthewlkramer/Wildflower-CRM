@@ -26,7 +26,6 @@ import type {
   AdminGoogleSyncList,
   AdminListEmailIntelFeedbackParams,
   AdminResyncGoogleUser200,
-  ApproveStagedPaymentResponse,
   BadRequestResponse,
   BulkUpdateGiftsBody,
   BulkUpdateHouseholdsBody,
@@ -70,6 +69,7 @@ import type {
   DismissTaskProposalBody,
   DonorPaymentIntermediary,
   DonorPaymentIntermediaryList,
+  DonorSearchList,
   Email,
   EmailIntelFeedbackList,
   EmailIntelPrompt,
@@ -111,7 +111,6 @@ import type {
   Interaction,
   InteractionList,
   InternalEmailDomainsConfig,
-  LinkStagedPaymentBody,
   LinkThankYouEmailBody,
   ListAddressesParams,
   ListCalendarEventsParams,
@@ -138,6 +137,7 @@ import type {
   ListRegionsParams,
   ListSavedViewsParams,
   ListSchoolsParams,
+  ListStagedPaymentGiftWindowParams,
   ListStagedPaymentsParams,
   ListTasksParams,
   ListTrackedEmailsByContactParams,
@@ -178,8 +178,10 @@ import type {
   ProjectionsByFyEntity,
   PromoteActionItemBody,
   QuickbooksOauthStatus,
+  QuickbooksReclassifySummary,
   QuickbooksRematchSummary,
   QuickbooksSyncSummary,
+  ReconcileStagedPaymentBody,
   RefreshTaskProposalBody,
   Region,
   RegionList,
@@ -192,9 +194,11 @@ import type {
   SavedViewList,
   School,
   SchoolList,
+  SearchStagedPaymentDonorsParams,
   SearchTrackedEmailParams,
   SendTrackedEmailBody,
   SendTrackedEmailResult,
+  StagedGiftResponse,
   StagedPayment,
   StagedPaymentList,
   StagedPaymentSummary,
@@ -13232,6 +13236,91 @@ export const useRematchStagedPayments = <
   return useMutation(getRematchStagedPaymentsMutationOptions(options));
 };
 
+/**
+ * @summary Re-run the noise classifier over auto-classified pending/excluded staged payments (never touches manual overrides).
+ */
+export const getReclassifyStagedPaymentsUrl = () => {
+  return `/api/quickbooks/reclassify`;
+};
+
+export const reclassifyStagedPayments = async (
+  options?: RequestInit,
+): Promise<QuickbooksReclassifySummary> => {
+  return customFetch<QuickbooksReclassifySummary>(
+    getReclassifyStagedPaymentsUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getReclassifyStagedPaymentsMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reclassifyStagedPayments>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reclassifyStagedPayments>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["reclassifyStagedPayments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reclassifyStagedPayments>>,
+    void
+  > = () => {
+    return reclassifyStagedPayments(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReclassifyStagedPaymentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reclassifyStagedPayments>>
+>;
+
+export type ReclassifyStagedPaymentsMutationError =
+  ErrorType<ForbiddenResponse | void>;
+
+/**
+ * @summary Re-run the noise classifier over auto-classified pending/excluded staged payments (never touches manual overrides).
+ */
+export const useReclassifyStagedPayments = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reclassifyStagedPayments>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reclassifyStagedPayments>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getReclassifyStagedPaymentsMutationOptions(options));
+};
+
 export const getListStagedPaymentsUrl = (params?: ListStagedPaymentsParams) => {
   const normalizedParams = new URLSearchParams();
 
@@ -13392,6 +13481,112 @@ export function useGetStagedPaymentsSummary<
 }
 
 /**
+ * @summary Trigram donor search (organizations / people / households) for the reconciler picker.
+ */
+export const getSearchStagedPaymentDonorsUrl = (
+  params: SearchStagedPaymentDonorsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/staged-payments-donor-search?${stringifiedParams}`
+    : `/api/staged-payments-donor-search`;
+};
+
+export const searchStagedPaymentDonors = async (
+  params: SearchStagedPaymentDonorsParams,
+  options?: RequestInit,
+): Promise<DonorSearchList> => {
+  return customFetch<DonorSearchList>(getSearchStagedPaymentDonorsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getSearchStagedPaymentDonorsQueryKey = (
+  params?: SearchStagedPaymentDonorsParams,
+) => {
+  return [
+    `/api/staged-payments-donor-search`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getSearchStagedPaymentDonorsQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchStagedPaymentDonors>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchStagedPaymentDonorsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchStagedPaymentDonors>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getSearchStagedPaymentDonorsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof searchStagedPaymentDonors>>
+  > = ({ signal }) =>
+    searchStagedPaymentDonors(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchStagedPaymentDonors>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type SearchStagedPaymentDonorsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchStagedPaymentDonors>>
+>;
+export type SearchStagedPaymentDonorsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Trigram donor search (organizations / people / households) for the reconciler picker.
+ */
+
+export function useSearchStagedPaymentDonors<
+  TData = Awaited<ReturnType<typeof searchStagedPaymentDonors>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchStagedPaymentDonorsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchStagedPaymentDonors>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getSearchStagedPaymentDonorsQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Set/fix the donor match on a pending staged payment (donor XOR).
  */
 export const getResolveStagedPaymentUrl = (id: string) => {
@@ -13482,18 +13677,18 @@ export const useResolveStagedPayment = <
 };
 
 /**
- * @summary Approve a staged payment — mints a gifts_and_payments row (donor XOR).
+ * @summary Mint a new gifts_and_payments row from a pending staged payment (donor XOR).
  */
-export const getApproveStagedPaymentUrl = (id: string) => {
-  return `/api/staged-payments/${id}/approve`;
+export const getCreateGiftFromStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/create-gift`;
 };
 
-export const approveStagedPayment = async (
+export const createGiftFromStagedPayment = async (
   id: string,
   options?: RequestInit,
-): Promise<ApproveStagedPaymentResponse> => {
-  return customFetch<ApproveStagedPaymentResponse>(
-    getApproveStagedPaymentUrl(id),
+): Promise<StagedGiftResponse> => {
+  return customFetch<StagedGiftResponse>(
+    getCreateGiftFromStagedPaymentUrl(id),
     {
       ...options,
       method: "POST",
@@ -13501,24 +13696,24 @@ export const approveStagedPayment = async (
   );
 };
 
-export const getApproveStagedPaymentMutationOptions = <
+export const getCreateGiftFromStagedPaymentMutationOptions = <
   TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof approveStagedPayment>>,
+    Awaited<ReturnType<typeof createGiftFromStagedPayment>>,
     TError,
     { id: string },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof approveStagedPayment>>,
+  Awaited<ReturnType<typeof createGiftFromStagedPayment>>,
   TError,
   { id: string },
   TContext
 > => {
-  const mutationKey = ["approveStagedPayment"];
+  const mutationKey = ["createGiftFromStagedPayment"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -13528,46 +13723,46 @@ export const getApproveStagedPaymentMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof approveStagedPayment>>,
+    Awaited<ReturnType<typeof createGiftFromStagedPayment>>,
     { id: string }
   > = (props) => {
     const { id } = props ?? {};
 
-    return approveStagedPayment(id, requestOptions);
+    return createGiftFromStagedPayment(id, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type ApproveStagedPaymentMutationResult = NonNullable<
-  Awaited<ReturnType<typeof approveStagedPayment>>
+export type CreateGiftFromStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createGiftFromStagedPayment>>
 >;
 
-export type ApproveStagedPaymentMutationError = ErrorType<
+export type CreateGiftFromStagedPaymentMutationError = ErrorType<
   BadRequestResponse | NotFoundResponse | void
 >;
 
 /**
- * @summary Approve a staged payment — mints a gifts_and_payments row (donor XOR).
+ * @summary Mint a new gifts_and_payments row from a pending staged payment (donor XOR).
  */
-export const useApproveStagedPayment = <
+export const useCreateGiftFromStagedPayment = <
   TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof approveStagedPayment>>,
+    Awaited<ReturnType<typeof createGiftFromStagedPayment>>,
     TError,
     { id: string },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof approveStagedPayment>>,
+  Awaited<ReturnType<typeof createGiftFromStagedPayment>>,
   TError,
   { id: string },
   TContext
 > => {
-  return useMutation(getApproveStagedPaymentMutationOptions(options));
+  return useMutation(getCreateGiftFromStagedPaymentMutationOptions(options));
 };
 
 /**
@@ -13656,7 +13851,7 @@ export const useRejectStagedPayment = <
 };
 
 /**
- * @summary Move an auto-excluded staged payment back to pending (false positive).
+ * @summary Move an excluded staged payment back to pending (pins classification to manual).
  */
 export const getReIncludeStagedPaymentUrl = (id: string) => {
   return `/api/staged-payments/${id}/re-include`;
@@ -13718,7 +13913,7 @@ export type ReIncludeStagedPaymentMutationError =
   ErrorType<NotFoundResponse | void>;
 
 /**
- * @summary Move an auto-excluded staged payment back to pending (false positive).
+ * @summary Move an excluded staged payment back to pending (pins classification to manual).
  */
 export const useReIncludeStagedPayment = <
   TError = ErrorType<NotFoundResponse | void>,
@@ -13743,10 +13938,10 @@ export const useReIncludeStagedPayment = <
 /**
  * Human-driven counterpart to the insert-time auto-exclude: files a staged
 payment under a non-gift category (membership, loan, etc.) and moves it to
-the excluded bucket. Works on a pending row (exclude it) or an
-already-excluded row (reclassify its category). The donor match is left
-intact so re-include can restore it. Approved/rejected rows cannot be
-excluded.
+the excluded bucket, pinning classification_source='manual' so the
+re-runnable classifier never re-includes it. Works on a pending row
+(exclude it) or an already-excluded row (reclassify its category). The
+donor match is left intact so re-include can restore it.
 
  * @summary Manually file a staged payment under a non-gift exclusion category.
  */
@@ -13839,14 +14034,14 @@ export const useExcludeStagedPayment = <
 
 /**
  * Finds already-recorded gifts_and_payments rows for the staged payment's
-saved donor whose amount equals the staged amount, so the fundraiser can
-link the QuickBooks record to an existing gift instead of creating a
-duplicate. Returns an empty list if the staged row has no donor or no
-amount. Ordered by date proximity to the staged payment's date. Each
-candidate flags whether it is already linked to another QuickBooks
-staged payment.
+saved donor whose amount is at or just above the staged amount (a
+processor fee makes the CRM gross gift slightly larger than the QB net
+deposit), so the fundraiser can reconcile to an existing gift instead of
+minting a duplicate. Empty when the staged row has no donor or no amount.
+Each candidate flags whether it is already linked to another staged
+payment.
 
- * @summary Existing gifts/payments that match this staged payment's donor + amount.
+ * @summary Existing gifts for this staged payment's saved donor within the amount band.
  */
 export const getListStagedPaymentGiftCandidatesUrl = (id: string) => {
   return `/api/staged-payments/${id}/gift-candidates`;
@@ -13912,7 +14107,7 @@ export type ListStagedPaymentGiftCandidatesQueryError =
   ErrorType<NotFoundResponse>;
 
 /**
- * @summary Existing gifts/payments that match this staged payment's donor + amount.
+ * @summary Existing gifts for this staged payment's saved donor within the amount band.
  */
 
 export function useListStagedPaymentGiftCandidates<
@@ -13942,52 +14137,175 @@ export function useListStagedPaymentGiftCandidates<
 }
 
 /**
- * Ties the QuickBooks staged payment to an already-recorded
-gifts_and_payments row instead of minting a new one. Marks the staged
-row approved with createdGiftId pointing at the chosen gift. The gift's
-donor must match the staged payment's saved donor, and the gift must not
-already be linked to another staged payment.
+ * Donor-agnostic reconcile entry point: existing gifts whose amount and
+date sit in a window around the staged payment, so a fundraiser can
+reconcile even when the donor wasn't auto-resolved. Empty when the staged
+row has no amount.
 
- * @summary Link a staged payment to an existing gift (no new gift is created).
+ * @summary Existing gifts across ALL donors within the amount/date window (donor-agnostic).
  */
-export const getLinkStagedPaymentUrl = (id: string) => {
-  return `/api/staged-payments/${id}/link`;
+export const getListStagedPaymentGiftWindowUrl = (
+  id: string,
+  params?: ListStagedPaymentGiftWindowParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/staged-payments/${id}/gift-window?${stringifiedParams}`
+    : `/api/staged-payments/${id}/gift-window`;
 };
 
-export const linkStagedPayment = async (
+export const listStagedPaymentGiftWindow = async (
   id: string,
-  linkStagedPaymentBody: LinkStagedPaymentBody,
+  params?: ListStagedPaymentGiftWindowParams,
   options?: RequestInit,
-): Promise<ApproveStagedPaymentResponse> => {
-  return customFetch<ApproveStagedPaymentResponse>(
-    getLinkStagedPaymentUrl(id),
+): Promise<GiftCandidateList> => {
+  return customFetch<GiftCandidateList>(
+    getListStagedPaymentGiftWindowUrl(id, params),
     {
       ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(linkStagedPaymentBody),
+      method: "GET",
     },
   );
 };
 
-export const getLinkStagedPaymentMutationOptions = <
+export const getListStagedPaymentGiftWindowQueryKey = (
+  id: string,
+  params?: ListStagedPaymentGiftWindowParams,
+) => {
+  return [
+    `/api/staged-payments/${id}/gift-window`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListStagedPaymentGiftWindowQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  params?: ListStagedPaymentGiftWindowParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListStagedPaymentGiftWindowQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>
+  > = ({ signal }) =>
+    listStagedPaymentGiftWindow(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListStagedPaymentGiftWindowQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>
+>;
+export type ListStagedPaymentGiftWindowQueryError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Existing gifts across ALL donors within the amount/date window (donor-agnostic).
+ */
+
+export function useListStagedPaymentGiftWindow<
+  TData = Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  params?: ListStagedPaymentGiftWindowParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListStagedPaymentGiftWindowQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Ties the staged payment to an already-recorded gifts_and_payments row by
+setting matchedGiftId. Marks the row approved (autoApplied=false). If the
+staged row has no donor yet it adopts the gift's donor; otherwise the
+donors must match. The gift must not already be linked to another staged
+payment.
+
+ * @summary Reconcile a staged payment to an existing gift (no new gift is created).
+ */
+export const getReconcileStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/reconcile`;
+};
+
+export const reconcileStagedPayment = async (
+  id: string,
+  reconcileStagedPaymentBody: ReconcileStagedPaymentBody,
+  options?: RequestInit,
+): Promise<StagedGiftResponse> => {
+  return customFetch<StagedGiftResponse>(getReconcileStagedPaymentUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(reconcileStagedPaymentBody),
+  });
+};
+
+export const getReconcileStagedPaymentMutationOptions = <
   TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof linkStagedPayment>>,
+    Awaited<ReturnType<typeof reconcileStagedPayment>>,
     TError,
-    { id: string; data: BodyType<LinkStagedPaymentBody> },
+    { id: string; data: BodyType<ReconcileStagedPaymentBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof linkStagedPayment>>,
+  Awaited<ReturnType<typeof reconcileStagedPayment>>,
   TError,
-  { id: string; data: BodyType<LinkStagedPaymentBody> },
+  { id: string; data: BodyType<ReconcileStagedPaymentBody> },
   TContext
 > => {
-  const mutationKey = ["linkStagedPayment"];
+  const mutationKey = ["reconcileStagedPayment"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -13997,55 +14315,56 @@ export const getLinkStagedPaymentMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof linkStagedPayment>>,
-    { id: string; data: BodyType<LinkStagedPaymentBody> }
+    Awaited<ReturnType<typeof reconcileStagedPayment>>,
+    { id: string; data: BodyType<ReconcileStagedPaymentBody> }
   > = (props) => {
     const { id, data } = props ?? {};
 
-    return linkStagedPayment(id, data, requestOptions);
+    return reconcileStagedPayment(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type LinkStagedPaymentMutationResult = NonNullable<
-  Awaited<ReturnType<typeof linkStagedPayment>>
+export type ReconcileStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reconcileStagedPayment>>
 >;
-export type LinkStagedPaymentMutationBody = BodyType<LinkStagedPaymentBody>;
-export type LinkStagedPaymentMutationError = ErrorType<
+export type ReconcileStagedPaymentMutationBody =
+  BodyType<ReconcileStagedPaymentBody>;
+export type ReconcileStagedPaymentMutationError = ErrorType<
   BadRequestResponse | NotFoundResponse | void
 >;
 
 /**
- * @summary Link a staged payment to an existing gift (no new gift is created).
+ * @summary Reconcile a staged payment to an existing gift (no new gift is created).
  */
-export const useLinkStagedPayment = <
+export const useReconcileStagedPayment = <
   TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof linkStagedPayment>>,
+    Awaited<ReturnType<typeof reconcileStagedPayment>>,
     TError,
-    { id: string; data: BodyType<LinkStagedPaymentBody> },
+    { id: string; data: BodyType<ReconcileStagedPaymentBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof linkStagedPayment>>,
+  Awaited<ReturnType<typeof reconcileStagedPayment>>,
   TError,
-  { id: string; data: BodyType<LinkStagedPaymentBody> },
+  { id: string; data: BodyType<ReconcileStagedPaymentBody> },
   TContext
 > => {
-  return useMutation(getLinkStagedPaymentMutationOptions(options));
+  return useMutation(getReconcileStagedPaymentMutationOptions(options));
 };
 
 /**
- * Marks the donor match on a pending, matched staged payment as
-human-confirmed (records match_confirmed_at / match_confirmed_by_user_id).
-The row must be pending and already have a donor; this does not change
-the donor or mint a gift.
+ * Stamps the donor match as human-confirmed (match_confirmed_at /
+match_confirmed_by_user_id). Works on a pending row with a donor OR an
+auto-applied approved row (graduating it from "Auto-matched" to "Done").
+Does not change the donor or mint a gift.
 
- * @summary Confirm a system-suggested donor match (system matched → human approved).
+ * @summary Confirm a system-suggested or auto-applied donor match (→ human approved / done).
  */
 export const getConfirmStagedPaymentMatchUrl = (id: string) => {
   return `/api/staged-payments/${id}/confirm-match`;
@@ -14107,7 +14426,7 @@ export type ConfirmStagedPaymentMatchMutationError =
   ErrorType<NotFoundResponse | void>;
 
 /**
- * @summary Confirm a system-suggested donor match (system matched → human approved).
+ * @summary Confirm a system-suggested or auto-applied donor match (→ human approved / done).
  */
 export const useConfirmStagedPaymentMatch = <
   TError = ErrorType<NotFoundResponse | void>,
@@ -14130,12 +14449,7 @@ export const useConfirmStagedPaymentMatch = <
 };
 
 /**
- * Removes the donor from a pending staged payment and resets it to
-unmatched, clearing any human confirmation. Works on both
-system-matched and human-approved rows. Only pending rows can be
-unmatched.
-
- * @summary Clear the donor match (any match → unmatched).
+ * @summary Clear the donor match (any match → unmatched). Pending rows only.
  */
 export const getUnmatchStagedPaymentUrl = (id: string) => {
   return `/api/staged-payments/${id}/unmatch`;
@@ -14197,7 +14511,7 @@ export type UnmatchStagedPaymentMutationError =
   ErrorType<NotFoundResponse | void>;
 
 /**
- * @summary Clear the donor match (any match → unmatched).
+ * @summary Clear the donor match (any match → unmatched). Pending rows only.
  */
 export const useUnmatchStagedPayment = <
   TError = ErrorType<NotFoundResponse | void>,
@@ -14220,48 +14534,47 @@ export const useUnmatchStagedPayment = <
 };
 
 /**
- * Severs the tie between a staged payment and the pre-existing gift it was
-linked to, returning the row to the pending queue (createdGiftId and the
-approval stamps are cleared; the donor match is left intact). The
-pre-existing gift itself is untouched. Only applies to rows that were
-resolved via "Link to existing gift" (giftWasLinked = true) — a
-minted-gift approval cannot be unlinked, since that would orphan the
-newly created gift.
+ * Returns an approved staged payment to the pending queue. If it was
+reconciled to an existing gift (matchedGiftId), the link is cleared and
+the pre-existing gift is untouched. If it was an auto-minted gift
+(createdGiftId + autoApplied), the auto-created gift is deleted. A
+manually created gift cannot be reverted (it would orphan a
+fundraiser-created ledger row). The donor match is left intact.
 
- * @summary Undo a link to an existing gift (linked → pending).
+ * @summary Undo an approved reconciliation/creation (approved → pending).
  */
-export const getUnlinkStagedPaymentUrl = (id: string) => {
-  return `/api/staged-payments/${id}/unlink`;
+export const getRevertStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/revert`;
 };
 
-export const unlinkStagedPayment = async (
+export const revertStagedPayment = async (
   id: string,
   options?: RequestInit,
 ): Promise<StagedPayment> => {
-  return customFetch<StagedPayment>(getUnlinkStagedPaymentUrl(id), {
+  return customFetch<StagedPayment>(getRevertStagedPaymentUrl(id), {
     ...options,
     method: "POST",
   });
 };
 
-export const getUnlinkStagedPaymentMutationOptions = <
+export const getRevertStagedPaymentMutationOptions = <
   TError = ErrorType<NotFoundResponse | void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof unlinkStagedPayment>>,
+    Awaited<ReturnType<typeof revertStagedPayment>>,
     TError,
     { id: string },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof unlinkStagedPayment>>,
+  Awaited<ReturnType<typeof revertStagedPayment>>,
   TError,
   { id: string },
   TContext
 > => {
-  const mutationKey = ["unlinkStagedPayment"];
+  const mutationKey = ["revertStagedPayment"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -14271,45 +14584,45 @@ export const getUnlinkStagedPaymentMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof unlinkStagedPayment>>,
+    Awaited<ReturnType<typeof revertStagedPayment>>,
     { id: string }
   > = (props) => {
     const { id } = props ?? {};
 
-    return unlinkStagedPayment(id, requestOptions);
+    return revertStagedPayment(id, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type UnlinkStagedPaymentMutationResult = NonNullable<
-  Awaited<ReturnType<typeof unlinkStagedPayment>>
+export type RevertStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revertStagedPayment>>
 >;
 
-export type UnlinkStagedPaymentMutationError =
+export type RevertStagedPaymentMutationError =
   ErrorType<NotFoundResponse | void>;
 
 /**
- * @summary Undo a link to an existing gift (linked → pending).
+ * @summary Undo an approved reconciliation/creation (approved → pending).
  */
-export const useUnlinkStagedPayment = <
+export const useRevertStagedPayment = <
   TError = ErrorType<NotFoundResponse | void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof unlinkStagedPayment>>,
+    Awaited<ReturnType<typeof revertStagedPayment>>,
     TError,
     { id: string },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof unlinkStagedPayment>>,
+  Awaited<ReturnType<typeof revertStagedPayment>>,
   TError,
   { id: string },
   TContext
 > => {
-  return useMutation(getUnlinkStagedPaymentMutationOptions(options));
+  return useMutation(getRevertStagedPaymentMutationOptions(options));
 };
 
 /**

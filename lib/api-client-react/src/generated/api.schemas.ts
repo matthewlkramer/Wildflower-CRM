@@ -1678,15 +1678,40 @@ export type StagedPaymentMatchStatus =
 
 export const StagedPaymentMatchStatus = {
   matched: "matched",
+  suggested: "suggested",
   unmatched: "unmatched",
 } as const;
 
-export type StagedPaymentMatchState =
-  (typeof StagedPaymentMatchState)[keyof typeof StagedPaymentMatchState];
+export type StagedPaymentMatchMethod =
+  (typeof StagedPaymentMatchMethod)[keyof typeof StagedPaymentMatchMethod];
 
-export const StagedPaymentMatchState = {
-  unmatched: "unmatched",
-  matched: "matched",
+export const StagedPaymentMatchMethod = {
+  email: "email",
+  name: "name",
+  name_amount_date: "name_amount_date",
+  amount_date: "amount_date",
+  memo: "memo",
+  intermediary: "intermediary",
+  manual: "manual",
+} as const;
+
+export type StagedPaymentClassificationSource =
+  (typeof StagedPaymentClassificationSource)[keyof typeof StagedPaymentClassificationSource];
+
+export const StagedPaymentClassificationSource = {
+  auto: "auto",
+  manual: "manual",
+} as const;
+
+export type StagedPaymentQueue =
+  (typeof StagedPaymentQueue)[keyof typeof StagedPaymentQueue];
+
+export const StagedPaymentQueue = {
+  needs_review: "needs_review",
+  auto_matched: "auto_matched",
+  excluded: "excluded",
+  done: "done",
+  rejected: "rejected",
 } as const;
 
 export interface QuickbooksOauthStatus {
@@ -1708,6 +1733,8 @@ export interface QuickbooksSyncSummary {
   pulled: number;
   staged: number;
   matched: number;
+  /** Newly-staged rows auto-reconciled or auto-minted at high confidence. */
+  autoApplied: number;
 }
 
 export interface QuickbooksRematchSummary {
@@ -1715,8 +1742,19 @@ export interface QuickbooksRematchSummary {
   ran: boolean;
   /** Candidate rows examined (pending + unmatched + no donor). */
   scanned: number;
-  /** Rows newly auto-matched by this run. */
+  /** Rows newly given a donor hint by this run. */
   matched: number;
+}
+
+export interface QuickbooksReclassifySummary {
+  /** False when the reclassify was skipped (a sync/rematch/reclassify was already running). */
+  ran: boolean;
+  /** Auto-classified pending/excluded rows examined. */
+  scanned: number;
+  /** Rows newly moved to excluded by this run. */
+  excluded: number;
+  /** Rows newly restored to pending by this run. */
+  included: number;
 }
 
 export interface StagedPayment {
@@ -1724,31 +1762,44 @@ export interface StagedPayment {
   realmId: string;
   qbEntityType: QuickbooksEntityType;
   qbEntityId: string;
+  qbLineId?: string | null;
   amount?: string | null;
   dateReceived?: string | null;
   payerName?: string | null;
   payerEmail?: string | null;
   rawReference?: string | null;
+  lineDescription?: string | null;
   status: StagedPaymentStatus;
   exclusionReason?: StagedPaymentExclusionReason | null;
+  classificationSource: StagedPaymentClassificationSource;
   lineItemNames?: string[] | null;
   lineAccountNames?: string[] | null;
   lineClasses?: string[] | null;
   matchStatus: StagedPaymentMatchStatus;
+  matchScore?: number | null;
+  matchMethod?: StagedPaymentMatchMethod | null;
   matchConfirmedByUserId?: string | null;
   matchConfirmedAt?: string | null;
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
+  matchedPaymentIntermediaryId?: string | null;
+  matchedGiftId?: string | null;
   createdGiftId?: string | null;
-  giftWasLinked: boolean;
+  autoApplied: boolean;
   approvedByUserId?: string | null;
   approvedAt?: string | null;
   rejectedByUserId?: string | null;
   rejectedAt?: string | null;
+  queue?: StagedPaymentQueue;
   organizationName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
+  intermediaryName?: string | null;
+  resolvedGiftId?: string | null;
+  resolvedGiftName?: string | null;
+  resolvedGiftAmount?: string | null;
+  resolvedGiftDate?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1770,33 +1821,53 @@ export type StagedPaymentSummaryExcludedByReason = {
 };
 
 export interface StagedPaymentSummary {
-  pending: number;
-  pendingUnmatched: number;
-  pendingMatched: number;
-  approved: number;
+  needsReview: number;
+  autoMatched: number;
+  done: number;
   rejected: number;
   excluded: number;
   excludedByReason: StagedPaymentSummaryExcludedByReason;
 }
 
+export type DonorSearchResultKind =
+  (typeof DonorSearchResultKind)[keyof typeof DonorSearchResultKind];
+
+export const DonorSearchResultKind = {
+  organization: "organization",
+  person: "person",
+  household: "household",
+} as const;
+
+export interface DonorSearchResult {
+  id: string;
+  kind: DonorSearchResultKind;
+  name: string;
+}
+
+export interface DonorSearchList {
+  data: DonorSearchResult[];
+}
+
 /**
- * Set exactly one donor FK (donor XOR). Null the others.
+ * Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary.
  */
 export interface ResolveStagedPaymentBody {
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
+  paymentIntermediaryId?: string | null;
 }
 
-export interface ApproveStagedPaymentResponse {
+export interface StagedGiftResponse {
   gift: GiftOrPayment;
   stagedPaymentId: string;
-  /** API path that streams the file. Auth-gated. */
-  downloadUrl?: string;
 }
 
 export type GiftCandidate = GiftOrPayment & {
-  /** Set when this gift is already the createdGiftId of another staged payment. The UI disables linking to it to avoid double-counting. */
+  organizationName?: string | null;
+  householdName?: string | null;
+  individualGiverPersonName?: string | null;
+  /** Set when this gift is already reconciled/created by another staged payment. The UI disables linking to it to avoid double-counting. */
   alreadyLinkedStagedPaymentId?: string | null;
 };
 
@@ -1805,9 +1876,9 @@ export interface GiftCandidateList {
 }
 
 /**
- * Link the staged payment to an existing gifts_and_payments row.
+ * Reconcile the staged payment to an existing gifts_and_payments row.
  */
-export interface LinkStagedPaymentBody {
+export interface ReconcileStagedPaymentBody {
   giftId: string;
 }
 
@@ -3871,13 +3942,9 @@ export type DisconnectQuickbooksOauth200 = {
 
 export type ListStagedPaymentsParams = {
   /**
-   * Filter by review status (default pending).
+   * Which queue to list (default needs_review).
    */
-  status?: StagedPaymentStatus;
-  /**
-   * Optionally narrow pending rows to unmatched vs. matched (system or human).
-   */
-  matchState?: StagedPaymentMatchState;
+  queue?: StagedPaymentQueue;
   /**
    * @minimum 1
    * @maximum 10000
@@ -3887,6 +3954,22 @@ export type ListStagedPaymentsParams = {
    * @minimum 1
    */
   page?: PageParameter;
+};
+
+export type SearchStagedPaymentDonorsParams = {
+  /**
+   * Search query (min 2 chars).
+   */
+  q: string;
+};
+
+export type ListStagedPaymentGiftWindowParams = {
+  /**
+   * ± days around the staged date (default 30).
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
 };
 
 export type GetDashboardSummaryParams = {

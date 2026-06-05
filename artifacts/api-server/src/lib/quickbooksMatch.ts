@@ -1,17 +1,37 @@
 import { db } from "@workspace/db";
-import {
-  emails,
-  organizations,
-  people,
-  households,
-} from "@workspace/db/schema";
-import { and, eq, ilike, isNotNull, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 /**
- * Auto-match a staged QuickBooks payment to a CRM donor by email and then
- * name. A match is only returned when it is unambiguous (exactly one
- * candidate); anything ambiguous or absent stays unmatched so a human
- * makes the call. Follows the Donor XOR rule — at most one FK is set.
+ * Scored matcher for QuickBooks staged payments. Resolves a staged payment to
+ * a CRM donor (organization / person / household) and, when possible, an
+ * existing gifts_and_payments row to reconcile against — instead of always
+ * minting a new gift.
+ *
+ * Two scored axes plus an intermediary axis:
+ *
+ *   1. DONOR  — strongest signal first:
+ *        email exact (100) → CRM name (trigram fuzzy / exact) → donor names
+ *        parsed out of a free-text memo/reference. Name scoring uses pg_trgm
+ *        `similarity()` against organizations.name / people.full_name /
+ *        households.name (all GIN-trigram indexed). A name hit only counts as
+ *        high-confidence when it is both strong AND unambiguous (one clear
+ *        winner across all three tables).
+ *
+ *   2. EXISTING GIFT — once a donor is resolved, look for an already-recorded
+ *        gift for that donor with the SAME amount within a date window. Exactly
+ *        one ⇒ a reconcile target (matchedGiftId); zero ⇒ safe to mint a new
+ *        gift; many ⇒ ambiguous, leave for a human. When no donor resolves we
+ *        still try a donor-less amount+date lookup and adopt the matched gift's
+ *        donor as a suggestion.
+ *
+ *   3. INTERMEDIARY — when the payer name resolves to a payment intermediary
+ *        (DAF / giving platform / wealth manager), the conduit is recorded and
+ *        the real donor is sought in the memo.
+ *
+ * The result carries a 0–100 score, a method (audit + UI badge), and a tier
+ * (high / suggested / none). The sync worker turns `high` into an auto-applied
+ * action (reconcile if one gift matches, mint if none) and anything weaker into
+ * a "needs review" hint. Follows the Donor XOR rule — at most one donor FK set.
  */
 
 export interface DonorMatch {
@@ -26,73 +46,54 @@ const NO_MATCH: DonorMatch = {
   householdId: null,
 };
 
-/**
- * Email is the strongest signal. The `emails` table is owned by exactly
- * one of person / organization / household, so a single owning row maps
- * straight to a donor. Ambiguous (multiple distinct owners) → no match.
- */
-async function matchByEmail(email: string): Promise<DonorMatch | null> {
-  const rows = await db
-    .select({
-      personId: emails.personId,
-      organizationId: emails.organizationId,
-      householdId: emails.householdId,
-    })
-    .from(emails)
-    .where(eq(sql`lower(${emails.email})`, email.toLowerCase()));
-  if (rows.length === 0) return null;
+export type MatchTier = "high" | "suggested" | "none";
 
-  // Collapse to the distinct set of owning donors.
-  const owners = new Set<string>();
-  let match: DonorMatch = NO_MATCH;
-  for (const r of rows) {
-    if (r.personId) {
-      owners.add(`p:${r.personId}`);
-      match = { ...NO_MATCH, individualGiverPersonId: r.personId };
-    } else if (r.organizationId) {
-      owners.add(`o:${r.organizationId}`);
-      match = { ...NO_MATCH, organizationId: r.organizationId };
-    } else if (r.householdId) {
-      owners.add(`h:${r.householdId}`);
-      match = { ...NO_MATCH, householdId: r.householdId };
-    }
-  }
-  return owners.size === 1 ? match : null;
+export type MatchMethod =
+  | "email"
+  | "name"
+  | "name_amount_date"
+  | "amount_date"
+  | "memo"
+  | "intermediary";
+
+export interface ScoredMatch {
+  donor: DonorMatch;
+  /** Conduit the payer resolved to (DAF / platform), when applicable. */
+  intermediaryId: string | null;
+  /**
+   * A pre-existing gift to reconcile against — set ONLY when exactly one
+   * same-amount gift for the resolved donor falls in the date window. Null when
+   * zero (mint a new gift) or many (ambiguous; a human chooses).
+   */
+  matchedGiftId: string | null;
+  /** How many same-amount in-window gifts the resolved donor already has. */
+  giftCandidateCount: number;
+  /** 0–100 best confidence found. */
+  score: number;
+  method: MatchMethod | null;
+  tier: MatchTier;
 }
 
-/**
- * Name fallback. Tries organizations.name, people.fullName, and
- * households.name (case-insensitive exact). Only returns a match when the
- * name resolves to exactly one donor across ALL three tables combined.
- */
-async function matchByName(name: string): Promise<DonorMatch | null> {
-  const trimmed = name.trim();
-  if (!trimmed) return null;
+/** Score at/above which a match is auto-applied to the ledger. */
+export const HIGH_THRESHOLD = 90;
+/** Score at/above which a match is surfaced as a hint (but not applied). */
+export const SUGGEST_THRESHOLD = 70;
 
-  const [orgs, ppl, hhs] = await Promise.all([
-    db
-      .select({ id: organizations.id })
-      .from(organizations)
-      .where(ilike(organizations.name, trimmed))
-      .limit(2),
-    db
-      .select({ id: people.id })
-      .from(people)
-      .where(and(isNotNull(people.fullName), ilike(people.fullName, trimmed)))
-      .limit(2),
-    db
-      .select({ id: households.id })
-      .from(households)
-      .where(ilike(households.name, trimmed))
-      .limit(2),
-  ]);
+/** ± days around the staged date that counts as the same gift. */
+const GIFT_WINDOW_DAYS = 60;
+/** Tighter window for the donor-less amount+date suggestion. */
+const AMOUNT_DATE_WINDOW_DAYS = 10;
+/** Trigram similarity at/above which a payer is treated as an intermediary. */
+const INTERMEDIARY_SIM = 0.6;
 
-  const total = orgs.length + ppl.length + hhs.length;
-  if (total !== 1) return null;
-  if (orgs[0]) return { ...NO_MATCH, organizationId: orgs[0].id };
-  if (ppl[0]) return { ...NO_MATCH, individualGiverPersonId: ppl[0].id };
-  if (hhs[0]) return { ...NO_MATCH, householdId: hhs[0].id };
-  return null;
+function normalize(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function tierFor(score: number): MatchTier {
+  if (score >= HIGH_THRESHOLD) return "high";
+  if (score >= SUGGEST_THRESHOLD) return "suggested";
+  return "none";
 }
 
 /**
@@ -102,7 +103,7 @@ async function matchByName(name: string): Promise<DonorMatch | null> {
  * Foundation". We pull the trailing segment after a dash and any name following
  * a "from / for / by" keyword. Candidates are kept conservative — at least two
  * whitespace-separated tokens — so acronyms and single common words never feed
- * the (strict, exact, unambiguous) name matcher. Pure/synchronous for testing.
+ * the name matcher. Pure/synchronous for testing.
  */
 export function candidateNamesFromReference(ref: string | null): string[] {
   if (!ref) return [];
@@ -113,44 +114,371 @@ export function candidateNamesFromReference(ref: string | null): string[] {
   const add = (s: string | undefined | null): void => {
     if (!s) return;
     const v = s.trim();
-    // Require a multi-token, reasonably long string to stay conservative.
     if (v.length >= 4 && /\s/.test(v)) out.push(v);
   };
 
-  // "... - Kathleen Rash" → trailing segment after the LAST " - ".
   const dash = norm.lastIndexOf(" - ");
   if (dash !== -1) add(norm.slice(dash + 3));
 
-  // "Contribution from Fidelity Foundation" / "Donation for Jane Doe".
   const kw = norm.match(/\b(?:from|for|by)\s+(.+)$/i);
   if (kw) add(kw[1]);
 
   return [...new Set(out)];
 }
 
+interface NameHit {
+  donor: DonorMatch;
+  key: string;
+  name: string;
+  sim: number;
+}
+
 /**
- * Attempt email match first, then payer name, then names embedded in the raw
- * reference/memo. Returns the donor match plus whether it counts as "matched"
- * (exactly one confident donor). The reference fallback is purely additive —
- * it only fires when nothing else matched — and still requires a strict,
- * unambiguous CRM name hit, so it never weakens the existing guarantees.
+ * Best fuzzy name candidates across organizations / people / households,
+ * ordered by trigram similarity. Uses the `%` operator so the GIN trigram
+ * indexes are used and only rows above the similarity threshold are returned.
  */
-export async function autoMatchDonor(
-  payerName: string | null,
-  payerEmail: string | null,
-  rawReference: string | null = null,
-): Promise<{ match: DonorMatch; matched: boolean }> {
-  if (payerEmail) {
-    const byEmail = await matchByEmail(payerEmail);
-    if (byEmail) return { match: byEmail, matched: true };
+async function bestNameHits(name: string): Promise<NameHit[]> {
+  const q = name.trim();
+  if (q.length < 3) return [];
+  const rows = (
+    await db.execute(sql`
+      SELECT id, kind, name, sim FROM (
+        SELECT id, 'organization' AS kind, name AS name,
+               similarity(name, ${q}) AS sim
+          FROM organizations WHERE name % ${q}
+        UNION ALL
+        SELECT id, 'person' AS kind, full_name AS name,
+               similarity(full_name, ${q}) AS sim
+          FROM people WHERE full_name IS NOT NULL AND full_name % ${q}
+        UNION ALL
+        SELECT id, 'household' AS kind, name AS name,
+               similarity(name, ${q}) AS sim
+          FROM households WHERE name % ${q}
+      ) t
+      ORDER BY sim DESC
+      LIMIT 10
+    `)
+  ).rows as Array<{ id: string; kind: string; name: string; sim: number }>;
+
+  return rows.map((r) => {
+    const donor: DonorMatch =
+      r.kind === "organization"
+        ? { ...NO_MATCH, organizationId: r.id }
+        : r.kind === "person"
+          ? { ...NO_MATCH, individualGiverPersonId: r.id }
+          : { ...NO_MATCH, householdId: r.id };
+    return { donor, key: `${r.kind}:${r.id}`, name: r.name, sim: Number(r.sim) };
+  });
+}
+
+interface ScoredName {
+  donor: DonorMatch;
+  score: number;
+}
+
+/**
+ * Turn a query string into a scored donor (or null). An exact case-insensitive
+ * match scores 95 when unique. A fuzzy winner scores round(sim*100) when it is
+ * clearly ahead of the next *different* donor (margin ≥ 0.08); ambiguous
+ * winners are capped at the suggest ceiling so they never auto-apply.
+ */
+async function scoreName(name: string): Promise<ScoredName | null> {
+  const hits = await bestNameHits(name);
+  if (hits.length === 0) return null;
+
+  const target = normalize(name);
+  const exact = hits.filter((h) => normalize(h.name) === target);
+  if (exact.length === 1) {
+    return { donor: exact[0].donor, score: 95 };
   }
-  if (payerName) {
-    const byName = await matchByName(payerName);
-    if (byName) return { match: byName, matched: true };
+  if (exact.length > 1) {
+    // Same spelling, different entities — genuinely ambiguous.
+    return { donor: exact[0].donor, score: SUGGEST_THRESHOLD };
   }
-  for (const candidate of candidateNamesFromReference(rawReference)) {
-    const byRef = await matchByName(candidate);
-    if (byRef) return { match: byRef, matched: true };
+
+  const best = hits[0];
+  const nextDifferent = hits.find((h) => h.key !== best.key);
+  const unique = !nextDifferent || best.sim - nextDifferent.sim >= 0.08;
+  let score = Math.round(best.sim * 100);
+  if (!unique) score = Math.min(score, SUGGEST_THRESHOLD);
+  if (score < SUGGEST_THRESHOLD) return null;
+  return { donor: best.donor, score };
+}
+
+function donorWhere(donor: DonorMatch) {
+  if (donor.organizationId)
+    return sql`organization_id = ${donor.organizationId}`;
+  if (donor.individualGiverPersonId)
+    return sql`individual_giver_person_id = ${donor.individualGiverPersonId}`;
+  if (donor.householdId) return sql`household_id = ${donor.householdId}`;
+  return null;
+}
+
+/**
+ * Result of the existing-gift lookup for a resolved donor:
+ *   - `exact`         — ids of gifts whose amount equals the staged amount
+ *                       (within a cent). Exactly one of these is an auto-reconcile
+ *                       target; that gift adopts no fee assumption.
+ *   - `plausibleCount`— how many gifts fall in the wider amount band (the CRM
+ *                       gross gift can sit slightly above the QB net deposit by a
+ *                       processor fee). Gates auto-create: we only mint a new gift
+ *                       when NO plausible existing gift exists.
+ * Both exclude gifts already linked to another staged payment, so a gift claimed
+ * elsewhere never counts as a reconcile target or as a reason to skip minting.
+ */
+interface GiftWindowResult {
+  exact: string[];
+  plausibleCount: number;
+}
+
+/**
+ * Gifts for a donor within ±GIFT_WINDOW_DAYS of the staged date whose amount is
+ * at or just above the staged amount (the fee band), ordered by amount then date
+ * proximity. Excludes gifts already linked to/created by another staged payment.
+ */
+async function giftsInWindow(
+  donor: DonorMatch,
+  amount: string,
+  dateReceived: string | null,
+): Promise<GiftWindowResult> {
+  const where = donorWhere(donor);
+  if (!where) return { exact: [], plausibleCount: 0 };
+  const order = dateReceived
+    ? sql`ORDER BY ABS(amount - ${amount}::numeric), ABS(date_received - ${dateReceived}::date) NULLS LAST`
+    : sql`ORDER BY ABS(amount - ${amount}::numeric), date_received DESC NULLS LAST`;
+  const dateClause = dateReceived
+    ? sql`AND (date_received IS NULL OR ABS(date_received - ${dateReceived}::date) <= ${GIFT_WINDOW_DAYS})`
+    : sql``;
+  const rows = (
+    await db.execute(sql`
+      SELECT id, amount FROM gifts_and_payments g
+      WHERE ${where}
+        AND amount >= ${amount}::numeric - 0.01
+        AND amount <= ${amount}::numeric * 1.10 + 1
+        ${dateClause}
+        AND NOT EXISTS (
+          SELECT 1 FROM staged_payments sp
+          WHERE sp.matched_gift_id = g.id OR sp.created_gift_id = g.id
+        )
+      ${order}
+      LIMIT 10
+    `)
+  ).rows as Array<{ id: string; amount: string }>;
+  const target = Number(amount);
+  const exact = rows
+    .filter((r) => Math.abs(Number(r.amount) - target) <= 0.01)
+    .map((r) => r.id);
+  return { exact, plausibleCount: rows.length };
+}
+
+/**
+ * Donor-less fallback: a single same-amount gift within a tight date window.
+ * Adopts that gift's donor as a suggestion. Returns null unless exactly one
+ * gift (with a donor) is found.
+ */
+async function suggestByAmountDate(
+  amount: string,
+  dateReceived: string,
+): Promise<{ donor: DonorMatch; giftId: string } | null> {
+  const rows = (
+    await db.execute(sql`
+      SELECT id, organization_id, individual_giver_person_id, household_id
+      FROM gifts_and_payments
+      WHERE amount = ${amount}::numeric
+        AND date_received IS NOT NULL
+        AND ABS(date_received - ${dateReceived}::date) <= ${AMOUNT_DATE_WINDOW_DAYS}
+      LIMIT 2
+    `)
+  ).rows as Array<{
+    id: string;
+    organization_id: string | null;
+    individual_giver_person_id: string | null;
+    household_id: string | null;
+  }>;
+  if (rows.length !== 1) return null;
+  const r = rows[0];
+  const donor: DonorMatch = {
+    organizationId: r.organization_id,
+    individualGiverPersonId: r.individual_giver_person_id,
+    householdId: r.household_id,
+  };
+  const count = [
+    donor.organizationId,
+    donor.individualGiverPersonId,
+    donor.householdId,
+  ].filter(Boolean).length;
+  if (count !== 1) return null;
+  return { donor, giftId: r.id };
+}
+
+/** Email is the strongest donor signal — exact, owner-unique → 100. */
+async function matchByEmail(email: string): Promise<DonorMatch | null> {
+  const rows = (
+    await db.execute(sql`
+      SELECT person_id, organization_id, household_id
+      FROM emails
+      WHERE lower(email) = ${email.toLowerCase()}
+    `)
+  ).rows as Array<{
+    person_id: string | null;
+    organization_id: string | null;
+    household_id: string | null;
+  }>;
+  if (rows.length === 0) return null;
+  const owners = new Set<string>();
+  let match: DonorMatch = NO_MATCH;
+  for (const r of rows) {
+    if (r.person_id) {
+      owners.add(`p:${r.person_id}`);
+      match = { ...NO_MATCH, individualGiverPersonId: r.person_id };
+    } else if (r.organization_id) {
+      owners.add(`o:${r.organization_id}`);
+      match = { ...NO_MATCH, organizationId: r.organization_id };
+    } else if (r.household_id) {
+      owners.add(`h:${r.household_id}`);
+      match = { ...NO_MATCH, householdId: r.household_id };
+    }
   }
-  return { match: NO_MATCH, matched: false };
+  return owners.size === 1 ? match : null;
+}
+
+/** Resolve a payer name to a payment intermediary (DAF / platform) by trigram. */
+async function matchIntermediary(name: string): Promise<string | null> {
+  const q = name.trim();
+  if (q.length < 3) return null;
+  const rows = (
+    await db.execute(sql`
+      SELECT id, similarity(name, ${q}) AS sim
+      FROM payment_intermediaries
+      WHERE name % ${q}
+      ORDER BY sim DESC
+      LIMIT 1
+    `)
+  ).rows as Array<{ id: string; sim: number }>;
+  if (rows.length === 0) return null;
+  return Number(rows[0].sim) >= INTERMEDIARY_SIM ? rows[0].id : null;
+}
+
+export interface ScoreInput {
+  payerName: string | null;
+  payerEmail: string | null;
+  rawReference: string | null;
+  lineDescription: string | null;
+  amount: string | null;
+  dateReceived: string | null;
+}
+
+const NO_SCORE: ScoredMatch = {
+  donor: NO_MATCH,
+  intermediaryId: null,
+  matchedGiftId: null,
+  giftCandidateCount: 0,
+  score: 0,
+  method: null,
+  tier: "none",
+};
+
+/**
+ * Score a staged payment against CRM donors and existing gifts. Pure of any
+ * write side-effects — the sync/route layer decides what to do with the result.
+ */
+export async function scoreStagedPayment(
+  input: ScoreInput,
+): Promise<ScoredMatch> {
+  const memo = [input.rawReference, input.lineDescription]
+    .filter((s): s is string => !!s)
+    .join(" ");
+
+  // ── Intermediary axis: is the payer itself a conduit? ──
+  const intermediaryId = input.payerName
+    ? await matchIntermediary(input.payerName)
+    : null;
+
+  // ── Donor axis ──
+  let donor: DonorMatch = NO_MATCH;
+  let score = 0;
+  let method: MatchMethod | null = null;
+
+  // 1. Email exact.
+  if (input.payerEmail) {
+    const byEmail = await matchByEmail(input.payerEmail);
+    if (byEmail) {
+      donor = byEmail;
+      score = 100;
+      method = "email";
+    }
+  }
+
+  // 2. Payer name (skipped when the payer is an intermediary — the name is the
+  //    conduit, not the donor; look in the memo instead).
+  if (!method && input.payerName && !intermediaryId) {
+    const byName = await scoreName(input.payerName);
+    if (byName) {
+      donor = byName.donor;
+      score = byName.score;
+      method = "name";
+    }
+  }
+
+  // 3. Donor names parsed from the memo / reference.
+  if (!method) {
+    for (const candidate of candidateNamesFromReference(memo)) {
+      const byRef = await scoreName(candidate);
+      if (byRef) {
+        donor = byRef.donor;
+        score = byRef.score;
+        method = intermediaryId ? "intermediary" : "memo";
+        break;
+      }
+    }
+  }
+
+  // ── Existing-gift axis ──
+  let matchedGiftId: string | null = null;
+  let giftCandidateCount = 0;
+  if (method && input.amount) {
+    const gifts = await giftsInWindow(donor, input.amount, input.dateReceived);
+    // Mint-gate uses the plausible (fee-band) count; reconcile target is a
+    // SINGLE exact-amount gift only.
+    giftCandidateCount = gifts.plausibleCount;
+    if (gifts.exact.length === 1) matchedGiftId = gifts.exact[0];
+    // Amount+date corroboration strengthens a name hit into name_amount_date.
+    if (
+      giftCandidateCount >= 1 &&
+      (method === "name" || method === "memo") &&
+      input.dateReceived
+    ) {
+      method = "name_amount_date";
+      score = Math.max(score, HIGH_THRESHOLD);
+    }
+  }
+
+  // ── Donor-less amount+date suggestion ──
+  if (!method && input.amount && input.dateReceived) {
+    const byAmt = await suggestByAmountDate(input.amount, input.dateReceived);
+    if (byAmt) {
+      donor = byAmt.donor;
+      score = SUGGEST_THRESHOLD;
+      method = "amount_date";
+      giftCandidateCount = 1;
+    }
+  }
+
+  if (!method) {
+    // Nothing on the donor axes; still surface the intermediary as a weak hint.
+    return intermediaryId
+      ? { ...NO_SCORE, intermediaryId, score: SUGGEST_THRESHOLD, tier: "suggested" }
+      : NO_SCORE;
+  }
+
+  return {
+    donor,
+    intermediaryId,
+    matchedGiftId,
+    giftCandidateCount,
+    score,
+    method,
+    tier: tierFor(score),
+  };
 }
