@@ -3492,7 +3492,7 @@ components:
     # ─── QuickBooks payment sync ──────────────────────────────────────────────
     QuickbooksEntityType: { type: string, enum: [sales_receipt, payment, deposit] }
     StagedPaymentStatus: { type: string, enum: [pending, approved, rejected, excluded] }
-    StagedPaymentExclusionReason: { type: string, enum: [zero_amount, loan, membership] }
+    StagedPaymentExclusionReason: { type: string, enum: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund] }
     StagedPaymentMatchStatus: { type: string, enum: [matched, unmatched] }
     QuickbooksOauthStatus:
       type: object

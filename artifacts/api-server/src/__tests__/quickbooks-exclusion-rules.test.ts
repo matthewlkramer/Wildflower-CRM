@@ -123,4 +123,128 @@ describe("classifyStagedPayment", () => {
       }).reason,
     ).toBe("loan");
   });
+
+  it("excludes the funder 'CSP' as government_reimbursement (exact, case-insensitive)", () => {
+    expect(classifyStagedPayment({ ...base, payerName: "CSP" }).reason).toBe(
+      "government_reimbursement",
+    );
+    expect(classifyStagedPayment({ ...base, payerName: "  csp  " }).reason).toBe(
+      "government_reimbursement",
+    );
+  });
+
+  it("does not treat 'CSP' substrings as government_reimbursement", () => {
+    expect(
+      classifyStagedPayment({ ...base, payerName: "CSPire Communications" })
+        .excluded,
+    ).toBe(false);
+  });
+
+  it("excludes interest income by account and by item", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineAccountNames: ["4010 Interest Earned"],
+      }).reason,
+    ).toBe("interest");
+    expect(
+      classifyStagedPayment({ ...base, lineItemNames: ["INTEREST"] }).reason,
+    ).toBe("interest");
+  });
+
+  it("excludes guaranty revenue as loan activity (line-based)", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineAccountNames: ["4102 Guaranty Revenue"],
+      }).reason,
+    ).toBe("loan");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineItemNames: ["Springpoint:Guaranty Revenue"],
+      }).reason,
+    ).toBe("loan");
+  });
+
+  it("excludes payroll-tax / tax / insurance refunds as tax_refund", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineAccountNames: ["7010.4 Payroll:3.Benefits:Payroll Taxes"],
+      }).reason,
+    ).toBe("tax_refund");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineAccountNames: ["7006 All Other Expenditures:Insurance"],
+      }).reason,
+    ).toBe("tax_refund");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineAccountNames: ["7020 All Other Expenditures:Taxes"],
+      }).reason,
+    ).toBe("tax_refund");
+  });
+
+  it("does not treat unrelated expense accounts as tax_refund", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineAccountNames: ["7003 All Other Expenditures:Bank Charges"],
+      }).excluded,
+    ).toBe(false);
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineAccountNames: ["7011 All Other Expenditures:Office Supplies"],
+      }).excluded,
+    ).toBe(false);
+  });
+
+  it("donation-first guard keeps a bundled gift even with an interest line", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: ["4000 Unrestricted Donations", "4010 Interest Earned"],
+      }).excluded,
+    ).toBe(false);
+  });
+
+  it("donation-first guard protects bundled gifts from guaranty / tax_refund lines", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineAccountNames: ["4100 Restricted Donations", "4102 Guaranty Revenue"],
+      }).excluded,
+    ).toBe(false);
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineItemNames: ["Donation - Foundation"],
+        lineAccountNames: ["7010.4 Payroll:3.Benefits:Payroll Taxes"],
+      }).excluded,
+    ).toBe(false);
+  });
+
+  it("CSP exclusion is definitive even on a donation-coded line", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "CSP",
+        lineAccountNames: ["4000 Unrestricted Donations"],
+      }).reason,
+    ).toBe("government_reimbursement");
+  });
+
+  it("interest account 4010 is not mistaken for a 4000-series donation", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineAccountNames: ["4010 Interest Earned"],
+      }).reason,
+    ).toBe("interest");
+  });
 });

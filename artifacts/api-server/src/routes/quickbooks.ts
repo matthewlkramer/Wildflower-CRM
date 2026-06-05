@@ -336,7 +336,14 @@ router.get(
       }
     }
 
-    const excludedByReason = { zero_amount: 0, loan: 0, membership: 0 };
+    const excludedByReason = {
+      zero_amount: 0,
+      loan: 0,
+      membership: 0,
+      interest: 0,
+      government_reimbursement: 0,
+      tax_refund: 0,
+    };
     for (const r of reasonRows) {
       if (r.reason && r.reason in excludedByReason) {
         excludedByReason[r.reason as keyof typeof excludedByReason] = r.value;

@@ -6774,7 +6774,14 @@ export const ListStagedPaymentsResponse = zod.object({
       rawReference: zod.string().nullish(),
       status: zod.enum(["pending", "approved", "rejected", "excluded"]),
       exclusionReason: zod
-        .enum(["zero_amount", "loan", "membership"])
+        .enum([
+          "zero_amount",
+          "loan",
+          "membership",
+          "interest",
+          "government_reimbursement",
+          "tax_refund",
+        ])
         .nullish(),
       lineItemNames: zod.array(zod.string()).nullish(),
       lineAccountNames: zod.array(zod.string()).nullish(),
@@ -6840,7 +6847,16 @@ export const ResolveStagedPaymentResponse = zod.object({
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
   status: zod.enum(["pending", "approved", "rejected", "excluded"]),
-  exclusionReason: zod.enum(["zero_amount", "loan", "membership"]).nullish(),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+    ])
+    .nullish(),
   lineItemNames: zod.array(zod.string()).nullish(),
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
@@ -6885,7 +6901,16 @@ export const RejectStagedPaymentResponse = zod.object({
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
   status: zod.enum(["pending", "approved", "rejected", "excluded"]),
-  exclusionReason: zod.enum(["zero_amount", "loan", "membership"]).nullish(),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+    ])
+    .nullish(),
   lineItemNames: zod.array(zod.string()).nullish(),
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
@@ -6923,7 +6948,16 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
   status: zod.enum(["pending", "approved", "rejected", "excluded"]),
-  exclusionReason: zod.enum(["zero_amount", "loan", "membership"]).nullish(),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+    ])
+    .nullish(),
   lineItemNames: zod.array(zod.string()).nullish(),
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),

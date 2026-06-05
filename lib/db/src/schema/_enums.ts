@@ -445,12 +445,22 @@ export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
 ]);
 
 // Why a staged QuickBooks payment was auto-excluded from the review queue.
-//   zero_amount — amount is null or <= 0
-//   loan        — school loan activity (loan account, repayment, guaranty fee)
-//   membership  — school membership dues (matched by QB item / income account)
+//   zero_amount              — amount is null or <= 0
+//   loan                     — school loan activity (loan account, repayment, guaranty fee)
+//   membership               — school membership dues (matched by QB item / income account)
+//   interest                 — bank/investment interest income (Interest Earned account / INTEREST item)
+//   government_reimbursement — government grant reimbursements (exact payer name, e.g. "CSP")
+//   tax_refund               — payroll-tax / tax / insurance refunds (unemployment tax, workers-comp, etc.)
 export const stagedPaymentExclusionReasonEnum = pgEnum(
   "staged_payment_exclusion_reason",
-  ["zero_amount", "loan", "membership"],
+  [
+    "zero_amount",
+    "loan",
+    "membership",
+    "interest",
+    "government_reimbursement",
+    "tax_refund",
+  ],
 );
 
 // Result of auto-matching a staged payment to a CRM donor at sync time.

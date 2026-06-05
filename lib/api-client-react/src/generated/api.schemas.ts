@@ -1654,6 +1654,9 @@ export const StagedPaymentExclusionReason = {
   zero_amount: "zero_amount",
   loan: "loan",
   membership: "membership",
+  interest: "interest",
+  government_reimbursement: "government_reimbursement",
+  tax_refund: "tax_refund",
 } as const;
 
 export type StagedPaymentMatchStatus =
