@@ -967,10 +967,10 @@ function StagedPaymentCard({
       className={selected ? "ring-2 ring-primary" : undefined}
     >
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex items-start justify-between gap-2">
           <button
             type="button"
-            className="text-left min-w-0"
+            className="text-left min-w-0 flex-1"
             onClick={selectable ? onSelect : undefined}
             data-testid={`staged-select-${row.id}`}
             disabled={!selectable}
@@ -987,7 +987,7 @@ function StagedPaymentCard({
               {referenceText ? ` · ${referenceText}` : ""}
             </CardDescription>
           </button>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
             {selectable ? (
               <Badge
                 variant={selected ? "default" : "outline"}
