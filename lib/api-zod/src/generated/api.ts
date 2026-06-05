@@ -6952,6 +6952,8 @@ export const ListStagedPaymentsResponse = zod.object({
           "other_revenue",
           "earned_income",
           "fiscally_sponsored",
+          "intercompany_transfer",
+          "other",
         ])
         .nullish(),
       classificationSource: zod.enum(["auto", "manual"]),
@@ -7022,6 +7024,8 @@ export const GetStagedPaymentsSummaryResponse = zod.object({
     other_revenue: zod.number(),
     earned_income: zod.number(),
     fiscally_sponsored: zod.number(),
+    intercompany_transfer: zod.number(),
+    other: zod.number(),
   }),
 });
 
@@ -7084,6 +7088,8 @@ export const ResolveStagedPaymentResponse = zod.object({
       "other_revenue",
       "earned_income",
       "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -7169,6 +7175,8 @@ export const RejectStagedPaymentResponse = zod.object({
       "other_revenue",
       "earned_income",
       "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -7247,6 +7255,8 @@ export const ReIncludeStagedPaymentResponse = zod.object({
       "other_revenue",
       "earned_income",
       "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -7320,6 +7330,8 @@ export const ExcludeStagedPaymentBody = zod
       "other_revenue",
       "earned_income",
       "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
     ]),
   })
   .describe("File the staged payment under a non-gift exclusion category.");
@@ -7348,6 +7360,8 @@ export const ExcludeStagedPaymentResponse = zod.object({
       "other_revenue",
       "earned_income",
       "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -7831,6 +7845,8 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
       "other_revenue",
       "earned_income",
       "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -7909,6 +7925,8 @@ export const UnmatchStagedPaymentResponse = zod.object({
       "other_revenue",
       "earned_income",
       "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -7994,6 +8012,8 @@ export const RevertStagedPaymentResponse = zod.object({
       "other_revenue",
       "earned_income",
       "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),

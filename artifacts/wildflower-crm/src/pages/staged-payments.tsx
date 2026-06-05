@@ -5,8 +5,6 @@ import {
   getListStagedPaymentsQueryKey,
   getGetStagedPaymentsSummaryQueryKey,
   useGetStagedPaymentsSummary,
-  useResolveStagedPayment,
-  useRejectStagedPayment,
   useReIncludeStagedPayment,
   useReconcileStagedPayment,
   useRevertStagedPayment,
@@ -69,8 +67,10 @@ import { useToast } from "@/hooks/use-toast";
  * QuickBooks reconciliation — two-table reconciler.
  *
  * LEFT pane  = staged QuickBooks imports, filtered by queue + sortable. Each
- *              row offers per-row reclassify / exclude / reject / confirm /
- *              revert and acts as the "left selection" for matching.
+ *              needs-review row shows its (read-only) donor + gift linkage, a
+ *              badge-adjacent unmatch toggle, and an Exclude flow; it also acts
+ *              as the "left selection" for matching. Donor matching is driven
+ *              entirely from the right pane (no per-row donor picker).
  * RIGHT pane = CRM gifts, with free-text search (name + linked donor /
  *              intermediary), a date window, and a linked-to-QuickBooks
  *              filter. Each row is the "right selection" and, when already
@@ -109,6 +109,8 @@ const EXCLUSION_REASON_LABELS: Record<StagedPaymentExclusionReason, string> = {
   other_revenue: "Other revenue (non-gift)",
   earned_income: "Earned income (non-gift)",
   fiscally_sponsored: "Fiscally sponsored project",
+  intercompany_transfer: "Intercompany transfer",
+  other: "Other (not a gift)",
 };
 
 const QB_ENTITY_TYPE_LABELS: Record<QuickbooksEntityType, string> = {
@@ -701,9 +703,6 @@ export default function StagedPayments() {
                   selected={selectedStaged?.id === row.id}
                   onSelect={() => selectStaged(row)}
                   onChanged={invalidateAll}
-                  onCreateOrganization={onCreateOrganization}
-                  onCreatePerson={onCreatePerson}
-                  onCreateHousehold={onCreateHousehold}
                 />
               ))}
             </div>
@@ -829,62 +828,18 @@ function StagedPaymentCard({
   selected,
   onSelect,
   onChanged,
-  onCreateOrganization,
-  onCreatePerson,
-  onCreateHousehold,
 }: {
   row: StagedPayment;
   queue: StagedPaymentQueue;
   selected: boolean;
   onSelect: () => void;
   onChanged: () => void;
-  onCreateOrganization: (name: string) => Promise<string | null>;
-  onCreatePerson: (name: string) => Promise<string | null>;
-  onCreateHousehold: (name: string) => Promise<string | null>;
 }) {
   const { toast } = useToast();
-  const initialType = donorTypeFromRow(row);
-  const [donorType, setDonorType] = useState<DonorType>(initialType);
-  const [donorId, setDonorId] = useState<string | null>(
-    donorIdFromRow(row, initialType),
-  );
-  useEffect(() => {
-    const t = donorTypeFromRow(row);
-    setDonorType(t);
-    setDonorId(donorIdFromRow(row, t));
-  }, [row.id, row.organizationId, row.individualGiverPersonId, row.householdId]);
 
   const editable = queue === "needs_review";
   const isExcluded = queue === "excluded";
 
-  const resolve = useResolveStagedPayment({
-    mutation: {
-      onSuccess: () => {
-        onChanged();
-        toast({ title: "Donor updated" });
-      },
-      onError: (e: unknown) =>
-        toast({
-          title: "Update failed",
-          description: e instanceof Error ? e.message : "Unknown error",
-          variant: "destructive",
-        }),
-    },
-  });
-  const reject = useRejectStagedPayment({
-    mutation: {
-      onSuccess: () => {
-        onChanged();
-        toast({ title: "Rejected" });
-      },
-      onError: (e: unknown) =>
-        toast({
-          title: "Reject failed",
-          description: e instanceof Error ? e.message : "Unknown error",
-          variant: "destructive",
-        }),
-    },
-  });
   const reInclude = useReIncludeStagedPayment({
     mutation: {
       onSuccess: () => {
@@ -975,25 +930,18 @@ function StagedPaymentCard({
   const [showDetails, setShowDetails] = useState(false);
 
   const busy =
-    resolve.isPending ||
-    reject.isPending ||
     reInclude.isPending ||
     exclude.isPending ||
     confirmMatch.isPending ||
     unmatch.isPending ||
     revert.isPending;
 
-  const hasDonor = donorId != null;
   const matchState = matchStateOf(row);
   const donorLabel = donorNameFromRow(row);
 
   const wasReconciled = row.matchedGiftId != null;
   const wasAutoMinted = row.createdGiftId != null && row.autoApplied;
   const canRevert = wasReconciled || wasAutoMinted;
-
-  const handleSaveDonor = () => {
-    resolve.mutate({ id: row.id, data: donorBodyFor(donorType, donorId) });
-  };
 
   const selectable = queue === "needs_review";
 
@@ -1060,18 +1008,33 @@ function StagedPaymentCard({
                   row.exclusionReason}
               </Badge>
             ) : !isExcluded && queue !== "rejected" ? (
-              <Badge
-                variant={
-                  matchState === "confirmed"
-                    ? "default"
-                    : matchState === "suggested"
-                      ? "outline"
-                      : "secondary"
-                }
-                data-testid={`staged-match-state-${row.id}`}
-              >
-                {MATCH_STATE_LABEL[matchState]}
-              </Badge>
+              <>
+                <Badge
+                  variant={
+                    matchState === "confirmed"
+                      ? "default"
+                      : matchState === "suggested"
+                        ? "outline"
+                        : "secondary"
+                  }
+                  data-testid={`staged-match-state-${row.id}`}
+                >
+                  {MATCH_STATE_LABEL[matchState]}
+                </Badge>
+                {editable && matchState !== "unmatched" ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => unmatch.mutate({ id: row.id })}
+                    disabled={busy}
+                    data-testid={`staged-unmatch-${row.id}`}
+                    title="Switch this back to unmatched (clears the matched donor)."
+                  >
+                    {unmatch.isPending ? "Unmatching…" : "Unmatch"}
+                  </Button>
+                ) : null}
+              </>
             ) : null}
           </div>
         </div>
@@ -1079,116 +1042,74 @@ function StagedPaymentCard({
       <CardContent className="space-y-4">
         {editable ? (
           <>
-            <div>
-              <label className="text-sm font-medium">Donor</label>
-              <div className="mt-1">
-                <DonorFieldPicker
-                  type={donorType}
-                  id={donorId}
-                  onChange={(t, id) => {
-                    setDonorType(t);
-                    setDonorId(id);
-                  }}
-                  testIdBase={`staged-donor-${row.id}`}
-                  disabled={busy}
-                  onCreateOrganization={onCreateOrganization}
-                  onCreatePerson={onCreatePerson}
-                  onCreateHousehold={onCreateHousehold}
-                />
+            <div className="space-y-1 text-sm text-muted-foreground">
+              <div>
+                <span className="font-medium text-foreground">Donor:</span>{" "}
+                {donorLabel ?? "Not matched yet"}
+                {row.intermediaryName ? ` · via ${row.intermediaryName}` : ""}
+              </div>
+              <div>
+                <span className="font-medium text-foreground">Gift:</span>{" "}
+                {row.resolvedGiftName ? (
+                  <>
+                    {row.resolvedGiftName}
+                    {row.resolvedGiftAmount
+                      ? ` · ${formatAmount(row.resolvedGiftAmount)}`
+                      : ""}
+                    {row.resolvedGiftDate ? ` · ${row.resolvedGiftDate}` : ""}
+                  </>
+                ) : (
+                  "Not linked to a gift yet"
+                )}
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSaveDonor}
-                disabled={busy || !hasDonor}
-                data-testid={`staged-save-donor-${row.id}`}
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={excludeReason}
+                onValueChange={(v) =>
+                  setExcludeReason(v as StagedPaymentExclusionReason)
+                }
+                disabled={busy}
               >
-                Save donor
-              </Button>
-              {matchState === "suggested" ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => confirmMatch.mutate({ id: row.id })}
-                  disabled={busy}
-                  data-testid={`staged-confirm-match-${row.id}`}
-                  title="Confirm the system-suggested donor as human-approved."
+                <SelectTrigger
+                  className="h-9 w-[200px]"
+                  data-testid={`staged-exclude-reason-${row.id}`}
                 >
-                  {confirmMatch.isPending ? "Confirming…" : "Confirm donor"}
-                </Button>
-              ) : null}
-              {matchState !== "unmatched" ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => unmatch.mutate({ id: row.id })}
-                  disabled={busy}
-                  data-testid={`staged-unmatch-${row.id}`}
-                  title="Clear the donor and reset this row to unmatched."
-                >
-                  {unmatch.isPending ? "Clearing…" : "Clear donor"}
-                </Button>
-              ) : null}
+                  <SelectValue placeholder="Exclude as…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(EXCLUSION_REASON_LABELS).map(
+                    ([value, label]) => (
+                      <SelectItem
+                        key={value}
+                        value={value}
+                        data-testid={`staged-exclude-reason-${row.id}-${value}`}
+                      >
+                        {label}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => reject.mutate({ id: row.id })}
-                disabled={busy}
-                data-testid={`staged-reject-${row.id}`}
+                disabled={busy || !excludeReason}
+                onClick={() =>
+                  excludeReason &&
+                  exclude.mutate({
+                    id: row.id,
+                    data: { exclusionReason: excludeReason },
+                  })
+                }
+                data-testid={`staged-exclude-${row.id}`}
               >
-                Reject
+                {exclude.isPending ? "Excluding…" : "Exclude"}
               </Button>
-              <div className="flex items-center gap-2">
-                <Select
-                  value={excludeReason}
-                  onValueChange={(v) =>
-                    setExcludeReason(v as StagedPaymentExclusionReason)
-                  }
-                  disabled={busy}
-                >
-                  <SelectTrigger
-                    className="h-9 w-[200px]"
-                    data-testid={`staged-exclude-reason-${row.id}`}
-                  >
-                    <SelectValue placeholder="Exclude as…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(EXCLUSION_REASON_LABELS).map(
-                      ([value, label]) => (
-                        <SelectItem
-                          key={value}
-                          value={value}
-                          data-testid={`staged-exclude-reason-${row.id}-${value}`}
-                        >
-                          {label}
-                        </SelectItem>
-                      ),
-                    )}
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy || !excludeReason}
-                  onClick={() =>
-                    excludeReason &&
-                    exclude.mutate({
-                      id: row.id,
-                      data: { exclusionReason: excludeReason },
-                    })
-                  }
-                  data-testid={`staged-exclude-${row.id}`}
-                >
-                  {exclude.isPending ? "Excluding…" : "Exclude"}
-                </Button>
-              </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              {hasDonor
-                ? "Select this payment, then pick an existing gift on the right and press Match — or use “Create new gift”."
-                : "Pick a donor to speed up matching, or select this payment and reconcile to an existing gift on the right."}
+              Select this payment, then pick a gift on the right and press Match —
+              or use “Create new gift”. If it isn’t a gift, exclude it.
             </p>
           </>
         ) : isExcluded ? (

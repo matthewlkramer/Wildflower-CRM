@@ -453,6 +453,8 @@ export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
 //   tax_refund               — payroll-tax / tax / insurance refunds (unemployment tax, workers-comp, etc.)
 //   other_revenue            — clear non-gifts posted to Other Revenue (4030): credit-card rewards / bank-account activity (matched by memo)
 //   earned_income            — fees-for-service / program revenue (4020 Services - Earned Income); never a gift
+//   intercompany_transfer    — movement of money between the org's own entities/accounts; not a gift (manual-only)
+//   other                    — catch-all manual exclusion when no specific category fits (manual-only)
 export const stagedPaymentExclusionReasonEnum = pgEnum(
   "staged_payment_exclusion_reason",
   [
@@ -465,6 +467,8 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
     "other_revenue",
     "earned_income",
     "fiscally_sponsored",
+    "intercompany_transfer",
+    "other",
   ],
 );
 

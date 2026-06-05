@@ -3652,7 +3652,7 @@ components:
     # ─── QuickBooks payment sync ──────────────────────────────────────────────
     QuickbooksEntityType: { type: string, enum: [sales_receipt, payment, deposit] }
     StagedPaymentStatus: { type: string, enum: [pending, approved, rejected, excluded] }
-    StagedPaymentExclusionReason: { type: string, enum: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income, fiscally_sponsored] }
+    StagedPaymentExclusionReason: { type: string, enum: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income, fiscally_sponsored, intercompany_transfer, other] }
     StagedPaymentMatchStatus: { type: string, enum: [matched, suggested, unmatched] }
     StagedPaymentMatchMethod: { type: string, enum: [email, name, name_amount_date, amount_date, memo, intermediary, manual] }
     StagedPaymentClassificationSource: { type: string, enum: [auto, manual] }
@@ -3760,7 +3760,7 @@ components:
         excluded:    { type: integer }
         excludedByReason:
           type: object
-          required: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income, fiscally_sponsored]
+          required: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income, fiscally_sponsored, intercompany_transfer, other]
           properties:
             zero_amount:             { type: integer }
             loan:                    { type: integer }
@@ -3771,6 +3771,8 @@ components:
             other_revenue:           { type: integer }
             earned_income:           { type: integer }
             fiscally_sponsored:      { type: integer }
+            intercompany_transfer:   { type: integer }
+            other:                   { type: integer }
     DonorSearchResult:
       type: object
       required: [id, kind, name]
