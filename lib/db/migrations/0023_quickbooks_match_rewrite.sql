@@ -30,3 +30,5 @@ CREATE INDEX IF NOT EXISTS people_full_name_trgm
   ON people USING gin (full_name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS households_name_trgm
   ON households USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS payment_intermediaries_name_trgm
+  ON payment_intermediaries USING gin (name gin_trgm_ops);
