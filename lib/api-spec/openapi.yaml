@@ -1795,6 +1795,16 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "502": { description: "QuickBooks sync failed" }
 
+  /quickbooks/rematch:
+    post:
+      operationId: rematchStagedPayments
+      tags: [quickbooks-sync]
+      summary: Re-run donor auto-match over still-unmatched pending staged payments (additive, never overwrites a human match).
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickbooksRematchSummary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { description: "QuickBooks rematch failed" }
+
   # ─── Staged payments (QuickBooks review queue) ────────────────────────────
   /staged-payments:
     get:
@@ -3560,6 +3570,13 @@ components:
         pulled:  { type: integer }
         staged:  { type: integer }
         matched: { type: integer }
+    QuickbooksRematchSummary:
+      type: object
+      required: [ran, scanned, matched]
+      properties:
+        ran:     { type: boolean, description: "False when the rematch was skipped (a sync/rematch was already running)." }
+        scanned: { type: integer, description: "Candidate rows examined (pending + unmatched + no donor)." }
+        matched: { type: integer, description: "Rows newly auto-matched by this run." }
     StagedPayment:
       type: object
       required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, createdAt, updatedAt]

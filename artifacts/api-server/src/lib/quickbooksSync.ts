@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { quickbooksConnections, stagedPayments } from "@workspace/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
@@ -169,6 +169,100 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
 
   if (!outcome.ran) {
     return { ran: false, pulled: 0, staged: 0, matched: 0 };
+  }
+  return { ran: true, ...outcome.result! };
+}
+
+export interface QuickbooksRematchSummary {
+  /** False when the rematch was skipped (a sync/rematch was already running). */
+  ran: boolean;
+  /** Candidate rows examined (pending + unmatched + no donor). */
+  scanned: number;
+  /** Rows newly auto-matched by this run. */
+  matched: number;
+}
+
+// Bounded fan-out so a few hundred candidates finish well within one request
+// without overwhelming the DB pool.
+const REMATCH_CONCURRENCY = 8;
+
+/**
+ * On-demand backfill: re-run donor auto-match over staged payments that are
+ * still `pending` AND `unmatched` AND have no donor set, applying the latest
+ * matching logic (e.g. the memo/reference fallback) to rows staged before it
+ * existed.
+ *
+ * Purely additive and safe to run repeatedly: it only ever SETS a confident,
+ * unambiguous match. It never overwrites a donor a human already chose, never
+ * un-matches a row, and never touches excluded/approved/rejected rows. Each
+ * write is a guarded conditional UPDATE (still pending + unmatched + no donor),
+ * so a concurrent human resolve is never clobbered. Advisory-locked under the
+ * shared QuickBooks key so it can't race a sync or another rematch.
+ */
+export async function rematchStagedPayments(): Promise<QuickbooksRematchSummary> {
+  const outcome = await withSyncLock(QB_LOCK_KEY, "quickbooks", async () => {
+    const candidates = await db
+      .select({
+        id: stagedPayments.id,
+        payerName: stagedPayments.payerName,
+        payerEmail: stagedPayments.payerEmail,
+        rawReference: stagedPayments.rawReference,
+      })
+      .from(stagedPayments)
+      .where(
+        and(
+          eq(stagedPayments.status, "pending"),
+          eq(stagedPayments.matchStatus, "unmatched"),
+          isNull(stagedPayments.organizationId),
+          isNull(stagedPayments.individualGiverPersonId),
+          isNull(stagedPayments.householdId),
+        ),
+      );
+
+    let matched = 0;
+    for (let i = 0; i < candidates.length; i += REMATCH_CONCURRENCY) {
+      const chunk = candidates.slice(i, i + REMATCH_CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map(async (row) => {
+          const { match, matched: didMatch } = await autoMatchDonor(
+            row.payerName,
+            row.payerEmail,
+            row.rawReference,
+          );
+          if (!didMatch) return false;
+          // Re-check the guard at write time: only flip rows STILL pending +
+          // unmatched + donor-less, so a concurrent resolve is never clobbered.
+          const upd = await db
+            .update(stagedPayments)
+            .set({
+              matchStatus: "matched",
+              organizationId: match.organizationId,
+              individualGiverPersonId: match.individualGiverPersonId,
+              householdId: match.householdId,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(stagedPayments.id, row.id),
+                eq(stagedPayments.status, "pending"),
+                eq(stagedPayments.matchStatus, "unmatched"),
+                isNull(stagedPayments.organizationId),
+                isNull(stagedPayments.individualGiverPersonId),
+                isNull(stagedPayments.householdId),
+              ),
+            )
+            .returning({ id: stagedPayments.id });
+          return upd.length > 0;
+        }),
+      );
+      matched += results.filter(Boolean).length;
+    }
+
+    return { scanned: candidates.length, matched };
+  });
+
+  if (!outcome.ran) {
+    return { ran: false, scanned: 0, matched: 0 };
   }
   return { ran: true, ...outcome.result! };
 }

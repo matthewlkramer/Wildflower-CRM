@@ -13,6 +13,7 @@ import {
   useListStagedPaymentGiftCandidates,
   getListStagedPaymentGiftCandidatesQueryKey,
   useRunQuickbooksSync,
+  useRematchStagedPayments,
   useGetCurrentUser,
   getGetQuickbooksOauthStatusQueryKey,
   type StagedPayment,
@@ -164,6 +165,27 @@ export default function StagedPayments() {
     },
   });
 
+  const rematch = useRematchStagedPayments({
+    mutation: {
+      onSuccess: (data) => {
+        invalidateAll();
+        toast({
+          title: data.ran ? "Re-match complete" : "Re-match skipped",
+          description: data.ran
+            ? `Checked ${data.scanned} unmatched, newly matched ${data.matched}.`
+            : "A sync or re-match was already in progress.",
+        });
+      },
+      onError: (e: unknown) => {
+        toast({
+          title: "Re-match failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
   const rows = listQ.data?.data ?? [];
   const summary = summaryQ.data;
 
@@ -180,13 +202,24 @@ export default function StagedPayments() {
           </p>
         </div>
         {isAdmin ? (
-          <Button
-            onClick={() => syncNow.mutate()}
-            disabled={syncNow.isPending}
-            data-testid="staged-sync-now"
-          >
-            {syncNow.isPending ? "Syncing…" : "Sync now"}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => rematch.mutate()}
+              disabled={rematch.isPending || syncNow.isPending}
+              data-testid="staged-rematch"
+              title="Re-run donor auto-match over still-unmatched pending rows. Never overwrites a match you've already made."
+            >
+              {rematch.isPending ? "Re-matching…" : "Re-run matching"}
+            </Button>
+            <Button
+              onClick={() => syncNow.mutate()}
+              disabled={syncNow.isPending || rematch.isPending}
+              data-testid="staged-sync-now"
+            >
+              {syncNow.isPending ? "Syncing…" : "Sync now"}
+            </Button>
+          </div>
         ) : null}
       </div>
 

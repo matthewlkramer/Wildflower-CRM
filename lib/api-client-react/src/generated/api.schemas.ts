@@ -1702,6 +1702,15 @@ export interface QuickbooksSyncSummary {
   matched: number;
 }
 
+export interface QuickbooksRematchSummary {
+  /** False when the rematch was skipped (a sync/rematch was already running). */
+  ran: boolean;
+  /** Candidate rows examined (pending + unmatched + no donor). */
+  scanned: number;
+  /** Rows newly auto-matched by this run. */
+  matched: number;
+}
+
 export interface StagedPayment {
   id: string;
   realmId: string;

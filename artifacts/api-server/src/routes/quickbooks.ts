@@ -24,7 +24,7 @@ import {
 } from "@workspace/api-zod";
 import { donorOf, validateGiftLink } from "../lib/quickbooksLink";
 import { logger } from "../lib/logger";
-import { syncQuickbooks } from "../lib/quickbooksSync";
+import { syncQuickbooks, rematchStagedPayments } from "../lib/quickbooksSync";
 
 /**
  * Review queue for QuickBooks-sourced payments plus the manual "sync now"
@@ -572,6 +572,31 @@ router.post(
       res.status(502).json({
         error: "sync_failed",
         message: e instanceof Error ? e.message : "QuickBooks sync failed",
+      });
+    }
+  }),
+);
+
+// ─── POST /quickbooks/rematch ──────────────────────────────────────────────
+// Admin-gated backfill: re-run donor auto-match over still-unmatched pending
+// rows so the latest matching logic applies to rows staged before it existed.
+// Additive only — never overwrites a human match or un-matches a row.
+router.post(
+  "/quickbooks/rematch",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const summary = await rematchStagedPayments();
+      req.log.info(
+        { ran: summary.ran, scanned: summary.scanned, matched: summary.matched },
+        "QuickBooks staged-payment rematch run",
+      );
+      res.json(summary);
+    } catch (e) {
+      logger.error({ err: e }, "QuickBooks rematch failed");
+      res.status(502).json({
+        error: "rematch_failed",
+        message: e instanceof Error ? e.message : "QuickBooks rematch failed",
       });
     }
   }),

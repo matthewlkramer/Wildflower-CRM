@@ -35,5 +35,15 @@ QB record to an already-recorded gift, no new row).
   `raw_reference` (e.g. "Donation for BWF - Kathleen Rash"). `autoMatchDonor` has an
   ADDITIVE fallback (`candidateNamesFromReference`) that fires only after email +
   payerName miss and still requires a strict, unambiguous exact CRM name hit — so it
-  never weakens matching. Insert-time only; it won't retro-match already-staged rows,
-  and won't catch near-misses like "Fidelity Foundation" vs CRM "Fidelity Foundations".
+  never weakens matching. Won't catch near-misses like "Fidelity Foundation" vs CRM
+  "Fidelity Foundations".
+
+- **Auto-match runs at INSERT only; sync never re-matches existing rows.** The sync
+  onConflict deliberately leaves donor match/status untouched on re-sync. To apply an
+  improved matcher to already-staged rows there is a separate admin-gated backfill
+  (`rematchStagedPayments` / POST /quickbooks/rematch, "Re-run matching" button).
+  **Why:** agent can't write prod; the backfill runs IN the prod server when an admin
+  clicks it. It's additive/idempotent — only rows still pending+unmatched+donor-less,
+  guarded conditional UPDATE re-checks that predicate so a concurrent human resolve is
+  never clobbered, never un-matches, shares the QB advisory lock (ran=false if a
+  sync/rematch is already running).

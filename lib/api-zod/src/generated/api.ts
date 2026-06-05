@@ -6808,6 +6808,21 @@ export const RunQuickbooksSyncResponse = zod.object({
   matched: zod.number(),
 });
 
+/**
+ * @summary Re-run donor auto-match over still-unmatched pending staged payments (additive, never overwrites a human match).
+ */
+export const RematchStagedPaymentsResponse = zod.object({
+  ran: zod
+    .boolean()
+    .describe(
+      "False when the rematch was skipped (a sync\/rematch was already running).",
+    ),
+  scanned: zod
+    .number()
+    .describe("Candidate rows examined (pending + unmatched + no donor)."),
+  matched: zod.number().describe("Rows newly auto-matched by this run."),
+});
+
 export const listStagedPaymentsQueryLimitDefault = 50;
 export const listStagedPaymentsQueryLimitMax = 10000;
 

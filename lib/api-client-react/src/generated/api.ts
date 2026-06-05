@@ -177,6 +177,7 @@ import type {
   ProjectionsByFyEntity,
   PromoteActionItemBody,
   QuickbooksOauthStatus,
+  QuickbooksRematchSummary,
   QuickbooksSyncSummary,
   RefreshTaskProposalBody,
   Region,
@@ -13146,6 +13147,88 @@ export const useRunQuickbooksSync = <
   TContext
 > => {
   return useMutation(getRunQuickbooksSyncMutationOptions(options));
+};
+
+/**
+ * @summary Re-run donor auto-match over still-unmatched pending staged payments (additive, never overwrites a human match).
+ */
+export const getRematchStagedPaymentsUrl = () => {
+  return `/api/quickbooks/rematch`;
+};
+
+export const rematchStagedPayments = async (
+  options?: RequestInit,
+): Promise<QuickbooksRematchSummary> => {
+  return customFetch<QuickbooksRematchSummary>(getRematchStagedPaymentsUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRematchStagedPaymentsMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rematchStagedPayments>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rematchStagedPayments>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["rematchStagedPayments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rematchStagedPayments>>,
+    void
+  > = () => {
+    return rematchStagedPayments(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RematchStagedPaymentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rematchStagedPayments>>
+>;
+
+export type RematchStagedPaymentsMutationError =
+  ErrorType<ForbiddenResponse | void>;
+
+/**
+ * @summary Re-run donor auto-match over still-unmatched pending staged payments (additive, never overwrites a human match).
+ */
+export const useRematchStagedPayments = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rematchStagedPayments>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rematchStagedPayments>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRematchStagedPaymentsMutationOptions(options));
 };
 
 export const getListStagedPaymentsUrl = (params?: ListStagedPaymentsParams) => {
