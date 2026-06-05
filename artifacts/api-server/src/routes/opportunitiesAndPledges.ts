@@ -134,7 +134,24 @@ router.get(
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
-    if (q.search) filters.push(ilike(opportunitiesAndPledges.name, `%${q.search}%`));
+    if (q.search) {
+      // Search the record name plus the donor display name (org / household /
+      // individual giver). The donor tables are already left-joined below, and
+      // the count query joins them too. Person name mirrors the
+      // individualGiverPersonName expression in donorJoinSelect.
+      const term = `%${q.search}%`;
+      filters.push(
+        or(
+          ilike(opportunitiesAndPledges.name, term),
+          ilike(organizations.name, term),
+          ilike(households.name, term),
+          sql`COALESCE(
+            NULLIF(TRIM(${people.fullName}), ''),
+            NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
+          ) ILIKE ${term}`,
+        )!,
+      );
+    }
     {
       const f = splitBlank(q.status as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(opportunitiesAndPledges.status), inArray(opportunitiesAndPledges.status, f.values as never[]))!);
@@ -268,7 +285,13 @@ router.get(
         .orderBy(desc(opportunitiesAndPledges.projectedCloseDate))
         .limit(limit)
         .offset(offset),
-      db.select({ value: count() }).from(opportunitiesAndPledges).where(where),
+      db
+        .select({ value: count() })
+        .from(opportunitiesAndPledges)
+        .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
+        .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
+        .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
+        .where(where),
     ]);
     res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
   }),
