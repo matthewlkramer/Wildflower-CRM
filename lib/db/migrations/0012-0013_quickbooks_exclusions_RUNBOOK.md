@@ -51,10 +51,18 @@ The agent cannot write to prod; a human applies each step.
    ```bash
    psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f 0013_quickbooks_exclusions_backfill.sql
    ```
-4. **Enrich line detail.** Run a sync (Settings → QuickBooks → "Sync now", or
-   wait for the 30-min scheduler). The pull now captures line-item detail and
-   the ON CONFLICT upsert backfills `line_item_names` / `line_account_names`
-   onto existing pending/excluded rows (approved/rejected untouched).
+4. **Enrich line detail.** The scheduled sync is **incremental** (watermark-based)
+   and will NOT re-fetch the existing back-catalog, so it cannot enrich the old
+   rows on its own. To enrich them you must force a one-time **full re-pull**:
+   first reset the watermark with `0014`, then run a sync.
+   ```bash
+   psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f 0014_quickbooks_reset_watermark.sql
+   ```
+   Then trigger a sync (Settings → QuickBooks → "Sync now", or wait for the
+   30-min scheduler). The pull captures line-item detail and the ON CONFLICT
+   upsert backfills `line_item_names` / `line_account_names` onto existing
+   pending/excluded rows (approved/rejected untouched; excluded rows stay
+   excluded — only line detail + updated_at change).
 5. **Discovery — confirm the membership marker** (see below).
 6. **Fill the confirmed marker(s)** into BOTH:
    - `MEMBERSHIP_ITEM_NAMES` / `MEMBERSHIP_ACCOUNT_NAMES` in
