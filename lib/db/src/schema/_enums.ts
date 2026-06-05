@@ -448,10 +448,11 @@ export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
 //   zero_amount              — amount is null or <= 0
 //   loan                     — school loan activity (loan account, repayment, guaranty fee)
 //   membership               — school membership dues (matched by QB item / income account)
-//   interest                 — bank/investment interest income (Interest Earned account / INTEREST item)
+//   interest                 — bank/investment income (Interest Earned 4010 + Realized Gain/Loss on Investments 4040)
 //   government_reimbursement — government grant reimbursements (exact payer name, e.g. "CSP")
 //   tax_refund               — payroll-tax / tax / insurance refunds (unemployment tax, workers-comp, etc.)
 //   other_revenue            — clear non-gifts posted to Other Revenue (4030): credit-card rewards / bank-account activity (matched by memo)
+//   earned_income            — fees-for-service / program revenue (4020 Services - Earned Income); never a gift
 export const stagedPaymentExclusionReasonEnum = pgEnum(
   "staged_payment_exclusion_reason",
   [
@@ -462,6 +463,7 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
     "government_reimbursement",
     "tax_refund",
     "other_revenue",
+    "earned_income",
   ],
 );
 

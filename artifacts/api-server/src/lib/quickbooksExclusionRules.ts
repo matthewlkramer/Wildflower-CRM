@@ -15,9 +15,10 @@
  *                                income account / item on the line detail.
  *   3. government_reimbursement — government grant reimbursements. Detected by an
  *                                exact payer name (e.g. "CSP").
- *   4. interest                — bank / investment interest income. Detected by
- *                                the "Interest Earned" income account / "INTEREST"
- *                                line item.
+ *   4. interest                — bank / investment income. Detected by the
+ *                                "Interest Earned" (4010) and "Realized Gain/Loss
+ *                                on Investments" (4040) income accounts / the
+ *                                "INTEREST" line item.
  *   5. tax_refund              — payroll-tax, tax and insurance refunds
  *                                (unemployment tax, workers-comp refund, tax
  *                                liability, ERC, etc.). Detected by the expense
@@ -28,6 +29,11 @@
  *                                income account on the transaction's — or, for
  *                                invoice-applied Payments, the linked Invoice's —
  *                                line), NOT by a school-name heuristic.
+ *   7. other_revenue           — clear non-gifts posted to Other Revenue (4030):
+ *                                credit-card rewards / bank-account activity
+ *                                (matched by memo).
+ *   8. earned_income           — fees-for-service / program revenue (4020
+ *                                "Services - Earned Income"). Never a gift.
  *
  * DONATION-FIRST GUARD: the line-based rules (loan-by-guaranty, interest,
  * tax_refund) never fire on a row that ALSO carries a real donation line (a
@@ -36,7 +42,8 @@
  *
  * Rules are applied in a deterministic order (see `classifyStagedPayment`):
  * zero_amount → loan (payer) → government_reimbursement → loan (guaranty line) →
- * interest → tax_refund → other_revenue → membership. The first match wins.
+ * interest → tax_refund → other_revenue → earned_income → membership. The first
+ * match wins.
  */
 
 export type ExclusionReason =
@@ -46,7 +53,8 @@ export type ExclusionReason =
   | "interest"
   | "government_reimbursement"
   | "tax_refund"
-  | "other_revenue";
+  | "other_revenue"
+  | "earned_income";
 
 export interface ClassifierInput {
   amount: string | null;
@@ -120,11 +128,16 @@ export const MEMBERSHIP_ACCOUNT_NAMES: readonly string[] = [
 export const GOVERNMENT_REIMBURSEMENT_PAYERS: readonly string[] = ["CSP"];
 
 /**
- * INTEREST income markers — the "Interest Earned" income account (matched by the
+ * INTEREST / investment-income markers — the "Interest Earned" (4010) and
+ * "Realized Gain/Loss on Investments" (4040) income accounts (matched by the
  * leading QuickBooks account-code prefix, robust to description edits) and the
- * "INTEREST" line item.
+ * "INTEREST" line item. Both are non-gift investment income, grouped under the
+ * single `interest` reason (4040 deposits carry an "Interest Earned" memo).
  */
-export const INTEREST_ACCOUNT_CODE_PREFIXES: readonly string[] = ["4010"];
+export const INTEREST_ACCOUNT_CODE_PREFIXES: readonly string[] = [
+  "4010",
+  "4040",
+];
 export const INTEREST_ITEM_SUBSTRINGS: readonly string[] = ["interest"];
 
 /**
@@ -162,6 +175,13 @@ export const OTHER_REVENUE_NONGIFT_MEMO_PATTERNS: readonly RegExp[] = [
   /\brewards?\b/i, // "Credit card rewards", "WF rewards", "Wells Rewards"
   /\bbusiness checking\b/i, // "BUSINESS CHECKING (XXXXXX 8945)" bank activity
 ];
+
+/**
+ * EARNED-INCOME markers — the "Services - Earned Income" income account (code
+ * prefix 4020). Fees-for-service / program revenue, never a gift. Matched by
+ * account code; honors the donation-first guard like the other line-based rules.
+ */
+export const EARNED_INCOME_ACCOUNT_CODE_PREFIXES: readonly string[] = ["4020"];
 
 /**
  * DONATION-line markers used by the donation-first guard: a Donation item or a
@@ -269,12 +289,20 @@ function isOtherRevenueNonGift(input: ClassifierInput): boolean {
   return OTHER_REVENUE_NONGIFT_MEMO_PATTERNS.some((re) => re.test(memo));
 }
 
+/** True if a row is coded to the "Services - Earned Income" (4020) account. */
+function isEarnedIncomeLine(input: ClassifierInput): boolean {
+  return anyAccountCodeStartsWith(
+    input.lineAccountNames,
+    EARNED_INCOME_ACCOUNT_CODE_PREFIXES,
+  );
+}
+
 /**
  * Pure noise classifier. Takes a normalized payment + its captured line detail
  * and returns whether it should be auto-excluded and why. Deterministic rule
  * order: zero_amount → loan (payer) → government_reimbursement →
- * loan (guaranty line) → interest → tax_refund → other_revenue → membership;
- * first match wins.
+ * loan (guaranty line) → interest → tax_refund → other_revenue →
+ * earned_income → membership; first match wins.
  * The line-based rules honor the donation-first guard.
  */
 export function classifyStagedPayment(
@@ -328,7 +356,12 @@ export function classifyStagedPayment(
     return { excluded: true, reason: "other_revenue" };
   }
 
-  // 8. Membership by confirmed QB item / income-account marker.
+  // 8. Earned income (4020 Services - Earned Income): fees-for-service, never a gift.
+  if (!donation && isEarnedIncomeLine(input)) {
+    return { excluded: true, reason: "earned_income" };
+  }
+
+  // 9. Membership by confirmed QB item / income-account marker.
   if (
     matchesAny(input.lineItemNames, MEMBERSHIP_ITEM_NAMES) ||
     matchesAny(input.lineAccountNames, MEMBERSHIP_ACCOUNT_NAMES)

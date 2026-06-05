@@ -39,8 +39,12 @@ SQL backfill must mirror the regex (TS `\b…\b` ⇄ Postgres `~* '\y…\y'`).
 - `tax_refund` groups unemployment-tax and workers-comp refunds — those have NO
   QB item/account of their own; they post back to expense accounts
   (`7010.4` payroll taxes, `7020` taxes, `7006` insurance). Split only via a new migration.
-- `interest` (`4010` Interest Earned / `INTEREST` item) and
-  `government_reimbursement` (exact payer `CSP`) are their own enum values.
+- `interest` covers BOTH `4010` (Interest Earned) AND `4040` (Realized Gain/Loss
+  on Investments) + the `INTEREST` item — investment income folded into one bucket
+  (4040 deposits carry an "Interest Earned" memo); UI label is "Interest /
+  investment income". `government_reimbursement` (exact payer `CSP`) is its own value.
+- `earned_income` (`4020` Services - Earned Income): fees-for-service / program
+  revenue, never a gift. Account-prefix rule, donation-guarded.
 - `other_revenue` (`4030` Other Revenue): a grab-bag bucket — mostly non-gifts
   but real gifts are occasionally miscoded here, so the rule is deliberately
   NARROW. It excludes ONLY rows coded to 4030 whose memo reads like credit-card
@@ -66,3 +70,12 @@ back-catalog (those rows sit behind the watermark). Line-based backfills need a
 **full historical re-pull**, forced by resetting the watermark to NULL
 (`0014_quickbooks_reset_watermark.sql` pattern) then syncing. Verify
 `count(*) FILTER (WHERE line_item_names IS NOT NULL)` before assuming enrichment.
+
+**Re-pull enriches but does NOT reclassify.** The sync `onConflictDoUpdate`
+(quickbooksSync.ts) only refreshes `line_*` detail + `updated_at` on existing
+pending/excluded rows; status & exclusion_reason are intentionally left untouched
+so a manual re-include / approve / reject is never clobbered. Consequence: after a
+watermark-reset re-pull adds line detail to the historical back-catalog, those rows
+stay `pending` even if they now match a rule — you MUST re-run the line-based
+backfills (0016 + 0019 + 0021, all idempotent + pending-only) AFTERWARD to actually
+exclude the newly-enriched noise. Only *brand-new* pulls classify at insert time.

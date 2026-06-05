@@ -1670,6 +1670,7 @@ export const StagedPaymentExclusionReason = {
   government_reimbursement: "government_reimbursement",
   tax_refund: "tax_refund",
   other_revenue: "other_revenue",
+  earned_income: "earned_income",
 } as const;
 
 export type StagedPaymentMatchStatus =
@@ -1745,6 +1746,7 @@ export type StagedPaymentSummaryExcludedByReason = {
   government_reimbursement: number;
   tax_refund: number;
   other_revenue: number;
+  earned_income: number;
 };
 
 export interface StagedPaymentSummary {

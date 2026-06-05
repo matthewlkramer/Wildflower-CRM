@@ -153,6 +153,53 @@ describe("classifyStagedPayment", () => {
     ).toBe("interest");
   });
 
+  it("excludes Realized Gain/Loss on Investments (4040) as interest", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["4040 Realized Gain/Loss on Investments"],
+        rawReference: "Interest Earned",
+      }).reason,
+    ).toBe("interest");
+  });
+
+  it("excludes Services - Earned Income (4020) as earned_income", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["4020 Services - Earned Income"],
+      }).reason,
+    ).toBe("earned_income");
+  });
+
+  it("interest (4040) outranks earned_income (4020) when both lines are present", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: [
+          "4020 Services - Earned Income",
+          "4040 Realized Gain/Loss on Investments",
+        ],
+      }).reason,
+    ).toBe("interest");
+  });
+
+  it("donation-first guard keeps a bundled gift even with a 4020 earned-income line", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: [
+          "4000 Unrestricted Donations",
+          "4020 Services - Earned Income",
+        ],
+      }).excluded,
+    ).toBe(false);
+  });
+
   it("excludes guaranty revenue as loan activity (line-based)", () => {
     expect(
       classifyStagedPayment({

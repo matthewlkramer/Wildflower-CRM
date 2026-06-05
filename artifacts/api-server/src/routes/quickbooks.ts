@@ -344,6 +344,7 @@ router.get(
       government_reimbursement: 0,
       tax_refund: 0,
       other_revenue: 0,
+      earned_income: 0,
     };
     for (const r of reasonRows) {
       if (r.reason && r.reason in excludedByReason) {

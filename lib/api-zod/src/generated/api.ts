@@ -6848,6 +6848,7 @@ export const ListStagedPaymentsResponse = zod.object({
           "government_reimbursement",
           "tax_refund",
           "other_revenue",
+          "earned_income",
         ])
         .nullish(),
       lineItemNames: zod.array(zod.string()).nullish(),
@@ -6889,6 +6890,7 @@ export const GetStagedPaymentsSummaryResponse = zod.object({
     government_reimbursement: zod.number(),
     tax_refund: zod.number(),
     other_revenue: zod.number(),
+    earned_income: zod.number(),
   }),
 });
 
@@ -6927,6 +6929,7 @@ export const ResolveStagedPaymentResponse = zod.object({
       "government_reimbursement",
       "tax_refund",
       "other_revenue",
+      "earned_income",
     ])
     .nullish(),
   lineItemNames: zod.array(zod.string()).nullish(),
@@ -6982,6 +6985,7 @@ export const RejectStagedPaymentResponse = zod.object({
       "government_reimbursement",
       "tax_refund",
       "other_revenue",
+      "earned_income",
     ])
     .nullish(),
   lineItemNames: zod.array(zod.string()).nullish(),
@@ -7030,6 +7034,7 @@ export const ReIncludeStagedPaymentResponse = zod.object({
       "government_reimbursement",
       "tax_refund",
       "other_revenue",
+      "earned_income",
     ])
     .nullish(),
   lineItemNames: zod.array(zod.string()).nullish(),
