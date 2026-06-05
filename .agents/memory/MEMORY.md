@@ -36,3 +36,4 @@
 - [QB deposit-coding preserve-on-conflict](quickbooks-deposit-coding-preserve.md) — staged-payment upsert must keep stored line coding when incremental pull is empty (edited payment + out-of-window deposit); reseed must reset watermark.
 - [QB fiscally-sponsored exclusion](quickbooks-fiscally-sponsored-exclusion.md) — fiscally_sponsored reason is a project-IDENTITY rule (no donation guard), reads QB Class; marker list TS↔SQL lockstep; approved rows need manual unwind.
 - [QB reconciler left-card UI model](quickbooks-reconciler-ui-model.md) — donor matching is right-pane only (no left donor picker); reject is UI-removed but backend-kept; intercompany_transfer/other are manual-only reasons (no classifier/backfill).
+- [Orval query-key invalidation prefix](orval-query-key-invalidation.md) — invalidateQueries needs the full "/api" prefix to match generated keys; a missing prefix silently refetches nothing.

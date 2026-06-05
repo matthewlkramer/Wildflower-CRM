@@ -281,11 +281,14 @@ export default function StagedPayments() {
   });
 
   const invalidateStaged = () => {
-    qc.invalidateQueries({ queryKey: ["/staged-payments"] });
+    // Prefix-match the generated query keys, which are namespaced under "/api"
+    // (e.g. ["/api/staged-payments", params]). Omitting "/api" matches nothing,
+    // so the left column would not refetch after an exclude/match.
+    qc.invalidateQueries({ queryKey: ["/api/staged-payments"] });
     qc.invalidateQueries({ queryKey: getGetStagedPaymentsSummaryQueryKey() });
   };
   const invalidateGifts = () => {
-    qc.invalidateQueries({ queryKey: ["/gifts-and-payments"] });
+    qc.invalidateQueries({ queryKey: ["/api/gifts-and-payments"] });
   };
   const invalidateAll = () => {
     invalidateStaged();
