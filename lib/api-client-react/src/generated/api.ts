@@ -83,6 +83,7 @@ import type {
   EmailProposalList,
   EmailProposalSummary,
   Entity,
+  ExcludeStagedPaymentBody,
   ExtensionTokenResponse,
   FiscalYear,
   FiscalYearBreakdown,
@@ -13737,6 +13738,103 @@ export const useReIncludeStagedPayment = <
   TContext
 > => {
   return useMutation(getReIncludeStagedPaymentMutationOptions(options));
+};
+
+/**
+ * Human-driven counterpart to the insert-time auto-exclude: files a staged
+payment under a non-gift category (membership, loan, etc.) and moves it to
+the excluded bucket. Works on a pending row (exclude it) or an
+already-excluded row (reclassify its category). The donor match is left
+intact so re-include can restore it. Approved/rejected rows cannot be
+excluded.
+
+ * @summary Manually file a staged payment under a non-gift exclusion category.
+ */
+export const getExcludeStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/exclude`;
+};
+
+export const excludeStagedPayment = async (
+  id: string,
+  excludeStagedPaymentBody: ExcludeStagedPaymentBody,
+  options?: RequestInit,
+): Promise<StagedPayment> => {
+  return customFetch<StagedPayment>(getExcludeStagedPaymentUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(excludeStagedPaymentBody),
+  });
+};
+
+export const getExcludeStagedPaymentMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof excludeStagedPayment>>,
+    TError,
+    { id: string; data: BodyType<ExcludeStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof excludeStagedPayment>>,
+  TError,
+  { id: string; data: BodyType<ExcludeStagedPaymentBody> },
+  TContext
+> => {
+  const mutationKey = ["excludeStagedPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof excludeStagedPayment>>,
+    { id: string; data: BodyType<ExcludeStagedPaymentBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return excludeStagedPayment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExcludeStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof excludeStagedPayment>>
+>;
+export type ExcludeStagedPaymentMutationBody =
+  BodyType<ExcludeStagedPaymentBody>;
+export type ExcludeStagedPaymentMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Manually file a staged payment under a non-gift exclusion category.
+ */
+export const useExcludeStagedPayment = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof excludeStagedPayment>>,
+    TError,
+    { id: string; data: BodyType<ExcludeStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof excludeStagedPayment>>,
+  TError,
+  { id: string; data: BodyType<ExcludeStagedPaymentBody> },
+  TContext
+> => {
+  return useMutation(getExcludeStagedPaymentMutationOptions(options));
 };
 
 /**

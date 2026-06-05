@@ -1811,6 +1811,13 @@ export interface LinkStagedPaymentBody {
   giftId: string;
 }
 
+/**
+ * File the staged payment under a non-gift exclusion category.
+ */
+export interface ExcludeStagedPaymentBody {
+  exclusionReason: StagedPaymentExclusionReason;
+}
+
 export interface CandidateThankYouEmail {
   emailMessageId: string;
   gmailMessageId?: string | null;

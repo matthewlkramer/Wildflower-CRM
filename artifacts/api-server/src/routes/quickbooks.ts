@@ -21,6 +21,7 @@ import { validateGiftInvariants, type InvariantIssue } from "@workspace/api-zod"
 import {
   ResolveStagedPaymentBody,
   LinkStagedPaymentBody,
+  ExcludeStagedPaymentBody,
 } from "@workspace/api-zod";
 import { donorOf, validateGiftLink } from "../lib/quickbooksLink";
 import { logger } from "../lib/logger";
@@ -401,6 +402,70 @@ router.post(
       })
       .where(eq(stagedPayments.id, id))
       .returning();
+    res.json(row);
+  }),
+);
+
+// ─── POST /staged-payments/:id/exclude ─────────────────────────────────────
+// Human-driven counterpart to the insert-time auto-exclude: file a staged row
+// under a non-gift category (membership, loan, …) and move it to the excluded
+// bucket. Allowed from pending (exclude it) OR from excluded (reclassify its
+// category); approved/rejected rows are terminal and can't be excluded. The
+// donor match is left intact so re-include restores it. The status guard lives
+// in the UPDATE predicate (not just the pre-read) so a concurrent approve/reject
+// can't be clobbered (TOCTOU); 409 on zero rows.
+router.post(
+  "/staged-payments/:id/exclude",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const parsed = ExcludeStagedPaymentBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    const { exclusionReason } = parsed.data;
+
+    const existing = await db
+      .select({ status: stagedPayments.status })
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (!existing) return notFound(res, "staged payment");
+    if (existing.status !== "pending" && existing.status !== "excluded") {
+      res.status(409).json({
+        error: "not_excludable",
+        message:
+          "Only pending or already-excluded staged payments can be excluded.",
+      });
+      return;
+    }
+
+    const [row] = await db
+      .update(stagedPayments)
+      .set({
+        status: "excluded",
+        exclusionReason,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(stagedPayments.id, id),
+          sql`${stagedPayments.status} IN ('pending', 'excluded')`,
+        ),
+      )
+      .returning();
+    if (!row) {
+      res.status(409).json({
+        error: "not_excludable",
+        message:
+          "This staged payment changed before it could be excluded. Refresh and retry.",
+      });
+      return;
+    }
     res.json(row);
   }),
 );

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import {
   useListStagedPayments,
@@ -11,6 +11,7 @@ import {
   useReIncludeStagedPayment,
   useLinkStagedPayment,
   useUnlinkStagedPayment,
+  useExcludeStagedPayment,
   useConfirmStagedPaymentMatch,
   useUnmatchStagedPayment,
   useListStagedPaymentGiftCandidates,
@@ -39,6 +40,13 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DonorFieldPicker,
   donorBodyFor,
@@ -510,6 +518,34 @@ function StagedPaymentCard({
         }),
     },
   });
+  // Seeded from the row so re-classifying an already-excluded row pre-selects its
+  // current category; pending rows start blank to force an explicit choice.
+  const [excludeReason, setExcludeReason] = useState<
+    StagedPaymentExclusionReason | ""
+  >(row.exclusionReason ?? "");
+  // Resync the local pick when the server's classification changes out from
+  // under us (a re-sync, another admin, or this row's own reclassify landing),
+  // so the Select never drifts from server truth on a persisted card instance.
+  useEffect(() => {
+    setExcludeReason(row.exclusionReason ?? "");
+  }, [row.id, row.exclusionReason]);
+  const exclude = useExcludeStagedPayment({
+    mutation: {
+      onSuccess: () => {
+        onChanged();
+        toast({
+          title: "Excluded",
+          description: "Filed under a non-gift category. Re-include if wrong.",
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Exclude failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
 
   const [showCandidates, setShowCandidates] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -561,6 +597,7 @@ function StagedPaymentCard({
     approve.isPending ||
     reject.isPending ||
     reInclude.isPending ||
+    exclude.isPending ||
     confirmMatch.isPending ||
     unmatch.isPending ||
     link.isPending ||
@@ -707,6 +744,50 @@ function StagedPaymentCard({
               >
                 Reject
               </Button>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={excludeReason}
+                  onValueChange={(v) =>
+                    setExcludeReason(v as StagedPaymentExclusionReason)
+                  }
+                  disabled={busy}
+                >
+                  <SelectTrigger
+                    className="h-9 w-[210px]"
+                    data-testid={`staged-exclude-reason-${row.id}`}
+                  >
+                    <SelectValue placeholder="Exclude as…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(EXCLUSION_REASON_LABELS).map(
+                      ([value, label]) => (
+                        <SelectItem
+                          key={value}
+                          value={value}
+                          data-testid={`staged-exclude-reason-${row.id}-${value}`}
+                        >
+                          {label}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy || !excludeReason}
+                  onClick={() =>
+                    excludeReason &&
+                    exclude.mutate({
+                      id: row.id,
+                      data: { exclusionReason: excludeReason },
+                    })
+                  }
+                  data-testid={`staged-exclude-${row.id}`}
+                >
+                  {exclude.isPending ? "Excluding…" : "Exclude"}
+                </Button>
+              </div>
             </div>
             {!hasDonor ? (
               <p className="text-xs text-muted-foreground">
@@ -729,21 +810,67 @@ function StagedPaymentCard({
         ) : excluded ? (
           <div className="space-y-3">
             <div className="text-sm text-muted-foreground">
-              Auto-excluded as noise
+              Excluded as a non-gift
               {row.exclusionReason
                 ? ` (${EXCLUSION_REASON_LABELS[row.exclusionReason] ?? row.exclusionReason})`
                 : ""}
-              . Not deleted — re-include it if this was wrong.
+              . Not deleted — re-include it, or change its category below.
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => reInclude.mutate({ id: row.id })}
-              disabled={busy}
-              data-testid={`staged-re-include-${row.id}`}
-            >
-              {reInclude.isPending ? "Re-including…" : "Re-include → pending"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => reInclude.mutate({ id: row.id })}
+                disabled={busy}
+                data-testid={`staged-re-include-${row.id}`}
+              >
+                {reInclude.isPending ? "Re-including…" : "Re-include → pending"}
+              </Button>
+              <Select
+                value={excludeReason}
+                onValueChange={(v) =>
+                  setExcludeReason(v as StagedPaymentExclusionReason)
+                }
+                disabled={busy}
+              >
+                <SelectTrigger
+                  className="h-9 w-[210px]"
+                  data-testid={`staged-reclassify-reason-${row.id}`}
+                >
+                  <SelectValue placeholder="Change category…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(EXCLUSION_REASON_LABELS).map(
+                    ([value, label]) => (
+                      <SelectItem
+                        key={value}
+                        value={value}
+                        data-testid={`staged-reclassify-reason-${row.id}-${value}`}
+                      >
+                        {label}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={
+                  busy || !excludeReason || excludeReason === row.exclusionReason
+                }
+                onClick={() =>
+                  excludeReason &&
+                  exclude.mutate({
+                    id: row.id,
+                    data: { exclusionReason: excludeReason },
+                  })
+                }
+                data-testid={`staged-reclassify-${row.id}`}
+              >
+                {exclude.isPending ? "Updating…" : "Update category"}
+              </Button>
+            </div>
           </div>
         ) : row.giftWasLinked ? (
           <div className="space-y-3">

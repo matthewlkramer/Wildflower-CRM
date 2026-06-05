@@ -9,6 +9,23 @@ The auto-exclude classifier (`quickbooksExclusionRules.ts`) only runs **on inser
 when a row is freshly staged. It does **not** retroactively reclassify rows that
 were already `pending`.
 
+## Manual exclude / reclassify from the card
+
+A human can now exclude/reclassify from the staged-payment card via
+`POST /staged-payments/:id/exclude` (`{ exclusionReason }`): allowed only from
+`pending` (exclude) or `excluded` (reclassify the category) — `approved`/`rejected`
+are non-excludable (409). Guarded conditional UPDATE (`WHERE id AND status IN
+('pending','excluded')`, 409 on zero rows). **Donor match is left intact** so
+re-include (which clears only `exclusionReason`) restores prior donor work. The
+insert-time classifier's conflict-update path refreshes only line detail/updatedAt
+for pending/excluded rows and never overwrites status/reason, so a manual
+exclude/reclassify (and manual re-include) survives later syncs untouched.
+
+**Frontend gotcha:** the card's `excludeReason` Select is seeded from
+`row.exclusionReason` and must be resynced via `useEffect` on
+`[row.id, row.exclusionReason]`, or it drifts from server truth on a persisted card
+instance (re-sync / another admin / its own reclassify landing).
+
 **Existing rows are cleared only by the backfill migration `0013`** (Part A
 zero/null amount, Part B loan payer-name patterns, Part C membership). `0013` is a
 manual data migration — Publish ships the *schema* (`0012`) but never runs the

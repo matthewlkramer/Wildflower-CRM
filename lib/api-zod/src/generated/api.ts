@@ -7092,6 +7092,80 @@ export const ReIncludeStagedPaymentResponse = zod.object({
 });
 
 /**
+ * Human-driven counterpart to the insert-time auto-exclude: files a staged
+payment under a non-gift category (membership, loan, etc.) and moves it to
+the excluded bucket. Works on a pending row (exclude it) or an
+already-excluded row (reclassify its category). The donor match is left
+intact so re-include can restore it. Approved/rejected rows cannot be
+excluded.
+
+ * @summary Manually file a staged payment under a non-gift exclusion category.
+ */
+export const ExcludeStagedPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ExcludeStagedPaymentBody = zod
+  .object({
+    exclusionReason: zod.enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+    ]),
+  })
+  .describe("File the staged payment under a non-gift exclusion category.");
+
+export const ExcludeStagedPaymentResponse = zod.object({
+  id: zod.string(),
+  realmId: zod.string(),
+  qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
+  qbEntityId: zod.string(),
+  amount: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  rawReference: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+    ])
+    .nullish(),
+  lineItemNames: zod.array(zod.string()).nullish(),
+  lineAccountNames: zod.array(zod.string()).nullish(),
+  lineClasses: zod.array(zod.string()).nullish(),
+  matchStatus: zod.enum(["matched", "unmatched"]),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  giftWasLinked: zod.boolean(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
  * Finds already-recorded gifts_and_payments rows for the staged payment's
 saved donor whose amount equals the staged amount, so the fundraiser can
 link the QuickBooks record to an existing gift instead of creating a

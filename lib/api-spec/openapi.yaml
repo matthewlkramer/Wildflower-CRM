@@ -1868,6 +1868,27 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not excluded" }
+  /staged-payments/{id}/exclude:
+    post:
+      operationId: excludeStagedPayment
+      tags: [staged-payments]
+      summary: Manually file a staged payment under a non-gift exclusion category.
+      description: |
+        Human-driven counterpart to the insert-time auto-exclude: files a staged
+        payment under a non-gift category (membership, loan, etc.) and moves it to
+        the excluded bucket. Works on a pending row (exclude it) or an
+        already-excluded row (reclassify its category). The donor match is left
+        intact so re-include can restore it. Approved/rejected rows cannot be
+        excluded.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ExcludeStagedPaymentBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Staged payment cannot be excluded from its current state" }
   /staged-payments/{id}/gift-candidates:
     get:
       operationId: listStagedPaymentGiftCandidates
@@ -3725,6 +3746,12 @@ components:
       description: "Link the staged payment to an existing gifts_and_payments row."
       properties:
         giftId: { type: string }
+    ExcludeStagedPaymentBody:
+      type: object
+      required: [exclusionReason]
+      description: "File the staged payment under a non-gift exclusion category."
+      properties:
+        exclusionReason: { $ref: "#/components/schemas/StagedPaymentExclusionReason" }
     CandidateThankYouEmail:
       type: object
       required: [emailMessageId, sentAt, hasDocumentAttachment]
