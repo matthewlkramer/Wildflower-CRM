@@ -79,15 +79,48 @@ describe("classifyStagedPayment", () => {
     ).toBe("zero_amount");
   });
 
-  it("membership rule is inert until a marker is configured", () => {
-    // No markers are configured by default (discovery is prod-only), so a row
-    // carrying an arbitrary item/account is NOT excluded as membership.
+  it("excludes the confirmed 'School Contributions' membership item", () => {
     expect(
       classifyStagedPayment({
         ...base,
-        lineItemNames: ["Some Item"],
-        lineAccountNames: ["Some Account"],
+        lineItemNames: ["School Contributions"],
+      }).reason,
+    ).toBe("membership");
+  });
+
+  it("matches the membership item case-insensitively after trim", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineItemNames: ["  school contributions  "],
+      }).reason,
+    ).toBe("membership");
+  });
+
+  it("does not exclude unrelated line items as membership", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: ["4000 Unrestricted Donations"],
       }).excluded,
     ).toBe(false);
+  });
+
+  it("zero_amount and loan take precedence over membership", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        amount: "0",
+        lineItemNames: ["School Contributions"],
+      }).reason,
+    ).toBe("zero_amount");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "Loan - Snowdrop",
+        lineItemNames: ["School Contributions"],
+      }).reason,
+    ).toBe("loan");
   });
 });

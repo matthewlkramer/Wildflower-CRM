@@ -36,3 +36,18 @@ discovery query both depend on that line detail.
 **full re-pull** (reset the connection's `syncWatermark`), not just wait for the
 scheduler. The runbook's step 4 ("run a sync to enrich line detail") is incomplete
 for the existing back-catalog because of this watermark scoping.
+
+## Confirmed membership marker
+
+The membership marker is the QuickBooks Product/Service **line item**
+`"School Contributions"` (member Montessori schools pay network dues under it).
+There is **no** income/posting-account marker — membership is item-only.
+
+**Why:** confirmed against prod after the full re-pull enriched line detail;
+user verified "school contributions = membership fees."
+
+**How to apply:** keep the SQL backfill (Part C) and the classifier's
+`MEMBERSHIP_ITEM_NAMES` in lockstep, and keep both **case-insensitive + trimmed**
+(`lower(btrim(...))` in SQL == `normalize()` in code) or the backfill silently
+misses casing/spacing variants the live rule would catch. Run the runbook's
+parity pre-check (normalized_hits == exact_hits) before any prod Part C run.

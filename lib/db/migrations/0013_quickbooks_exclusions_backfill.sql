@@ -59,19 +59,24 @@ UPDATE staged_payments
    );
 
 -- ─── Part C: membership (confirmed QB item / income-account marker) ─────────
--- ⚠️ Fill these arrays with the CONFIRMED membership marker name(s) from the
--- production discovery query (see runbook) BEFORE this does anything. They must
--- match the values in MEMBERSHIP_ITEM_NAMES / MEMBERSHIP_ACCOUNT_NAMES in
--- quickbooksExclusionRules.ts. While empty, the `&&` overlap matches nothing,
--- so this block is a safe no-op.
+-- CONFIRMED in production: member schools pay network membership dues under the
+-- QuickBooks line item "School Contributions". These markers match
+-- MEMBERSHIP_ITEM_NAMES / MEMBERSHIP_ACCOUNT_NAMES in quickbooksExclusionRules.ts.
+-- Requires line detail to be populated first (run the full re-pull — 0014 +
+-- "Sync now" — before this; rows with NULL line_item_names won't match).
+-- Matching is case-insensitive + whitespace-trimmed to stay EXACTLY equivalent
+-- to the classifier (normalize() = lower(trim(...)) in quickbooksExclusionRules.ts),
+-- so the backfill can never miss a casing/spacing variant the live rule would
+-- catch. Account markers are intentionally empty (membership is item-only).
 UPDATE staged_payments
    SET status = 'excluded',
        exclusion_reason = 'membership',
        updated_at = now()
  WHERE status = 'pending'
-   AND (
-     line_item_names && ARRAY[]::text[]      -- e.g. ARRAY['Membership Fee']
-     OR line_account_names && ARRAY[]::text[] -- e.g. ARRAY['Membership Income']
+   AND EXISTS (
+     SELECT 1
+       FROM unnest(coalesce(line_item_names, '{}'::text[])) AS li
+      WHERE lower(btrim(li)) = ANY (ARRAY['school contributions'])
    );
 
 -- Verification:

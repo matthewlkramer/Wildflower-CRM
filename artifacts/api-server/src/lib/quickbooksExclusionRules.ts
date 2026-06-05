@@ -68,10 +68,15 @@ export const LOAN_PAYER_PATTERNS: readonly RegExp[] = [
  * name(s) below and record the finding in that runbook.
  */
 export const MEMBERSHIP_ITEM_NAMES: readonly string[] = [
-  // e.g. "Membership Fee", "School Membership Dues" — TODO: confirm in prod.
+  // Confirmed in production: member Montessori schools pay their network
+  // membership dues under the QuickBooks Product/Service item "School
+  // Contributions" (recurring payments from each member school).
+  "School Contributions",
 ];
 export const MEMBERSHIP_ACCOUNT_NAMES: readonly string[] = [
-  // e.g. "Membership Income", "Member Dues" — TODO: confirm in prod.
+  // No income/posting-account marker is needed — membership is identified by
+  // the "School Contributions" line item above. Add account names here only if
+  // a future membership coding can't be distinguished by item alone.
 ];
 
 function normalize(s: string): string {

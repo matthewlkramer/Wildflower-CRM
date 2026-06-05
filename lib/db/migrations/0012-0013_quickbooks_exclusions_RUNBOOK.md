@@ -94,8 +94,10 @@ SELECT 'account' AS kind, unnest(line_account_names) AS name, count(*) AS n
 
 Record the confirmed name(s) here once known:
 
-> **Confirmed membership marker(s):** _TODO — fill in after running discovery._
-> (e.g. item `Membership Fee`, income account `Membership Income`.)
+> **Confirmed membership marker(s):** item `School Contributions` (confirmed in
+> production — member Montessori schools pay network membership dues under this
+> QuickBooks Product/Service item; ~904 recurring payments across ~70 schools).
+> No income-account marker needed. Wired into `MEMBERSHIP_ITEM_NAMES` and Part C.
 
 ## Verify
 
@@ -103,6 +105,24 @@ Record the confirmed name(s) here once known:
 SELECT status, exclusion_reason, count(*)
 FROM staged_payments GROUP BY 1, 2 ORDER BY 1, 2;
 ```
+
+### Membership parity pre-check (run BEFORE Part C)
+
+Proves the case-insensitive/trimmed backfill matches every pending row the live
+classifier would treat as membership — the two counts must be equal (no gap):
+
+```sql
+SELECT
+  count(*) FILTER (WHERE status='pending' AND EXISTS (
+    SELECT 1 FROM unnest(coalesce(line_item_names,'{}'::text[])) li
+    WHERE lower(btrim(li)) = ANY (ARRAY['school contributions']))) AS normalized_hits,
+  count(*) FILTER (WHERE status='pending'
+    AND line_item_names && ARRAY['School Contributions']::text[]) AS exact_hits
+FROM staged_payments;
+```
+
+On the 2026-06 prod data both returned **904** (full re-pull complete), dropping
+the pending queue 2,803 → 1,899 after Part C runs.
 
 ## Dev note
 
