@@ -14122,6 +14122,99 @@ export const useUnmatchStagedPayment = <
 };
 
 /**
+ * Severs the tie between a staged payment and the pre-existing gift it was
+linked to, returning the row to the pending queue (createdGiftId and the
+approval stamps are cleared; the donor match is left intact). The
+pre-existing gift itself is untouched. Only applies to rows that were
+resolved via "Link to existing gift" (giftWasLinked = true) — a
+minted-gift approval cannot be unlinked, since that would orphan the
+newly created gift.
+
+ * @summary Undo a link to an existing gift (linked → pending).
+ */
+export const getUnlinkStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/unlink`;
+};
+
+export const unlinkStagedPayment = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StagedPayment> => {
+  return customFetch<StagedPayment>(getUnlinkStagedPaymentUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnlinkStagedPaymentMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unlinkStagedPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unlinkStagedPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unlinkStagedPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unlinkStagedPayment>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unlinkStagedPayment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnlinkStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unlinkStagedPayment>>
+>;
+
+export type UnlinkStagedPaymentMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Undo a link to an existing gift (linked → pending).
+ */
+export const useUnlinkStagedPayment = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unlinkStagedPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unlinkStagedPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnlinkStagedPaymentMutationOptions(options));
+};
+
+/**
  * Returns all organizations with priority='top' and all people with priority='top'
 who are NOT currently affiliated with a top-priority organization. Each row carries
 computed open-opportunity count, open-task count, affiliated people (organizations)

@@ -4,6 +4,7 @@ import {
   timestamp,
   numeric,
   date,
+  boolean,
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
@@ -100,6 +101,11 @@ export const stagedPayments = pgTable(
       () => giftsAndPayments.id,
       { onDelete: "set null" },
     ),
+    // Distinguishes the two "approved" resolutions, since createdGiftId is
+    // overloaded: true when the row was tied to a pre-existing gift via the
+    // link endpoint, false when "Approve → create gift" minted a new one. Only
+    // linked rows may be unlinked (unlinking a minted gift would orphan it).
+    giftWasLinked: boolean("gift_was_linked").notNull().default(false),
 
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",

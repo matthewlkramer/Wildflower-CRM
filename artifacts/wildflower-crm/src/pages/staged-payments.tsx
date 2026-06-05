@@ -10,6 +10,7 @@ import {
   useRejectStagedPayment,
   useReIncludeStagedPayment,
   useLinkStagedPayment,
+  useUnlinkStagedPayment,
   useConfirmStagedPaymentMatch,
   useUnmatchStagedPayment,
   useListStagedPaymentGiftCandidates,
@@ -529,6 +530,23 @@ function StagedPaymentCard({
         }),
     },
   });
+  const unlink = useUnlinkStagedPayment({
+    mutation: {
+      onSuccess: () => {
+        onChanged();
+        toast({
+          title: "Unlinked",
+          description: "Returned to the pending queue. The gift was untouched.",
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Unlink failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
   // The server matches candidates against the SAVED donor on the row, so only
   // fetch once a donor is persisted (matchStatus flips to "matched" on save).
   const candidates = useListStagedPaymentGiftCandidates(row.id, {
@@ -545,7 +563,8 @@ function StagedPaymentCard({
     reInclude.isPending ||
     confirmMatch.isPending ||
     unmatch.isPending ||
-    link.isPending;
+    link.isPending ||
+    unlink.isPending;
   const hasDonor = donorId != null;
   const matchState = matchStateOf(row);
   // A donor persisted on the row (not just picked locally) is required for the
@@ -725,6 +744,27 @@ function StagedPaymentCard({
             >
               {reInclude.isPending ? "Re-including…" : "Re-include → pending"}
             </Button>
+          </div>
+        ) : row.giftWasLinked ? (
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">
+              Donor: {donorLabel ?? "—"}
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm text-muted-foreground">
+                Linked to an existing gift — no new gift was created.
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => unlink.mutate({ id: row.id })}
+                disabled={busy}
+                data-testid={`staged-unlink-${row.id}`}
+                title="Undo the link and return this payment to the pending queue. The existing gift is left untouched."
+              >
+                {unlink.isPending ? "Unlinking…" : "Unlink gift"}
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="text-sm text-muted-foreground">

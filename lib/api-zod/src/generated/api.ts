@@ -6882,6 +6882,7 @@ export const ListStagedPaymentsResponse = zod.object({
       individualGiverPersonId: zod.string().nullish(),
       householdId: zod.string().nullish(),
       createdGiftId: zod.string().nullish(),
+      giftWasLinked: zod.boolean(),
       approvedByUserId: zod.string().nullish(),
       approvedAt: zod.string().datetime({}).nullish(),
       rejectedByUserId: zod.string().nullish(),
@@ -6967,6 +6968,7 @@ export const ResolveStagedPaymentResponse = zod.object({
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  giftWasLinked: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
   rejectedByUserId: zod.string().nullish(),
@@ -7025,6 +7027,7 @@ export const RejectStagedPaymentResponse = zod.object({
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  giftWasLinked: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
   rejectedByUserId: zod.string().nullish(),
@@ -7076,6 +7079,7 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  giftWasLinked: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
   rejectedByUserId: zod.string().nullish(),
@@ -7374,6 +7378,7 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  giftWasLinked: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
   rejectedByUserId: zod.string().nullish(),
@@ -7430,6 +7435,67 @@ export const UnmatchStagedPaymentResponse = zod.object({
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  giftWasLinked: zod.boolean(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * Severs the tie between a staged payment and the pre-existing gift it was
+linked to, returning the row to the pending queue (createdGiftId and the
+approval stamps are cleared; the donor match is left intact). The
+pre-existing gift itself is untouched. Only applies to rows that were
+resolved via "Link to existing gift" (giftWasLinked = true) — a
+minted-gift approval cannot be unlinked, since that would orphan the
+newly created gift.
+
+ * @summary Undo a link to an existing gift (linked → pending).
+ */
+export const UnlinkStagedPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnlinkStagedPaymentResponse = zod.object({
+  id: zod.string(),
+  realmId: zod.string(),
+  qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
+  qbEntityId: zod.string(),
+  amount: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  rawReference: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+    ])
+    .nullish(),
+  lineItemNames: zod.array(zod.string()).nullish(),
+  lineAccountNames: zod.array(zod.string()).nullish(),
+  lineClasses: zod.array(zod.string()).nullish(),
+  matchStatus: zod.enum(["matched", "unmatched"]),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  giftWasLinked: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
   rejectedByUserId: zod.string().nullish(),

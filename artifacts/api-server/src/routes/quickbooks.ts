@@ -291,6 +291,10 @@ router.post(
           .set({
             status: "approved",
             createdGiftId: giftId,
+            // Minted a NEW gift (not a link). Set false explicitly so the
+            // unlink guard can never mistake a minted approval for a linked one
+            // and orphan the gift, even if the row carried stale state.
+            giftWasLinked: false,
             approvedByUserId: user.id,
             approvedAt: new Date(),
             updatedAt: new Date(),
@@ -570,6 +574,7 @@ router.post(
       .set({
         status: "approved",
         createdGiftId: giftId,
+        giftWasLinked: true,
         approvedByUserId: user.id,
         approvedAt: new Date(),
         updatedAt: new Date(),
@@ -712,6 +717,71 @@ router.post(
       res.status(409).json({
         error: "not_pending",
         message: "This staged payment is no longer pending. Refresh and retry.",
+      });
+      return;
+    }
+    res.json(row);
+  }),
+);
+
+// ─── POST /staged-payments/:id/unlink ──────────────────────────────────────
+// Undo a "link to existing gift" resolution: clear the tie to the pre-existing
+// gift and return the row to the pending queue. The donor match is left intact
+// so the fundraiser can re-link or approve. Only a linked-gift approval may be
+// unlinked — a minted-gift approval (giftWasLinked = false) must not be, since
+// unlinking would leave its freshly created gift orphaned in the ledger. The
+// guard lives in the UPDATE predicate (not just the pre-read) so a concurrent
+// resolution can't slip through (TOCTOU); 409 on zero rows.
+router.post(
+  "/staged-payments/:id/unlink",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const id = paramId(req);
+    const existing = await db
+      .select({
+        status: stagedPayments.status,
+        giftWasLinked: stagedPayments.giftWasLinked,
+      })
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (!existing) return notFound(res, "staged payment");
+    if (existing.status !== "approved" || !existing.giftWasLinked) {
+      res.status(409).json({
+        error: "not_linked",
+        message:
+          "Only a staged payment linked to an existing gift can be unlinked.",
+      });
+      return;
+    }
+
+    const [row] = await db
+      .update(stagedPayments)
+      .set({
+        status: "pending",
+        createdGiftId: null,
+        giftWasLinked: false,
+        approvedByUserId: null,
+        approvedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(stagedPayments.id, id),
+          eq(stagedPayments.status, "approved"),
+          eq(stagedPayments.giftWasLinked, true),
+        ),
+      )
+      .returning();
+    if (!row) {
+      res.status(409).json({
+        error: "not_linked",
+        message:
+          "This staged payment is no longer a linked-gift approval. Refresh and retry.",
       });
       return;
     }

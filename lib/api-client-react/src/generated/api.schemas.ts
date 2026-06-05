@@ -1741,6 +1741,7 @@ export interface StagedPayment {
   individualGiverPersonId?: string | null;
   householdId?: string | null;
   createdGiftId?: string | null;
+  giftWasLinked: boolean;
   approvedByUserId?: string | null;
   approvedAt?: string | null;
   rejectedByUserId?: string | null;

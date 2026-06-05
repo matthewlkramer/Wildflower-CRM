@@ -8,11 +8,21 @@ gift" (mints a new gifts_and_payments row) and "Link to existing gift" (ties the
 QB record to an already-recorded gift, no new row).
 
 - **created_gift_id is overloaded** — both flows set `staged_payments.created_gift_id`
-  to the resulting gift; "linked" reuses the same FK as "created".
-  **Why:** chosen to avoid a prod schema migration (user prefers non-destructive
-  changes; agent can't write prod). There is no DB-level flag distinguishing
-  created vs linked. If you ever need to tell them apart, add a column via the
-  staged SQL-file flow, don't infer.
+  to the resulting gift; "linked" reuses the same FK as "created". To tell them
+  apart there is now `staged_payments.gift_was_linked` (boolean, NOT NULL DEFAULT
+  false): true only for the link endpoint, explicitly false on the mint/approve
+  path. **Never infer linked-vs-minted from created_gift_id** — read the flag.
+
+- **Unlink only ever severs a LINKED approval, never a minted one.** Unlinking a
+  minted approval would orphan the gift it created, so the unlink endpoint's guard
+  is `WHERE status='approved' AND gift_was_linked=true` (in the UPDATE predicate,
+  not just the pre-read; 409 on rowCount 0). It clears created_gift_id + approval
+  stamps and returns the row to `status='pending'`, leaving donor FKs / matchStatus
+  intact so it lands back in Pending·Matched. **Why the flag was needed:** without
+  it the queue couldn't distinguish a linked approval (safe to undo) from a minted
+  one (unsafe). **History caveat:** approvals predating the column all read false,
+  so historically-linked rows are intentionally NOT unlinkable (no reliable way to
+  reconstruct the resolution after the fact).
 
 - **One gift ↔ one staged payment is enforced in app code, not the DB.** There is
   no unique index on `created_gift_id`. The link endpoint guards double-counting

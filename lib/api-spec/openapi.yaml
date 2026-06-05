@@ -1935,6 +1935,24 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not pending" }
+  /staged-payments/{id}/unlink:
+    post:
+      operationId: unlinkStagedPayment
+      tags: [staged-payments]
+      summary: Undo a link to an existing gift (linked → pending).
+      description: |
+        Severs the tie between a staged payment and the pre-existing gift it was
+        linked to, returning the row to the pending queue (createdGiftId and the
+        approval stamps are cleared; the donor match is left intact). The
+        pre-existing gift itself is untouched. Only applies to rows that were
+        resolved via "Link to existing gift" (giftWasLinked = true) — a
+        minted-gift approval cannot be unlinked, since that would orphan the
+        newly created gift.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Staged payment is not a linked-gift approval" }
 
   # ─── Top Priorities ────────────────────────────────────────────────────────
   /top-priorities:
@@ -3611,7 +3629,7 @@ components:
         matched: { type: integer, description: "Rows newly auto-matched by this run." }
     StagedPayment:
       type: object
-      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, createdAt, updatedAt]
+      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, giftWasLinked, createdAt, updatedAt]
       properties:
         id:                        { type: string }
         realmId:                   { type: string }
@@ -3634,6 +3652,7 @@ components:
         individualGiverPersonId:   { type: string, nullable: true }
         householdId:               { type: string, nullable: true }
         createdGiftId:             { type: string, nullable: true }
+        giftWasLinked:             { type: boolean }
         approvedByUserId:          { type: string, nullable: true }
         approvedAt:                { type: string, format: date-time, nullable: true }
         rejectedByUserId:          { type: string, nullable: true }
