@@ -265,7 +265,10 @@ export default function StagedPayments() {
   const [giftSearch, setGiftSearch] = useState("");
   const [dateAfter, setDateAfter] = useState("");
   const [dateBefore, setDateBefore] = useState("");
-  const [linkedFilter, setLinkedFilter] = useState<LinkedFilter>("all");
+  // Default to hiding gifts already linked to a QuickBooks payment — when
+  // reconciling you almost always want gifts still needing a match. Users can
+  // switch to "All gifts" / "Linked to QB" from the dropdown.
+  const [linkedFilter, setLinkedFilter] = useState<LinkedFilter>("unlinked");
   const [giftPage, setGiftPage] = useState(1);
   const GIFT_PAGE_SIZE = 25;
 
@@ -1422,7 +1425,7 @@ function GiftsPanel({
               <SelectItem value="linked">Linked to QB</SelectItem>
             </SelectContent>
           </Select>
-          {dateAfter || dateBefore || search || linkedFilter !== "all" ? (
+          {dateAfter || dateBefore || search || linkedFilter !== "unlinked" ? (
             <Button
               variant="ghost"
               size="sm"
@@ -1430,7 +1433,7 @@ function GiftsPanel({
                 setSearch("");
                 setDateAfter("");
                 setDateBefore("");
-                setLinkedFilter("all");
+                setLinkedFilter("unlinked");
               }}
               data-testid="gift-clear-filters"
             >
