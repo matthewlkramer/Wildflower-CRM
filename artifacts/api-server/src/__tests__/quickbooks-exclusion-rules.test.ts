@@ -383,4 +383,78 @@ describe("classifyStagedPayment", () => {
       }).excluded,
     ).toBe(false);
   });
+
+  it("excludes a fiscally sponsored project by its QuickBooks Class", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineClasses: ["Embracing Equity"],
+      }).reason,
+    ).toBe("fiscally_sponsored");
+  });
+
+  it("matches the fiscally sponsored marker case-insensitively and as a substring", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineClasses: ["  EMBRACING EQUITY : Cohort 3  "],
+      }).reason,
+    ).toBe("fiscally_sponsored");
+  });
+
+  it("matches the fiscally sponsored marker on payer, item, account or memo", () => {
+    expect(
+      classifyStagedPayment({ ...base, payerName: "Embracing Equity" }).reason,
+    ).toBe("fiscally_sponsored");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineItemNames: ["Embracing Equity workshop"],
+      }).reason,
+    ).toBe("fiscally_sponsored");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["Embracing Equity income"],
+      }).reason,
+    ).toBe("fiscally_sponsored");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        rawReference: "deposit for Embracing Equity",
+      }).reason,
+    ).toBe("fiscally_sponsored");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineDescription: "Embracing Equity program fees",
+      }).reason,
+    ).toBe("fiscally_sponsored");
+  });
+
+  it("excludes a fiscally sponsored project EVEN when it carries a donation line (no donation guard)", () => {
+    // A donation coded to the other project is still the other project's money.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineClasses: ["Embracing Equity"],
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: ["4000 Unrestricted Donations"],
+      }).reason,
+    ).toBe("fiscally_sponsored");
+  });
+
+  it("does not exclude unrelated rows that merely mention 'equity'", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineClasses: ["Equity Fund"],
+        rawReference: "private equity distribution",
+      }).excluded,
+    ).toBe(false);
+  });
 });

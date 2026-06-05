@@ -464,6 +464,7 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
     "tax_refund",
     "other_revenue",
     "earned_income",
+    "fiscally_sponsored",
   ],
 );
 

@@ -108,6 +108,7 @@ const EXCLUSION_REASON_LABELS: Record<StagedPaymentExclusionReason, string> = {
   tax_refund: "Tax / insurance refund",
   other_revenue: "Other revenue (non-gift)",
   earned_income: "Earned income (non-gift)",
+  fiscally_sponsored: "Fiscally sponsored project",
 };
 
 const QB_ENTITY_TYPE_LABELS: Record<QuickbooksEntityType, string> = {

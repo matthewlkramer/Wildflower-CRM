@@ -151,6 +151,7 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
         lineAccountNames: p.lineAccountNames,
         rawReference: p.rawReference,
         lineDescription: p.lineDescription,
+        lineClasses: p.lineClasses,
       });
 
       const scored: ScoredMatch | null = cls.excluded
@@ -465,6 +466,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
         lineDescription: stagedPayments.lineDescription,
         lineItemNames: stagedPayments.lineItemNames,
         lineAccountNames: stagedPayments.lineAccountNames,
+        lineClasses: stagedPayments.lineClasses,
       })
       .from(stagedPayments)
       .where(
@@ -491,6 +493,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
         lineAccountNames: row.lineAccountNames,
         rawReference: row.rawReference,
         lineDescription: row.lineDescription,
+        lineClasses: row.lineClasses,
       });
       if (cls.excluded && row.status !== "excluded") {
         const upd = await db

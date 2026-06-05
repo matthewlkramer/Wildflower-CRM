@@ -34,6 +34,14 @@
  *                                (matched by memo).
  *   8. earned_income           — fees-for-service / program revenue (4020
  *                                "Services - Earned Income"). Never a gift.
+ *   9. fiscally_sponsored      — money belonging to a separate fiscally
+ *                                sponsored project (e.g. "Embracing Equity")
+ *                                that the org does NOT reconcile here. A
+ *                                project-IDENTITY rule: matched by a project
+ *                                marker (QuickBooks Class, payer, item, account,
+ *                                or memo) anywhere on the row. Because the whole
+ *                                payment belongs to the other project, this rule
+ *                                is NOT subject to the donation-first guard.
  *
  * DONATION-FIRST GUARD: the line-based rules (loan-by-guaranty, interest,
  * tax_refund) never fire on a row that ALSO carries a real donation line (a
@@ -41,9 +49,9 @@
  * gift with a fee / interest / refund line is never wrongly hidden.
  *
  * Rules are applied in a deterministic order (see `classifyStagedPayment`):
- * zero_amount → loan (payer) → government_reimbursement → loan (guaranty line) →
- * interest → tax_refund → other_revenue → earned_income → membership. The first
- * match wins.
+ * zero_amount → loan (payer) → government_reimbursement → fiscally_sponsored →
+ * loan (guaranty line) → interest → tax_refund → other_revenue → earned_income →
+ * membership. The first match wins.
  */
 
 export type ExclusionReason =
@@ -54,7 +62,8 @@ export type ExclusionReason =
   | "government_reimbursement"
   | "tax_refund"
   | "other_revenue"
-  | "earned_income";
+  | "earned_income"
+  | "fiscally_sponsored";
 
 export interface ClassifierInput {
   amount: string | null;
@@ -77,6 +86,12 @@ export interface ClassifierInput {
    * deposit-level PrivateNote. Optional for backward compatibility.
    */
   lineDescription?: string | null;
+  /**
+   * QuickBooks Class names captured on the txn / deposit lines. Fiscally
+   * sponsored projects are tracked by Class, so the `fiscally_sponsored` rule
+   * reads these. Optional for backward compatibility.
+   */
+  lineClasses?: string[] | null;
 }
 
 export interface ClassificationResult {
@@ -189,6 +204,18 @@ export const OTHER_REVENUE_NONGIFT_MEMO_PATTERNS: readonly RegExp[] = [
  * account code; honors the donation-first guard like the other line-based rules.
  */
 export const EARNED_INCOME_ACCOUNT_CODE_PREFIXES: readonly string[] = ["4020"];
+
+/**
+ * FISCALLY SPONSORED PROJECT markers. Money belonging to a separate fiscally
+ * sponsored project the org doesn't reconcile here. Fiscally sponsored projects
+ * are tracked in QuickBooks by a Class, but the marker may also surface on the
+ * payer, item, account, or memo — so the `fiscally_sponsored` rule looks for any
+ * of these substrings (case-insensitive) ANYWHERE on the row. Add a project's
+ * distinctive name here to exclude all of its incoming money.
+ */
+export const FISCALLY_SPONSORED_PROJECT_SUBSTRINGS: readonly string[] = [
+  "embracing equity",
+];
 
 /**
  * DONATION-line markers used by the donation-first guard: a Donation item or a
@@ -307,11 +334,34 @@ function isEarnedIncomeLine(input: ClassifierInput): boolean {
 }
 
 /**
+ * True if a row belongs to a fiscally sponsored project: a project marker
+ * substring appears anywhere on the row — the QuickBooks Class, payer name,
+ * item / account names, line description, or memo. Project-identity rule, so it
+ * scans all captured text (not just the line accounts) and ignores the
+ * donation-first guard.
+ */
+function isFiscallySponsoredProject(input: ClassifierInput): boolean {
+  if (FISCALLY_SPONSORED_PROJECT_SUBSTRINGS.length === 0) return false;
+  const needles = FISCALLY_SPONSORED_PROJECT_SUBSTRINGS.map(normalize);
+  const haystacks = [
+    input.payerName,
+    input.rawReference,
+    input.lineDescription ?? null,
+    ...(input.lineClasses ?? []),
+    ...(input.lineItemNames ?? []),
+    ...(input.lineAccountNames ?? []),
+  ]
+    .filter((s): s is string => !!s)
+    .map(normalize);
+  return haystacks.some((h) => needles.some((n) => h.includes(n)));
+}
+
+/**
  * Pure noise classifier. Takes a normalized payment + its captured line detail
  * and returns whether it should be auto-excluded and why. Deterministic rule
  * order: zero_amount → loan (payer) → government_reimbursement →
- * loan (guaranty line) → interest → tax_refund → other_revenue →
- * earned_income → membership; first match wins.
+ * fiscally_sponsored → loan (guaranty line) → interest → tax_refund →
+ * other_revenue → earned_income → membership; first match wins.
  * The line-based rules honor the donation-first guard.
  */
 export function classifyStagedPayment(
@@ -340,37 +390,45 @@ export function classifyStagedPayment(
     return { excluded: true, reason: "government_reimbursement" };
   }
 
+  // 4. Fiscally sponsored project (e.g. "Embracing Equity"). Project-identity
+  //    rule — the whole payment belongs to a separate project the org doesn't
+  //    reconcile here, so it fires even on donation lines (BEFORE the donation
+  //    guard) and scans every captured field (Class, payer, item, account, memo).
+  if (isFiscallySponsoredProject(input)) {
+    return { excluded: true, reason: "fiscally_sponsored" };
+  }
+
   // The remaining line-based noise rules are suppressed when the row also carries
   // a real donation line, so a bundled gift is never wrongly hidden.
   const donation = hasDonationLine(input);
 
-  // 4. Guaranty fees are loan activity (reason `loan`), detected on the line.
+  // 5. Guaranty fees are loan activity (reason `loan`), detected on the line.
   if (!donation && isGuarantyLine(input)) {
     return { excluded: true, reason: "loan" };
   }
 
-  // 5. Interest income.
+  // 6. Interest income.
   if (!donation && isInterestLine(input)) {
     return { excluded: true, reason: "interest" };
   }
 
-  // 6. Tax / insurance refunds (unemployment tax, workers-comp refund, etc.).
+  // 7. Tax / insurance refunds (unemployment tax, workers-comp refund, etc.).
   if (!donation && isTaxRefundLine(input)) {
     return { excluded: true, reason: "tax_refund" };
   }
 
-  // 7. Other-Revenue (4030) clear non-gifts: credit-card rewards / bank-account
+  // 8. Other-Revenue (4030) clear non-gifts: credit-card rewards / bank-account
   //    activity recognised by memo. Narrow by design — see isOtherRevenueNonGift.
   if (!donation && isOtherRevenueNonGift(input)) {
     return { excluded: true, reason: "other_revenue" };
   }
 
-  // 8. Earned income (4020 Services - Earned Income): fees-for-service, never a gift.
+  // 9. Earned income (4020 Services - Earned Income): fees-for-service, never a gift.
   if (!donation && isEarnedIncomeLine(input)) {
     return { excluded: true, reason: "earned_income" };
   }
 
-  // 9. Membership by confirmed QB item / income-account marker.
+  // 10. Membership by confirmed QB item / income-account marker.
   if (
     matchesAny(input.lineItemNames, MEMBERSHIP_ITEM_NAMES) ||
     matchesAny(input.lineAccountNames, MEMBERSHIP_ACCOUNT_NAMES)

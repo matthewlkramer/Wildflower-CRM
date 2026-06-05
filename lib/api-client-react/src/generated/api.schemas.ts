@@ -1674,6 +1674,7 @@ export const StagedPaymentExclusionReason = {
   tax_refund: "tax_refund",
   other_revenue: "other_revenue",
   earned_income: "earned_income",
+  fiscally_sponsored: "fiscally_sponsored",
 } as const;
 
 export type StagedPaymentMatchStatus =
@@ -1833,6 +1834,7 @@ export type StagedPaymentSummaryExcludedByReason = {
   tax_refund: number;
   other_revenue: number;
   earned_income: number;
+  fiscally_sponsored: number;
 };
 
 export interface StagedPaymentSummary {

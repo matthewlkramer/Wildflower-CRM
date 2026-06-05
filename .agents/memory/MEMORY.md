@@ -34,3 +34,4 @@
 - [Publish never creates extensions](publish-flow-extensions.md) — prod gets all columns/indexes via publish diff but NOT CREATE EXTENSION; pg_trgm/gin_trgm_ops indexes need a manual idempotent psql file.
 - [Gmail sync stall detection](gmail-sync-stuck-detection.md) — email_sync_state.no_progress_runs counts consecutive errored runs (cursor held); reset on clean run; admin panel flags >= threshold as stuck.
 - [QB deposit-coding preserve-on-conflict](quickbooks-deposit-coding-preserve.md) — staged-payment upsert must keep stored line coding when incremental pull is empty (edited payment + out-of-window deposit); reseed must reset watermark.
+- [QB fiscally-sponsored exclusion](quickbooks-fiscally-sponsored-exclusion.md) — fiscally_sponsored reason is a project-IDENTITY rule (no donation guard), reads QB Class; marker list TS↔SQL lockstep; approved rows need manual unwind.
