@@ -24,6 +24,7 @@
 - [clerk admin-gated e2e testing](clerk-admin-e2e-testing.md) — testClerkAuth provisions team_member; add a [DB] step to promote to admin or admin cards silently 403/hide.
 - [task intelligence](task-intelligence.md) — AI next-step suggestions in Tasks card; auto-generate ONLY on true first view (hasAnyProposal=false), never regenerate after accept/dismiss; refresh is explicit.
 - [QB staged-payment link-to-gift](quickbooks-staged-link.md) — created_gift_id overloaded (created vs linked); one-gift↔one-staged enforced via atomic conditional UPDATE (no DB unique index); donor+exact-amount match.
+- [QB staged-payment resolution races](quickbooks-staged-resolution-races.md) — every state transition must guard status='pending' in the UPDATE (not just pre-read), 409 on zero rows; 3 match states are derived from matchStatus+matchConfirmedAt.
 - [QuickBooks exclusion rules](quickbooks-exclusion-rules.md) — TS classifier ↔ SQL backfill must stay lockstep; donation-first guard; ADD VALUE two-file split; watermark reset needed to enrich historical line detail.
 - [QuickBooks staged-payment auto-exclude](quickbooks-staged-exclude.md) — classifier is insert-time only; existing rows cleared only by manual 0013 backfill; watermark sync won't re-enrich historical line detail (blocks membership Part C).
 - [QuickBooks payment sync](quickbooks-payment-sync.md) — pull-only QBO→CRM; idempotent (realmId,type,id) rows retained; dev keys⇒sandbox host, prod keys⇒live; redirect URI exact-match per key set; approve mints gift w/ Donor XOR.

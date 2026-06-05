@@ -861,6 +861,8 @@ export function DonorFieldPicker({
   individualLabel = "Individual",
   disabled,
   onCreateOrganization,
+  onCreatePerson,
+  onCreateHousehold,
 }: {
   type: DonorType;
   id: string | null;
@@ -874,6 +876,16 @@ export function DonorFieldPicker({
    * should create the funder and return its new id (or null on failure).
    */
   onCreateOrganization?: (name: string) => Promise<string | null>;
+  /**
+   * Same as {@link onCreateOrganization} but for the individual (person)
+   * combobox. Return the new person id (or null on failure).
+   */
+  onCreatePerson?: (name: string) => Promise<string | null>;
+  /**
+   * Same as {@link onCreateOrganization} but for the household combobox.
+   * Return the new household id (or null on failure).
+   */
+  onCreateHousehold?: (name: string) => Promise<string | null>;
 }) {
   return (
     <div className="flex flex-col gap-2 min-w-0">
@@ -920,6 +932,8 @@ export function DonorFieldPicker({
           placeholder="Search people…"
           disabled={disabled}
           testId={testIdBase ? `select-${testIdBase}` : undefined}
+          onCreate={onCreatePerson}
+          createNoun="person"
         />
       ) : (
         <EntityCombobox
@@ -931,6 +945,8 @@ export function DonorFieldPicker({
           placeholder="Search households…"
           disabled={disabled}
           testId={testIdBase ? `select-${testIdBase}` : undefined}
+          onCreate={onCreateHousehold}
+          createNoun="household"
         />
       )}
     </div>

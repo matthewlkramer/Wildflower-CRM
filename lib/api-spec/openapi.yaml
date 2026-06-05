@@ -1812,6 +1812,7 @@ paths:
       tags: [staged-payments]
       parameters:
         - { name: status, in: query, schema: { $ref: "#/components/schemas/StagedPaymentStatus" }, description: "Filter by review status (default pending)." }
+        - { name: matchState, in: query, schema: { $ref: "#/components/schemas/StagedPaymentMatchState" }, description: "Optionally narrow pending rows to unmatched vs. matched (system or human)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -1904,6 +1905,36 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not pending, or the gift is already linked" }
+  /staged-payments/{id}/confirm-match:
+    post:
+      operationId: confirmStagedPaymentMatch
+      tags: [staged-payments]
+      summary: Confirm a system-suggested donor match (system matched → human approved).
+      description: |
+        Marks the donor match on a pending, matched staged payment as
+        human-confirmed (records match_confirmed_at / match_confirmed_by_user_id).
+        The row must be pending and already have a donor; this does not change
+        the donor or mint a gift.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Staged payment is not pending, or has no donor to confirm" }
+  /staged-payments/{id}/unmatch:
+    post:
+      operationId: unmatchStagedPayment
+      tags: [staged-payments]
+      summary: Clear the donor match (any match → unmatched).
+      description: |
+        Removes the donor from a pending staged payment and resets it to
+        unmatched, clearing any human confirmation. Works on both
+        system-matched and human-approved rows. Only pending rows can be
+        unmatched.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Staged payment is not pending" }
 
   # ─── Top Priorities ────────────────────────────────────────────────────────
   /top-priorities:
@@ -3550,6 +3581,7 @@ components:
     StagedPaymentStatus: { type: string, enum: [pending, approved, rejected, excluded] }
     StagedPaymentExclusionReason: { type: string, enum: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income] }
     StagedPaymentMatchStatus: { type: string, enum: [matched, unmatched] }
+    StagedPaymentMatchState: { type: string, enum: [unmatched, matched] }
     QuickbooksOauthStatus:
       type: object
       required: [configured, connected]
@@ -3596,6 +3628,8 @@ components:
         lineAccountNames:          { type: array, items: { type: string }, nullable: true }
         lineClasses:               { type: array, items: { type: string }, nullable: true }
         matchStatus:               { $ref: "#/components/schemas/StagedPaymentMatchStatus" }
+        matchConfirmedByUserId:    { type: string, nullable: true }
+        matchConfirmedAt:          { type: string, format: date-time, nullable: true }
         organizationId:            { type: string, nullable: true }
         individualGiverPersonId:   { type: string, nullable: true }
         householdId:               { type: string, nullable: true }
@@ -3618,9 +3652,11 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     StagedPaymentSummary:
       type: object
-      required: [pending, approved, rejected, excluded, excludedByReason]
+      required: [pending, pendingUnmatched, pendingMatched, approved, rejected, excluded, excludedByReason]
       properties:
         pending:  { type: integer }
+        pendingUnmatched: { type: integer }
+        pendingMatched:   { type: integer }
         approved: { type: integer }
         rejected: { type: integer }
         excluded: { type: integer }

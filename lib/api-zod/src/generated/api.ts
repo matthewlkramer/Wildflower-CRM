@@ -6833,6 +6833,12 @@ export const ListStagedPaymentsQueryParams = zod.object({
     .enum(["pending", "approved", "rejected", "excluded"])
     .optional()
     .describe("Filter by review status (default pending)."),
+  matchState: zod
+    .enum(["unmatched", "matched"])
+    .optional()
+    .describe(
+      "Optionally narrow pending rows to unmatched vs. matched (system or human).",
+    ),
   limit: zod.coerce
     .number()
     .min(1)
@@ -6870,6 +6876,8 @@ export const ListStagedPaymentsResponse = zod.object({
       lineAccountNames: zod.array(zod.string()).nullish(),
       lineClasses: zod.array(zod.string()).nullish(),
       matchStatus: zod.enum(["matched", "unmatched"]),
+      matchConfirmedByUserId: zod.string().nullish(),
+      matchConfirmedAt: zod.string().datetime({}).nullish(),
       organizationId: zod.string().nullish(),
       individualGiverPersonId: zod.string().nullish(),
       householdId: zod.string().nullish(),
@@ -6894,6 +6902,8 @@ export const ListStagedPaymentsResponse = zod.object({
 
 export const GetStagedPaymentsSummaryResponse = zod.object({
   pending: zod.number(),
+  pendingUnmatched: zod.number(),
+  pendingMatched: zod.number(),
   approved: zod.number(),
   rejected: zod.number(),
   excluded: zod.number(),
@@ -6951,6 +6961,8 @@ export const ResolveStagedPaymentResponse = zod.object({
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
   matchStatus: zod.enum(["matched", "unmatched"]),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
   organizationId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
@@ -7007,6 +7019,8 @@ export const RejectStagedPaymentResponse = zod.object({
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
   matchStatus: zod.enum(["matched", "unmatched"]),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
   organizationId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
@@ -7056,6 +7070,8 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
   matchStatus: zod.enum(["matched", "unmatched"]),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
   organizationId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
@@ -7311,6 +7327,118 @@ export const LinkStagedPaymentResponse = zod.object({
     .string()
     .optional()
     .describe("API path that streams the file. Auth-gated."),
+});
+
+/**
+ * Marks the donor match on a pending, matched staged payment as
+human-confirmed (records match_confirmed_at / match_confirmed_by_user_id).
+The row must be pending and already have a donor; this does not change
+the donor or mint a gift.
+
+ * @summary Confirm a system-suggested donor match (system matched → human approved).
+ */
+export const ConfirmStagedPaymentMatchParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ConfirmStagedPaymentMatchResponse = zod.object({
+  id: zod.string(),
+  realmId: zod.string(),
+  qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
+  qbEntityId: zod.string(),
+  amount: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  rawReference: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+    ])
+    .nullish(),
+  lineItemNames: zod.array(zod.string()).nullish(),
+  lineAccountNames: zod.array(zod.string()).nullish(),
+  lineClasses: zod.array(zod.string()).nullish(),
+  matchStatus: zod.enum(["matched", "unmatched"]),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * Removes the donor from a pending staged payment and resets it to
+unmatched, clearing any human confirmation. Works on both
+system-matched and human-approved rows. Only pending rows can be
+unmatched.
+
+ * @summary Clear the donor match (any match → unmatched).
+ */
+export const UnmatchStagedPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnmatchStagedPaymentResponse = zod.object({
+  id: zod.string(),
+  realmId: zod.string(),
+  qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
+  qbEntityId: zod.string(),
+  amount: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  rawReference: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+    ])
+    .nullish(),
+  lineItemNames: zod.array(zod.string()).nullish(),
+  lineAccountNames: zod.array(zod.string()).nullish(),
+  lineClasses: zod.array(zod.string()).nullish(),
+  matchStatus: zod.enum(["matched", "unmatched"]),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 /**

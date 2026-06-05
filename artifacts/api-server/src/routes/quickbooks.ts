@@ -83,9 +83,26 @@ router.get(
       rawStatus === "excluded"
         ? rawStatus
         : "pending";
+    const rawMatchState =
+      typeof req.query["matchState"] === "string"
+        ? req.query["matchState"]
+        : null;
+    const matchState =
+      rawMatchState === "unmatched" || rawMatchState === "matched"
+        ? rawMatchState
+        : null;
     const { limit, offset, page } = parsePagination(req.query);
 
-    const where = eq(stagedPayments.status, status);
+    const where =
+      matchState != null
+        ? and(
+            eq(stagedPayments.status, status),
+            eq(
+              stagedPayments.matchStatus,
+              matchState === "matched" ? "matched" : "unmatched",
+            ),
+          )
+        : eq(stagedPayments.status, status);
     const [rows, totalRow] = await Promise.all([
       db
         .select(stagedSelect)
@@ -123,6 +140,11 @@ router.get(
 router.post(
   "/staged-payments/:id/resolve",
   asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
     const id = paramId(req);
     const parsed = ResolveStagedPaymentBody.safeParse(req.body);
     if (!parsed.success) {
@@ -157,15 +179,30 @@ router.post(
     const issues = validateGiftInvariants(donor);
     if (issues.length) return respondInvariantFailure(res, issues);
 
+    // A human picking the donor is itself a human-approved match, so stamp
+    // match confirmation here (not just on the dedicated confirm-match route).
+    // Conditional UPDATE on status='pending' so a concurrent approve/reject
+    // can't be clobbered between the precheck above and this write (TOCTOU).
     const [row] = await db
       .update(stagedPayments)
       .set({
         ...donor,
         matchStatus: "matched",
+        matchConfirmedByUserId: user.id,
+        matchConfirmedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(stagedPayments.id, id))
+      .where(
+        and(eq(stagedPayments.id, id), eq(stagedPayments.status, "pending")),
+      )
       .returning();
+    if (!row) {
+      res.status(409).json({
+        error: "not_pending",
+        message: "This staged payment is no longer pending. Refresh and retry.",
+      });
+      return;
+    }
     res.json(row);
   }),
 );
@@ -182,6 +219,8 @@ router.post(
       return;
     }
     const id = paramId(req);
+    // Cheap pre-read for friendly 404 / 409 / 400 before opening a tx. The
+    // authoritative checks happen under a row lock inside the tx below.
     const existing = await db
       .select()
       .from(stagedPayments)
@@ -195,44 +234,82 @@ router.post(
       });
       return;
     }
-
-    const donor = {
+    const preIssues = validateGiftInvariants({
       organizationId: existing.organizationId,
       individualGiverPersonId: existing.individualGiverPersonId,
       householdId: existing.householdId,
-    };
-    const issues = validateGiftInvariants(donor);
-    if (issues.length) return respondInvariantFailure(res, issues);
-
-    const giftName =
-      existing.payerName ??
-      existing.rawReference ??
-      `QuickBooks ${existing.qbEntityType}`;
+    });
+    if (preIssues.length) return respondInvariantFailure(res, preIssues);
 
     const giftId = newId();
-    await db.transaction(async (tx) => {
-      await tx.insert(giftsAndPayments).values({
-        id: giftId,
-        name: giftName,
-        amount: existing.amount,
-        dateReceived: existing.dateReceived,
-        organizationId: donor.organizationId,
-        individualGiverPersonId: donor.individualGiverPersonId,
-        householdId: donor.householdId,
-        details: `Imported from QuickBooks (${existing.qbEntityType} #${existing.qbEntityId}).`,
-        ownerUserId: user.id,
+    // Lock + re-read the row inside the tx (SELECT ... FOR UPDATE) so the gift
+    // is always minted from the *fresh* donor snapshot. A concurrent unmatch /
+    // resolve can change or clear the donor while status stays 'pending'; the
+    // lock makes those serialize behind this tx and re-validation here means we
+    // never mint a gift from stale donor data (TOCTOU on the donor fields).
+    const NOT_PENDING = "__staged_not_pending__";
+    const INVARIANT = "__staged_invariant__";
+    let lockedIssues: InvariantIssue[] = [];
+    try {
+      await db.transaction(async (tx) => {
+        const locked = await tx
+          .select()
+          .from(stagedPayments)
+          .where(eq(stagedPayments.id, id))
+          .for("update")
+          .then((r) => r[0]);
+        if (!locked || locked.status !== "pending") {
+          throw new Error(NOT_PENDING);
+        }
+        const donor = {
+          organizationId: locked.organizationId,
+          individualGiverPersonId: locked.individualGiverPersonId,
+          householdId: locked.householdId,
+        };
+        const issues = validateGiftInvariants(donor);
+        if (issues.length) {
+          lockedIssues = issues;
+          throw new Error(INVARIANT);
+        }
+        const giftName =
+          locked.payerName ??
+          locked.rawReference ??
+          `QuickBooks ${locked.qbEntityType}`;
+        await tx.insert(giftsAndPayments).values({
+          id: giftId,
+          name: giftName,
+          amount: locked.amount,
+          dateReceived: locked.dateReceived,
+          organizationId: donor.organizationId,
+          individualGiverPersonId: donor.individualGiverPersonId,
+          householdId: donor.householdId,
+          details: `Imported from QuickBooks (${locked.qbEntityType} #${locked.qbEntityId}).`,
+          ownerUserId: user.id,
+        });
+        await tx
+          .update(stagedPayments)
+          .set({
+            status: "approved",
+            createdGiftId: giftId,
+            approvedByUserId: user.id,
+            approvedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(stagedPayments.id, id));
       });
-      await tx
-        .update(stagedPayments)
-        .set({
-          status: "approved",
-          createdGiftId: giftId,
-          approvedByUserId: user.id,
-          approvedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(stagedPayments.id, id));
-    });
+    } catch (e) {
+      if (e instanceof Error && e.message === NOT_PENDING) {
+        res.status(409).json({
+          error: "not_pending",
+          message: "This staged payment has already been resolved.",
+        });
+        return;
+      }
+      if (e instanceof Error && e.message === INVARIANT) {
+        return respondInvariantFailure(res, lockedIssues);
+      }
+      throw e;
+    }
 
     const [gift] = await db
       .select()
@@ -266,6 +343,8 @@ router.post(
       });
       return;
     }
+    // Conditional UPDATE on status='pending' so a concurrent approve/reject
+    // can't overwrite an already-resolved row (TOCTOU).
     const [row] = await db
       .update(stagedPayments)
       .set({
@@ -274,8 +353,17 @@ router.post(
         rejectedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(stagedPayments.id, id))
+      .where(
+        and(eq(stagedPayments.id, id), eq(stagedPayments.status, "pending")),
+      )
       .returning();
+    if (!row) {
+      res.status(409).json({
+        error: "not_pending",
+        message: "This staged payment has already been resolved.",
+      });
+      return;
+    }
     res.json(row);
   }),
 );
@@ -511,12 +599,132 @@ router.post(
   }),
 );
 
+// ─── POST /staged-payments/:id/confirm-match ───────────────────────────────
+// Confirm a system-suggested donor match without changing the donor or minting
+// a gift: stamps match confirmation so the row reads "human approved" instead
+// of "system matched". Guarded conditional UPDATE: only a pending row that
+// still has a donor is confirmed.
+router.post(
+  "/staged-payments/:id/confirm-match",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const id = paramId(req);
+    const existing = await db
+      .select()
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (!existing) return notFound(res, "staged payment");
+    if (existing.status !== "pending") {
+      res.status(409).json({
+        error: "not_pending",
+        message: "Only pending staged payments can be confirmed.",
+      });
+      return;
+    }
+    const hasDonor =
+      existing.organizationId != null ||
+      existing.individualGiverPersonId != null ||
+      existing.householdId != null;
+    if (!hasDonor) {
+      res.status(409).json({
+        error: "no_donor",
+        message: "Pick a donor before confirming the match.",
+      });
+      return;
+    }
+
+    // Guard the donor-present precondition in the UPDATE itself (not just the
+    // pre-read) so a concurrent unmatch between read and write can't leave a
+    // matched/human-approved row with no donor (TOCTOU).
+    const [row] = await db
+      .update(stagedPayments)
+      .set({
+        matchStatus: "matched",
+        matchConfirmedByUserId: user.id,
+        matchConfirmedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(stagedPayments.id, id),
+          eq(stagedPayments.status, "pending"),
+          sql`num_nonnulls(${stagedPayments.organizationId}, ${stagedPayments.individualGiverPersonId}, ${stagedPayments.householdId}) >= 1`,
+        ),
+      )
+      .returning();
+    if (!row) {
+      res.status(409).json({
+        error: "conflict",
+        message:
+          "This staged payment changed before it could be confirmed. Refresh and retry.",
+      });
+      return;
+    }
+    res.json(row);
+  }),
+);
+
+// ─── POST /staged-payments/:id/unmatch ─────────────────────────────────────
+// Clear the donor match (system OR human) and reset the row to unmatched,
+// dropping any human confirmation. Only a pending row can be unmatched.
+router.post(
+  "/staged-payments/:id/unmatch",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const existing = await db
+      .select({ status: stagedPayments.status })
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (!existing) return notFound(res, "staged payment");
+    if (existing.status !== "pending") {
+      res.status(409).json({
+        error: "not_pending",
+        message: "Only pending staged payments can be unmatched.",
+      });
+      return;
+    }
+
+    const [row] = await db
+      .update(stagedPayments)
+      .set({
+        organizationId: null,
+        individualGiverPersonId: null,
+        householdId: null,
+        matchStatus: "unmatched",
+        matchConfirmedByUserId: null,
+        matchConfirmedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(stagedPayments.id, id),
+          eq(stagedPayments.status, "pending"),
+        ),
+      )
+      .returning();
+    if (!row) {
+      res.status(409).json({
+        error: "not_pending",
+        message: "This staged payment is no longer pending. Refresh and retry.",
+      });
+      return;
+    }
+    res.json(row);
+  }),
+);
+
 // ─── GET /staged-payments-summary ──────────────────────────────────────────
 // Lightweight counts for badges.
 router.get(
   "/staged-payments-summary",
   asyncHandler(async (_req, res) => {
-    const [statusRows, reasonRows] = await Promise.all([
+    const [statusRows, reasonRows, pendingMatchRows] = await Promise.all([
       db
         .select({ status: stagedPayments.status, value: count() })
         .from(stagedPayments)
@@ -529,6 +737,11 @@ router.get(
         .from(stagedPayments)
         .where(eq(stagedPayments.status, "excluded"))
         .groupBy(stagedPayments.exclusionReason),
+      db
+        .select({ matchStatus: stagedPayments.matchStatus, value: count() })
+        .from(stagedPayments)
+        .where(eq(stagedPayments.status, "pending"))
+        .groupBy(stagedPayments.matchStatus),
     ]);
 
     const summary = { pending: 0, approved: 0, rejected: 0, excluded: 0 };
@@ -536,6 +749,13 @@ router.get(
       if (r.status in summary) {
         summary[r.status as keyof typeof summary] = r.value;
       }
+    }
+
+    let pendingUnmatched = 0;
+    let pendingMatched = 0;
+    for (const r of pendingMatchRows) {
+      if (r.matchStatus === "matched") pendingMatched = r.value;
+      else pendingUnmatched = r.value;
     }
 
     const excludedByReason = {
@@ -554,7 +774,7 @@ router.get(
       }
     }
 
-    res.json({ ...summary, excludedByReason });
+    res.json({ ...summary, pendingUnmatched, pendingMatched, excludedByReason });
   }),
 );
 

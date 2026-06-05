@@ -1681,6 +1681,14 @@ export const StagedPaymentMatchStatus = {
   unmatched: "unmatched",
 } as const;
 
+export type StagedPaymentMatchState =
+  (typeof StagedPaymentMatchState)[keyof typeof StagedPaymentMatchState];
+
+export const StagedPaymentMatchState = {
+  unmatched: "unmatched",
+  matched: "matched",
+} as const;
+
 export interface QuickbooksOauthStatus {
   /** Server has QUICKBOOKS_CLIENT_ID/SECRET set */
   configured: boolean;
@@ -1727,6 +1735,8 @@ export interface StagedPayment {
   lineAccountNames?: string[] | null;
   lineClasses?: string[] | null;
   matchStatus: StagedPaymentMatchStatus;
+  matchConfirmedByUserId?: string | null;
+  matchConfirmedAt?: string | null;
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
@@ -1760,6 +1770,8 @@ export type StagedPaymentSummaryExcludedByReason = {
 
 export interface StagedPaymentSummary {
   pending: number;
+  pendingUnmatched: number;
+  pendingMatched: number;
   approved: number;
   rejected: number;
   excluded: number;
@@ -3854,6 +3866,10 @@ export type ListStagedPaymentsParams = {
    * Filter by review status (default pending).
    */
   status?: StagedPaymentStatus;
+  /**
+   * Optionally narrow pending rows to unmatched vs. matched (system or human).
+   */
+  matchState?: StagedPaymentMatchState;
   /**
    * @minimum 1
    * @maximum 10000

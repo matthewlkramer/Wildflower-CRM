@@ -13942,6 +13942,186 @@ export const useLinkStagedPayment = <
 };
 
 /**
+ * Marks the donor match on a pending, matched staged payment as
+human-confirmed (records match_confirmed_at / match_confirmed_by_user_id).
+The row must be pending and already have a donor; this does not change
+the donor or mint a gift.
+
+ * @summary Confirm a system-suggested donor match (system matched → human approved).
+ */
+export const getConfirmStagedPaymentMatchUrl = (id: string) => {
+  return `/api/staged-payments/${id}/confirm-match`;
+};
+
+export const confirmStagedPaymentMatch = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StagedPayment> => {
+  return customFetch<StagedPayment>(getConfirmStagedPaymentMatchUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getConfirmStagedPaymentMatchMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStagedPaymentMatch>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmStagedPaymentMatch>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["confirmStagedPaymentMatch"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmStagedPaymentMatch>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return confirmStagedPaymentMatch(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConfirmStagedPaymentMatchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmStagedPaymentMatch>>
+>;
+
+export type ConfirmStagedPaymentMatchMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Confirm a system-suggested donor match (system matched → human approved).
+ */
+export const useConfirmStagedPaymentMatch = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStagedPaymentMatch>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof confirmStagedPaymentMatch>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getConfirmStagedPaymentMatchMutationOptions(options));
+};
+
+/**
+ * Removes the donor from a pending staged payment and resets it to
+unmatched, clearing any human confirmation. Works on both
+system-matched and human-approved rows. Only pending rows can be
+unmatched.
+
+ * @summary Clear the donor match (any match → unmatched).
+ */
+export const getUnmatchStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/unmatch`;
+};
+
+export const unmatchStagedPayment = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StagedPayment> => {
+  return customFetch<StagedPayment>(getUnmatchStagedPaymentUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnmatchStagedPaymentMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unmatchStagedPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unmatchStagedPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unmatchStagedPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unmatchStagedPayment>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unmatchStagedPayment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnmatchStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unmatchStagedPayment>>
+>;
+
+export type UnmatchStagedPaymentMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Clear the donor match (any match → unmatched).
+ */
+export const useUnmatchStagedPayment = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unmatchStagedPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unmatchStagedPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnmatchStagedPaymentMutationOptions(options));
+};
+
+/**
  * Returns all organizations with priority='top' and all people with priority='top'
 who are NOT currently affiliated with a top-priority organization. Each row carries
 computed open-opportunity count, open-task count, affiliated people (organizations)

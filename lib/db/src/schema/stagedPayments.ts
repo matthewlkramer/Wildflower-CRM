@@ -60,6 +60,19 @@ export const stagedPayments = pgTable(
       .notNull()
       .default("unmatched"),
 
+    // When a human confirms the donor match (either by confirming a
+    // system-suggested match or by picking the donor themselves), these
+    // record who/when. NULL while a row is unmatched or only system-matched.
+    // This is what distinguishes a "system matched" row (matchStatus =
+    // "matched" but matchConfirmedAt IS NULL) from a "human approved" one
+    // (matchConfirmedAt IS NOT NULL). It is independent of `status`, which
+    // tracks whether the row has been minted into a gift.
+    matchConfirmedByUserId: text("match_confirmed_by_user_id").references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    matchConfirmedAt: timestamp("match_confirmed_at", { withTimezone: true }),
+
     // QuickBooks line-item detail captured at pull time, used by the noise
     // classifier (membership detection) and to make exclusions auditable.
     // For Payment entities (which carry no lines of their own) these come from

@@ -32,7 +32,7 @@ QB record to an already-recorded gift, no new row).
 
 - **Donor name often lives in the memo, not payer_name.** Donorbox→QuickBooks
   deposits arrive with a blank CustomerRef (payer_name null) and the donor in
-  `raw_reference` (e.g. "Donation for BWF - Kathleen Rash"). `autoMatchDonor` has an
+  `raw_reference` (e.g. "Donation for <Project> - <Donor Name>"). `autoMatchDonor` has an
   ADDITIVE fallback (`candidateNamesFromReference`) that fires only after email +
   payerName miss and still requires a strict, unambiguous exact CRM name hit — so it
   never weakens matching. Won't catch near-misses like "Fidelity Foundation" vs CRM

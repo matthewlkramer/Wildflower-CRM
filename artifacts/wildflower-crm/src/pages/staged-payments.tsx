@@ -10,14 +10,20 @@ import {
   useRejectStagedPayment,
   useReIncludeStagedPayment,
   useLinkStagedPayment,
+  useConfirmStagedPaymentMatch,
+  useUnmatchStagedPayment,
   useListStagedPaymentGiftCandidates,
   getListStagedPaymentGiftCandidatesQueryKey,
   useRunQuickbooksSync,
   useRematchStagedPayments,
   useGetCurrentUser,
+  useCreateOrganization,
+  useCreatePerson,
+  useCreateHousehold,
   getGetQuickbooksOauthStatusQueryKey,
   type StagedPayment,
   type StagedPaymentStatus,
+  type StagedPaymentMatchState,
   type StagedPaymentExclusionReason,
   type QuickbooksEntityType,
   type GiftCandidate,
@@ -39,11 +45,37 @@ import {
 } from "@/components/entity-picker";
 import { useToast } from "@/hooks/use-toast";
 
-const STATUS_TABS: { value: StagedPaymentStatus; label: string }[] = [
-  { value: "pending", label: "Pending" },
-  { value: "approved", label: "Approved" },
-  { value: "rejected", label: "Rejected" },
-  { value: "excluded", label: "Excluded" },
+// The four review states, but with Pending split into two sub-tabs by match
+// state (unmatched vs. matched). `status` is what the list/summary filter on;
+// `matchState` further narrows the two pending tabs.
+type TabKey =
+  | "pending-unmatched"
+  | "pending-matched"
+  | "approved"
+  | "rejected"
+  | "excluded";
+
+const TABS: {
+  value: TabKey;
+  label: string;
+  status: StagedPaymentStatus;
+  matchState?: StagedPaymentMatchState;
+}[] = [
+  {
+    value: "pending-unmatched",
+    label: "Pending · Unmatched",
+    status: "pending",
+    matchState: "unmatched",
+  },
+  {
+    value: "pending-matched",
+    label: "Pending · Matched",
+    status: "pending",
+    matchState: "matched",
+  },
+  { value: "approved", label: "Approved", status: "approved" },
+  { value: "rejected", label: "Rejected", status: "rejected" },
+  { value: "excluded", label: "Excluded", status: "excluded" },
 ];
 
 // Human-friendly labels for the auto-exclude reasons.
@@ -64,6 +96,23 @@ const QB_ENTITY_TYPE_LABELS: Record<QuickbooksEntityType, string> = {
   sales_receipt: "Sales Receipt",
   payment: "Payment",
   deposit: "Deposit",
+};
+
+// Three derived match states for the badge / actions:
+//   unmatched       — no donor picked yet (matchStatus "unmatched")
+//   system_matched  — auto-matched donor, not yet human-confirmed
+//   human_approved  — a human picked/confirmed the donor (matchConfirmedAt set)
+type MatchState = "unmatched" | "system_matched" | "human_approved";
+
+function matchStateOf(row: StagedPayment): MatchState {
+  if (row.matchStatus !== "matched") return "unmatched";
+  return row.matchConfirmedAt != null ? "human_approved" : "system_matched";
+}
+
+const MATCH_STATE_LABEL: Record<MatchState, string> = {
+  unmatched: "Unmatched",
+  system_matched: "System matched",
+  human_approved: "Human approved",
 };
 
 function donorTypeFromRow(row: StagedPayment): DonorType {
@@ -117,19 +166,22 @@ function feeDeltaLabel(
 export default function StagedPayments() {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [status, setStatus] = useState<StagedPaymentStatus>("pending");
+  const [tab, setTab] = useState<TabKey>("pending-unmatched");
+  const activeTab = TABS.find((t) => t.value === tab) ?? TABS[0];
+  const status = activeTab.status;
+  const matchState = activeTab.matchState;
 
   const me = useGetCurrentUser().data ?? null;
   const isAdmin = me?.role === "admin";
 
-  const listQ = useListStagedPayments(
-    { status, limit: 200 },
-    {
-      query: {
-        queryKey: getListStagedPaymentsQueryKey({ status, limit: 200 }),
-      },
+  const listParams = matchState
+    ? { status, matchState, limit: 200 }
+    : { status, limit: 200 };
+  const listQ = useListStagedPayments(listParams, {
+    query: {
+      queryKey: getListStagedPaymentsQueryKey(listParams),
     },
-  );
+  });
   const summaryQ = useGetStagedPaymentsSummary({
     query: { queryKey: getGetStagedPaymentsSummaryQueryKey() },
   });
@@ -140,6 +192,65 @@ export default function StagedPayments() {
       queryKey: getGetStagedPaymentsSummaryQueryKey(),
     });
   };
+
+  // ── Inline donor creation (org / person / household) ──────────────────────
+  const createOrg = useCreateOrganization();
+  const createPerson = useCreatePerson();
+  const createHousehold = useCreateHousehold();
+
+  const onCreateOrganization = (name: string): Promise<string | null> =>
+    new Promise((resolve) => {
+      createOrg.mutate(
+        { data: { name } },
+        {
+          onSuccess: (created) => resolve(created?.id ?? null),
+          onError: (e: unknown) => {
+            toast({
+              title: "Create organization failed",
+              description: e instanceof Error ? e.message : "Unknown error",
+              variant: "destructive",
+            });
+            resolve(null);
+          },
+        },
+      );
+    });
+
+  const onCreatePerson = (name: string): Promise<string | null> =>
+    new Promise((resolve) => {
+      createPerson.mutate(
+        { data: { fullName: name } },
+        {
+          onSuccess: (created) => resolve(created?.id ?? null),
+          onError: (e: unknown) => {
+            toast({
+              title: "Create person failed",
+              description: e instanceof Error ? e.message : "Unknown error",
+              variant: "destructive",
+            });
+            resolve(null);
+          },
+        },
+      );
+    });
+
+  const onCreateHousehold = (name: string): Promise<string | null> =>
+    new Promise((resolve) => {
+      createHousehold.mutate(
+        { data: { name } },
+        {
+          onSuccess: (created) => resolve(created?.id ?? null),
+          onError: (e: unknown) => {
+            toast({
+              title: "Create household failed",
+              description: e instanceof Error ? e.message : "Unknown error",
+              variant: "destructive",
+            });
+            resolve(null);
+          },
+        },
+      );
+    });
 
   const syncNow = useRunQuickbooksSync({
     mutation: {
@@ -223,25 +334,27 @@ export default function StagedPayments() {
         ) : null}
       </div>
 
-      <div className="flex gap-2">
-        {STATUS_TABS.map((tab) => {
+      <div className="flex flex-wrap gap-2">
+        {TABS.map((t) => {
           const c =
-            tab.value === "pending"
-              ? summary?.pending
-              : tab.value === "approved"
-                ? summary?.approved
-                : tab.value === "rejected"
-                  ? summary?.rejected
-                  : summary?.excluded;
+            t.value === "pending-unmatched"
+              ? summary?.pendingUnmatched
+              : t.value === "pending-matched"
+                ? summary?.pendingMatched
+                : t.value === "approved"
+                  ? summary?.approved
+                  : t.value === "rejected"
+                    ? summary?.rejected
+                    : summary?.excluded;
           return (
             <Button
-              key={tab.value}
-              variant={status === tab.value ? "default" : "outline"}
+              key={t.value}
+              variant={tab === t.value ? "default" : "outline"}
               size="sm"
-              onClick={() => setStatus(tab.value)}
-              data-testid={`staged-tab-${tab.value}`}
+              onClick={() => setTab(t.value)}
+              data-testid={`staged-tab-${t.value}`}
             >
-              {tab.label}
+              {t.label}
               {typeof c === "number" ? (
                 <span className="ml-2 text-xs opacity-70">{c}</span>
               ) : null}
@@ -259,7 +372,7 @@ export default function StagedPayments() {
       ) : rows.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No {status} payments.
+            No {activeTab.label.toLowerCase()} payments.
           </CardContent>
         </Card>
       ) : (
@@ -271,6 +384,9 @@ export default function StagedPayments() {
               editable={status === "pending"}
               excluded={status === "excluded"}
               onChanged={invalidateAll}
+              onCreateOrganization={onCreateOrganization}
+              onCreatePerson={onCreatePerson}
+              onCreateHousehold={onCreateHousehold}
             />
           ))}
         </div>
@@ -284,11 +400,17 @@ function StagedPaymentCard({
   editable,
   excluded,
   onChanged,
+  onCreateOrganization,
+  onCreatePerson,
+  onCreateHousehold,
 }: {
   row: StagedPayment;
   editable: boolean;
   excluded: boolean;
   onChanged: () => void;
+  onCreateOrganization: (name: string) => Promise<string | null>;
+  onCreatePerson: (name: string) => Promise<string | null>;
+  onCreateHousehold: (name: string) => Promise<string | null>;
 }) {
   const { toast } = useToast();
   const initialType = donorTypeFromRow(row);
@@ -359,6 +481,34 @@ function StagedPaymentCard({
         }),
     },
   });
+  const confirmMatch = useConfirmStagedPaymentMatch({
+    mutation: {
+      onSuccess: () => {
+        onChanged();
+        toast({ title: "Match confirmed" });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Confirm failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+  const unmatch = useUnmatchStagedPayment({
+    mutation: {
+      onSuccess: () => {
+        onChanged();
+        toast({ title: "Match cleared" });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Unmatch failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
 
   const [showCandidates, setShowCandidates] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -393,8 +543,11 @@ function StagedPaymentCard({
     approve.isPending ||
     reject.isPending ||
     reInclude.isPending ||
+    confirmMatch.isPending ||
+    unmatch.isPending ||
     link.isPending;
   const hasDonor = donorId != null;
+  const matchState = matchStateOf(row);
   // A donor persisted on the row (not just picked locally) is required for the
   // candidate search, since the server reads the saved donor FKs.
   const hasSavedDonor =
@@ -440,9 +593,16 @@ function StagedPaymentCard({
             </Badge>
           ) : (
             <Badge
-              variant={row.matchStatus === "matched" ? "default" : "secondary"}
+              variant={
+                matchState === "human_approved"
+                  ? "default"
+                  : matchState === "system_matched"
+                    ? "outline"
+                    : "secondary"
+              }
+              data-testid={`staged-match-state-${row.id}`}
             >
-              {row.matchStatus}
+              {MATCH_STATE_LABEL[matchState]}
             </Badge>
           )}
         </div>
@@ -462,6 +622,9 @@ function StagedPaymentCard({
                   }}
                   testIdBase={`staged-donor-${row.id}`}
                   disabled={busy}
+                  onCreateOrganization={onCreateOrganization}
+                  onCreatePerson={onCreatePerson}
+                  onCreateHousehold={onCreateHousehold}
                 />
               </div>
             </div>
@@ -475,6 +638,30 @@ function StagedPaymentCard({
               >
                 Save donor
               </Button>
+              {matchState === "system_matched" ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => confirmMatch.mutate({ id: row.id })}
+                  disabled={busy}
+                  data-testid={`staged-confirm-match-${row.id}`}
+                  title="Confirm the system-suggested donor as human-approved."
+                >
+                  {confirmMatch.isPending ? "Confirming…" : "Confirm match"}
+                </Button>
+              ) : null}
+              {matchState !== "unmatched" ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => unmatch.mutate({ id: row.id })}
+                  disabled={busy}
+                  data-testid={`staged-unmatch-${row.id}`}
+                  title="Clear the donor and reset this row to unmatched."
+                >
+                  {unmatch.isPending ? "Clearing…" : "Unmatch"}
+                </Button>
+              ) : null}
               <Button
                 variant="outline"
                 size="sm"
