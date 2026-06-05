@@ -37,3 +37,4 @@
 - [QB fiscally-sponsored exclusion](quickbooks-fiscally-sponsored-exclusion.md) — fiscally_sponsored reason is a project-IDENTITY rule (no donation guard), reads QB Class; marker list TS↔SQL lockstep; approved rows need manual unwind.
 - [QB reconciler left-card UI model](quickbooks-reconciler-ui-model.md) — donor matching is right-pane only (no left donor picker); reject is UI-removed but backend-kept; intercompany_transfer/other are manual-only reasons (no classifier/backfill).
 - [Orval query-key invalidation prefix](orval-query-key-invalidation.md) — invalidateQueries needs the full "/api" prefix to match generated keys; a missing prefix silently refetches nothing.
+- [QuickBooks reconcile adopts gift donor](quickbooks-reconcile-donor-adoption.md) — explicit human Match links to a gift by adopting the GIFT donor (overrides auto-guess); donorsMatch/validateGiftLink no longer enforced on that path.

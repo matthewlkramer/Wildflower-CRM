@@ -25,7 +25,7 @@ import {
   ReconcileStagedPaymentBody,
   ExcludeStagedPaymentBody,
 } from "@workspace/api-zod";
-import { donorOf, donorsMatch, validateGiftLink } from "../lib/quickbooksLink";
+import { donorOf, hasExactlyOneDonor } from "../lib/quickbooksLink";
 import { buildGiftValuesFromStaged } from "../lib/quickbooksGift";
 import { logger } from "../lib/logger";
 import {
@@ -785,9 +785,10 @@ router.get(
 
 // ─── POST /staged-payments/:id/reconcile ───────────────────────────────────
 // Tie a staged payment to an EXISTING gift (no new gift minted). Sets
-// matchedGiftId → the chosen gift, status approved, autoApplied=false. If the
-// staged row has no donor yet, it adopts the gift's donor; otherwise the donors
-// must match. Guards: row pending, gift exists, gift not already linked.
+// matchedGiftId → the chosen gift, status approved, autoApplied=false. An
+// explicit human Match treats the selected gift as authoritative: the staged
+// row ADOPTS the gift's donor, overriding any auto-guessed donor. Guards: row
+// pending, gift exists with a single valid donor, gift not already linked.
 router.post(
   "/staged-payments/:id/reconcile",
   asyncHandler(async (req, res) => {
@@ -829,31 +830,28 @@ router.post(
       .then((r) => r[0]);
     if (!gift) return notFound(res, "gift");
 
-    const stagedDonor = donorOf(existing);
+    // An explicit human Match treats the selected gift as authoritative: adopt
+    // the gift's donor onto the staged row, overriding any auto-guessed donor
+    // (e.g. a deposit auto-matched to an individual can link to that person's
+    // household gift). Guard only that the gift itself carries a single valid
+    // donor so the staged row keeps the Donor XOR invariant.
     const giftDonor = donorOf(gift);
-    // Adopt the gift's donor when the staged row has no donor yet (window-based
-    // reconcile). Otherwise require the donors to match.
-    const stagedHasDonor =
-      stagedDonor.organizationId != null ||
-      stagedDonor.individualGiverPersonId != null ||
-      stagedDonor.householdId != null;
-    const finalDonor = stagedHasDonor ? stagedDonor : giftDonor;
-
-    if (stagedHasDonor && !donorsMatch(stagedDonor, giftDonor)) {
-      const issues = validateGiftLink({
-        stagedDonor,
-        giftDonor,
-        alreadyLinkedStagedPaymentId: null,
-      });
+    if (!hasExactlyOneDonor(giftDonor)) {
       res.status(400).json({
         error: "link_invalid",
         message: "Cannot reconcile this staged payment to that gift.",
         details: {
-          issues: issues.map((i) => ({ path: ["giftId"], message: i.message })),
+          issues: [
+            {
+              path: ["giftId"],
+              message: "The selected gift has no donor to adopt.",
+            },
+          ],
         },
       });
       return;
     }
+    const finalDonor = giftDonor;
 
     // Atomic: only succeeds if still pending AND no other staged row has grabbed
     // this gift (matched or created) since the pre-check. NOT EXISTS handles the
