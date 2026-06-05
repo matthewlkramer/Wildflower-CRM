@@ -167,7 +167,10 @@ router.get(
     const [rows, totalRow] = await Promise.all([
       withJoins(db.select(stagedSelect).from(stagedPayments).$dynamic())
         .where(where)
+        // Payments / sales-receipts before bank deposits, then newest first, so
+        // per-donor payments are never buried under a large pile of deposits.
         .orderBy(
+          sql`CASE WHEN ${stagedPayments.qbEntityType} = 'deposit' THEN 1 ELSE 0 END`,
           desc(stagedPayments.dateReceived),
           desc(stagedPayments.createdAt),
         )

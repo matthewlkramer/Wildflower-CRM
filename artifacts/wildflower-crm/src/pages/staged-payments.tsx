@@ -187,11 +187,13 @@ export default function StagedPayments() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [queue, setQueue] = useState<StagedPaymentQueue>("needs_review");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 100;
 
   const me = useGetCurrentUser().data ?? null;
   const isAdmin = me?.role === "admin";
 
-  const listParams = { queue, limit: 200 };
+  const listParams = { queue, limit: PAGE_SIZE, page };
   const listQ = useListStagedPayments(listParams, {
     query: { queryKey: getListStagedPaymentsQueryKey(listParams) },
   });
@@ -330,7 +332,15 @@ export default function StagedPayments() {
   });
 
   const rows = listQ.data?.data ?? [];
+  const total = listQ.data?.pagination?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const summary = summaryQ.data;
+
+  // If the queue shrinks (after a sync / resolve / reject), pull the user back
+  // onto a valid page instead of stranding them on an empty one.
+  useEffect(() => {
+    if (!listQ.isFetching && page > totalPages) setPage(totalPages);
+  }, [listQ.isFetching, page, totalPages]);
 
   const countFor = (q: StagedPaymentQueue): number | undefined => {
     if (!summary) return undefined;
@@ -409,7 +419,10 @@ export default function StagedPayments() {
               key={q.value}
               variant={queue === q.value ? "default" : "outline"}
               size="sm"
-              onClick={() => setQueue(q.value)}
+              onClick={() => {
+                setQueue(q.value);
+                setPage(1);
+              }}
               data-testid={`staged-tab-${q.value}`}
             >
               {q.label}
@@ -446,6 +459,34 @@ export default function StagedPayments() {
           ))}
         </div>
       )}
+
+      {total > PAGE_SIZE || page > 1 ? (
+        <div className="flex items-center justify-between pt-2">
+          <p className="text-sm text-muted-foreground">
+            Page {page} of {totalPages} · {total} total
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || listQ.isFetching}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              data-testid="staged-page-prev"
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || listQ.isFetching}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              data-testid="staged-page-next"
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
