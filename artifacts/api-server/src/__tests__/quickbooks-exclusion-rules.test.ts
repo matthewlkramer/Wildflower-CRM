@@ -9,6 +9,7 @@ const base: ClassifierInput = {
   payerName: "Generous Donor",
   lineItemNames: null,
   lineAccountNames: null,
+  rawReference: null,
 };
 
 describe("classifyStagedPayment", () => {
@@ -246,5 +247,78 @@ describe("classifyStagedPayment", () => {
         lineAccountNames: ["4010 Interest Earned"],
       }).reason,
     ).toBe("interest");
+  });
+
+  it("excludes Other Revenue credit-card rewards as other_revenue", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["4030 Other Revenue"],
+        rawReference: "Wells Fargo Credit Card rewards",
+      }).reason,
+    ).toBe("other_revenue");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["4030 Other Revenue"],
+        rawReference: "Check: X530 $500.00 - WF rewards, coded to FO, general",
+      }).reason,
+    ).toBe("other_revenue");
+  });
+
+  it("excludes Other Revenue bank-account activity as other_revenue", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["4030 Other Revenue"],
+        rawReference: "BUSINESS CHECKING (XXXXXX 8945)",
+      }).reason,
+    ).toBe("other_revenue");
+  });
+
+  it("leaves other Other-Revenue rows in the queue for review", () => {
+    // Legal settlement / unidentified deposit coded to 4030 but without a
+    // rewards / bank-account memo stays pending.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["4030 Other Revenue"],
+        rawReference: "Legal settlement - Sweet Pea",
+      }).excluded,
+    ).toBe(false);
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["4030 Other Revenue"],
+        rawReference: null,
+      }).excluded,
+    ).toBe(false);
+  });
+
+  it("only treats the rewards/bank memo as other_revenue when coded to 4030", () => {
+    // Same memo on a donation-coded line must not be hidden.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineAccountNames: ["4000 Unrestricted Donations"],
+        rawReference: "credit card rewards",
+      }).excluded,
+    ).toBe(false);
+  });
+
+  it("donation-first guard protects a bundled gift on a 4030 line", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: ["4000 Unrestricted Donations", "4030 Other Revenue"],
+        rawReference: "credit card rewards",
+      }).excluded,
+    ).toBe(false);
   });
 });

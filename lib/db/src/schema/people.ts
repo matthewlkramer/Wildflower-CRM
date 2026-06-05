@@ -79,6 +79,9 @@ export const people = pgTable("people", {
   enthusiasm: enthusiasmEnum("enthusiasm"),
   childrenAtWf: text("children_at_wf"),
   meetingLink: text("meeting_link"),
+  // QuickBooks Online Customer Id this individual maps to. Used to
+  // deterministically link incoming QuickBooks payments to this donor.
+  quickbooksCustomerId: text("quickbooks_customer_id"),
   // Self-ref. SET NULL: if the assistant person is deleted, this person
   // just loses the pointer.
   assistantPersonId: text("assistant_person_id").references(

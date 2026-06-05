@@ -2622,6 +2622,7 @@ components:
         instagram:             { type: string, nullable: true }
         youtube:               { type: string, nullable: true }
         crunchbase:            { type: string, nullable: true }
+        quickbooksCustomerId:  { type: string, nullable: true, description: "QuickBooks Online Customer Id this organization maps to." }
         priority:              { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, description: "Solicitation priority tier (top/high/medium/low)." }
         # Server-computed aggregates for the organizations list view.
         primaryContactPersonId:   { type: string, nullable: true, readOnly: true }
@@ -2683,6 +2684,7 @@ components:
         instagram:             { type: string }
         youtube:               { type: string }
         crunchbase:            { type: string }
+        quickbooksCustomerId:  { type: string }
         priority:              { $ref: "#/components/schemas/Priority" }
         anonymous:             { type: boolean }
     UpdateOrganizationBody:
@@ -2721,6 +2723,7 @@ components:
         instagram:             { type: string, nullable: true }
         youtube:               { type: string, nullable: true }
         crunchbase:            { type: string, nullable: true }
+        quickbooksCustomerId:  { type: string, nullable: true }
         priority:              { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
         anonymous:             { type: boolean }
 
@@ -2764,6 +2767,7 @@ components:
         id:         { type: string }
         name:       { type: string }
         type:       { allOf: [ { $ref: "#/components/schemas/PaymentIntermediaryType" } ], nullable: true }
+        quickbooksCustomerId: { type: string, nullable: true, description: "QuickBooks Online Customer Id this payment intermediary maps to." }
         createdAt:  { type: string, format: date-time }
         updatedAt:  { type: string, format: date-time }
     PaymentIntermediaryDetail:
@@ -2786,11 +2790,13 @@ components:
       properties:
         name: { type: string }
         type: { $ref: "#/components/schemas/PaymentIntermediaryType" }
+        quickbooksCustomerId: { type: string }
     UpdatePaymentIntermediaryBody:
       type: object
       properties:
         name: { type: string }
         type: { allOf: [ { $ref: "#/components/schemas/PaymentIntermediaryType" } ], nullable: true }
+        quickbooksCustomerId: { type: string, nullable: true }
 
     # ─── Households ────────────────────────────────────────────────────────────
     Household:
@@ -2873,6 +2879,7 @@ components:
         netWorth:                 { type: string, nullable: true, description: "Estimated net worth for this individual. Decimal as string." }
         connectionStatus:         { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
         enthusiasm:               { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
+        quickbooksCustomerId:     { type: string, nullable: true, description: "QuickBooks Online Customer Id this individual maps to." }
         priority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, description: "Solicitation priority tier (top/high/medium/low). The 'top' band is surfaced as a star on the individuals table and on opportunities/gifts where this person is the individual giver." }
         anonymous:                { type: boolean, description: "When true, hide the person's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned." }
         # Server-computed aggregates for the individuals list view. NOT
@@ -2933,6 +2940,7 @@ components:
         unsubscribedToNewsletter: { type: boolean }
         childrenAtWf:             { type: string }
         meetingLink:              { type: string }
+        quickbooksCustomerId:     { type: string }
         assistantPersonId:        { type: string }
         capacityRating:           { $ref: "#/components/schemas/CapacityRating" }
         netWorth:                 { type: string, description: "Estimated net worth for this individual. Decimal as string." }
@@ -2977,6 +2985,7 @@ components:
         netWorth:                 { type: string, nullable: true, description: "Estimated net worth for this individual. Decimal as string." }
         connectionStatus:         { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
         enthusiasm:               { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
+        quickbooksCustomerId:     { type: string, nullable: true }
         priority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
         anonymous:                { type: boolean }
 
@@ -3492,7 +3501,7 @@ components:
     # ─── QuickBooks payment sync ──────────────────────────────────────────────
     QuickbooksEntityType: { type: string, enum: [sales_receipt, payment, deposit] }
     StagedPaymentStatus: { type: string, enum: [pending, approved, rejected, excluded] }
-    StagedPaymentExclusionReason: { type: string, enum: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund] }
+    StagedPaymentExclusionReason: { type: string, enum: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue] }
     StagedPaymentMatchStatus: { type: string, enum: [matched, unmatched] }
     QuickbooksOauthStatus:
       type: object
@@ -3563,11 +3572,15 @@ components:
         excluded: { type: integer }
         excludedByReason:
           type: object
-          required: [zero_amount, loan, membership]
+          required: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue]
           properties:
-            zero_amount: { type: integer }
-            loan:        { type: integer }
-            membership:  { type: integer }
+            zero_amount:             { type: integer }
+            loan:                    { type: integer }
+            membership:              { type: integer }
+            interest:                { type: integer }
+            government_reimbursement: { type: integer }
+            tax_refund:              { type: integer }
+            other_revenue:           { type: integer }
     ResolveStagedPaymentBody:
       type: object
       description: "Set exactly one donor FK (donor XOR). Null the others."

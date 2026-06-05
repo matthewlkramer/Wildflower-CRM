@@ -23,10 +23,16 @@ substring. A mismatch silently under- or over-classifies real money.
 **Why:** an over-broad rule can wrongly hide a real gift; an under-broad backfill
 leaves noise in the queue. Equivalence is the safety property.
 
-**Donation-first guard:** all *line-based* rules (guaranty/interest/tax_refund)
-are suppressed when the row also carries a real donation line (4000/4100-series
-account or a "Donation" item), so a bundled deposit is never hidden. Payer-identity
-rules (e.g. exact "CSP" government reimbursement) are intentionally NOT guarded.
+**Donation-first guard:** all *line-based* rules (guaranty/interest/tax_refund/
+other_revenue) are suppressed when the row also carries a real donation line
+(4000/4100-series account or a "Donation" item), so a bundled deposit is never
+hidden. Payer-identity rules (e.g. exact "CSP" government reimbursement) are
+intentionally NOT guarded.
+
+**Memo (`raw_reference`) is a classifier input.** Some accounts carry no usable
+item/account signal — the distinguishing detail is in the free-text memo. The
+classifier therefore receives `rawReference`; if you add a memo-based rule, the
+SQL backfill must mirror the regex (TS `\b…\b` ⇄ Postgres `~* '\y…\y'`).
 
 **Taxonomy decisions (enum values are sticky — hard to drop later):**
 - Guaranty fees reuse the existing `loan` reason (they are loan activity), no new value.
@@ -35,6 +41,14 @@ rules (e.g. exact "CSP" government reimbursement) are intentionally NOT guarded.
   (`7010.4` payroll taxes, `7020` taxes, `7006` insurance). Split only via a new migration.
 - `interest` (`4010` Interest Earned / `INTEREST` item) and
   `government_reimbursement` (exact payer `CSP`) are their own enum values.
+- `other_revenue` (`4030` Other Revenue): a grab-bag bucket — mostly non-gifts
+  but real gifts are occasionally miscoded here, so the rule is deliberately
+  NARROW. It excludes ONLY rows coded to 4030 whose memo reads like credit-card
+  rewards (`\brewards?\b`) or bank-account activity (`\bbusiness checking\b`);
+  everything else coded to 4030 (settlements, refunds, unidentified, miscoded
+  gifts) stays in the queue for human review. **Why:** the user explicitly chose
+  "exclude only the clear non-gifts, leave the rest to review" — do not broaden
+  to a blanket 4030 exclusion.
 
 ## Two-file enum migration gotcha
 

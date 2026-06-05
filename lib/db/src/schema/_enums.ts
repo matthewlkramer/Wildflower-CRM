@@ -451,6 +451,7 @@ export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
 //   interest                 — bank/investment interest income (Interest Earned account / INTEREST item)
 //   government_reimbursement — government grant reimbursements (exact payer name, e.g. "CSP")
 //   tax_refund               — payroll-tax / tax / insurance refunds (unemployment tax, workers-comp, etc.)
+//   other_revenue            — clear non-gifts posted to Other Revenue (4030): credit-card rewards / bank-account activity (matched by memo)
 export const stagedPaymentExclusionReasonEnum = pgEnum(
   "staged_payment_exclusion_reason",
   [
@@ -460,6 +461,7 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
     "interest",
     "government_reimbursement",
     "tax_refund",
+    "other_revenue",
   ],
 );
 

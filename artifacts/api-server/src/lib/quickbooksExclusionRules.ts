@@ -36,7 +36,7 @@
  *
  * Rules are applied in a deterministic order (see `classifyStagedPayment`):
  * zero_amount → loan (payer) → government_reimbursement → loan (guaranty line) →
- * interest → tax_refund → membership. The first match wins.
+ * interest → tax_refund → other_revenue → membership. The first match wins.
  */
 
 export type ExclusionReason =
@@ -45,7 +45,8 @@ export type ExclusionReason =
   | "membership"
   | "interest"
   | "government_reimbursement"
-  | "tax_refund";
+  | "tax_refund"
+  | "other_revenue";
 
 export interface ClassifierInput {
   amount: string | null;
@@ -54,6 +55,13 @@ export interface ClassifierInput {
   lineItemNames: string[] | null;
   /** Income / posting account names from the txn / linked-invoice lines. */
   lineAccountNames: string[] | null;
+  /**
+   * Free-text memo / reference captured on the staged payment (PrivateNote,
+   * deposit-account name, etc.). Used only by the narrow `other_revenue` rule
+   * to recognise clear non-gift Other-Revenue noise (credit-card rewards,
+   * bank-account activity) by their memo wording.
+   */
+  rawReference: string | null;
 }
 
 export interface ClassificationResult {
@@ -136,6 +144,23 @@ export const TAX_REFUND_ACCOUNT_CODE_PREFIXES: readonly string[] = [
   "7010.4", // Payroll:3.Benefits:Payroll Taxes
   "7020", // All Other Expenditures:Taxes
   "7006", // All Other Expenditures:Insurance
+];
+
+/**
+ * OTHER-REVENUE non-gift markers. The "Other Revenue" income account (code
+ * prefix 4030) is a grab-bag bucket: mostly non-gift noise (credit-card
+ * rewards, bank-account activity), but a real donation is occasionally
+ * miscoded here. Per the user's decision we exclude ONLY the clear non-gifts —
+ * a row posted to 4030 whose memo reads like credit-card rewards or a
+ * bank-account transfer — and leave everything else (legal settlements,
+ * refunds, unidentified deposits, miscoded gifts) in the queue to review.
+ * Matched on the memo so the narrow, well-understood cases are removed without
+ * blanket-hiding the bucket.
+ */
+export const OTHER_REVENUE_ACCOUNT_CODE_PREFIXES: readonly string[] = ["4030"];
+export const OTHER_REVENUE_NONGIFT_MEMO_PATTERNS: readonly RegExp[] = [
+  /\brewards?\b/i, // "Credit card rewards", "WF rewards", "Wells Rewards"
+  /\bbusiness checking\b/i, // "BUSINESS CHECKING (XXXXXX 8945)" bank activity
 ];
 
 /**
@@ -227,10 +252,29 @@ function isTaxRefundLine(input: ClassifierInput): boolean {
 }
 
 /**
+ * True for a clear non-gift posted to the Other-Revenue (4030) account: the row
+ * is coded to 4030 AND its memo reads like credit-card rewards or bank-account
+ * activity. Deliberately narrow — anything else coded to 4030 stays in the queue.
+ */
+function isOtherRevenueNonGift(input: ClassifierInput): boolean {
+  if (
+    !anyAccountCodeStartsWith(
+      input.lineAccountNames,
+      OTHER_REVENUE_ACCOUNT_CODE_PREFIXES,
+    )
+  ) {
+    return false;
+  }
+  const memo = input.rawReference ?? "";
+  return OTHER_REVENUE_NONGIFT_MEMO_PATTERNS.some((re) => re.test(memo));
+}
+
+/**
  * Pure noise classifier. Takes a normalized payment + its captured line detail
  * and returns whether it should be auto-excluded and why. Deterministic rule
  * order: zero_amount → loan (payer) → government_reimbursement →
- * loan (guaranty line) → interest → tax_refund → membership; first match wins.
+ * loan (guaranty line) → interest → tax_refund → other_revenue → membership;
+ * first match wins.
  * The line-based rules honor the donation-first guard.
  */
 export function classifyStagedPayment(
@@ -278,7 +322,13 @@ export function classifyStagedPayment(
     return { excluded: true, reason: "tax_refund" };
   }
 
-  // 7. Membership by confirmed QB item / income-account marker.
+  // 7. Other-Revenue (4030) clear non-gifts: credit-card rewards / bank-account
+  //    activity recognised by memo. Narrow by design — see isOtherRevenueNonGift.
+  if (!donation && isOtherRevenueNonGift(input)) {
+    return { excluded: true, reason: "other_revenue" };
+  }
+
+  // 8. Membership by confirmed QB item / income-account marker.
   if (
     matchesAny(input.lineItemNames, MEMBERSHIP_ITEM_NAMES) ||
     matchesAny(input.lineAccountNames, MEMBERSHIP_ACCOUNT_NAMES)

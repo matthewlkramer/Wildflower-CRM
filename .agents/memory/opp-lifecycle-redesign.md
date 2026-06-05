@@ -1,5 +1,5 @@
 ---
-name: opportunity/pledge lifecycle redesign (post-#158/#159)
+name: opportunity/pledge lifecycle redesign
 description: Final intended end-state for the opp/pledge lifecycle (cash-in, was_pledge, grant-letter, conditional rules) confirmed by the user; partly supersedes the original verbal-confirmation task plan.
 ---
 

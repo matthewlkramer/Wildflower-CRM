@@ -67,6 +67,9 @@ export const organizations = pgTable("organizations", {
   instagram: text("instagram"),
   youtube: text("youtube"),
   crunchbase: text("crunchbase"),
+  // QuickBooks Online Customer Id this organization maps to. Used to
+  // deterministically link incoming QuickBooks payments to this donor.
+  quickbooksCustomerId: text("quickbooks_customer_id"),
   connectionStatus: connectionStatusEnum("connection_status"),
   enthusiasm: enthusiasmEnum("enthusiasm"),
   strategicAlignment: strategicAlignmentEnum("strategic_alignment"),

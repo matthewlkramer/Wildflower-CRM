@@ -147,6 +147,7 @@ const ORGANIZATION_OVERRIDE_FIELDS: ReadonlyArray<string> = [
   "instagram",
   "youtube",
   "crunchbase",
+  "quickbooksCustomerId",
   "website",
   "connectionStatus",
   "enthusiasm",
@@ -186,6 +187,7 @@ const PERSON_OVERRIDE_FIELDS: ReadonlyArray<string> = [
   "enthusiasm",
   "childrenAtWf",
   "meetingLink",
+  "quickbooksCustomerId",
   "assistantPersonId",
   "priority",
 ];

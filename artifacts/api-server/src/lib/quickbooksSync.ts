@@ -93,6 +93,7 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
         payerName: p.payerName,
         lineItemNames: p.lineItemNames,
         lineAccountNames: p.lineAccountNames,
+        rawReference: p.rawReference,
       });
       const inserted = await db
         .insert(stagedPayments)

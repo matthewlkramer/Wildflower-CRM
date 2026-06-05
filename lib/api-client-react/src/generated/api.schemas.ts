@@ -827,6 +827,8 @@ export interface Organization {
   instagram?: string | null;
   youtube?: string | null;
   crunchbase?: string | null;
+  /** QuickBooks Online Customer Id this organization maps to. */
+  quickbooksCustomerId?: string | null;
   /** Solicitation priority tier (top/high/medium/low). */
   priority?: Priority | null;
   readonly primaryContactPersonId?: string | null;
@@ -907,6 +909,8 @@ export interface PaymentIntermediary {
   id: string;
   name: string;
   type?: PaymentIntermediaryType | null;
+  /** QuickBooks Online Customer Id this payment intermediary maps to. */
+  quickbooksCustomerId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -958,6 +962,7 @@ export interface CreateOrganizationBody {
   instagram?: string;
   youtube?: string;
   crunchbase?: string;
+  quickbooksCustomerId?: string;
   priority?: Priority;
   anonymous?: boolean;
 }
@@ -996,6 +1001,7 @@ export interface UpdateOrganizationBody {
   instagram?: string | null;
   youtube?: string | null;
   crunchbase?: string | null;
+  quickbooksCustomerId?: string | null;
   priority?: Priority | null;
   anonymous?: boolean;
 }
@@ -1039,11 +1045,13 @@ export interface PaymentIntermediaryList {
 export interface CreatePaymentIntermediaryBody {
   name: string;
   type?: PaymentIntermediaryType;
+  quickbooksCustomerId?: string;
 }
 
 export interface UpdatePaymentIntermediaryBody {
   name?: string;
   type?: PaymentIntermediaryType | null;
+  quickbooksCustomerId?: string | null;
 }
 
 export interface Household {
@@ -1119,6 +1127,8 @@ export interface Person {
   netWorth?: string | null;
   connectionStatus?: ConnectionStatus | null;
   enthusiasm?: Enthusiasm | null;
+  /** QuickBooks Online Customer Id this individual maps to. */
+  quickbooksCustomerId?: string | null;
   /** Solicitation priority tier (top/high/medium/low). The 'top' band is surfaced as a star on the individuals table and on opportunities/gifts where this person is the individual giver. */
   priority?: Priority | null;
   /** When true, hide the person's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned. */
@@ -1179,6 +1189,7 @@ export interface CreatePersonBody {
   unsubscribedToNewsletter?: boolean;
   childrenAtWf?: string;
   meetingLink?: string;
+  quickbooksCustomerId?: string;
   assistantPersonId?: string;
   capacityRating?: CapacityRating;
   /** Estimated net worth for this individual. Decimal as string. */
@@ -1225,6 +1236,7 @@ export interface UpdatePersonBody {
   netWorth?: string | null;
   connectionStatus?: ConnectionStatus | null;
   enthusiasm?: Enthusiasm | null;
+  quickbooksCustomerId?: string | null;
   priority?: Priority | null;
   anonymous?: boolean;
 }
@@ -1657,6 +1669,7 @@ export const StagedPaymentExclusionReason = {
   interest: "interest",
   government_reimbursement: "government_reimbursement",
   tax_refund: "tax_refund",
+  other_revenue: "other_revenue",
 } as const;
 
 export type StagedPaymentMatchStatus =
@@ -1728,6 +1741,10 @@ export type StagedPaymentSummaryExcludedByReason = {
   zero_amount: number;
   loan: number;
   membership: number;
+  interest: number;
+  government_reimbursement: number;
+  tax_refund: number;
+  other_revenue: number;
 };
 
 export interface StagedPaymentSummary {

@@ -1399,6 +1399,10 @@ export const ListOrganizationsResponse = zod.object({
       instagram: zod.string().nullish(),
       youtube: zod.string().nullish(),
       crunchbase: zod.string().nullish(),
+      quickbooksCustomerId: zod
+        .string()
+        .nullish()
+        .describe("QuickBooks Online Customer Id this organization maps to."),
       priority: zod
         .enum(["top", "high", "medium", "low"])
         .nullish()
@@ -1527,6 +1531,7 @@ export const CreateOrganizationBody = zod.object({
   instagram: zod.string().optional(),
   youtube: zod.string().optional(),
   crunchbase: zod.string().optional(),
+  quickbooksCustomerId: zod.string().optional(),
   priority: zod.enum(["top", "high", "medium", "low"]).optional(),
   anonymous: zod.boolean().optional(),
 });
@@ -1655,6 +1660,10 @@ export const GetOrganizationResponse = zod
     instagram: zod.string().nullish(),
     youtube: zod.string().nullish(),
     crunchbase: zod.string().nullish(),
+    quickbooksCustomerId: zod
+      .string()
+      .nullish()
+      .describe("QuickBooks Online Customer Id this organization maps to."),
     priority: zod
       .enum(["top", "high", "medium", "low"])
       .nullish()
@@ -1779,6 +1788,12 @@ export const GetOrganizationResponse = zod
           type: zod
             .enum(["daf", "giving_platform", "private_wealth_manager"])
             .nullish(),
+          quickbooksCustomerId: zod
+            .string()
+            .nullish()
+            .describe(
+              "QuickBooks Online Customer Id this payment intermediary maps to.",
+            ),
           createdAt: zod.string().datetime({}),
           updatedAt: zod.string().datetime({}),
         })
@@ -1889,6 +1904,7 @@ export const UpdateOrganizationBody = zod.object({
   instagram: zod.string().nullish(),
   youtube: zod.string().nullish(),
   crunchbase: zod.string().nullish(),
+  quickbooksCustomerId: zod.string().nullish(),
   priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
   anonymous: zod.boolean().optional(),
 });
@@ -2012,6 +2028,10 @@ export const UpdateOrganizationResponse = zod.object({
   instagram: zod.string().nullish(),
   youtube: zod.string().nullish(),
   crunchbase: zod.string().nullish(),
+  quickbooksCustomerId: zod
+    .string()
+    .nullish()
+    .describe("QuickBooks Online Customer Id this organization maps to."),
   priority: zod
     .enum(["top", "high", "medium", "low"])
     .nullish()
@@ -2067,6 +2087,12 @@ export const ListPaymentIntermediariesResponse = zod.object({
       type: zod
         .enum(["daf", "giving_platform", "private_wealth_manager"])
         .nullish(),
+      quickbooksCustomerId: zod
+        .string()
+        .nullish()
+        .describe(
+          "QuickBooks Online Customer Id this payment intermediary maps to.",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -2083,6 +2109,7 @@ export const CreatePaymentIntermediaryBody = zod.object({
   type: zod
     .enum(["daf", "giving_platform", "private_wealth_manager"])
     .optional(),
+  quickbooksCustomerId: zod.string().optional(),
 });
 
 export const GetPaymentIntermediaryParams = zod.object({
@@ -2096,6 +2123,12 @@ export const GetPaymentIntermediaryResponse = zod
     type: zod
       .enum(["daf", "giving_platform", "private_wealth_manager"])
       .nullish(),
+    quickbooksCustomerId: zod
+      .string()
+      .nullish()
+      .describe(
+        "QuickBooks Online Customer Id this payment intermediary maps to.",
+      ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   })
@@ -2190,6 +2223,7 @@ export const UpdatePaymentIntermediaryBody = zod.object({
   type: zod
     .enum(["daf", "giving_platform", "private_wealth_manager"])
     .nullish(),
+  quickbooksCustomerId: zod.string().nullish(),
 });
 
 export const UpdatePaymentIntermediaryResponse = zod.object({
@@ -2198,6 +2232,12 @@ export const UpdatePaymentIntermediaryResponse = zod.object({
   type: zod
     .enum(["daf", "giving_platform", "private_wealth_manager"])
     .nullish(),
+  quickbooksCustomerId: zod
+    .string()
+    .nullish()
+    .describe(
+      "QuickBooks Online Customer Id this payment intermediary maps to.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -2560,6 +2600,10 @@ export const ListPeopleResponse = zod.object({
           "1-hostile",
         ])
         .nullish(),
+      quickbooksCustomerId: zod
+        .string()
+        .nullish()
+        .describe("QuickBooks Online Customer Id this individual maps to."),
       priority: zod
         .enum(["top", "high", "medium", "low"])
         .nullish()
@@ -2645,6 +2689,7 @@ export const CreatePersonBody = zod.object({
   unsubscribedToNewsletter: zod.boolean().optional(),
   childrenAtWf: zod.string().optional(),
   meetingLink: zod.string().optional(),
+  quickbooksCustomerId: zod.string().optional(),
   assistantPersonId: zod.string().optional(),
   capacityRating: zod
     .enum([
@@ -2744,6 +2789,10 @@ export const GetPersonResponse = zod
         "1-hostile",
       ])
       .nullish(),
+    quickbooksCustomerId: zod
+      .string()
+      .nullish()
+      .describe("QuickBooks Online Customer Id this individual maps to."),
     priority: zod
       .enum(["top", "high", "medium", "low"])
       .nullish()
@@ -2952,6 +3001,7 @@ export const UpdatePersonBody = zod.object({
       "1-hostile",
     ])
     .nullish(),
+  quickbooksCustomerId: zod.string().nullish(),
   priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
   anonymous: zod.boolean().optional(),
 });
@@ -3018,6 +3068,10 @@ export const UpdatePersonResponse = zod.object({
       "1-hostile",
     ])
     .nullish(),
+  quickbooksCustomerId: zod
+    .string()
+    .nullish()
+    .describe("QuickBooks Online Customer Id this individual maps to."),
   priority: zod
     .enum(["top", "high", "medium", "low"])
     .nullish()
@@ -3241,6 +3295,12 @@ export const ListDonorPaymentIntermediariesResponse = zod.object({
         type: zod
           .enum(["daf", "giving_platform", "private_wealth_manager"])
           .nullish(),
+        quickbooksCustomerId: zod
+          .string()
+          .nullish()
+          .describe(
+            "QuickBooks Online Customer Id this payment intermediary maps to.",
+          ),
         createdAt: zod.string().datetime({}),
         updatedAt: zod.string().datetime({}),
       }),
@@ -3255,6 +3315,12 @@ export const ListDonorPaymentIntermediariesResponse = zod.object({
       type: zod
         .enum(["daf", "giving_platform", "private_wealth_manager"])
         .nullish(),
+      quickbooksCustomerId: zod
+        .string()
+        .nullish()
+        .describe(
+          "QuickBooks Online Customer Id this payment intermediary maps to.",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -6781,6 +6847,7 @@ export const ListStagedPaymentsResponse = zod.object({
           "interest",
           "government_reimbursement",
           "tax_refund",
+          "other_revenue",
         ])
         .nullish(),
       lineItemNames: zod.array(zod.string()).nullish(),
@@ -6818,6 +6885,10 @@ export const GetStagedPaymentsSummaryResponse = zod.object({
     zero_amount: zod.number(),
     loan: zod.number(),
     membership: zod.number(),
+    interest: zod.number(),
+    government_reimbursement: zod.number(),
+    tax_refund: zod.number(),
+    other_revenue: zod.number(),
   }),
 });
 
@@ -6855,6 +6926,7 @@ export const ResolveStagedPaymentResponse = zod.object({
       "interest",
       "government_reimbursement",
       "tax_refund",
+      "other_revenue",
     ])
     .nullish(),
   lineItemNames: zod.array(zod.string()).nullish(),
@@ -6909,6 +6981,7 @@ export const RejectStagedPaymentResponse = zod.object({
       "interest",
       "government_reimbursement",
       "tax_refund",
+      "other_revenue",
     ])
     .nullish(),
   lineItemNames: zod.array(zod.string()).nullish(),
@@ -6956,6 +7029,7 @@ export const ReIncludeStagedPaymentResponse = zod.object({
       "interest",
       "government_reimbursement",
       "tax_refund",
+      "other_revenue",
     ])
     .nullish(),
   lineItemNames: zod.array(zod.string()).nullish(),

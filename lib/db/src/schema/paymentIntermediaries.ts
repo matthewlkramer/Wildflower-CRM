@@ -7,6 +7,9 @@ export const paymentIntermediaries = pgTable("payment_intermediaries", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   type: paymentIntermediaryTypeEnum("type"),
+  // QuickBooks Online Customer Id this payment intermediary maps to. Used to
+  // deterministically link incoming QuickBooks payments routed through it.
+  quickbooksCustomerId: text("quickbooks_customer_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

@@ -48,6 +48,7 @@ const EXCLUSION_REASON_LABELS: Record<StagedPaymentExclusionReason, string> = {
   interest: "Interest income",
   government_reimbursement: "Government reimbursement",
   tax_refund: "Tax / insurance refund",
+  other_revenue: "Other revenue (non-gift)",
 };
 
 // QuickBooks entity types are stored snake_case (matching the DB enum); show a
