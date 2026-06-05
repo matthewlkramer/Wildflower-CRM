@@ -1450,6 +1450,9 @@ export interface GiftOrPayment {
   organizationName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
+  readonly paymentIntermediaryName?: string | null;
+  /** Id of the QuickBooks staged payment reconciled to / that created this gift, if any. Lets the reconciler show linked status and offer unmatch. */
+  readonly quickbooksStagedPaymentId?: string | null;
   readonly organizationPriority?: Priority | null;
   readonly individualGiverPersonPriority?: Priority | null;
   /** Distinct entity_id values from gift_allocations. */
@@ -1712,6 +1715,18 @@ export const StagedPaymentQueue = {
   excluded: "excluded",
   done: "done",
   rejected: "rejected",
+} as const;
+
+export type StagedPaymentSort =
+  (typeof StagedPaymentSort)[keyof typeof StagedPaymentSort];
+
+export const StagedPaymentSort = {
+  date_desc: "date_desc",
+  date_asc: "date_asc",
+  amount_desc: "amount_desc",
+  amount_asc: "amount_asc",
+  payer_asc: "payer_asc",
+  payer_desc: "payer_desc",
 } as const;
 
 export interface QuickbooksOauthStatus {
@@ -3685,6 +3700,18 @@ fiscal years.
  */
   fiscalYear?: string[];
   /**
+   * Keep gifts with dateReceived on/after this date (inclusive).
+   */
+  dateAfter?: string;
+  /**
+   * Keep gifts with dateReceived on/before this date (inclusive).
+   */
+  dateBefore?: string;
+  /**
+   * Filter by whether a QuickBooks staged payment is reconciled to / created this gift (`linked`) or not (`unlinked`).
+   */
+  linkedToQuickbooks?: ListGiftsAndPaymentsLinkedToQuickbooks;
+  /**
    * @minimum 1
    * @maximum 10000
    */
@@ -3725,6 +3752,14 @@ export type ListGiftsAndPaymentsThankYouSentAtPresence =
 export const ListGiftsAndPaymentsThankYouSentAtPresence = {
   has: "has",
   blank: "blank",
+} as const;
+
+export type ListGiftsAndPaymentsLinkedToQuickbooks =
+  (typeof ListGiftsAndPaymentsLinkedToQuickbooks)[keyof typeof ListGiftsAndPaymentsLinkedToQuickbooks];
+
+export const ListGiftsAndPaymentsLinkedToQuickbooks = {
+  linked: "linked",
+  unlinked: "unlinked",
 } as const;
 
 export type ListGiftAllocationsParams = {
@@ -3945,6 +3980,10 @@ export type ListStagedPaymentsParams = {
    * Which queue to list (default needs_review).
    */
   queue?: StagedPaymentQueue;
+  /**
+   * Sort order (default date_desc).
+   */
+  sort?: StagedPaymentSort;
   /**
    * @minimum 1
    * @maximum 10000

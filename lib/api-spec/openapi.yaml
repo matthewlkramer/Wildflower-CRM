@@ -1108,6 +1108,9 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
+        - { name: dateAfter, in: query, required: false, description: "Keep gifts with dateReceived on/after this date (inclusive).", schema: { type: string, format: date } }
+        - { name: dateBefore, in: query, required: false, description: "Keep gifts with dateReceived on/before this date (inclusive).", schema: { type: string, format: date } }
+        - { name: linkedToQuickbooks, in: query, required: false, description: "Filter by whether a QuickBooks staged payment is reconciled to / created this gift (`linked`) or not (`unlinked`).", schema: { type: string, enum: [linked, unlinked] } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -1822,6 +1825,7 @@ paths:
       tags: [staged-payments]
       parameters:
         - { name: queue, in: query, schema: { $ref: "#/components/schemas/StagedPaymentQueue" }, description: "Which queue to list (default needs_review)." }
+        - { name: sort, in: query, schema: { $ref: "#/components/schemas/StagedPaymentSort" }, description: "Sort order (default date_desc)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -3568,6 +3572,8 @@ components:
         organizationName:                 { type: string, nullable: true }
         householdName:              { type: string, nullable: true }
         individualGiverPersonName:  { type: string, nullable: true }
+        paymentIntermediaryName:    { type: string, nullable: true, readOnly: true }
+        quickbooksStagedPaymentId:  { type: string, nullable: true, readOnly: true, description: "Id of the QuickBooks staged payment reconciled to / that created this gift, if any. Lets the reconciler show linked status and offer unmatch." }
         organizationPriority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         individualGiverPersonPriority:  { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         # Aggregates across this gift's gift_allocations rows. All three
@@ -3651,6 +3657,7 @@ components:
     StagedPaymentMatchMethod: { type: string, enum: [email, name, name_amount_date, amount_date, memo, intermediary, manual] }
     StagedPaymentClassificationSource: { type: string, enum: [auto, manual] }
     StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, rejected] }
+    StagedPaymentSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc, payer_asc, payer_desc] }
     QuickbooksOauthStatus:
       type: object
       required: [configured, connected]

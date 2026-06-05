@@ -3999,6 +3999,13 @@ export const GetOpportunityOrPledgeResponse = zod
             organizationName: zod.string().nullish(),
             householdName: zod.string().nullish(),
             individualGiverPersonName: zod.string().nullish(),
+            paymentIntermediaryName: zod.string().nullish(),
+            quickbooksStagedPaymentId: zod
+              .string()
+              .nullish()
+              .describe(
+                "Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.",
+              ),
             organizationPriority: zod
               .enum(["top", "high", "medium", "low"])
               .nullish(),
@@ -4386,6 +4393,22 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
     .describe(
       "Filter to gifts that have at least one gift_allocation with\n`grant_year` in the given set (e.g. `fy2026`). Multi-value:\nrepeat the param or comma-separate. Omit to include all\nfiscal years.\n",
     ),
+  dateAfter: zod.coerce
+    .string()
+    .date()
+    .optional()
+    .describe("Keep gifts with dateReceived on\/after this date (inclusive)."),
+  dateBefore: zod.coerce
+    .string()
+    .date()
+    .optional()
+    .describe("Keep gifts with dateReceived on\/before this date (inclusive)."),
+  linkedToQuickbooks: zod
+    .enum(["linked", "unlinked"])
+    .optional()
+    .describe(
+      "Filter by whether a QuickBooks staged payment is reconciled to \/ created this gift (`linked`) or not (`unlinked`).",
+    ),
   limit: zod.coerce
     .number()
     .min(1)
@@ -4469,6 +4492,13 @@ export const ListGiftsAndPaymentsResponse = zod.object({
       organizationName: zod.string().nullish(),
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
+      paymentIntermediaryName: zod.string().nullish(),
+      quickbooksStagedPaymentId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.",
+        ),
       organizationPriority: zod
         .enum(["top", "high", "medium", "low"])
         .nullish(),
@@ -4616,6 +4646,13 @@ export const GetGiftOrPaymentResponse = zod
     organizationName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
+    paymentIntermediaryName: zod.string().nullish(),
+    quickbooksStagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.",
+      ),
     organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
     individualGiverPersonPriority: zod
       .enum(["top", "high", "medium", "low"])
@@ -4792,6 +4829,13 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
+  paymentIntermediaryName: zod.string().nullish(),
+  quickbooksStagedPaymentId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.",
+    ),
   organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
   individualGiverPersonPriority: zod
     .enum(["top", "high", "medium", "low"])
@@ -4931,6 +4975,13 @@ export const LinkThankYouEmailResponse = zod
     organizationName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
+    paymentIntermediaryName: zod.string().nullish(),
+    quickbooksStagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.",
+      ),
     organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
     individualGiverPersonPriority: zod
       .enum(["top", "high", "medium", "low"])
@@ -6856,6 +6907,17 @@ export const ListStagedPaymentsQueryParams = zod.object({
     .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
     .optional()
     .describe("Which queue to list (default needs_review)."),
+  sort: zod
+    .enum([
+      "date_desc",
+      "date_asc",
+      "amount_desc",
+      "amount_asc",
+      "payer_asc",
+      "payer_desc",
+    ])
+    .optional()
+    .describe("Sort order (default date_desc)."),
   limit: zod.coerce
     .number()
     .min(1)
@@ -7414,6 +7476,13 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
         organizationName: zod.string().nullish(),
         householdName: zod.string().nullish(),
         individualGiverPersonName: zod.string().nullish(),
+        paymentIntermediaryName: zod.string().nullish(),
+        quickbooksStagedPaymentId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.",
+          ),
         organizationPriority: zod
           .enum(["top", "high", "medium", "low"])
           .nullish(),
@@ -7550,6 +7619,13 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
         organizationName: zod.string().nullish(),
         householdName: zod.string().nullish(),
         individualGiverPersonName: zod.string().nullish(),
+        paymentIntermediaryName: zod.string().nullish(),
+        quickbooksStagedPaymentId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.",
+          ),
         organizationPriority: zod
           .enum(["top", "high", "medium", "low"])
           .nullish(),
@@ -7681,6 +7757,13 @@ export const ReconcileStagedPaymentResponse = zod.object({
     organizationName: zod.string().nullish(),
     householdName: zod.string().nullish(),
     individualGiverPersonName: zod.string().nullish(),
+    paymentIntermediaryName: zod.string().nullish(),
+    quickbooksStagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.",
+      ),
     organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
     individualGiverPersonPriority: zod
       .enum(["top", "high", "medium", "low"])

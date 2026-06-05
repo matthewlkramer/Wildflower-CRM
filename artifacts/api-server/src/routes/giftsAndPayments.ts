@@ -49,6 +49,21 @@ const donorJoinSelect = {
     FROM gift_allocations ga
     WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.grant_year IS NOT NULL
   )`.as("grant_years"),
+  // Display name of the gift's payment intermediary (DAF / platform), if any.
+  // Correlated subquery so no extra join is forced on donorJoinSelect callers.
+  paymentIntermediaryName: sql<string | null>`(
+    SELECT pi.name FROM payment_intermediaries pi
+    WHERE pi.id = ${giftsAndPayments.paymentIntermediaryId}
+  )`.as("payment_intermediary_name"),
+  // The QuickBooks staged payment reconciled to / that created this gift, if
+  // any (at most one — backed by partial-unique indexes on staged_payments).
+  // Lets the reconciler show linked status and offer an unmatch action.
+  quickbooksStagedPaymentId: sql<string | null>`(
+    SELECT sp.id FROM staged_payments sp
+    WHERE sp.matched_gift_id = ${giftsAndPayments.id}
+       OR sp.created_gift_id = ${giftsAndPayments.id}
+    LIMIT 1
+  )`.as("quickbooks_staged_payment_id"),
 };
 import {
   ListGiftsAndPaymentsQueryParams,
@@ -103,8 +118,24 @@ router.get(
             NULLIF(TRIM(${people.fullName}), ''),
             NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
           ) ILIKE ${term}`,
+          // Linked payment intermediary name (correlated EXISTS — no join).
+          sql`EXISTS (
+            SELECT 1 FROM payment_intermediaries pi
+            WHERE pi.id = ${giftsAndPayments.paymentIntermediaryId}
+              AND pi.name ILIKE ${term}
+          )`,
         )!,
       );
+    }
+    // Date-received window (inclusive) for the reconciler's amount/date search.
+    if (q.dateAfter) filters.push(gte(giftsAndPayments.dateReceived, q.dateAfter));
+    if (q.dateBefore) filters.push(lte(giftsAndPayments.dateReceived, q.dateBefore));
+    // Linked-to-QuickBooks filter — whether a staged payment reconciles to /
+    // created this gift. Correlated EXISTS so no join is forced.
+    if (q.linkedToQuickbooks === "linked") {
+      filters.push(sql`EXISTS (SELECT 1 FROM staged_payments sp WHERE sp.matched_gift_id = ${giftsAndPayments.id} OR sp.created_gift_id = ${giftsAndPayments.id})`);
+    } else if (q.linkedToQuickbooks === "unlinked") {
+      filters.push(sql`NOT EXISTS (SELECT 1 FROM staged_payments sp WHERE sp.matched_gift_id = ${giftsAndPayments.id} OR sp.created_gift_id = ${giftsAndPayments.id})`);
     }
     {
       const f = splitBlank(q.type as string[] | undefined);

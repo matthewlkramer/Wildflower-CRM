@@ -1,12 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useListStagedPayments,
   getListStagedPaymentsQueryKey,
   getGetStagedPaymentsSummaryQueryKey,
   useGetStagedPaymentsSummary,
   useResolveStagedPayment,
-  useCreateGiftFromStagedPayment,
   useRejectStagedPayment,
   useReIncludeStagedPayment,
   useReconcileStagedPayment,
@@ -14,10 +13,6 @@ import {
   useExcludeStagedPayment,
   useConfirmStagedPaymentMatch,
   useUnmatchStagedPayment,
-  useListStagedPaymentGiftCandidates,
-  getListStagedPaymentGiftCandidatesQueryKey,
-  useListStagedPaymentGiftWindow,
-  getListStagedPaymentGiftWindowQueryKey,
   useRunQuickbooksSync,
   useRematchStagedPayments,
   useReclassifyStagedPayments,
@@ -25,14 +20,17 @@ import {
   useCreateOrganization,
   useCreatePerson,
   useCreateHousehold,
+  useListGiftsAndPayments,
+  getListGiftsAndPaymentsQueryKey,
+  useCreateGiftOrPayment,
   getGetQuickbooksOauthStatusQueryKey,
   type StagedPayment,
   type StagedPaymentQueue,
+  type StagedPaymentSort,
   type StagedPaymentExclusionReason,
   type StagedPaymentMatchMethod,
   type QuickbooksEntityType,
-  type GiftCandidate,
-  type GiftCandidateList,
+  type GiftOrPayment,
 } from "@workspace/api-client-react";
 import {
   Card,
@@ -43,6 +41,8 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -51,16 +51,37 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   DonorFieldPicker,
   donorBodyFor,
   type DonorType,
 } from "@/components/entity-picker";
 import { useToast } from "@/hooks/use-toast";
 
-// The five reconciliation queues. `needs_review` holds uncertain pending rows;
-// `auto_matched` holds high-confidence rows the system already applied (awaiting
-// a quick human confirm); `done` holds confirmed / manually-resolved rows;
-// `excluded` holds non-gift noise; `rejected` holds discarded rows.
+/* ────────────────────────────────────────────────────────────────────────
+ * QuickBooks reconciliation — two-table reconciler.
+ *
+ * LEFT pane  = staged QuickBooks imports, filtered by queue + sortable. Each
+ *              row offers per-row reclassify / exclude / reject / confirm /
+ *              revert and acts as the "left selection" for matching.
+ * RIGHT pane = CRM gifts, with free-text search (name + linked donor /
+ *              intermediary), a date window, and a linked-to-QuickBooks
+ *              filter. Each row is the "right selection" and, when already
+ *              linked, offers an unmatch (revert) action.
+ *
+ * Selecting a left row + a right gift and pressing "Match" reconciles the
+ * staged payment to the existing gift (no new gift minted). "Create new gift"
+ * opens a dialog (donor search + create-if-none + gift fields) and, when a
+ * left row is selected, reconciles the payment to the freshly-created gift.
+ * ──────────────────────────────────────────────────────────────────────── */
+
 const QUEUES: { value: StagedPaymentQueue; label: string }[] = [
   { value: "needs_review", label: "Needs review" },
   { value: "auto_matched", label: "Auto-matched" },
@@ -69,7 +90,15 @@ const QUEUES: { value: StagedPaymentQueue; label: string }[] = [
   { value: "rejected", label: "Rejected" },
 ];
 
-// Human-friendly labels for the auto-exclude reasons.
+const SORTS: { value: StagedPaymentSort; label: string }[] = [
+  { value: "date_desc", label: "Date (newest)" },
+  { value: "date_asc", label: "Date (oldest)" },
+  { value: "amount_desc", label: "Amount (high → low)" },
+  { value: "amount_asc", label: "Amount (low → high)" },
+  { value: "payer_asc", label: "Payer (A → Z)" },
+  { value: "payer_desc", label: "Payer (Z → A)" },
+];
+
 const EXCLUSION_REASON_LABELS: Record<StagedPaymentExclusionReason, string> = {
   zero_amount: "Zero amount",
   loan: "Loan activity",
@@ -81,15 +110,12 @@ const EXCLUSION_REASON_LABELS: Record<StagedPaymentExclusionReason, string> = {
   earned_income: "Earned income (non-gift)",
 };
 
-// QuickBooks entity types are stored snake_case (matching the DB enum); show a
-// human-friendly label in the review queue.
 const QB_ENTITY_TYPE_LABELS: Record<QuickbooksEntityType, string> = {
   sales_receipt: "Sales Receipt",
   payment: "Payment",
   deposit: "Deposit",
 };
 
-// How the scored matcher arrived at the donor/gift suggestion.
 const MATCH_METHOD_LABELS: Record<StagedPaymentMatchMethod, string> = {
   email: "Email match",
   name: "Name match",
@@ -99,6 +125,8 @@ const MATCH_METHOD_LABELS: Record<StagedPaymentMatchMethod, string> = {
   intermediary: "Payment intermediary",
   manual: "Manual",
 };
+
+type LinkedFilter = "all" | "linked" | "unlinked";
 
 function donorTypeFromRow(row: StagedPayment): DonorType {
   if (row.organizationId != null) return "organization";
@@ -122,14 +150,29 @@ function donorNameFromRow(row: StagedPayment): string | null {
   );
 }
 
+function giftDonorName(g: GiftOrPayment): string | null {
+  return (
+    g.organizationName ??
+    g.individualGiverPersonName ??
+    g.householdName ??
+    null
+  );
+}
+
 function formatAmount(amount: string | null | undefined): string {
   if (amount == null) return "—";
   const n = Number(amount);
   if (Number.isNaN(n)) return amount;
-  return n.toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-  });
+  return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
+}
+
+// Compact one-line label for a gift, shown in the cross-pane match bar so the
+// operator can confirm exactly which gift is selected before pressing Match.
+function giftRowLabel(g: GiftOrPayment): string {
+  const donor = giftDonorName(g);
+  return [g.name ?? "Untitled gift", formatAmount(g.amount), donor ?? undefined]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function formatDateTime(value: string | null | undefined): string | null {
@@ -138,9 +181,17 @@ function formatDateTime(value: string | null | undefined): string | null {
   return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
 }
 
+// Shift a yyyy-mm-dd date string by `days` and return yyyy-mm-dd (UTC math so
+// the window is stable regardless of the viewer's timezone).
+function shiftIsoDate(date: string | null | undefined, days: number): string {
+  const base = date ? new Date(`${date}T00:00:00Z`) : new Date();
+  if (Number.isNaN(base.getTime())) return "";
+  base.setUTCDate(base.getUTCDate() + days);
+  return base.toISOString().slice(0, 10);
+}
+
 // When a candidate gift is larger than the QB net amount, surface the gap as a
-// likely processing fee so the fundraiser understands why a non-exact match
-// surfaced (e.g. CRM $50 gift vs. QB $47.25 deposit → "+$2.75 fee?").
+// likely processing fee (CRM $50 gift vs QB $47.25 deposit → "+$2.75 fee?").
 function feeDeltaLabel(
   stagedAmount: string | null | undefined,
   giftAmount: string | null | undefined,
@@ -157,17 +208,10 @@ function feeDeltaLabel(
   })} fee?`;
 }
 
-// Three derived donor-match states for the badge / actions:
-//   unmatched  — no donor (matchStatus "unmatched")
-//   suggested  — system suggested a donor, not yet human-confirmed
-//   confirmed  — a human picked/confirmed the donor (matchConfirmedAt set)
+// Three derived donor-match states for the badge / actions.
 type MatchState = "unmatched" | "suggested" | "confirmed";
 
 function matchStateOf(row: StagedPayment): MatchState {
-  // matchConfirmedAt is the ONLY signal for "confirmed" — a human acted. A
-  // system-set matchStatus of "matched" (e.g. the high-tier rematch path) is
-  // still only a suggestion until confirmed, so it must offer the Confirm action
-  // rather than masquerade as confirmed.
   if (row.matchConfirmedAt != null) return "confirmed";
   const hasDonor =
     row.organizationId != null ||
@@ -183,17 +227,49 @@ const MATCH_STATE_LABEL: Record<MatchState, string> = {
   confirmed: "Confirmed",
 };
 
+/* ──────────────────────────────────────────────────────────────────────── */
+
 export default function StagedPayments() {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [queue, setQueue] = useState<StagedPaymentQueue>("needs_review");
-  const [page, setPage] = useState(1);
-  const PAGE_SIZE = 100;
 
   const me = useGetCurrentUser().data ?? null;
   const isAdmin = me?.role === "admin";
 
-  const listParams = { queue, limit: PAGE_SIZE, page };
+  // Left pane (staged imports) state.
+  const [queue, setQueue] = useState<StagedPaymentQueue>("needs_review");
+  const [sort, setSort] = useState<StagedPaymentSort>("date_desc");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+
+  // Cross-pane selection.
+  const [selectedStaged, setSelectedStaged] = useState<StagedPayment | null>(
+    null,
+  );
+  const [selectedGiftId, setSelectedGiftId] = useState<string | null>(null);
+  const [selectedGiftLabel, setSelectedGiftLabel] = useState<string | null>(
+    null,
+  );
+
+  // Single entry point for choosing a gift on the right pane so the id and the
+  // human-readable label in the match bar never drift apart.
+  const selectGift = (giftId: string | null, label: string | null) => {
+    setSelectedGiftId(giftId);
+    setSelectedGiftLabel(giftId ? label : null);
+  };
+
+  // Right pane (CRM gifts) filters.
+  const [giftSearch, setGiftSearch] = useState("");
+  const [dateAfter, setDateAfter] = useState("");
+  const [dateBefore, setDateBefore] = useState("");
+  const [linkedFilter, setLinkedFilter] = useState<LinkedFilter>("all");
+  const [giftPage, setGiftPage] = useState(1);
+  const GIFT_PAGE_SIZE = 25;
+
+  // Create-gift dialog.
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const listParams = { queue, sort, limit: PAGE_SIZE, page };
   const listQ = useListStagedPayments(listParams, {
     query: { queryKey: getListStagedPaymentsQueryKey(listParams) },
   });
@@ -201,9 +277,16 @@ export default function StagedPayments() {
     query: { queryKey: getGetStagedPaymentsSummaryQueryKey() },
   });
 
-  const invalidateAll = () => {
+  const invalidateStaged = () => {
     qc.invalidateQueries({ queryKey: ["/staged-payments"] });
     qc.invalidateQueries({ queryKey: getGetStagedPaymentsSummaryQueryKey() });
+  };
+  const invalidateGifts = () => {
+    qc.invalidateQueries({ queryKey: ["/gifts-and-payments"] });
+  };
+  const invalidateAll = () => {
+    invalidateStaged();
+    invalidateGifts();
   };
 
   // ── Inline donor creation (org / person / household) ──────────────────────
@@ -269,9 +352,7 @@ export default function StagedPayments() {
     mutation: {
       onSuccess: (data) => {
         invalidateAll();
-        qc.invalidateQueries({
-          queryKey: getGetQuickbooksOauthStatusQueryKey(),
-        });
+        qc.invalidateQueries({ queryKey: getGetQuickbooksOauthStatusQueryKey() });
         toast({
           title: "Sync complete",
           description: data.ran
@@ -279,20 +360,19 @@ export default function StagedPayments() {
             : "A sync was already in progress.",
         });
       },
-      onError: (e: unknown) => {
+      onError: (e: unknown) =>
         toast({
           title: "Sync failed",
           description: e instanceof Error ? e.message : "Unknown error",
           variant: "destructive",
-        });
-      },
+        }),
     },
   });
 
   const rematch = useRematchStagedPayments({
     mutation: {
       onSuccess: (data) => {
-        invalidateAll();
+        invalidateStaged();
         toast({
           title: data.ran ? "Re-match complete" : "Re-match skipped",
           description: data.ran
@@ -300,20 +380,19 @@ export default function StagedPayments() {
             : "A sync or re-match was already in progress.",
         });
       },
-      onError: (e: unknown) => {
+      onError: (e: unknown) =>
         toast({
           title: "Re-match failed",
           description: e instanceof Error ? e.message : "Unknown error",
           variant: "destructive",
-        });
-      },
+        }),
     },
   });
 
   const reclassify = useReclassifyStagedPayments({
     mutation: {
       onSuccess: (data) => {
-        invalidateAll();
+        invalidateStaged();
         toast({
           title: data.ran ? "Reclassify complete" : "Reclassify skipped",
           description: data.ran
@@ -321,13 +400,54 @@ export default function StagedPayments() {
             : "A sync, re-match, or reclassify was already in progress.",
         });
       },
-      onError: (e: unknown) => {
+      onError: (e: unknown) =>
         toast({
           title: "Reclassify failed",
           description: e instanceof Error ? e.message : "Unknown error",
           variant: "destructive",
+        }),
+    },
+  });
+
+  // ── Cross-pane reconcile (Match) + unmatch (revert) ───────────────────────
+  const reconcile = useReconcileStagedPayment({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        selectGift(null, null);
+        setSelectedStaged(null);
+        toast({
+          title: "Matched",
+          description: "Tied the payment to an existing gift.",
         });
       },
+      onError: (e: unknown) =>
+        toast({
+          title: "Match failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const revert = useRevertStagedPayment({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        toast({
+          title: "Unmatched",
+          description: "Returned the payment to the needs-review queue.",
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Unmatch failed",
+          description:
+            e instanceof Error
+              ? e.message
+              : "Could not unmatch (a manually-created gift must be reverted from its own record).",
+          variant: "destructive",
+        }),
     },
   });
 
@@ -336,11 +456,16 @@ export default function StagedPayments() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const summary = summaryQ.data;
 
-  // If the queue shrinks (after a sync / resolve / reject), pull the user back
-  // onto a valid page instead of stranding them on an empty one.
   useEffect(() => {
     if (!listQ.isFetching && page > totalPages) setPage(totalPages);
   }, [listQ.isFetching, page, totalPages]);
+
+  // Drop a stale left selection if it falls out of the current queue/page.
+  useEffect(() => {
+    if (selectedStaged && !rows.some((r) => r.id === selectedStaged.id)) {
+      setSelectedStaged(null);
+    }
+  }, [rows, selectedStaged]);
 
   const countFor = (q: StagedPaymentQueue): number | undefined => {
     if (!summary) return undefined;
@@ -361,17 +486,53 @@ export default function StagedPayments() {
   const activeLabel =
     QUEUES.find((q) => q.value === queue)?.label.toLowerCase() ?? "";
 
+  // Selecting a payment seeds the gift pane with a donor-centric + date-window
+  // search so likely existing gifts surface immediately. Filters stay editable.
+  const selectStaged = (row: StagedPayment) => {
+    if (selectedStaged?.id === row.id) {
+      setSelectedStaged(null);
+      selectGift(null, null);
+      return;
+    }
+    setSelectedStaged(row);
+    // Drop any gift carried over from a previous payment so a stale right-side
+    // selection can never be matched to the newly chosen payment by accident.
+    selectGift(null, null);
+    setGiftSearch(donorNameFromRow(row) ?? row.payerName ?? "");
+    setDateAfter(shiftIsoDate(row.dateReceived, -30));
+    setDateBefore(shiftIsoDate(row.dateReceived, 30));
+    setLinkedFilter("all");
+    setGiftPage(1);
+  };
+
+  const canMatch =
+    queue === "needs_review" &&
+    selectedStaged != null &&
+    selectedStaged.status === "pending" &&
+    selectedGiftId != null &&
+    !reconcile.isPending;
+
+  const doMatch = () => {
+    if (!selectedStaged || !selectedGiftId) return;
+    reconcile.mutate({
+      id: selectedStaged.id,
+      data: { giftId: selectedGiftId },
+    });
+  };
+
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">
             QuickBooks Reconciliation
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Incoming payments pulled from QuickBooks. High-confidence matches are
-            applied automatically (reversible); uncertain ones land in “Needs
-            review” for you to reconcile to an existing gift or record a new one.
+          <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
+            Incoming payments from QuickBooks on the left, your CRM gifts on the
+            right. High-confidence matches are applied automatically
+            (reversible); for the rest, pick a payment and an existing gift then
+            press <span className="font-medium">Match</span>, or record a new
+            gift.
           </p>
         </div>
         {isAdmin ? (
@@ -411,89 +572,261 @@ export default function StagedPayments() {
         ) : null}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {QUEUES.map((q) => {
-          const c = countFor(q.value);
-          return (
+      {/* Cross-pane match bar. */}
+      <Card>
+        <CardContent className="flex flex-wrap items-center gap-3 py-3">
+          <div className="text-sm">
+            <span className="text-muted-foreground">Payment: </span>
+            {selectedStaged ? (
+              <span className="font-medium" data-testid="match-selected-staged">
+                {selectedStaged.payerName ?? "Unknown payer"} ·{" "}
+                {formatAmount(selectedStaged.amount)} ·{" "}
+                {selectedStaged.dateReceived ?? "no date"}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">none selected</span>
+            )}
+          </div>
+          <div className="text-sm">
+            <span className="text-muted-foreground">Gift: </span>
+            {selectedGiftId ? (
+              <span className="font-medium" data-testid="match-selected-gift">
+                {selectedGiftLabel ?? "selected"}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">none selected</span>
+            )}
+          </div>
+          <div className="ml-auto flex flex-wrap gap-2">
             <Button
-              key={q.value}
-              variant={queue === q.value ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setQueue(q.value);
-                setPage(1);
-              }}
-              data-testid={`staged-tab-${q.value}`}
+              onClick={doMatch}
+              disabled={!canMatch}
+              data-testid="match-button"
+              title={
+                queue !== "needs_review"
+                  ? "Switch to the Needs review queue to match a payment."
+                  : "Reconcile the selected payment to the selected gift."
+              }
             >
-              {q.label}
-              {typeof c === "number" ? (
-                <span className="ml-2 text-xs opacity-70">{c}</span>
-              ) : null}
-            </Button>
-          );
-        })}
-      </div>
-
-      {listQ.isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : listQ.isError ? (
-        <p className="text-sm text-red-700">Failed to load staged payments.</p>
-      ) : rows.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No {activeLabel} payments.
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {rows.map((row) => (
-            <StagedPaymentCard
-              key={row.id}
-              row={row}
-              queue={queue}
-              onChanged={invalidateAll}
-              onCreateOrganization={onCreateOrganization}
-              onCreatePerson={onCreatePerson}
-              onCreateHousehold={onCreateHousehold}
-            />
-          ))}
-        </div>
-      )}
-
-      {total > PAGE_SIZE || page > 1 ? (
-        <div className="flex items-center justify-between pt-2">
-          <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages} · {total} total
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1 || listQ.isFetching}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              data-testid="staged-page-prev"
-            >
-              Previous
+              {reconcile.isPending ? "Matching…" : "Match →"}
             </Button>
             <Button
               variant="outline"
-              size="sm"
-              disabled={page >= totalPages || listQ.isFetching}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              data-testid="staged-page-next"
+              onClick={() => setCreateOpen(true)}
+              disabled={createOpen}
+              data-testid="open-create-gift"
+              title="Record a brand-new gift (optionally from the selected payment)."
             >
-              Next
+              Create new gift…
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* ── LEFT: staged QuickBooks imports ── */}
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={queue}
+              onValueChange={(v) => {
+                setQueue(v as StagedPaymentQueue);
+                setPage(1);
+                setSelectedStaged(null);
+              }}
+            >
+              <SelectTrigger className="h-9 w-[170px]" data-testid="staged-queue">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {QUEUES.map((q) => {
+                  const c = countFor(q.value);
+                  return (
+                    <SelectItem
+                      key={q.value}
+                      value={q.value}
+                      data-testid={`staged-queue-${q.value}`}
+                    >
+                      {q.label}
+                      {typeof c === "number" ? ` (${c})` : ""}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            <Select
+              value={sort}
+              onValueChange={(v) => {
+                setSort(v as StagedPaymentSort);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="h-9 w-[185px]" data-testid="staged-sort">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORTS.map((s) => (
+                  <SelectItem
+                    key={s.value}
+                    value={s.value}
+                    data-testid={`staged-sort-${s.value}`}
+                  >
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {listQ.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : listQ.isError ? (
+            <p className="text-sm text-red-700">
+              Failed to load staged payments.
+            </p>
+          ) : rows.length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No {activeLabel} payments.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {rows.map((row) => (
+                <StagedPaymentCard
+                  key={row.id}
+                  row={row}
+                  queue={queue}
+                  selected={selectedStaged?.id === row.id}
+                  onSelect={() => selectStaged(row)}
+                  onChanged={invalidateAll}
+                  onCreateOrganization={onCreateOrganization}
+                  onCreatePerson={onCreatePerson}
+                  onCreateHousehold={onCreateHousehold}
+                />
+              ))}
+            </div>
+          )}
+
+          {total > PAGE_SIZE || page > 1 ? (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-muted-foreground">
+                Page {page} of {totalPages} · {total} total
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1 || listQ.isFetching}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  data-testid="staged-page-prev"
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages || listQ.isFetching}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  data-testid="staged-page-next"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+
+        {/* ── RIGHT: CRM gifts ── */}
+        <GiftsPanel
+          search={giftSearch}
+          setSearch={(v) => {
+            setGiftSearch(v);
+            setGiftPage(1);
+          }}
+          dateAfter={dateAfter}
+          setDateAfter={(v) => {
+            setDateAfter(v);
+            setGiftPage(1);
+          }}
+          dateBefore={dateBefore}
+          setDateBefore={(v) => {
+            setDateBefore(v);
+            setGiftPage(1);
+          }}
+          linkedFilter={linkedFilter}
+          setLinkedFilter={(v) => {
+            setLinkedFilter(v);
+            setGiftPage(1);
+          }}
+          page={giftPage}
+          setPage={setGiftPage}
+          pageSize={GIFT_PAGE_SIZE}
+          selectedGiftId={selectedGiftId}
+          onSelectGift={selectGift}
+          stagedAmount={selectedStaged?.amount}
+          onUnmatch={(stagedPaymentId) =>
+            revert.mutate({ id: stagedPaymentId })
+          }
+          unmatching={revert.isPending}
+        />
+      </div>
+
+      <CreateGiftDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        fromStaged={selectedStaged}
+        onCreateOrganization={onCreateOrganization}
+        onCreatePerson={onCreatePerson}
+        onCreateHousehold={onCreateHousehold}
+        onCreated={(giftId) => {
+          invalidateGifts();
+          // If a payment is selected and still pending, tie it to the new gift.
+          if (
+            selectedStaged &&
+            selectedStaged.status === "pending" &&
+            queue === "needs_review"
+          ) {
+            reconcile.mutate(
+              {
+                id: selectedStaged.id,
+                data: { giftId },
+              },
+              {
+                // The gift already exists at this point; if the link step
+                // fails (e.g. the payment changed underneath) say so clearly
+                // so the operator links it by hand instead of re-creating it.
+                onError: (e: unknown) =>
+                  toast({
+                    title: "Gift created, but not linked",
+                    description: `The new gift was saved but couldn't be tied to the payment automatically (${
+                      e instanceof Error ? e.message : "unknown error"
+                    }). Find it on the right and press Match.`,
+                    variant: "destructive",
+                  }),
+              },
+            );
+          } else {
+            toast({
+              title: "Gift created",
+              description: "Recorded a new gift.",
+            });
+          }
+        }}
+      />
     </div>
   );
 }
 
+/* ────────────────────────────────────────────────────────────────────────
+ * LEFT: a single staged-payment card.
+ * ──────────────────────────────────────────────────────────────────────── */
+
 function StagedPaymentCard({
   row,
   queue,
+  selected,
+  onSelect,
   onChanged,
   onCreateOrganization,
   onCreatePerson,
@@ -501,6 +834,8 @@ function StagedPaymentCard({
 }: {
   row: StagedPayment;
   queue: StagedPaymentQueue;
+  selected: boolean;
+  onSelect: () => void;
   onChanged: () => void;
   onCreateOrganization: (name: string) => Promise<string | null>;
   onCreatePerson: (name: string) => Promise<string | null>;
@@ -512,17 +847,11 @@ function StagedPaymentCard({
   const [donorId, setDonorId] = useState<string | null>(
     donorIdFromRow(row, initialType),
   );
-  // Keep local donor selection in sync if the server row changes underneath us.
   useEffect(() => {
     const t = donorTypeFromRow(row);
     setDonorType(t);
     setDonorId(donorIdFromRow(row, t));
-  }, [
-    row.id,
-    row.organizationId,
-    row.individualGiverPersonId,
-    row.householdId,
-  ]);
+  }, [row.id, row.organizationId, row.individualGiverPersonId, row.householdId]);
 
   const editable = queue === "needs_review";
   const isExcluded = queue === "excluded";
@@ -536,23 +865,6 @@ function StagedPaymentCard({
       onError: (e: unknown) =>
         toast({
           title: "Update failed",
-          description: e instanceof Error ? e.message : "Unknown error",
-          variant: "destructive",
-        }),
-    },
-  });
-  const createGift = useCreateGiftFromStagedPayment({
-    mutation: {
-      onSuccess: () => {
-        onChanged();
-        toast({
-          title: "Gift created",
-          description: "A new gift was recorded from this payment.",
-        });
-      },
-      onError: (e: unknown) =>
-        toast({
-          title: "Create gift failed",
           description: e instanceof Error ? e.message : "Unknown error",
           variant: "destructive",
         }),
@@ -617,23 +929,6 @@ function StagedPaymentCard({
         }),
     },
   });
-  const reconcile = useReconcileStagedPayment({
-    mutation: {
-      onSuccess: () => {
-        onChanged();
-        toast({
-          title: "Reconciled",
-          description: "Tied to an existing gift — no new gift was created.",
-        });
-      },
-      onError: (e: unknown) =>
-        toast({
-          title: "Reconcile failed",
-          description: e instanceof Error ? e.message : "Unknown error",
-          variant: "destructive",
-        }),
-    },
-  });
   const revert = useRevertStagedPayment({
     mutation: {
       onSuccess: () => {
@@ -652,8 +947,6 @@ function StagedPaymentCard({
     },
   });
 
-  // Seeded from the row so re-classifying an already-excluded row pre-selects
-  // its current category; pending rows start blank to force an explicit choice.
   const [excludeReason, setExcludeReason] = useState<
     StagedPaymentExclusionReason | ""
   >(row.exclusionReason ?? "");
@@ -678,44 +971,45 @@ function StagedPaymentCard({
     },
   });
 
-  const [showReconciler, setShowReconciler] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
 
   const busy =
     resolve.isPending ||
-    createGift.isPending ||
     reject.isPending ||
     reInclude.isPending ||
     exclude.isPending ||
     confirmMatch.isPending ||
     unmatch.isPending ||
-    reconcile.isPending ||
     revert.isPending;
 
   const hasDonor = donorId != null;
   const matchState = matchStateOf(row);
-  const hasSavedDonor =
-    row.organizationId != null ||
-    row.individualGiverPersonId != null ||
-    row.householdId != null;
+  const donorLabel = donorNameFromRow(row);
+
+  const wasReconciled = row.matchedGiftId != null;
+  const wasAutoMinted = row.createdGiftId != null && row.autoApplied;
+  const canRevert = wasReconciled || wasAutoMinted;
 
   const handleSaveDonor = () => {
     resolve.mutate({ id: row.id, data: donorBodyFor(donorType, donorId) });
   };
 
-  const donorLabel = donorNameFromRow(row);
-
-  // Revert is allowed for reconciled rows (link cleared) and auto-minted gifts
-  // (gift deleted), but not for a manually created gift (would orphan a row).
-  const wasReconciled = row.matchedGiftId != null;
-  const wasAutoMinted = row.createdGiftId != null && row.autoApplied;
-  const canRevert = wasReconciled || wasAutoMinted;
+  const selectable = queue === "needs_review";
 
   return (
-    <Card data-testid={`staged-payment-${row.id}`}>
+    <Card
+      data-testid={`staged-payment-${row.id}`}
+      className={selected ? "ring-2 ring-primary" : undefined}
+    >
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
+          <button
+            type="button"
+            className="text-left min-w-0"
+            onClick={selectable ? onSelect : undefined}
+            data-testid={`staged-select-${row.id}`}
+            disabled={!selectable}
+          >
             <CardTitle className="text-lg">
               {row.payerName ?? "Unknown payer"}
               <span className="ml-2 text-base font-normal text-muted-foreground">
@@ -728,9 +1022,20 @@ function StagedPaymentCard({
               {row.payerEmail ? ` · ${row.payerEmail}` : ""}
               {row.rawReference ? ` · ${row.rawReference}` : ""}
             </CardDescription>
-          </div>
+          </button>
           <div className="flex flex-wrap items-center gap-1.5">
-            {row.autoApplied && (queue === "auto_matched" || queue === "done") ? (
+            {selectable ? (
+              <Badge
+                variant={selected ? "default" : "outline"}
+                className="cursor-pointer"
+                onClick={onSelect}
+                data-testid={`staged-select-badge-${row.id}`}
+              >
+                {selected ? "Selected" : "Select"}
+              </Badge>
+            ) : null}
+            {row.autoApplied &&
+            (queue === "auto_matched" || queue === "done") ? (
               <Badge variant="outline" data-testid={`staged-auto-${row.id}`}>
                 Auto-applied
               </Badge>
@@ -741,7 +1046,7 @@ function StagedPaymentCard({
                 data-testid={`staged-score-${row.id}`}
                 title={
                   row.matchMethod
-                    ? MATCH_METHOD_LABELS[row.matchMethod] ?? row.matchMethod
+                    ? (MATCH_METHOD_LABELS[row.matchMethod] ?? row.matchMethod)
                     : undefined
                 }
               >
@@ -822,28 +1127,9 @@ function StagedPaymentCard({
                   data-testid={`staged-unmatch-${row.id}`}
                   title="Clear the donor and reset this row to unmatched."
                 >
-                  {unmatch.isPending ? "Clearing…" : "Unmatch"}
+                  {unmatch.isPending ? "Clearing…" : "Clear donor"}
                 </Button>
               ) : null}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowReconciler((v) => !v)}
-                disabled={busy}
-                data-testid={`staged-reconcile-toggle-${row.id}`}
-              >
-                {showReconciler
-                  ? "Hide existing gifts"
-                  : "Reconcile to existing gift"}
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => createGift.mutate({ id: row.id })}
-                disabled={busy || !hasDonor}
-                data-testid={`staged-create-gift-${row.id}`}
-              >
-                {createGift.isPending ? "Creating…" : "Create new gift"}
-              </Button>
               <Button
                 variant="ghost"
                 size="sm"
@@ -862,7 +1148,7 @@ function StagedPaymentCard({
                   disabled={busy}
                 >
                   <SelectTrigger
-                    className="h-9 w-[210px]"
+                    className="h-9 w-[200px]"
                     data-testid={`staged-exclude-reason-${row.id}`}
                   >
                     <SelectValue placeholder="Exclude as…" />
@@ -898,22 +1184,11 @@ function StagedPaymentCard({
                 </Button>
               </div>
             </div>
-            {!hasDonor ? (
-              <p className="text-xs text-muted-foreground">
-                Pick a donor before creating a new gift, or reconcile to an
-                existing gift below (which can adopt the gift’s donor).
-              </p>
-            ) : null}
-            {showReconciler ? (
-              <Reconciler
-                row={row}
-                hasSavedDonor={hasSavedDonor}
-                onReconcile={(giftId) =>
-                  reconcile.mutate({ id: row.id, data: { giftId } })
-                }
-                reconciling={reconcile.isPending}
-              />
-            ) : null}
+            <p className="text-xs text-muted-foreground">
+              {hasDonor
+                ? "Select this payment, then pick an existing gift on the right and press Match — or use “Create new gift”."
+                : "Pick a donor to speed up matching, or select this payment and reconcile to an existing gift on the right."}
+            </p>
           </>
         ) : isExcluded ? (
           <div className="space-y-3">
@@ -945,7 +1220,7 @@ function StagedPaymentCard({
                 disabled={busy}
               >
                 <SelectTrigger
-                  className="h-9 w-[210px]"
+                  className="h-9 w-[200px]"
                   data-testid={`staged-reclassify-reason-${row.id}`}
                 >
                   <SelectValue placeholder="Change category…" />
@@ -985,11 +1260,11 @@ function StagedPaymentCard({
           </div>
         ) : queue === "rejected" ? (
           <div className="text-sm text-muted-foreground">
-            Rejected{row.rejectedAt ? ` · ${formatDateTime(row.rejectedAt)}` : ""}
-            . Retained so a future sync won’t re-stage it.
+            Rejected
+            {row.rejectedAt ? ` · ${formatDateTime(row.rejectedAt)}` : ""}.
+            Retained so a future sync won’t re-stage it.
           </div>
         ) : (
-          // auto_matched + done: show the applied result + confirm / revert.
           <ResolvedSummary
             row={row}
             queue={queue}
@@ -1013,8 +1288,7 @@ function StagedPaymentCard({
   );
 }
 
-// Summary of an applied (approved) row for the Auto-matched / Done queues:
-// what gift it was tied to, plus Confirm (auto_matched → done) and Revert.
+// Summary of an applied (approved) row for the Auto-matched / Done queues.
 function ResolvedSummary({
   row,
   queue,
@@ -1095,197 +1369,445 @@ function ResolvedSummary({
   );
 }
 
-// Two-column reconciler: left lists candidate existing gifts, sourced either
-// from the saved donor (tight amount band) or a donor-agnostic amount/date
-// window. The fundraiser reconciles the staged payment to one of them.
-function Reconciler({
-  row,
-  hasSavedDonor,
-  onReconcile,
-  reconciling,
-}: {
-  row: StagedPayment;
-  hasSavedDonor: boolean;
-  onReconcile: (giftId: string) => void;
-  reconciling: boolean;
-}) {
-  const [source, setSource] = useState<"donor" | "window">(
-    hasSavedDonor ? "donor" : "window",
-  );
-  useEffect(() => {
-    if (!hasSavedDonor) setSource("window");
-  }, [hasSavedDonor]);
+/* ────────────────────────────────────────────────────────────────────────
+ * RIGHT: CRM gifts panel.
+ * ──────────────────────────────────────────────────────────────────────── */
 
-  const donorQ = useListStagedPaymentGiftCandidates(row.id, {
-    query: {
-      enabled: source === "donor" && hasSavedDonor,
-      queryKey: getListStagedPaymentGiftCandidatesQueryKey(row.id),
-    },
+function GiftsPanel({
+  search,
+  setSearch,
+  dateAfter,
+  setDateAfter,
+  dateBefore,
+  setDateBefore,
+  linkedFilter,
+  setLinkedFilter,
+  page,
+  setPage,
+  pageSize,
+  selectedGiftId,
+  onSelectGift,
+  stagedAmount,
+  onUnmatch,
+  unmatching,
+}: {
+  search: string;
+  setSearch: (v: string) => void;
+  dateAfter: string;
+  setDateAfter: (v: string) => void;
+  dateBefore: string;
+  setDateBefore: (v: string) => void;
+  linkedFilter: LinkedFilter;
+  setLinkedFilter: (v: LinkedFilter) => void;
+  page: number;
+  setPage: (v: number) => void;
+  pageSize: number;
+  selectedGiftId: string | null;
+  onSelectGift: (id: string | null, label: string | null) => void;
+  stagedAmount: string | null | undefined;
+  onUnmatch: (stagedPaymentId: string) => void;
+  unmatching: boolean;
+}) {
+  // Debounce the free-text search so we don't fire a request per keystroke.
+  const [debounced, setDebounced] = useState(search);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const params = useMemo(() => {
+    const p: {
+      limit: number;
+      page: number;
+      search?: string;
+      dateAfter?: string;
+      dateBefore?: string;
+      linkedToQuickbooks?: "linked" | "unlinked";
+    } = { limit: pageSize, page };
+    if (debounced.trim()) p.search = debounced.trim();
+    if (dateAfter) p.dateAfter = dateAfter;
+    if (dateBefore) p.dateBefore = dateBefore;
+    if (linkedFilter !== "all") p.linkedToQuickbooks = linkedFilter;
+    return p;
+  }, [debounced, dateAfter, dateBefore, linkedFilter, page, pageSize]);
+
+  const giftsQ = useListGiftsAndPayments(params, {
+    query: { queryKey: getListGiftsAndPaymentsQueryKey(params) },
   });
-  const windowParams = { days: 30 };
-  const windowQ = useListStagedPaymentGiftWindow(row.id, windowParams, {
-    query: {
-      enabled: source === "window",
-      queryKey: getListStagedPaymentGiftWindowQueryKey(row.id, windowParams),
-    },
-  });
-  const activeQ = source === "donor" ? donorQ : windowQ;
+
+  const gifts = giftsQ.data?.data ?? [];
+  const total = giftsQ.data?.pagination?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div
-      className="rounded-md border"
-      data-testid={`staged-reconciler-${row.id}`}
-    >
-      <div className="grid grid-cols-1 md:grid-cols-2">
-        {/* Left column: the QuickBooks payment we're reconciling. */}
-        <div className="border-b p-3 md:border-b-0 md:border-r">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            QuickBooks payment
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search gifts — name, donor, or intermediary…"
+          data-testid="gift-search"
+        />
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs text-muted-foreground">From</Label>
+            <Input
+              type="date"
+              value={dateAfter}
+              onChange={(e) => setDateAfter(e.target.value)}
+              className="h-9 w-[150px]"
+              data-testid="gift-date-after"
+            />
           </div>
-          <div className="text-sm font-medium">
-            {row.payerName ?? "Unknown payer"} {formatAmount(row.amount)}
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs text-muted-foreground">To</Label>
+            <Input
+              type="date"
+              value={dateBefore}
+              onChange={(e) => setDateBefore(e.target.value)}
+              className="h-9 w-[150px]"
+              data-testid="gift-date-before"
+            />
           </div>
-          <div className="text-xs text-muted-foreground">
-            {QB_ENTITY_TYPE_LABELS[row.qbEntityType] ?? row.qbEntityType} ·{" "}
-            {row.dateReceived ?? "no date"}
-          </div>
-          {row.lineDescription ? (
-            <div className="mt-1 text-xs text-muted-foreground break-words">
-              {row.lineDescription}
-            </div>
+          <Select
+            value={linkedFilter}
+            onValueChange={(v) => setLinkedFilter(v as LinkedFilter)}
+          >
+            <SelectTrigger
+              className="h-9 w-[160px]"
+              data-testid="gift-linked-filter"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All gifts</SelectItem>
+              <SelectItem value="unlinked">Not linked to QB</SelectItem>
+              <SelectItem value="linked">Linked to QB</SelectItem>
+            </SelectContent>
+          </Select>
+          {dateAfter || dateBefore || search || linkedFilter !== "all" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearch("");
+                setDateAfter("");
+                setDateBefore("");
+                setLinkedFilter("all");
+              }}
+              data-testid="gift-clear-filters"
+            >
+              Clear
+            </Button>
           ) : null}
         </div>
-
-        {/* Right column: candidate existing gifts. */}
-        <div className="p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Existing gifts
-            </div>
-            <div className="flex gap-1">
-              <Button
-                size="sm"
-                variant={source === "donor" ? "default" : "outline"}
-                className="h-7 px-2 text-xs"
-                onClick={() => setSource("donor")}
-                disabled={!hasSavedDonor}
-                data-testid={`staged-reconciler-source-donor-${row.id}`}
-                title={
-                  hasSavedDonor
-                    ? "Gifts for the saved donor near this amount."
-                    : "Save a donor first to search their gifts."
-                }
-              >
-                This donor
-              </Button>
-              <Button
-                size="sm"
-                variant={source === "window" ? "default" : "outline"}
-                className="h-7 px-2 text-xs"
-                onClick={() => setSource("window")}
-                data-testid={`staged-reconciler-source-window-${row.id}`}
-                title="Any donor's gifts within ±30 days and this amount."
-              >
-                Amount + date
-              </Button>
-            </div>
-          </div>
-          <GiftCandidateList
-            row={row}
-            query={activeQ}
-            showDonor={source === "window"}
-            onReconcile={onReconcile}
-            reconciling={reconciling}
-          />
-        </div>
       </div>
+
+      {giftsQ.isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading gifts…</p>
+      ) : giftsQ.isError ? (
+        <p className="text-sm text-red-700">Failed to load gifts.</p>
+      ) : gifts.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            No matching gifts. Adjust the search or create a new gift.
+          </CardContent>
+        </Card>
+      ) : (
+        <ul className="space-y-2" data-testid="gift-list">
+          {gifts.map((g) => (
+            <GiftRow
+              key={g.id}
+              gift={g}
+              selected={selectedGiftId === g.id}
+              onSelect={() =>
+                onSelectGift(
+                  selectedGiftId === g.id ? null : g.id,
+                  selectedGiftId === g.id ? null : giftRowLabel(g),
+                )
+              }
+              stagedAmount={stagedAmount}
+              onUnmatch={onUnmatch}
+              unmatching={unmatching}
+            />
+          ))}
+        </ul>
+      )}
+
+      {total > pageSize || page > 1 ? (
+        <div className="flex items-center justify-between pt-2">
+          <p className="text-sm text-muted-foreground">
+            Page {page} of {totalPages} · {total} total
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || giftsQ.isFetching}
+              onClick={() => setPage(Math.max(1, page - 1))}
+              data-testid="gift-page-prev"
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || giftsQ.isFetching}
+              onClick={() => setPage(Math.min(totalPages, page + 1))}
+              data-testid="gift-page-next"
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function GiftCandidateList({
-  row,
-  query,
-  showDonor,
-  onReconcile,
-  reconciling,
+function GiftRow({
+  gift,
+  selected,
+  onSelect,
+  stagedAmount,
+  onUnmatch,
+  unmatching,
 }: {
-  row: StagedPayment;
-  query: UseQueryResult<GiftCandidateList>;
-  showDonor: boolean;
-  onReconcile: (giftId: string) => void;
-  reconciling: boolean;
+  gift: GiftOrPayment;
+  selected: boolean;
+  onSelect: () => void;
+  stagedAmount: string | null | undefined;
+  onUnmatch: (stagedPaymentId: string) => void;
+  unmatching: boolean;
 }) {
-  const candidates: GiftCandidate[] = query.data?.data ?? [];
-
-  if (query.isLoading) {
-    return <p className="text-xs text-muted-foreground">Searching…</p>;
-  }
-  if (query.isError) {
-    return (
-      <p className="text-xs text-destructive">
-        Could not load candidates. Try again.
-      </p>
-    );
-  }
-  if (candidates.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        No matching gift found. Use “Create new gift” to record one.
-      </p>
-    );
-  }
+  const donorName = giftDonorName(gift);
+  const linkedStagedId = gift.quickbooksStagedPaymentId ?? null;
+  // A gift already linked to a QuickBooks payment can't be matched again; the
+  // only action is Unmatch, so selecting it for Match is disabled.
+  const selectable = linkedStagedId == null;
   return (
-    <ul className="space-y-2">
-      {candidates.map((c) => {
-        const alreadyLinked = c.alreadyLinkedStagedPaymentId != null;
-        const donorName =
-          c.organizationName ??
-          c.individualGiverPersonName ??
-          c.householdName ??
-          null;
-        return (
-          <li
-            key={c.id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5"
-            data-testid={`staged-candidate-${row.id}-${c.id}`}
-          >
-            <div className="min-w-0">
-              <div className="truncate text-sm">
-                {c.name ?? "Untitled gift"}
-                <span className="ml-2 text-muted-foreground">
-                  {formatAmount(c.amount)}
-                </span>
-              </div>
-              <div className="truncate text-xs text-muted-foreground">
-                {showDonor && donorName ? `${donorName} · ` : ""}
-                {c.dateReceived ?? "no date"}
-                {c.type ? ` · ${c.type}` : ""}
-                {feeDeltaLabel(row.amount, c.amount)}
-                {alreadyLinked
-                  ? " · already linked to a QuickBooks payment"
-                  : ""}
-              </div>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onReconcile(c.id)}
-              disabled={reconciling || alreadyLinked}
-              data-testid={`staged-reconcile-${row.id}-${c.id}`}
+    <li
+      className={`rounded border px-3 py-2 ${
+        selected ? "ring-2 ring-primary" : ""
+      }`}
+      data-testid={`gift-row-${gift.id}`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          className={`min-w-0 text-left ${selectable ? "" : "cursor-default"}`}
+          onClick={selectable ? onSelect : undefined}
+          data-testid={`gift-select-${gift.id}`}
+        >
+          <div className="truncate text-sm font-medium">
+            {gift.name ?? "Untitled gift"}
+            <span className="ml-2 font-normal text-muted-foreground">
+              {formatAmount(gift.amount)}
+            </span>
+          </div>
+          <div className="truncate text-xs text-muted-foreground">
+            {donorName ? `${donorName} · ` : ""}
+            {gift.dateReceived ?? "no date"}
+            {gift.type ? ` · ${gift.type}` : ""}
+            {gift.paymentIntermediaryName
+              ? ` · via ${gift.paymentIntermediaryName}`
+              : ""}
+            {feeDeltaLabel(stagedAmount, gift.amount)}
+          </div>
+        </button>
+        <div className="flex items-center gap-1.5">
+          {linkedStagedId ? (
+            <>
+              <Badge variant="secondary" data-testid={`gift-linked-${gift.id}`}>
+                Linked
+              </Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onUnmatch(linkedStagedId)}
+                disabled={unmatching}
+                data-testid={`gift-unmatch-${gift.id}`}
+                title="Undo the QuickBooks link. The gift itself is kept unless it was auto-created."
+              >
+                {unmatching ? "Unmatching…" : "Unmatch"}
+              </Button>
+            </>
+          ) : (
+            <Badge
+              variant={selected ? "default" : "outline"}
+              className="cursor-pointer"
+              onClick={onSelect}
+              data-testid={`gift-select-badge-${gift.id}`}
             >
-              {alreadyLinked ? "Linked" : "Reconcile"}
-            </Button>
-          </li>
-        );
-      })}
-    </ul>
+              {selected ? "Selected" : "Select"}
+            </Badge>
+          )}
+        </div>
+      </div>
+    </li>
   );
 }
 
-// Full, read-only dump of everything QuickBooks gave us for this row —
-// including the per-line item / account / class arrays — so a fundraiser can
-// see exactly what they are reconciling without leaving the page.
+/* ────────────────────────────────────────────────────────────────────────
+ * Create-new-gift dialog.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+function CreateGiftDialog({
+  open,
+  onOpenChange,
+  fromStaged,
+  onCreateOrganization,
+  onCreatePerson,
+  onCreateHousehold,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  fromStaged: StagedPayment | null;
+  onCreateOrganization: (name: string) => Promise<string | null>;
+  onCreatePerson: (name: string) => Promise<string | null>;
+  onCreateHousehold: (name: string) => Promise<string | null>;
+  onCreated: (giftId: string) => void;
+}) {
+  const { toast } = useToast();
+  const [donorType, setDonorType] = useState<DonorType>("organization");
+  const [donorId, setDonorId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [amount, setAmount] = useState("");
+  const [dateReceived, setDateReceived] = useState("");
+
+  // Seed the form from the selected payment each time the dialog opens.
+  useEffect(() => {
+    if (!open) return;
+    const t = fromStaged ? donorTypeFromRow(fromStaged) : "organization";
+    setDonorType(t);
+    setDonorId(fromStaged ? donorIdFromRow(fromStaged, t) : null);
+    setName(fromStaged?.payerName ?? "");
+    setAmount(fromStaged?.amount ?? "");
+    setDateReceived(fromStaged?.dateReceived ?? "");
+  }, [open, fromStaged]);
+
+  const createGift = useCreateGiftOrPayment({
+    mutation: {
+      onSuccess: (created) => {
+        onOpenChange(false);
+        if (created?.id) onCreated(created.id);
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Create gift failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const canSave = donorId != null && !createGift.isPending;
+
+  const save = () => {
+    if (!donorId) return;
+    const donor = donorBodyFor(donorType, donorId);
+    createGift.mutate({
+      data: {
+        ...(name.trim() ? { name: name.trim() } : {}),
+        ...(amount.trim() ? { amount: amount.trim() } : {}),
+        ...(dateReceived ? { dateReceived } : {}),
+        organizationId: donor.organizationId ?? undefined,
+        individualGiverPersonId: donor.individualGiverPersonId ?? undefined,
+        householdId: donor.householdId ?? undefined,
+      },
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent data-testid="create-gift-dialog">
+        <DialogHeader>
+          <DialogTitle>Create new gift</DialogTitle>
+          <DialogDescription>
+            {fromStaged
+              ? "Record a new gift and tie the selected QuickBooks payment to it."
+              : "Record a new gift in the CRM."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label className="text-sm font-medium">Donor</Label>
+            <div className="mt-1">
+              <DonorFieldPicker
+                type={donorType}
+                id={donorId}
+                onChange={(t, id) => {
+                  setDonorType(t);
+                  setDonorId(id);
+                }}
+                testIdBase="create-gift-donor"
+                disabled={createGift.isPending}
+                onCreateOrganization={onCreateOrganization}
+                onCreatePerson={onCreatePerson}
+                onCreateHousehold={onCreateHousehold}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <Label className="text-xs text-muted-foreground">Name</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Gift name / description"
+                data-testid="create-gift-name"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">Amount</Label>
+              <Input
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                inputMode="decimal"
+                data-testid="create-gift-amount"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">
+                Date received
+              </Label>
+              <Input
+                type="date"
+                value={dateReceived}
+                onChange={(e) => setDateReceived(e.target.value)}
+                data-testid="create-gift-date"
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={createGift.isPending}
+            data-testid="create-gift-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={save}
+            disabled={!canSave}
+            data-testid="create-gift-save"
+          >
+            {createGift.isPending ? "Saving…" : "Create gift"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Read-only details dump for a staged row.
+ * ──────────────────────────────────────────────────────────────────────── */
+
 function StagedPaymentDetails({
   row,
   donorLabel,

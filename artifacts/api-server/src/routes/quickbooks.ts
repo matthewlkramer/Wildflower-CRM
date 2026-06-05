@@ -8,7 +8,7 @@ import {
   people,
   paymentIntermediaries,
 } from "@workspace/db/schema";
-import { and, count, desc, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, sql } from "drizzle-orm";
 import { alias, type PgSelect } from "drizzle-orm/pg-core";
 import { requireAuth } from "../middlewares/requireAuth";
 import {
@@ -128,6 +128,36 @@ function withJoins<T extends PgSelect>(q: T) {
 
 type Queue = "needs_review" | "auto_matched" | "excluded" | "done" | "rejected";
 
+const STAGED_SORTS = [
+  "date_desc",
+  "date_asc",
+  "amount_desc",
+  "amount_asc",
+  "payer_asc",
+  "payer_desc",
+] as const;
+type StagedSort = (typeof STAGED_SORTS)[number];
+
+// Column ordering for the reconciler's sort dropdown. createdAt is the stable
+// tiebreak so paging is deterministic within a sort key.
+function stagedOrderBy(sort: StagedSort) {
+  switch (sort) {
+    case "date_asc":
+      return [asc(stagedPayments.dateReceived), desc(stagedPayments.createdAt)];
+    case "amount_desc":
+      return [desc(stagedPayments.amount), desc(stagedPayments.createdAt)];
+    case "amount_asc":
+      return [asc(stagedPayments.amount), desc(stagedPayments.createdAt)];
+    case "payer_asc":
+      return [asc(stagedPayments.payerName), desc(stagedPayments.createdAt)];
+    case "payer_desc":
+      return [desc(stagedPayments.payerName), desc(stagedPayments.createdAt)];
+    case "date_desc":
+    default:
+      return [desc(stagedPayments.dateReceived), desc(stagedPayments.createdAt)];
+  }
+}
+
 function queueWhere(queue: Queue) {
   switch (queue) {
     case "auto_matched":
@@ -161,19 +191,18 @@ router.get(
     ).includes(raw as Queue)
       ? (raw as Queue)
       : "needs_review";
+    const rawSort =
+      typeof req.query["sort"] === "string" ? req.query["sort"] : "";
+    const sort: StagedSort = (STAGED_SORTS as readonly string[]).includes(rawSort)
+      ? (rawSort as StagedSort)
+      : "date_desc";
     const { limit, offset, page } = parsePagination(req.query);
     const where = queueWhere(queue);
 
     const [rows, totalRow] = await Promise.all([
       withJoins(db.select(stagedSelect).from(stagedPayments).$dynamic())
         .where(where)
-        // Payments / sales-receipts before bank deposits, then newest first, so
-        // per-donor payments are never buried under a large pile of deposits.
-        .orderBy(
-          sql`CASE WHEN ${stagedPayments.qbEntityType} = 'deposit' THEN 1 ELSE 0 END`,
-          desc(stagedPayments.dateReceived),
-          desc(stagedPayments.createdAt),
-        )
+        .orderBy(...stagedOrderBy(sort))
         .limit(limit)
         .offset(offset),
       db
