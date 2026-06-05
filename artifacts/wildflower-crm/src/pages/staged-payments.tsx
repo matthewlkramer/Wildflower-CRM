@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import {
   useListStagedPayments,
   getListStagedPaymentsQueryKey,
@@ -9,6 +9,9 @@ import {
   useApproveStagedPayment,
   useRejectStagedPayment,
   useReIncludeStagedPayment,
+  useLinkStagedPayment,
+  useListStagedPaymentGiftCandidates,
+  getListStagedPaymentGiftCandidatesQueryKey,
   useRunQuickbooksSync,
   useGetCurrentUser,
   getGetQuickbooksOauthStatusQueryKey,
@@ -16,6 +19,8 @@ import {
   type StagedPaymentStatus,
   type StagedPaymentExclusionReason,
   type QuickbooksEntityType,
+  type GiftCandidate,
+  type GiftCandidateList,
 } from "@workspace/api-client-react";
 import {
   Card,
@@ -297,12 +302,46 @@ function StagedPaymentCard({
     },
   });
 
+  const [showCandidates, setShowCandidates] = useState(false);
+  const link = useLinkStagedPayment({
+    mutation: {
+      onSuccess: () => {
+        onChanged();
+        toast({
+          title: "Linked",
+          description: "Tied to an existing gift — no new gift was created.",
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Link failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+  // The server matches candidates against the SAVED donor on the row, so only
+  // fetch once a donor is persisted (matchStatus flips to "matched" on save).
+  const candidates = useListStagedPaymentGiftCandidates(row.id, {
+    query: {
+      enabled: showCandidates,
+      queryKey: getListStagedPaymentGiftCandidatesQueryKey(row.id),
+    },
+  });
+
   const busy =
     resolve.isPending ||
     approve.isPending ||
     reject.isPending ||
-    reInclude.isPending;
+    reInclude.isPending ||
+    link.isPending;
   const hasDonor = donorId != null;
+  // A donor persisted on the row (not just picked locally) is required for the
+  // candidate search, since the server reads the saved donor FKs.
+  const hasSavedDonor =
+    row.organizationId != null ||
+    row.individualGiverPersonId != null ||
+    row.householdId != null;
 
   const handleSaveDonor = () => {
     resolve.mutate({
@@ -378,6 +417,15 @@ function StagedPaymentCard({
                 Save donor
               </Button>
               <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCandidates((v) => !v)}
+                disabled={busy || !hasSavedDonor}
+                data-testid={`staged-find-gift-${row.id}`}
+              >
+                {showCandidates ? "Hide existing gifts" : "Find existing gift"}
+              </Button>
+              <Button
                 size="sm"
                 onClick={() => approve.mutate({ id: row.id })}
                 disabled={busy || !hasDonor}
@@ -399,6 +447,18 @@ function StagedPaymentCard({
               <p className="text-xs text-muted-foreground">
                 Pick a donor before approving.
               </p>
+            ) : !hasSavedDonor ? (
+              <p className="text-xs text-muted-foreground">
+                Save the donor first to search for a matching existing gift.
+              </p>
+            ) : null}
+            {showCandidates ? (
+              <GiftCandidates
+                row={row}
+                query={candidates}
+                onLink={(giftId) => link.mutate({ id: row.id, data: { giftId } })}
+                linking={link.isPending}
+              />
             ) : null}
           </>
         ) : excluded ? (
@@ -427,5 +487,80 @@ function StagedPaymentCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Existing gifts that match this staged payment's donor + amount. Linking ties
+// the QuickBooks record to one of these instead of minting a new gift.
+function GiftCandidates({
+  row,
+  query,
+  onLink,
+  linking,
+}: {
+  row: StagedPayment;
+  query: UseQueryResult<GiftCandidateList>;
+  onLink: (giftId: string) => void;
+  linking: boolean;
+}) {
+  const candidates: GiftCandidate[] = query.data?.data ?? [];
+
+  return (
+    <div
+      className="rounded-md border p-3"
+      data-testid={`staged-candidates-${row.id}`}
+    >
+      <div className="mb-2 text-sm font-medium">
+        Existing gifts matching {formatAmount(row.amount)} for this donor
+      </div>
+      {query.isLoading ? (
+        <p className="text-xs text-muted-foreground">Searching…</p>
+      ) : query.isError ? (
+        <p className="text-xs text-destructive">
+          Could not load candidates. Try again.
+        </p>
+      ) : candidates.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          No matching gift found. Use “Approve → create gift” to record a new
+          one.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {candidates.map((c) => {
+            const alreadyLinked = c.alreadyLinkedStagedPaymentId != null;
+            return (
+              <li
+                key={c.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5"
+                data-testid={`staged-candidate-${row.id}-${c.id}`}
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm">
+                    {c.name ?? "Untitled gift"}
+                    <span className="ml-2 text-muted-foreground">
+                      {formatAmount(c.amount)}
+                    </span>
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {c.dateReceived ?? "no date"}
+                    {c.type ? ` · ${c.type}` : ""}
+                    {alreadyLinked ? " · already linked to a QuickBooks payment" : ""}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onLink(c.id)}
+                  disabled={linking || alreadyLinked}
+                  data-testid={`staged-link-${row.id}-${c.id}`}
+                >
+                  {alreadyLinked ? "Linked" : "Link"}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }

@@ -96,6 +96,7 @@ import type {
   GetTaskProposalParams,
   GiftAllocation,
   GiftAllocationList,
+  GiftCandidateList,
   GiftOrPayment,
   GiftOrPaymentDetail,
   GiftOrPaymentList,
@@ -109,6 +110,7 @@ import type {
   Interaction,
   InteractionList,
   InternalEmailDomainsConfig,
+  LinkStagedPaymentBody,
   LinkThankYouEmailBody,
   ListAddressesParams,
   ListCalendarEventsParams,
@@ -13652,6 +13654,208 @@ export const useReIncludeStagedPayment = <
   TContext
 > => {
   return useMutation(getReIncludeStagedPaymentMutationOptions(options));
+};
+
+/**
+ * Finds already-recorded gifts_and_payments rows for the staged payment's
+saved donor whose amount equals the staged amount, so the fundraiser can
+link the QuickBooks record to an existing gift instead of creating a
+duplicate. Returns an empty list if the staged row has no donor or no
+amount. Ordered by date proximity to the staged payment's date. Each
+candidate flags whether it is already linked to another QuickBooks
+staged payment.
+
+ * @summary Existing gifts/payments that match this staged payment's donor + amount.
+ */
+export const getListStagedPaymentGiftCandidatesUrl = (id: string) => {
+  return `/api/staged-payments/${id}/gift-candidates`;
+};
+
+export const listStagedPaymentGiftCandidates = async (
+  id: string,
+  options?: RequestInit,
+): Promise<GiftCandidateList> => {
+  return customFetch<GiftCandidateList>(
+    getListStagedPaymentGiftCandidatesUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListStagedPaymentGiftCandidatesQueryKey = (id: string) => {
+  return [`/api/staged-payments/${id}/gift-candidates`] as const;
+};
+
+export const getListStagedPaymentGiftCandidatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListStagedPaymentGiftCandidatesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>
+  > = ({ signal }) =>
+    listStagedPaymentGiftCandidates(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListStagedPaymentGiftCandidatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>
+>;
+export type ListStagedPaymentGiftCandidatesQueryError =
+  ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Existing gifts/payments that match this staged payment's donor + amount.
+ */
+
+export function useListStagedPaymentGiftCandidates<
+  TData = Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListStagedPaymentGiftCandidatesQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Ties the QuickBooks staged payment to an already-recorded
+gifts_and_payments row instead of minting a new one. Marks the staged
+row approved with createdGiftId pointing at the chosen gift. The gift's
+donor must match the staged payment's saved donor, and the gift must not
+already be linked to another staged payment.
+
+ * @summary Link a staged payment to an existing gift (no new gift is created).
+ */
+export const getLinkStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/link`;
+};
+
+export const linkStagedPayment = async (
+  id: string,
+  linkStagedPaymentBody: LinkStagedPaymentBody,
+  options?: RequestInit,
+): Promise<ApproveStagedPaymentResponse> => {
+  return customFetch<ApproveStagedPaymentResponse>(
+    getLinkStagedPaymentUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(linkStagedPaymentBody),
+    },
+  );
+};
+
+export const getLinkStagedPaymentMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof linkStagedPayment>>,
+    TError,
+    { id: string; data: BodyType<LinkStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof linkStagedPayment>>,
+  TError,
+  { id: string; data: BodyType<LinkStagedPaymentBody> },
+  TContext
+> => {
+  const mutationKey = ["linkStagedPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof linkStagedPayment>>,
+    { id: string; data: BodyType<LinkStagedPaymentBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return linkStagedPayment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LinkStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof linkStagedPayment>>
+>;
+export type LinkStagedPaymentMutationBody = BodyType<LinkStagedPaymentBody>;
+export type LinkStagedPaymentMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Link a staged payment to an existing gift (no new gift is created).
+ */
+export const useLinkStagedPayment = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof linkStagedPayment>>,
+    TError,
+    { id: string; data: BodyType<LinkStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof linkStagedPayment>>,
+  TError,
+  { id: string; data: BodyType<LinkStagedPaymentBody> },
+  TContext
+> => {
+  return useMutation(getLinkStagedPaymentMutationOptions(options));
 };
 
 /**

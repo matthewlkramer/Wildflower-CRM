@@ -1773,6 +1773,22 @@ export interface ApproveStagedPaymentResponse {
   downloadUrl?: string;
 }
 
+export type GiftCandidate = GiftOrPayment & {
+  /** Set when this gift is already the createdGiftId of another staged payment. The UI disables linking to it to avoid double-counting. */
+  alreadyLinkedStagedPaymentId?: string | null;
+};
+
+export interface GiftCandidateList {
+  data: GiftCandidate[];
+}
+
+/**
+ * Link the staged payment to an existing gifts_and_payments row.
+ */
+export interface LinkStagedPaymentBody {
+  giftId: string;
+}
+
 export interface CandidateThankYouEmail {
   emailMessageId: string;
   gmailMessageId?: string | null;

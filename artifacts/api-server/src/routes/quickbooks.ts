@@ -18,7 +18,11 @@ import {
 } from "../lib/helpers";
 import { getAppUser } from "../lib/appRequest";
 import { validateGiftInvariants, type InvariantIssue } from "@workspace/api-zod";
-import { ResolveStagedPaymentBody } from "@workspace/api-zod";
+import {
+  ResolveStagedPaymentBody,
+  LinkStagedPaymentBody,
+} from "@workspace/api-zod";
+import { donorOf, validateGiftLink } from "../lib/quickbooksLink";
 import { logger } from "../lib/logger";
 import { syncQuickbooks } from "../lib/quickbooksSync";
 
@@ -306,6 +310,189 @@ router.post(
       .where(eq(stagedPayments.id, id))
       .returning();
     res.json(row);
+  }),
+);
+
+// ─── GET /staged-payments/:id/gift-candidates ──────────────────────────────
+// Existing gifts for the staged row's saved donor whose amount equals the
+// staged amount — so a fundraiser can link the QB record to a gift already in
+// the ledger instead of minting a duplicate. Empty list when the staged row
+// has no donor or no amount. Flags candidates already linked to another staged
+// payment so the UI can disable double-linking.
+router.get(
+  "/staged-payments/:id/gift-candidates",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const staged = await db
+      .select()
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (!staged) return notFound(res, "staged payment");
+
+    const donor = donorOf(staged);
+    const donorFilter =
+      donor.organizationId != null
+        ? eq(giftsAndPayments.organizationId, donor.organizationId)
+        : donor.individualGiverPersonId != null
+          ? eq(
+              giftsAndPayments.individualGiverPersonId,
+              donor.individualGiverPersonId,
+            )
+          : donor.householdId != null
+            ? eq(giftsAndPayments.householdId, donor.householdId)
+            : null;
+
+    // No donor or no amount → nothing to match against.
+    if (donorFilter == null || staged.amount == null) {
+      res.json({ data: [] });
+      return;
+    }
+
+    // Flag a gift already linked to a *different* staged payment via a
+    // correlated subquery (not a join) so a gift linked by multiple staged
+    // rows can't duplicate candidate rows.
+    const rows = await db
+      .select({
+        ...getTableColumns(giftsAndPayments),
+        organizationName: organizations.name,
+        householdName: households.name,
+        individualGiverPersonName: people.fullName,
+        alreadyLinkedStagedPaymentId: sql<string | null>`(
+          SELECT sp2.id FROM staged_payments sp2
+          WHERE sp2.created_gift_id = ${giftsAndPayments.id} AND sp2.id <> ${id}
+          LIMIT 1
+        )`,
+      })
+      .from(giftsAndPayments)
+      .leftJoin(
+        organizations,
+        eq(organizations.id, giftsAndPayments.organizationId),
+      )
+      .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
+      .leftJoin(
+        people,
+        eq(people.id, giftsAndPayments.individualGiverPersonId),
+      )
+      .where(and(donorFilter, eq(giftsAndPayments.amount, staged.amount)))
+      .orderBy(
+        sql`ABS(${giftsAndPayments.dateReceived} - ${staged.dateReceived}::date) ASC NULLS LAST`,
+        desc(giftsAndPayments.dateReceived),
+      )
+      .limit(50);
+
+    res.json({ data: rows });
+  }),
+);
+
+// ─── POST /staged-payments/:id/link ────────────────────────────────────────
+// Tie a staged payment to an EXISTING gift instead of minting a new one. Marks
+// the row approved with createdGiftId → the chosen gift. Guards: row pending,
+// gift exists, donor matches, gift not already linked elsewhere.
+router.post(
+  "/staged-payments/:id/link",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const id = paramId(req);
+    const parsed = LinkStagedPaymentBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    const { giftId } = parsed.data;
+
+    const existing = await db
+      .select()
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (!existing) return notFound(res, "staged payment");
+    if (existing.status !== "pending") {
+      res.status(409).json({
+        error: "not_pending",
+        message: "This staged payment has already been resolved.",
+      });
+      return;
+    }
+
+    const gift = await db
+      .select()
+      .from(giftsAndPayments)
+      .where(eq(giftsAndPayments.id, giftId))
+      .then((r) => r[0]);
+    if (!gift) return notFound(res, "gift");
+
+    // Is this gift already linked to a *different* staged payment?
+    const otherLink = await db
+      .select({ id: stagedPayments.id })
+      .from(stagedPayments)
+      .where(
+        and(
+          eq(stagedPayments.createdGiftId, giftId),
+          sql`${stagedPayments.id} <> ${id}`,
+        ),
+      )
+      .then((r) => r[0]);
+
+    const issues = validateGiftLink({
+      stagedDonor: donorOf(existing),
+      giftDonor: donorOf(gift),
+      alreadyLinkedStagedPaymentId: otherLink?.id ?? null,
+    });
+    if (issues.length) {
+      res.status(issues.some((i) => i.code === "already_linked") ? 409 : 400).json({
+        error: "link_invalid",
+        message: "Cannot link this staged payment to that gift.",
+        details: {
+          issues: issues.map((i) => ({ path: ["giftId"], message: i.message })),
+        },
+      });
+      return;
+    }
+
+    // Atomic write: only succeeds if the row is still pending AND no other
+    // staged payment has grabbed this gift since the pre-check. Without a
+    // DB unique constraint, this WHERE predicate is what prevents two
+    // concurrent links from double-counting one gift.
+    const updated = await db
+      .update(stagedPayments)
+      .set({
+        status: "approved",
+        createdGiftId: giftId,
+        approvedByUserId: user.id,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(stagedPayments.id, id),
+          eq(stagedPayments.status, "pending"),
+          sql`NOT EXISTS (
+            SELECT 1 FROM staged_payments sp2
+            WHERE sp2.created_gift_id = ${giftId} AND sp2.id <> ${id}
+          )`,
+        ),
+      )
+      .returning({ id: stagedPayments.id });
+
+    if (updated.length === 0) {
+      res.status(409).json({
+        error: "link_conflict",
+        message:
+          "This staged payment is no longer pending, or that gift was just linked to another payment. Refresh and try again.",
+      });
+      return;
+    }
+
+    res.json({ gift, stagedPaymentId: id });
   }),
 );
 

@@ -7057,6 +7057,248 @@ export const ReIncludeStagedPaymentResponse = zod.object({
 });
 
 /**
+ * Finds already-recorded gifts_and_payments rows for the staged payment's
+saved donor whose amount equals the staged amount, so the fundraiser can
+link the QuickBooks record to an existing gift instead of creating a
+duplicate. Returns an empty list if the staged row has no donor or no
+amount. Ordered by date proximity to the staged payment's date. Each
+candidate flags whether it is already linked to another QuickBooks
+staged payment.
+
+ * @summary Existing gifts/payments that match this staged payment's donor + amount.
+ */
+export const ListStagedPaymentGiftCandidatesParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ListStagedPaymentGiftCandidatesResponse = zod.object({
+  data: zod.array(
+    zod
+      .object({
+        id: zod.string(),
+        legacyGiftId: zod.string().nullish(),
+        name: zod.string().nullish(),
+        details: zod.string().nullish(),
+        dateReceived: zod.string().date().nullish(),
+        paymentMethod: zod
+          .enum([
+            "ach",
+            "check",
+            "wire",
+            "stock",
+            "donor_box",
+            "daf_ach",
+            "daf_check",
+            "daf_bill_com",
+          ])
+          .nullish(),
+        amount: zod.string().nullish(),
+        organizationId: zod.string().nullish(),
+        individualGiverPersonId: zod.string().nullish(),
+        householdId: zod.string().nullish(),
+        type: zod
+          .enum([
+            "standard_gift",
+            "pledge_payment",
+            "directed_gift",
+            "loan_fund_investment",
+            "matching_gift",
+          ])
+          .nullish(),
+        paymentOnPledgeId: zod.string().nullish(),
+        advisorPersonId: zod.string().nullish(),
+        grantYear: zod.string().nullish(),
+        giftBeingMatchedId: zod.string().nullish(),
+        primaryContactPersonId: zod.string().nullish(),
+        paymentIntermediaryId: zod.string().nullish(),
+        ownerUserId: zod.string().nullish(),
+        designatedToSchool: zod.boolean(),
+        tags: zod.string().nullish(),
+        thankYouSentAt: zod
+          .string()
+          .date()
+          .nullish()
+          .describe(
+            "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time.",
+          ),
+        thankYouEmailMessageId: zod
+          .string()
+          .nullish()
+          .describe(
+            "FK to the email_messages row that was identified as the thank-you. Read-only; set via \/link-thank-you-email or the thank_you_acknowledgment proposal accept.",
+          ),
+        thankYouAttachments: zod
+          .array(
+            zod.object({
+              id: zod.string(),
+              filename: zod.string().nullish(),
+              mimeType: zod.string().nullish(),
+              sizeBytes: zod.number().nullish(),
+              downloadUrl: zod.string(),
+            }),
+          )
+          .nullish()
+          .describe(
+            "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
+          ),
+        organizationName: zod.string().nullish(),
+        householdName: zod.string().nullish(),
+        individualGiverPersonName: zod.string().nullish(),
+        organizationPriority: zod
+          .enum(["top", "high", "medium", "low"])
+          .nullish(),
+        individualGiverPersonPriority: zod
+          .enum(["top", "high", "medium", "low"])
+          .nullish(),
+        entityIds: zod
+          .array(zod.string())
+          .nullish()
+          .describe("Distinct entity_id values from gift_allocations."),
+        displayUsages: zod
+          .array(zod.string())
+          .nullish()
+          .describe(
+            "Distinct display_usage values from gift_allocations (server-computed labels).",
+          ),
+        grantYears: zod
+          .array(zod.string())
+          .nullish()
+          .describe("Distinct grant_year values from gift_allocations."),
+        createdAt: zod.string().datetime({}),
+        updatedAt: zod.string().datetime({}),
+      })
+      .and(
+        zod.object({
+          alreadyLinkedStagedPaymentId: zod
+            .string()
+            .nullish()
+            .describe(
+              "Set when this gift is already the createdGiftId of another staged payment. The UI disables linking to it to avoid double-counting.",
+            ),
+        }),
+      ),
+  ),
+});
+
+/**
+ * Ties the QuickBooks staged payment to an already-recorded
+gifts_and_payments row instead of minting a new one. Marks the staged
+row approved with createdGiftId pointing at the chosen gift. The gift's
+donor must match the staged payment's saved donor, and the gift must not
+already be linked to another staged payment.
+
+ * @summary Link a staged payment to an existing gift (no new gift is created).
+ */
+export const LinkStagedPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const LinkStagedPaymentBody = zod
+  .object({
+    giftId: zod.string(),
+  })
+  .describe("Link the staged payment to an existing gifts_and_payments row.");
+
+export const LinkStagedPaymentResponse = zod.object({
+  gift: zod.object({
+    id: zod.string(),
+    legacyGiftId: zod.string().nullish(),
+    name: zod.string().nullish(),
+    details: zod.string().nullish(),
+    dateReceived: zod.string().date().nullish(),
+    paymentMethod: zod
+      .enum([
+        "ach",
+        "check",
+        "wire",
+        "stock",
+        "donor_box",
+        "daf_ach",
+        "daf_check",
+        "daf_bill_com",
+      ])
+      .nullish(),
+    amount: zod.string().nullish(),
+    organizationId: zod.string().nullish(),
+    individualGiverPersonId: zod.string().nullish(),
+    householdId: zod.string().nullish(),
+    type: zod
+      .enum([
+        "standard_gift",
+        "pledge_payment",
+        "directed_gift",
+        "loan_fund_investment",
+        "matching_gift",
+      ])
+      .nullish(),
+    paymentOnPledgeId: zod.string().nullish(),
+    advisorPersonId: zod.string().nullish(),
+    grantYear: zod.string().nullish(),
+    giftBeingMatchedId: zod.string().nullish(),
+    primaryContactPersonId: zod.string().nullish(),
+    paymentIntermediaryId: zod.string().nullish(),
+    ownerUserId: zod.string().nullish(),
+    designatedToSchool: zod.boolean(),
+    tags: zod.string().nullish(),
+    thankYouSentAt: zod
+      .string()
+      .date()
+      .nullish()
+      .describe(
+        "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time.",
+      ),
+    thankYouEmailMessageId: zod
+      .string()
+      .nullish()
+      .describe(
+        "FK to the email_messages row that was identified as the thank-you. Read-only; set via \/link-thank-you-email or the thank_you_acknowledgment proposal accept.",
+      ),
+    thankYouAttachments: zod
+      .array(
+        zod.object({
+          id: zod.string(),
+          filename: zod.string().nullish(),
+          mimeType: zod.string().nullish(),
+          sizeBytes: zod.number().nullish(),
+          downloadUrl: zod.string(),
+        }),
+      )
+      .nullish()
+      .describe(
+        "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
+      ),
+    organizationName: zod.string().nullish(),
+    householdName: zod.string().nullish(),
+    individualGiverPersonName: zod.string().nullish(),
+    organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+    individualGiverPersonPriority: zod
+      .enum(["top", "high", "medium", "low"])
+      .nullish(),
+    entityIds: zod
+      .array(zod.string())
+      .nullish()
+      .describe("Distinct entity_id values from gift_allocations."),
+    displayUsages: zod
+      .array(zod.string())
+      .nullish()
+      .describe(
+        "Distinct display_usage values from gift_allocations (server-computed labels).",
+      ),
+    grantYears: zod
+      .array(zod.string())
+      .nullish()
+      .describe("Distinct grant_year values from gift_allocations."),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
+  }),
+  stagedPaymentId: zod.string(),
+  downloadUrl: zod
+    .string()
+    .optional()
+    .describe("API path that streams the file. Auth-gated."),
+});
+
+/**
  * Returns all organizations with priority='top' and all people with priority='top'
 who are NOT currently affiliated with a top-priority organization. Each row carries
 computed open-opportunity count, open-task count, affiliated people (organizations)

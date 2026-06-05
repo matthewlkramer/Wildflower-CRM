@@ -1857,6 +1857,43 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not excluded" }
+  /staged-payments/{id}/gift-candidates:
+    get:
+      operationId: listStagedPaymentGiftCandidates
+      tags: [staged-payments]
+      summary: Existing gifts/payments that match this staged payment's donor + amount.
+      description: |
+        Finds already-recorded gifts_and_payments rows for the staged payment's
+        saved donor whose amount equals the staged amount, so the fundraiser can
+        link the QuickBooks record to an existing gift instead of creating a
+        duplicate. Returns an empty list if the staged row has no donor or no
+        amount. Ordered by date proximity to the staged payment's date. Each
+        candidate flags whether it is already linked to another QuickBooks
+        staged payment.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftCandidateList" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /staged-payments/{id}/link:
+    post:
+      operationId: linkStagedPayment
+      tags: [staged-payments]
+      summary: Link a staged payment to an existing gift (no new gift is created).
+      description: |
+        Ties the QuickBooks staged payment to an already-recorded
+        gifts_and_payments row instead of minting a new one. Marks the staged
+        row approved with createdGiftId pointing at the chosen gift. The gift's
+        donor must match the staged payment's saved donor, and the gift must not
+        already be linked to another staged payment.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/LinkStagedPaymentBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ApproveStagedPaymentResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Staged payment is not pending, or the gift is already linked" }
 
   # ─── Top Priorities ────────────────────────────────────────────────────────
   /top-priorities:
@@ -3596,6 +3633,26 @@ components:
         gift:            { $ref: "#/components/schemas/GiftOrPayment" }
         stagedPaymentId: { type: string }
         downloadUrl: { type: string, description: "API path that streams the file. Auth-gated." }
+    GiftCandidate:
+      allOf:
+        - { $ref: "#/components/schemas/GiftOrPayment" }
+        - type: object
+          properties:
+            alreadyLinkedStagedPaymentId:
+              type: string
+              nullable: true
+              description: "Set when this gift is already the createdGiftId of another staged payment. The UI disables linking to it to avoid double-counting."
+    GiftCandidateList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/GiftCandidate" } }
+    LinkStagedPaymentBody:
+      type: object
+      required: [giftId]
+      description: "Link the staged payment to an existing gifts_and_payments row."
+      properties:
+        giftId: { type: string }
     CandidateThankYouEmail:
       type: object
       required: [emailMessageId, sentAt, hasDocumentAttachment]
