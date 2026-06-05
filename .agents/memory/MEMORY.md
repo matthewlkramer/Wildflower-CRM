@@ -23,6 +23,7 @@
 - [Fundable projects page](fundable-projects-page.md) — management moved off Admin to /fundable-projects; timeframes+goal columns nullable; progress = sum gift_allocations.sub_amount per project.
 - [clerk admin-gated e2e testing](clerk-admin-e2e-testing.md) — testClerkAuth provisions team_member; add a [DB] step to promote to admin or admin cards silently 403/hide.
 - [task intelligence](task-intelligence.md) — AI next-step suggestions in Tasks card; auto-generate ONLY on true first view (hasAnyProposal=false), never regenerate after accept/dismiss; refresh is explicit.
+- [QuickBooks staged-payment auto-exclude](quickbooks-staged-exclude.md) — classifier is insert-time only; existing rows cleared only by manual 0013 backfill; watermark sync won't re-enrich historical line detail (blocks membership Part C).
 - [QuickBooks payment sync](quickbooks-payment-sync.md) — pull-only QBO→CRM; idempotent (realmId,type,id) rows retained; dev keys⇒sandbox host, prod keys⇒live; redirect URI exact-match per key set; approve mints gift w/ Donor XOR.
 - [internal email domains config](internal-email-domains-config.md) — staff domains moved from hardcoded Set to internal_email_domains singleton; matcher loads via cached loadInternalDomains; defaults seed/fallback keep sync unchanged on rollout.
 - [Flodesk subscriber sync](flodesk-subscriber-sync.md) — people→one segment; Basic auth (not Bearer)+User-Agent; no-op until API key+segment id set; inbound monotonic, Flodesk unsubscribe wins; advisory lock (9001,2).
