@@ -699,4 +699,94 @@ describe("classifyStagedPayment", () => {
       }).reason,
     ).toBe("tax_refund");
   });
+
+  // ─── expensify ────────────────────────────────────────────────────────────
+  it("excludes an Expensify reimbursement on the payer as expensify", () => {
+    expect(
+      classifyStagedPayment({ ...base, payerName: "Expensify" }).reason,
+    ).toBe("expensify");
+  });
+
+  it("matches the expensify marker case-insensitively on any field", () => {
+    expect(
+      classifyStagedPayment({ ...base, rawReference: "EXPENSIFY reimbursement" })
+        .reason,
+    ).toBe("expensify");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineDescription: "Payment via expensify.com",
+      }).reason,
+    ).toBe("expensify");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineItemNames: ["Expensify expense report"],
+      }).reason,
+    ).toBe("expensify");
+  });
+
+  it("excludes an expensify row EVEN when it carries a donation line (no donation guard)", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "Expensify",
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: ["4000 Unrestricted Donations"],
+      }).reason,
+    ).toBe("expensify");
+  });
+
+  it("does not fire expensify on unrelated text", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        rawReference: "expense report reimbursement",
+      }).excluded,
+    ).toBe(false);
+  });
+
+  // ─── returned_wire ────────────────────────────────────────────────────────
+  it("excludes a returned wire transfer as returned_wire", () => {
+    expect(
+      classifyStagedPayment({ ...base, rawReference: "Returned Wire" }).reason,
+    ).toBe("returned_wire");
+  });
+
+  it("matches the returned-wire marker case-insensitively and whitespace-tolerantly on any field", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineDescription: "RETURNED  WIRE - insufficient routing info",
+      }).reason,
+    ).toBe("returned_wire");
+    expect(
+      classifyStagedPayment({ ...base, payerName: "Returned wire" }).reason,
+    ).toBe("returned_wire");
+  });
+
+  it("excludes a returned wire EVEN when it carries a donation line (no donation guard)", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        rawReference: "returned wire",
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: ["4000 Unrestricted Donations"],
+      }).reason,
+    ).toBe("returned_wire");
+  });
+
+  it("does not fire returned_wire on unrelated 'wire' or 'returned' text", () => {
+    expect(
+      classifyStagedPayment({ ...base, rawReference: "incoming wire transfer" })
+        .excluded,
+    ).toBe(false);
+    expect(
+      classifyStagedPayment({ ...base, rawReference: "returned to sender" })
+        .excluded,
+    ).toBe(false);
+  });
 });

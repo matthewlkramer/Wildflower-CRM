@@ -64,6 +64,11 @@ import {
   type DonorType,
 } from "@/components/entity-picker";
 import { useToast } from "@/hooks/use-toast";
+import {
+  looksLikeIntermediary,
+  donorNameFromMemo,
+  trimToEssentialName,
+} from "@/lib/donor-seed";
 
 /* ────────────────────────────────────────────────────────────────────────
  * QuickBooks reconciliation — two-table reconciler.
@@ -115,6 +120,8 @@ const EXCLUSION_REASON_LABELS: Record<StagedPaymentExclusionReason, string> = {
   other: "Other (not a gift)",
   insurance: "Insurance / COBRA reimbursement",
   expense_refund: "Expense refund (non-gift)",
+  expensify: "Expensify reimbursement (non-gift)",
+  returned_wire: "Returned wire (non-gift)",
 };
 
 const QB_ENTITY_TYPE_LABELS: Record<QuickbooksEntityType, string> = {
@@ -157,55 +164,15 @@ function donorNameFromRow(row: StagedPayment): string | null {
   );
 }
 
-// Pass-through processors / DAFs that show up as the payer (or get auto-matched
-// as the "donor") even though the real donor is named elsewhere on the record.
-const PAYMENT_INTERMEDIARY_HINTS = [
-  "stripe",
-  "donorbox",
-  "paypal",
-  "benevity",
-  "classy",
-  "givebutter",
-  "every.org",
-  "network for good",
-  "donor advised",
-  "donor-advised",
-  "charitable giving fund",
-  "charitable gift fund",
-  "daf",
-];
-
-function looksLikeIntermediary(name: string | null | undefined): boolean {
-  if (!name) return false;
-  const n = name.toLowerCase();
-  return PAYMENT_INTERMEDIARY_HINTS.some((h) => n.includes(h));
-}
-
-// Donations routed through an intermediary usually name the real donor in the
-// same sentence as the processor, e.g. "Stripe donation - Angie Schiavoni" or
-// "...Donor Advised Fund Gift from Nic and Lindsey Barnes, for Dahlia SF".
-// Pull that name out of a free-text memo / line description so we can seed the
-// gift search with the actual donor instead of the processor. Returns null when
-// nothing confident is found (caller falls back to the payer/donor name). The
-// seeded search is editable, so an imperfect guess is always recoverable.
-function donorNameFromMemo(text: string | null | undefined): string | null {
-  if (!text) return null;
-  const cleaned = text.replace(/\s+/g, " ").trim();
-  // "...from <NAME>..." — the strongest signal. Capture a capitalized run
-  // (allowing "and"/"&") and stop at a comma/period or a connective word.
-  const fromMatch = cleaned.match(
-    /\bfrom\s+([A-Z][^,.]*?)(?=\s+(?:for|via|through|to|in|at|on|by)\b|[,.]|$)/,
-  );
-  const candidate = fromMatch?.[1] ?? cleaned.match(/-\s*([A-Z][A-Za-z.'&\- ]+)$/)?.[1];
-  const trimmed = candidate?.replace(/[^A-Za-z.]+$/, "").trim();
-  return trimmed ? trimmed : null;
-}
-
 // Best guess at the donor name to seed the gift search with: trust the matched
 // donor / payer unless it looks like a payment intermediary (or is empty), in
-// which case dig the real donor out of the memo / line description.
+// which case dig the real donor out of the memo / line description. The final
+// seed is trimmed to its essential token(s) (generic org words dropped) to
+// improve matching — e.g. "CityBridge Foundation" → "CityBridge". The search box
+// stays editable, so an imperfect guess is always recoverable.
 function donorSearchSeed(row: StagedPayment): string {
   const base = donorNameFromRow(row) ?? row.payerName ?? "";
+  let seed = base;
   if (
     base === "" ||
     looksLikeIntermediary(base) ||
@@ -214,9 +181,9 @@ function donorSearchSeed(row: StagedPayment): string {
     const fromMemo =
       donorNameFromMemo(row.lineDescription) ??
       donorNameFromMemo(row.rawReference);
-    if (fromMemo) return fromMemo;
+    if (fromMemo) seed = fromMemo;
   }
-  return base;
+  return trimToEssentialName(seed);
 }
 
 function giftDonorName(g: GiftOrPayment): string | null {

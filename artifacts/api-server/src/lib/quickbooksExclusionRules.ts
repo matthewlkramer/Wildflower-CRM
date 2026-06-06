@@ -63,20 +63,31 @@
  *                                deliberately NOT subject to the donation-first
  *                                guard (some refunds, e.g. ERC, are miscoded in
  *                                QuickBooks to a donation income account).
+ *  12. expensify               — Expensify expense-reimbursement activity. Any
+ *                                record whose text contains "expensify" anywhere
+ *                                is categorically not a gift. A TEXT rule matched
+ *                                as a substring anywhere on the row; never a gift,
+ *                                so NOT subject to the donation-first guard.
+ *  13. returned_wire           — a wire transfer that was returned (money sent out
+ *                                that bounced back), not an incoming contribution.
+ *                                A TEXT rule matched by "returned wire"
+ *                                (whitespace-tolerant) anywhere on the row; never
+ *                                a gift, so NOT subject to the donation-first guard.
  *
  * DONATION-FIRST GUARD: the line-based rules (loan-by-guaranty, interest,
  * tax_refund, other_revenue, earned_income) never fire on a row that ALSO carries
  * a real donation line (a Donation item or a 4000/4100-series donation account),
  * so a deposit bundling a gift with a fee / interest / refund line is never
  * wrongly hidden. The IDENTITY / TEXT rules (fiscally_sponsored, insurance,
- * expense_refund) intentionally BYPASS this guard — they identify money that is
- * categorically not a gift regardless of how the line is coded.
+ * expensify, returned_wire, expense_refund) intentionally BYPASS this guard —
+ * they identify money that is categorically not a gift regardless of how the line
+ * is coded.
  *
  * Rules are applied in a deterministic order (see `classifyStagedPayment`):
  * zero_amount → loan (payer) → government_reimbursement → fiscally_sponsored →
- * insurance → loan (line/memo) → loan (guaranty line) → interest → tax_refund →
- * other_revenue → earned_income → expense_refund → membership. The first match
- * wins.
+ * insurance → expensify → returned_wire → loan (line/memo) → loan (guaranty line)
+ * → interest → tax_refund → other_revenue → earned_income → expense_refund →
+ * membership. The first match wins.
  */
 
 export type ExclusionReason =
@@ -90,7 +101,9 @@ export type ExclusionReason =
   | "earned_income"
   | "fiscally_sponsored"
   | "insurance"
-  | "expense_refund";
+  | "expense_refund"
+  | "expensify"
+  | "returned_wire";
 
 export interface ClassifierInput {
   amount: string | null;
@@ -294,6 +307,26 @@ export const INSURANCE_MARKER_SUBSTRINGS: readonly string[] = ["cobra"];
 export const EXPENSE_REFUND_TEXT_PATTERNS: readonly RegExp[] = [/\brefund/i];
 
 /**
+ * EXPENSIFY markers. Expensify is an expense-reimbursement service; any incoming
+ * record whose text mentions "expensify" is reimbursement activity, never a gift.
+ * A TEXT rule — matched as a case-insensitive SUBSTRING ANYWHERE on the row
+ * (payer, memo, line description, item, account, Class). Identity rule, so it
+ * ignores the donation-first guard.
+ */
+export const EXPENSIFY_MARKER_SUBSTRINGS: readonly string[] = ["expensify"];
+
+/**
+ * RETURNED-WIRE markers. A wire transfer the org SENT that bounced back is not an
+ * incoming contribution. They surface with the phrase "returned wire" somewhere
+ * on the row. A TEXT rule — matched ANYWHERE on the row, whitespace-tolerant
+ * (`returned\s+wire`, so "returned  wire" / "RETURNED WIRE" match) but not stray
+ * single tokens. Identity rule, so it ignores the donation-first guard.
+ */
+export const RETURNED_WIRE_TEXT_PATTERNS: readonly RegExp[] = [
+  /returned\s+wire/i,
+];
+
+/**
  * DONATION-line markers used by the donation-first guard: a Donation item or a
  * 4000/4100-series donation income account. When present, the line-based noise
  * rules are suppressed so a bundled gift is never hidden.
@@ -488,13 +521,39 @@ function isExpenseRefund(input: ClassifierInput): boolean {
 }
 
 /**
+ * True if a row is Expensify expense-reimbursement activity: the "expensify"
+ * marker substring appears anywhere on the row. Identity rule — never a gift, so
+ * it ignores the donation-first guard.
+ */
+function isExpensify(input: ClassifierInput): boolean {
+  if (EXPENSIFY_MARKER_SUBSTRINGS.length === 0) return false;
+  const needles = EXPENSIFY_MARKER_SUBSTRINGS.map(normalize);
+  return allTextFields(input)
+    .map(normalize)
+    .some((h) => needles.some((n) => h.includes(n)));
+}
+
+/**
+ * True if a row is a returned wire transfer: the phrase "returned wire"
+ * (whitespace-tolerant) appears anywhere on the row. Identity rule — money sent
+ * out that bounced back, never an incoming gift, so it ignores the donation-first
+ * guard.
+ */
+function isReturnedWire(input: ClassifierInput): boolean {
+  if (RETURNED_WIRE_TEXT_PATTERNS.length === 0) return false;
+  const hay = allTextFields(input).join(" ");
+  return RETURNED_WIRE_TEXT_PATTERNS.some((re) => re.test(hay));
+}
+
+/**
  * Pure noise classifier. Takes a normalized payment + its captured line detail
  * and returns whether it should be auto-excluded and why. Deterministic rule
  * order: zero_amount → loan (payer) → government_reimbursement →
- * fiscally_sponsored → insurance → loan (guaranty line) → interest → tax_refund →
- * other_revenue → earned_income → expense_refund → membership; first match wins.
- * The line-based rules honor the donation-first guard; the identity / text rules
- * (fiscally_sponsored, insurance, expense_refund) intentionally bypass it.
+ * fiscally_sponsored → insurance → expensify → returned_wire → loan (guaranty
+ * line) → interest → tax_refund → other_revenue → earned_income → expense_refund →
+ * membership; first match wins. The line-based rules honor the donation-first
+ * guard; the identity / text rules (fiscally_sponsored, insurance, expensify,
+ * returned_wire, expense_refund) intentionally bypass it.
  */
 export function classifyStagedPayment(
   input: ClassifierInput,
@@ -535,6 +594,19 @@ export function classifyStagedPayment(
   //     every captured field.
   if (isInsuranceMarker(input)) {
     return { excluded: true, reason: "insurance" };
+  }
+
+  // 4c. Expensify expense-reimbursement activity (the "expensify" marker).
+  //     Identity rule — never a gift, fires BEFORE the donation guard.
+  if (isExpensify(input)) {
+    return { excluded: true, reason: "expensify" };
+  }
+
+  // 4d. Returned wire transfers (the "returned wire" marker): money the org sent
+  //     that bounced back, not an incoming gift. Identity rule — fires BEFORE the
+  //     donation guard.
+  if (isReturnedWire(input)) {
+    return { excluded: true, reason: "returned_wire" };
   }
 
   // The remaining line-based noise rules are suppressed when the row also carries

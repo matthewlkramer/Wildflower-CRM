@@ -457,6 +457,8 @@ export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
 //   other                    — catch-all manual exclusion when no specific category fits (manual-only)
 //   insurance                — COBRA / insurance-premium reimbursements (BASICCOBRA marker); never a gift
 //   expense_refund           — refunds of the org's own expenses (vendor overpayments, ERC tax refunds, etc.); not a contribution
+//   expensify                — Expensify expense-reimbursement activity ("expensify" marker); never a gift
+//   returned_wire            — a wire transfer the org sent that bounced back ("returned wire" marker); not an incoming gift
 export const stagedPaymentExclusionReasonEnum = pgEnum(
   "staged_payment_exclusion_reason",
   [
@@ -473,6 +475,8 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
     "other",
     "insurance",
     "expense_refund",
+    "expensify",
+    "returned_wire",
   ],
 );
 

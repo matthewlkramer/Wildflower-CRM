@@ -6968,6 +6968,8 @@ export const ListStagedPaymentsResponse = zod.object({
           "other",
           "insurance",
           "expense_refund",
+          "expensify",
+          "returned_wire",
         ])
         .nullish(),
       classificationSource: zod.enum(["auto", "manual"]),
@@ -7054,6 +7056,8 @@ export const GetStagedPaymentsSummaryResponse = zod.object({
     other: zod.number(),
     insurance: zod.number(),
     expense_refund: zod.number(),
+    expensify: zod.number(),
+    returned_wire: zod.number(),
   }),
 });
 
@@ -7126,6 +7130,8 @@ export const ResolveStagedPaymentResponse = zod.object({
       "other",
       "insurance",
       "expense_refund",
+      "expensify",
+      "returned_wire",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -7233,6 +7239,8 @@ export const RejectStagedPaymentResponse = zod.object({
       "other",
       "insurance",
       "expense_refund",
+      "expensify",
+      "returned_wire",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -7333,6 +7341,8 @@ export const ReIncludeStagedPaymentResponse = zod.object({
       "other",
       "insurance",
       "expense_refund",
+      "expensify",
+      "returned_wire",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -7422,6 +7432,8 @@ export const ExcludeStagedPaymentBody = zod
       "other",
       "insurance",
       "expense_refund",
+      "expensify",
+      "returned_wire",
     ]),
   })
   .describe("File the staged payment under a non-gift exclusion category.");
@@ -7460,6 +7472,8 @@ export const ExcludeStagedPaymentResponse = zod.object({
       "other",
       "insurance",
       "expense_refund",
+      "expensify",
+      "returned_wire",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -8106,6 +8120,8 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
       "other",
       "insurance",
       "expense_refund",
+      "expensify",
+      "returned_wire",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -8206,6 +8222,8 @@ export const UnmatchStagedPaymentResponse = zod.object({
       "other",
       "insurance",
       "expense_refund",
+      "expensify",
+      "returned_wire",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),
@@ -8313,6 +8331,8 @@ export const RevertStagedPaymentResponse = zod.object({
       "other",
       "insurance",
       "expense_refund",
+      "expensify",
+      "returned_wire",
     ])
     .nullish(),
   classificationSource: zod.enum(["auto", "manual"]),

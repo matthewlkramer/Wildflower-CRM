@@ -341,6 +341,8 @@ router.get(
       other: 0,
       insurance: 0,
       expense_refund: 0,
+      expensify: 0,
+      returned_wire: 0,
     };
     for (const r of reasonRows) {
       if (r.reason && r.reason in excludedByReason) {

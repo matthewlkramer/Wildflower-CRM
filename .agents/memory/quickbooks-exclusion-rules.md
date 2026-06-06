@@ -85,6 +85,14 @@ SQL backfill must mirror the regex (TS `\b…\b` ⇄ Postgres `~* '\y…\y'`).
   refunds are MISCODED to a `4000.4` donation income account — a guarded rule would
   trap them in the queue forever. Memo regex TS `/\brefund/i` ⇄ SQL `~ '\mrefund'`
   (matches refund/refunds/refunded, NOT "prefund").
+- `expensify` (the word "expensify"): Expensify expense-reimbursement activity.
+  **UNGUARDED** TEXT/identity rule, fires right after `insurance` (before the
+  donation guard). Substring `expensify` on any field. TS substring ⇄ SQL
+  `LIKE '%expensify%'`.
+- `returned_wire` ("returned wire"): a wire the org SENT that bounced back, not
+  incoming money. **UNGUARDED** TEXT/identity rule, fires after `expensify`.
+  Whitespace-tolerant TS `/returned\s+wire/i` ⇄ SQL `~ 'returned[[:space:]]+wire'`
+  (NOT bare "wire" / "returned" alone).
 
 ## Two-file enum migration gotcha
 

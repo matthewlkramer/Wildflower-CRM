@@ -1679,6 +1679,8 @@ export const StagedPaymentExclusionReason = {
   other: "other",
   insurance: "insurance",
   expense_refund: "expense_refund",
+  expensify: "expensify",
+  returned_wire: "returned_wire",
 } as const;
 
 export type StagedPaymentMatchStatus =
@@ -1849,6 +1851,8 @@ export type StagedPaymentSummaryExcludedByReason = {
   other: number;
   insurance: number;
   expense_refund: number;
+  expensify: number;
+  returned_wire: number;
 };
 
 export interface StagedPaymentSummary {
