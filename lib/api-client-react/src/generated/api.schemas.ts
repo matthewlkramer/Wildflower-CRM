@@ -1783,6 +1783,8 @@ export interface StagedPayment {
   qbEntityType: QuickbooksEntityType;
   qbEntityId: string;
   qbLineId?: string | null;
+  /** The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed). */
+  qbDepositId?: string | null;
   amount?: string | null;
   dateReceived?: string | null;
   payerName?: string | null;
@@ -1806,6 +1808,8 @@ export interface StagedPayment {
   matchedPaymentIntermediaryId?: string | null;
   matchedGiftId?: string | null;
   createdGiftId?: string | null;
+  /** Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert. */
+  groupReconciledGiftId?: string | null;
   autoApplied: boolean;
   approvedByUserId?: string | null;
   approvedAt?: string | null;
@@ -1907,6 +1911,26 @@ export interface GiftCandidateList {
  */
 export interface ReconcileStagedPaymentBody {
   giftId: string;
+}
+
+/**
+ * Group several same-deposit staged payments and reconcile the whole group to one existing gift.
+ */
+export interface GroupReconcileStagedPaymentsBody {
+  /**
+   * Ids of the staged payments to group. Must be at least two, all pending, and all sharing the same non-null qbDepositId.
+   * @minItems 2
+   */
+  stagedPaymentIds: string[];
+  /** The existing gift the deposit group reconciles to. */
+  giftId: string;
+}
+
+export interface GroupReconcileStagedPaymentsResponse {
+  gift: GiftOrPayment;
+  stagedPaymentIds: string[];
+  /** The group member that also carries matchedGiftId (the one that makes the gift show linked). */
+  representativeStagedPaymentId: string;
 }
 
 /**

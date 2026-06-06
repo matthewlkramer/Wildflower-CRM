@@ -16,6 +16,8 @@ import {
   eq,
   getTableColumns,
   ilike,
+  inArray,
+  notInArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -33,6 +35,7 @@ import { validateGiftInvariants, type InvariantIssue } from "@workspace/api-zod"
 import {
   ResolveStagedPaymentBody,
   ReconcileStagedPaymentBody,
+  GroupReconcileStagedPaymentsBody,
   ExcludeStagedPaymentBody,
 } from "@workspace/api-zod";
 import { donorOf, hasExactlyOneDonor } from "../lib/quickbooksLink";
@@ -171,7 +174,7 @@ function withJoins<T extends PgSelect>(q: T) {
     )
     .leftJoin(
       resolvedGift,
-      sql`${resolvedGift.id} = COALESCE(${stagedPayments.matchedGiftId}, ${stagedPayments.createdGiftId})`,
+      sql`${resolvedGift.id} = COALESCE(${stagedPayments.matchedGiftId}, ${stagedPayments.createdGiftId}, ${stagedPayments.groupReconciledGiftId})`,
     );
 }
 
@@ -996,6 +999,228 @@ router.post(
   }),
 );
 
+// ─── POST /staged-payments/group-reconcile ─────────────────────────────────
+// Manually group several staged payments that share ONE underlying bank Deposit
+// into a single "deposit unit" and reconcile the GROUP to ONE existing CRM gift
+// (which typically carries multiple allocations). No new gift is minted and
+// QuickBooks is never written back. Guards: at least two rows; every row pending
+// and not already resolved; all rows share the same non-null qbDepositId
+// (never across deposits); the gift exists with a single valid donor and is not
+// already linked to any other staged row; the members' combined total sits in
+// the fee-band tolerance around the gift amount. On success EVERY member gets
+// groupReconciledGiftId = the gift; exactly one deterministic "representative"
+// also gets matchedGiftId = the gift (satisfying the one-staged↔one-gift
+// partial-unique index and making the gift show linked). Reversible as a whole
+// via the group-aware revert. Idempotent: re-running with the same rows already
+// grouped is blocked by the not-pending guard.
+router.post(
+  "/staged-payments/group-reconcile",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const parsed = GroupReconcileStagedPaymentsBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    const { giftId } = parsed.data;
+    // De-dupe and sort for a deterministic representative (smallest id).
+    const ids = Array.from(new Set(parsed.data.stagedPaymentIds)).sort();
+    if (ids.length < 2) {
+      res.status(400).json({
+        error: "group_too_small",
+        message:
+          "Group at least two staged payments from the same deposit to reconcile as a unit.",
+      });
+      return;
+    }
+
+    const gift = await db
+      .select()
+      .from(giftsAndPayments)
+      .where(eq(giftsAndPayments.id, giftId))
+      .then((r) => r[0]);
+    if (!gift) return notFound(res, "gift");
+
+    // The group adopts the gift's donor (Donor XOR). Guard the gift carries a
+    // single valid donor, exactly like the single-row reconcile path.
+    const giftDonor = donorOf(gift);
+    if (!hasExactlyOneDonor(giftDonor)) {
+      res.status(400).json({
+        error: "link_invalid",
+        message: "Cannot reconcile this deposit group to that gift.",
+        details: {
+          issues: [
+            {
+              path: ["giftId"],
+              message: "The selected gift has no donor to adopt.",
+            },
+          ],
+        },
+      });
+      return;
+    }
+
+    const NOT_FOUND = "__not_found__";
+    const NOT_PENDING = "__not_pending__";
+    const NOT_GROUPABLE = "__not_groupable__";
+    const TOLERANCE = "__tolerance__";
+    const CONFLICT = "__conflict__";
+
+    const representativeId = ids[0];
+    let toleranceDetail: { combinedTotal: number; giftAmount: number } | null =
+      null;
+    try {
+      await db.transaction(async (tx) => {
+        const locked = await tx
+          .select()
+          .from(stagedPayments)
+          .where(inArray(stagedPayments.id, ids))
+          .for("update");
+        if (locked.length !== ids.length) throw new Error(NOT_FOUND);
+
+        for (const row of locked) {
+          if (
+            row.status !== "pending" ||
+            row.matchedGiftId != null ||
+            row.createdGiftId != null ||
+            row.groupReconciledGiftId != null
+          ) {
+            throw new Error(NOT_PENDING);
+          }
+        }
+
+        // All members must share exactly one non-null deposit. Never group
+        // across deposits, and never group rows with no known deposit.
+        const depositIds = new Set(locked.map((r) => r.qbDepositId));
+        if (depositIds.size !== 1 || locked[0].qbDepositId == null) {
+          throw new Error(NOT_GROUPABLE);
+        }
+
+        // Combined member total must sit in the fee-band tolerance around the
+        // gift: gift may be at most a hair under the sum (rounding) and at most
+        // ~10% + $1 over (processor fees withheld before deposit).
+        const sum = locked.reduce(
+          (acc, r) => acc + Number(r.amount ?? 0),
+          0,
+        );
+        const giftAmt = Number(gift.amount ?? 0);
+        if (!(giftAmt >= sum - 0.01 && giftAmt <= sum * 1.1 + 1)) {
+          toleranceDetail = { combinedTotal: sum, giftAmount: giftAmt };
+          throw new Error(TOLERANCE);
+        }
+
+        // Gift must not already be linked to any staged row outside this group.
+        const conflict = await tx
+          .select({ id: stagedPayments.id })
+          .from(stagedPayments)
+          .where(
+            and(
+              or(
+                eq(stagedPayments.matchedGiftId, giftId),
+                eq(stagedPayments.createdGiftId, giftId),
+                eq(stagedPayments.groupReconciledGiftId, giftId),
+              ),
+              notInArray(stagedPayments.id, ids),
+            ),
+          )
+          .then((r) => r[0]);
+        if (conflict) throw new Error(CONFLICT);
+
+        const stamp = {
+          ...giftDonor,
+          status: "approved" as const,
+          createdGiftId: null,
+          autoApplied: false,
+          matchStatus: "matched" as const,
+          matchMethod: "manual" as const,
+          matchConfirmedByUserId: user.id,
+          matchConfirmedAt: new Date(),
+          approvedByUserId: user.id,
+          approvedAt: new Date(),
+          groupReconciledGiftId: giftId,
+          updatedAt: new Date(),
+        };
+
+        try {
+          // Representative carries matchedGiftId (gift shows linked); the rest
+          // reconcile via groupReconciledGiftId alone.
+          await tx
+            .update(stagedPayments)
+            .set({ ...stamp, matchedGiftId: giftId })
+            .where(eq(stagedPayments.id, representativeId));
+          const memberIds = ids.filter((mid) => mid !== representativeId);
+          await tx
+            .update(stagedPayments)
+            .set({ ...stamp, matchedGiftId: null })
+            .where(inArray(stagedPayments.id, memberIds));
+        } catch (e) {
+          if (
+            typeof e === "object" &&
+            e !== null &&
+            "code" in e &&
+            (e as { code?: string }).code === "23505"
+          ) {
+            throw new Error(CONFLICT);
+          }
+          throw e;
+        }
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message === NOT_FOUND) {
+        return notFound(res, "staged payment");
+      }
+      if (e instanceof Error && e.message === NOT_PENDING) {
+        res.status(409).json({
+          error: "not_pending",
+          message:
+            "One or more of these staged payments has already been resolved. Refresh and try again.",
+        });
+        return;
+      }
+      if (e instanceof Error && e.message === NOT_GROUPABLE) {
+        res.status(400).json({
+          error: "not_groupable",
+          message:
+            "These payments must all come from the same bank deposit to be grouped.",
+        });
+        return;
+      }
+      if (e instanceof Error && e.message === TOLERANCE) {
+        res.status(400).json({
+          error: "amount_mismatch",
+          message:
+            "The combined deposit total doesn't match the selected gift within the fee tolerance.",
+          details: toleranceDetail,
+        });
+        return;
+      }
+      if (e instanceof Error && e.message === CONFLICT) {
+        res.status(409).json({
+          error: "link_conflict",
+          message:
+            "That gift was just linked to another payment. Refresh and try again.",
+        });
+        return;
+      }
+      throw e;
+    }
+
+    res.json({
+      gift,
+      stagedPaymentIds: ids,
+      representativeStagedPaymentId: representativeId,
+    });
+  }),
+);
+
 // ─── POST /staged-payments/:id/confirm-match ───────────────────────────────
 // Confirm a system-suggested donor match (auto-matched → human approved)
 // without changing the donor or minting a gift. For auto-applied rows this is
@@ -1123,6 +1348,41 @@ router.post(
           .then((r) => r[0]);
         if (!locked) throw new Error("__not_found__");
         if (locked.status !== "approved") throw new Error(NOT_REVERTIBLE);
+
+        // Group-aware: a deposit-group member (incl. the representative, which
+        // also carries matchedGiftId) reverts the WHOLE group back to pending.
+        // No gift is deleted — a group reconciles to a pre-existing gift, never
+        // a minted one. Check this first so the representative isn't handled by
+        // the single-row branch (which would orphan the other members).
+        if (locked.groupReconciledGiftId != null) {
+          const gid = locked.groupReconciledGiftId;
+          await tx
+            .select({ id: stagedPayments.id })
+            .from(stagedPayments)
+            .where(eq(stagedPayments.groupReconciledGiftId, gid))
+            .for("update");
+          await tx
+            .update(stagedPayments)
+            .set({
+              status: "pending",
+              matchedGiftId: null,
+              createdGiftId: null,
+              groupReconciledGiftId: null,
+              autoApplied: false,
+              matchConfirmedByUserId: null,
+              matchConfirmedAt: null,
+              approvedByUserId: null,
+              approvedAt: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(stagedPayments.groupReconciledGiftId, gid));
+          const [row] = await tx
+            .select()
+            .from(stagedPayments)
+            .where(eq(stagedPayments.id, id));
+          result = row ?? null;
+          return;
+        }
 
         const isReconcile = locked.matchedGiftId != null;
         const isAutoMint =

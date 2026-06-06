@@ -43,3 +43,4 @@
 - [QuickBooks reconciler intermediary donor seed](quickbooks-intermediary-donor-seed.md) — when payer is Stripe/Donorbox/DAF, seed gift search with the donor pulled from the memo (after "from"/dash), conservatively.
 - [Deleting a gift requires removing allocations first](gift-delete-allocations-restrict.md) — gift_allocations FK is RESTRICT (every gift has >=1); delete route must clear allocations in-txn first; other gift FKs are set-null.
 - [Vite build-time env gating](vite-build-env-gating.md) — artifact vite.config must validate PORT/BASE_PATH only in `command==="serve"`; root build builds ALL artifacts (incl. non-deployed design ones), so build-time throws crash the deploy.
+- [QuickBooks deposit grouping](quickbooks-deposit-grouping.md) — manual group of staged payments sharing one bank deposit→one gift; representative gets matched_gift_id, all get group_reconciled_gift_id; qb_deposit_id preserve-on-conflict.

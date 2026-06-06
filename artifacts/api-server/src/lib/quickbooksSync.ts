@@ -62,6 +62,11 @@ export function buildStagedLineUpsert(values: typeof stagedPayments.$inferInsert
         lineAccountNames: sql`CASE WHEN coalesce(cardinality(excluded.line_account_names), 0) > 0 THEN excluded.line_account_names ELSE ${stagedPayments.lineAccountNames} END`,
         lineClasses: sql`CASE WHEN coalesce(cardinality(excluded.line_classes), 0) > 0 THEN excluded.line_classes ELSE ${stagedPayments.lineClasses} END`,
         lineDescription: sql`coalesce(nullif(excluded.line_description, ''), ${stagedPayments.lineDescription})`,
+        // Preserve-on-conflict, mirroring the coding fields: an incremental
+        // re-sync may re-pull a Payment whose linked deposit is older than the
+        // watermark (and thus absent), leaving qb_deposit_id empty on the
+        // incoming row — keep the stored deposit id rather than clobber it.
+        qbDepositId: sql`coalesce(excluded.qb_deposit_id, ${stagedPayments.qbDepositId})`,
         updatedAt: new Date(),
       },
       setWhere: sql`${stagedPayments.status} in ('pending', 'excluded')`,
@@ -185,6 +190,7 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
         qbEntityType: p.qbEntityType,
         qbEntityId: p.qbEntityId,
         qbLineId: p.qbLineId,
+        qbDepositId: p.qbDepositId,
         amount: p.amount,
         dateReceived: p.dateReceived,
         payerName: p.payerName,

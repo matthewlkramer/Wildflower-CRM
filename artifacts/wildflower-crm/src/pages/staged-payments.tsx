@@ -7,6 +7,7 @@ import {
   useGetStagedPaymentsSummary,
   useReIncludeStagedPayment,
   useReconcileStagedPayment,
+  useGroupReconcileStagedPayments,
   useRevertStagedPayment,
   useExcludeStagedPayment,
   useConfirmStagedPaymentMatch,
@@ -41,6 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -327,12 +329,47 @@ export default function StagedPayments() {
   const [selectedGiftLabel, setSelectedGiftLabel] = useState<string | null>(
     null,
   );
+  // The selected gift's amount, kept so the deposit-group match bar can preview
+  // the combined total vs the gift within the fee-band before submitting.
+  const [selectedGiftAmount, setSelectedGiftAmount] = useState<string | null>(
+    null,
+  );
 
-  // Single entry point for choosing a gift on the right pane so the id and the
-  // human-readable label in the match bar never drift apart.
-  const selectGift = (giftId: string | null, label: string | null) => {
+  // Single entry point for choosing a gift on the right pane so the id, the
+  // human-readable label, and the amount in the match bar never drift apart.
+  const selectGift = (
+    giftId: string | null,
+    label: string | null,
+    amount: string | null = null,
+  ) => {
     setSelectedGiftId(giftId);
     setSelectedGiftLabel(giftId ? label : null);
+    setSelectedGiftAmount(giftId ? amount : null);
+  };
+
+  // ── Deposit grouping (manual) ──
+  // Rows the fundraiser has checked to group into a single "deposit unit". All
+  // members must share one bank deposit (qbDepositId); we store the full rows so
+  // the combined total can be shown without re-fetching. A group of 2+ switches
+  // the match bar / gift rows into group-reconcile mode.
+  const [groupRows, setGroupRows] = useState<StagedPayment[]>([]);
+  const groupIds = groupRows.map((r) => r.id);
+  const groupDepositId = groupRows[0]?.qbDepositId ?? null;
+  const groupActive = groupRows.length >= 2;
+  const groupTotal = groupRows.reduce((acc, r) => acc + Number(r.amount ?? 0), 0);
+
+  const clearGroup = () => setGroupRows([]);
+
+  const toggleGroupMember = (row: StagedPayment) => {
+    if (!row.qbDepositId) return;
+    setGroupRows((prev) => {
+      if (prev.some((r) => r.id === row.id)) {
+        return prev.filter((r) => r.id !== row.id);
+      }
+      // Never group across deposits: ignore a row from a different deposit.
+      if (prev.length > 0 && prev[0].qbDepositId !== row.qbDepositId) return prev;
+      return [...prev, row];
+    });
   };
 
   // Right pane (CRM gifts) filters.
@@ -542,6 +579,28 @@ export default function StagedPayments() {
     },
   });
 
+  const groupReconcile = useGroupReconcileStagedPayments({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        clearGroup();
+        selectGift(null, null);
+        setSelectedStaged(null);
+        toast({
+          title: "Deposit group reconciled",
+          description:
+            "Matched the grouped deposit payments to the existing gift.",
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Group match failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
   const rows = listQ.data?.data ?? [];
   const total = listQ.data?.pagination?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -626,6 +685,29 @@ export default function StagedPayments() {
     reconcile.mutate({ id: selectedStaged.id, data: { giftId } });
   };
 
+  // Deposit-group reconcile: match the whole checked group to one existing gift.
+  // The combined member total must sit in the fee-band around the gift; that is
+  // enforced server-side, with a preview shown in the match bar.
+  const giftAmtNum =
+    selectedGiftAmount != null ? Number(selectedGiftAmount) : null;
+  const groupWithinBand =
+    giftAmtNum != null &&
+    !Number.isNaN(giftAmtNum) &&
+    giftAmtNum >= groupTotal - 0.01 &&
+    giftAmtNum <= groupTotal * 1.1 + 1;
+  const canGroupMatch =
+    queue === "needs_review" && groupActive && !groupReconcile.isPending;
+
+  const groupMatchGift = (giftId: string) => {
+    if (!groupActive) return;
+    groupReconcile.mutate({ data: { stagedPaymentIds: groupIds, giftId } });
+  };
+
+  const doGroupMatch = () => {
+    if (!selectedGiftId) return;
+    groupMatchGift(selectedGiftId);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -682,8 +764,19 @@ export default function StagedPayments() {
       <Card>
         <CardContent className="flex flex-wrap items-center gap-3 py-3">
           <div className="text-sm">
-            <span className="text-muted-foreground">Payment: </span>
-            {selectedStaged ? (
+            <span className="text-muted-foreground">
+              {groupActive ? "Deposit group: " : "Payment: "}
+            </span>
+            {groupActive ? (
+              <span
+                className="font-medium"
+                data-testid="match-selected-group"
+                title="These payments share one bank deposit and will be reconciled together to a single gift."
+              >
+                {groupRows.length} payments · {formatAmount(String(groupTotal))}{" "}
+                combined
+              </span>
+            ) : selectedStaged ? (
               <span className="font-medium" data-testid="match-selected-staged">
                 {selectedStaged.payerName ?? "Unknown payer"} ·{" "}
                 {formatAmount(selectedStaged.amount)} ·{" "}
@@ -703,19 +796,61 @@ export default function StagedPayments() {
               <span className="text-muted-foreground">none selected</span>
             )}
           </div>
-          <div className="ml-auto flex flex-wrap gap-2">
-            <Button
-              onClick={doMatch}
-              disabled={!canMatch}
-              data-testid="match-button"
-              title={
-                queue !== "needs_review"
-                  ? "Switch to the Needs review queue to match a payment."
-                  : "Reconcile the selected payment to the selected gift."
-              }
+          {groupActive && selectedGiftId && giftAmtNum != null ? (
+            <div
+              className={`text-xs ${
+                groupWithinBand ? "text-muted-foreground" : "text-amber-700 dark:text-amber-400"
+              }`}
+              data-testid="group-tolerance-preview"
             >
-              {reconcile.isPending ? "Matching…" : "Match →"}
-            </Button>
+              {groupWithinBand
+                ? "Combined total is within the fee tolerance of this gift."
+                : `Combined ${formatAmount(String(groupTotal))} vs gift ${formatAmount(
+                    selectedGiftAmount,
+                  )} — outside the fee tolerance.`}
+            </div>
+          ) : null}
+          <div className="ml-auto flex flex-wrap gap-2">
+            {groupActive ? (
+              <Button
+                variant="ghost"
+                onClick={clearGroup}
+                disabled={groupReconcile.isPending}
+                data-testid="group-clear"
+                title="Clear the deposit group selection."
+              >
+                Clear group
+              </Button>
+            ) : null}
+            {groupActive ? (
+              <Button
+                onClick={doGroupMatch}
+                disabled={!canGroupMatch || selectedGiftId == null}
+                data-testid="group-match-button"
+                title={
+                  selectedGiftId == null
+                    ? "Pick the existing gift on the right to reconcile this deposit group to."
+                    : "Reconcile this deposit group to the selected gift."
+                }
+              >
+                {groupReconcile.isPending
+                  ? "Matching…"
+                  : `Match group (${groupRows.length}) →`}
+              </Button>
+            ) : (
+              <Button
+                onClick={doMatch}
+                disabled={!canMatch}
+                data-testid="match-button"
+                title={
+                  queue !== "needs_review"
+                    ? "Switch to the Needs review queue to match a payment."
+                    : "Reconcile the selected payment to the selected gift."
+                }
+              >
+                {reconcile.isPending ? "Matching…" : "Match →"}
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => setCreateOpen(true)}
@@ -830,6 +965,13 @@ export default function StagedPayments() {
                     selected={selectedStaged?.id === row.id}
                     onSelect={() => selectStaged(row)}
                     onChanged={invalidateAll}
+                    groupChecked={groupIds.includes(row.id)}
+                    groupCheckboxDisabled={
+                      row.qbDepositId == null ||
+                      (groupDepositId != null &&
+                        row.qbDepositId !== groupDepositId)
+                    }
+                    onToggleGroup={() => toggleGroupMember(row)}
                   />
                 ))}
               </div>
@@ -900,6 +1042,10 @@ export default function StagedPayments() {
             revert.mutate({ id: stagedPaymentId })
           }
           unmatching={revert.isPending}
+          groupActive={groupActive}
+          groupSize={groupRows.length}
+          onMatchGroup={groupMatchGift}
+          groupMatching={groupReconcile.isPending}
         />
       </div>
 
@@ -959,12 +1105,18 @@ function StagedPaymentCard({
   selected,
   onSelect,
   onChanged,
+  groupChecked,
+  groupCheckboxDisabled,
+  onToggleGroup,
 }: {
   row: StagedPayment;
   queue: StagedPaymentQueue;
   selected: boolean;
   onSelect: () => void;
   onChanged: () => void;
+  groupChecked: boolean;
+  groupCheckboxDisabled: boolean;
+  onToggleGroup: () => void;
 }) {
   const { toast } = useToast();
 
@@ -1102,6 +1254,24 @@ function StagedPaymentCard({
     >
       <CardHeader>
         <div className="flex items-start justify-between gap-2">
+          {selectable ? (
+            <div className="pt-1">
+              <Checkbox
+                checked={groupChecked}
+                disabled={groupCheckboxDisabled && !groupChecked}
+                onCheckedChange={() => onToggleGroup()}
+                data-testid={`staged-group-checkbox-${row.id}`}
+                aria-label="Add to deposit group"
+                title={
+                  row.qbDepositId == null
+                    ? "This payment isn't linked to a bank deposit, so it can't be grouped."
+                    : groupCheckboxDisabled
+                      ? "Only payments sharing the same bank deposit can be grouped together."
+                      : "Group payments that share one bank deposit, then match them to one gift."
+                }
+              />
+            </div>
+          ) : null}
           <button
             type="button"
             className="text-left min-w-0 flex-1"
@@ -1473,6 +1643,10 @@ function GiftsPanel({
   matching,
   onUnmatch,
   unmatching,
+  groupActive,
+  groupSize,
+  onMatchGroup,
+  groupMatching,
 }: {
   search: string;
   setSearch: (v: string) => void;
@@ -1486,13 +1660,21 @@ function GiftsPanel({
   setPage: (v: number) => void;
   pageSize: number;
   selectedGiftId: string | null;
-  onSelectGift: (id: string | null, label: string | null) => void;
+  onSelectGift: (
+    id: string | null,
+    label: string | null,
+    amount?: string | null,
+  ) => void;
   stagedAmount: string | null | undefined;
   canMatchAny: boolean;
   onMatchGift: (giftId: string) => void;
   matching: boolean;
   onUnmatch: (stagedPaymentId: string) => void;
   unmatching: boolean;
+  groupActive: boolean;
+  groupSize: number;
+  onMatchGroup: (giftId: string) => void;
+  groupMatching: boolean;
 }) {
   // Debounce the free-text search so we don't fire a request per keystroke.
   const [debounced, setDebounced] = useState(search);
@@ -1611,6 +1793,7 @@ function GiftsPanel({
                   onSelectGift(
                     selectedGiftId === g.id ? null : g.id,
                     selectedGiftId === g.id ? null : giftRowLabel(g),
+                    selectedGiftId === g.id ? null : g.amount,
                   )
                 }
                 stagedAmount={stagedAmount}
@@ -1619,6 +1802,10 @@ function GiftsPanel({
                 matching={matching}
                 onUnmatch={onUnmatch}
                 unmatching={unmatching}
+                groupActive={groupActive}
+                groupSize={groupSize}
+                onMatchGroup={onMatchGroup}
+                groupMatching={groupMatching}
               />
             ))}
           </ul>
@@ -1666,6 +1853,10 @@ function GiftRow({
   matching,
   onUnmatch,
   unmatching,
+  groupActive,
+  groupSize,
+  onMatchGroup,
+  groupMatching,
 }: {
   gift: GiftOrPayment;
   selected: boolean;
@@ -1676,6 +1867,10 @@ function GiftRow({
   matching: boolean;
   onUnmatch: (stagedPaymentId: string) => void;
   unmatching: boolean;
+  groupActive: boolean;
+  groupSize: number;
+  onMatchGroup: (giftId: string) => void;
+  groupMatching: boolean;
 }) {
   const donorName = giftDonorName(gift);
   const linkedStagedId = gift.quickbooksStagedPaymentId ?? null;
@@ -1729,6 +1924,16 @@ function GiftRow({
                 {unmatching ? "Unmatching…" : "Unmatch"}
               </Button>
             </>
+          ) : groupActive ? (
+            <Button
+              size="sm"
+              onClick={() => onMatchGroup(gift.id)}
+              disabled={groupMatching}
+              data-testid={`gift-match-group-${gift.id}`}
+              title="Reconcile the whole deposit group to this gift."
+            >
+              {groupMatching ? "Matching…" : `Match group (${groupSize}) →`}
+            </Button>
           ) : (
             <Button
               size="sm"

@@ -6940,6 +6940,12 @@ export const ListStagedPaymentsResponse = zod.object({
       qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
       qbEntityId: zod.string(),
       qbLineId: zod.string().nullish(),
+      qbDepositId: zod
+        .string()
+        .nullish()
+        .describe(
+          "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).",
+        ),
       amount: zod.string().nullish(),
       dateReceived: zod.string().date().nullish(),
       payerName: zod.string().nullish(),
@@ -6989,6 +6995,12 @@ export const ListStagedPaymentsResponse = zod.object({
       matchedPaymentIntermediaryId: zod.string().nullish(),
       matchedGiftId: zod.string().nullish(),
       createdGiftId: zod.string().nullish(),
+      groupReconciledGiftId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
+        ),
       autoApplied: zod.boolean(),
       approvedByUserId: zod.string().nullish(),
       approvedAt: zod.string().datetime({}).nullish(),
@@ -7086,6 +7098,12 @@ export const ResolveStagedPaymentResponse = zod.object({
   qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
   qbEntityId: zod.string(),
   qbLineId: zod.string().nullish(),
+  qbDepositId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).",
+    ),
   amount: zod.string().nullish(),
   dateReceived: zod.string().date().nullish(),
   payerName: zod.string().nullish(),
@@ -7135,6 +7153,12 @@ export const ResolveStagedPaymentResponse = zod.object({
   matchedPaymentIntermediaryId: zod.string().nullish(),
   matchedGiftId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  groupReconciledGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -7181,6 +7205,12 @@ export const RejectStagedPaymentResponse = zod.object({
   qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
   qbEntityId: zod.string(),
   qbLineId: zod.string().nullish(),
+  qbDepositId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).",
+    ),
   amount: zod.string().nullish(),
   dateReceived: zod.string().date().nullish(),
   payerName: zod.string().nullish(),
@@ -7230,6 +7260,12 @@ export const RejectStagedPaymentResponse = zod.object({
   matchedPaymentIntermediaryId: zod.string().nullish(),
   matchedGiftId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  groupReconciledGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -7269,6 +7305,12 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
   qbEntityId: zod.string(),
   qbLineId: zod.string().nullish(),
+  qbDepositId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).",
+    ),
   amount: zod.string().nullish(),
   dateReceived: zod.string().date().nullish(),
   payerName: zod.string().nullish(),
@@ -7318,6 +7360,12 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   matchedPaymentIntermediaryId: zod.string().nullish(),
   matchedGiftId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  groupReconciledGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -7384,6 +7432,12 @@ export const ExcludeStagedPaymentResponse = zod.object({
   qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
   qbEntityId: zod.string(),
   qbLineId: zod.string().nullish(),
+  qbDepositId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).",
+    ),
   amount: zod.string().nullish(),
   dateReceived: zod.string().date().nullish(),
   payerName: zod.string().nullish(),
@@ -7433,6 +7487,12 @@ export const ExcludeStagedPaymentResponse = zod.object({
   matchedPaymentIntermediaryId: zod.string().nullish(),
   matchedGiftId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  groupReconciledGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -7860,6 +7920,147 @@ export const ReconcileStagedPaymentResponse = zod.object({
 });
 
 /**
+ * Manually groups two or more staged payments that share ONE underlying
+bank Deposit (same qbDepositId) into a single "deposit unit" and
+reconciles the GROUP as a whole to one already-recorded gift (typically a
+multi-allocation gift). No new gift is minted and QuickBooks is never
+written back. Every member is set to approved with
+groupReconciledGiftId = the gift; one deterministic representative member
+also carries matchedGiftId so the gift shows linked. The group adopts the
+gift's donor (Donor XOR). Guards: at least two rows, all pending and
+unresolved, all sharing the same non-null deposit, the gift exists with a
+single valid donor and is not already linked elsewhere, and the members'
+combined total matches the gift amount within the processor fee-band
+tolerance. Reversible as a whole via the revert endpoint.
+
+ * @summary Group several same-deposit staged payments and reconcile them as one unit to an existing gift.
+ */
+export const groupReconcileStagedPaymentsBodyStagedPaymentIdsMin = 2;
+
+export const GroupReconcileStagedPaymentsBody = zod
+  .object({
+    stagedPaymentIds: zod
+      .array(zod.string())
+      .min(groupReconcileStagedPaymentsBodyStagedPaymentIdsMin)
+      .describe(
+        "Ids of the staged payments to group. Must be at least two, all pending, and all sharing the same non-null qbDepositId.",
+      ),
+    giftId: zod
+      .string()
+      .describe("The existing gift the deposit group reconciles to."),
+  })
+  .describe(
+    "Group several same-deposit staged payments and reconcile the whole group to one existing gift.",
+  );
+
+export const GroupReconcileStagedPaymentsResponse = zod.object({
+  gift: zod.object({
+    id: zod.string(),
+    legacyGiftId: zod.string().nullish(),
+    name: zod.string().nullish(),
+    details: zod.string().nullish(),
+    dateReceived: zod.string().date().nullish(),
+    paymentMethod: zod
+      .enum([
+        "ach",
+        "check",
+        "wire",
+        "stock",
+        "donor_box",
+        "daf_ach",
+        "daf_check",
+        "daf_bill_com",
+      ])
+      .nullish(),
+    amount: zod.string().nullish(),
+    organizationId: zod.string().nullish(),
+    individualGiverPersonId: zod.string().nullish(),
+    householdId: zod.string().nullish(),
+    type: zod
+      .enum([
+        "standard_gift",
+        "pledge_payment",
+        "directed_gift",
+        "loan_fund_investment",
+        "matching_gift",
+      ])
+      .nullish(),
+    paymentOnPledgeId: zod.string().nullish(),
+    advisorPersonId: zod.string().nullish(),
+    grantYear: zod.string().nullish(),
+    giftBeingMatchedId: zod.string().nullish(),
+    primaryContactPersonId: zod.string().nullish(),
+    paymentIntermediaryId: zod.string().nullish(),
+    ownerUserId: zod.string().nullish(),
+    designatedToSchool: zod.boolean(),
+    tags: zod.string().nullish(),
+    thankYouSentAt: zod
+      .string()
+      .date()
+      .nullish()
+      .describe(
+        "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time.",
+      ),
+    thankYouEmailMessageId: zod
+      .string()
+      .nullish()
+      .describe(
+        "FK to the email_messages row that was identified as the thank-you. Read-only; set via \/link-thank-you-email or the thank_you_acknowledgment proposal accept.",
+      ),
+    thankYouAttachments: zod
+      .array(
+        zod.object({
+          id: zod.string(),
+          filename: zod.string().nullish(),
+          mimeType: zod.string().nullish(),
+          sizeBytes: zod.number().nullish(),
+          downloadUrl: zod.string(),
+        }),
+      )
+      .nullish()
+      .describe(
+        "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
+      ),
+    organizationName: zod.string().nullish(),
+    householdName: zod.string().nullish(),
+    individualGiverPersonName: zod.string().nullish(),
+    paymentIntermediaryName: zod.string().nullish(),
+    quickbooksStagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.",
+      ),
+    organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+    individualGiverPersonPriority: zod
+      .enum(["top", "high", "medium", "low"])
+      .nullish(),
+    entityIds: zod
+      .array(zod.string())
+      .nullish()
+      .describe("Distinct entity_id values from gift_allocations."),
+    displayUsages: zod
+      .array(zod.string())
+      .nullish()
+      .describe(
+        "Distinct display_usage values from gift_allocations (server-computed labels).",
+      ),
+    grantYears: zod
+      .array(zod.string())
+      .nullish()
+      .describe("Distinct grant_year values from gift_allocations."),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
+  }),
+  stagedPaymentIds: zod.array(zod.string()),
+  representativeStagedPaymentId: zod
+    .string()
+    .describe(
+      "The group member that also carries matchedGiftId (the one that makes the gift show linked).",
+    ),
+});
+
+/**
  * Stamps the donor match as human-confirmed (match_confirmed_at /
 match_confirmed_by_user_id). Works on a pending row with a donor OR an
 auto-applied approved row (graduating it from "Auto-matched" to "Done").
@@ -7877,6 +8078,12 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
   qbEntityId: zod.string(),
   qbLineId: zod.string().nullish(),
+  qbDepositId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).",
+    ),
   amount: zod.string().nullish(),
   dateReceived: zod.string().date().nullish(),
   payerName: zod.string().nullish(),
@@ -7926,6 +8133,12 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   matchedPaymentIntermediaryId: zod.string().nullish(),
   matchedGiftId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  groupReconciledGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -7965,6 +8178,12 @@ export const UnmatchStagedPaymentResponse = zod.object({
   qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
   qbEntityId: zod.string(),
   qbLineId: zod.string().nullish(),
+  qbDepositId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).",
+    ),
   amount: zod.string().nullish(),
   dateReceived: zod.string().date().nullish(),
   payerName: zod.string().nullish(),
@@ -8014,6 +8233,12 @@ export const UnmatchStagedPaymentResponse = zod.object({
   matchedPaymentIntermediaryId: zod.string().nullish(),
   matchedGiftId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  groupReconciledGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -8060,6 +8285,12 @@ export const RevertStagedPaymentResponse = zod.object({
   qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
   qbEntityId: zod.string(),
   qbLineId: zod.string().nullish(),
+  qbDepositId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).",
+    ),
   amount: zod.string().nullish(),
   dateReceived: zod.string().date().nullish(),
   payerName: zod.string().nullish(),
@@ -8109,6 +8340,12 @@ export const RevertStagedPaymentResponse = zod.object({
   matchedPaymentIntermediaryId: zod.string().nullish(),
   matchedGiftId: zod.string().nullish(),
   createdGiftId: zod.string().nullish(),
+  groupReconciledGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),

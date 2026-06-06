@@ -59,6 +59,14 @@ describe("buildStagedLineUpsert — preserve-on-conflict coding", () => {
     expect(compiled).toContain('"staged_payments"."line_description"');
   });
 
+  it("keeps the stored qb_deposit_id when the incoming pull is null", () => {
+    // The bank Deposit that re-records a Payment can fall outside the
+    // incremental watermark window, so a re-pull may carry a null deposit id.
+    // Grouping depends on this id, so it must never be clobbered back to null.
+    expect(compiled).toContain("coalesce(excluded.qb_deposit_id");
+    expect(compiled).toContain('"staged_payments"."qb_deposit_id"');
+  });
+
   it("still lets a non-empty incoming pull replace the stored coding", () => {
     // Guard against over-preservation: when the new pull DOES carry coding it
     // must win (the THEN branch references the incoming `excluded` value), so a

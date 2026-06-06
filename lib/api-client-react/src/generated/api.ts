@@ -104,6 +104,8 @@ import type {
   GmailSyncRunResponse,
   GoogleOauthStatus,
   GoogleSyncStatus,
+  GroupReconcileStagedPaymentsBody,
+  GroupReconcileStagedPaymentsResponse,
   HealthStatus,
   Household,
   HouseholdDetail,
@@ -14356,6 +14358,111 @@ export const useReconcileStagedPayment = <
   TContext
 > => {
   return useMutation(getReconcileStagedPaymentMutationOptions(options));
+};
+
+/**
+ * Manually groups two or more staged payments that share ONE underlying
+bank Deposit (same qbDepositId) into a single "deposit unit" and
+reconciles the GROUP as a whole to one already-recorded gift (typically a
+multi-allocation gift). No new gift is minted and QuickBooks is never
+written back. Every member is set to approved with
+groupReconciledGiftId = the gift; one deterministic representative member
+also carries matchedGiftId so the gift shows linked. The group adopts the
+gift's donor (Donor XOR). Guards: at least two rows, all pending and
+unresolved, all sharing the same non-null deposit, the gift exists with a
+single valid donor and is not already linked elsewhere, and the members'
+combined total matches the gift amount within the processor fee-band
+tolerance. Reversible as a whole via the revert endpoint.
+
+ * @summary Group several same-deposit staged payments and reconcile them as one unit to an existing gift.
+ */
+export const getGroupReconcileStagedPaymentsUrl = () => {
+  return `/api/staged-payments/group-reconcile`;
+};
+
+export const groupReconcileStagedPayments = async (
+  groupReconcileStagedPaymentsBody: GroupReconcileStagedPaymentsBody,
+  options?: RequestInit,
+): Promise<GroupReconcileStagedPaymentsResponse> => {
+  return customFetch<GroupReconcileStagedPaymentsResponse>(
+    getGroupReconcileStagedPaymentsUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(groupReconcileStagedPaymentsBody),
+    },
+  );
+};
+
+export const getGroupReconcileStagedPaymentsMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof groupReconcileStagedPayments>>,
+    TError,
+    { data: BodyType<GroupReconcileStagedPaymentsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof groupReconcileStagedPayments>>,
+  TError,
+  { data: BodyType<GroupReconcileStagedPaymentsBody> },
+  TContext
+> => {
+  const mutationKey = ["groupReconcileStagedPayments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof groupReconcileStagedPayments>>,
+    { data: BodyType<GroupReconcileStagedPaymentsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return groupReconcileStagedPayments(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GroupReconcileStagedPaymentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof groupReconcileStagedPayments>>
+>;
+export type GroupReconcileStagedPaymentsMutationBody =
+  BodyType<GroupReconcileStagedPaymentsBody>;
+export type GroupReconcileStagedPaymentsMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Group several same-deposit staged payments and reconcile them as one unit to an existing gift.
+ */
+export const useGroupReconcileStagedPayments = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof groupReconcileStagedPayments>>,
+    TError,
+    { data: BodyType<GroupReconcileStagedPaymentsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof groupReconcileStagedPayments>>,
+  TError,
+  { data: BodyType<GroupReconcileStagedPaymentsBody> },
+  TContext
+> => {
+  return useMutation(getGroupReconcileStagedPaymentsMutationOptions(options));
 };
 
 /**

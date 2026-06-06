@@ -1965,6 +1965,32 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not pending, or the gift is already linked" }
+  /staged-payments/group-reconcile:
+    post:
+      operationId: groupReconcileStagedPayments
+      tags: [staged-payments]
+      summary: Group several same-deposit staged payments and reconcile them as one unit to an existing gift.
+      description: |
+        Manually groups two or more staged payments that share ONE underlying
+        bank Deposit (same qbDepositId) into a single "deposit unit" and
+        reconciles the GROUP as a whole to one already-recorded gift (typically a
+        multi-allocation gift). No new gift is minted and QuickBooks is never
+        written back. Every member is set to approved with
+        groupReconciledGiftId = the gift; one deterministic representative member
+        also carries matchedGiftId so the gift shows linked. The group adopts the
+        gift's donor (Donor XOR). Guards: at least two rows, all pending and
+        unresolved, all sharing the same non-null deposit, the gift exists with a
+        single valid donor and is not already linked elsewhere, and the members'
+        combined total matches the gift amount within the processor fee-band
+        tolerance. Reversible as a whole via the revert endpoint.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/GroupReconcileStagedPaymentsBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GroupReconcileStagedPaymentsResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "A member is no longer pending, or the gift is already linked" }
   /staged-payments/{id}/confirm-match:
     post:
       operationId: confirmStagedPaymentMatch
@@ -3704,6 +3730,7 @@ components:
         qbEntityType:              { $ref: "#/components/schemas/QuickbooksEntityType" }
         qbEntityId:                { type: string }
         qbLineId:                  { type: string, nullable: true }
+        qbDepositId:               { type: string, nullable: true, description: "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed)." }
         amount:                    { type: string, nullable: true }
         dateReceived:              { type: string, format: date, nullable: true }
         payerName:                 { type: string, nullable: true }
@@ -3727,6 +3754,7 @@ components:
         matchedPaymentIntermediaryId: { type: string, nullable: true }
         matchedGiftId:             { type: string, nullable: true }
         createdGiftId:             { type: string, nullable: true }
+        groupReconciledGiftId:     { type: string, nullable: true, description: "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert." }
         autoApplied:               { type: boolean }
         approvedByUserId:          { type: string, nullable: true }
         approvedAt:                { type: string, format: date-time, nullable: true }
@@ -3826,6 +3854,24 @@ components:
       description: "Reconcile the staged payment to an existing gifts_and_payments row."
       properties:
         giftId: { type: string }
+    GroupReconcileStagedPaymentsBody:
+      type: object
+      required: [stagedPaymentIds, giftId]
+      description: "Group several same-deposit staged payments and reconcile the whole group to one existing gift."
+      properties:
+        stagedPaymentIds:
+          type: array
+          minItems: 2
+          items: { type: string }
+          description: "Ids of the staged payments to group. Must be at least two, all pending, and all sharing the same non-null qbDepositId."
+        giftId: { type: string, description: "The existing gift the deposit group reconciles to." }
+    GroupReconcileStagedPaymentsResponse:
+      type: object
+      required: [gift, stagedPaymentIds, representativeStagedPaymentId]
+      properties:
+        gift: { $ref: "#/components/schemas/GiftOrPayment" }
+        stagedPaymentIds: { type: array, items: { type: string } }
+        representativeStagedPaymentId: { type: string, description: "The group member that also carries matchedGiftId (the one that makes the gift show linked)." }
     ExcludeStagedPaymentBody:
       type: object
       required: [exclusionReason]

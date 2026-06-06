@@ -36,6 +36,12 @@ export interface NormalizedQuickbooksPayment {
   // QuickBooks line id, for deposits staged PER LINE. Empty string (not null)
   // for SalesReceipt/Payment so each is a single idempotent unit.
   qbLineId: string;
+  // The underlying bank Deposit id this unit belongs to, when known. For a
+  // direct deposit LINE it is the deposit's own id; for a Payment/SalesReceipt
+  // bundled into a deposit it is threaded from the deposit→entity back-index.
+  // Null when the money is not tied to a deposit. Lets a fundraiser manually
+  // group same-deposit units and reconcile them as one to a multi-allocation gift.
+  qbDepositId: string | null;
   amount: string | null;
   dateReceived: string | null;
   payerName: string | null;
@@ -273,6 +279,9 @@ interface DepositCoding {
   accountNames: string[];
   classes: string[];
   memo: string | null;
+  // The bank Deposit id that re-recorded this entity. Threaded onto the
+  // entity's staged row so same-deposit units can be manually grouped.
+  depositId: string | null;
 }
 
 /**
@@ -467,11 +476,14 @@ export async function pullIncomingPayments(
           accountNames: [],
           classes: [],
           memo: null,
+          depositId: null,
         };
         depositCodingByTxn.set(key, {
           accountNames: uniq([...prev.accountNames, acct]),
           classes: uniq([...prev.classes, cls]),
           memo: prev.memo ?? memo,
+          // First deposit wins; an entity normally belongs to exactly one.
+          depositId: prev.depositId ?? dep.Id,
         });
       }
     }
@@ -496,15 +508,17 @@ export async function pullIncomingPayments(
   // item map. Inherit any deposit-line coding that re-recorded it.
   for (const row of salesReceipts) {
     const ownDetail = extractLineDetail(row.Line, itemAccounts);
+    const coding = depositCodingByTxn.get(`SalesReceipt:${row.Id}`);
     const { detail, lineDescription } = applyDepositCoding(
       ownDetail,
       row.CustomerMemo?.value ?? null,
-      depositCodingByTxn.get(`SalesReceipt:${row.Id}`),
+      coding,
     );
     out.push({
       qbEntityType: "sales_receipt",
       qbEntityId: row.Id,
       qbLineId: "",
+      qbDepositId: coding?.depositId ?? null,
       amount: num(row.TotalAmt),
       dateReceived: row.TxnDate ?? null,
       payerName: row.CustomerRef?.name ?? null,
@@ -529,15 +543,17 @@ export async function pullIncomingPayments(
     const invDetail = mergeLineDetail(
       invoiceIds.map((id) => extractLineDetail(invoiceLines.get(id), itemAccounts)),
     );
+    const coding = depositCodingByTxn.get(`Payment:${row.Id}`);
     const { detail, lineDescription } = applyDepositCoding(
       invDetail,
       null,
-      depositCodingByTxn.get(`Payment:${row.Id}`),
+      coding,
     );
     out.push({
       qbEntityType: "payment",
       qbEntityId: row.Id,
       qbLineId: "",
+      qbDepositId: coding?.depositId ?? null,
       amount: num(row.TotalAmt),
       dateReceived: row.TxnDate ?? null,
       payerName: row.CustomerRef?.name ?? null,
@@ -580,6 +596,8 @@ export async function pullIncomingPayments(
         qbEntityType: "deposit",
         qbEntityId: row.Id,
         qbLineId: line.Id ?? "",
+        // A direct deposit line's underlying deposit is the deposit itself.
+        qbDepositId: row.Id,
         amount: num(line.Amount),
         dateReceived: row.TxnDate ?? null,
         // The payer for a direct deposit line is its Entity (Customer /

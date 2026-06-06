@@ -81,6 +81,16 @@ export const stagedPayments = pgTable(
     // (NOT null) for SalesReceipt/Payment so the idempotency unique index
     // treats them as a single unit.
     qbLineId: text("qb_line_id").notNull().default(""),
+    // The underlying bank Deposit this incoming money belongs to, when known.
+    // For a direct deposit LINE this is the deposit's own entity id; for a
+    // Payment/SalesReceipt that was bundled into a bank deposit it is threaded
+    // from the deposit→entity back-index at pull time. NULL when the unit is not
+    // tied to a deposit (e.g. an undeposited payment, or a row staged before
+    // this column existed). Several staged rows sharing one non-null
+    // qbDepositId are the candidates a fundraiser may MANUALLY group into a
+    // single "deposit unit" and reconcile as a whole to one multi-allocation
+    // gift. Grouping never spans deposits.
+    qbDepositId: text("qb_deposit_id"),
 
     // Normalized incoming-money facts pulled from QuickBooks.
     amount: numeric("amount", { precision: 14, scale: 2 }),
@@ -167,6 +177,22 @@ export const stagedPayments = pgTable(
       { onDelete: "set null" },
     ),
 
+    // Deposit-group reconciliation (manual): when a fundraiser groups several
+    // staged rows that share one bank deposit and matches the GROUP to a single
+    // existing multi-allocation gift, EVERY member (including the representative)
+    // gets this set to that gift's id. It marks group membership; the group is
+    // exactly the rows sharing this gift id. To stay compatible with the
+    // one-staged↔one-gift partial-unique index on matchedGiftId, only ONE member
+    // (the "representative") also carries matchedGiftId = the same gift; the
+    // others reconcile to the gift via this column alone. A grouped gift is
+    // therefore "linked" through its representative's matchedGiftId (existing
+    // gift-linkage logic is unchanged), while members still display the gift via
+    // the resolved-gift join's COALESCE. Cleared for the whole group on revert.
+    groupReconciledGiftId: text("group_reconciled_gift_id").references(
+      () => giftsAndPayments.id,
+      { onDelete: "set null" },
+    ),
+
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -188,6 +214,12 @@ export const stagedPayments = pgTable(
     ),
     index("staged_payments_status_idx").on(t.status),
     index("staged_payments_match_status_idx").on(t.matchStatus),
+    // Look up the candidate members of a bank deposit (manual deposit-grouping)
+    // and the members of an already-grouped reconciliation.
+    index("staged_payments_qb_deposit_id_idx").on(t.qbDepositId),
+    index("staged_payments_group_reconciled_gift_id_idx").on(
+      t.groupReconciledGiftId,
+    ),
     index("staged_payments_date_received_idx").on(t.dateReceived),
     index("staged_payments_amount_idx").on(t.amount),
     index("staged_payments_organization_id_idx").on(t.organizationId),
