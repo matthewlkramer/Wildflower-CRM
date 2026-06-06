@@ -61,9 +61,10 @@ export interface ScoredMatch {
   /** Conduit the payer resolved to (DAF / platform), when applicable. */
   intermediaryId: string | null;
   /**
-   * A pre-existing gift to reconcile against — set ONLY when exactly one
-   * same-amount gift for the resolved donor falls in the date window. Null when
-   * zero (mint a new gift) or many (ambiguous; a human chooses).
+   * A pre-existing gift to reconcile against — set when there is an unambiguous
+   * target: exactly one same-amount gift in the date window, or (when there is no
+   * exact match) exactly one fee-band gift. Null when none (mint a new gift) or
+   * many (ambiguous; a human chooses).
    */
   matchedGiftId: string | null;
   /** How many same-amount in-window gifts the resolved donor already has. */
@@ -220,16 +221,17 @@ function donorWhere(donor: DonorMatch) {
  *   - `exact`         — ids of gifts whose amount equals the staged amount
  *                       (within a cent). Exactly one of these is an auto-reconcile
  *                       target; that gift adopts no fee assumption.
- *   - `plausibleCount`— how many gifts fall in the wider amount band (the CRM
- *                       gross gift can sit slightly above the QB net deposit by a
- *                       processor fee). Gates auto-create: we only mint a new gift
- *                       when NO plausible existing gift exists.
+ *   - `plausible`     — ids of gifts in the wider amount band (the CRM gross
+ *                       gift can sit just above the QB net deposit by a processor
+ *                       fee). Gates auto-create (we mint only when NONE exist) and,
+ *                       when there is exactly one and no exact match, is the
+ *                       fee-band auto-reconcile target. Includes the exact ids.
  * Both exclude gifts already linked to another staged payment, so a gift claimed
  * elsewhere never counts as a reconcile target or as a reason to skip minting.
  */
 interface GiftWindowResult {
   exact: string[];
-  plausibleCount: number;
+  plausible: string[];
 }
 
 /**
@@ -243,7 +245,7 @@ async function giftsInWindow(
   dateReceived: string | null,
 ): Promise<GiftWindowResult> {
   const where = donorWhere(donor);
-  if (!where) return { exact: [], plausibleCount: 0 };
+  if (!where) return { exact: [], plausible: [] };
   const order = dateReceived
     ? sql`ORDER BY ABS(amount - ${amount}::numeric), ABS(date_received - ${dateReceived}::date) NULLS LAST`
     : sql`ORDER BY ABS(amount - ${amount}::numeric), date_received DESC NULLS LAST`;
@@ -269,7 +271,24 @@ async function giftsInWindow(
   const exact = rows
     .filter((r) => Math.abs(Number(r.amount) - target) <= 0.01)
     .map((r) => r.id);
-  return { exact, plausibleCount: rows.length };
+  return { exact, plausible: rows.map((r) => r.id) };
+}
+
+/**
+ * The unambiguous auto-reconcile target among a donor's in-window gifts, or null
+ * when ambiguous. Prefer a single EXACT-amount gift; when there is no exact
+ * match, fall back to a single FEE-BAND gift (its gross sits just above the QB
+ * net deposit by a processor fee). Any other shape — multiple exact, multiple
+ * fee-band, or none — is ambiguous and yields null (a human picks, or a gift is
+ * minted when there are none). `plausible` includes the exact ids.
+ */
+export function reconcileTarget(
+  exact: string[],
+  plausible: string[],
+): string | null {
+  if (exact.length === 1) return exact[0];
+  if (exact.length === 0 && plausible.length === 1) return plausible[0];
+  return null;
 }
 
 /**
@@ -439,10 +458,11 @@ export async function scoreStagedPayment(
   let giftCandidateCount = 0;
   if (method && input.amount) {
     const gifts = await giftsInWindow(donor, input.amount, input.dateReceived);
-    // Mint-gate uses the plausible (fee-band) count; reconcile target is a
-    // SINGLE exact-amount gift only.
-    giftCandidateCount = gifts.plausibleCount;
-    if (gifts.exact.length === 1) matchedGiftId = gifts.exact[0];
+    // Mint-gate uses the full plausible (fee-band) set; the reconcile target is a
+    // single exact-amount gift, or — when there is no exact match — a single
+    // fee-band gift (the QB net deposit is the gift gross minus a processor fee).
+    giftCandidateCount = gifts.plausible.length;
+    matchedGiftId = reconcileTarget(gifts.exact, gifts.plausible);
     // Amount+date corroboration strengthens a name hit into name_amount_date.
     if (
       giftCandidateCount >= 1 &&

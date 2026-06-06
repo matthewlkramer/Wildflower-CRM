@@ -244,9 +244,10 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
 
 /**
  * Apply a high-confidence match to the ledger inside a guarded transaction.
- *   exactly one in-window gift → RECONCILE (matchedGiftId).
- *   zero in-window gifts       → MINT a new gift (createdGiftId).
- *   many                       → ambiguous; leave pending for review.
+ *   single unambiguous gift    → RECONCILE (matchedGiftId): one exact-amount
+ *                                gift, or one fee-band gift when none are exact.
+ *   zero in-window gifts        → MINT a new gift (createdGiftId).
+ *   many                        → ambiguous; leave pending for review.
  * Each write re-checks the row is still pending so a concurrent human action is
  * never clobbered. Returns true when an action was applied.
  */
