@@ -878,6 +878,9 @@ export default function StagedPayments() {
           selectedGiftId={selectedGiftId}
           onSelectGift={selectGift}
           stagedAmount={selectedStaged?.amount}
+          canMatch={canMatch}
+          onMatch={doMatch}
+          matching={reconcile.isPending}
           onUnmatch={(stagedPaymentId) =>
             revert.mutate({ id: stagedPaymentId })
           }
@@ -1435,6 +1438,9 @@ function GiftsPanel({
   selectedGiftId,
   onSelectGift,
   stagedAmount,
+  canMatch,
+  onMatch,
+  matching,
   onUnmatch,
   unmatching,
 }: {
@@ -1452,6 +1458,9 @@ function GiftsPanel({
   selectedGiftId: string | null;
   onSelectGift: (id: string | null, label: string | null) => void;
   stagedAmount: string | null | undefined;
+  canMatch: boolean;
+  onMatch: () => void;
+  matching: boolean;
   onUnmatch: (stagedPaymentId: string) => void;
   unmatching: boolean;
 }) {
@@ -1575,6 +1584,9 @@ function GiftsPanel({
                   )
                 }
                 stagedAmount={stagedAmount}
+                canMatch={canMatch}
+                onMatch={onMatch}
+                matching={matching}
                 onUnmatch={onUnmatch}
                 unmatching={unmatching}
               />
@@ -1619,6 +1631,9 @@ function GiftRow({
   selected,
   onSelect,
   stagedAmount,
+  canMatch,
+  onMatch,
+  matching,
   onUnmatch,
   unmatching,
 }: {
@@ -1626,6 +1641,9 @@ function GiftRow({
   selected: boolean;
   onSelect: () => void;
   stagedAmount: string | null | undefined;
+  canMatch: boolean;
+  onMatch: () => void;
+  matching: boolean;
   onUnmatch: (stagedPaymentId: string) => void;
   unmatching: boolean;
 }) {
@@ -1681,14 +1699,28 @@ function GiftRow({
                 {unmatching ? "Unmatching…" : "Unmatch"}
               </Button>
             </>
+          ) : selected ? (
+            <Button
+              size="sm"
+              onClick={onMatch}
+              disabled={!canMatch || matching}
+              data-testid={`gift-match-${gift.id}`}
+              title={
+                canMatch
+                  ? "Match the selected payment to this gift."
+                  : "Select a pending payment on the left to match."
+              }
+            >
+              {matching ? "Matching…" : "Match →"}
+            </Button>
           ) : (
             <Badge
-              variant={selected ? "default" : "outline"}
+              variant="outline"
               className="cursor-pointer"
               onClick={onSelect}
               data-testid={`gift-select-badge-${gift.id}`}
             >
-              {selected ? "Selected" : "Select"}
+              Select
             </Badge>
           )}
         </div>
