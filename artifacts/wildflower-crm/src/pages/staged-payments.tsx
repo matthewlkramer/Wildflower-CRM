@@ -611,6 +611,21 @@ export default function StagedPayments() {
     });
   };
 
+  // One-click reconcile to a specific candidate gift in the right pane, skipping
+  // the separate "select the gift first" step. The operator is still choosing the
+  // exact gift (the button lives on that gift's own row), so it stays explicit —
+  // no blind auto-guess.
+  const canMatchAny =
+    queue === "needs_review" &&
+    selectedStaged != null &&
+    selectedStaged.status === "pending" &&
+    !reconcile.isPending;
+
+  const matchGift = (giftId: string) => {
+    if (!selectedStaged || selectedStaged.status !== "pending") return;
+    reconcile.mutate({ id: selectedStaged.id, data: { giftId } });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -878,8 +893,8 @@ export default function StagedPayments() {
           selectedGiftId={selectedGiftId}
           onSelectGift={selectGift}
           stagedAmount={selectedStaged?.amount}
-          canMatch={canMatch}
-          onMatch={doMatch}
+          canMatchAny={canMatchAny}
+          onMatchGift={matchGift}
           matching={reconcile.isPending}
           onUnmatch={(stagedPaymentId) =>
             revert.mutate({ id: stagedPaymentId })
@@ -1438,8 +1453,8 @@ function GiftsPanel({
   selectedGiftId,
   onSelectGift,
   stagedAmount,
-  canMatch,
-  onMatch,
+  canMatchAny,
+  onMatchGift,
   matching,
   onUnmatch,
   unmatching,
@@ -1458,8 +1473,8 @@ function GiftsPanel({
   selectedGiftId: string | null;
   onSelectGift: (id: string | null, label: string | null) => void;
   stagedAmount: string | null | undefined;
-  canMatch: boolean;
-  onMatch: () => void;
+  canMatchAny: boolean;
+  onMatchGift: (giftId: string) => void;
   matching: boolean;
   onUnmatch: (stagedPaymentId: string) => void;
   unmatching: boolean;
@@ -1584,8 +1599,8 @@ function GiftsPanel({
                   )
                 }
                 stagedAmount={stagedAmount}
-                canMatch={canMatch}
-                onMatch={onMatch}
+                canMatchAny={canMatchAny}
+                onMatchGift={onMatchGift}
                 matching={matching}
                 onUnmatch={onUnmatch}
                 unmatching={unmatching}
@@ -1631,8 +1646,8 @@ function GiftRow({
   selected,
   onSelect,
   stagedAmount,
-  canMatch,
-  onMatch,
+  canMatchAny,
+  onMatchGift,
   matching,
   onUnmatch,
   unmatching,
@@ -1641,8 +1656,8 @@ function GiftRow({
   selected: boolean;
   onSelect: () => void;
   stagedAmount: string | null | undefined;
-  canMatch: boolean;
-  onMatch: () => void;
+  canMatchAny: boolean;
+  onMatchGift: (giftId: string) => void;
   matching: boolean;
   onUnmatch: (stagedPaymentId: string) => void;
   unmatching: boolean;
@@ -1699,29 +1714,20 @@ function GiftRow({
                 {unmatching ? "Unmatching…" : "Unmatch"}
               </Button>
             </>
-          ) : selected ? (
+          ) : (
             <Button
               size="sm"
-              onClick={onMatch}
-              disabled={!canMatch || matching}
+              onClick={() => onMatchGift(gift.id)}
+              disabled={!canMatchAny || matching}
               data-testid={`gift-match-${gift.id}`}
               title={
-                canMatch
+                canMatchAny
                   ? "Match the selected payment to this gift."
-                  : "Select a pending payment on the left to match."
+                  : "Select a pending payment on the left to match first."
               }
             >
               {matching ? "Matching…" : "Match →"}
             </Button>
-          ) : (
-            <Badge
-              variant="outline"
-              className="cursor-pointer"
-              onClick={onSelect}
-              data-testid={`gift-select-badge-${gift.id}`}
-            >
-              Select
-            </Badge>
           )}
         </div>
       </div>
