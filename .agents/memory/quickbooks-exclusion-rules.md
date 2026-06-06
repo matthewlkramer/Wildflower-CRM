@@ -63,6 +63,18 @@ SQL backfill must mirror the regex (TS `\b…\b` ⇄ Postgres `~* '\y…\y'`).
   gifts) stays in the queue for human review. **Why:** the user explicitly chose
   "exclude only the clear non-gifts, leave the rest to review" — do not broaden
   to a blanket 4030 exclusion.
+- `insurance` (BASICCOBRA): COBRA/insurance-premium reimbursements administered by
+  BASIC. A TEXT/identity rule (`basiccobra` substring on any field), so it is
+  **UNGUARDED** and runs before the donation guard — categorically not a gift
+  regardless of coding.
+- `expense_refund` (the word "refund"): refunds of the org's OWN expenses (vendor
+  overpayments, training/registration refunds, ERC tax refunds). **UNGUARDED** but
+  runs AFTER the guarded account-based rules, so a refund coded to a tax/insurance
+  account keeps the more-specific `tax_refund` label; `expense_refund` only catches
+  refunds the guarded rules missed. **Why unguarded matters:** the two largest ERC
+  refunds are MISCODED to a `4000.4` donation income account — a guarded rule would
+  trap them in the queue forever. Memo regex TS `/\brefund/i` ⇄ SQL `~ '\mrefund'`
+  (matches refund/refunds/refunded, NOT "prefund").
 
 ## Two-file enum migration gotcha
 

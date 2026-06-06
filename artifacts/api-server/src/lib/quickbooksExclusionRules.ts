@@ -42,16 +42,33 @@
  *                                or memo) anywhere on the row. Because the whole
  *                                payment belongs to the other project, this rule
  *                                is NOT subject to the donation-first guard.
+ *  10. insurance               — COBRA / insurance-premium reimbursements
+ *                                administered by BASIC (the "BASICCOBRA" marker
+ *                                on the line). An IDENTITY rule matched by the
+ *                                marker anywhere on the row; never a gift, so NOT
+ *                                subject to the donation-first guard.
+ *  11. expense_refund          — refunds of the org's OWN expenses (vendor
+ *                                overpayments, registration / training refunds,
+ *                                ERC tax refunds, etc.): money coming back, not a
+ *                                contribution. A TEXT rule matched by the word
+ *                                "refund" anywhere on the row. Per the user every
+ *                                such record is an expense refund, so this rule is
+ *                                deliberately NOT subject to the donation-first
+ *                                guard (some refunds, e.g. ERC, are miscoded in
+ *                                QuickBooks to a donation income account).
  *
  * DONATION-FIRST GUARD: the line-based rules (loan-by-guaranty, interest,
- * tax_refund) never fire on a row that ALSO carries a real donation line (a
- * Donation item or a 4000/4100-series donation account), so a deposit bundling a
- * gift with a fee / interest / refund line is never wrongly hidden.
+ * tax_refund, other_revenue, earned_income) never fire on a row that ALSO carries
+ * a real donation line (a Donation item or a 4000/4100-series donation account),
+ * so a deposit bundling a gift with a fee / interest / refund line is never
+ * wrongly hidden. The IDENTITY / TEXT rules (fiscally_sponsored, insurance,
+ * expense_refund) intentionally BYPASS this guard — they identify money that is
+ * categorically not a gift regardless of how the line is coded.
  *
  * Rules are applied in a deterministic order (see `classifyStagedPayment`):
  * zero_amount → loan (payer) → government_reimbursement → fiscally_sponsored →
- * loan (guaranty line) → interest → tax_refund → other_revenue → earned_income →
- * membership. The first match wins.
+ * insurance → loan (guaranty line) → interest → tax_refund → other_revenue →
+ * earned_income → expense_refund → membership. The first match wins.
  */
 
 export type ExclusionReason =
@@ -63,7 +80,9 @@ export type ExclusionReason =
   | "tax_refund"
   | "other_revenue"
   | "earned_income"
-  | "fiscally_sponsored";
+  | "fiscally_sponsored"
+  | "insurance"
+  | "expense_refund";
 
 export interface ClassifierInput {
   amount: string | null;
@@ -229,6 +248,25 @@ export const FISCALLY_SPONSORED_PROJECT_SUBSTRINGS: readonly string[] = [
 ];
 
 /**
+ * INSURANCE / COBRA reimbursement markers. COBRA continuation-coverage premiums
+ * the org collects and remits, administered by BASIC, post under the line marker
+ * "BASICCOBRA". Never a gift. An IDENTITY rule — matched as a case-insensitive
+ * substring ANYWHERE on the row (payer, memo, line description, item, account,
+ * Class), so it is robust to which field carries the marker.
+ */
+export const INSURANCE_MARKER_SUBSTRINGS: readonly string[] = ["basiccobra"];
+
+/**
+ * EXPENSE-REFUND markers. Money refunded back to the org for its OWN expenses
+ * (vendor overpayments, registration / training refunds, ERC tax refunds, etc.)
+ * is not a contribution. Per the user, every record whose text contains the word
+ * "refund" is an expense refund. A TEXT rule — matched ANYWHERE on the row,
+ * word-START anchored (`\brefund`) so "refund / refunds / refunded" match but
+ * "prefund" does not.
+ */
+export const EXPENSE_REFUND_TEXT_PATTERNS: readonly RegExp[] = [/\brefund/i];
+
+/**
  * DONATION-line markers used by the donation-first guard: a Donation item or a
  * 4000/4100-series donation income account. When present, the line-based noise
  * rules are suppressed so a bundled gift is never hidden.
@@ -347,35 +385,69 @@ function isEarnedIncomeLine(input: ClassifierInput): boolean {
 }
 
 /**
- * True if a row belongs to a fiscally sponsored project: a project marker
- * substring appears anywhere on the row — the QuickBooks Class, payer name,
- * item / account names, line description, or memo. Project-identity rule, so it
- * scans all captured text (not just the line accounts) and ignores the
- * donation-first guard.
+ * Every captured free-text field on a row, used by the IDENTITY / TEXT rules
+ * (fiscally_sponsored, insurance, expense_refund) that scan the whole row rather
+ * than a specific line account: the QuickBooks Class, payer name, item / account
+ * names, line description, and memo.
  */
-function isFiscallySponsoredProject(input: ClassifierInput): boolean {
-  if (FISCALLY_SPONSORED_PROJECT_SUBSTRINGS.length === 0) return false;
-  const needles = FISCALLY_SPONSORED_PROJECT_SUBSTRINGS.map(normalize);
-  const haystacks = [
+function allTextFields(input: ClassifierInput): string[] {
+  return [
     input.payerName,
     input.rawReference,
     input.lineDescription ?? null,
     ...(input.lineClasses ?? []),
     ...(input.lineItemNames ?? []),
     ...(input.lineAccountNames ?? []),
-  ]
-    .filter((s): s is string => !!s)
-    .map(normalize);
-  return haystacks.some((h) => needles.some((n) => h.includes(n)));
+  ].filter((s): s is string => !!s);
+}
+
+/**
+ * True if a row belongs to a fiscally sponsored project: a project marker
+ * substring appears anywhere on the row. Project-identity rule, so it scans all
+ * captured text (not just the line accounts) and ignores the donation-first guard.
+ */
+function isFiscallySponsoredProject(input: ClassifierInput): boolean {
+  if (FISCALLY_SPONSORED_PROJECT_SUBSTRINGS.length === 0) return false;
+  const needles = FISCALLY_SPONSORED_PROJECT_SUBSTRINGS.map(normalize);
+  return allTextFields(input)
+    .map(normalize)
+    .some((h) => needles.some((n) => h.includes(n)));
+}
+
+/**
+ * True if a row is a COBRA / insurance-premium reimbursement: an insurance
+ * marker substring (e.g. "basiccobra") appears anywhere on the row. Identity
+ * rule — never a gift, so it ignores the donation-first guard.
+ */
+function isInsuranceMarker(input: ClassifierInput): boolean {
+  if (INSURANCE_MARKER_SUBSTRINGS.length === 0) return false;
+  const needles = INSURANCE_MARKER_SUBSTRINGS.map(normalize);
+  return allTextFields(input)
+    .map(normalize)
+    .some((h) => needles.some((n) => h.includes(n)));
+}
+
+/**
+ * True if a row is a refund of the org's own expenses: the word "refund"
+ * (word-start anchored) appears anywhere on the row. Per the user every such
+ * record is an expense refund, not a contribution, so this rule ignores the
+ * donation-first guard — some refunds (e.g. ERC tax refunds) are miscoded to a
+ * donation income account in QuickBooks yet are still not gifts.
+ */
+function isExpenseRefund(input: ClassifierInput): boolean {
+  if (EXPENSE_REFUND_TEXT_PATTERNS.length === 0) return false;
+  const hay = allTextFields(input).join(" ");
+  return EXPENSE_REFUND_TEXT_PATTERNS.some((re) => re.test(hay));
 }
 
 /**
  * Pure noise classifier. Takes a normalized payment + its captured line detail
  * and returns whether it should be auto-excluded and why. Deterministic rule
  * order: zero_amount → loan (payer) → government_reimbursement →
- * fiscally_sponsored → loan (guaranty line) → interest → tax_refund →
- * other_revenue → earned_income → membership; first match wins.
- * The line-based rules honor the donation-first guard.
+ * fiscally_sponsored → insurance → loan (guaranty line) → interest → tax_refund →
+ * other_revenue → earned_income → expense_refund → membership; first match wins.
+ * The line-based rules honor the donation-first guard; the identity / text rules
+ * (fiscally_sponsored, insurance, expense_refund) intentionally bypass it.
  */
 export function classifyStagedPayment(
   input: ClassifierInput,
@@ -411,6 +483,13 @@ export function classifyStagedPayment(
     return { excluded: true, reason: "fiscally_sponsored" };
   }
 
+  // 4b. Insurance / COBRA reimbursements (the "BASICCOBRA" marker). Identity
+  //     rule — never a gift, so it fires BEFORE the donation guard and scans
+  //     every captured field.
+  if (isInsuranceMarker(input)) {
+    return { excluded: true, reason: "insurance" };
+  }
+
   // The remaining line-based noise rules are suppressed when the row also carries
   // a real donation line, so a bundled gift is never wrongly hidden.
   const donation = hasDonationLine(input);
@@ -441,7 +520,16 @@ export function classifyStagedPayment(
     return { excluded: true, reason: "earned_income" };
   }
 
-  // 10. Membership by confirmed QB item / income-account marker.
+  // 10. Expense refunds (the word "refund" anywhere on the row): money coming
+  //     back, not a contribution. TEXT-identity rule — intentionally UNGUARDED
+  //     (some refunds, e.g. ERC, are miscoded to a donation account yet are not
+  //     gifts). Runs AFTER the specific guarded rules so a genuine tax/insurance
+  //     refund keeps its more specific `tax_refund` label.
+  if (isExpenseRefund(input)) {
+    return { excluded: true, reason: "expense_refund" };
+  }
+
+  // 11. Membership by confirmed QB item / income-account marker.
   if (
     matchesAny(input.lineItemNames, MEMBERSHIP_ITEM_NAMES) ||
     matchesAny(input.lineAccountNames, MEMBERSHIP_ACCOUNT_NAMES)

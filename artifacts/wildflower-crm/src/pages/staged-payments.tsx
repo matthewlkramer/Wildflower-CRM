@@ -111,6 +111,8 @@ const EXCLUSION_REASON_LABELS: Record<StagedPaymentExclusionReason, string> = {
   fiscally_sponsored: "Fiscally sponsored project",
   intercompany_transfer: "Intercompany transfer",
   other: "Other (not a gift)",
+  insurance: "Insurance / COBRA reimbursement",
+  expense_refund: "Expense refund (non-gift)",
 };
 
 const QB_ENTITY_TYPE_LABELS: Record<QuickbooksEntityType, string> = {

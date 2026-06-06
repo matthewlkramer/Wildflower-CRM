@@ -259,6 +259,8 @@ router.get(
       fiscally_sponsored: 0,
       intercompany_transfer: 0,
       other: 0,
+      insurance: 0,
+      expense_refund: 0,
     };
     for (const r of reasonRows) {
       if (r.reason && r.reason in excludedByReason) {

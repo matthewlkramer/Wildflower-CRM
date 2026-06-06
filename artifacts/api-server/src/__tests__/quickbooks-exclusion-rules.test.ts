@@ -494,4 +494,110 @@ describe("classifyStagedPayment", () => {
       }).excluded,
     ).toBe(false);
   });
+
+  // ─── insurance (BASICCOBRA) ───────────────────────────────────────────────
+  it("excludes a BASICCOBRA reimbursement as insurance (marker on the line)", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineDescription: "BASIC            BASICCOBRA 221215                 The Wildf",
+        lineAccountNames: ["2002 Benefit Liability"],
+      }).reason,
+    ).toBe("insurance");
+  });
+
+  it("matches the BASICCOBRA marker case-insensitively on any field", () => {
+    expect(
+      classifyStagedPayment({ ...base, payerName: "BasicCobra Admin" }).reason,
+    ).toBe("insurance");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        rawReference: "basiccobra premium remittance",
+      }).reason,
+    ).toBe("insurance");
+  });
+
+  it("excludes a BASICCOBRA row EVEN when it carries a donation line (no donation guard)", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineDescription: "BASICCOBRA premium",
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: ["4000 Unrestricted Donations"],
+      }).reason,
+    ).toBe("insurance");
+  });
+
+  it("does not treat the bare word 'insurance' as the insurance reason", () => {
+    // Only the BASICCOBRA marker triggers `insurance`; a generic mention does
+    // not. (A 7006 Insurance expense account would be tax_refund, not insurance.)
+    expect(
+      classifyStagedPayment({
+        ...base,
+        rawReference: "annual insurance plan contribution",
+      }).excluded,
+    ).toBe(false);
+  });
+
+  // ─── expense_refund (the word "refund") ───────────────────────────────────
+  it("excludes a refund of the org's own expense as expense_refund", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "Tina Garyantes",
+        rawReference: "REFUND",
+        lineAccountNames: [
+          "7033 All Other Expenditures:Montessori Training Registrations",
+        ],
+      }).reason,
+    ).toBe("expense_refund");
+  });
+
+  it("matches refund / refunds / refunded but not 'prefund'", () => {
+    expect(
+      classifyStagedPayment({ ...base, rawReference: "Overpay Refund" }).reason,
+    ).toBe("expense_refund");
+    expect(
+      classifyStagedPayment({ ...base, rawReference: "registration refunds" })
+        .reason,
+    ).toBe("expense_refund");
+    expect(
+      classifyStagedPayment({ ...base, rawReference: "amount refunded" }).reason,
+    ).toBe("expense_refund");
+    expect(
+      classifyStagedPayment({ ...base, rawReference: "prefund the account" })
+        .excluded,
+    ).toBe(false);
+  });
+
+  it("excludes an ERC refund miscoded to a donation account (no donation guard)", () => {
+    // ERC tax refunds are sometimes coded in QuickBooks to a 4000-series
+    // donation income account, but they are refunds, not gifts.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "US Department of Treasury",
+        rawReference: "ERC Tax Refund",
+        lineAccountNames: [
+          "4000.4 Unrestricted Donations:Unrestricted Donations -Governmental",
+        ],
+      }).reason,
+    ).toBe("expense_refund");
+  });
+
+  it("keeps the more specific tax_refund label when a refund posts to a tax account", () => {
+    // tax_refund (guarded, account-based) runs before expense_refund, so a
+    // refund coded to a payroll-tax / tax / insurance account stays tax_refund.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        rawReference: "unemployment tax refund",
+        lineAccountNames: ["7020 All Other Expenditures:Taxes"],
+      }).reason,
+    ).toBe("tax_refund");
+  });
 });

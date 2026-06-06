@@ -1677,6 +1677,8 @@ export const StagedPaymentExclusionReason = {
   fiscally_sponsored: "fiscally_sponsored",
   intercompany_transfer: "intercompany_transfer",
   other: "other",
+  insurance: "insurance",
+  expense_refund: "expense_refund",
 } as const;
 
 export type StagedPaymentMatchStatus =
@@ -1839,6 +1841,8 @@ export type StagedPaymentSummaryExcludedByReason = {
   fiscally_sponsored: number;
   intercompany_transfer: number;
   other: number;
+  insurance: number;
+  expense_refund: number;
 };
 
 export interface StagedPaymentSummary {
