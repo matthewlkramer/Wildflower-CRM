@@ -122,11 +122,11 @@ const stagedSelect = {
   resolvedGiftName: resolvedGift.name,
   resolvedGiftAmount: resolvedGift.amount,
   resolvedGiftDate: resolvedGift.dateReceived,
-  // "Looks like a 2nd payment for one gift": this row has no gift of its own,
-  // and every same-donor / similar-amount gift is already linked to a DIFFERENT
-  // staged payment (no unlinked candidate is left to match). Signals the
-  // fundraiser to create a new gift (or exclude a true duplicate) rather than
-  // trusting a high match score that points at an already-claimed gift.
+  // "Gift likely not created yet": this row has no gift of its own, and every
+  // same-donor / similar-amount gift is already linked to a DIFFERENT staged
+  // payment (no unlinked candidate is left to match). Signals the fundraiser to
+  // create a new gift (or exclude a true duplicate) rather than trusting a high
+  // match score that points at an already-claimed gift.
   giftAlreadyLinkedElsewhere: sql<boolean>`(
     ${stagedPayments.matchedGiftId} IS NULL
     AND ${stagedPayments.createdGiftId} IS NULL

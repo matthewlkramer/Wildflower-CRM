@@ -3770,7 +3770,7 @@ components:
         resolvedGiftName:          { type: string, nullable: true }
         resolvedGiftAmount:        { type: string, nullable: true }
         resolvedGiftDate:          { type: string, format: date, nullable: true }
-        giftAlreadyLinkedElsewhere: { type: boolean, description: "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. this looks like a second payment toward an existing gift (create a new gift for it, or exclude if it's a duplicate)." }
+        giftAlreadyLinkedElsewhere: { type: boolean, description: "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate)." }
         createdAt:                 { type: string, format: date-time }
         updatedAt:                 { type: string, format: date-time }
     StagedPaymentList:
