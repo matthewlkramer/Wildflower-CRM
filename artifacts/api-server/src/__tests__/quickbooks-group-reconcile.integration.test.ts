@@ -51,8 +51,11 @@ vi.mock("../middlewares/requireAuth", () => ({
 
 const RUN = `qbgrp_${Date.now()}`;
 const ORG_ID = `${RUN}_org`;
+const PERSON_ID = `${RUN}_person`;
+const HOUSEHOLD_ID = `${RUN}_household`;
 const REALM_ID = `${RUN}_realm`;
 const DEPOSIT_ID = `${RUN}_dep`;
+const DONOR_XOR_CONSTRAINT = "gifts_and_payments_donor_xor";
 
 type Db = typeof import("@workspace/db");
 
@@ -60,11 +63,14 @@ let db: Db["db"];
 let schema: {
   users: Db["users"];
   organizations: Db["organizations"];
+  people: Db["people"];
+  households: Db["households"];
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
+let sqlFn: (typeof import("drizzle-orm"))["sql"];
 let server: Server;
 let baseUrl = "";
 
@@ -98,6 +104,12 @@ async function api(
   return { status: res.status, json };
 }
 
+type DonorFields = {
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+};
+
 async function seedGift(amount: string): Promise<string> {
   const id = nextGiftId();
   await db.insert(schema.giftsAndPayments).values({
@@ -105,6 +117,45 @@ async function seedGift(amount: string): Promise<string> {
     amount,
     organizationId: ORG_ID,
   });
+  return id;
+}
+
+/** Seed a gift carrying a specific single donor (Donor XOR). */
+async function seedGiftWithDonor(
+  amount: string,
+  donor: DonorFields,
+): Promise<string> {
+  const id = nextGiftId();
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    amount,
+    organizationId: donor.organizationId ?? null,
+    individualGiverPersonId: donor.individualGiverPersonId ?? null,
+    householdId: donor.householdId ?? null,
+  });
+  return id;
+}
+
+/**
+ * Seed a gift with NO donor. The gifts_and_payments_donor_xor CHECK constraint
+ * forbids zero-donor rows, so we briefly drop it, insert the malformed gift,
+ * and immediately re-add the constraint as NOT VALID (still enforced for any
+ * new rows, just not re-validated against the existing one). The constraint is
+ * fully re-validated in afterAll once the malformed row is gone.
+ */
+async function seedNoDonorGift(amount: string): Promise<string> {
+  const id = nextGiftId();
+  await db.execute(
+    sqlFn`ALTER TABLE gifts_and_payments DROP CONSTRAINT IF EXISTS ${sqlFn.raw(
+      DONOR_XOR_CONSTRAINT,
+    )}`,
+  );
+  await db.insert(schema.giftsAndPayments).values({ id, amount });
+  await db.execute(
+    sqlFn`ALTER TABLE gifts_and_payments ADD CONSTRAINT ${sqlFn.raw(
+      DONOR_XOR_CONSTRAINT,
+    )} CHECK (num_nonnulls(organization_id, individual_giver_person_id, household_id) = 1) NOT VALID`,
+  );
   return id;
 }
 
@@ -147,11 +198,14 @@ beforeAll(async () => {
   schema = {
     users: dbMod.users,
     organizations: dbMod.organizations,
+    people: dbMod.people,
+    households: dbMod.households,
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
+  sqlFn = drizzle.sql;
 
   // Seed the user the mocked auth gate injects (FK target for
   // matchConfirmedByUserId / approvedByUserId) and the donor org.
@@ -164,6 +218,15 @@ beforeAll(async () => {
   await db.insert(schema.organizations).values({
     id: ORG_ID,
     name: `QB Group Test Org ${RUN}`,
+  });
+  // Donor targets for the individual-giver / household adoption cases.
+  await db.insert(schema.people).values({
+    id: PERSON_ID,
+    fullName: `QB Group Test Person ${RUN}`,
+  });
+  await db.insert(schema.households).values({
+    id: HOUSEHOLD_ID,
+    name: `QB Group Test Household ${RUN}`,
   });
 
   const { default: app } = await import("../app");
@@ -186,6 +249,24 @@ afterAll(async () => {
       .delete(schema.giftsAndPayments)
       .where(inArrayFn(schema.giftsAndPayments.id, seededGiftIds));
   }
+  // The no-donor case may have left the donor-XOR constraint NOT VALID. With the
+  // malformed gift now deleted, fully re-validate it to restore the dev DB's
+  // pristine schema state (a no-op if it was never dropped).
+  try {
+    await db.execute(
+      sqlFn`ALTER TABLE gifts_and_payments VALIDATE CONSTRAINT ${sqlFn.raw(
+        DONOR_XOR_CONSTRAINT,
+      )}`,
+    );
+  } catch {
+    // Best-effort: never let constraint restoration mask test results.
+  }
+  await db
+    .delete(schema.people)
+    .where(eqFn(schema.people.id, PERSON_ID));
+  await db
+    .delete(schema.households)
+    .where(eqFn(schema.households.id, HOUSEHOLD_ID));
   await db
     .delete(schema.organizations)
     .where(eqFn(schema.organizations.id, ORG_ID));
@@ -234,6 +315,96 @@ describe.skipIf(!HAS_DB)(
       expect(member.groupReconciledGiftId).toBe(giftId);
       expect(member.matchedGiftId).toBeNull();
       expect(member.status).toBe("approved");
+    }, 30_000);
+
+    it("adopts an individual-giver donor and nulls the other donor FKs", async () => {
+      // Gift donor is an individual giver; staged rows seed with an org donor,
+      // which must be replaced by the gift's individual donor on reconcile.
+      const giftId = await seedGiftWithDonor("80.00", {
+        individualGiverPersonId: PERSON_ID,
+      });
+      seededGiftIds.push(giftId);
+      const repId = await seedStaged(giftId, "a", "40.00");
+      const memberId = await seedStaged(giftId, "b", "40.00");
+
+      const res = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [memberId, repId],
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.json.representativeStagedPaymentId).toBe(repId);
+
+      const rep = await readStaged(repId);
+      const member = await readStaged(memberId);
+
+      for (const row of [rep, member]) {
+        // The individual donor is stamped; the other two FKs are nulled.
+        expect(row.individualGiverPersonId).toBe(PERSON_ID);
+        expect(row.organizationId).toBeNull();
+        expect(row.householdId).toBeNull();
+        expect(row.status).toBe("approved");
+        expect(row.groupReconciledGiftId).toBe(giftId);
+      }
+      expect(rep.matchedGiftId).toBe(giftId);
+      expect(member.matchedGiftId).toBeNull();
+    }, 30_000);
+
+    it("adopts a household donor and nulls the other donor FKs", async () => {
+      const giftId = await seedGiftWithDonor("80.00", {
+        householdId: HOUSEHOLD_ID,
+      });
+      seededGiftIds.push(giftId);
+      const repId = await seedStaged(giftId, "a", "40.00");
+      const memberId = await seedStaged(giftId, "b", "40.00");
+
+      const res = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [memberId, repId],
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.json.representativeStagedPaymentId).toBe(repId);
+
+      const rep = await readStaged(repId);
+      const member = await readStaged(memberId);
+
+      for (const row of [rep, member]) {
+        // The household donor is stamped; the other two FKs are nulled.
+        expect(row.householdId).toBe(HOUSEHOLD_ID);
+        expect(row.organizationId).toBeNull();
+        expect(row.individualGiverPersonId).toBeNull();
+        expect(row.status).toBe("approved");
+        expect(row.groupReconciledGiftId).toBe(giftId);
+      }
+      expect(rep.matchedGiftId).toBe(giftId);
+      expect(member.matchedGiftId).toBeNull();
+    }, 30_000);
+
+    it("rejects reconciling to a gift with no donor and leaves rows untouched", async () => {
+      // Gift carries zero donors → no donor to adopt → 400 link_invalid.
+      const giftId = await seedNoDonorGift("60.00");
+      seededGiftIds.push(giftId);
+      const aId = await seedStaged(giftId, "a", "30.00");
+      const bId = await seedStaged(giftId, "b", "30.00");
+
+      const res = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe("link_invalid");
+
+      // Rows untouched — still pending, no gift links, donor still the seed org.
+      const a = await readStaged(aId);
+      const b = await readStaged(bId);
+      for (const row of [a, b]) {
+        expect(row.status).toBe("pending");
+        expect(row.matchedGiftId).toBeNull();
+        expect(row.groupReconciledGiftId).toBeNull();
+        expect(row.organizationId).toBe(ORG_ID);
+      }
     }, 30_000);
 
     it("rejects an out-of-tolerance combined total without touching the rows", async () => {
