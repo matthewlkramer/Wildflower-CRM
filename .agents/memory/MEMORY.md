@@ -39,3 +39,4 @@
 - [Orval query-key invalidation prefix](orval-query-key-invalidation.md) — invalidateQueries needs the full "/api" prefix to match generated keys; a missing prefix silently refetches nothing.
 - [QuickBooks reconcile adopts gift donor](quickbooks-reconcile-donor-adoption.md) — explicit human Match links to a gift by adopting the GIFT donor (overrides auto-guess); donorsMatch/validateGiftLink no longer enforced on that path.
 - [QuickBooks reconciler intermediary donor seed](quickbooks-intermediary-donor-seed.md) — when payer is Stripe/Donorbox/DAF, seed gift search with the donor pulled from the memo (after "from"/dash), conservatively.
+- [Deleting a gift requires removing allocations first](gift-delete-allocations-restrict.md) — gift_allocations FK is RESTRICT (every gift has >=1); delete route must clear allocations in-txn first; other gift FKs are set-null.

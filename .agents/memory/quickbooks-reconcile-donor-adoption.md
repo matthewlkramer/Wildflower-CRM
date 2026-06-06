@@ -7,7 +7,7 @@ The QuickBooks staged-payment reconcile endpoint (link to an EXISTING gift)
 treats an explicit human Match as authoritative: the staged row **adopts the
 selected gift's donor**, overriding any auto-guessed donor.
 
-**Why:** a deposit line auto-matched to an individual (e.g. "Angie Schiavoni")
+**Why:** a deposit line auto-matched to an individual (e.g. a person record)
 could not be linked to that person's *household* gift — the old strict
 `donorsMatch` guard returned HTTP 400 `donor_mismatch`. The fundraiser explicitly
 selects both sides, so their selection wins. (User decision, confirmed.)

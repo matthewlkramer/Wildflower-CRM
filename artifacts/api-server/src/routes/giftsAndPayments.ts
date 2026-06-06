@@ -476,7 +476,15 @@ router.delete(
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, id))
       .then((r) => r[0]);
-    await db.delete(giftsAndPayments).where(eq(giftsAndPayments.id, id));
+    // gift_allocations FK is RESTRICT (allocations are money-trail line items),
+    // so the parent gift can't be deleted until its allocation rows are gone.
+    // Every gift carries at least one allocation row, so this cleanup is
+    // effectively always required — do both in one transaction so a gift is
+    // never left orphaned of (or partially stripped of) its allocations.
+    await db.transaction(async (tx) => {
+      await tx.delete(giftAllocations).where(eq(giftAllocations.giftId, id));
+      await tx.delete(giftsAndPayments).where(eq(giftsAndPayments.id, id));
+    });
     await applyDerivedOppFieldsMany(existing?.paymentOnPledgeId);
     res.status(204).end();
   }),
