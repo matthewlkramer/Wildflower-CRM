@@ -119,6 +119,45 @@ const stagedSelect = {
   resolvedGiftName: resolvedGift.name,
   resolvedGiftAmount: resolvedGift.amount,
   resolvedGiftDate: resolvedGift.dateReceived,
+  // "Looks like a 2nd payment for one gift": this row has no gift of its own,
+  // and every same-donor / similar-amount gift is already linked to a DIFFERENT
+  // staged payment (no unlinked candidate is left to match). Signals the
+  // fundraiser to create a new gift (or exclude a true duplicate) rather than
+  // trusting a high match score that points at an already-claimed gift.
+  giftAlreadyLinkedElsewhere: sql<boolean>`(
+    ${stagedPayments.matchedGiftId} IS NULL
+    AND ${stagedPayments.createdGiftId} IS NULL
+    AND ${stagedPayments.amount} IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM gifts_and_payments g
+      WHERE (
+        (${stagedPayments.organizationId} IS NOT NULL AND g.organization_id = ${stagedPayments.organizationId})
+        OR (${stagedPayments.individualGiverPersonId} IS NOT NULL AND g.individual_giver_person_id = ${stagedPayments.individualGiverPersonId})
+        OR (${stagedPayments.householdId} IS NOT NULL AND g.household_id = ${stagedPayments.householdId})
+      )
+      AND g.amount >= ${stagedPayments.amount}::numeric - 0.01
+      AND g.amount <= ${stagedPayments.amount}::numeric * 1.10 + 1
+      AND EXISTS (
+        SELECT 1 FROM staged_payments sp2
+        WHERE (sp2.matched_gift_id = g.id OR sp2.created_gift_id = g.id)
+          AND sp2.id <> ${stagedPayments.id}
+      )
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM gifts_and_payments g2
+      WHERE (
+        (${stagedPayments.organizationId} IS NOT NULL AND g2.organization_id = ${stagedPayments.organizationId})
+        OR (${stagedPayments.individualGiverPersonId} IS NOT NULL AND g2.individual_giver_person_id = ${stagedPayments.individualGiverPersonId})
+        OR (${stagedPayments.householdId} IS NOT NULL AND g2.household_id = ${stagedPayments.householdId})
+      )
+      AND g2.amount >= ${stagedPayments.amount}::numeric - 0.01
+      AND g2.amount <= ${stagedPayments.amount}::numeric * 1.10 + 1
+      AND NOT EXISTS (
+        SELECT 1 FROM staged_payments sp3
+        WHERE (sp3.matched_gift_id = g2.id OR sp3.created_gift_id = g2.id)
+      )
+    )
+  )`.as("gift_already_linked_elsewhere"),
 };
 
 function withJoins<T extends PgSelect>(q: T) {

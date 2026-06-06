@@ -1820,6 +1820,8 @@ export interface StagedPayment {
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
   resolvedGiftDate?: string | null;
+  /** True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. this looks like a second payment toward an existing gift (create a new gift for it, or exclude if it's a duplicate). */
+  giftAlreadyLinkedElsewhere?: boolean;
   createdAt: string;
   updatedAt: string;
 }

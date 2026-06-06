@@ -1089,6 +1089,12 @@ function StagedPaymentCard({
 
   const selectable = queue === "needs_review";
 
+  // When every same-donor, similar-amount gift is already claimed by another QB
+  // payment, this is likely a 2nd payment toward an existing gift — surface that
+  // instead of a confident "% match" that points at an already-linked gift.
+  const looksLikeSecondPayment =
+    queue === "needs_review" && row.giftAlreadyLinkedElsewhere === true;
+
   return (
     <Card
       data-testid={`staged-payment-${row.id}`}
@@ -1132,7 +1138,16 @@ function StagedPaymentCard({
                 Auto-applied
               </Badge>
             ) : null}
-            {typeof row.matchScore === "number" ? (
+            {looksLikeSecondPayment ? (
+              <Badge
+                variant="outline"
+                className="border-amber-500 text-amber-700 dark:text-amber-400"
+                data-testid={`staged-second-payment-${row.id}`}
+                title="Every matching gift for this donor and amount is already linked to another QuickBooks payment. This looks like a second payment toward an existing gift — create a new gift for it, or exclude it if it's a duplicate."
+              >
+                Likely 2nd payment for an existing gift
+              </Badge>
+            ) : typeof row.matchScore === "number" ? (
               <Badge
                 variant="secondary"
                 data-testid={`staged-score-${row.id}`}

@@ -7005,6 +7005,12 @@ export const ListStagedPaymentsResponse = zod.object({
       resolvedGiftName: zod.string().nullish(),
       resolvedGiftAmount: zod.string().nullish(),
       resolvedGiftDate: zod.string().date().nullish(),
+      giftAlreadyLinkedElsewhere: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. this looks like a second payment toward an existing gift (create a new gift for it, or exclude if it's a duplicate).",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -7145,6 +7151,12 @@ export const ResolveStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  giftAlreadyLinkedElsewhere: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. this looks like a second payment toward an existing gift (create a new gift for it, or exclude if it's a duplicate).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -7234,6 +7246,12 @@ export const RejectStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  giftAlreadyLinkedElsewhere: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. this looks like a second payment toward an existing gift (create a new gift for it, or exclude if it's a duplicate).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -7316,6 +7334,12 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  giftAlreadyLinkedElsewhere: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. this looks like a second payment toward an existing gift (create a new gift for it, or exclude if it's a duplicate).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -7425,6 +7449,12 @@ export const ExcludeStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  giftAlreadyLinkedElsewhere: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. this looks like a second payment toward an existing gift (create a new gift for it, or exclude if it's a duplicate).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -7912,6 +7942,12 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  giftAlreadyLinkedElsewhere: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. this looks like a second payment toward an existing gift (create a new gift for it, or exclude if it's a duplicate).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -7994,6 +8030,12 @@ export const UnmatchStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  giftAlreadyLinkedElsewhere: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. this looks like a second payment toward an existing gift (create a new gift for it, or exclude if it's a duplicate).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -8083,6 +8125,12 @@ export const RevertStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  giftAlreadyLinkedElsewhere: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. this looks like a second payment toward an existing gift (create a new gift for it, or exclude if it's a duplicate).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });

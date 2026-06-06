@@ -12,10 +12,11 @@ size on the same day. Both are real money that arrived.
 
 **Why:** QuickBooks is authoritative for "money that actually arrived." Each
 distinct QB Payment entity (distinct `qb_entity_id`) is a distinct real inflow.
-Real example: Scholler 2024-02-02 had `payment 28838` (Scholler Foundation, $5,000)
-AND `payment 28845` (Saint Paul & Minnesota Foundation, $5,000) — two separate
-payments, no `LinkedTxn` between them = two real gifts ($10,000 total), even though
-donor+amount+date were identical.
+Two staged rows with the same donor + same amount + same/near date but different
+`qb_entity_id` and no `LinkedTxn` between them are two real gifts, not a duplicate.
+Common shapes: (a) a direct gift + an identical conduit gift on the same day; or
+(b) the same donor making two equal payments a few days apart (an existing CRM
+gift covers only the first; the second needs its own gift).
 
 **How to apply:**
 - NEVER dedupe staged_payments or gifts by (donor, amount, date). It will wrongly
