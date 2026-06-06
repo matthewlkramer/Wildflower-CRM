@@ -33,11 +33,20 @@ substring (TS `anyIncludes` ⇄ SQL `lower(btrim(a)) LIKE '%name%'`). The intere
 family carries both an `*_ACCOUNT_CODE_PREFIXES` and an `*_ACCOUNT_NAME_SUBSTRINGS`
 list for this reason.
 
-**Donation-first guard:** all *line-based* rules (guaranty/interest/tax_refund/
-other_revenue) are suppressed when the row also carries a real donation line
-(4000/4100-series account or a "Donation" item), so a bundled deposit is never
-hidden. Payer-identity rules (e.g. exact "CSP" government reimbursement) are
-intentionally NOT guarded.
+**Donation-first guard:** all *line-based* rules (loan-by-line/guaranty/interest/
+tax_refund/other_revenue/earned_income) are suppressed when the row also carries
+a real donation line (4000/4100-series account or a "Donation" item), so a
+bundled deposit is never hidden. Payer-identity rules (e.g. exact "CSP"
+government reimbursement) and the unguarded identity/text rules
+(fiscally_sponsored/insurance/expense_refund) are intentionally NOT guarded.
+
+**Loan is detected on BOTH the payer AND the line.** The payer rule
+(`\bloan\b`/`\brepayment\b`/`\bguaranty fee\b`, step 2, UNGUARDED) catches
+loan-account payers; a separate GUARDED line rule (`isLoanLineOrText`, step 5)
+catches school loans with a generic/blank payer whose marker lives on the line —
+the `Loans to Schools`/`Loan Funds`/`PPP Loan Received`/`Note Payable` accounts,
+a `LOAN REPAYMENT` item, or a `… Repayment` description. Patterns are
+plural-aware (`\bloans?\b`) and scan item/account/description/memo (NOT payer).
 
 **Memo (`raw_reference`) is a classifier input.** Some accounts carry no usable
 item/account signal — the distinguishing detail is in the free-text memo. The
@@ -63,10 +72,11 @@ SQL backfill must mirror the regex (TS `\b…\b` ⇄ Postgres `~* '\y…\y'`).
   gifts) stays in the queue for human review. **Why:** the user explicitly chose
   "exclude only the clear non-gifts, leave the rest to review" — do not broaden
   to a blanket 4030 exclusion.
-- `insurance` (BASICCOBRA): COBRA/insurance-premium reimbursements administered by
-  BASIC. A TEXT/identity rule (`basiccobra` substring on any field), so it is
-  **UNGUARDED** and runs before the donation guard — categorically not a gift
-  regardless of coding.
+- `insurance` (COBRA): COBRA/insurance-premium reimbursements. A TEXT/identity
+  rule — the marker is the bare substring **`cobra`** on any field (it subsumes
+  the older `basiccobra`; real deposits read "COBRA TRUST ACCT BASICPacif…" /
+  "… Cobra", account `2002 Benefit Liability`). **UNGUARDED**, runs before the
+  donation guard — categorically not a gift regardless of coding.
 - `expense_refund` (the word "refund"): refunds of the org's OWN expenses (vendor
   overpayments, training/registration refunds, ERC tax refunds). **UNGUARDED** but
   runs AFTER the guarded account-based rules, so a refund coded to a tax/insurance

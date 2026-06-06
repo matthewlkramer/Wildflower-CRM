@@ -533,12 +533,111 @@ describe("classifyStagedPayment", () => {
   });
 
   it("does not treat the bare word 'insurance' as the insurance reason", () => {
-    // Only the BASICCOBRA marker triggers `insurance`; a generic mention does
+    // Only the COBRA marker triggers `insurance`; a generic mention does
     // not. (A 7006 Insurance expense account would be tax_refund, not insurance.)
     expect(
       classifyStagedPayment({
         ...base,
         rawReference: "annual insurance plan contribution",
+      }).excluded,
+    ).toBe(false);
+  });
+
+  it("excludes a COBRA reimbursement (bare 'COBRA', not 'BASICCOBRA') as insurance", () => {
+    // QuickBooks deposits these as "COBRA TRUST ACCT BASICPacif…" — the BASIC
+    // administrator name is glued to "Pacif", so the only marker is the separate
+    // word COBRA. Posted to the "Benefit Liability" account, never a gift.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineDescription: "COBRA TRUST ACCT BASICPacif",
+        rawReference: "BUSINESS CHECKING (XXXXXX 8945)",
+        lineAccountNames: ["2002 Benefit Liability"],
+      }).reason,
+    ).toBe("insurance");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "Dandelion Parent Education Incorporated",
+        rawReference: "Dan Grigsby Cobra",
+        lineAccountNames: ["2002 Benefit Liability"],
+      }).reason,
+    ).toBe("insurance");
+  });
+
+  // ─── loan on the LINE detail (no loan-account payer) ──────────────────────
+  it("excludes a 'LOAN REPAYMENT' line item as loan (generic payer)", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "Morgan Stanley",
+        lineItemNames: ["LOAN REPAYMENT"],
+        lineAccountNames: ["Loans to Schools"],
+      }).reason,
+    ).toBe("loan");
+  });
+
+  it("excludes a 'Loans to Schools' posting account as loan (plural-aware)", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "Snowdrop",
+        lineAccountNames: ["1600 Loans to Schools"],
+        lineDescription: "ATM CHECK DEPOSIT",
+      }).reason,
+    ).toBe("loan");
+  });
+
+  it("excludes a '… Repayment' deposit description as loan", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineDescription: "Dahlia Montessori Repayment",
+      }).reason,
+    ).toBe("loan");
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["2503 PPP Loan Received"],
+        lineDescription: "PPP 2 Loan",
+      }).reason,
+    ).toBe("loan");
+  });
+
+  it("does not treat loan-like line substrings as loans", () => {
+    // Word-anchored: "loaning" / "Reloaning" on the line must not match.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineDescription: "Reloaning program contribution",
+      }).excluded,
+    ).toBe(false);
+  });
+
+  it("prefers insurance over loan when a row matches both markers", () => {
+    // insurance (step 4b) outranks the loan line/memo rule (step 5).
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineDescription: "COBRA loan repayment",
+      }).reason,
+    ).toBe("insurance");
+  });
+
+  it("keeps a gift bundled with a loan line in the queue (donation-first guard)", () => {
+    // A donation line on the same row suppresses the line/memo loan rule.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineDescription: "Loan Fund repayment",
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: ["4000 Unrestricted Donations"],
       }).excluded,
     ).toBe(false);
   });

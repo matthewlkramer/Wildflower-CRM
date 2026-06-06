@@ -11,8 +11,13 @@
  *                                incoming money from our schools is loans or
  *                                membership fees; loans show up as a loan-account
  *                                payer plus repayments and guaranty fees. Detected
- *                                by payer-name patterns AND by the guaranty-revenue
- *                                income account / item on the line detail.
+ *                                by payer-name patterns, by the guaranty-revenue
+ *                                income account / item, AND by a "loan" / "repayment"
+ *                                marker on the LINE detail (item, account name,
+ *                                description, memo) — e.g. the "Loans to Schools" /
+ *                                "PPP Loan Received" balance-sheet accounts and
+ *                                "… Repayment" deposit lines, which carry no
+ *                                loan-account payer.
  *   3. government_reimbursement — government grant reimbursements. Detected by an
  *                                exact payer name (e.g. "CSP").
  *   4. interest                — bank / investment income. Detected by the
@@ -42,9 +47,11 @@
  *                                or memo) anywhere on the row. Because the whole
  *                                payment belongs to the other project, this rule
  *                                is NOT subject to the donation-first guard.
- *  10. insurance               — COBRA / insurance-premium reimbursements
- *                                administered by BASIC (the "BASICCOBRA" marker
- *                                on the line). An IDENTITY rule matched by the
+ *  10. insurance               — COBRA / insurance-premium reimbursements (the
+ *                                "COBRA" marker on the line — e.g. "COBRA TRUST
+ *                                ACCT …", "… Cobra", posted to the "Benefit
+ *                                Liability" account; also the BASIC administrator's
+ *                                "BASICCOBRA"). An IDENTITY rule matched by the
  *                                marker anywhere on the row; never a gift, so NOT
  *                                subject to the donation-first guard.
  *  11. expense_refund          — refunds of the org's OWN expenses (vendor
@@ -67,8 +74,9 @@
  *
  * Rules are applied in a deterministic order (see `classifyStagedPayment`):
  * zero_amount → loan (payer) → government_reimbursement → fiscally_sponsored →
- * insurance → loan (guaranty line) → interest → tax_refund → other_revenue →
- * earned_income → expense_refund → membership. The first match wins.
+ * insurance → loan (line/memo) → loan (guaranty line) → interest → tax_refund →
+ * other_revenue → earned_income → expense_refund → membership. The first match
+ * wins.
  */
 
 export type ExclusionReason =
@@ -129,6 +137,22 @@ export const LOAN_PAYER_PATTERNS: readonly RegExp[] = [
   /\bloan\b/i,
   /\brepayment\b/i,
   /\bguaranty\s+fee\b/i,
+];
+
+/**
+ * Loan / repayment markers found on the LINE detail (item name, posting-account
+ * name, line description, memo) rather than the payer. Many school loans arrive
+ * with a generic or blank payer but a telltale line: the "Loans to Schools" /
+ * "Loan Funds" / "PPP Loan Received" / "Note Payable" balance-sheet accounts, a
+ * "LOAN REPAYMENT" item, or a "… Repayment" deposit description. Word-anchored
+ * and plural-aware ("loan"/"loans") so "Reloaning" / "loaning" can't match by
+ * accident. Folded into the `loan` reason and honored only on rows WITHOUT a
+ * donation line (donation-first guard), so a gift bundled with a loan reference
+ * is never hidden.
+ */
+export const LOAN_LINE_TEXT_PATTERNS: readonly RegExp[] = [
+  /\bloans?\b/i,
+  /\brepayment\b/i,
 ];
 
 /**
@@ -249,12 +273,15 @@ export const FISCALLY_SPONSORED_PROJECT_SUBSTRINGS: readonly string[] = [
 
 /**
  * INSURANCE / COBRA reimbursement markers. COBRA continuation-coverage premiums
- * the org collects and remits, administered by BASIC, post under the line marker
- * "BASICCOBRA". Never a gift. An IDENTITY rule — matched as a case-insensitive
- * substring ANYWHERE on the row (payer, memo, line description, item, account,
- * Class), so it is robust to which field carries the marker.
+ * the org collects and remits are never a gift. They surface with the word
+ * "COBRA" somewhere on the row — e.g. "COBRA TRUST ACCT …", a "… Cobra"
+ * description, or the BASIC administrator's contiguous "BASICCOBRA" token — and
+ * post to the "Benefit Liability" account. An IDENTITY rule — matched as a
+ * case-insensitive substring ANYWHERE on the row (payer, memo, line description,
+ * item, account, Class), so it is robust to which field carries the marker.
+ * "cobra" subsumes the older "basiccobra" token (it contains "cobra").
  */
-export const INSURANCE_MARKER_SUBSTRINGS: readonly string[] = ["basiccobra"];
+export const INSURANCE_MARKER_SUBSTRINGS: readonly string[] = ["cobra"];
 
 /**
  * EXPENSE-REFUND markers. Money refunded back to the org for its OWN expenses
@@ -324,6 +351,26 @@ function hasDonationLine(input: ClassifierInput): boolean {
       DONATION_ACCOUNT_CODE_PREFIXES,
     ) || anyIncludes(input.lineItemNames, DONATION_ITEM_SUBSTRINGS)
   );
+}
+
+/**
+ * True if a row carries a loan / repayment marker on its LINE detail (item,
+ * posting account, line description, or memo) — not the payer, which the step-2
+ * payer rule already covers. Scans the same family of patterns used for the
+ * payer, plural-aware, so balance-sheet loan accounts and "… Repayment" deposit
+ * lines are caught. Honored only behind the donation-first guard.
+ */
+function isLoanLineOrText(input: ClassifierInput): boolean {
+  if (LOAN_LINE_TEXT_PATTERNS.length === 0) return false;
+  const hay = [
+    input.rawReference,
+    input.lineDescription ?? null,
+    ...(input.lineItemNames ?? []),
+    ...(input.lineAccountNames ?? []),
+  ]
+    .filter((s): s is string => !!s)
+    .join(" ");
+  return LOAN_LINE_TEXT_PATTERNS.some((re) => re.test(hay));
 }
 
 /** True if a row matches the guaranty-fee (loan) markers. */
@@ -494,33 +541,41 @@ export function classifyStagedPayment(
   // a real donation line, so a bundled gift is never wrongly hidden.
   const donation = hasDonationLine(input);
 
-  // 5. Guaranty fees are loan activity (reason `loan`), detected on the line.
+  // 5. Loan / repayment markers on the LINE detail (item, posting account,
+  //    description, memo): the "Loans to Schools" / "PPP Loan Received" accounts,
+  //    a "LOAN REPAYMENT" item, "… Repayment" deposit lines, etc. — school loan
+  //    activity that arrives with a generic / blank payer.
+  if (!donation && isLoanLineOrText(input)) {
+    return { excluded: true, reason: "loan" };
+  }
+
+  // 6. Guaranty fees are loan activity (reason `loan`), detected on the line.
   if (!donation && isGuarantyLine(input)) {
     return { excluded: true, reason: "loan" };
   }
 
-  // 6. Interest income.
+  // 7. Interest income.
   if (!donation && isInterestLine(input)) {
     return { excluded: true, reason: "interest" };
   }
 
-  // 7. Tax / insurance refunds (unemployment tax, workers-comp refund, etc.).
+  // 8. Tax / insurance refunds (unemployment tax, workers-comp refund, etc.).
   if (!donation && isTaxRefundLine(input)) {
     return { excluded: true, reason: "tax_refund" };
   }
 
-  // 8. Other-Revenue (4030) clear non-gifts: credit-card rewards / bank-account
+  // 9. Other-Revenue (4030) clear non-gifts: credit-card rewards / bank-account
   //    activity recognised by memo. Narrow by design — see isOtherRevenueNonGift.
   if (!donation && isOtherRevenueNonGift(input)) {
     return { excluded: true, reason: "other_revenue" };
   }
 
-  // 9. Earned income (4020 Services - Earned Income): fees-for-service, never a gift.
+  // 10. Earned income (4020 Services - Earned Income): fees-for-service, never a gift.
   if (!donation && isEarnedIncomeLine(input)) {
     return { excluded: true, reason: "earned_income" };
   }
 
-  // 10. Expense refunds (the word "refund" anywhere on the row): money coming
+  // 11. Expense refunds (the word "refund" anywhere on the row): money coming
   //     back, not a contribution. TEXT-identity rule — intentionally UNGUARDED
   //     (some refunds, e.g. ERC, are miscoded to a donation account yet are not
   //     gifts). Runs AFTER the specific guarded rules so a genuine tax/insurance
@@ -529,7 +584,7 @@ export function classifyStagedPayment(
     return { excluded: true, reason: "expense_refund" };
   }
 
-  // 11. Membership by confirmed QB item / income-account marker.
+  // 12. Membership by confirmed QB item / income-account marker.
   if (
     matchesAny(input.lineItemNames, MEMBERSHIP_ITEM_NAMES) ||
     matchesAny(input.lineAccountNames, MEMBERSHIP_ACCOUNT_NAMES)
