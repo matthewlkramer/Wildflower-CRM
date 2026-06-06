@@ -153,6 +153,68 @@ function donorNameFromRow(row: StagedPayment): string | null {
   );
 }
 
+// Pass-through processors / DAFs that show up as the payer (or get auto-matched
+// as the "donor") even though the real donor is named elsewhere on the record.
+const PAYMENT_INTERMEDIARY_HINTS = [
+  "stripe",
+  "donorbox",
+  "paypal",
+  "benevity",
+  "classy",
+  "givebutter",
+  "every.org",
+  "network for good",
+  "donor advised",
+  "donor-advised",
+  "charitable giving fund",
+  "charitable gift fund",
+  "daf",
+];
+
+function looksLikeIntermediary(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return PAYMENT_INTERMEDIARY_HINTS.some((h) => n.includes(h));
+}
+
+// Donations routed through an intermediary usually name the real donor in the
+// same sentence as the processor, e.g. "Stripe donation - Angie Schiavoni" or
+// "...Donor Advised Fund Gift from Nic and Lindsey Barnes, for Dahlia SF".
+// Pull that name out of a free-text memo / line description so we can seed the
+// gift search with the actual donor instead of the processor. Returns null when
+// nothing confident is found (caller falls back to the payer/donor name). The
+// seeded search is editable, so an imperfect guess is always recoverable.
+function donorNameFromMemo(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  // "...from <NAME>..." — the strongest signal. Capture a capitalized run
+  // (allowing "and"/"&") and stop at a comma/period or a connective word.
+  const fromMatch = cleaned.match(
+    /\bfrom\s+([A-Z][^,.]*?)(?=\s+(?:for|via|through|to|in|at|on|by)\b|[,.]|$)/,
+  );
+  const candidate = fromMatch?.[1] ?? cleaned.match(/-\s*([A-Z][A-Za-z.'&\- ]+)$/)?.[1];
+  const trimmed = candidate?.replace(/[^A-Za-z.]+$/, "").trim();
+  return trimmed ? trimmed : null;
+}
+
+// Best guess at the donor name to seed the gift search with: trust the matched
+// donor / payer unless it looks like a payment intermediary (or is empty), in
+// which case dig the real donor out of the memo / line description.
+function donorSearchSeed(row: StagedPayment): string {
+  const base = donorNameFromRow(row) ?? row.payerName ?? "";
+  if (
+    base === "" ||
+    looksLikeIntermediary(base) ||
+    looksLikeIntermediary(row.payerName)
+  ) {
+    const fromMemo =
+      donorNameFromMemo(row.lineDescription) ??
+      donorNameFromMemo(row.rawReference);
+    if (fromMemo) return fromMemo;
+  }
+  return base;
+}
+
 function giftDonorName(g: GiftOrPayment): string | null {
   return (
     g.organizationName ??
@@ -507,10 +569,10 @@ export default function StagedPayments() {
     // Drop any gift carried over from a previous payment so a stale right-side
     // selection can never be matched to the newly chosen payment by accident.
     selectGift(null, null);
-    setGiftSearch(donorNameFromRow(row) ?? row.payerName ?? "");
+    setGiftSearch(donorSearchSeed(row));
     setDateAfter(shiftIsoDate(row.dateReceived, -30));
     setDateBefore(shiftIsoDate(row.dateReceived, 30));
-    setLinkedFilter("all");
+    setLinkedFilter("unlinked");
     setGiftPage(1);
   };
 

@@ -38,3 +38,4 @@
 - [QB reconciler left-card UI model](quickbooks-reconciler-ui-model.md) — donor matching is right-pane only (no left donor picker); reject is UI-removed but backend-kept; intercompany_transfer/other are manual-only reasons (no classifier/backfill).
 - [Orval query-key invalidation prefix](orval-query-key-invalidation.md) — invalidateQueries needs the full "/api" prefix to match generated keys; a missing prefix silently refetches nothing.
 - [QuickBooks reconcile adopts gift donor](quickbooks-reconcile-donor-adoption.md) — explicit human Match links to a gift by adopting the GIFT donor (overrides auto-guess); donorsMatch/validateGiftLink no longer enforced on that path.
+- [QuickBooks reconciler intermediary donor seed](quickbooks-intermediary-donor-seed.md) — when payer is Stripe/Donorbox/DAF, seed gift search with the donor pulled from the memo (after "from"/dash), conservatively.
