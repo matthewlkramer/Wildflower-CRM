@@ -6865,6 +6865,23 @@ export const RunQuickbooksSyncResponse = zod.object({
 });
 
 /**
+ * @summary Non-destructive full re-pull that re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state.
+ */
+export const ResyncQuickbooksFullResponse = zod.object({
+  ran: zod
+    .boolean()
+    .describe("False when the sync was skipped (lock contended)."),
+  pulled: zod.number(),
+  staged: zod.number(),
+  matched: zod.number(),
+  autoApplied: zod
+    .number()
+    .describe(
+      "Newly-staged rows auto-reconciled or auto-minted at high confidence.",
+    ),
+});
+
+/**
  * @summary Re-run donor auto-match over still-unmatched pending staged payments (additive, never overwrites a human match).
  */
 export const RematchStagedPaymentsResponse = zod.object({
@@ -6976,6 +6993,30 @@ export const ListStagedPaymentsResponse = zod.object({
       lineItemNames: zod.array(zod.string()).nullish(),
       lineAccountNames: zod.array(zod.string()).nullish(),
       lineClasses: zod.array(zod.string()).nullish(),
+      qbPayerType: zod
+        .enum(["vendor", "customer", "employee"])
+        .nullish()
+        .describe(
+          "The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).",
+        ),
+      qbPayerId: zod.string().nullish(),
+      qbPaymentMethod: zod.string().nullish(),
+      qbCheckNumber: zod.string().nullish(),
+      qbDepositToAccountName: zod.string().nullish(),
+      qbDocNumber: zod.string().nullish(),
+      qbBillingAddress: zod.string().nullish(),
+      qbTransactionMemo: zod.string().nullish(),
+      qbCurrency: zod.string().nullish(),
+      qbExchangeRate: zod.string().nullish(),
+      qbCreateTime: zod.string().datetime({}).nullish(),
+      qbLinkedTxn: zod
+        .array(
+          zod.object({
+            txnId: zod.string(),
+            txnType: zod.string(),
+          }),
+        )
+        .nullish(),
       matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
       matchScore: zod.number().nullish(),
       matchMethod: zod
@@ -7138,6 +7179,30 @@ export const ResolveStagedPaymentResponse = zod.object({
   lineItemNames: zod.array(zod.string()).nullish(),
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
+  qbPayerType: zod
+    .enum(["vendor", "customer", "employee"])
+    .nullish()
+    .describe(
+      "The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).",
+    ),
+  qbPayerId: zod.string().nullish(),
+  qbPaymentMethod: zod.string().nullish(),
+  qbCheckNumber: zod.string().nullish(),
+  qbDepositToAccountName: zod.string().nullish(),
+  qbDocNumber: zod.string().nullish(),
+  qbBillingAddress: zod.string().nullish(),
+  qbTransactionMemo: zod.string().nullish(),
+  qbCurrency: zod.string().nullish(),
+  qbExchangeRate: zod.string().nullish(),
+  qbCreateTime: zod.string().datetime({}).nullish(),
+  qbLinkedTxn: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish(),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -7247,6 +7312,30 @@ export const RejectStagedPaymentResponse = zod.object({
   lineItemNames: zod.array(zod.string()).nullish(),
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
+  qbPayerType: zod
+    .enum(["vendor", "customer", "employee"])
+    .nullish()
+    .describe(
+      "The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).",
+    ),
+  qbPayerId: zod.string().nullish(),
+  qbPaymentMethod: zod.string().nullish(),
+  qbCheckNumber: zod.string().nullish(),
+  qbDepositToAccountName: zod.string().nullish(),
+  qbDocNumber: zod.string().nullish(),
+  qbBillingAddress: zod.string().nullish(),
+  qbTransactionMemo: zod.string().nullish(),
+  qbCurrency: zod.string().nullish(),
+  qbExchangeRate: zod.string().nullish(),
+  qbCreateTime: zod.string().datetime({}).nullish(),
+  qbLinkedTxn: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish(),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -7349,6 +7438,30 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   lineItemNames: zod.array(zod.string()).nullish(),
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
+  qbPayerType: zod
+    .enum(["vendor", "customer", "employee"])
+    .nullish()
+    .describe(
+      "The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).",
+    ),
+  qbPayerId: zod.string().nullish(),
+  qbPaymentMethod: zod.string().nullish(),
+  qbCheckNumber: zod.string().nullish(),
+  qbDepositToAccountName: zod.string().nullish(),
+  qbDocNumber: zod.string().nullish(),
+  qbBillingAddress: zod.string().nullish(),
+  qbTransactionMemo: zod.string().nullish(),
+  qbCurrency: zod.string().nullish(),
+  qbExchangeRate: zod.string().nullish(),
+  qbCreateTime: zod.string().datetime({}).nullish(),
+  qbLinkedTxn: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish(),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -7480,6 +7593,30 @@ export const ExcludeStagedPaymentResponse = zod.object({
   lineItemNames: zod.array(zod.string()).nullish(),
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
+  qbPayerType: zod
+    .enum(["vendor", "customer", "employee"])
+    .nullish()
+    .describe(
+      "The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).",
+    ),
+  qbPayerId: zod.string().nullish(),
+  qbPaymentMethod: zod.string().nullish(),
+  qbCheckNumber: zod.string().nullish(),
+  qbDepositToAccountName: zod.string().nullish(),
+  qbDocNumber: zod.string().nullish(),
+  qbBillingAddress: zod.string().nullish(),
+  qbTransactionMemo: zod.string().nullish(),
+  qbCurrency: zod.string().nullish(),
+  qbExchangeRate: zod.string().nullish(),
+  qbCreateTime: zod.string().datetime({}).nullish(),
+  qbLinkedTxn: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish(),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -8128,6 +8265,30 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   lineItemNames: zod.array(zod.string()).nullish(),
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
+  qbPayerType: zod
+    .enum(["vendor", "customer", "employee"])
+    .nullish()
+    .describe(
+      "The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).",
+    ),
+  qbPayerId: zod.string().nullish(),
+  qbPaymentMethod: zod.string().nullish(),
+  qbCheckNumber: zod.string().nullish(),
+  qbDepositToAccountName: zod.string().nullish(),
+  qbDocNumber: zod.string().nullish(),
+  qbBillingAddress: zod.string().nullish(),
+  qbTransactionMemo: zod.string().nullish(),
+  qbCurrency: zod.string().nullish(),
+  qbExchangeRate: zod.string().nullish(),
+  qbCreateTime: zod.string().datetime({}).nullish(),
+  qbLinkedTxn: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish(),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -8230,6 +8391,30 @@ export const UnmatchStagedPaymentResponse = zod.object({
   lineItemNames: zod.array(zod.string()).nullish(),
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
+  qbPayerType: zod
+    .enum(["vendor", "customer", "employee"])
+    .nullish()
+    .describe(
+      "The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).",
+    ),
+  qbPayerId: zod.string().nullish(),
+  qbPaymentMethod: zod.string().nullish(),
+  qbCheckNumber: zod.string().nullish(),
+  qbDepositToAccountName: zod.string().nullish(),
+  qbDocNumber: zod.string().nullish(),
+  qbBillingAddress: zod.string().nullish(),
+  qbTransactionMemo: zod.string().nullish(),
+  qbCurrency: zod.string().nullish(),
+  qbExchangeRate: zod.string().nullish(),
+  qbCreateTime: zod.string().datetime({}).nullish(),
+  qbLinkedTxn: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish(),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -8339,6 +8524,30 @@ export const RevertStagedPaymentResponse = zod.object({
   lineItemNames: zod.array(zod.string()).nullish(),
   lineAccountNames: zod.array(zod.string()).nullish(),
   lineClasses: zod.array(zod.string()).nullish(),
+  qbPayerType: zod
+    .enum(["vendor", "customer", "employee"])
+    .nullish()
+    .describe(
+      "The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).",
+    ),
+  qbPayerId: zod.string().nullish(),
+  qbPaymentMethod: zod.string().nullish(),
+  qbCheckNumber: zod.string().nullish(),
+  qbDepositToAccountName: zod.string().nullish(),
+  qbDocNumber: zod.string().nullish(),
+  qbBillingAddress: zod.string().nullish(),
+  qbTransactionMemo: zod.string().nullish(),
+  qbCurrency: zod.string().nullish(),
+  qbExchangeRate: zod.string().nullish(),
+  qbCreateTime: zod.string().datetime({}).nullish(),
+  qbLinkedTxn: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish(),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod

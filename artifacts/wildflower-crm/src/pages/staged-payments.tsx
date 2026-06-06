@@ -13,6 +13,7 @@ import {
   useConfirmStagedPaymentMatch,
   useUnmatchStagedPayment,
   useRunQuickbooksSync,
+  useResyncQuickbooksFull,
   useRematchStagedPayments,
   useReclassifyStagedPayments,
   useGetCurrentUser,
@@ -29,6 +30,7 @@ import {
   type StagedPaymentExclusionReason,
   type StagedPaymentMatchMethod,
   type QuickbooksEntityType,
+  type QuickbooksPayerType,
   type GiftOrPayment,
 } from "@workspace/api-client-react";
 import {
@@ -128,6 +130,12 @@ const QB_ENTITY_TYPE_LABELS: Record<QuickbooksEntityType, string> = {
   sales_receipt: "Sales Receipt",
   payment: "Payment",
   deposit: "Deposit",
+};
+
+const QB_PAYER_TYPE_LABELS: Record<QuickbooksPayerType, string> = {
+  vendor: "Vendor",
+  customer: "Customer",
+  employee: "Employee",
 };
 
 const MATCH_METHOD_LABELS: Record<StagedPaymentMatchMethod, string> = {
@@ -464,6 +472,27 @@ export default function StagedPayments() {
     },
   });
 
+  const resyncFull = useResyncQuickbooksFull({
+    mutation: {
+      onSuccess: (data) => {
+        invalidateAll();
+        qc.invalidateQueries({ queryKey: getGetQuickbooksOauthStatusQueryKey() });
+        toast({
+          title: data.ran ? "Re-pull complete" : "Re-pull skipped",
+          description: data.ran
+            ? `Re-pulled ${data.pulled} QuickBooks records; refreshed capture fields on all staged rows (review state preserved).`
+            : "A sync was already in progress.",
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Re-pull failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
   const rematch = useRematchStagedPayments({
     mutation: {
       onSuccess: (data) => {
@@ -707,7 +736,10 @@ export default function StagedPayments() {
               variant="outline"
               onClick={() => rematch.mutate()}
               disabled={
-                rematch.isPending || syncNow.isPending || reclassify.isPending
+                rematch.isPending ||
+                syncNow.isPending ||
+                reclassify.isPending ||
+                resyncFull.isPending
               }
               data-testid="staged-rematch"
               title="Re-run donor auto-match over still-unmatched rows. Never overwrites a match you've already made."
@@ -715,9 +747,26 @@ export default function StagedPayments() {
               {rematch.isPending ? "Re-matching…" : "Re-run matching"}
             </Button>
             <Button
+              variant="outline"
+              onClick={() => resyncFull.mutate()}
+              disabled={
+                resyncFull.isPending ||
+                syncNow.isPending ||
+                rematch.isPending ||
+                reclassify.isPending
+              }
+              data-testid="staged-resync-full"
+              title="Non-destructive full re-pull from QuickBooks. Refreshes the captured QB fields (payer type, payment method, raw data, …) on every staged row. Never changes status, donor match, or exclusions."
+            >
+              {resyncFull.isPending ? "Re-pulling…" : "Re-pull all fields"}
+            </Button>
+            <Button
               onClick={() => syncNow.mutate()}
               disabled={
-                syncNow.isPending || rematch.isPending || reclassify.isPending
+                syncNow.isPending ||
+                rematch.isPending ||
+                reclassify.isPending ||
+                resyncFull.isPending
               }
               data-testid="staged-sync-now"
             >
@@ -1268,6 +1317,20 @@ function StagedPaymentCard({
                 data-testid={`staged-select-badge-${row.id}`}
               >
                 {selected ? "Selected" : "Select"}
+              </Badge>
+            ) : null}
+            {row.qbPayerType ? (
+              <Badge
+                variant="outline"
+                className={
+                  row.qbPayerType === "vendor"
+                    ? "border-amber-500 text-amber-700 dark:text-amber-400"
+                    : undefined
+                }
+                data-testid={`staged-payer-type-${row.id}`}
+                title={`QuickBooks payer type: ${QB_PAYER_TYPE_LABELS[row.qbPayerType]}`}
+              >
+                {QB_PAYER_TYPE_LABELS[row.qbPayerType]}
               </Badge>
             ) : null}
             {row.autoApplied &&
@@ -2106,6 +2169,31 @@ function StagedPaymentDetails({
     { label: "Date received", value: row.dateReceived },
     { label: "Payer name", value: row.payerName },
     { label: "Payer email", value: row.payerEmail },
+    {
+      label: "Payer type",
+      value: row.qbPayerType
+        ? (QB_PAYER_TYPE_LABELS[row.qbPayerType] ?? row.qbPayerType)
+        : null,
+    },
+    { label: "Payer (QB) ID", value: row.qbPayerId },
+    { label: "Payment method", value: row.qbPaymentMethod },
+    { label: "Check number", value: row.qbCheckNumber },
+    { label: "Deposit-to account", value: row.qbDepositToAccountName },
+    { label: "Doc number", value: row.qbDocNumber },
+    { label: "Billing address", value: row.qbBillingAddress },
+    { label: "QB transaction memo", value: row.qbTransactionMemo },
+    { label: "Currency", value: row.qbCurrency },
+    { label: "Exchange rate", value: row.qbExchangeRate },
+    { label: "QB created", value: formatDateTime(row.qbCreateTime) },
+    {
+      label: "Linked transactions",
+      value:
+        row.qbLinkedTxn && row.qbLinkedTxn.length > 0
+          ? row.qbLinkedTxn
+              .map((lt) => `${lt.txnType} #${lt.txnId}`)
+              .join(", ")
+          : null,
+    },
     { label: "Reference / memo", value: row.rawReference },
     { label: "Line description", value: row.lineDescription },
     { label: "Status", value: row.status },

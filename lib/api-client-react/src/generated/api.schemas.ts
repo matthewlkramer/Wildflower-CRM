@@ -1652,6 +1652,18 @@ export const QuickbooksEntityType = {
   deposit: "deposit",
 } as const;
 
+/**
+ * The QuickBooks payer/entity kind behind this incoming money (Customer for a SalesReceipt/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).
+ */
+export type QuickbooksPayerType =
+  (typeof QuickbooksPayerType)[keyof typeof QuickbooksPayerType];
+
+export const QuickbooksPayerType = {
+  vendor: "vendor",
+  customer: "customer",
+  employee: "employee",
+} as const;
+
 export type StagedPaymentStatus =
   (typeof StagedPaymentStatus)[keyof typeof StagedPaymentStatus];
 
@@ -1779,6 +1791,11 @@ export interface QuickbooksReclassifySummary {
   included: number;
 }
 
+export type StagedPaymentQbLinkedTxnItem = {
+  txnId: string;
+  txnType: string;
+};
+
 export interface StagedPayment {
   id: string;
   realmId: string;
@@ -1799,6 +1816,18 @@ export interface StagedPayment {
   lineItemNames?: string[] | null;
   lineAccountNames?: string[] | null;
   lineClasses?: string[] | null;
+  qbPayerType?: QuickbooksPayerType | null;
+  qbPayerId?: string | null;
+  qbPaymentMethod?: string | null;
+  qbCheckNumber?: string | null;
+  qbDepositToAccountName?: string | null;
+  qbDocNumber?: string | null;
+  qbBillingAddress?: string | null;
+  qbTransactionMemo?: string | null;
+  qbCurrency?: string | null;
+  qbExchangeRate?: string | null;
+  qbCreateTime?: string | null;
+  qbLinkedTxn?: StagedPaymentQbLinkedTxnItem[] | null;
   matchStatus: StagedPaymentMatchStatus;
   matchScore?: number | null;
   matchMethod?: StagedPaymentMatchMethod | null;

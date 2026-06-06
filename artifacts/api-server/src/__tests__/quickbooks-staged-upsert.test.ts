@@ -79,4 +79,84 @@ describe("buildStagedLineUpsert — preserve-on-conflict coding", () => {
     // Memo: a non-empty incoming memo (nullif keeps it) wins over the stored one.
     expect(compiled).toContain("coalesce(nullif(excluded.line_description, '')");
   });
+
+  // The extended QB capture columns are read-only mirrors of the QB record;
+  // each must coalesce the incoming value over the stored one (preserve-on-
+  // conflict) so an absent field in an incremental pull never blanks a value
+  // captured by an earlier full pull.
+  const captureCols = [
+    "qb_payer_type",
+    "qb_payer_id",
+    "qb_payment_method",
+    "qb_check_number",
+    "qb_deposit_to_account_name",
+    "qb_doc_number",
+    "qb_billing_address",
+    "qb_transaction_memo",
+    "qb_currency",
+    "qb_exchange_rate",
+    "qb_create_time",
+    "qb_linked_txn",
+    "qb_raw",
+    "qb_raw_line",
+  ];
+  for (const col of captureCols) {
+    it(`coalesces ${col} (incoming wins, stored is the fallback)`, () => {
+      expect(compiled).toContain(`coalesce(excluded.${col}`);
+      expect(compiled).toContain(`"staged_payments"."${col}"`);
+    });
+  }
+});
+
+/**
+ * The full re-pull (enrichAllStatuses) must drop the status `setWhere` guard so
+ * approved / rejected rows also receive the new read-only capture fields, while
+ * the `set` clause still only touches QB facts — never review columns.
+ */
+describe("buildStagedLineUpsert — enrichAllStatuses (full re-pull)", () => {
+  const base = {
+    id: "test-id",
+    realmId: "test-realm",
+    qbEntityType: "payment" as const,
+    qbEntityId: "QB-123",
+    qbLineId: "",
+    amount: "100.00",
+    lineItemNames: [],
+    lineAccountNames: [],
+    lineClasses: [],
+    lineDescription: null,
+  };
+
+  it("drops the pending/excluded guard when enriching all statuses", () => {
+    const sql = buildStagedLineUpsert(base, { enrichAllStatuses: true })
+      .toSQL()
+      .sql.toLowerCase();
+    expect(sql).not.toMatch(/in \('pending', 'excluded'\)/);
+  });
+
+  it("keeps the guard for a normal (incremental) sync", () => {
+    const sql = buildStagedLineUpsert(base).toSQL().sql.toLowerCase();
+    expect(sql).toMatch(/in \('pending', 'excluded'\)/);
+  });
+
+  it("never writes review columns on conflict (only QB facts + updatedAt)", () => {
+    const sql = buildStagedLineUpsert(base, { enrichAllStatuses: true })
+      .toSQL()
+      .sql.toLowerCase();
+    // The ON CONFLICT SET clause must not touch status / donor / match / gift /
+    // approval columns — re-enrichment is read-only w.r.t. review state.
+    const setClause = sql.slice(sql.indexOf("do update set"));
+    for (const col of [
+      '"status"',
+      '"match_status"',
+      '"matched_gift_id"',
+      '"created_gift_id"',
+      '"organization_id"',
+      '"approved_at"',
+      '"rejected_at"',
+      '"exclusion_reason"',
+    ]) {
+      expect(setClause).not.toContain(`${col} =`);
+    }
+  });
 });

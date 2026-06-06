@@ -61,6 +61,27 @@ export interface NormalizedQuickbooksPayment {
   lineItemNames: string[];
   lineAccountNames: string[];
   lineClasses: string[];
+
+  // ── Extended QuickBooks payer + entity context (read-only mirror) ────────
+  // The kind of QB name the payer resolves to. "customer" for a
+  // SalesReceipt/Payment CustomerRef; the deposit line's Entity ref type for a
+  // deposit line; null when QB recorded no payer ref.
+  qbPayerType: "vendor" | "customer" | "employee" | null;
+  qbPayerId: string | null;
+  qbPaymentMethod: string | null;
+  qbCheckNumber: string | null;
+  qbDepositToAccountName: string | null;
+  qbDocNumber: string | null;
+  qbBillingAddress: string | null;
+  qbTransactionMemo: string | null;
+  qbCurrency: string | null;
+  qbExchangeRate: string | null;
+  qbCreateTime: string | null;
+  qbLinkedTxn: { txnId: string; txnType: string }[] | null;
+  // The complete raw QB entity payload, verbatim (for future-proofing).
+  qbRaw: unknown;
+  // For deposit-line rows only: the specific deposit Line object, verbatim.
+  qbRawLine: unknown;
 }
 
 interface QbQueryResponse {
@@ -103,7 +124,22 @@ async function runQuery(
   return (await r.json()) as QbQueryResponse;
 }
 
-type QbRef = { value?: string; name?: string } | undefined;
+type QbRef = { value?: string; name?: string; type?: string } | undefined;
+
+// A QuickBooks address block (e.g. SalesReceipt BillAddr).
+interface QbAddr {
+  Line1?: string;
+  Line2?: string;
+  Line3?: string;
+  Line4?: string;
+  Line5?: string;
+  City?: string;
+  CountrySubDivisionCode?: string;
+  PostalCode?: string;
+  Country?: string;
+}
+
+type QbMeta = { LastUpdatedTime?: string; CreateTime?: string };
 
 // A QuickBooks transaction line. Beyond the detail relevant to noise
 // classification — the Product/Service item (SalesItemLineDetail), the
@@ -122,6 +158,8 @@ interface QbLine {
     AccountRef?: QbRef;
     ClassRef?: QbRef;
     Entity?: QbRef;
+    CheckNum?: string;
+    PaymentMethodRef?: QbRef;
   };
 }
 
@@ -132,9 +170,16 @@ interface QbSalesReceipt {
   DocNumber?: string;
   CustomerRef?: QbRef;
   BillEmail?: { Address?: string };
+  BillAddr?: QbAddr;
   CustomerMemo?: { value?: string };
+  PrivateNote?: string;
+  PaymentMethodRef?: QbRef;
+  PaymentRefNum?: string;
+  DepositToAccountRef?: QbRef;
+  CurrencyRef?: QbRef;
+  ExchangeRate?: number;
   Line?: QbLine[];
-  MetaData?: { LastUpdatedTime?: string };
+  MetaData?: QbMeta;
 }
 
 interface QbLinkedTxn {
@@ -146,20 +191,29 @@ interface QbPayment {
   Id: string;
   TotalAmt?: number;
   TxnDate?: string;
+  DocNumber?: string;
   PaymentRefNum?: string;
+  PaymentMethodRef?: QbRef;
   CustomerRef?: QbRef;
+  PrivateNote?: string;
+  DepositToAccountRef?: QbRef;
+  CurrencyRef?: QbRef;
+  ExchangeRate?: number;
   Line?: { LinkedTxn?: QbLinkedTxn[] }[];
-  MetaData?: { LastUpdatedTime?: string };
+  MetaData?: QbMeta;
 }
 
 interface QbDeposit {
   Id: string;
   TotalAmt?: number;
   TxnDate?: string;
+  DocNumber?: string;
   PrivateNote?: string;
   DepositToAccountRef?: QbRef;
+  CurrencyRef?: QbRef;
+  ExchangeRate?: number;
   Line?: QbLine[];
-  MetaData?: { LastUpdatedTime?: string };
+  MetaData?: QbMeta;
 }
 
 interface QbInvoice {
@@ -186,6 +240,55 @@ interface QbCustomer {
 
 function num(n: number | undefined): string | null {
   return typeof n === "number" ? n.toFixed(2) : null;
+}
+
+/** Normalize a QB ref `type` string to our payer-type enum (or null). */
+function normalizePayerType(
+  t: string | undefined | null,
+): "vendor" | "customer" | "employee" | null {
+  switch ((t ?? "").toLowerCase()) {
+    case "vendor":
+      return "vendor";
+    case "customer":
+      return "customer";
+    case "employee":
+      return "employee";
+    default:
+      return null;
+  }
+}
+
+/** Flatten a QB address block to a single comma-separated display string. */
+function flattenAddr(a: QbAddr | undefined): string | null {
+  if (!a) return null;
+  const s = uniq([
+    a.Line1,
+    a.Line2,
+    a.Line3,
+    a.Line4,
+    a.Line5,
+    a.City,
+    a.CountrySubDivisionCode,
+    a.PostalCode,
+    a.Country,
+  ]).join(", ");
+  return s || null;
+}
+
+/** QB exchange rate → string (numeric column), preserving precision. */
+function rate(n: number | undefined): string | null {
+  return typeof n === "number" ? String(n) : null;
+}
+
+/** Map QB LinkedTxn[] to our compact {txnId, txnType}[] (null when empty). */
+function mapLinkedTxn(
+  lts: QbLinkedTxn[] | undefined,
+): { txnId: string; txnType: string }[] | null {
+  if (!lts || lts.length === 0) return null;
+  const out = lts
+    .filter((lt) => lt.TxnId)
+    .map((lt) => ({ txnId: lt.TxnId as string, txnType: lt.TxnType ?? "" }));
+  return out.length ? out : null;
 }
 
 /** Distinct, non-empty, trimmed strings — keeps the stored arrays tidy. */
@@ -533,6 +636,22 @@ export async function pullIncomingPayments(
       lineItemNames: detail.itemNames,
       lineAccountNames: detail.accountNames,
       lineClasses: detail.classes,
+      qbPayerType: row.CustomerRef ? "customer" : null,
+      qbPayerId: row.CustomerRef?.value ?? null,
+      qbPaymentMethod: row.PaymentMethodRef?.name ?? null,
+      qbCheckNumber: row.PaymentRefNum ?? null,
+      qbDepositToAccountName: row.DepositToAccountRef?.name ?? null,
+      qbDocNumber: row.DocNumber ?? null,
+      qbBillingAddress: flattenAddr(row.BillAddr),
+      qbTransactionMemo: row.PrivateNote ?? null,
+      qbCurrency: row.CurrencyRef?.value ?? null,
+      qbExchangeRate: rate(row.ExchangeRate),
+      qbCreateTime: row.MetaData?.CreateTime ?? null,
+      qbLinkedTxn: mapLinkedTxn(
+        (row.Line ?? []).flatMap((l) => l.LinkedTxn ?? []),
+      ),
+      qbRaw: row,
+      qbRawLine: null,
     });
   }
 
@@ -566,6 +685,22 @@ export async function pullIncomingPayments(
       lineItemNames: detail.itemNames,
       lineAccountNames: detail.accountNames,
       lineClasses: detail.classes,
+      qbPayerType: row.CustomerRef ? "customer" : null,
+      qbPayerId: row.CustomerRef?.value ?? null,
+      qbPaymentMethod: row.PaymentMethodRef?.name ?? null,
+      qbCheckNumber: row.PaymentRefNum ?? null,
+      qbDepositToAccountName: row.DepositToAccountRef?.name ?? null,
+      qbDocNumber: row.DocNumber ?? null,
+      qbBillingAddress: null,
+      qbTransactionMemo: row.PrivateNote ?? null,
+      qbCurrency: row.CurrencyRef?.value ?? null,
+      qbExchangeRate: rate(row.ExchangeRate),
+      qbCreateTime: row.MetaData?.CreateTime ?? null,
+      qbLinkedTxn: mapLinkedTxn(
+        (row.Line ?? []).flatMap((l) => l.LinkedTxn ?? []),
+      ),
+      qbRaw: row,
+      qbRawLine: null,
     });
   }
 
@@ -614,6 +749,25 @@ export async function pullIncomingPayments(
         lineItemNames: detail.itemNames,
         lineAccountNames: detail.accountNames,
         lineClasses: detail.classes,
+        // The deposit line's Entity ref carries the payer kind + id.
+        qbPayerType: normalizePayerType(line.DepositLineDetail?.Entity?.type),
+        qbPayerId: entityId,
+        // Payment method / check number live on the deposit LINE detail.
+        qbPaymentMethod: line.DepositLineDetail?.PaymentMethodRef?.name ?? null,
+        qbCheckNumber: line.DepositLineDetail?.CheckNum ?? null,
+        // The deposit's destination bank account.
+        qbDepositToAccountName: row.DepositToAccountRef?.name ?? null,
+        qbDocNumber: row.DocNumber ?? null,
+        qbBillingAddress: null,
+        // The deposit's transaction-level memo (distinct from the line note).
+        qbTransactionMemo: depositMemo,
+        qbCurrency: row.CurrencyRef?.value ?? null,
+        qbExchangeRate: rate(row.ExchangeRate),
+        qbCreateTime: row.MetaData?.CreateTime ?? null,
+        qbLinkedTxn: mapLinkedTxn(line.LinkedTxn),
+        // Store the whole deposit as the raw entity AND the specific line.
+        qbRaw: row,
+        qbRawLine: line,
       });
     }
   }

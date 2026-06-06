@@ -106,8 +106,15 @@ const queueExpr = sql<string>`
 `.as("queue");
 
 // Donor + resolved-gift + intermediary display fields joined for the queue UI.
+// The verbatim raw QB JSON (qbRaw / qbRawLine) is stored for audit but excluded
+// from every list/detail response — it is large and never needed by the UI.
+const {
+  qbRaw: _qbRaw,
+  qbRawLine: _qbRawLine,
+  ...stagedColumns
+} = getTableColumns(stagedPayments);
 const stagedSelect = {
-  ...getTableColumns(stagedPayments),
+  ...stagedColumns,
   queue: queueExpr,
   organizationName: organizations.name,
   householdName: households.name,
@@ -1446,6 +1453,34 @@ router.post(
       res.status(502).json({
         error: "sync_failed",
         message: e instanceof Error ? e.message : "QuickBooks sync failed",
+      });
+    }
+  }),
+);
+
+// ─── POST /quickbooks/resync-full ──────────────────────────────────────────
+// Admin-gated NON-destructive full re-pull. Ignores the watermark to re-fetch
+// the entire QuickBooks back-catalog and re-enrich every existing staged row
+// with the extended QB capture fields (payer type, raw JSON, etc.). Unlike the
+// destructive cutover this preserves ALL review state — status, donor match,
+// exclusion, grouping are never touched (the upsert refreshes only read-only QB
+// facts). Use after deploying new capture fields to backfill existing rows.
+router.post(
+  "/quickbooks/resync-full",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const summary = await syncQuickbooks({ fullResync: true });
+      req.log.info(
+        { ran: summary.ran, pulled: summary.pulled, staged: summary.staged },
+        "QuickBooks full re-pull (field enrichment) run",
+      );
+      res.json(summary);
+    } catch (e) {
+      logger.error({ err: e }, "QuickBooks full re-pull failed");
+      res.status(502).json({
+        error: "resync_failed",
+        message: e instanceof Error ? e.message : "QuickBooks full re-pull failed",
       });
     }
   }),

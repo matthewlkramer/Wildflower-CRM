@@ -430,6 +430,18 @@ export const quickbooksEntityTypeEnum = pgEnum("quickbooks_entity_type", [
   "deposit",
 ]);
 
+// The kind of QuickBooks name a staged payment's payer resolves to. Pulled
+// verbatim from the QB entity ref (CustomerRef on SalesReceipt/Payment, the
+// deposit line's DepositLineDetail.Entity ref on a deposit line) and normalized
+// to lower snake_case. A `vendor`/`employee` payer is a strong "this is not a
+// donation" signal for the reconciler; `customer` is the normal donor case.
+// NULL when QuickBooks supplied no payer ref (e.g. some bare deposit lines).
+export const quickbooksPayerTypeEnum = pgEnum("quickbooks_payer_type", [
+  "vendor",
+  "customer",
+  "employee",
+]);
+
 // Lifecycle of a staged QuickBooks payment in the review queue.
 //   pending  — awaiting fundraiser review (default)
 //   approved — turned into a gifts_and_payments row (createdGiftId set)

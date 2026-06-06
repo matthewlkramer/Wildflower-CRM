@@ -13157,6 +13157,88 @@ export const useRunQuickbooksSync = <
 };
 
 /**
+ * @summary Non-destructive full re-pull that re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state.
+ */
+export const getResyncQuickbooksFullUrl = () => {
+  return `/api/quickbooks/resync-full`;
+};
+
+export const resyncQuickbooksFull = async (
+  options?: RequestInit,
+): Promise<QuickbooksSyncSummary> => {
+  return customFetch<QuickbooksSyncSummary>(getResyncQuickbooksFullUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getResyncQuickbooksFullMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resyncQuickbooksFull>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resyncQuickbooksFull>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["resyncQuickbooksFull"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resyncQuickbooksFull>>,
+    void
+  > = () => {
+    return resyncQuickbooksFull(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResyncQuickbooksFullMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resyncQuickbooksFull>>
+>;
+
+export type ResyncQuickbooksFullMutationError =
+  ErrorType<ForbiddenResponse | void>;
+
+/**
+ * @summary Non-destructive full re-pull that re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state.
+ */
+export const useResyncQuickbooksFull = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resyncQuickbooksFull>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resyncQuickbooksFull>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getResyncQuickbooksFullMutationOptions(options));
+};
+
+/**
  * @summary Re-run donor auto-match over still-unmatched pending staged payments (additive, never overwrites a human match).
  */
 export const getRematchStagedPaymentsUrl = () => {

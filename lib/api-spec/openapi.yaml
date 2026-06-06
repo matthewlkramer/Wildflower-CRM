@@ -1798,6 +1798,16 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "502": { description: "QuickBooks sync failed" }
 
+  /quickbooks/resync-full:
+    post:
+      operationId: resyncQuickbooksFull
+      tags: [quickbooks-sync]
+      summary: Non-destructive full re-pull that re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickbooksSyncSummary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { description: "QuickBooks full re-pull failed" }
+
   /quickbooks/rematch:
     post:
       operationId: rematchStagedPayments
@@ -3678,6 +3688,7 @@ components:
 
     # ─── QuickBooks payment sync ──────────────────────────────────────────────
     QuickbooksEntityType: { type: string, enum: [sales_receipt, payment, deposit] }
+    QuickbooksPayerType: { type: string, enum: [vendor, customer, employee], description: "The QuickBooks payer/entity kind behind this incoming money (Customer for a SalesReceipt/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line)." }
     StagedPaymentStatus: { type: string, enum: [pending, approved, rejected, excluded] }
     StagedPaymentExclusionReason: { type: string, enum: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income, fiscally_sponsored, intercompany_transfer, other, insurance, expense_refund, expensify, returned_wire] }
     StagedPaymentMatchStatus: { type: string, enum: [matched, suggested, unmatched] }
@@ -3743,6 +3754,30 @@ components:
         lineItemNames:             { type: array, items: { type: string }, nullable: true }
         lineAccountNames:          { type: array, items: { type: string }, nullable: true }
         lineClasses:               { type: array, items: { type: string }, nullable: true }
+        # Extended QuickBooks capture — read-only mirrors of the QB record surfaced
+        # in the reviewer for context. The verbatim qbRaw / qbRawLine JSON is stored
+        # in the DB but intentionally omitted here (and from the list select) to keep
+        # responses small.
+        qbPayerType:               { $ref: "#/components/schemas/QuickbooksPayerType", nullable: true }
+        qbPayerId:                 { type: string, nullable: true }
+        qbPaymentMethod:           { type: string, nullable: true }
+        qbCheckNumber:             { type: string, nullable: true }
+        qbDepositToAccountName:    { type: string, nullable: true }
+        qbDocNumber:               { type: string, nullable: true }
+        qbBillingAddress:          { type: string, nullable: true }
+        qbTransactionMemo:         { type: string, nullable: true }
+        qbCurrency:                { type: string, nullable: true }
+        qbExchangeRate:            { type: string, nullable: true }
+        qbCreateTime:              { type: string, format: date-time, nullable: true }
+        qbLinkedTxn:
+          type: array
+          nullable: true
+          items:
+            type: object
+            required: [txnId, txnType]
+            properties:
+              txnId:   { type: string }
+              txnType: { type: string }
         matchStatus:               { $ref: "#/components/schemas/StagedPaymentMatchStatus" }
         matchScore:                { type: integer, nullable: true }
         matchMethod:               { $ref: "#/components/schemas/StagedPaymentMatchMethod", nullable: true }

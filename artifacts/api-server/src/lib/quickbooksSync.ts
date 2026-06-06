@@ -46,7 +46,41 @@ function isUniqueViolation(e: unknown): boolean {
  * Returns the drizzle builder so callers can chain `.returning(...)`; exported so
  * the preserve-on-conflict semantics can be asserted in a regression test.
  */
-export function buildStagedLineUpsert(values: typeof stagedPayments.$inferInsert) {
+export function buildStagedLineUpsert(
+  values: typeof stagedPayments.$inferInsert,
+  opts: { enrichAllStatuses?: boolean } = {},
+) {
+  const set = {
+    lineItemNames: sql`CASE WHEN coalesce(cardinality(excluded.line_item_names), 0) > 0 THEN excluded.line_item_names ELSE ${stagedPayments.lineItemNames} END`,
+    lineAccountNames: sql`CASE WHEN coalesce(cardinality(excluded.line_account_names), 0) > 0 THEN excluded.line_account_names ELSE ${stagedPayments.lineAccountNames} END`,
+    lineClasses: sql`CASE WHEN coalesce(cardinality(excluded.line_classes), 0) > 0 THEN excluded.line_classes ELSE ${stagedPayments.lineClasses} END`,
+    lineDescription: sql`coalesce(nullif(excluded.line_description, ''), ${stagedPayments.lineDescription})`,
+    // Preserve-on-conflict, mirroring the coding fields: an incremental
+    // re-sync may re-pull a Payment whose linked deposit is older than the
+    // watermark (and thus absent), leaving qb_deposit_id empty on the
+    // incoming row — keep the stored deposit id rather than clobber it.
+    qbDepositId: sql`coalesce(excluded.qb_deposit_id, ${stagedPayments.qbDepositId})`,
+    // Extended QB capture fields. These are pure read-only mirrors of the QB
+    // record (never review state), so an incoming non-null value wins and an
+    // absent one keeps the stored value (preserve-on-conflict). They are safe
+    // to refresh on any status, which is what the full re-pull relies on.
+    qbPayerType: sql`coalesce(excluded.qb_payer_type, ${stagedPayments.qbPayerType})`,
+    qbPayerId: sql`coalesce(excluded.qb_payer_id, ${stagedPayments.qbPayerId})`,
+    qbPaymentMethod: sql`coalesce(excluded.qb_payment_method, ${stagedPayments.qbPaymentMethod})`,
+    qbCheckNumber: sql`coalesce(excluded.qb_check_number, ${stagedPayments.qbCheckNumber})`,
+    qbDepositToAccountName: sql`coalesce(excluded.qb_deposit_to_account_name, ${stagedPayments.qbDepositToAccountName})`,
+    qbDocNumber: sql`coalesce(excluded.qb_doc_number, ${stagedPayments.qbDocNumber})`,
+    qbBillingAddress: sql`coalesce(excluded.qb_billing_address, ${stagedPayments.qbBillingAddress})`,
+    qbTransactionMemo: sql`coalesce(excluded.qb_transaction_memo, ${stagedPayments.qbTransactionMemo})`,
+    qbCurrency: sql`coalesce(excluded.qb_currency, ${stagedPayments.qbCurrency})`,
+    qbExchangeRate: sql`coalesce(excluded.qb_exchange_rate, ${stagedPayments.qbExchangeRate})`,
+    qbCreateTime: sql`coalesce(excluded.qb_create_time, ${stagedPayments.qbCreateTime})`,
+    qbLinkedTxn: sql`coalesce(excluded.qb_linked_txn, ${stagedPayments.qbLinkedTxn})`,
+    qbRaw: sql`coalesce(excluded.qb_raw, ${stagedPayments.qbRaw})`,
+    qbRawLine: sql`coalesce(excluded.qb_raw_line, ${stagedPayments.qbRawLine})`,
+    updatedAt: new Date(),
+  };
+
   return db
     .insert(stagedPayments)
     .values(values)
@@ -57,19 +91,15 @@ export function buildStagedLineUpsert(values: typeof stagedPayments.$inferInsert
         stagedPayments.qbEntityId,
         stagedPayments.qbLineId,
       ],
-      set: {
-        lineItemNames: sql`CASE WHEN coalesce(cardinality(excluded.line_item_names), 0) > 0 THEN excluded.line_item_names ELSE ${stagedPayments.lineItemNames} END`,
-        lineAccountNames: sql`CASE WHEN coalesce(cardinality(excluded.line_account_names), 0) > 0 THEN excluded.line_account_names ELSE ${stagedPayments.lineAccountNames} END`,
-        lineClasses: sql`CASE WHEN coalesce(cardinality(excluded.line_classes), 0) > 0 THEN excluded.line_classes ELSE ${stagedPayments.lineClasses} END`,
-        lineDescription: sql`coalesce(nullif(excluded.line_description, ''), ${stagedPayments.lineDescription})`,
-        // Preserve-on-conflict, mirroring the coding fields: an incremental
-        // re-sync may re-pull a Payment whose linked deposit is older than the
-        // watermark (and thus absent), leaving qb_deposit_id empty on the
-        // incoming row — keep the stored deposit id rather than clobber it.
-        qbDepositId: sql`coalesce(excluded.qb_deposit_id, ${stagedPayments.qbDepositId})`,
-        updatedAt: new Date(),
-      },
-      setWhere: sql`${stagedPayments.status} in ('pending', 'excluded')`,
+      set,
+      // Normal sync only refreshes pending/excluded rows so a manual override
+      // is never clobbered. The full re-pull (enrichAllStatuses) drops that
+      // guard so approved/rejected rows also get the new capture fields — the
+      // `set` above only touches read-only QB facts, never review columns, so
+      // no approval / match / exclusion / grouping is affected.
+      ...(opts.enrichAllStatuses
+        ? {}
+        : { setWhere: sql`${stagedPayments.status} in ('pending', 'excluded')` }),
     });
 }
 
@@ -108,7 +138,10 @@ export interface QuickbooksSyncSummary {
   autoApplied: number;
 }
 
-export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
+export async function syncQuickbooks(
+  opts: { fullResync?: boolean } = {},
+): Promise<QuickbooksSyncSummary> {
+  const fullResync = opts.fullResync === true;
   const outcome = await withSyncLock(QB_LOCK_KEY, "quickbooks", async () => {
     const conn = await getValidQuickbooksAccessToken();
     if (!conn) {
@@ -121,7 +154,11 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
       .from(quickbooksConnections)
       .where(eq(quickbooksConnections.realmId, conn.realmId))
       .then((r) => r[0]);
-    const since = row?.syncWatermark ?? null;
+    // A full re-pull ignores the watermark to re-fetch the entire back-catalog
+    // (since=null), so every existing staged row is re-enriched with the new QB
+    // capture fields. The watermark itself is still advanced at the end.
+    const since = fullResync ? null : (row?.syncWatermark ?? null);
+    const watermarkFloor = row?.syncWatermark ?? null;
 
     let pulled: Awaited<ReturnType<typeof pullIncomingPayments>>;
     try {
@@ -138,7 +175,12 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
     let staged = 0;
     let matched = 0;
     let autoApplied = 0;
-    let maxUpdated: number | null = since ? since.getTime() : null;
+    // Seed from the stored watermark floor (not `since`, which is null on a full
+    // re-pull) so a full re-pull never regresses the watermark below where the
+    // incremental sync had already advanced it.
+    let maxUpdated: number | null = watermarkFloor
+      ? watermarkFloor.getTime()
+      : null;
 
     for (const p of pulled) {
       if (p.lastUpdatedTime) {
@@ -210,7 +252,21 @@ export async function syncQuickbooks(): Promise<QuickbooksSyncSummary> {
         lineItemNames: p.lineItemNames,
         lineAccountNames: p.lineAccountNames,
         lineClasses: p.lineClasses,
-      }).returning({
+        qbPayerType: p.qbPayerType,
+        qbPayerId: p.qbPayerId,
+        qbPaymentMethod: p.qbPaymentMethod,
+        qbCheckNumber: p.qbCheckNumber,
+        qbDepositToAccountName: p.qbDepositToAccountName,
+        qbDocNumber: p.qbDocNumber,
+        qbBillingAddress: p.qbBillingAddress,
+        qbTransactionMemo: p.qbTransactionMemo,
+        qbCurrency: p.qbCurrency,
+        qbExchangeRate: p.qbExchangeRate,
+        qbCreateTime: p.qbCreateTime ? new Date(p.qbCreateTime) : null,
+        qbLinkedTxn: p.qbLinkedTxn,
+        qbRaw: p.qbRaw,
+        qbRawLine: p.qbRawLine,
+      }, { enrichAllStatuses: fullResync }).returning({
         id: stagedPayments.id,
         isInsert: sql<boolean>`(xmax = 0)`,
       });

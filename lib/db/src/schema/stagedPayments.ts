@@ -6,12 +6,14 @@ import {
   numeric,
   date,
   boolean,
+  jsonb,
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
   quickbooksEntityTypeEnum,
+  quickbooksPayerTypeEnum,
   stagedPaymentStatusEnum,
   stagedPaymentExclusionReasonEnum,
   stagedPaymentMatchStatusEnum,
@@ -103,6 +105,54 @@ export const stagedPayments = pgTable(
     // Description, deposit PrivateNote, CustomerMemo) — context for the
     // reconciler and the memo-based matcher/classifier.
     lineDescription: text("line_description"),
+
+    // ── QuickBooks payer + entity context captured at pull time ───────────
+    // All of the following are read-only facts mirrored from QuickBooks. They
+    // are NEVER part of review state, so the full re-pull may refresh them on
+    // any row (including approved/rejected) without touching the reconcile.
+    //
+    // The kind of QB name the payer resolves to (Customer / Vendor / Employee).
+    // A vendor/employee payer is a strong "not a donation" hint. NULL when QB
+    // supplied no payer ref.
+    qbPayerType: quickbooksPayerTypeEnum("qb_payer_type"),
+    // The QB id of that payer ref (stable across renames; lets us link back to
+    // the QB Customer/Vendor/Employee record).
+    qbPayerId: text("qb_payer_id"),
+    // QB PaymentMethodRef name (e.g. "Check", "ACH", "Visa") — entity-level for
+    // SalesReceipt/Payment, line-level for a deposit line.
+    qbPaymentMethod: text("qb_payment_method"),
+    // Check number / payment reference number (deposit line CheckNum, or the
+    // entity's PaymentRefNum). Distinct from rawReference, which prefers the
+    // DocNumber for display.
+    qbCheckNumber: text("qb_check_number"),
+    // The bank/asset account the money was deposited to (DepositToAccountRef).
+    qbDepositToAccountName: text("qb_deposit_to_account_name"),
+    // The entity's DocNumber, kept verbatim (rawReference may massage this).
+    qbDocNumber: text("qb_doc_number"),
+    // The payer's billing address, flattened to a single display string
+    // (SalesReceipt BillAddr). NULL when the entity carries no address.
+    qbBillingAddress: text("qb_billing_address"),
+    // The transaction-level PrivateNote (entity memo) — distinct from
+    // lineDescription, which prefers the per-line note for deposit lines.
+    qbTransactionMemo: text("qb_transaction_memo"),
+    // QB currency code (CurrencyRef.value, e.g. "USD") and the exchange rate to
+    // home currency (ExchangeRate). Captured for multi-currency auditing.
+    qbCurrency: text("qb_currency"),
+    qbExchangeRate: numeric("qb_exchange_rate", { precision: 18, scale: 6 }),
+    // When the QB record was created (MetaData.CreateTime), distinct from when
+    // we first staged it (createdAt).
+    qbCreateTime: timestamp("qb_create_time", { withTimezone: true }),
+    // The line's LinkedTxn references (each { txnId, txnType }) — e.g. a deposit
+    // line linked to the Payment it re-records, or a Payment linked to the
+    // Invoice it pays. Kept for provenance and dedupe auditing.
+    qbLinkedTxn:
+      jsonb("qb_linked_txn").$type<{ txnId: string; txnType: string }[]>(),
+    // The complete raw QuickBooks entity payload, stored verbatim so any future
+    // field can be derived WITHOUT re-pulling from QuickBooks. Excluded from
+    // list API responses (heavy) — storage only.
+    qbRaw: jsonb("qb_raw"),
+    // For deposit-line rows only: the specific deposit Line object, verbatim.
+    qbRawLine: jsonb("qb_raw_line"),
 
     status: stagedPaymentStatusEnum("status").notNull().default("pending"),
     // Set only when status = "excluded" — why the row was filtered.
