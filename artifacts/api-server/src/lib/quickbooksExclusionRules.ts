@@ -161,6 +161,17 @@ export const INTEREST_ACCOUNT_CODE_PREFIXES: readonly string[] = [
   "4040",
 ];
 export const INTEREST_ITEM_SUBSTRINGS: readonly string[] = ["interest"];
+/**
+ * Some QuickBooks exports emit these income accounts by their human NAME with no
+ * leading account code (e.g. "Realized Gain/Loss on Investments", "Interest
+ * Earned"), which the code-PREFIX match above can't see. Catch those by
+ * case-insensitive account-NAME substring as well, so investment gain/loss and
+ * bank interest are excluded whether or not QuickBooks prefixed the code.
+ */
+export const INTEREST_ACCOUNT_NAME_SUBSTRINGS: readonly string[] = [
+  "realized gain/loss on investments",
+  "interest earned",
+];
 
 /**
  * GUARANTY-fee markers (folded into the `loan` reason — guaranty fees are loan
@@ -293,7 +304,9 @@ function isInterestLine(input: ClassifierInput): boolean {
     anyAccountCodeStartsWith(
       input.lineAccountNames,
       INTEREST_ACCOUNT_CODE_PREFIXES,
-    ) || anyIncludes(input.lineItemNames, INTEREST_ITEM_SUBSTRINGS)
+    ) ||
+    anyIncludes(input.lineAccountNames, INTEREST_ACCOUNT_NAME_SUBSTRINGS) ||
+    anyIncludes(input.lineItemNames, INTEREST_ITEM_SUBSTRINGS)
   );
 }
 

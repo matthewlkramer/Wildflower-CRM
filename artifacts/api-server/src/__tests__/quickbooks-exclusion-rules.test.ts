@@ -179,6 +179,43 @@ describe("classifyStagedPayment", () => {
     ).toBe("interest");
   });
 
+  it("excludes Realized Gain/Loss on Investments by NAME when the 4040 code is absent", () => {
+    // QuickBooks sometimes emits the account name without the leading code.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "Wells Fargo",
+        lineAccountNames: ["Realized Gain/Loss on Investments"],
+        lineItemNames: [
+          "Government Grant - Unrestricted:Realized Gain/Loss on Investments",
+        ],
+      }).reason,
+    ).toBe("interest");
+  });
+
+  it("excludes Interest Earned by NAME when the 4010 code is absent", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["  interest earned  "],
+      }).reason,
+    ).toBe("interest");
+  });
+
+  it("donation-first guard keeps a bundled gift even with a code-less gain/loss line", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: [
+          "4000 Unrestricted Donations",
+          "Realized Gain/Loss on Investments",
+        ],
+      }).excluded,
+    ).toBe(false);
+  });
+
   it("excludes Services - Earned Income (4020) as earned_income", () => {
     expect(
       classifyStagedPayment({

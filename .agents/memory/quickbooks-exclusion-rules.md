@@ -23,6 +23,16 @@ substring. A mismatch silently under- or over-classifies real money.
 **Why:** an over-broad rule can wrongly hide a real gift; an under-broad backfill
 leaves noise in the queue. Equivalence is the safety property.
 
+**Account-code prefixes are NOT enough — also match the human account NAME.**
+QuickBooks emits the same income account both WITH and WITHOUT its leading code
+(e.g. both "4040 Realized Gain/Loss on Investments" and bare "Realized Gain/Loss
+on Investments"; same for "Interest Earned"). A code-PREFIX-only rule silently
+misses the code-less variant, leaking those rows into the queue. For any
+account-coded rule, match by code prefix OR case-insensitive account-NAME
+substring (TS `anyIncludes` ⇄ SQL `lower(btrim(a)) LIKE '%name%'`). The interest
+family carries both an `*_ACCOUNT_CODE_PREFIXES` and an `*_ACCOUNT_NAME_SUBSTRINGS`
+list for this reason.
+
 **Donation-first guard:** all *line-based* rules (guaranty/interest/tax_refund/
 other_revenue) are suppressed when the row also carries a real donation line
 (4000/4100-series account or a "Donation" item), so a bundled deposit is never
