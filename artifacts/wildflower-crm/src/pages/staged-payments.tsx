@@ -749,32 +749,34 @@ export default function StagedPayments() {
             </Select>
           </div>
 
-          {listQ.isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : listQ.isError ? (
-            <p className="text-sm text-red-700">
-              Failed to load staged payments.
-            </p>
-          ) : rows.length === 0 ? (
-            <Card>
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                No {activeLabel} payments.
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {rows.map((row) => (
-                <StagedPaymentCard
-                  key={row.id}
-                  row={row}
-                  queue={queue}
-                  selected={selectedStaged?.id === row.id}
-                  onSelect={() => selectStaged(row)}
-                  onChanged={invalidateAll}
-                />
-              ))}
-            </div>
-          )}
+          <div className="lg:max-h-[calc(100vh-19rem)] lg:overflow-y-auto lg:pr-1">
+            {listQ.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : listQ.isError ? (
+              <p className="text-sm text-red-700">
+                Failed to load staged payments.
+              </p>
+            ) : rows.length === 0 ? (
+              <Card>
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  No {activeLabel} payments.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {rows.map((row) => (
+                  <StagedPaymentCard
+                    key={row.id}
+                    row={row}
+                    queue={queue}
+                    selected={selectedStaged?.id === row.id}
+                    onSelect={() => selectStaged(row)}
+                    onChanged={invalidateAll}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
 
           {total > PAGE_SIZE || page > 1 ? (
             <div className="flex items-center justify-between pt-2">
@@ -1505,36 +1507,38 @@ function GiftsPanel({
         </div>
       </div>
 
-      {giftsQ.isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading gifts…</p>
-      ) : giftsQ.isError ? (
-        <p className="text-sm text-red-700">Failed to load gifts.</p>
-      ) : gifts.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No matching gifts. Adjust the search or create a new gift.
-          </CardContent>
-        </Card>
-      ) : (
-        <ul className="space-y-2" data-testid="gift-list">
-          {gifts.map((g) => (
-            <GiftRow
-              key={g.id}
-              gift={g}
-              selected={selectedGiftId === g.id}
-              onSelect={() =>
-                onSelectGift(
-                  selectedGiftId === g.id ? null : g.id,
-                  selectedGiftId === g.id ? null : giftRowLabel(g),
-                )
-              }
-              stagedAmount={stagedAmount}
-              onUnmatch={onUnmatch}
-              unmatching={unmatching}
-            />
-          ))}
-        </ul>
-      )}
+      <div className="lg:max-h-[calc(100vh-22rem)] lg:overflow-y-auto lg:pr-1">
+        {giftsQ.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading gifts…</p>
+        ) : giftsQ.isError ? (
+          <p className="text-sm text-red-700">Failed to load gifts.</p>
+        ) : gifts.length === 0 ? (
+          <Card>
+            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+              No matching gifts. Adjust the search or create a new gift.
+            </CardContent>
+          </Card>
+        ) : (
+          <ul className="space-y-2" data-testid="gift-list">
+            {gifts.map((g) => (
+              <GiftRow
+                key={g.id}
+                gift={g}
+                selected={selectedGiftId === g.id}
+                onSelect={() =>
+                  onSelectGift(
+                    selectedGiftId === g.id ? null : g.id,
+                    selectedGiftId === g.id ? null : giftRowLabel(g),
+                  )
+                }
+                stagedAmount={stagedAmount}
+                onUnmatch={onUnmatch}
+                unmatching={unmatching}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
 
       {total > pageSize || page > 1 ? (
         <div className="flex items-center justify-between pt-2">
