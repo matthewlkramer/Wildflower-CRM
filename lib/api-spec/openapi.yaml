@@ -1826,6 +1826,7 @@ paths:
       parameters:
         - { name: queue, in: query, schema: { $ref: "#/components/schemas/StagedPaymentQueue" }, description: "Which queue to list (default needs_review)." }
         - { name: sort, in: query, schema: { $ref: "#/components/schemas/StagedPaymentSort" }, description: "Sort order (default date_desc)." }
+        - { name: search, in: query, schema: { type: string }, description: "Free-text filter across payer, memo, and line item / account / class detail." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:

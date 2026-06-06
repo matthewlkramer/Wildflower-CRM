@@ -6918,6 +6918,12 @@ export const ListStagedPaymentsQueryParams = zod.object({
     ])
     .optional()
     .describe("Sort order (default date_desc)."),
+  search: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Free-text filter across payer, memo, and line item \/ account \/ class detail.",
+    ),
   limit: zod.coerce
     .number()
     .min(1)

@@ -306,8 +306,18 @@ export default function StagedPayments() {
   // Left pane (staged imports) state.
   const [queue, setQueue] = useState<StagedPaymentQueue>("needs_review");
   const [sort, setSort] = useState<StagedPaymentSort>("date_desc");
+  const [stagedSearch, setStagedSearch] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
+
+  // Debounce the left-pane free-text search so we don't refetch per keystroke
+  // (mirrors the gifts panel on the right).
+  const [debouncedStagedSearch, setDebouncedStagedSearch] =
+    useState(stagedSearch);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedStagedSearch(stagedSearch), 250);
+    return () => clearTimeout(t);
+  }, [stagedSearch]);
 
   // Cross-pane selection.
   const [selectedStaged, setSelectedStaged] = useState<StagedPayment | null>(
@@ -339,7 +349,15 @@ export default function StagedPayments() {
   // Create-gift dialog.
   const [createOpen, setCreateOpen] = useState(false);
 
-  const listParams = { queue, sort, limit: PAGE_SIZE, page };
+  const listParams = {
+    queue,
+    sort,
+    limit: PAGE_SIZE,
+    page,
+    ...(debouncedStagedSearch.trim()
+      ? { search: debouncedStagedSearch.trim() }
+      : {}),
+  };
   const listQ = useListStagedPayments(listParams, {
     query: { queryKey: getListStagedPaymentsQueryKey(listParams) },
   });
@@ -749,6 +767,29 @@ export default function StagedPayments() {
                 ))}
               </SelectContent>
             </Select>
+            <Input
+              value={stagedSearch}
+              onChange={(e) => {
+                setStagedSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search payer, memo, account…"
+              className="h-9 w-[220px]"
+              data-testid="staged-search"
+            />
+            {stagedSearch ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setStagedSearch("");
+                  setPage(1);
+                }}
+                data-testid="staged-search-clear"
+              >
+                Clear
+              </Button>
+            ) : null}
           </div>
 
           <div className="lg:max-h-[calc(100vh-19rem)] lg:overflow-y-auto lg:pr-1">

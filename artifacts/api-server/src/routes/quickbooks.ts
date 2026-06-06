@@ -8,7 +8,17 @@ import {
   people,
   paymentIntermediaries,
 } from "@workspace/db/schema";
-import { and, asc, count, desc, eq, getTableColumns, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  ilike,
+  or,
+  sql,
+} from "drizzle-orm";
 import { alias, type PgSelect } from "drizzle-orm/pg-core";
 import { requireAuth } from "../middlewares/requireAuth";
 import {
@@ -158,6 +168,30 @@ function stagedOrderBy(sort: StagedSort) {
   }
 }
 
+// Escape LIKE/ILIKE wildcards so a user typing "%" or "_" searches for those
+// literal characters instead of matching (nearly) everything. PostgreSQL's
+// default ILIKE escape character is the backslash, so escaping the input is
+// enough — no explicit ESCAPE clause needed.
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+// Free-text filter for the reconciler's LEFT pane. Matches the payer, the raw
+// memo/reference, the single-line description, and any of the line-detail array
+// fields (items / accounts / classes). Array columns are flattened with
+// array_to_string so a substring match works across all elements at once.
+function stagedSearchWhere(term: string) {
+  const like = `%${escapeLike(term)}%`;
+  return or(
+    ilike(stagedPayments.payerName, like),
+    ilike(stagedPayments.rawReference, like),
+    ilike(stagedPayments.lineDescription, like),
+    sql`array_to_string(COALESCE(${stagedPayments.lineItemNames}, '{}'), ' ') ILIKE ${like}`,
+    sql`array_to_string(COALESCE(${stagedPayments.lineAccountNames}, '{}'), ' ') ILIKE ${like}`,
+    sql`array_to_string(COALESCE(${stagedPayments.lineClasses}, '{}'), ' ') ILIKE ${like}`,
+  );
+}
+
 function queueWhere(queue: Queue) {
   switch (queue) {
     case "auto_matched":
@@ -197,7 +231,11 @@ router.get(
       ? (rawSort as StagedSort)
       : "date_desc";
     const { limit, offset, page } = parsePagination(req.query);
-    const where = queueWhere(queue);
+    const search =
+      typeof req.query["search"] === "string" ? req.query["search"].trim() : "";
+    const where = search
+      ? and(queueWhere(queue), stagedSearchWhere(search))
+      : queueWhere(queue);
 
     const [rows, totalRow] = await Promise.all([
       withJoins(db.select(stagedSelect).from(stagedPayments).$dynamic())

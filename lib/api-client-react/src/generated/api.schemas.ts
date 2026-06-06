@@ -3995,6 +3995,10 @@ export type ListStagedPaymentsParams = {
    */
   sort?: StagedPaymentSort;
   /**
+   * Free-text filter across payer, memo, and line item / account / class detail.
+   */
+  search?: string;
+  /**
    * @minimum 1
    * @maximum 10000
    */
