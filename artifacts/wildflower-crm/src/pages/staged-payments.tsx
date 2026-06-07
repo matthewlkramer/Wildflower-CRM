@@ -13,6 +13,7 @@ import {
   useExcludeStagedPayment,
   useConfirmStagedPaymentMatch,
   useConfirmStagedPaymentMatches,
+  useRevertStagedPaymentMatches,
   useUnmatchStagedPayment,
   useRunQuickbooksSync,
   useResyncQuickbooksFull,
@@ -520,6 +521,33 @@ export default function StagedPayments() {
       onError: (e: unknown) =>
         toast({
           title: "Bulk confirm failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const bulkRevert = useRevertStagedPaymentMatches({
+    mutation: {
+      onSuccess: (data) => {
+        clearBulk();
+        invalidateAll();
+        const reverted = data.revertedIds.length;
+        const skipped = data.requested - reverted;
+        toast({
+          title:
+            reverted === 0
+              ? "Nothing to revert"
+              : `Reverted ${reverted} match${reverted === 1 ? "" : "es"}`,
+          description:
+            skipped > 0
+              ? `${skipped} skipped — already handled or no longer revertible.`
+              : "Returned to the needs-review queue.",
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Bulk revert failed",
           description: e instanceof Error ? e.message : "Unknown error",
           variant: "destructive",
         }),
@@ -1350,12 +1378,34 @@ export default function StagedPayments() {
                     variant="ghost"
                     size="sm"
                     onClick={clearBulk}
-                    disabled={bulkConfirm.isPending}
+                    disabled={bulkConfirm.isPending || bulkRevert.isPending}
                     data-testid="bulk-clear"
                   >
                     Clear
                   </Button>
                 ) : null}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    bulkRevert.mutate({
+                      data: { ids: Array.from(bulkSelected) },
+                    })
+                  }
+                  disabled={
+                    bulkSelected.size === 0 ||
+                    bulkConfirm.isPending ||
+                    bulkRevert.isPending
+                  }
+                  data-testid="bulk-revert"
+                  title="Revert every selected auto-matched payment back to the needs-review queue. Auto-created gifts are deleted; existing gifts are untouched."
+                >
+                  {bulkRevert.isPending
+                    ? "Reverting…"
+                    : `Revert selected${
+                        bulkSelected.size > 0 ? ` (${bulkSelected.size})` : ""
+                      }`}
+                </Button>
                 <Button
                   size="sm"
                   onClick={() =>
@@ -1363,7 +1413,11 @@ export default function StagedPayments() {
                       data: { ids: Array.from(bulkSelected) },
                     })
                   }
-                  disabled={bulkSelected.size === 0 || bulkConfirm.isPending}
+                  disabled={
+                    bulkSelected.size === 0 ||
+                    bulkConfirm.isPending ||
+                    bulkRevert.isPending
+                  }
                   data-testid="bulk-confirm"
                   title="Confirm every selected auto-matched payment; moves them to Done."
                 >

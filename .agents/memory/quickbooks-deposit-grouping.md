@@ -16,9 +16,10 @@ A group is coherent when members share ONE grouping key, payer preferred:
 - `dep:<qbDepositId>` when no payer was captured.
 **Neither the date NOR the deposit is part of the key** — a series of stock
 sales is one gift even though EACH sale settles as its OWN deposit over several
-days (e.g. Arthur Rock 2018-05-22 → 06-15, 5 distinct deposits = one ~$1M gift).
+days (a large securities gift can settle as several distinct deposits spanning
+weeks, yet is one gift).
 
-**Why payer-first / cross-deposit:** real stock-sale gifts (Arthur Rock, etc.)
+**Why payer-first / cross-deposit:** real stock-sale gifts
 land as one bank deposit PER sale, so the old `allDepositNull`-gated payer
 fallback never engaged and the operator literally could not group them. Grouping
 reconciles to ONE gift with ONE donor, so payer is the correct coherence signal;
@@ -38,8 +39,8 @@ the fee band is asymmetric on purpose — deposits may land slightly BELOW the g
 (processor fees) but essentially never above (`giftAmt >= sum-0.01 && giftAmt <=
 sum*1.1+1`). Appreciated-stock/securities gifts break this: shares are booked at
 one value but SELL for more, so combined proceeds exceed the recorded gift (real
-case: Arthur Rock FY18 booked $1,000,000, 5 sales settled at $1,012,780.49 ≈
-+1.3%). The user explicitly chose an operator override over widening the band.
+case: a securities gift booked at its share value settled ~1.3% higher across its
+sales). The user explicitly chose an operator override over widening the band.
 So when the combined total is OUTSIDE the band the server returns a DISTINCT
 `400 amount_mismatch_confirmation_required` (was `amount_mismatch`) unless
 `confirmAmountMismatch === true`, which fully bypasses the band check. Tight band
@@ -107,3 +108,16 @@ Client (`staged-payments.tsx`): per-card checkbox + select-all bar render ONLY
 for `queue==="auto_matched"`; a `rows`-keyed effect prunes the bulk selection to
 currently-visible ids so pagination / post-confirm refetch can't carry hidden ids
 into a confirm; queue switch clears the selection.
+
+`POST /staged-payments/revert-matches` is the bulk REVERT companion (same bulk
+bar, reuses the SAME `bulkSelected` set; "Revert selected" sits next to "Confirm
+selected"). It loops the deduped ids and calls the SHARED helper
+`revertOneStagedPayment(id)` — the single `/:id/revert` transaction extracted so
+both routes stay in lockstep. Two non-obvious invariants: (1) each row reverts in
+its OWN transaction so one rollback never undoes another's revert (NOT one giant
+batch UPDATE — revert deletes auto-minted gifts and is group/split-aware, so it
+can't be a single SQL statement); (2) the helper returns a structured
+`{ok}|{reason}` outcome instead of throwing for the expected not-found /
+not-revertible cases, so the bulk loop SKIPS those rows; only `__unexpected__`
+errors propagate. Revertibility (only `status='approved'` + reconcile/auto-mint/
+group/split; manual-created gifts are never revertible) is unchanged.

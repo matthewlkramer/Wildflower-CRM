@@ -2068,6 +2068,27 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConfirmStagedPaymentMatchesResponse" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /staged-payments/revert-matches:
+    post:
+      operationId: revertStagedPaymentMatches
+      tags: [staged-payments]
+      summary: Bulk-revert several auto-applied matches in one call.
+      description: |
+        Reverts many staged-payment matches at once — the bulk equivalent of
+        POST /staged-payments/{id}/revert, used to clear auto-applied matches off
+        the Auto-matched queue in a single action. Each id is reverted only if it
+        is in a revertible state (an approved row that was reconciled to an
+        existing gift, auto-minted, group-reconciled, or split); the auto-minted
+        gift is deleted, pre-existing gifts are untouched. Ids that are missing or
+        not revertible (e.g. a manually-created gift) are silently skipped rather
+        than failing the whole batch. The response reports which ids were reverted
+        so the client can report partial results.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RevertStagedPaymentMatchesBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RevertStagedPaymentMatchesResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /staged-payments/{id}/confirm-match:
     post:
       operationId: confirmStagedPaymentMatch
@@ -4034,6 +4055,22 @@ components:
       properties:
         confirmedIds: { type: array, items: { type: string }, description: "Ids that were actually confirmed." }
         requested: { type: integer, description: "How many ids were submitted. (requested − confirmedIds.length = skipped.)" }
+    RevertStagedPaymentMatchesBody:
+      type: object
+      required: [ids]
+      description: "Bulk-revert several auto-applied staged-payment matches (e.g. the whole Auto-matched queue) in one call."
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items: { type: string }
+          description: "Ids of the staged payments to revert. Ids that are not in a revertible state are skipped, not errors."
+    RevertStagedPaymentMatchesResponse:
+      type: object
+      required: [revertedIds, requested]
+      properties:
+        revertedIds: { type: array, items: { type: string }, description: "Ids that were actually reverted." }
+        requested: { type: integer, description: "How many ids were submitted. (requested − revertedIds.length = skipped.)" }
     ExcludeStagedPaymentBody:
       type: object
       required: [exclusionReason]

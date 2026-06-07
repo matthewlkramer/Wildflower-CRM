@@ -8458,6 +8458,44 @@ export const ConfirmStagedPaymentMatchesResponse = zod.object({
 });
 
 /**
+ * Reverts many staged-payment matches at once — the bulk equivalent of
+POST /staged-payments/{id}/revert, used to clear auto-applied matches off
+the Auto-matched queue in a single action. Each id is reverted only if it
+is in a revertible state (an approved row that was reconciled to an
+existing gift, auto-minted, group-reconciled, or split); the auto-minted
+gift is deleted, pre-existing gifts are untouched. Ids that are missing or
+not revertible (e.g. a manually-created gift) are silently skipped rather
+than failing the whole batch. The response reports which ids were reverted
+so the client can report partial results.
+
+ * @summary Bulk-revert several auto-applied matches in one call.
+ */
+
+export const RevertStagedPaymentMatchesBody = zod
+  .object({
+    ids: zod
+      .array(zod.string())
+      .min(1)
+      .describe(
+        "Ids of the staged payments to revert. Ids that are not in a revertible state are skipped, not errors.",
+      ),
+  })
+  .describe(
+    "Bulk-revert several auto-applied staged-payment matches (e.g. the whole Auto-matched queue) in one call.",
+  );
+
+export const RevertStagedPaymentMatchesResponse = zod.object({
+  revertedIds: zod
+    .array(zod.string())
+    .describe("Ids that were actually reverted."),
+  requested: zod
+    .number()
+    .describe(
+      "How many ids were submitted. (requested − revertedIds.length = skipped.)",
+    ),
+});
+
+/**
  * Stamps the donor match as human-confirmed (match_confirmed_at /
 match_confirmed_by_user_id). Works on a pending row with a donor OR an
 auto-applied approved row (graduating it from "Auto-matched" to "Done").

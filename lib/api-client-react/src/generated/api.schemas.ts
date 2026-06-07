@@ -2046,6 +2046,24 @@ export interface ConfirmStagedPaymentMatchesResponse {
 }
 
 /**
+ * Bulk-revert several auto-applied staged-payment matches (e.g. the whole Auto-matched queue) in one call.
+ */
+export interface RevertStagedPaymentMatchesBody {
+  /**
+   * Ids of the staged payments to revert. Ids that are not in a revertible state are skipped, not errors.
+   * @minItems 1
+   */
+  ids: string[];
+}
+
+export interface RevertStagedPaymentMatchesResponse {
+  /** Ids that were actually reverted. */
+  revertedIds: string[];
+  /** How many ids were submitted. (requested − revertedIds.length = skipped.) */
+  requested: number;
+}
+
+/**
  * File the staged payment under a non-gift exclusion category.
  */
 export interface ExcludeStagedPaymentBody {

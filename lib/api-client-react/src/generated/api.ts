@@ -194,6 +194,8 @@ import type {
   RequestUploadUrl200,
   RequestUploadUrlBody,
   ResolveStagedPaymentBody,
+  RevertStagedPaymentMatchesBody,
+  RevertStagedPaymentMatchesResponse,
   SaveEmailIntelPromptBody,
   SavedView,
   SavedViewList,
@@ -14841,6 +14843,107 @@ export const useConfirmStagedPaymentMatches = <
   TContext
 > => {
   return useMutation(getConfirmStagedPaymentMatchesMutationOptions(options));
+};
+
+/**
+ * Reverts many staged-payment matches at once — the bulk equivalent of
+POST /staged-payments/{id}/revert, used to clear auto-applied matches off
+the Auto-matched queue in a single action. Each id is reverted only if it
+is in a revertible state (an approved row that was reconciled to an
+existing gift, auto-minted, group-reconciled, or split); the auto-minted
+gift is deleted, pre-existing gifts are untouched. Ids that are missing or
+not revertible (e.g. a manually-created gift) are silently skipped rather
+than failing the whole batch. The response reports which ids were reverted
+so the client can report partial results.
+
+ * @summary Bulk-revert several auto-applied matches in one call.
+ */
+export const getRevertStagedPaymentMatchesUrl = () => {
+  return `/api/staged-payments/revert-matches`;
+};
+
+export const revertStagedPaymentMatches = async (
+  revertStagedPaymentMatchesBody: RevertStagedPaymentMatchesBody,
+  options?: RequestInit,
+): Promise<RevertStagedPaymentMatchesResponse> => {
+  return customFetch<RevertStagedPaymentMatchesResponse>(
+    getRevertStagedPaymentMatchesUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(revertStagedPaymentMatchesBody),
+    },
+  );
+};
+
+export const getRevertStagedPaymentMatchesMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revertStagedPaymentMatches>>,
+    TError,
+    { data: BodyType<RevertStagedPaymentMatchesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof revertStagedPaymentMatches>>,
+  TError,
+  { data: BodyType<RevertStagedPaymentMatchesBody> },
+  TContext
+> => {
+  const mutationKey = ["revertStagedPaymentMatches"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revertStagedPaymentMatches>>,
+    { data: BodyType<RevertStagedPaymentMatchesBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return revertStagedPaymentMatches(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevertStagedPaymentMatchesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revertStagedPaymentMatches>>
+>;
+export type RevertStagedPaymentMatchesMutationBody =
+  BodyType<RevertStagedPaymentMatchesBody>;
+export type RevertStagedPaymentMatchesMutationError =
+  ErrorType<BadRequestResponse>;
+
+/**
+ * @summary Bulk-revert several auto-applied matches in one call.
+ */
+export const useRevertStagedPaymentMatches = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revertStagedPaymentMatches>>,
+    TError,
+    { data: BodyType<RevertStagedPaymentMatchesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof revertStagedPaymentMatches>>,
+  TError,
+  { data: BodyType<RevertStagedPaymentMatchesBody> },
+  TContext
+> => {
+  return useMutation(getRevertStagedPaymentMatchesMutationOptions(options));
 };
 
 /**
