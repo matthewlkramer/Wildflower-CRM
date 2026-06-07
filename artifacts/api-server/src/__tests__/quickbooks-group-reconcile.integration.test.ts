@@ -407,7 +407,7 @@ describe.skipIf(!HAS_DB)(
       }
     }, 30_000);
 
-    it("rejects an out-of-tolerance combined total without touching the rows", async () => {
+    it("gates an out-of-tolerance combined total behind confirmAmountMismatch without touching the rows", async () => {
       // Gift 200.00 vs combined 100.00 → 200 > 100*1.1+1 = 111 → over band.
       const giftId = await seedGift("200.00");
       seededGiftIds.push(giftId);
@@ -420,7 +420,7 @@ describe.skipIf(!HAS_DB)(
       });
 
       expect(res.status).toBe(400);
-      expect(res.json.error).toBe("amount_mismatch");
+      expect(res.json.error).toBe("amount_mismatch_confirmation_required");
       expect(res.json.details).toMatchObject({
         combinedTotal: 100,
         giftAmount: 200,
@@ -433,6 +433,41 @@ describe.skipIf(!HAS_DB)(
         expect(row.status).toBe("pending");
         expect(row.matchedGiftId).toBeNull();
         expect(row.groupReconciledGiftId).toBeNull();
+      }
+    }, 30_000);
+
+    it("reconciles an out-of-tolerance group WITH confirmAmountMismatch (the appreciated-stock case)", async () => {
+      // Stock gift booked at 1,000,000 but the sale proceeds came to a hair
+      // over (1,012,780.49) — above the fee band, which only tolerates the
+      // deposit landing BELOW the gift. The operator explicitly confirms.
+      const giftId = await seedGift("1000000.00");
+      seededGiftIds.push(giftId);
+      const aId = await seedStaged(giftId, "a", "512780.49");
+      const bId = await seedStaged(giftId, "b", "500000.00");
+
+      const blocked = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+      });
+      expect(blocked.status).toBe(400);
+      expect(blocked.json.error).toBe("amount_mismatch_confirmation_required");
+
+      const res = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+        confirmAmountMismatch: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.json.representativeStagedPaymentId).toBe(
+        [aId, bId].sort()[0],
+      );
+
+      const a = await readStaged(aId);
+      const b = await readStaged(bId);
+      for (const row of [a, b]) {
+        expect(row.status).toBe("approved");
+        expect(row.groupReconciledGiftId).toBe(giftId);
       }
     }, 30_000);
 

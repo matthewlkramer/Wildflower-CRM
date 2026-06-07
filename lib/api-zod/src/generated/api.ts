@@ -8274,9 +8274,13 @@ all pending and unresolved, all sharing one grouping key (deposit or
 payer), the gift exists with a single valid donor and is not already
 linked elsewhere, and the members' combined total matches the gift amount
 within the processor fee-band tolerance. When the grouped payments do not
-all fall on the same date_received, `confirmMultiDate` must be true
-(otherwise 400 multi_date_confirmation_required) — this guards against
-collapsing unrelated same-payer gifts. Reversible as a whole via the
+all fall on the same date_received, or carry more than one distinct
+(non-null) bank deposit, `confirmMultiDate` must be true (otherwise
+400 multi_date_confirmation_required) — this guards against collapsing
+unrelated same-payer gifts. When the combined total falls OUTSIDE the
+fee-band tolerance (e.g. stock/securities gifts whose sale proceeds differ
+from the booked value), `confirmAmountMismatch` must be true (otherwise
+400 amount_mismatch_confirmation_required). Reversible as a whole via the
 revert endpoint.
 
  * @summary Group several staged payments and reconcile them as one unit to an existing gift.
@@ -8296,7 +8300,13 @@ export const GroupReconcileStagedPaymentsBody = zod
       .boolean()
       .optional()
       .describe(
-        "Must be true when the grouped payments do not all share the same date_received. Guards against accidentally collapsing unrelated same-payer gifts (e.g. recurring donations) into one. The client prompts the operator to confirm before sending this.",
+        "Must be true when the grouped payments do not all share the same date_received, or carry more than one distinct (non-null) bank deposit. Guards against accidentally collapsing unrelated same-payer gifts (e.g. recurring donations) or two genuinely separate deposits into one. The client prompts the operator to confirm before sending this.",
+      ),
+    confirmAmountMismatch: zod
+      .boolean()
+      .optional()
+      .describe(
+        "Must be true when the members' combined total falls OUTSIDE the processor fee-band tolerance around the gift amount (e.g. stock\/securities gifts, where the cash from selling the shares differs from the gift's booked value). Lets the operator explicitly approve a deliberate amount mismatch; without it such a group is rejected 400 amount_mismatch_confirmation_required. The client prompts the operator to confirm before sending this.",
       ),
   })
   .describe(

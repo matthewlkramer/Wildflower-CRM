@@ -2014,8 +2014,10 @@ export interface GroupReconcileStagedPaymentsBody {
   stagedPaymentIds: string[];
   /** The existing gift the group reconciles to. */
   giftId: string;
-  /** Must be true when the grouped payments do not all share the same date_received. Guards against accidentally collapsing unrelated same-payer gifts (e.g. recurring donations) into one. The client prompts the operator to confirm before sending this. */
+  /** Must be true when the grouped payments do not all share the same date_received, or carry more than one distinct (non-null) bank deposit. Guards against accidentally collapsing unrelated same-payer gifts (e.g. recurring donations) or two genuinely separate deposits into one. The client prompts the operator to confirm before sending this. */
   confirmMultiDate?: boolean;
+  /** Must be true when the members' combined total falls OUTSIDE the processor fee-band tolerance around the gift amount (e.g. stock/securities gifts, where the cash from selling the shares differs from the gift's booked value). Lets the operator explicitly approve a deliberate amount mismatch; without it such a group is rejected 400 amount_mismatch_confirmation_required. The client prompts the operator to confirm before sending this. */
+  confirmAmountMismatch?: boolean;
 }
 
 export interface GroupReconcileStagedPaymentsResponse {

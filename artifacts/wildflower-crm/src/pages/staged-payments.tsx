@@ -385,10 +385,13 @@ export default function StagedPayments() {
     new Set(groupRows.map((r) => r.dateReceived).filter((d): d is string => !!d)),
   ).sort();
   const groupHasUndatedRow = groupRows.some((r) => !r.dateReceived);
-  // Holds the gift id awaiting multi-date confirmation; non-null opens the dialog.
-  const [pendingMultiDateGiftId, setPendingMultiDateGiftId] = useState<
-    string | null
-  >(null);
+  // Holds the gift (id + amount) awaiting an explicit group confirmation:
+  // either the members span multiple dates/deposits, or the combined total
+  // falls outside the fee band. Non-null opens the confirm dialog.
+  const [pendingGroupGift, setPendingGroupGift] = useState<{
+    giftId: string;
+    giftAmount: string | null;
+  } | null>(null);
 
   const clearGroup = () => setGroupRows([]);
 
@@ -729,7 +732,7 @@ export default function StagedPayments() {
       onSuccess: () => {
         invalidateAll();
         clearGroup();
-        setPendingMultiDateGiftId(null);
+        setPendingGroupGift(null);
         selectGift(null, null);
         setSelectedStaged(null);
         toast({
@@ -860,20 +863,32 @@ export default function StagedPayments() {
   // enforced server-side, with a preview shown in the match bar.
   const giftAmtNum =
     selectedGiftAmount != null ? Number(selectedGiftAmount) : null;
-  const groupWithinBand =
-    giftAmtNum != null &&
-    !Number.isNaN(giftAmtNum) &&
-    giftAmtNum >= groupTotal - 0.01 &&
-    giftAmtNum <= groupTotal * 1.1 + 1;
+  // Combined member total must sit in the fee-band around the gift amount —
+  // the same band the server enforces. Reused for both the selected-gift
+  // preview and the per-row match action (which knows its own gift's amount).
+  const groupWithinBandFor = (amount: string | null | undefined) => {
+    const n = amount != null ? Number(amount) : null;
+    return (
+      n != null &&
+      !Number.isNaN(n) &&
+      n >= groupTotal - 0.01 &&
+      n <= groupTotal * 1.1 + 1
+    );
+  };
+  const groupWithinBand = groupWithinBandFor(selectedGiftAmount);
   const canGroupMatch =
     queue === "needs_review" && groupActive && !groupReconcile.isPending;
 
-  const groupMatchGift = (giftId: string) => {
+  const groupMatchGift = (
+    giftId: string,
+    giftAmount: string | null | undefined,
+  ) => {
     if (!groupActive) return;
-    // Groups that cross a date or deposit boundary need an explicit
-    // confirmation first; open the dialog instead of reconciling immediately.
-    if (groupNeedsConfirm) {
-      setPendingMultiDateGiftId(giftId);
+    // Groups that cross a date/deposit boundary, OR whose combined total falls
+    // outside the fee band, need an explicit operator confirmation first; open
+    // the dialog instead of reconciling immediately.
+    if (groupNeedsConfirm || !groupWithinBandFor(giftAmount)) {
+      setPendingGroupGift({ giftId, giftAmount: giftAmount ?? null });
       return;
     }
     groupReconcile.mutate({ data: { stagedPaymentIds: groupIds, giftId } });
@@ -881,20 +896,26 @@ export default function StagedPayments() {
 
   const doGroupMatch = () => {
     if (!selectedGiftId) return;
-    groupMatchGift(selectedGiftId);
+    groupMatchGift(selectedGiftId, selectedGiftAmount);
   };
 
-  // Operator confirmed grouping payments that span multiple dates.
-  const confirmMultiDateGroupMatch = () => {
-    if (!groupActive || !pendingMultiDateGiftId) return;
+  // Operator confirmed the group despite it spanning multiple dates/deposits
+  // and/or falling outside the fee band. Send both confirmation flags; the
+  // server only enforces whichever actually applies, so the extra is a no-op.
+  const confirmGroupMatch = () => {
+    if (!groupActive || !pendingGroupGift) return;
     groupReconcile.mutate({
       data: {
         stagedPaymentIds: groupIds,
-        giftId: pendingMultiDateGiftId,
+        giftId: pendingGroupGift.giftId,
         confirmMultiDate: true,
+        confirmAmountMismatch: true,
       },
     });
   };
+  const pendingMismatch =
+    pendingGroupGift != null &&
+    !groupWithinBandFor(pendingGroupGift.giftAmount);
 
   // ── Split derived state ──
   // Split mode is meaningful only with one pending payment selected in the
@@ -1401,52 +1422,67 @@ export default function StagedPayments() {
           different days could collapse unrelated gifts (e.g. recurring
           donations), so we require an explicit confirmation before sending. */}
       <Dialog
-        open={pendingMultiDateGiftId != null}
+        open={pendingGroupGift != null}
         onOpenChange={(open) => {
-          if (!open) setPendingMultiDateGiftId(null);
+          if (!open) setPendingGroupGift(null);
         }}
       >
         <DialogContent data-testid="group-multi-date-dialog">
           <DialogHeader>
-            <DialogTitle>Group payments across dates or deposits?</DialogTitle>
+            <DialogTitle>
+              {groupNeedsConfirm && pendingMismatch
+                ? "Group these payments anyway?"
+                : groupNeedsConfirm
+                  ? "Group payments across dates or deposits?"
+                  : "Group payments with a mismatched total?"}
+            </DialogTitle>
             <DialogDescription>
-              These {groupRows.length} payments aren't all on the same date or
-              bank deposit. Only group them if they're truly one gift (for
-              example a single wire or a series of stock sales split across days
-              and separate deposits).
+              {groupNeedsConfirm
+                ? `These ${groupRows.length} payments aren't all on the same date or bank deposit. Only group them if they're truly one gift (for example a single wire or a series of stock sales split across days and separate deposits).`
+                : `The combined total of these ${groupRows.length} payments doesn't match the selected gift within the usual fee tolerance. Only group them if they're truly this one gift (for example a stock or securities gift whose sale proceeds differ from its booked value).`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1 text-sm">
-            <div>
-              <span className="text-muted-foreground">Dates: </span>
-              {groupRealDates.length > 0
-                ? `${groupRealDates[0]} → ${
-                    groupRealDates[groupRealDates.length - 1]
-                  }${groupHasUndatedRow ? " (+ undated)" : ""}`
-                : "Undated"}
-            </div>
+            {groupNeedsConfirm ? (
+              <div>
+                <span className="text-muted-foreground">Dates: </span>
+                {groupRealDates.length > 0
+                  ? `${groupRealDates[0]} → ${
+                      groupRealDates[groupRealDates.length - 1]
+                    }${groupHasUndatedRow ? " (+ undated)" : ""}`
+                  : "Undated"}
+              </div>
+            ) : null}
             <div>
               <span className="text-muted-foreground">Combined total: </span>
               {formatAmount(String(groupTotal))}
             </div>
+            {pendingMismatch ? (
+              <div data-testid="group-amount-mismatch-detail">
+                <span className="text-muted-foreground">Selected gift: </span>
+                {formatAmount(pendingGroupGift?.giftAmount ?? null)}
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button
               variant="ghost"
-              onClick={() => setPendingMultiDateGiftId(null)}
+              onClick={() => setPendingGroupGift(null)}
               disabled={groupReconcile.isPending}
               data-testid="group-multi-date-cancel"
             >
               Cancel
             </Button>
             <Button
-              onClick={confirmMultiDateGroupMatch}
+              onClick={confirmGroupMatch}
               disabled={groupReconcile.isPending}
               data-testid="group-multi-date-confirm"
             >
               {groupReconcile.isPending
                 ? "Matching…"
-                : "Group across dates"}
+                : pendingMismatch && !groupNeedsConfirm
+                  ? "Group anyway"
+                  : "Group across dates"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2074,7 +2110,7 @@ function GiftsPanel({
   unmatching: boolean;
   groupActive: boolean;
   groupSize: number;
-  onMatchGroup: (giftId: string) => void;
+  onMatchGroup: (giftId: string, giftAmount: string | null | undefined) => void;
   groupMatching: boolean;
   splitActive: boolean;
   splitGiftIds: string[];
@@ -2301,7 +2337,7 @@ function GiftRow({
   unmatching: boolean;
   groupActive: boolean;
   groupSize: number;
-  onMatchGroup: (giftId: string) => void;
+  onMatchGroup: (giftId: string, giftAmount: string | null | undefined) => void;
   groupMatching: boolean;
   splitActive: boolean;
   splitChecked: boolean;
@@ -2377,7 +2413,7 @@ function GiftRow({
           ) : groupActive ? (
             <Button
               size="sm"
-              onClick={() => onMatchGroup(gift.id)}
+              onClick={() => onMatchGroup(gift.id, gift.amount)}
               disabled={groupMatching}
               data-testid={`gift-match-group-${gift.id}`}
               title="Reconcile the whole payment group to this gift."

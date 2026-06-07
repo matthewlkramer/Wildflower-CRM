@@ -31,7 +31,25 @@ the members span >1 distinct `date_received` **OR** >1 distinct non-null
 `qbDepositId`, and `confirmMultiDate !== true`. A single shared deposit + single
 date never prompts. The client detects the span and opens a confirm dialog, then
 resends `confirmMultiDate:true`. (Flag name kept as `confirmMultiDate` though it
-now also covers the multi-deposit case — no spec change.)
+now also covers the multi-deposit case.)
+
+**Amount-mismatch gate (SEPARATE human confirmation — do NOT widen the band):**
+the fee band is asymmetric on purpose — deposits may land slightly BELOW the gift
+(processor fees) but essentially never above (`giftAmt >= sum-0.01 && giftAmt <=
+sum*1.1+1`). Appreciated-stock/securities gifts break this: shares are booked at
+one value but SELL for more, so combined proceeds exceed the recorded gift (real
+case: Arthur Rock FY18 booked $1,000,000, 5 sales settled at $1,012,780.49 ≈
++1.3%). The user explicitly chose an operator override over widening the band.
+So when the combined total is OUTSIDE the band the server returns a DISTINCT
+`400 amount_mismatch_confirmation_required` (was `amount_mismatch`) unless
+`confirmAmountMismatch === true`, which fully bypasses the band check. Tight band
+stays the automatic default. The two confirm flags are independent and the server
+only enforces whichever applies, so the client sends BOTH `confirmMultiDate:true`
++ `confirmAmountMismatch:true` on the single explicit confirm (harmless extras).
+Client `groupWithinBandFor(amount)` must use the SAME band and the per-row match
+must pass the row's own gift amount (not just the selected gift) so the dialog
+opens for any gift. The single-row + split reconcile paths keep the old strict
+`amount_mismatch` (no override) — only the group flow has the confirm.
 
 **Lockstep invariants** (client `groupKeyOf`/`groupNeedsConfirm` ↔ server guard —
 the server is the real boundary, a direct API call must not bypass):
