@@ -14,6 +14,8 @@ import {
   useUnmatchStagedPayment,
   useRunQuickbooksSync,
   useResyncQuickbooksFull,
+  useGetQuickbooksResyncStatus,
+  getGetQuickbooksResyncStatusQueryKey,
   useRematchStagedPayments,
   useReclassifyStagedPayments,
   useGetCurrentUser,
@@ -361,6 +363,10 @@ export default function StagedPayments() {
   // Create-gift dialog.
   const [createOpen, setCreateOpen] = useState(false);
 
+  // Background full re-pull: the POST returns immediately and we poll
+  // /quickbooks/resync-status until the (multi-minute) job finishes.
+  const [resyncPolling, setResyncPolling] = useState(false);
+
   const listParams = {
     queue,
     sort,
@@ -475,23 +481,84 @@ export default function StagedPayments() {
   const resyncFull = useResyncQuickbooksFull({
     mutation: {
       onSuccess: (data) => {
-        invalidateAll();
-        qc.invalidateQueries({ queryKey: getGetQuickbooksOauthStatusQueryKey() });
-        toast({
-          title: data.ran ? "Re-pull complete" : "Re-pull skipped",
-          description: data.ran
-            ? `Re-pulled ${data.pulled} QuickBooks records; refreshed capture fields on all staged rows (review state preserved).`
-            : "A sync was already in progress.",
-        });
+        if (data.status === "running") {
+          setResyncPolling(true);
+          toast({
+            title: "Re-pull started",
+            description:
+              "Pulling the full QuickBooks back-catalog in the background. This can take a few minutes — you can keep working; we'll refresh when it finishes.",
+          });
+        } else if (data.status === "done") {
+          invalidateAll();
+          qc.invalidateQueries({
+            queryKey: getGetQuickbooksOauthStatusQueryKey(),
+          });
+          toast({
+            title: "Re-pull complete",
+            description: data.summary
+              ? `Re-pulled ${data.summary.pulled} QuickBooks records; refreshed capture fields on all staged rows (review state preserved).`
+              : "Re-pull finished.",
+          });
+        }
       },
       onError: (e: unknown) =>
         toast({
-          title: "Re-pull failed",
+          title: "Couldn't start re-pull",
           description: e instanceof Error ? e.message : "Unknown error",
           variant: "destructive",
         }),
     },
   });
+
+  // Poll the background re-pull's status while it runs. The query fetches once
+  // on mount (so a re-pull started elsewhere / before a reload is picked up) and
+  // then every 3s only while the server reports "running".
+  const resyncStatusQ = useGetQuickbooksResyncStatus({
+    query: {
+      queryKey: getGetQuickbooksResyncStatusQueryKey(),
+      enabled: isAdmin,
+      refetchInterval: (query) =>
+        query.state.data?.status === "running" ? 3000 : false,
+    },
+  });
+  const resyncStatus = resyncStatusQ.data?.status;
+  useEffect(() => {
+    const data = resyncStatusQ.data;
+    if (!data) return;
+    // Adopt an in-flight run we didn't start in this tab (reload / other admin).
+    if (data.status === "running") {
+      if (!resyncPolling) setResyncPolling(true);
+      return;
+    }
+    if (!resyncPolling) return;
+    if (data.status === "done") {
+      setResyncPolling(false);
+      invalidateAll();
+      qc.invalidateQueries({
+        queryKey: getGetQuickbooksOauthStatusQueryKey(),
+      });
+      toast({
+        title: "Re-pull complete",
+        description: data.summary
+          ? `Re-pulled ${data.summary.pulled} QuickBooks records; refreshed capture fields on all staged rows (review state preserved).`
+          : "Re-pull finished.",
+      });
+    } else if (data.status === "error") {
+      setResyncPolling(false);
+      toast({
+        title: "Re-pull failed",
+        description: data.error ?? "Unknown error",
+        variant: "destructive",
+      });
+    } else if (data.status === "idle") {
+      // Process restarted mid-run, or nothing is running — stop quietly.
+      setResyncPolling(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resyncStatusQ.data]);
+
+  // True while either the start request is in flight or the background job runs.
+  const resyncBusy = resyncFull.isPending || resyncPolling || resyncStatus === "running";
 
   const rematch = useRematchStagedPayments({
     mutation: {
@@ -739,7 +806,7 @@ export default function StagedPayments() {
                 rematch.isPending ||
                 syncNow.isPending ||
                 reclassify.isPending ||
-                resyncFull.isPending
+                resyncBusy
               }
               data-testid="staged-rematch"
               title="Re-run donor auto-match over still-unmatched rows. Never overwrites a match you've already made."
@@ -750,15 +817,15 @@ export default function StagedPayments() {
               variant="outline"
               onClick={() => resyncFull.mutate()}
               disabled={
-                resyncFull.isPending ||
+                resyncBusy ||
                 syncNow.isPending ||
                 rematch.isPending ||
                 reclassify.isPending
               }
               data-testid="staged-resync-full"
-              title="Non-destructive full re-pull from QuickBooks. Refreshes the captured QB fields (payer type, payment method, raw data, …) on every staged row. Never changes status, donor match, or exclusions."
+              title="Non-destructive full re-pull from QuickBooks. Runs in the background (a few minutes) and refreshes the captured QB fields (payer type, payment method, raw data, …) on every staged row. Never changes status, donor match, or exclusions."
             >
-              {resyncFull.isPending ? "Re-pulling…" : "Re-pull all fields"}
+              {resyncBusy ? "Re-pulling…" : "Re-pull all fields"}
             </Button>
             <Button
               onClick={() => syncNow.mutate()}
@@ -766,7 +833,7 @@ export default function StagedPayments() {
                 syncNow.isPending ||
                 rematch.isPending ||
                 reclassify.isPending ||
-                resyncFull.isPending
+                resyncBusy
               }
               data-testid="staged-sync-now"
             >

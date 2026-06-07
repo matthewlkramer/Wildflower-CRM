@@ -84,3 +84,9 @@ id = "7iR5Vc2OcvwyTmJBxSjf6"
 uri = "file://.local/sync-review/dev-sync-changes-CORRECTED.csv"
 type = "table"
 title = "CORRECTED changes (77 'about' reverts removed)"
+
+[[outputs]]
+id = "RK5DHgypyXx3dQdeF-AUy"
+uri = "file://.local/exports/pending-qb-match-worklist.csv"
+type = "table"
+title = "Pending QuickBooks payments — match worklist (271 rows)"

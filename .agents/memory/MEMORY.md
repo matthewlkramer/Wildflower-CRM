@@ -45,4 +45,5 @@
 - [Vite build-time env gating](vite-build-env-gating.md) — artifact vite.config must validate PORT/BASE_PATH only in `command==="serve"`; root build builds ALL artifacts (incl. non-deployed design ones), so build-time throws crash the deploy.
 - [QuickBooks deposit grouping](quickbooks-deposit-grouping.md) — manual group of staged payments sharing one bank deposit→one gift; representative gets matched_gift_id, all get group_reconciled_gift_id; qb_deposit_id preserve-on-conflict.
 - [api-server HTTP integration tests](api-server-http-integration-tests.md) — DB-backed route test pattern: mock requireAuth, boot app.listen(0)+fetch, raise hook timeouts, skipIf no real DB; suite is otherwise DB-free.
+- [QB full re-pull is background+polled](quickbooks-resync-background.md) — ~4min job exceeds proxy timeout→false "failed"; fire-and-forget + in-memory state + GET resync-status poll, advisory lock is the real guard.
 - [QuickBooks non-destructive full re-pull](quickbooks-nondestructive-repull.md) — backfill new qb_* capture cols via fullResync+enrichAllStatuses (drops status setWhere) NOT 0024 wipe; set must stay read-only QB facts; qb_raw excluded from select+spec.

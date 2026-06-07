@@ -182,6 +182,7 @@ import type {
   QuickbooksOauthStatus,
   QuickbooksReclassifySummary,
   QuickbooksRematchSummary,
+  QuickbooksResyncStatus,
   QuickbooksSyncSummary,
   ReconcileStagedPaymentBody,
   RefreshTaskProposalBody,
@@ -13157,7 +13158,7 @@ export const useRunQuickbooksSync = <
 };
 
 /**
- * @summary Non-destructive full re-pull that re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state.
+ * @summary Start a non-destructive full re-pull in the background (returns immediately). Re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state. Poll /quickbooks/resync-status for progress.
  */
 export const getResyncQuickbooksFullUrl = () => {
   return `/api/quickbooks/resync-full`;
@@ -13165,15 +13166,15 @@ export const getResyncQuickbooksFullUrl = () => {
 
 export const resyncQuickbooksFull = async (
   options?: RequestInit,
-): Promise<QuickbooksSyncSummary> => {
-  return customFetch<QuickbooksSyncSummary>(getResyncQuickbooksFullUrl(), {
+): Promise<QuickbooksResyncStatus> => {
+  return customFetch<QuickbooksResyncStatus>(getResyncQuickbooksFullUrl(), {
     ...options,
     method: "POST",
   });
 };
 
 export const getResyncQuickbooksFullMutationOptions = <
-  TError = ErrorType<ForbiddenResponse | void>,
+  TError = ErrorType<ForbiddenResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -13212,14 +13213,13 @@ export type ResyncQuickbooksFullMutationResult = NonNullable<
   Awaited<ReturnType<typeof resyncQuickbooksFull>>
 >;
 
-export type ResyncQuickbooksFullMutationError =
-  ErrorType<ForbiddenResponse | void>;
+export type ResyncQuickbooksFullMutationError = ErrorType<ForbiddenResponse>;
 
 /**
- * @summary Non-destructive full re-pull that re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state.
+ * @summary Start a non-destructive full re-pull in the background (returns immediately). Re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state. Poll /quickbooks/resync-status for progress.
  */
 export const useResyncQuickbooksFull = <
-  TError = ErrorType<ForbiddenResponse | void>,
+  TError = ErrorType<ForbiddenResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -13237,6 +13237,85 @@ export const useResyncQuickbooksFull = <
 > => {
   return useMutation(getResyncQuickbooksFullMutationOptions(options));
 };
+
+/**
+ * @summary Poll the state of the background full re-pull started by /quickbooks/resync-full.
+ */
+export const getGetQuickbooksResyncStatusUrl = () => {
+  return `/api/quickbooks/resync-status`;
+};
+
+export const getQuickbooksResyncStatus = async (
+  options?: RequestInit,
+): Promise<QuickbooksResyncStatus> => {
+  return customFetch<QuickbooksResyncStatus>(
+    getGetQuickbooksResyncStatusUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetQuickbooksResyncStatusQueryKey = () => {
+  return [`/api/quickbooks/resync-status`] as const;
+};
+
+export const getGetQuickbooksResyncStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getQuickbooksResyncStatus>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getQuickbooksResyncStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetQuickbooksResyncStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getQuickbooksResyncStatus>>
+  > = ({ signal }) => getQuickbooksResyncStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getQuickbooksResyncStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetQuickbooksResyncStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getQuickbooksResyncStatus>>
+>;
+export type GetQuickbooksResyncStatusQueryError = ErrorType<ForbiddenResponse>;
+
+/**
+ * @summary Poll the state of the background full re-pull started by /quickbooks/resync-full.
+ */
+
+export function useGetQuickbooksResyncStatus<
+  TData = Awaited<ReturnType<typeof getQuickbooksResyncStatus>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getQuickbooksResyncStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetQuickbooksResyncStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Re-run donor auto-match over still-unmatched pending staged payments (additive, never overwrites a human match).

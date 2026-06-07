@@ -43,6 +43,8 @@ import { buildGiftValuesFromStaged } from "../lib/quickbooksGift";
 import { logger } from "../lib/logger";
 import {
   syncQuickbooks,
+  startFullResync,
+  getFullResyncState,
   rematchStagedPayments,
   reclassifyStagedPayments,
 } from "../lib/quickbooksSync";
@@ -1469,20 +1471,25 @@ router.post(
   "/quickbooks/resync-full",
   asyncHandler(async (req, res) => {
     if (!requireAdmin(req, res)) return;
-    try {
-      const summary = await syncQuickbooks({ fullResync: true });
-      req.log.info(
-        { ran: summary.ran, pulled: summary.pulled, staged: summary.staged },
-        "QuickBooks full re-pull (field enrichment) run",
-      );
-      res.json(summary);
-    } catch (e) {
-      logger.error({ err: e }, "QuickBooks full re-pull failed");
-      res.status(502).json({
-        error: "resync_failed",
-        message: e instanceof Error ? e.message : "QuickBooks full re-pull failed",
-      });
-    }
+    // Kick off the (multi-minute) re-pull in the background and return the
+    // current state immediately — the browser/proxy would otherwise time out
+    // long before the job finishes. The UI polls GET /quickbooks/resync-status.
+    const state = startFullResync();
+    req.log.info(
+      { status: state.status },
+      "QuickBooks full re-pull (background) requested",
+    );
+    res.json(state);
+  }),
+);
+
+// ─── GET /quickbooks/resync-status ─────────────────────────────────────────
+// Admin-gated progress for the background full re-pull started above.
+router.get(
+  "/quickbooks/resync-status",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json(getFullResyncState());
   }),
 );
 

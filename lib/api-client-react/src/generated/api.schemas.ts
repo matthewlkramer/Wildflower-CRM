@@ -1771,6 +1771,30 @@ export interface QuickbooksSyncSummary {
   autoApplied: number;
 }
 
+/**
+ * Lifecycle of the background full re-pull. 'idle' = none has run since boot; 'running' = in progress; 'done'/'error' = last run outcome.
+ */
+export type QuickbooksResyncStatusStatus =
+  (typeof QuickbooksResyncStatusStatus)[keyof typeof QuickbooksResyncStatusStatus];
+
+export const QuickbooksResyncStatusStatus = {
+  idle: "idle",
+  running: "running",
+  done: "done",
+  error: "error",
+} as const;
+
+export interface QuickbooksResyncStatus {
+  /** Lifecycle of the background full re-pull. 'idle' = none has run since boot; 'running' = in progress; 'done'/'error' = last run outcome. */
+  status: QuickbooksResyncStatusStatus;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** Result of the last completed run (null while running / before any run). */
+  summary: QuickbooksSyncSummary | null;
+  /** Error message when status is 'error'. */
+  error: string | null;
+}
+
 export interface QuickbooksRematchSummary {
   /** False when the rematch was skipped (a sync/rematch was already running). */
   ran: boolean;

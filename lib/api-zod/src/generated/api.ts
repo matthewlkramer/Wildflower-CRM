@@ -6865,20 +6865,73 @@ export const RunQuickbooksSyncResponse = zod.object({
 });
 
 /**
- * @summary Non-destructive full re-pull that re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state.
+ * @summary Start a non-destructive full re-pull in the background (returns immediately). Re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state. Poll /quickbooks/resync-status for progress.
  */
 export const ResyncQuickbooksFullResponse = zod.object({
-  ran: zod
-    .boolean()
-    .describe("False when the sync was skipped (lock contended)."),
-  pulled: zod.number(),
-  staged: zod.number(),
-  matched: zod.number(),
-  autoApplied: zod
-    .number()
+  status: zod
+    .enum(["idle", "running", "done", "error"])
     .describe(
-      "Newly-staged rows auto-reconciled or auto-minted at high confidence.",
+      "Lifecycle of the background full re-pull. 'idle' = none has run since boot; 'running' = in progress; 'done'\/'error' = last run outcome.",
     ),
+  startedAt: zod.string().datetime({}).nullable(),
+  finishedAt: zod.string().datetime({}).nullable(),
+  summary: zod
+    .object({
+      ran: zod
+        .boolean()
+        .describe("False when the sync was skipped (lock contended)."),
+      pulled: zod.number(),
+      staged: zod.number(),
+      matched: zod.number(),
+      autoApplied: zod
+        .number()
+        .describe(
+          "Newly-staged rows auto-reconciled or auto-minted at high confidence.",
+        ),
+    })
+    .nullable()
+    .describe(
+      "Result of the last completed run (null while running \/ before any run).",
+    ),
+  error: zod
+    .string()
+    .nullable()
+    .describe("Error message when status is 'error'."),
+});
+
+/**
+ * @summary Poll the state of the background full re-pull started by /quickbooks/resync-full.
+ */
+export const GetQuickbooksResyncStatusResponse = zod.object({
+  status: zod
+    .enum(["idle", "running", "done", "error"])
+    .describe(
+      "Lifecycle of the background full re-pull. 'idle' = none has run since boot; 'running' = in progress; 'done'\/'error' = last run outcome.",
+    ),
+  startedAt: zod.string().datetime({}).nullable(),
+  finishedAt: zod.string().datetime({}).nullable(),
+  summary: zod
+    .object({
+      ran: zod
+        .boolean()
+        .describe("False when the sync was skipped (lock contended)."),
+      pulled: zod.number(),
+      staged: zod.number(),
+      matched: zod.number(),
+      autoApplied: zod
+        .number()
+        .describe(
+          "Newly-staged rows auto-reconciled or auto-minted at high confidence.",
+        ),
+    })
+    .nullable()
+    .describe(
+      "Result of the last completed run (null while running \/ before any run).",
+    ),
+  error: zod
+    .string()
+    .nullable()
+    .describe("Error message when status is 'error'."),
 });
 
 /**

@@ -138,6 +138,83 @@ export interface QuickbooksSyncSummary {
   autoApplied: number;
 }
 
+// ─── Background full re-pull state ─────────────────────────────────────────
+// A full re-pull walks the entire QuickBooks back-catalog and can take several
+// minutes — far longer than a browser/proxy will wait on a single request. So
+// the route kicks it off in the background (fire-and-forget) and the UI polls
+// `getFullResyncState()` for progress. The state is process-local: QuickBooks is
+// a single shared company connection, and the concurrency guard is the advisory
+// lock inside `syncQuickbooks`; this flag only drives the UI. If the process
+// restarts mid-run the state resets to "idle" and the poller stops cleanly.
+export type FullResyncStatus = "idle" | "running" | "done" | "error";
+
+export interface FullResyncState {
+  status: FullResyncStatus;
+  startedAt: string | null;
+  finishedAt: string | null;
+  summary: QuickbooksSyncSummary | null;
+  error: string | null;
+}
+
+let fullResyncState: FullResyncState = {
+  status: "idle",
+  startedAt: null,
+  finishedAt: null,
+  summary: null,
+  error: null,
+};
+
+export function getFullResyncState(): FullResyncState {
+  return fullResyncState;
+}
+
+/**
+ * Start a full re-pull in the background and return the current state
+ * immediately. If one is already running this is a no-op that returns the
+ * in-progress state (the advisory lock is the real guard against concurrent
+ * QuickBooks pulls; this only keeps the UI from launching a second poller).
+ */
+export function startFullResync(): FullResyncState {
+  if (fullResyncState.status === "running") return fullResyncState;
+
+  const startedAt = new Date().toISOString();
+  fullResyncState = {
+    status: "running",
+    startedAt,
+    finishedAt: null,
+    summary: null,
+    error: null,
+  };
+
+  void (async () => {
+    try {
+      const summary = await syncQuickbooks({ fullResync: true });
+      fullResyncState = {
+        status: "done",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        summary,
+        error: null,
+      };
+      logger.info(
+        { pulled: summary.pulled, staged: summary.staged },
+        "QuickBooks full re-pull (background) complete",
+      );
+    } catch (e) {
+      fullResyncState = {
+        status: "error",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        summary: null,
+        error: e instanceof Error ? e.message : "QuickBooks full re-pull failed",
+      };
+      logger.error({ err: e }, "QuickBooks full re-pull (background) failed");
+    }
+  })();
+
+  return fullResyncState;
+}
+
 export async function syncQuickbooks(
   opts: { fullResync?: boolean } = {},
 ): Promise<QuickbooksSyncSummary> {

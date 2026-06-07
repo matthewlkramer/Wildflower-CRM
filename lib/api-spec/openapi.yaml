@@ -1802,11 +1802,19 @@ paths:
     post:
       operationId: resyncQuickbooksFull
       tags: [quickbooks-sync]
-      summary: Non-destructive full re-pull that re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state.
+      summary: Start a non-destructive full re-pull in the background (returns immediately). Re-enriches every staged row with the extended QuickBooks capture fields, preserving all review state. Poll /quickbooks/resync-status for progress.
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickbooksSyncSummary" } } } }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickbooksResyncStatus" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "502": { description: "QuickBooks full re-pull failed" }
+
+  /quickbooks/resync-status:
+    get:
+      operationId: getQuickbooksResyncStatus
+      tags: [quickbooks-sync]
+      summary: Poll the state of the background full re-pull started by /quickbooks/resync-full.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickbooksResyncStatus" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /quickbooks/rematch:
     post:
@@ -3717,6 +3725,21 @@ components:
         staged:      { type: integer }
         matched:     { type: integer }
         autoApplied: { type: integer, description: "Newly-staged rows auto-reconciled or auto-minted at high confidence." }
+    QuickbooksResyncStatus:
+      type: object
+      required: [status, startedAt, finishedAt, summary, error]
+      properties:
+        status:
+          type: string
+          enum: [idle, running, done, error]
+          description: "Lifecycle of the background full re-pull. 'idle' = none has run since boot; 'running' = in progress; 'done'/'error' = last run outcome."
+        startedAt:  { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        summary:
+          oneOf: [ { $ref: "#/components/schemas/QuickbooksSyncSummary" } ]
+          nullable: true
+          description: "Result of the last completed run (null while running / before any run)."
+        error:      { type: string, nullable: true, description: "Error message when status is 'error'." }
     QuickbooksRematchSummary:
       type: object
       required: [ran, scanned, matched]
