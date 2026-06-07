@@ -9,32 +9,42 @@ Fundraisers MANUALLY group several QB staged payments and match the group to ONE
 existing CRM gift. Fee-band gated (combined member total ≈ gift amount),
 reversible, idempotent under re-sync. No auto-grouping, no mint, no QB writeback.
 
-## Grouping key (deposit OR payer; date NOT in the key)
-A group is coherent when members share ONE grouping key:
-- `dep:<qbDepositId>` when a deposit was captured, OR
-- `payer:<payer>` (trimmed+lowercased, non-empty) — used ONLY when **every**
-  member has a null `qbDepositId`. **Date is NOT part of the key** (a single
-  wire, or a series of stock sales, can span several days — e.g. Arthur Rock
-  2018-05-22 → 06-15 = one $1M gift).
+## Grouping key (payer-first; deposit fallback; neither date nor deposit in key)
+A group is coherent when members share ONE grouping key, payer preferred:
+- `payer:<payer>` (trimmed+lowercased, non-empty) — used whenever a payer is
+  present, **even when members carry DIFFERENT `qbDepositId`s**, OR
+- `dep:<qbDepositId>` when no payer was captured.
+**Neither the date NOR the deposit is part of the key** — a series of stock
+sales is one gift even though EACH sale settles as its OWN deposit over several
+days (e.g. Arthur Rock 2018-05-22 → 06-15, 5 distinct deposits = one ~$1M gift).
 
-**Why:** many real rows (Wend, Walton, Chan Zuckerberg, Arthur Rock, Howley) are
-one gift split across several QB records with NO captured deposit; gating on
-same-day blocked the multi-day stock-sale cases.
+**Why payer-first / cross-deposit:** real stock-sale gifts (Arthur Rock, etc.)
+land as one bank deposit PER sale, so the old `allDepositNull`-gated payer
+fallback never engaged and the operator literally could not group them. Grouping
+reconciles to ONE gift with ONE donor, so payer is the correct coherence signal;
+deposit is only the fallback for unnamed-payer line items.
 
-**Cross-date confirmation gate:** because payer-only grouping could collapse
-unrelated same-payer gifts (recurring donations), the server throws
-`400 multi_date_confirmation_required` when the members span >1 distinct
-`date_received` and the body's `confirmMultiDate !== true`. The client detects
-the span and opens a confirm dialog, then resends with `confirmMultiDate:true`.
+**Confirmation gate (date OR deposit boundary):** because payer grouping could
+collapse unrelated same-payer gifts (recurring donations) or two genuinely
+separate deposits, the server throws `400 multi_date_confirmation_required` when
+the members span >1 distinct `date_received` **OR** >1 distinct non-null
+`qbDepositId`, and `confirmMultiDate !== true`. A single shared deposit + single
+date never prompts. The client detects the span and opens a confirm dialog, then
+resends `confirmMultiDate:true`. (Flag name kept as `confirmMultiDate` though it
+now also covers the multi-deposit case — no spec change.)
 
-**Lockstep invariants** (client `groupKeyOf`/`groupSpansMultipleDates` ↔ server
-guard — the server is the real boundary, a direct API call must not bypass):
-- payer fallback gated on `allDepositNull` on BOTH sides (else different known
-  deposits could be force-grouped by shared payer).
-- multi-date detection must count `null` date as its OWN distinct bucket on
-  BOTH sides (`new Set(map(r => r.dateReceived ?? null)).size > 1`). If the
-  client drops nulls (e.g. `filter(Boolean)`) it diverges: a mixed null+real
-  group opens no dialog yet the server always 400s → operator stranded.
+**Lockstep invariants** (client `groupKeyOf`/`groupNeedsConfirm` ↔ server guard —
+the server is the real boundary, a direct API call must not bypass):
+- BOTH sides compute ONE per-row key (`payer:<payer>` if present else
+  `dep:<qbDepositId>` else null) and require all members to share one non-null
+  key. Do NOT regress the server to `sameDeposit || samePayer` OR-logic — that
+  accepts groups the UI can't assemble (one deposit batching different payers)
+  and would let a raw API call collapse two different donors who share a deposit.
+- confirm trigger = multi-date OR multi-deposit on BOTH sides; date detection
+  counts `null` date as its OWN distinct bucket
+  (`new Set(map(r => r.dateReceived ?? null)).size > 1`); deposit detection
+  counts only non-null ids (`...filter(d => d != null)).size > 1`). Divergence
+  strands the operator (dialog never opens yet server 400s, or vice-versa).
 All other gates (pending-only, fee-band tolerance, gift single-donor XOR,
 gift-not-already-linked, partial-unique index) are unchanged.
 

@@ -1072,13 +1072,14 @@ router.post(
 // Manually group several staged payments into a single unit and reconcile the
 // GROUP to ONE existing CRM gift (which typically carries multiple allocations).
 // Members must form one coherent group: either they share ONE underlying bank
-// Deposit (qbDepositId), or — when no deposit was captured — they share the same
-// payer name (a single wire, or a series of stock sales, split across several QB
-// records, possibly over several days). No new gift is minted and QuickBooks is
-// never written back. Guards: at least two rows; every row pending and not
-// already resolved; all rows share one grouping key (deposit, or payer); when
-// the rows span more than one date_received the caller must pass
-// confirmMultiDate; the gift exists with a single valid donor and is not
+// Deposit (qbDepositId), or they share the same payer name (a single wire, or a
+// series of stock sales, split across several QB records — each often settling
+// as its OWN bank deposit over several days). No new gift is minted and
+// QuickBooks is never written back. Guards: at least two rows; every row pending
+// and not already resolved; all rows share one grouping key (deposit, or payer);
+// when the rows span more than one date_received OR more than one distinct
+// deposit the caller must pass confirmMultiDate; the gift exists with a single
+// valid donor and is not
 // already linked to any other staged row; the members' combined total sits in
 // the fee-band tolerance around the gift amount. On success EVERY member gets
 // groupReconciledGiftId = the gift; exactly one deterministic "representative"
@@ -1183,39 +1184,43 @@ router.post(
           }
         }
 
-        // Members must form one coherent group: either they all share exactly
-        // one non-null bank deposit, OR — when no deposit was captured — they
-        // all share the same payer name (a single wire, or a series of stock
-        // sales, split across several QuickBooks records, possibly over several
-        // days). Never group across deposits, and never group rows that share
-        // neither key.
-        const depositIds = new Set(locked.map((r) => r.qbDepositId));
-        const sameDeposit =
-          depositIds.size === 1 && locked[0].qbDepositId != null;
-        // The payer fallback applies ONLY when NO member has a captured deposit
-        // — otherwise two records from different known deposits could be
-        // force-grouped just because the payer coincides. This mirrors the
-        // client groupKeyOf(), which uses the payer key only when qbDepositId is
-        // absent. The date is intentionally NOT part of the key (same-payer rows
-        // can span days); cross-date grouping is instead gated by an explicit
-        // confirmMultiDate acknowledgement below.
-        const allDepositNull = locked.every((r) => r.qbDepositId == null);
-        const payerKeys = new Set(
-          locked.map((r) => (r.payerName ?? "").trim().toLowerCase()),
-        );
-        const samePayer =
-          allDepositNull && payerKeys.size === 1 && !payerKeys.has("");
-        if (!sameDeposit && !samePayer) {
+        // Compute ONE coherence key per row, identical to the client's
+        // groupKeyOf(): prefer the payer (a single wire, or a series of stock
+        // sales, split across several QB records — each often settling as its
+        // OWN bank deposit over several days, e.g. Arthur Rock 2018-05-22 →
+        // 06-15 = 5 deposits, one gift); fall back to the bank deposit only when
+        // no payer was captured. The group is coherent iff every member resolves
+        // to the SAME non-null key. Keeping this in lockstep with the client is
+        // essential — the client disables selection across differing keys, so a
+        // server rule that merely required "shared deposit OR shared payer" would
+        // accept groups (e.g. one deposit batching DIFFERENT payers) that the UI
+        // can never assemble, and — worse — would let a direct API call collapse
+        // two different donors who happen to share a deposit into one gift.
+        const keyOf = (r: (typeof locked)[number]): string | null => {
+          const payer = (r.payerName ?? "").trim().toLowerCase();
+          if (payer) return `payer:${payer}`;
+          if (r.qbDepositId) return `dep:${r.qbDepositId}`;
+          return null;
+        };
+        const groupKeys = new Set(locked.map(keyOf));
+        if (groupKeys.size !== 1 || groupKeys.has(null)) {
           throw new Error(NOT_GROUPABLE);
         }
 
-        // Grouping payments from different days risks collapsing unrelated
-        // same-payer gifts (e.g. recurring monthly donations) into one. Require
-        // the operator to have explicitly confirmed (confirmMultiDate) whenever
-        // the members don't all share one date_received. The client surfaces a
-        // confirm dialog before sending the flag; this is the server-side guard.
+        // Grouping payments that cross a date OR deposit boundary risks
+        // collapsing unrelated same-payer gifts (e.g. recurring monthly
+        // donations, or two genuinely separate deposits that merely share a
+        // payer) into one. Require the operator to have explicitly confirmed
+        // (confirmMultiDate) whenever the members don't all share one
+        // date_received, or carry more than one distinct (non-null) deposit id.
+        // A single shared deposit never needs confirmation. The client surfaces
+        // a confirm dialog before sending the flag; this is the server boundary.
         const dateKeys = new Set(locked.map((r) => r.dateReceived));
-        if (dateKeys.size > 1 && !confirmMultiDate) {
+        const distinctDeposits = new Set(
+          locked.map((r) => r.qbDepositId).filter((d) => d != null),
+        );
+        const needsConfirm = dateKeys.size > 1 || distinctDeposits.size > 1;
+        if (needsConfirm && !confirmMultiDate) {
           throw new Error(MULTI_DATE);
         }
 
@@ -1320,7 +1325,7 @@ router.post(
         res.status(400).json({
           error: "multi_date_confirmation_required",
           message:
-            "These payments are on different dates. Confirm you want to group them into a single gift.",
+            "These payments are on different dates or bank deposits. Confirm you want to group them into a single gift.",
         });
         return;
       }

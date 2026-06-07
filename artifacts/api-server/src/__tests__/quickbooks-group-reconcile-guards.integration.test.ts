@@ -17,10 +17,10 @@ import type { Server } from "node:http";
  * the happy path + revert). This file asserts the route's grouping-key +
  * rejection paths each return the right status/error AND (for rejections) leave
  * every row untouched:
- *   - DIFFERENT bank deposits                          → 400 not_groupable
+ *   - DIFFERENT deposits, NO/empty payer               → 400 not_groupable
  *   - no deposit AND different payer                   → 400 not_groupable
  *   - no deposit, SAME payer + date                    → 200, reconciled
- *   - same payer+date but DIFFERENT non-null deposits  → 400 not_groupable
+ *   - same payer+date but DIFFERENT non-null deposits  → confirm gate, then 200
  *   - same payer, DIFFERENT dates, no confirm flag     → 400 multi_date_confirmation_required
  *   - same payer, DIFFERENT dates, confirmMultiDate    → 200, reconciled
  *   - same payer, one real + one null date (mixed)     → multi-date gate applies
@@ -304,10 +304,13 @@ describe.skipIf(!HAS_DB)(
       expect(b.matchedGiftId).toBeNull();
     }, 30_000);
 
-    it("rejects same payer + date but DIFFERENT non-null deposits with 400 not_groupable and changes nothing", async () => {
-      // The critical guard: the payer+date fallback must apply ONLY when no
-      // member has a captured deposit. Two records from different known deposits
-      // must never be force-grouped just because payer and date coincide.
+    it("gates same payer + date but DIFFERENT non-null deposits behind confirmMultiDate, then reconciles", async () => {
+      // Real stock-sale gifts settle as one bank deposit per sale, so the same
+      // payer legitimately spans multiple distinct deposits. Grouping is allowed
+      // but — because crossing a deposit boundary could collapse two genuinely
+      // separate same-payer gifts — it requires the operator's explicit
+      // confirmation first (same gate as the multi-date case), even when the
+      // dates coincide.
       const giftId = await seedGift("100.00");
       const aId = await seedStaged(giftId, "a", "50.00", {
         depositId: `${RUN}_depX`,
@@ -320,16 +323,68 @@ describe.skipIf(!HAS_DB)(
         dateReceived: "2025-01-01",
       });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const blocked = await api("/api/staged-payments/group-reconcile", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
-
-      expect(res.status).toBe(400);
-      expect(res.json.error).toBe("not_groupable");
-
+      expect(blocked.status).toBe(400);
+      expect(blocked.json.error).toBe("multi_date_confirmation_required");
       await expectUntouchedPending(aId);
       await expectUntouchedPending(bId);
+
+      const ok = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+        confirmMultiDate: true,
+      });
+      expect(ok.status).toBe(200);
+      const a = await readStaged(aId);
+      const b = await readStaged(bId);
+      expect(a.status).toBe("approved");
+      expect(b.status).toBe("approved");
+      expect(a.groupReconciledGiftId).toBe(giftId);
+      expect(b.groupReconciledGiftId).toBe(giftId);
+      expect(a.matchedGiftId).toBe(giftId);
+      expect(b.matchedGiftId).toBeNull();
+    }, 30_000);
+
+    it("reconciles same payer across DIFFERENT deposits AND dates with confirmMultiDate (the Arthur Rock case)", async () => {
+      // The motivating real case: a series of stock sales from one donor over
+      // ~24 days, EACH settling as its own bank deposit. Distinct deposits +
+      // distinct dates, grouped to one gift after explicit confirmation.
+      const giftId = await seedGift("1000000.00");
+      const aId = await seedStaged(giftId, "a", "600000.00", {
+        depositId: `${RUN}_arA`,
+        payerName: "Arthur Rock Foundation",
+        dateReceived: "2018-05-22",
+      });
+      const bId = await seedStaged(giftId, "b", "400000.00", {
+        depositId: `${RUN}_arB`,
+        payerName: "Arthur Rock Foundation",
+        dateReceived: "2018-06-15",
+      });
+
+      const blocked = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+      });
+      expect(blocked.status).toBe(400);
+      expect(blocked.json.error).toBe("multi_date_confirmation_required");
+      await expectUntouchedPending(aId);
+      await expectUntouchedPending(bId);
+
+      const ok = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+        confirmMultiDate: true,
+      });
+      expect(ok.status).toBe(200);
+      const a = await readStaged(aId);
+      const b = await readStaged(bId);
+      expect(a.status).toBe("approved");
+      expect(b.status).toBe("approved");
+      expect(a.groupReconciledGiftId).toBe(giftId);
+      expect(b.groupReconciledGiftId).toBe(giftId);
     }, 30_000);
 
     it("rejects same payer but DIFFERENT dates without confirmMultiDate (400 multi_date_confirmation_required) and changes nothing", async () => {
@@ -424,6 +479,38 @@ describe.skipIf(!HAS_DB)(
       const a = await readStaged(aId);
       expect(a.status).toBe("approved");
       expect(a.groupReconciledGiftId).toBe(giftId);
+    }, 30_000);
+
+    it("rejects rows sharing ONE deposit but with DIFFERENT payers with 400 not_groupable", async () => {
+      // A single bank deposit can batch checks from genuinely different donors.
+      // The coherence key is payer-first, so two different payers never group —
+      // even inside one deposit. This guards a raw API call from collapsing two
+      // donors into one gift, and keeps the server in lockstep with the client,
+      // which keys each row by payer and disables selection across payers.
+      const giftId = await seedGift("100.00");
+      const depositId = `${RUN}_dep_mixed`;
+      const aId = await seedStaged(giftId, "a", "50.00", {
+        depositId,
+        payerName: "Donor One",
+        dateReceived: "2025-01-01",
+      });
+      const bId = await seedStaged(giftId, "b", "50.00", {
+        depositId,
+        payerName: "Donor Two",
+        dateReceived: "2025-01-01",
+      });
+
+      const res = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+        confirmMultiDate: true,
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe("not_groupable");
+
+      await expectUntouchedPending(aId);
+      await expectUntouchedPending(bId);
     }, 30_000);
 
     it("rejects when a row is already resolved with 409 not_pending and changes nothing", async () => {

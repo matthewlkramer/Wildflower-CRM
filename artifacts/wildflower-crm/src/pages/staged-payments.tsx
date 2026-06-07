@@ -222,17 +222,20 @@ function formatAmount(amount: string | null | undefined): string {
 }
 
 // Grouping key for the "several QB records = one CRM gift" flow. Two staged
-// payments can be grouped when they share an underlying bank deposit
-// (qbDepositId) OR — when no deposit was captured — when they share the same
-// payer (a single wire, or a series of stock sales, split across multiple QB
-// records, possibly over several days). The date is intentionally NOT part of
-// the key; cross-date grouping is allowed but prompts an explicit confirmation
-// before it is sent (see confirmMultiDate). Rows with neither key are not
-// groupable. Mirrors the server guard in POST /staged-payments/group-reconcile.
+// payments can be grouped when they share the same payer (a single wire, or a
+// series of stock sales, split across multiple QB records — each often settling
+// as its OWN bank deposit over several days, e.g. Arthur Rock 2018-05-22 →
+// 06-15) OR — when no payer was captured — when they share an underlying bank
+// deposit (qbDepositId). Payer is preferred so same-payer rows with DIFFERENT
+// deposit ids still group together. Neither the date nor the deposit is part of
+// the key; crossing either boundary is allowed but prompts an explicit
+// confirmation before it is sent (see confirmMultiDate / groupNeedsConfirm).
+// Rows with neither key are not groupable. Mirrors the server guard in
+// POST /staged-payments/group-reconcile.
 function groupKeyOf(row: StagedPayment): string | null {
-  if (row.qbDepositId) return `dep:${row.qbDepositId}`;
   const payer = (row.payerName ?? "").trim().toLowerCase();
   if (payer) return `payer:${payer}`;
+  if (row.qbDepositId) return `dep:${row.qbDepositId}`;
   return null;
 }
 
@@ -361,15 +364,22 @@ export default function StagedPayments() {
   const groupKey = groupRows[0] ? groupKeyOf(groupRows[0]) : null;
   const groupActive = groupRows.length >= 2;
   const groupTotal = groupRows.reduce((acc, r) => acc + Number(r.amount ?? 0), 0);
-  // Distinct receipt dates across the group. When more than one, grouping
-  // requires explicit operator confirmation (it risks collapsing unrelated
-  // same-payer gifts) — surfaced via the confirm dialog below and sent as
+  // Grouping requires explicit operator confirmation whenever the members cross
+  // a date OR a deposit boundary — both risk collapsing unrelated same-payer
+  // gifts (recurring donations, or two genuinely separate deposits that merely
+  // share a payer). Surfaced via the confirm dialog below and sent as
   // confirmMultiDate to the server. A null date is its own distinct bucket so
   // this matches the server guard exactly (mixed null + real dates also count
   // as multi-date); otherwise the dialog wouldn't open but the server would
-  // still reject, stranding the operator.
+  // still reject, stranding the operator. Deposits are compared by their
+  // non-null ids only (a single shared deposit never needs confirmation).
   const groupSpansMultipleDates =
     new Set(groupRows.map((r) => r.dateReceived ?? null)).size > 1;
+  const groupSpansMultipleDeposits =
+    new Set(groupRows.map((r) => r.qbDepositId).filter((d) => d != null)).size >
+    1;
+  const groupNeedsConfirm =
+    groupSpansMultipleDates || groupSpansMultipleDeposits;
   // Real (non-null) dates, sorted, for the confirm dialog's date-range label.
   const groupRealDates = Array.from(
     new Set(groupRows.map((r) => r.dateReceived).filter((d): d is string => !!d)),
@@ -860,9 +870,9 @@ export default function StagedPayments() {
 
   const groupMatchGift = (giftId: string) => {
     if (!groupActive) return;
-    // Cross-date groups need an explicit confirmation first; open the dialog
-    // instead of reconciling immediately.
-    if (groupSpansMultipleDates) {
+    // Groups that cross a date or deposit boundary need an explicit
+    // confirmation first; open the dialog instead of reconciling immediately.
+    if (groupNeedsConfirm) {
       setPendingMultiDateGiftId(giftId);
       return;
     }
@@ -1398,11 +1408,12 @@ export default function StagedPayments() {
       >
         <DialogContent data-testid="group-multi-date-dialog">
           <DialogHeader>
-            <DialogTitle>Group payments from different dates?</DialogTitle>
+            <DialogTitle>Group payments across dates or deposits?</DialogTitle>
             <DialogDescription>
-              These {groupRows.length} payments are not all on the same date.
-              Only group them if they're truly one gift (for example a single
-              wire or a series of stock sales split across days).
+              These {groupRows.length} payments aren't all on the same date or
+              bank deposit. Only group them if they're truly one gift (for
+              example a single wire or a series of stock sales split across days
+              and separate deposits).
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1 text-sm">
