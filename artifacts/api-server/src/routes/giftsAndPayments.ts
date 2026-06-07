@@ -622,23 +622,35 @@ router.post(
         };
       }
 
-      // Donor XOR — default to the survivor's own (locked) donor when none supplied.
-      let donor = {
-        organizationId: body.organizationId ?? null,
-        individualGiverPersonId: body.individualGiverPersonId ?? null,
-        householdId: body.householdId ?? null,
-      };
-      if (
-        donor.organizationId == null &&
-        donor.individualGiverPersonId == null &&
-        donor.householdId == null
-      ) {
-        donor = {
-          organizationId: primaryRow.organizationId,
-          individualGiverPersonId: primaryRow.individualGiverPersonId,
-          householdId: primaryRow.householdId,
+      // Donor XOR. When the selected gifts disagree on donor the caller MUST
+      // resolve it explicitly — guessing is out of scope and a data-integrity
+      // risk. Otherwise default to the survivor's own (locked) donor.
+      const bodyDonorProvided =
+        body.organizationId != null ||
+        body.individualGiverPersonId != null ||
+        body.householdId != null;
+      if (!bodyDonorProvided && new Set(rows.map(donorKeyOf)).size > 1) {
+        return {
+          ok: false,
+          status: 400,
+          json: {
+            error: "donor_resolution_required",
+            message:
+              "The selected gifts have different donors. Choose which donor the merged gift should use.",
+          },
         };
       }
+      const donor = bodyDonorProvided
+        ? {
+            organizationId: body.organizationId ?? null,
+            individualGiverPersonId: body.individualGiverPersonId ?? null,
+            householdId: body.householdId ?? null,
+          }
+        : {
+            organizationId: primaryRow.organizationId,
+            individualGiverPersonId: primaryRow.individualGiverPersonId,
+            householdId: primaryRow.householdId,
+          };
       const issues = validateGiftInvariants(donor);
       if (issues.length) return { ok: false, invariant: issues };
 
@@ -861,24 +873,36 @@ router.post(
         pledgeId = pledge.id;
         created = false;
       } else {
-        // New pledge — donor XOR, defaulting to the first (locked) gift's donor.
-        let donor = {
-          organizationId: body.organizationId ?? null,
-          individualGiverPersonId: body.individualGiverPersonId ?? null,
-          householdId: body.householdId ?? null,
-        };
-        if (
-          donor.organizationId == null &&
-          donor.individualGiverPersonId == null &&
-          donor.householdId == null
-        ) {
-          const g0 = gifts[0];
-          donor = {
-            organizationId: g0.organizationId,
-            individualGiverPersonId: g0.individualGiverPersonId,
-            householdId: g0.householdId,
+        // New pledge — donor XOR. When the selected gifts disagree on donor the
+        // caller MUST resolve it explicitly; otherwise default to the first
+        // (locked) gift's donor.
+        const bodyDonorProvided =
+          body.organizationId != null ||
+          body.individualGiverPersonId != null ||
+          body.householdId != null;
+        if (!bodyDonorProvided && new Set(gifts.map(donorKeyOf)).size > 1) {
+          return {
+            ok: false,
+            status: 400,
+            json: {
+              error: "donor_resolution_required",
+              message:
+                "The selected gifts have different donors. Choose which donor the new pledge should use.",
+            },
           };
         }
+        const g0 = gifts[0];
+        const donor = bodyDonorProvided
+          ? {
+              organizationId: body.organizationId ?? null,
+              individualGiverPersonId: body.individualGiverPersonId ?? null,
+              householdId: body.householdId ?? null,
+            }
+          : {
+              organizationId: g0.organizationId,
+              individualGiverPersonId: g0.individualGiverPersonId,
+              householdId: g0.householdId,
+            };
         const issues = validateOppInvariants(donor);
         if (issues.length) return { ok: false, invariant: issues };
         pledgeId = newId();

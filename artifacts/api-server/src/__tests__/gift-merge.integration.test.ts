@@ -283,6 +283,24 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
     expect(Number(survivor.amount)).toBeCloseTo(100);
   }, 30_000);
 
+  it("blocks (400 donor_resolution_required) a mixed-donor merge with no donor pick", async () => {
+    const a = await seedGiftWithAllocation("60.00", { organizationId: ORG_ID });
+    const b = await seedGiftWithAllocation("40.00", {
+      individualGiverPersonId: PERSON_ID,
+    });
+
+    const res = await api("/api/gifts-and-payments/merge", {
+      primaryId: a,
+      mergeIds: [b],
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe("donor_resolution_required");
+    // Nothing deleted on a rejected merge.
+    expect(await readGift(a)).toBeDefined();
+    expect(await readGift(b)).toBeDefined();
+  }, 30_000);
+
   it("rejects a donor pick that resolves to more than one type (XOR 400)", async () => {
     const a = await seedGiftWithAllocation("10.00");
     const b = await seedGiftWithAllocation("10.00");
@@ -464,6 +482,24 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
     });
     expect(res.status).toBe(409);
     expect(res.json.error).toBe("pledge_not_found");
+  }, 30_000);
+
+  it("blocks (400 donor_resolution_required) a new pledge from mixed-donor gifts with no donor pick", async () => {
+    const a = await seedGiftWithAllocation("60.00", { organizationId: ORG_ID });
+    const b = await seedGiftWithAllocation("40.00", {
+      individualGiverPersonId: PERSON_ID,
+    });
+
+    const res = await api("/api/gifts-and-payments/merge-into-pledge", {
+      giftIds: [a, b],
+      name: `Mixed Donor Pledge ${RUN}`,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe("donor_resolution_required");
+    // Neither gift was attached to a pledge.
+    expect((await readGift(a)).paymentOnPledgeId).toBeNull();
+    expect((await readGift(b)).paymentOnPledgeId).toBeNull();
   }, 30_000);
 
   it("returns 400 on an empty giftIds body", async () => {

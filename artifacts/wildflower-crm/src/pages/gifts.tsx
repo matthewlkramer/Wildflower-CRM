@@ -690,7 +690,7 @@ export default function Gifts() {
               onClick={() => setMergePledgeOpen(true)}
               data-testid="button-bulk-merge-pledge"
             >
-              Merge into pledge
+              Merge into one pledge
             </Button>
           </>
         }
