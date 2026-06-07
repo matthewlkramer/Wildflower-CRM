@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListGiftsAndPayments,
   getListGiftsAndPaymentsQueryKey,
   useBulkUpdateGiftsAndPayments,
+  getGetGiftOrPaymentQueryOptions,
+  getGetGiftOrPaymentQueryKey,
   type ListGiftsAndPaymentsParams,
   type GiftType,
   type GiftPaymentMethod,
@@ -25,6 +28,10 @@ import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
+import {
+  MergeGiftsDialog,
+  MergeIntoPledgeDialog,
+} from "@/components/gift-merge-dialogs";
 import { GIFTS_BULK_FIELDS } from "@/lib/bulk-fields";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -203,6 +210,8 @@ export default function Gifts() {
   );
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [mergeGiftOpen, setMergeGiftOpen] = useState(false);
+  const [mergePledgeOpen, setMergePledgeOpen] = useState(false);
   const bulkMut = useBulkUpdateGiftsAndPayments();
 
   // Global entity filter (header dropdown). Forwarded to the server so the
@@ -388,6 +397,27 @@ export default function Gifts() {
   const rows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // Fetch full records for the merge dialogs only while one is open. Selected
+  // ids may span pages/filters, so we resolve each by id rather than reuse
+  // the current page's rows.
+  const mergeOpen = mergeGiftOpen || mergePledgeOpen;
+  const mergeIds = mergeOpen ? selection.selectedIds : [];
+  const mergeQueries = useQueries({
+    queries: mergeIds.map((id) =>
+      getGetGiftOrPaymentQueryOptions(id, {
+        query: {
+          enabled: mergeOpen,
+          staleTime: 30_000,
+          queryKey: getGetGiftOrPaymentQueryKey(id),
+        },
+      }),
+    ),
+  });
+  const mergeRecords = useMemo<GiftOrPayment[]>(
+    () => mergeQueries.map((q) => q.data).filter((d): d is GiftOrPayment => !!d),
+    [mergeQueries],
+  );
 
   const sortedRows = useMemo(
     () =>
@@ -640,6 +670,38 @@ export default function Gifts() {
         onEdit={() => setBulkOpen(true)}
         onClear={selection.clear}
         entityNoun="gift"
+        extraActions={
+          <>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setMergeGiftOpen(true)}
+              data-testid="button-bulk-merge-gift"
+            >
+              Merge into one gift
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setMergePledgeOpen(true)}
+              data-testid="button-bulk-merge-pledge"
+            >
+              Merge into pledge
+            </Button>
+          </>
+        }
+      />
+      <MergeGiftsDialog
+        open={mergeGiftOpen}
+        onOpenChange={setMergeGiftOpen}
+        gifts={mergeRecords}
+        onDone={() => selection.clear()}
+      />
+      <MergeIntoPledgeDialog
+        open={mergePledgeOpen}
+        onOpenChange={setMergePledgeOpen}
+        gifts={mergeRecords}
+        onDone={() => selection.clear()}
       />
       <BulkEditDialog
         open={bulkOpen}

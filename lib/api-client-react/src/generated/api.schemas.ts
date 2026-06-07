@@ -3116,6 +3116,48 @@ export interface MergePeopleBody {
 }
 
 /**
+ * Collapse `mergeIds` (losers) into `primaryId` (survivor): the survivor's amount becomes the sum of all selected gifts, every loser's allocation rows move onto the survivor, and the losers are permanently deleted. Exactly one of the donor fields must be set (donor XOR); it is applied to the survivor.
+ */
+export interface MergeGiftsBody {
+  primaryId: string;
+  /**
+   * @minItems 1
+   * @maxItems 49
+   */
+  mergeIds: string[];
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+}
+
+/**
+ * Attach `giftIds` to a pledge as its payments (each gift's payment_on_pledge_id is set). Provide `pledgeId` to attach to an existing pledge, OR omit it to create a NEW pledge — in which case exactly one donor field must be set (donor XOR) for the new pledge.
+ */
+export interface MergeGiftsIntoPledgeBody {
+  /**
+   * @minItems 1
+   * @maxItems 49
+   */
+  giftIds: string[];
+  /** Existing pledge to attach to. Omit/null to create a new pledge. */
+  pledgeId?: string | null;
+  /** Name for the new pledge (ignored when pledgeId is set). */
+  name?: string | null;
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+}
+
+export interface MergeIntoPledgeResult {
+  /** The pledge the gifts were attached to. */
+  pledgeId: string;
+  /** The gift ids attached as payments. */
+  giftIds: string[];
+  /** True if a new pledge was created, false if an existing one was used. */
+  created: boolean;
+}
+
+/**
  * Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged.
  */
 export interface BulkUpdatePeoplePatch {

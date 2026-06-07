@@ -5,6 +5,10 @@ import {
   giftsAndPayments,
   giftAllocations,
   stagedPaymentSplits,
+  stagedPayments,
+  opportunitiesAndPledges,
+  pledgeAllocations,
+  bulkOperations,
   organizations,
   households,
   people,
@@ -74,7 +78,10 @@ import {
   CreateGiftOrPaymentBodyRefined,
   UpdateGiftOrPaymentBody,
   BulkUpdateGiftsAndPaymentsBody,
+  MergeGiftsAndPaymentsBody,
+  MergeGiftsIntoPledgeBody,
   validateGiftInvariants,
+  validateOppInvariants,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -525,6 +532,352 @@ router.delete(
 );
 
 // ──────────────────────────────────────────────────────────────────
+// Merge routes
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * Merge several gifts into one. The survivor (`primaryId`) absorbs every
+ * loser's (`mergeIds`) allocation rows, its `amount` becomes the SUM of all
+ * selected gifts, and the losers are permanently deleted. Exactly one donor
+ * field must resolve (donor XOR) — when none is supplied the survivor's own
+ * donor is kept. Blocked (409) if any LOSER is linked to a QuickBooks staged
+ * payment, since deleting it would silently null that reconciliation link.
+ */
+router.post(
+  "/gifts-and-payments/merge",
+  asyncHandler(async (req, res) => {
+    const body = parseOrBadRequest(MergeGiftsAndPaymentsBody, req.body, res);
+    if (!body) return;
+    const primaryId = body.primaryId;
+
+    // De-dupe losers, drop the primary if it slipped into mergeIds.
+    const seen = new Set<string>([primaryId]);
+    const loserIds: string[] = [];
+    for (const id of body.mergeIds) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        loserIds.push(id);
+      }
+    }
+    if (loserIds.length === 0) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "mergeIds must contain at least one gift distinct from primaryId",
+      });
+      return;
+    }
+
+    const allIds = [primaryId, ...loserIds];
+    const actor = getAppUser(req);
+
+    type Outcome =
+      | { ok: true; pledges: string[]; donorOrgId: string | null }
+      | { ok: false; status: number; json: Record<string, unknown> }
+      | { ok: false; invariant: InvariantIssue[] };
+
+    // Everything that decides the outcome — the authoritative row read, the
+    // sum, the donor default, and the QuickBooks-link guard — happens INSIDE
+    // the transaction after FOR UPDATE so a concurrent edit, delete, or QB
+    // reconcile can't race between a guard and the destructive delete below.
+    const outcome = await db.transaction(async (tx): Promise<Outcome> => {
+      const rows = await tx
+        .select()
+        .from(giftsAndPayments)
+        .where(inArray(giftsAndPayments.id, allIds))
+        .for("update");
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const primaryRow = byId.get(primaryId);
+      if (!primaryRow) {
+        return {
+          ok: false,
+          status: 400,
+          json: { error: "validation_error", message: "primary gift not found" },
+        };
+      }
+      const missing = loserIds.filter((id) => !byId.has(id));
+      if (missing.length) {
+        return {
+          ok: false,
+          status: 400,
+          json: {
+            error: "validation_error",
+            message: `gift(s) not found: ${missing.join(", ")}`,
+          },
+        };
+      }
+
+      // Donor XOR — default to the survivor's own (locked) donor when none supplied.
+      let donor = {
+        organizationId: body.organizationId ?? null,
+        individualGiverPersonId: body.individualGiverPersonId ?? null,
+        householdId: body.householdId ?? null,
+      };
+      if (
+        donor.organizationId == null &&
+        donor.individualGiverPersonId == null &&
+        donor.householdId == null
+      ) {
+        donor = {
+          organizationId: primaryRow.organizationId,
+          individualGiverPersonId: primaryRow.individualGiverPersonId,
+          householdId: primaryRow.householdId,
+        };
+      }
+      const issues = validateGiftInvariants(donor);
+      if (issues.length) return { ok: false, invariant: issues };
+
+      // Block if any LOSER is linked to a QuickBooks staged payment (split,
+      // matched, created, or group-reconciled). Those FKs are SET NULL, so
+      // deleting the loser would silently sever QB reconciliation history.
+      const splitLink = await tx
+        .select({ giftId: stagedPaymentSplits.giftId })
+        .from(stagedPaymentSplits)
+        .where(inArray(stagedPaymentSplits.giftId, loserIds))
+        .then((r) => r[0]);
+      const stagedLink = await tx
+        .select({ id: stagedPayments.id })
+        .from(stagedPayments)
+        .where(
+          or(
+            inArray(stagedPayments.matchedGiftId, loserIds),
+            inArray(stagedPayments.createdGiftId, loserIds),
+            inArray(stagedPayments.groupReconciledGiftId, loserIds),
+          ),
+        )
+        .then((r) => r[0]);
+      if (splitLink || stagedLink) {
+        return {
+          ok: false,
+          status: 409,
+          json: {
+            error: "quickbooks_linked",
+            message:
+              "One of the duplicate gifts is linked to a QuickBooks staged payment. Unlink it in QuickBooks Review before merging.",
+          },
+        };
+      }
+
+      // Sum amounts from the locked rows (numeric text; null → 0).
+      const sum = rows.reduce((acc, r) => acc + Number(r.amount ?? 0), 0);
+      const summedAmount = sum.toFixed(2);
+
+      // Any pledge whose paid total changes — survivor's + every loser's pledge.
+      const pledges = new Set<string>();
+      for (const r of rows) if (r.paymentOnPledgeId) pledges.add(r.paymentOnPledgeId);
+
+      // Move every loser's allocation rows onto the survivor.
+      await tx
+        .update(giftAllocations)
+        .set({ giftId: primaryId, updatedAt: new Date() })
+        .where(inArray(giftAllocations.giftId, loserIds));
+
+      // Survivor absorbs the summed amount and the resolved donor.
+      await tx
+        .update(giftsAndPayments)
+        .set({
+          amount: summedAmount,
+          organizationId: donor.organizationId,
+          individualGiverPersonId: donor.individualGiverPersonId,
+          householdId: donor.householdId,
+          updatedAt: new Date(),
+        })
+        .where(eq(giftsAndPayments.id, primaryId));
+
+      // Delete the losers. giftBeingMatchedId references (including the
+      // survivor's) are SET NULL by the DB on delete.
+      await tx
+        .delete(giftsAndPayments)
+        .where(inArray(giftsAndPayments.id, loserIds));
+
+      if (actor) {
+        await tx.insert(bulkOperations).values({
+          id: newId(),
+          actorUserId: actor.id,
+          entity: "gifts-and-payments/merge",
+          fields: ["amount", "organizationId", "individualGiverPersonId", "householdId"],
+          targetIds: allIds,
+          succeededIds: allIds,
+          failedIds: [],
+        });
+      }
+
+      return { ok: true, pledges: [...pledges], donorOrgId: donor.organizationId };
+    });
+
+    if (!outcome.ok) {
+      if ("invariant" in outcome) return respondInvariantFailure(res, outcome.invariant);
+      res.status(outcome.status).json(outcome.json);
+      return;
+    }
+
+    await applyDerivedOppFieldsMany(...outcome.pledges);
+    if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
+    res.json({ primaryId, mergedIds: loserIds });
+  }),
+);
+
+/**
+ * Attach several gifts to a pledge as its payments. With `pledgeId` the gifts
+ * are attached to that existing pledge; without it a NEW fully-paid pledge is
+ * created (donor XOR required — defaults to the first gift's donor) whose
+ * awarded amount is the SUM of the gifts. The gifts are NOT deleted; each keeps
+ * its own donor and gets `paymentOnPledgeId` set. Derived pledge fields
+ * (status/stage/paid totals) are recomputed afterward — status is never written
+ * directly.
+ */
+router.post(
+  "/gifts-and-payments/merge-into-pledge",
+  asyncHandler(async (req, res) => {
+    const body = parseOrBadRequest(MergeGiftsIntoPledgeBody, req.body, res);
+    if (!body) return;
+
+    // De-dupe gift ids.
+    const seen = new Set<string>();
+    const giftIds: string[] = [];
+    for (const id of body.giftIds) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        giftIds.push(id);
+      }
+    }
+    if (giftIds.length === 0) {
+      res.status(400).json({ error: "validation_error", message: "giftIds must not be empty" });
+      return;
+    }
+
+    const actor = getAppUser(req);
+
+    type Outcome =
+      | { ok: true; pledgeId: string; created: boolean; pledges: string[] }
+      | { ok: false; status: number; json: Record<string, unknown> }
+      | { ok: false; invariant: InvariantIssue[] };
+
+    // Read + lock the gifts (and the target pledge, if any) inside the tx so
+    // the sum, donor default, and existence checks reflect the committed state
+    // and can't race a concurrent edit or pledge deletion.
+    const outcome = await db.transaction(async (tx): Promise<Outcome> => {
+      const gifts = await tx
+        .select()
+        .from(giftsAndPayments)
+        .where(inArray(giftsAndPayments.id, giftIds))
+        .for("update");
+      const foundIds = new Set(gifts.map((g) => g.id));
+      const missing = giftIds.filter((id) => !foundIds.has(id));
+      if (missing.length) {
+        return {
+          ok: false,
+          status: 400,
+          json: {
+            error: "validation_error",
+            message: `gift(s) not found: ${missing.join(", ")}`,
+          },
+        };
+      }
+
+      const sum = gifts.reduce((acc, g) => acc + Number(g.amount ?? 0), 0);
+      const summedAmount = sum.toFixed(2);
+
+      // Pledges whose paid total changes — the target plus any pledge the gifts
+      // were previously attached to.
+      const pledges = new Set<string>();
+      for (const g of gifts) if (g.paymentOnPledgeId) pledges.add(g.paymentOnPledgeId);
+
+      let pledgeId: string;
+      let created: boolean;
+
+      if (body.pledgeId) {
+        // Lock the target pledge so it can't be deleted mid-merge.
+        const pledge = await tx
+          .select({ id: opportunitiesAndPledges.id })
+          .from(opportunitiesAndPledges)
+          .where(eq(opportunitiesAndPledges.id, body.pledgeId))
+          .for("update")
+          .then((r) => r[0]);
+        if (!pledge) {
+          return {
+            ok: false,
+            status: 409,
+            json: { error: "pledge_not_found", message: "Target pledge not found." },
+          };
+        }
+        pledgeId = pledge.id;
+        created = false;
+      } else {
+        // New pledge — donor XOR, defaulting to the first (locked) gift's donor.
+        let donor = {
+          organizationId: body.organizationId ?? null,
+          individualGiverPersonId: body.individualGiverPersonId ?? null,
+          householdId: body.householdId ?? null,
+        };
+        if (
+          donor.organizationId == null &&
+          donor.individualGiverPersonId == null &&
+          donor.householdId == null
+        ) {
+          const g0 = gifts[0];
+          donor = {
+            organizationId: g0.organizationId,
+            individualGiverPersonId: g0.individualGiverPersonId,
+            householdId: g0.householdId,
+          };
+        }
+        const issues = validateOppInvariants(donor);
+        if (issues.length) return { ok: false, invariant: issues };
+        pledgeId = newId();
+        created = true;
+
+        await tx.insert(opportunitiesAndPledges).values({
+          id: pledgeId,
+          name: body.name ?? null,
+          organizationId: donor.organizationId,
+          individualGiverPersonId: donor.individualGiverPersonId,
+          householdId: donor.householdId,
+          awardedAmount: summedAmount,
+          stage: "written_commitment",
+          wasPledge: true,
+        });
+        // Minimal allocation so the pledge satisfies the "at least one
+        // allocation" expectation; carries the full summed amount.
+        await tx.insert(pledgeAllocations).values({
+          id: newId(),
+          pledgeOrOpportunityId: pledgeId,
+          subAmount: summedAmount,
+        });
+      }
+      pledges.add(pledgeId);
+
+      await tx
+        .update(giftsAndPayments)
+        .set({ paymentOnPledgeId: pledgeId, updatedAt: new Date() })
+        .where(inArray(giftsAndPayments.id, giftIds));
+
+      if (actor) {
+        await tx.insert(bulkOperations).values({
+          id: newId(),
+          actorUserId: actor.id,
+          entity: "gifts-and-payments/merge-into-pledge",
+          fields: ["paymentOnPledgeId"],
+          targetIds: giftIds,
+          succeededIds: giftIds,
+          failedIds: [],
+        });
+      }
+
+      return { ok: true, pledgeId, created, pledges: [...pledges] };
+    });
+
+    if (!outcome.ok) {
+      if ("invariant" in outcome) return respondInvariantFailure(res, outcome.invariant);
+      res.status(outcome.status).json(outcome.json);
+      return;
+    }
+
+    await applyDerivedOppFieldsMany(...outcome.pledges);
+    res.json({ pledgeId: outcome.pledgeId, giftIds, created: outcome.created });
+  }),
+);
+
+// ──────────────────────────────────────────────────────────────────
 // Thank-you email linking
 // ──────────────────────────────────────────────────────────────────
 
@@ -628,7 +981,7 @@ router.get(
         mimeType: emailAttachments.mimeType,
       })
       .from(emailAttachments)
-      .where(sql`${emailAttachments.emailMessageId} = ANY(${msgIds}::text[])`);
+      .where(inArray(emailAttachments.emailMessageId, msgIds));
     const docCountByMsg = new Map<string, number>();
     for (const a of atts) {
       if (isDocumentMime(a.mimeType)) {

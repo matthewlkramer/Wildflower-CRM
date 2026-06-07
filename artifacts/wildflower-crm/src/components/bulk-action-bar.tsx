@@ -12,6 +12,7 @@ export function BulkActionBar({
   onMerge,
   onClear,
   entityNoun,
+  extraActions,
 }: {
   count: number;
   onEdit: () => void;
@@ -20,6 +21,12 @@ export function BulkActionBar({
   onClear: () => void;
   /** Singular noun used in the label, e.g. "person" → "1 person selected". */
   entityNoun: string;
+  /**
+   * Extra action buttons rendered once 2+ rows are selected (e.g. the gifts
+   * page's two merge variants). The caller is responsible for their own
+   * disabled/visible logic beyond the 2+ gate.
+   */
+  extraActions?: React.ReactNode;
 }) {
   if (count === 0) return null;
   const label = `${count.toLocaleString()} ${count === 1 ? entityNoun : `${entityNoun}s`} selected`;
@@ -47,6 +54,7 @@ export function BulkActionBar({
             Merge
           </Button>
         )}
+        {count >= 2 && extraActions}
         <Button
           variant="ghost"
           size="sm"

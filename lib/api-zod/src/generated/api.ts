@@ -9372,6 +9372,76 @@ export const MergePeopleResponse = zod.object({
     ),
 });
 
+/**
+ * @summary Merge several gifts into one gift, summing amounts and combining allocations.
+ */
+export const mergeGiftsAndPaymentsBodyMergeIdsMax = 49;
+
+export const MergeGiftsAndPaymentsBody = zod
+  .object({
+    primaryId: zod.string(),
+    mergeIds: zod
+      .array(zod.string())
+      .min(1)
+      .max(mergeGiftsAndPaymentsBodyMergeIdsMax),
+    organizationId: zod.string().nullish(),
+    individualGiverPersonId: zod.string().nullish(),
+    householdId: zod.string().nullish(),
+  })
+  .describe(
+    "Collapse `mergeIds` (losers) into `primaryId` (survivor): the survivor's amount becomes the sum of all selected gifts, every loser's allocation rows move onto the survivor, and the losers are permanently deleted. Exactly one of the donor fields must be set (donor XOR); it is applied to the survivor.",
+  );
+
+export const MergeGiftsAndPaymentsResponse = zod.object({
+  primaryId: zod.string().describe("The surviving record id."),
+  mergedIds: zod
+    .array(zod.string())
+    .describe(
+      "Duplicate record ids that were merged into the primary and deleted.",
+    ),
+});
+
+/**
+ * @summary Attach several gifts to a pledge as its payments (new pledge or existing).
+ */
+export const mergeGiftsIntoPledgeBodyGiftIdsMax = 49;
+
+export const MergeGiftsIntoPledgeBody = zod
+  .object({
+    giftIds: zod
+      .array(zod.string())
+      .min(1)
+      .max(mergeGiftsIntoPledgeBodyGiftIdsMax),
+    pledgeId: zod
+      .string()
+      .nullish()
+      .describe(
+        "Existing pledge to attach to. Omit\/null to create a new pledge.",
+      ),
+    name: zod
+      .string()
+      .nullish()
+      .describe("Name for the new pledge (ignored when pledgeId is set)."),
+    organizationId: zod.string().nullish(),
+    individualGiverPersonId: zod.string().nullish(),
+    householdId: zod.string().nullish(),
+  })
+  .describe(
+    "Attach `giftIds` to a pledge as its payments (each gift's payment_on_pledge_id is set). Provide `pledgeId` to attach to an existing pledge, OR omit it to create a NEW pledge — in which case exactly one donor field must be set (donor XOR) for the new pledge.",
+  );
+
+export const MergeGiftsIntoPledgeResponse = zod.object({
+  pledgeId: zod.string().describe("The pledge the gifts were attached to."),
+  giftIds: zod
+    .array(zod.string())
+    .describe("The gift ids attached as payments."),
+  created: zod
+    .boolean()
+    .describe(
+      "True if a new pledge was created, false if an existing one was used.",
+    ),
+});
+
 export const bulkUpdateHouseholdsBodyIdsMax = 1000;
 
 export const BulkUpdateHouseholdsBody = zod.object({

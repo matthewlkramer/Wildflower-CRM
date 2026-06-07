@@ -47,3 +47,4 @@
 - [api-server HTTP integration tests](api-server-http-integration-tests.md) — DB-backed route test pattern: mock requireAuth, boot app.listen(0)+fetch, raise hook timeouts, skipIf no real DB; suite is otherwise DB-free.
 - [QB full re-pull is background+polled](quickbooks-resync-background.md) — ~4min job exceeds proxy timeout→false "failed"; fire-and-forget + in-memory state + GET resync-status poll, advisory lock is the real guard.
 - [QuickBooks non-destructive full re-pull](quickbooks-nondestructive-repull.md) — backfill new qb_* capture cols via fullResync+enrichAllStatuses (drops status setWhere) NOT 0024 wipe; set must stay read-only QB facts; qb_raw excluded from select+spec.
+- [drizzle ANY(array) cast pitfall](drizzle-any-array-cast.md) — `ANY(${jsArray}::text[])` in a drizzle sql template renders a row-constructor → runtime "cannot cast record to text[]"; use inArray() (typecheck won't catch it).

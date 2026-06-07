@@ -2254,6 +2254,26 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MergeResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /gifts-and-payments/merge:
+    post:
+      operationId: mergeGiftsAndPayments
+      tags: [gifts-and-payments]
+      summary: "Merge several gifts into one gift, summing amounts and combining allocations."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MergeGiftsBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MergeResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: "A duplicate gift is linked to a QuickBooks staged payment; resolve that first." }
+  /gifts-and-payments/merge-into-pledge:
+    post:
+      operationId: mergeGiftsIntoPledge
+      tags: [gifts-and-payments]
+      summary: "Attach several gifts to a pledge as its payments (new pledge or existing)."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MergeGiftsIntoPledgeBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MergeIntoPledgeResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: "Target pledge not found or one of the gifts could not be attached." }
   /households/bulk-update:
     post:
       operationId: bulkUpdateHouseholds
@@ -5114,6 +5134,34 @@ components:
         primaryId: { type: string }
         mergeIds:  { type: array, items: { type: string }, minItems: 1, maxItems: 49 }
         overrides: { type: object, additionalProperties: true, nullable: true }
+    MergeGiftsBody:
+      type: object
+      required: [primaryId, mergeIds]
+      description: "Collapse `mergeIds` (losers) into `primaryId` (survivor): the survivor's amount becomes the sum of all selected gifts, every loser's allocation rows move onto the survivor, and the losers are permanently deleted. Exactly one of the donor fields must be set (donor XOR); it is applied to the survivor."
+      properties:
+        primaryId: { type: string }
+        mergeIds:  { type: array, items: { type: string }, minItems: 1, maxItems: 49 }
+        organizationId: { type: string, nullable: true }
+        individualGiverPersonId: { type: string, nullable: true }
+        householdId: { type: string, nullable: true }
+    MergeGiftsIntoPledgeBody:
+      type: object
+      required: [giftIds]
+      description: "Attach `giftIds` to a pledge as its payments (each gift's payment_on_pledge_id is set). Provide `pledgeId` to attach to an existing pledge, OR omit it to create a NEW pledge — in which case exactly one donor field must be set (donor XOR) for the new pledge."
+      properties:
+        giftIds: { type: array, items: { type: string }, minItems: 1, maxItems: 49 }
+        pledgeId: { type: string, nullable: true, description: "Existing pledge to attach to. Omit/null to create a new pledge." }
+        name: { type: string, nullable: true, description: "Name for the new pledge (ignored when pledgeId is set)." }
+        organizationId: { type: string, nullable: true }
+        individualGiverPersonId: { type: string, nullable: true }
+        householdId: { type: string, nullable: true }
+    MergeIntoPledgeResult:
+      type: object
+      required: [pledgeId, giftIds, created]
+      properties:
+        pledgeId: { type: string, description: "The pledge the gifts were attached to." }
+        giftIds: { type: array, items: { type: string }, description: "The gift ids attached as payments." }
+        created: { type: boolean, description: "True if a new pledge was created, false if an existing one was used." }
     BulkUpdatePeoplePatch:
       type: object
       description: "Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged."

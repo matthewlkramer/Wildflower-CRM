@@ -153,6 +153,9 @@ import type {
   MediaMentionUpdate,
   MeetingNote,
   MeetingNoteList,
+  MergeGiftsBody,
+  MergeGiftsIntoPledgeBody,
+  MergeIntoPledgeResult,
   MergeOrganizationsBody,
   MergePeopleBody,
   MergeResult,
@@ -15952,6 +15955,181 @@ export const useMergePeople = <
   TContext
 > => {
   return useMutation(getMergePeopleMutationOptions(options));
+};
+
+/**
+ * @summary Merge several gifts into one gift, summing amounts and combining allocations.
+ */
+export const getMergeGiftsAndPaymentsUrl = () => {
+  return `/api/gifts-and-payments/merge`;
+};
+
+export const mergeGiftsAndPayments = async (
+  mergeGiftsBody: MergeGiftsBody,
+  options?: RequestInit,
+): Promise<MergeResult> => {
+  return customFetch<MergeResult>(getMergeGiftsAndPaymentsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(mergeGiftsBody),
+  });
+};
+
+export const getMergeGiftsAndPaymentsMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeGiftsAndPayments>>,
+    TError,
+    { data: BodyType<MergeGiftsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mergeGiftsAndPayments>>,
+  TError,
+  { data: BodyType<MergeGiftsBody> },
+  TContext
+> => {
+  const mutationKey = ["mergeGiftsAndPayments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mergeGiftsAndPayments>>,
+    { data: BodyType<MergeGiftsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return mergeGiftsAndPayments(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MergeGiftsAndPaymentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mergeGiftsAndPayments>>
+>;
+export type MergeGiftsAndPaymentsMutationBody = BodyType<MergeGiftsBody>;
+export type MergeGiftsAndPaymentsMutationError =
+  ErrorType<BadRequestResponse | void>;
+
+/**
+ * @summary Merge several gifts into one gift, summing amounts and combining allocations.
+ */
+export const useMergeGiftsAndPayments = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeGiftsAndPayments>>,
+    TError,
+    { data: BodyType<MergeGiftsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof mergeGiftsAndPayments>>,
+  TError,
+  { data: BodyType<MergeGiftsBody> },
+  TContext
+> => {
+  return useMutation(getMergeGiftsAndPaymentsMutationOptions(options));
+};
+
+/**
+ * @summary Attach several gifts to a pledge as its payments (new pledge or existing).
+ */
+export const getMergeGiftsIntoPledgeUrl = () => {
+  return `/api/gifts-and-payments/merge-into-pledge`;
+};
+
+export const mergeGiftsIntoPledge = async (
+  mergeGiftsIntoPledgeBody: MergeGiftsIntoPledgeBody,
+  options?: RequestInit,
+): Promise<MergeIntoPledgeResult> => {
+  return customFetch<MergeIntoPledgeResult>(getMergeGiftsIntoPledgeUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(mergeGiftsIntoPledgeBody),
+  });
+};
+
+export const getMergeGiftsIntoPledgeMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeGiftsIntoPledge>>,
+    TError,
+    { data: BodyType<MergeGiftsIntoPledgeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mergeGiftsIntoPledge>>,
+  TError,
+  { data: BodyType<MergeGiftsIntoPledgeBody> },
+  TContext
+> => {
+  const mutationKey = ["mergeGiftsIntoPledge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mergeGiftsIntoPledge>>,
+    { data: BodyType<MergeGiftsIntoPledgeBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return mergeGiftsIntoPledge(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MergeGiftsIntoPledgeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mergeGiftsIntoPledge>>
+>;
+export type MergeGiftsIntoPledgeMutationBody =
+  BodyType<MergeGiftsIntoPledgeBody>;
+export type MergeGiftsIntoPledgeMutationError =
+  ErrorType<BadRequestResponse | void>;
+
+/**
+ * @summary Attach several gifts to a pledge as its payments (new pledge or existing).
+ */
+export const useMergeGiftsIntoPledge = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeGiftsIntoPledge>>,
+    TError,
+    { data: BodyType<MergeGiftsIntoPledgeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof mergeGiftsIntoPledge>>,
+  TError,
+  { data: BodyType<MergeGiftsIntoPledgeBody> },
+  TContext
+> => {
+  return useMutation(getMergeGiftsIntoPledgeMutationOptions(options));
 };
 
 export const getBulkUpdateHouseholdsUrl = () => {
