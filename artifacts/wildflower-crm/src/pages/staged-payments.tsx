@@ -8,6 +8,7 @@ import {
   useReIncludeStagedPayment,
   useReconcileStagedPayment,
   useGroupReconcileStagedPayments,
+  useSplitStagedPayment,
   useRevertStagedPayment,
   useExcludeStagedPayment,
   useConfirmStagedPaymentMatch,
@@ -386,6 +387,32 @@ export default function StagedPayments() {
     });
   };
 
+  // ── Split-across-gifts (manual) ──
+  // The inverse of grouping: ONE staged payment (a lump-sum payout) reconciled
+  // across TWO OR MORE existing gifts, each linked for its own gross amount. The
+  // operator turns split mode on with a single pending payment selected, then
+  // checks gifts on the right. The summed gross of the checked gifts must sit in
+  // the fee-band around the staged net amount (enforced server-side, previewed
+  // in the match bar). We keep the full gift rows so the running total renders
+  // without a refetch.
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitGifts, setSplitGifts] = useState<GiftOrPayment[]>([]);
+  const splitGiftIds = splitGifts.map((g) => g.id);
+  const splitTotal = splitGifts.reduce((acc, g) => acc + Number(g.amount ?? 0), 0);
+
+  const clearSplit = () => {
+    setSplitMode(false);
+    setSplitGifts([]);
+  };
+
+  const toggleSplitGift = (gift: GiftOrPayment) => {
+    setSplitGifts((prev) =>
+      prev.some((g) => g.id === gift.id)
+        ? prev.filter((g) => g.id !== gift.id)
+        : [...prev, gift],
+    );
+  };
+
   // Right pane (CRM gifts) filters.
   const [giftSearch, setGiftSearch] = useState("");
   const [dateAfter, setDateAfter] = useState("");
@@ -702,6 +729,27 @@ export default function StagedPayments() {
     },
   });
 
+  const split = useSplitStagedPayment({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        clearSplit();
+        selectGift(null, null);
+        setSelectedStaged(null);
+        toast({
+          title: "Payment split",
+          description: "Linked the payment across the selected gifts.",
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Split failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
   const rows = listQ.data?.data ?? [];
   const total = listQ.data?.pagination?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -743,12 +791,15 @@ export default function StagedPayments() {
     if (selectedStaged?.id === row.id) {
       setSelectedStaged(null);
       selectGift(null, null);
+      clearSplit();
       return;
     }
     setSelectedStaged(row);
     // Drop any gift carried over from a previous payment so a stale right-side
     // selection can never be matched to the newly chosen payment by accident.
     selectGift(null, null);
+    // Leave split mode + clear checked gifts so they can't carry to a new payment.
+    clearSplit();
     setGiftSearch(donorSearchSeed(row));
     setDateAfter(shiftIsoDate(row.dateReceived, -30));
     setDateBefore(shiftIsoDate(row.dateReceived, 30));
@@ -825,6 +876,33 @@ export default function StagedPayments() {
         confirmMultiDate: true,
       },
     });
+  };
+
+  // ── Split derived state ──
+  // Split mode is meaningful only with one pending payment selected in the
+  // needs-review queue, and never alongside group mode (a deposit-group already
+  // claims the gift rows). The summed gross of the checked gifts must sit in the
+  // fee-band around the staged net amount — same band as group reconcile, with
+  // the staged amount playing the "gift" role and the gift sum the "combined".
+  const stagedAmtNum =
+    selectedStaged?.amount != null ? Number(selectedStaged.amount) : null;
+  const splitWithinBand =
+    stagedAmtNum != null &&
+    !Number.isNaN(stagedAmtNum) &&
+    splitTotal >= stagedAmtNum - 0.01 &&
+    splitTotal <= stagedAmtNum * 1.1 + 1;
+  const splitActive =
+    splitMode &&
+    !groupActive &&
+    queue === "needs_review" &&
+    selectedStaged != null &&
+    selectedStaged.status === "pending";
+  const canSplit =
+    splitActive && splitGifts.length >= 2 && splitWithinBand && !split.isPending;
+
+  const doSplit = () => {
+    if (!selectedStaged || splitGifts.length < 2) return;
+    split.mutate({ id: selectedStaged.id, data: { giftIds: splitGiftIds } });
   };
 
   return (
@@ -949,7 +1027,75 @@ export default function StagedPayments() {
                   )} — outside the fee tolerance.`}
             </div>
           ) : null}
+          {splitActive ? (
+            <div className="text-sm" data-testid="split-running-total">
+              <span className="text-muted-foreground">Split across: </span>
+              <span className="font-medium">
+                {splitGifts.length} gift{splitGifts.length === 1 ? "" : "s"} ·{" "}
+                {formatAmount(splitTotal.toFixed(2))} combined
+              </span>
+            </div>
+          ) : null}
+          {splitActive && splitGifts.length >= 2 && stagedAmtNum != null ? (
+            <div
+              className={`text-xs ${
+                splitWithinBand
+                  ? "text-muted-foreground"
+                  : "text-amber-700 dark:text-amber-400"
+              }`}
+              data-testid="split-tolerance-preview"
+            >
+              {splitWithinBand
+                ? "Combined gift total is within the fee tolerance of this payment."
+                : `Combined ${formatAmount(splitTotal.toFixed(2))} vs payment ${formatAmount(
+                    selectedStaged?.amount,
+                  )} — outside the fee tolerance.`}
+            </div>
+          ) : null}
           <div className="ml-auto flex flex-wrap gap-2">
+            {splitActive ? (
+              <>
+                <Button
+                  variant="ghost"
+                  onClick={clearSplit}
+                  disabled={split.isPending}
+                  data-testid="split-cancel"
+                  title="Leave split mode and clear the selected gifts."
+                >
+                  Cancel split
+                </Button>
+                <Button
+                  onClick={doSplit}
+                  disabled={!canSplit}
+                  data-testid="split-confirm-button"
+                  title={
+                    splitGifts.length < 2
+                      ? "Check at least two gifts on the right to split this payment across."
+                      : !splitWithinBand
+                        ? "The gifts' combined total is outside the fee tolerance of this payment."
+                        : "Link this payment across the selected gifts."
+                  }
+                >
+                  {split.isPending
+                    ? "Splitting…"
+                    : `Split across ${splitGifts.length} gifts →`}
+                </Button>
+              </>
+            ) : null}
+            {!splitActive &&
+            !groupActive &&
+            queue === "needs_review" &&
+            selectedStaged != null &&
+            selectedStaged.status === "pending" ? (
+              <Button
+                variant="outline"
+                onClick={() => setSplitMode(true)}
+                data-testid="split-start"
+                title="Reconcile this one payment across two or more existing gifts."
+              >
+                Split across gifts…
+              </Button>
+            ) : null}
             {groupActive ? (
               <Button
                 variant="ghost"
@@ -961,7 +1107,7 @@ export default function StagedPayments() {
                 Clear group
               </Button>
             ) : null}
-            {groupActive ? (
+            {splitActive ? null : groupActive ? (
               <Button
                 onClick={doGroupMatch}
                 disabled={!canGroupMatch || selectedGiftId == null}
@@ -1184,6 +1330,9 @@ export default function StagedPayments() {
           groupSize={groupRows.length}
           onMatchGroup={groupMatchGift}
           groupMatching={groupReconcile.isPending}
+          splitActive={splitActive}
+          splitGiftIds={splitGiftIds}
+          onToggleSplitGift={toggleSplitGift}
         />
       </div>
 
@@ -1429,7 +1578,11 @@ function StagedPaymentCard({
 
   const wasReconciled = row.matchedGiftId != null;
   const wasAutoMinted = row.createdGiftId != null && row.autoApplied;
-  const canRevert = wasReconciled || wasAutoMinted;
+  // A split row carries no single matched/created gift — its resolution lives in
+  // staged_payment_splits (splitCount > 0). It is revertible as a whole (the
+  // split-aware revert deletes every link); the pre-existing gifts are untouched.
+  const wasSplit = (row.splitCount ?? 0) > 0;
+  const canRevert = wasReconciled || wasAutoMinted || wasSplit;
 
   const selectable = queue === "needs_review";
 
@@ -1768,27 +1921,46 @@ function ResolvedSummary({
   onRevert: () => void;
 }) {
   const reconciled = row.matchedGiftId != null;
+  const splitCount = row.splitCount ?? 0;
+  const isSplit = splitCount > 0;
   return (
     <div className="space-y-3">
       <div className="text-sm text-muted-foreground">
         Donor: {donorLabel ?? "—"}
         {row.intermediaryName ? ` · via ${row.intermediaryName}` : ""}
       </div>
-      <div className="text-sm">
-        {reconciled
-          ? "Reconciled to an existing gift"
-          : "New gift created from this payment"}
-        {row.resolvedGiftName ? (
-          <span className="text-muted-foreground">
-            {" — "}
-            {row.resolvedGiftName}
-            {row.resolvedGiftAmount
-              ? ` · ${formatAmount(row.resolvedGiftAmount)}`
-              : ""}
-            {row.resolvedGiftDate ? ` · ${row.resolvedGiftDate}` : ""}
-          </span>
-        ) : null}
-      </div>
+      {isSplit ? (
+        <div className="text-sm" data-testid={`staged-split-summary-${row.id}`}>
+          {`Split across ${splitCount} gift${splitCount === 1 ? "" : "s"}`}
+          {row.splitTotal ? (
+            <span className="text-muted-foreground">
+              {" · "}
+              {formatAmount(row.splitTotal)}
+            </span>
+          ) : null}
+          {row.splitGiftNames && row.splitGiftNames.length > 0 ? (
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              {row.splitGiftNames.join(", ")}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="text-sm">
+          {reconciled
+            ? "Reconciled to an existing gift"
+            : "New gift created from this payment"}
+          {row.resolvedGiftName ? (
+            <span className="text-muted-foreground">
+              {" — "}
+              {row.resolvedGiftName}
+              {row.resolvedGiftAmount
+                ? ` · ${formatAmount(row.resolvedGiftAmount)}`
+                : ""}
+              {row.resolvedGiftDate ? ` · ${row.resolvedGiftDate}` : ""}
+            </span>
+          ) : null}
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         {queue === "auto_matched" ? (
           <Button
@@ -1854,6 +2026,9 @@ function GiftsPanel({
   groupSize,
   onMatchGroup,
   groupMatching,
+  splitActive,
+  splitGiftIds,
+  onToggleSplitGift,
 }: {
   search: string;
   setSearch: (v: string) => void;
@@ -1882,6 +2057,9 @@ function GiftsPanel({
   groupSize: number;
   onMatchGroup: (giftId: string) => void;
   groupMatching: boolean;
+  splitActive: boolean;
+  splitGiftIds: string[];
+  onToggleSplitGift: (gift: GiftOrPayment) => void;
 }) {
   // Debounce the free-text search so we don't fire a request per keystroke.
   const [debounced, setDebounced] = useState(search);
@@ -2013,6 +2191,9 @@ function GiftsPanel({
                 groupSize={groupSize}
                 onMatchGroup={onMatchGroup}
                 groupMatching={groupMatching}
+                splitActive={splitActive}
+                splitChecked={splitGiftIds.includes(g.id)}
+                onToggleSplit={() => onToggleSplitGift(g)}
               />
             ))}
           </ul>
@@ -2064,6 +2245,9 @@ function GiftRow({
   groupSize,
   onMatchGroup,
   groupMatching,
+  splitActive,
+  splitChecked,
+  onToggleSplit,
 }: {
   gift: GiftOrPayment;
   selected: boolean;
@@ -2078,6 +2262,9 @@ function GiftRow({
   groupSize: number;
   onMatchGroup: (giftId: string) => void;
   groupMatching: boolean;
+  splitActive: boolean;
+  splitChecked: boolean;
+  onToggleSplit: () => void;
 }) {
   const donorName = giftDonorName(gift);
   const linkedStagedId = gift.quickbooksStagedPaymentId ?? null;
@@ -2120,17 +2307,32 @@ function GiftRow({
               <Badge variant="secondary" data-testid={`gift-linked-${gift.id}`}>
                 Linked
               </Badge>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onUnmatch(linkedStagedId)}
-                disabled={unmatching}
-                data-testid={`gift-unmatch-${gift.id}`}
-                title="Undo the QuickBooks link. The gift itself is kept unless it was auto-created."
-              >
-                {unmatching ? "Unmatching…" : "Unmatch"}
-              </Button>
+              {splitActive ? null : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onUnmatch(linkedStagedId)}
+                  disabled={unmatching}
+                  data-testid={`gift-unmatch-${gift.id}`}
+                  title="Undo the QuickBooks link. The gift itself is kept unless it was auto-created."
+                >
+                  {unmatching ? "Unmatching…" : "Unmatch"}
+                </Button>
+              )}
             </>
+          ) : splitActive ? (
+            <label
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              title="Include this gift in the split."
+            >
+              <Checkbox
+                checked={splitChecked}
+                onCheckedChange={() => onToggleSplit()}
+                data-testid={`gift-split-checkbox-${gift.id}`}
+                aria-label="Include this gift in the split"
+              />
+              {splitChecked ? "In split" : "Add"}
+            </label>
           ) : groupActive ? (
             <Button
               size="sm"

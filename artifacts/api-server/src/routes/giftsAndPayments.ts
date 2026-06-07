@@ -4,6 +4,7 @@ import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
 import {
   giftsAndPayments,
   giftAllocations,
+  stagedPaymentSplits,
   organizations,
   households,
   people,
@@ -58,11 +59,14 @@ const donorJoinSelect = {
   // The QuickBooks staged payment reconciled to / that created this gift, if
   // any (at most one — backed by partial-unique indexes on staged_payments).
   // Lets the reconciler show linked status and offer an unmatch action.
-  quickbooksStagedPaymentId: sql<string | null>`(
-    SELECT sp.id FROM staged_payments sp
-    WHERE sp.matched_gift_id = ${giftsAndPayments.id}
-       OR sp.created_gift_id = ${giftsAndPayments.id}
-    LIMIT 1
+  quickbooksStagedPaymentId: sql<string | null>`COALESCE(
+    (SELECT sp.id FROM staged_payments sp
+      WHERE sp.matched_gift_id = ${giftsAndPayments.id}
+         OR sp.created_gift_id = ${giftsAndPayments.id}
+      LIMIT 1),
+    (SELECT spl.staged_payment_id FROM staged_payment_splits spl
+      WHERE spl.gift_id = ${giftsAndPayments.id}
+      LIMIT 1)
   )`.as("quickbooks_staged_payment_id"),
 };
 import {
@@ -133,9 +137,9 @@ router.get(
     // Linked-to-QuickBooks filter — whether a staged payment reconciles to /
     // created this gift. Correlated EXISTS so no join is forced.
     if (q.linkedToQuickbooks === "linked") {
-      filters.push(sql`EXISTS (SELECT 1 FROM staged_payments sp WHERE sp.matched_gift_id = ${giftsAndPayments.id} OR sp.created_gift_id = ${giftsAndPayments.id})`);
+      filters.push(sql`(EXISTS (SELECT 1 FROM staged_payments sp WHERE sp.matched_gift_id = ${giftsAndPayments.id} OR sp.created_gift_id = ${giftsAndPayments.id}) OR EXISTS (SELECT 1 FROM staged_payment_splits spl WHERE spl.gift_id = ${giftsAndPayments.id}))`);
     } else if (q.linkedToQuickbooks === "unlinked") {
-      filters.push(sql`NOT EXISTS (SELECT 1 FROM staged_payments sp WHERE sp.matched_gift_id = ${giftsAndPayments.id} OR sp.created_gift_id = ${giftsAndPayments.id})`);
+      filters.push(sql`(NOT EXISTS (SELECT 1 FROM staged_payments sp WHERE sp.matched_gift_id = ${giftsAndPayments.id} OR sp.created_gift_id = ${giftsAndPayments.id}) AND NOT EXISTS (SELECT 1 FROM staged_payment_splits spl WHERE spl.gift_id = ${giftsAndPayments.id}))`);
     }
     {
       const f = splitBlank(q.type as string[] | undefined);
@@ -476,6 +480,24 @@ router.delete(
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, id))
       .then((r) => r[0]);
+    // staged_payment_splits.gift_id is RESTRICT: a split-reconciled QuickBooks
+    // payment points at this gift as one of its portions. Silently deleting it
+    // would leave that staged payment with an incomplete split (the remaining
+    // portions no longer sum to the payout), so block the delete with a clean
+    // 409 and tell the user to revert the split first.
+    const splitLink = await db
+      .select({ stagedPaymentId: stagedPaymentSplits.stagedPaymentId })
+      .from(stagedPaymentSplits)
+      .where(eq(stagedPaymentSplits.giftId, id))
+      .then((r) => r[0]);
+    if (splitLink) {
+      res.status(409).json({
+        error: "split_linked",
+        message:
+          "This gift is part of a split-reconciled QuickBooks payment. Revert the split in QuickBooks Review before deleting the gift.",
+      });
+      return;
+    }
     // gift_allocations FK is RESTRICT (allocations are money-trail line items),
     // so the parent gift can't be deleted until its allocation rows are gone.
     // Every gift carries at least one allocation row, so this cleanup is

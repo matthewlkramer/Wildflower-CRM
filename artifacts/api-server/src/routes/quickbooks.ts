@@ -2,6 +2,7 @@ import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import {
   stagedPayments,
+  stagedPaymentSplits,
   giftsAndPayments,
   organizations,
   households,
@@ -36,6 +37,7 @@ import {
   ResolveStagedPaymentBody,
   ReconcileStagedPaymentBody,
   GroupReconcileStagedPaymentsBody,
+  SplitStagedPaymentBody,
   ExcludeStagedPaymentBody,
 } from "@workspace/api-zod";
 import { donorOf, hasExactlyOneDonor } from "../lib/quickbooksLink";
@@ -131,6 +133,25 @@ const stagedSelect = {
   resolvedGiftName: resolvedGift.name,
   resolvedGiftAmount: resolvedGift.amount,
   resolvedGiftDate: resolvedGift.dateReceived,
+  // Split summary: when a staged row is split across several existing gifts its
+  // resolution lives entirely in staged_payment_splits (resolvedGift above is
+  // null because no single matched/created/group gift is set). These correlated
+  // subqueries surface the count, combined gross total, and gift names so the UI
+  // can render "Split across N gifts · $total". 0/null when not split.
+  splitCount: sql<number>`(
+    SELECT COUNT(*)::int FROM staged_payment_splits sps
+    WHERE sps.staged_payment_id = ${stagedPayments.id}
+  )`.as("split_count"),
+  splitTotal: sql<string | null>`(
+    SELECT SUM(sps.sub_amount) FROM staged_payment_splits sps
+    WHERE sps.staged_payment_id = ${stagedPayments.id}
+  )`.as("split_total"),
+  splitGiftNames: sql<string[] | null>`(
+    SELECT array_agg(g.name ORDER BY g.name)
+    FROM staged_payment_splits sps
+    JOIN gifts_and_payments g ON g.id = sps.gift_id
+    WHERE sps.staged_payment_id = ${stagedPayments.id}
+  )`.as("split_gift_names"),
   // "Gift likely not created yet": this row has no gift of its own, and every
   // same-donor / similar-amount gift is already linked to a DIFFERENT staged
   // payment (no unlinked candidate is left to match). Signals the fundraiser to
@@ -149,10 +170,17 @@ const stagedSelect = {
       )
       AND g.amount >= ${stagedPayments.amount}::numeric - 0.01
       AND g.amount <= ${stagedPayments.amount}::numeric * 1.10 + 1
-      AND EXISTS (
-        SELECT 1 FROM staged_payments sp2
-        WHERE (sp2.matched_gift_id = g.id OR sp2.created_gift_id = g.id)
-          AND sp2.id <> ${stagedPayments.id}
+      AND (
+        EXISTS (
+          SELECT 1 FROM staged_payments sp2
+          WHERE (sp2.matched_gift_id = g.id OR sp2.created_gift_id = g.id)
+            AND sp2.id <> ${stagedPayments.id}
+        )
+        OR EXISTS (
+          SELECT 1 FROM staged_payment_splits spl2
+          WHERE spl2.gift_id = g.id
+            AND spl2.staged_payment_id <> ${stagedPayments.id}
+        )
       )
     )
     AND NOT EXISTS (
@@ -167,6 +195,10 @@ const stagedSelect = {
       AND NOT EXISTS (
         SELECT 1 FROM staged_payments sp3
         WHERE (sp3.matched_gift_id = g2.id OR sp3.created_gift_id = g2.id)
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM staged_payment_splits spl3
+        WHERE spl3.gift_id = g2.id
       )
     )
   )`.as("gift_already_linked_elsewhere"),
@@ -714,12 +746,16 @@ function giftCandidateSelect(excludeStagedId: string) {
     organizationName: organizations.name,
     householdName: households.name,
     individualGiverPersonName: people.fullName,
-    alreadyLinkedStagedPaymentId: sql<string | null>`(
-      SELECT sp2.id FROM staged_payments sp2
-      WHERE (sp2.matched_gift_id = ${giftsAndPayments.id}
-             OR sp2.created_gift_id = ${giftsAndPayments.id})
-        AND sp2.id <> ${excludeStagedId}
-      LIMIT 1
+    alreadyLinkedStagedPaymentId: sql<string | null>`COALESCE(
+      (SELECT sp2.id FROM staged_payments sp2
+        WHERE (sp2.matched_gift_id = ${giftsAndPayments.id}
+               OR sp2.created_gift_id = ${giftsAndPayments.id})
+          AND sp2.id <> ${excludeStagedId}
+        LIMIT 1),
+      (SELECT spl.staged_payment_id FROM staged_payment_splits spl
+        WHERE spl.gift_id = ${giftsAndPayments.id}
+          AND spl.staged_payment_id <> ${excludeStagedId}
+        LIMIT 1)
     )`,
   };
 }
@@ -947,39 +983,61 @@ router.post(
     const finalDonor = giftDonor;
 
     // Atomic: only succeeds if still pending AND no other staged row has grabbed
-    // this gift (matched or created) since the pre-check. NOT EXISTS handles the
-    // common case; the partial-unique index on matched_gift_id backstops a true
-    // write-skew race (caught below as a 409).
-    let updated: Array<{ id: string }>;
+    // this gift (matched, created, group-reconciled OR split-linked) since the
+    // pre-check. The NOT EXISTS guards handle the common case and the
+    // partial-unique index on matched_gift_id backstops a same-table write-skew,
+    // but the split table has no shared unique with staged_payments, so the
+    // cross-table invariant (a gift is claimed in exactly one place) is enforced
+    // by taking the gift row FOR UPDATE first. Every gift-claiming path (this
+    // reconcile, group-reconcile, split) locks staged-then-gift in that order so
+    // they serialize on the gift row without deadlocking.
+    let updated: Array<{ id: string }> = [];
     try {
-      updated = await db
-        .update(stagedPayments)
-        .set({
-          ...finalDonor,
-          status: "approved",
-          matchedGiftId: giftId,
-          createdGiftId: null,
-          autoApplied: false,
-          matchStatus: "matched",
-          matchConfirmedByUserId: user.id,
-          matchConfirmedAt: new Date(),
-          approvedByUserId: user.id,
-          approvedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(stagedPayments.id, id),
-            eq(stagedPayments.status, "pending"),
-            sql`NOT EXISTS (
-              SELECT 1 FROM staged_payments sp2
-              WHERE (sp2.matched_gift_id = ${giftId}
-                     OR sp2.created_gift_id = ${giftId})
-                AND sp2.id <> ${id}
-            )`,
-          ),
-        )
-        .returning({ id: stagedPayments.id });
+      await db.transaction(async (tx) => {
+        await tx
+          .select({ id: stagedPayments.id })
+          .from(stagedPayments)
+          .where(eq(stagedPayments.id, id))
+          .for("update");
+        await tx
+          .select({ id: giftsAndPayments.id })
+          .from(giftsAndPayments)
+          .where(eq(giftsAndPayments.id, giftId))
+          .for("update");
+        updated = await tx
+          .update(stagedPayments)
+          .set({
+            ...finalDonor,
+            status: "approved",
+            matchedGiftId: giftId,
+            createdGiftId: null,
+            autoApplied: false,
+            matchStatus: "matched",
+            matchConfirmedByUserId: user.id,
+            matchConfirmedAt: new Date(),
+            approvedByUserId: user.id,
+            approvedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(stagedPayments.id, id),
+              eq(stagedPayments.status, "pending"),
+              sql`NOT EXISTS (
+                SELECT 1 FROM staged_payments sp2
+                WHERE (sp2.matched_gift_id = ${giftId}
+                       OR sp2.created_gift_id = ${giftId}
+                       OR sp2.group_reconciled_gift_id = ${giftId})
+                  AND sp2.id <> ${id}
+              )`,
+              sql`NOT EXISTS (
+                SELECT 1 FROM staged_payment_splits spl
+                WHERE spl.gift_id = ${giftId}
+              )`,
+            ),
+          )
+          .returning({ id: stagedPayments.id });
+      });
     } catch (e) {
       if (
         typeof e === "object" &&
@@ -1103,6 +1161,17 @@ router.post(
           .for("update");
         if (locked.length !== ids.length) throw new Error(NOT_FOUND);
 
+        // Take the gift row lock after the staged rows (staged → gift order,
+        // shared by reconcile/split) so the conflict checks below run against
+        // committed state: any concurrent split/reconcile that claims this gift
+        // must commit and release the lock first, after which our READ COMMITTED
+        // re-reads see its write and we reject with a conflict.
+        await tx
+          .select({ id: giftsAndPayments.id })
+          .from(giftsAndPayments)
+          .where(eq(giftsAndPayments.id, giftId))
+          .for("update");
+
         for (const row of locked) {
           if (
             row.status !== "pending" ||
@@ -1179,6 +1248,14 @@ router.post(
           )
           .then((r) => r[0]);
         if (conflict) throw new Error(CONFLICT);
+
+        // …and not already split-linked by any staged row.
+        const splitConflict = await tx
+          .select({ giftId: stagedPaymentSplits.giftId })
+          .from(stagedPaymentSplits)
+          .where(eq(stagedPaymentSplits.giftId, giftId))
+          .then((r) => r[0]);
+        if (splitConflict) throw new Error(CONFLICT);
 
         const stamp = {
           ...giftDonor,
@@ -1271,6 +1348,230 @@ router.post(
       gift,
       stagedPaymentIds: ids,
       representativeStagedPaymentId: representativeId,
+    });
+  }),
+);
+
+// ─── POST /staged-payments/:id/split ───────────────────────────────────────
+// Split ONE staged payment across TWO OR MORE existing gifts (the case where a
+// single incoming-money record — e.g. a Stripe payout that nets fees into a
+// lump sum — covers several different donors' gifts). Each portion links to an
+// existing gift for that gift's own gross amount; no new gift is minted and
+// QuickBooks is never written back. The staged row is marked approved (human
+// confirmed) and its own donor / single-gift link columns are cleared — its
+// resolution lives entirely in staged_payment_splits. Guards: row pending; at
+// least two distinct gifts; each gift exists, carries a single valid donor, and
+// is not already linked anywhere (matched / created / group / split); combined
+// gross within the fee-band around the staged net amount. Reversible as a whole
+// (delete the split links) via the split-aware revert above.
+router.post(
+  "/staged-payments/:id/split",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const id = paramId(req);
+    const parsed = SplitStagedPaymentBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    // De-dupe; require at least two distinct gifts.
+    const giftIds = Array.from(new Set(parsed.data.giftIds));
+    if (giftIds.length < 2) {
+      res.status(400).json({
+        error: "split_too_small",
+        message: "Split across at least two distinct gifts.",
+      });
+      return;
+    }
+
+    const NOT_FOUND = "__not_found__";
+    const NOT_PENDING = "__not_pending__";
+    const GIFT_NOT_FOUND = "__gift_not_found__";
+    const LINK_INVALID = "__link_invalid__";
+    const CONFLICT = "__conflict__";
+    const TOLERANCE = "__tolerance__";
+
+    let toleranceDetail: { combinedTotal: number; stagedAmount: number } | null =
+      null;
+    let splitTotal = 0;
+    try {
+      await db.transaction(async (tx) => {
+        const locked = await tx
+          .select()
+          .from(stagedPayments)
+          .where(eq(stagedPayments.id, id))
+          .for("update")
+          .then((r) => r[0]);
+        if (!locked) throw new Error(NOT_FOUND);
+        if (locked.status !== "pending") throw new Error(NOT_PENDING);
+
+        // Load every target gift. Lock them so a concurrent reconcile/group/
+        // split can't grab one out from under us between the checks and inserts.
+        const gifts = await tx
+          .select()
+          .from(giftsAndPayments)
+          .where(inArray(giftsAndPayments.id, giftIds))
+          .for("update");
+        if (gifts.length !== giftIds.length) throw new Error(GIFT_NOT_FOUND);
+
+        // Each gift must carry a single valid donor (same guard the single-row
+        // and group reconcile paths use) — these are real donor gifts.
+        for (const gift of gifts) {
+          if (!hasExactlyOneDonor(donorOf(gift))) {
+            throw new Error(LINK_INVALID);
+          }
+        }
+
+        // No target gift may already be linked anywhere: matched / created /
+        // group-reconciled by another staged row, or split-linked at all (incl.
+        // an earlier split — the unique index on gift_id also backstops this).
+        const linkedElsewhere = await tx
+          .select({ id: stagedPayments.id })
+          .from(stagedPayments)
+          .where(
+            or(
+              inArray(stagedPayments.matchedGiftId, giftIds),
+              inArray(stagedPayments.createdGiftId, giftIds),
+              inArray(stagedPayments.groupReconciledGiftId, giftIds),
+            ),
+          )
+          .then((r) => r[0]);
+        if (linkedElsewhere) throw new Error(CONFLICT);
+        const splitLinked = await tx
+          .select({ giftId: stagedPaymentSplits.giftId })
+          .from(stagedPaymentSplits)
+          .where(inArray(stagedPaymentSplits.giftId, giftIds))
+          .then((r) => r[0]);
+        if (splitLinked) throw new Error(CONFLICT);
+
+        // Fee-band tolerance, with roles inverted vs group-reconcile: the gifts'
+        // summed GROSS total plays the "gift" role and the staged NET amount the
+        // "combined total" role — the gross sum may be at most a hair under the
+        // staged amount (rounding) and at most ~10% + $1 over (processor fees
+        // withheld before the lump-sum deposit).
+        const sumGifts = gifts.reduce(
+          (acc, g) => acc + Number(g.amount ?? 0),
+          0,
+        );
+        const staged = Number(locked.amount ?? 0);
+        if (!(sumGifts >= staged - 0.01 && sumGifts <= staged * 1.1 + 1)) {
+          toleranceDetail = { combinedTotal: sumGifts, stagedAmount: staged };
+          throw new Error(TOLERANCE);
+        }
+        splitTotal = sumGifts;
+
+        // Insert one split link per gift (sub_amount = that gift's own gross).
+        // The unique index on gift_id catches a write-skew race (caught below as
+        // a 409 conflict).
+        try {
+          await tx.insert(stagedPaymentSplits).values(
+            gifts.map((g) => ({
+              id: newId(),
+              stagedPaymentId: id,
+              giftId: g.id,
+              subAmount: g.amount ?? "0",
+              createdByUserId: user.id,
+            })),
+          );
+        } catch (e) {
+          if (
+            typeof e === "object" &&
+            e !== null &&
+            "code" in e &&
+            (e as { code?: string }).code === "23505"
+          ) {
+            throw new Error(CONFLICT);
+          }
+          throw e;
+        }
+
+        // Mark the staged row resolved. Its own donor columns are NOT
+        // authoritative for a split (the money spans several donors), so clear
+        // them along with every single-gift link column.
+        await tx
+          .update(stagedPayments)
+          .set({
+            organizationId: null,
+            individualGiverPersonId: null,
+            householdId: null,
+            matchedGiftId: null,
+            createdGiftId: null,
+            groupReconciledGiftId: null,
+            status: "approved",
+            autoApplied: false,
+            matchStatus: "matched",
+            matchMethod: "manual",
+            matchConfirmedByUserId: user.id,
+            matchConfirmedAt: new Date(),
+            approvedByUserId: user.id,
+            approvedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(eq(stagedPayments.id, id), eq(stagedPayments.status, "pending")),
+          );
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message === NOT_FOUND) {
+        return notFound(res, "staged payment");
+      }
+      if (e instanceof Error && e.message === GIFT_NOT_FOUND) {
+        return notFound(res, "gift");
+      }
+      if (e instanceof Error && e.message === NOT_PENDING) {
+        res.status(409).json({
+          error: "not_pending",
+          message: "This staged payment has already been resolved.",
+        });
+        return;
+      }
+      if (e instanceof Error && e.message === LINK_INVALID) {
+        res.status(400).json({
+          error: "link_invalid",
+          message: "Cannot split this payment across that gift.",
+          details: {
+            issues: [
+              {
+                path: ["giftIds"],
+                message: "One of the selected gifts has no donor.",
+              },
+            ],
+          },
+        });
+        return;
+      }
+      if (e instanceof Error && e.message === CONFLICT) {
+        res.status(409).json({
+          error: "link_conflict",
+          message:
+            "One of those gifts is already linked to a payment. Refresh and try again.",
+        });
+        return;
+      }
+      if (e instanceof Error && e.message === TOLERANCE) {
+        res.status(400).json({
+          error: "amount_mismatch",
+          message:
+            "The gifts' combined total doesn't match the payment within the fee tolerance.",
+          details: toleranceDetail,
+        });
+        return;
+      }
+      throw e;
+    }
+
+    res.json({
+      stagedPaymentId: id,
+      giftIds,
+      splitTotal: splitTotal.toFixed(2),
     });
   }),
 );
@@ -1402,6 +1703,39 @@ router.post(
           .then((r) => r[0]);
         if (!locked) throw new Error("__not_found__");
         if (locked.status !== "approved") throw new Error(NOT_REVERTIBLE);
+
+        // Split-aware: a row resolved by a split has no matched/created/group
+        // gift of its own, so it would fall through to the single-row branch and
+        // be rejected as not-revertible. Detect it first: delete every split
+        // link and return the row to pending. The pre-existing gifts are never
+        // touched (no mint happens in a split).
+        const splitLinks = await tx
+          .select({ id: stagedPaymentSplits.id })
+          .from(stagedPaymentSplits)
+          .where(eq(stagedPaymentSplits.stagedPaymentId, id));
+        if (splitLinks.length > 0) {
+          await tx
+            .delete(stagedPaymentSplits)
+            .where(eq(stagedPaymentSplits.stagedPaymentId, id));
+          const [row] = await tx
+            .update(stagedPayments)
+            .set({
+              status: "pending",
+              matchedGiftId: null,
+              createdGiftId: null,
+              groupReconciledGiftId: null,
+              autoApplied: false,
+              matchConfirmedByUserId: null,
+              matchConfirmedAt: null,
+              approvedByUserId: null,
+              approvedAt: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(stagedPayments.id, id))
+            .returning();
+          result = row ?? null;
+          return;
+        }
 
         // Group-aware: a deposit-group member (incl. the representative, which
         // also carries matchedGiftId) reverts the WHOLE group back to pending.

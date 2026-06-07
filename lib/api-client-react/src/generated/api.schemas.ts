@@ -1879,6 +1879,12 @@ export interface StagedPayment {
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
   resolvedGiftDate?: string | null;
+  /** How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift. */
+  splitCount?: number;
+  /** Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split. */
+  splitTotal?: string | null;
+  /** Names of the gifts this staged payment is split across, for display. Null when not split. */
+  splitGiftNames?: string[] | null;
   /** True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate). */
   giftAlreadyLinkedElsewhere?: boolean;
   createdAt: string;
@@ -1955,7 +1961,7 @@ export type GiftCandidate = GiftOrPayment & {
   organizationName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
-  /** Set when this gift is already reconciled/created by another staged payment. The UI disables linking to it to avoid double-counting. */
+  /** Set when this gift is already reconciled/created/group-reconciled/split-linked by a staged payment. The UI disables linking to it to avoid double-counting. */
   alreadyLinkedStagedPaymentId?: string | null;
 };
 
@@ -1968,6 +1974,24 @@ export interface GiftCandidateList {
  */
 export interface ReconcileStagedPaymentBody {
   giftId: string;
+}
+
+/**
+ * Split one staged payment across several existing gifts. Each portion is the linked gift's own gross amount; no new gift is created.
+ */
+export interface SplitStagedPaymentBody {
+  /**
+   * Ids of the existing gifts to split this staged payment across. Must be at least two distinct gifts, each unlinked everywhere, each with a single valid donor; their combined gross total must sit in the fee-band around the staged net amount.
+   * @minItems 2
+   */
+  giftIds: string[];
+}
+
+export interface SplitStagedPaymentResponse {
+  stagedPaymentId: string;
+  giftIds: string[];
+  /** Combined gross total of the split gifts. */
+  splitTotal: string;
 }
 
 /**

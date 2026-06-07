@@ -7113,6 +7113,24 @@ export const ListStagedPaymentsResponse = zod.object({
       resolvedGiftName: zod.string().nullish(),
       resolvedGiftAmount: zod.string().nullish(),
       resolvedGiftDate: zod.string().date().nullish(),
+      splitCount: zod
+        .number()
+        .optional()
+        .describe(
+          "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.",
+        ),
+      splitTotal: zod
+        .string()
+        .nullish()
+        .describe(
+          "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.",
+        ),
+      splitGiftNames: zod
+        .array(zod.string())
+        .nullish()
+        .describe(
+          "Names of the gifts this staged payment is split across, for display. Null when not split.",
+        ),
       giftAlreadyLinkedElsewhere: zod
         .boolean()
         .optional()
@@ -7299,6 +7317,24 @@ export const ResolveStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  splitCount: zod
+    .number()
+    .optional()
+    .describe(
+      "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.",
+    ),
+  splitTotal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.",
+    ),
+  splitGiftNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of the gifts this staged payment is split across, for display. Null when not split.",
+    ),
   giftAlreadyLinkedElsewhere: zod
     .boolean()
     .optional()
@@ -7432,6 +7468,24 @@ export const RejectStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  splitCount: zod
+    .number()
+    .optional()
+    .describe(
+      "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.",
+    ),
+  splitTotal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.",
+    ),
+  splitGiftNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of the gifts this staged payment is split across, for display. Null when not split.",
+    ),
   giftAlreadyLinkedElsewhere: zod
     .boolean()
     .optional()
@@ -7558,6 +7612,24 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  splitCount: zod
+    .number()
+    .optional()
+    .describe(
+      "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.",
+    ),
+  splitTotal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.",
+    ),
+  splitGiftNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of the gifts this staged payment is split across, for display. Null when not split.",
+    ),
   giftAlreadyLinkedElsewhere: zod
     .boolean()
     .optional()
@@ -7713,6 +7785,24 @@ export const ExcludeStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  splitCount: zod
+    .number()
+    .optional()
+    .describe(
+      "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.",
+    ),
+  splitTotal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.",
+    ),
+  splitGiftNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of the gifts this staged payment is split across, for display. Null when not split.",
+    ),
   giftAlreadyLinkedElsewhere: zod
     .boolean()
     .optional()
@@ -7850,7 +7940,7 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
             .string()
             .nullish()
             .describe(
-              "Set when this gift is already reconciled\/created by another staged payment. The UI disables linking to it to avoid double-counting.",
+              "Set when this gift is already reconciled\/created\/group-reconciled\/split-linked by a staged payment. The UI disables linking to it to avoid double-counting.",
             ),
         }),
       ),
@@ -7993,7 +8083,7 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
             .string()
             .nullish()
             .describe(
-              "Set when this gift is already reconciled\/created by another staged payment. The UI disables linking to it to avoid double-counting.",
+              "Set when this gift is already reconciled\/created\/group-reconciled\/split-linked by a staged payment. The UI disables linking to it to avoid double-counting.",
             ),
         }),
       ),
@@ -8121,6 +8211,48 @@ export const ReconcileStagedPaymentResponse = zod.object({
     updatedAt: zod.string().datetime({}),
   }),
   stagedPaymentId: zod.string(),
+});
+
+/**
+ * Reconciles ONE staged payment to TWO OR MORE already-recorded gifts for
+different donors — the case where a single incoming-money record (e.g. a
+Stripe payout that nets fees into a lump sum) covers several donors'
+gifts. Each portion links to an existing gift for that gift's own gross
+amount; no new gift is minted and QuickBooks is never written back. The
+staged row is marked approved (human-confirmed) and its own donor /
+single-gift link columns are cleared — its resolution lives entirely in
+the split links. Guards: the row is pending; at least two distinct gifts;
+each gift exists, carries a single valid donor, and is not already linked
+to ANY staged payment (matched, created, group-reconciled, or split); and
+the gifts' combined GROSS total sits in the processor fee-band tolerance
+around the staged NET amount (sum >= staged - 0.01 AND sum <= staged *
+1.1 + 1). Reversible as a whole via the revert endpoint (unsplit).
+
+ * @summary Split one staged payment across several existing gifts (no new gift is created).
+ */
+export const SplitStagedPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const splitStagedPaymentBodyGiftIdsMin = 2;
+
+export const SplitStagedPaymentBody = zod
+  .object({
+    giftIds: zod
+      .array(zod.string())
+      .min(splitStagedPaymentBodyGiftIdsMin)
+      .describe(
+        "Ids of the existing gifts to split this staged payment across. Must be at least two distinct gifts, each unlinked everywhere, each with a single valid donor; their combined gross total must sit in the fee-band around the staged net amount.",
+      ),
+  })
+  .describe(
+    "Split one staged payment across several existing gifts. Each portion is the linked gift's own gross amount; no new gift is created.",
+  );
+
+export const SplitStagedPaymentResponse = zod.object({
+  stagedPaymentId: zod.string(),
+  giftIds: zod.array(zod.string()),
+  splitTotal: zod.string().describe("Combined gross total of the split gifts."),
 });
 
 /**
@@ -8395,6 +8527,24 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  splitCount: zod
+    .number()
+    .optional()
+    .describe(
+      "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.",
+    ),
+  splitTotal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.",
+    ),
+  splitGiftNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of the gifts this staged payment is split across, for display. Null when not split.",
+    ),
   giftAlreadyLinkedElsewhere: zod
     .boolean()
     .optional()
@@ -8521,6 +8671,24 @@ export const UnmatchStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  splitCount: zod
+    .number()
+    .optional()
+    .describe(
+      "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.",
+    ),
+  splitTotal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.",
+    ),
+  splitGiftNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of the gifts this staged payment is split across, for display. Null when not split.",
+    ),
   giftAlreadyLinkedElsewhere: zod
     .boolean()
     .optional()
@@ -8654,6 +8822,24 @@ export const RevertStagedPaymentResponse = zod.object({
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
   resolvedGiftDate: zod.string().date().nullish(),
+  splitCount: zod
+    .number()
+    .optional()
+    .describe(
+      "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.",
+    ),
+  splitTotal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.",
+    ),
+  splitGiftNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of the gifts this staged payment is split across, for display. Null when not split.",
+    ),
   giftAlreadyLinkedElsewhere: zod
     .boolean()
     .optional()

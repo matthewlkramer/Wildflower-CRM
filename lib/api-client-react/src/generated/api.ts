@@ -201,6 +201,8 @@ import type {
   SearchTrackedEmailParams,
   SendTrackedEmailBody,
   SendTrackedEmailResult,
+  SplitStagedPaymentBody,
+  SplitStagedPaymentResponse,
   StagedGiftResponse,
   StagedPayment,
   StagedPaymentList,
@@ -14519,6 +14521,109 @@ export const useReconcileStagedPayment = <
   TContext
 > => {
   return useMutation(getReconcileStagedPaymentMutationOptions(options));
+};
+
+/**
+ * Reconciles ONE staged payment to TWO OR MORE already-recorded gifts for
+different donors — the case where a single incoming-money record (e.g. a
+Stripe payout that nets fees into a lump sum) covers several donors'
+gifts. Each portion links to an existing gift for that gift's own gross
+amount; no new gift is minted and QuickBooks is never written back. The
+staged row is marked approved (human-confirmed) and its own donor /
+single-gift link columns are cleared — its resolution lives entirely in
+the split links. Guards: the row is pending; at least two distinct gifts;
+each gift exists, carries a single valid donor, and is not already linked
+to ANY staged payment (matched, created, group-reconciled, or split); and
+the gifts' combined GROSS total sits in the processor fee-band tolerance
+around the staged NET amount (sum >= staged - 0.01 AND sum <= staged *
+1.1 + 1). Reversible as a whole via the revert endpoint (unsplit).
+
+ * @summary Split one staged payment across several existing gifts (no new gift is created).
+ */
+export const getSplitStagedPaymentUrl = (id: string) => {
+  return `/api/staged-payments/${id}/split`;
+};
+
+export const splitStagedPayment = async (
+  id: string,
+  splitStagedPaymentBody: SplitStagedPaymentBody,
+  options?: RequestInit,
+): Promise<SplitStagedPaymentResponse> => {
+  return customFetch<SplitStagedPaymentResponse>(getSplitStagedPaymentUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(splitStagedPaymentBody),
+  });
+};
+
+export const getSplitStagedPaymentMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof splitStagedPayment>>,
+    TError,
+    { id: string; data: BodyType<SplitStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof splitStagedPayment>>,
+  TError,
+  { id: string; data: BodyType<SplitStagedPaymentBody> },
+  TContext
+> => {
+  const mutationKey = ["splitStagedPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof splitStagedPayment>>,
+    { id: string; data: BodyType<SplitStagedPaymentBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return splitStagedPayment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SplitStagedPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof splitStagedPayment>>
+>;
+export type SplitStagedPaymentMutationBody = BodyType<SplitStagedPaymentBody>;
+export type SplitStagedPaymentMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Split one staged payment across several existing gifts (no new gift is created).
+ */
+export const useSplitStagedPayment = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof splitStagedPayment>>,
+    TError,
+    { id: string; data: BodyType<SplitStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof splitStagedPayment>>,
+  TError,
+  { id: string; data: BodyType<SplitStagedPaymentBody> },
+  TContext
+> => {
+  return useMutation(getSplitStagedPaymentMutationOptions(options));
 };
 
 /**

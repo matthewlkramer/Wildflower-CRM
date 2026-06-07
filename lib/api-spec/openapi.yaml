@@ -1983,6 +1983,34 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not pending, or the gift is already linked" }
+  /staged-payments/{id}/split:
+    post:
+      operationId: splitStagedPayment
+      tags: [staged-payments]
+      summary: Split one staged payment across several existing gifts (no new gift is created).
+      description: |
+        Reconciles ONE staged payment to TWO OR MORE already-recorded gifts for
+        different donors — the case where a single incoming-money record (e.g. a
+        Stripe payout that nets fees into a lump sum) covers several donors'
+        gifts. Each portion links to an existing gift for that gift's own gross
+        amount; no new gift is minted and QuickBooks is never written back. The
+        staged row is marked approved (human-confirmed) and its own donor /
+        single-gift link columns are cleared — its resolution lives entirely in
+        the split links. Guards: the row is pending; at least two distinct gifts;
+        each gift exists, carries a single valid donor, and is not already linked
+        to ANY staged payment (matched, created, group-reconciled, or split); and
+        the gifts' combined GROSS total sits in the processor fee-band tolerance
+        around the staged NET amount (sum >= staged - 0.01 AND sum <= staged *
+        1.1 + 1). Reversible as a whole via the revert endpoint (unsplit).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SplitStagedPaymentBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SplitStagedPaymentResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Staged payment is not pending, or one of the gifts is already linked" }
   /staged-payments/group-reconcile:
     post:
       operationId: groupReconcileStagedPayments
@@ -3834,6 +3862,9 @@ components:
         resolvedGiftName:          { type: string, nullable: true }
         resolvedGiftAmount:        { type: string, nullable: true }
         resolvedGiftDate:          { type: string, format: date, nullable: true }
+        splitCount:                { type: integer, description: "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift." }
+        splitTotal:                { type: string, nullable: true, description: "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split." }
+        splitGiftNames:            { type: array, items: { type: string }, nullable: true, description: "Names of the gifts this staged payment is split across, for display. Null when not split." }
         giftAlreadyLinkedElsewhere: { type: boolean, description: "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate)." }
         createdAt:                 { type: string, format: date-time }
         updatedAt:                 { type: string, format: date-time }
@@ -3908,7 +3939,7 @@ components:
             alreadyLinkedStagedPaymentId:
               type: string
               nullable: true
-              description: "Set when this gift is already reconciled/created by another staged payment. The UI disables linking to it to avoid double-counting."
+              description: "Set when this gift is already reconciled/created/group-reconciled/split-linked by a staged payment. The UI disables linking to it to avoid double-counting."
     GiftCandidateList:
       type: object
       required: [data]
@@ -3920,6 +3951,23 @@ components:
       description: "Reconcile the staged payment to an existing gifts_and_payments row."
       properties:
         giftId: { type: string }
+    SplitStagedPaymentBody:
+      type: object
+      required: [giftIds]
+      description: "Split one staged payment across several existing gifts. Each portion is the linked gift's own gross amount; no new gift is created."
+      properties:
+        giftIds:
+          type: array
+          minItems: 2
+          items: { type: string }
+          description: "Ids of the existing gifts to split this staged payment across. Must be at least two distinct gifts, each unlinked everywhere, each with a single valid donor; their combined gross total must sit in the fee-band around the staged net amount."
+    SplitStagedPaymentResponse:
+      type: object
+      required: [stagedPaymentId, giftIds, splitTotal]
+      properties:
+        stagedPaymentId: { type: string }
+        giftIds: { type: array, items: { type: string } }
+        splitTotal: { type: string, description: "Combined gross total of the split gifts." }
     GroupReconcileStagedPaymentsBody:
       type: object
       required: [stagedPaymentIds, giftId]

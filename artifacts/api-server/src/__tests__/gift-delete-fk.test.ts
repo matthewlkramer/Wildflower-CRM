@@ -11,10 +11,18 @@ import * as schema from "@workspace/db/schema";
  * carries >= 1 allocation row and a raw parent delete would otherwise fail the
  * FK with a 500 (this happened in production).
  *
+ * Two FKs onto gifts_and_payments.id are RESTRICT and each is handled by the
+ * delete route up front:
+ *   - gift_allocations.gift_id      — cleared in-txn before the gift delete.
+ *   - staged_payment_splits.gift_id — a split-reconciled QuickBooks payment
+ *     points at the gift; the route returns a clean 409 ("revert the split
+ *     first") instead of cascading, so the staged payment never ends up with an
+ *     incomplete split.
+ *
  * Every OTHER FK landing on gifts_and_payments.id is onDelete:set null, so it
  * never blocks a delete and needs no cleanup. If a future schema change adds a
  * new RESTRICT (or no-action) FK onto gifts_and_payments without teaching the
- * delete handler to clean it up first, that 500 silently returns — this test
+ * delete handler to handle it first, that 500 silently returns — this test
  * fails first, in the same spirit as the merge-entities FK-inventory guard.
  */
 function fksOntoGiftsAndPayments(): { col: string; onDelete?: string }[] {
@@ -38,17 +46,23 @@ function fksOntoGiftsAndPayments(): { col: string; onDelete?: string }[] {
 }
 
 describe("gift delete FK contract", () => {
-  it("only gift_allocations is RESTRICT; the delete handler must clear it first", () => {
+  // The RESTRICT FKs the delete route explicitly handles up front.
+  const HANDLED_RESTRICT = [
+    "gift_allocations.gift_id",
+    "staged_payment_splits.gift_id",
+  ];
+
+  it("only the handled FKs are RESTRICT; the delete handler must deal with each first", () => {
     const restrict = fksOntoGiftsAndPayments()
       .filter((f) => f.onDelete === "restrict")
       .map((f) => f.col)
       .sort();
-    expect(restrict).toEqual(["gift_allocations.gift_id"]);
+    expect(restrict).toEqual([...HANDLED_RESTRICT].sort());
   });
 
   it("every other FK onto gifts_and_payments is set null (never blocks delete)", () => {
     const blocking = fksOntoGiftsAndPayments().filter(
-      (f) => f.col !== "gift_allocations.gift_id" && f.onDelete !== "set null",
+      (f) => !HANDLED_RESTRICT.includes(f.col) && f.onDelete !== "set null",
     );
     expect(blocking).toEqual([]);
   });

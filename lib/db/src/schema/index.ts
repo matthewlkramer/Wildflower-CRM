@@ -45,4 +45,5 @@ export * from "./calendarMeetingFilters";
 export * from "./internalEmailDomains";
 export * from "./quickbooksConnections";
 export * from "./stagedPayments";
+export * from "./stagedPaymentSplits";
 export * from "./flodeskSyncState";
