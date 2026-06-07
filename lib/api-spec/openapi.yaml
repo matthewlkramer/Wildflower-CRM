@@ -1111,6 +1111,7 @@ paths:
         - { name: dateAfter, in: query, required: false, description: "Keep gifts with dateReceived on/after this date (inclusive).", schema: { type: string, format: date } }
         - { name: dateBefore, in: query, required: false, description: "Keep gifts with dateReceived on/before this date (inclusive).", schema: { type: string, format: date } }
         - { name: linkedToQuickbooks, in: query, required: false, description: "Filter by whether a QuickBooks staged payment is reconciled to / created this gift (`linked`) or not (`unlinked`).", schema: { type: string, enum: [linked, unlinked] } }
+        - { name: sort, in: query, required: false, schema: { $ref: "#/components/schemas/GiftSort" }, description: "Sort order (default date_desc)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -3738,6 +3739,7 @@ components:
     StagedPaymentClassificationSource: { type: string, enum: [auto, manual] }
     StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, rejected] }
     StagedPaymentSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc, payer_asc, payer_desc] }
+    GiftSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc] }
     QuickbooksOauthStatus:
       type: object
       required: [configured, connected]

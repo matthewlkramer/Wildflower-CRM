@@ -35,6 +35,7 @@ import {
   type QuickbooksEntityType,
   type QuickbooksPayerType,
   type GiftOrPayment,
+  type GiftSort,
 } from "@workspace/api-client-react";
 import {
   Card,
@@ -109,6 +110,13 @@ const SORTS: { value: StagedPaymentSort; label: string }[] = [
   { value: "amount_asc", label: "Amount (low → high)" },
   { value: "payer_asc", label: "Payer (A → Z)" },
   { value: "payer_desc", label: "Payer (Z → A)" },
+];
+
+const GIFT_SORTS: { value: GiftSort; label: string }[] = [
+  { value: "date_desc", label: "Date (newest)" },
+  { value: "date_asc", label: "Date (oldest)" },
+  { value: "amount_desc", label: "Amount (high → low)" },
+  { value: "amount_asc", label: "Amount (low → high)" },
 ];
 
 const EXCLUSION_REASON_LABELS: Record<StagedPaymentExclusionReason, string> = {
@@ -2068,6 +2076,8 @@ function GiftsPanel({
     return () => clearTimeout(t);
   }, [search]);
 
+  const [sort, setSort] = useState<GiftSort>("date_desc");
+
   const params = useMemo(() => {
     const p: {
       limit: number;
@@ -2076,13 +2086,15 @@ function GiftsPanel({
       dateAfter?: string;
       dateBefore?: string;
       linkedToQuickbooks?: "linked" | "unlinked";
+      sort?: GiftSort;
     } = { limit: pageSize, page };
     if (debounced.trim()) p.search = debounced.trim();
     if (dateAfter) p.dateAfter = dateAfter;
     if (dateBefore) p.dateBefore = dateBefore;
     if (linkedFilter !== "all") p.linkedToQuickbooks = linkedFilter;
+    if (sort !== "date_desc") p.sort = sort;
     return p;
-  }, [debounced, dateAfter, dateBefore, linkedFilter, page, pageSize]);
+  }, [debounced, dateAfter, dateBefore, linkedFilter, sort, page, pageSize]);
 
   const giftsQ = useListGiftsAndPayments(params, {
     query: { queryKey: getListGiftsAndPaymentsQueryKey(params) },
@@ -2136,6 +2148,24 @@ function GiftsPanel({
               <SelectItem value="all">All gifts</SelectItem>
               <SelectItem value="unlinked">Not linked to QB</SelectItem>
               <SelectItem value="linked">Linked to QB</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={sort}
+            onValueChange={(v) => {
+              setSort(v as GiftSort);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="h-9 w-[180px]" data-testid="gift-sort">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {GIFT_SORTS.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           {dateAfter || dateBefore || search || linkedFilter !== "unlinked" ? (

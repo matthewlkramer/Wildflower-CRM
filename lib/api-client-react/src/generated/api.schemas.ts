@@ -1748,6 +1748,15 @@ export const StagedPaymentSort = {
   payer_desc: "payer_desc",
 } as const;
 
+export type GiftSort = (typeof GiftSort)[keyof typeof GiftSort];
+
+export const GiftSort = {
+  date_desc: "date_desc",
+  date_asc: "date_asc",
+  amount_desc: "amount_desc",
+  amount_asc: "amount_asc",
+} as const;
+
 export interface QuickbooksOauthStatus {
   /** Server has QUICKBOOKS_CLIENT_ID/SECRET set */
   configured: boolean;
@@ -3830,6 +3839,10 @@ fiscal years.
    * Filter by whether a QuickBooks staged payment is reconciled to / created this gift (`linked`) or not (`unlinked`).
    */
   linkedToQuickbooks?: ListGiftsAndPaymentsLinkedToQuickbooks;
+  /**
+   * Sort order (default date_desc).
+   */
+  sort?: GiftSort;
   /**
    * @minimum 1
    * @maximum 10000

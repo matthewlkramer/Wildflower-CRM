@@ -4409,6 +4409,10 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
     .describe(
       "Filter by whether a QuickBooks staged payment is reconciled to \/ created this gift (`linked`) or not (`unlinked`).",
     ),
+  sort: zod
+    .enum(["date_desc", "date_asc", "amount_desc", "amount_asc"])
+    .optional()
+    .describe("Sort order (default date_desc)."),
   limit: zod.coerce
     .number()
     .min(1)

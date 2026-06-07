@@ -14,7 +14,7 @@ import {
   peopleEntityRoles,
   type NewGiftAllocation,
 } from "@workspace/db/schema";
-import { and, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { getAppUser } from "../lib/appRequest";
 
 // See opportunitiesAndPledges.ts for rationale — same denormalized
@@ -211,6 +211,18 @@ router.get(
     if (q.thankYouSentAtPresence === "has") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NOT NULL`);
     else if (q.thankYouSentAtPresence === "blank") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NULL`);
     const where = filters.length ? and(...filters) : undefined;
+    // Sort order (default date_desc). Amount is a numeric text column, so cast
+    // for a true numeric sort; a NULLS LAST tiebreaker on dateReceived keeps the
+    // order stable. Mirrors the staged-payments list sort options.
+    const amountNum = sql`(${giftsAndPayments.amount})::numeric`;
+    const orderBy =
+      q.sort === "amount_desc"
+        ? [desc(amountNum), desc(giftsAndPayments.dateReceived)]
+        : q.sort === "amount_asc"
+          ? [asc(amountNum), desc(giftsAndPayments.dateReceived)]
+          : q.sort === "date_asc"
+            ? [asc(giftsAndPayments.dateReceived)]
+            : [desc(giftsAndPayments.dateReceived)];
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
         .select(donorJoinSelect)
@@ -219,7 +231,7 @@ router.get(
         .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
         .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
         .where(where)
-        .orderBy(desc(giftsAndPayments.dateReceived))
+        .orderBy(...orderBy)
         .limit(limit)
         .offset(offset),
       db
