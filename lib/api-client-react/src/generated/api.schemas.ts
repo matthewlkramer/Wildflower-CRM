@@ -1971,16 +1971,18 @@ export interface ReconcileStagedPaymentBody {
 }
 
 /**
- * Group several same-deposit staged payments and reconcile the whole group to one existing gift.
+ * Group several staged payments and reconcile the whole group to one existing gift. Members must share one bank deposit, or — when no deposit was captured — the same payer.
  */
 export interface GroupReconcileStagedPaymentsBody {
   /**
-   * Ids of the staged payments to group. Must be at least two, all pending, and all sharing the same non-null qbDepositId.
+   * Ids of the staged payments to group. Must be at least two, all pending, and all sharing the same non-null qbDepositId, or — when none has a deposit — the same payer name.
    * @minItems 2
    */
   stagedPaymentIds: string[];
-  /** The existing gift the deposit group reconciles to. */
+  /** The existing gift the group reconciles to. */
   giftId: string;
+  /** Must be true when the grouped payments do not all share the same date_received. Guards against accidentally collapsing unrelated same-payer gifts (e.g. recurring donations) into one. The client prompts the operator to confirm before sending this. */
+  confirmMultiDate?: boolean;
 }
 
 export interface GroupReconcileStagedPaymentsResponse {

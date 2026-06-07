@@ -8124,20 +8124,26 @@ export const ReconcileStagedPaymentResponse = zod.object({
 });
 
 /**
- * Manually groups two or more staged payments that share ONE underlying
-bank Deposit (same qbDepositId) into a single "deposit unit" and
+ * Manually groups two or more staged payments into a single unit and
 reconciles the GROUP as a whole to one already-recorded gift (typically a
-multi-allocation gift). No new gift is minted and QuickBooks is never
-written back. Every member is set to approved with
-groupReconciledGiftId = the gift; one deterministic representative member
-also carries matchedGiftId so the gift shows linked. The group adopts the
-gift's donor (Donor XOR). Guards: at least two rows, all pending and
-unresolved, all sharing the same non-null deposit, the gift exists with a
-single valid donor and is not already linked elsewhere, and the members'
-combined total matches the gift amount within the processor fee-band
-tolerance. Reversible as a whole via the revert endpoint.
+multi-allocation gift). Members must form one coherent group: they share
+ONE underlying bank Deposit (same qbDepositId), or — when no deposit was
+captured — they share the same payer name (e.g. a single wire, or a
+series of stock sales, split across several QuickBooks records). No new
+gift is minted and QuickBooks is never written back. Every member is set
+to approved with groupReconciledGiftId = the gift; one deterministic
+representative member also carries matchedGiftId so the gift shows linked.
+The group adopts the gift's donor (Donor XOR). Guards: at least two rows,
+all pending and unresolved, all sharing one grouping key (deposit or
+payer), the gift exists with a single valid donor and is not already
+linked elsewhere, and the members' combined total matches the gift amount
+within the processor fee-band tolerance. When the grouped payments do not
+all fall on the same date_received, `confirmMultiDate` must be true
+(otherwise 400 multi_date_confirmation_required) — this guards against
+collapsing unrelated same-payer gifts. Reversible as a whole via the
+revert endpoint.
 
- * @summary Group several same-deposit staged payments and reconcile them as one unit to an existing gift.
+ * @summary Group several staged payments and reconcile them as one unit to an existing gift.
  */
 export const groupReconcileStagedPaymentsBodyStagedPaymentIdsMin = 2;
 
@@ -8147,14 +8153,18 @@ export const GroupReconcileStagedPaymentsBody = zod
       .array(zod.string())
       .min(groupReconcileStagedPaymentsBodyStagedPaymentIdsMin)
       .describe(
-        "Ids of the staged payments to group. Must be at least two, all pending, and all sharing the same non-null qbDepositId.",
+        "Ids of the staged payments to group. Must be at least two, all pending, and all sharing the same non-null qbDepositId, or — when none has a deposit — the same payer name.",
       ),
-    giftId: zod
-      .string()
-      .describe("The existing gift the deposit group reconciles to."),
+    giftId: zod.string().describe("The existing gift the group reconciles to."),
+    confirmMultiDate: zod
+      .boolean()
+      .optional()
+      .describe(
+        "Must be true when the grouped payments do not all share the same date_received. Guards against accidentally collapsing unrelated same-payer gifts (e.g. recurring donations) into one. The client prompts the operator to confirm before sending this.",
+      ),
   })
   .describe(
-    "Group several same-deposit staged payments and reconcile the whole group to one existing gift.",
+    "Group several staged payments and reconcile the whole group to one existing gift. Members must share one bank deposit, or — when no deposit was captured — the same payer.",
   );
 
 export const GroupReconcileStagedPaymentsResponse = zod.object({

@@ -18,9 +18,12 @@ import type { Server } from "node:http";
  * rejection paths each return the right status/error AND (for rejections) leave
  * every row untouched:
  *   - DIFFERENT bank deposits                          → 400 not_groupable
- *   - no deposit AND different payer/date              → 400 not_groupable
- *   - no deposit but SAME payer + date                 → 200, reconciled
+ *   - no deposit AND different payer                   → 400 not_groupable
+ *   - no deposit, SAME payer + date                    → 200, reconciled
  *   - same payer+date but DIFFERENT non-null deposits  → 400 not_groupable
+ *   - same payer, DIFFERENT dates, no confirm flag     → 400 multi_date_confirmation_required
+ *   - same payer, DIFFERENT dates, confirmMultiDate    → 200, reconciled
+ *   - same payer, one real + one null date (mixed)     → multi-date gate applies
  *   - one row already resolved/approved                → 409 not_pending
  *   - gift already linked to a staged row outside group → 409 link_conflict
  *   - fewer than two rows                              → 400 group_too_small
@@ -327,6 +330,100 @@ describe.skipIf(!HAS_DB)(
 
       await expectUntouchedPending(aId);
       await expectUntouchedPending(bId);
+    }, 30_000);
+
+    it("rejects same payer but DIFFERENT dates without confirmMultiDate (400 multi_date_confirmation_required) and changes nothing", async () => {
+      // A series of stock sales from one donor over several days. Same payer,
+      // no deposit, but different dates: groupable in principle, yet the caller
+      // must explicitly acknowledge the multi-date span first.
+      const giftId = await seedGift("1000000.00");
+      const aId = await seedStaged(giftId, "a", "600000.00", {
+        depositId: null,
+        payerName: "Arthur Rock",
+        dateReceived: "2018-05-22",
+      });
+      const bId = await seedStaged(giftId, "b", "400000.00", {
+        depositId: null,
+        payerName: "Arthur Rock",
+        dateReceived: "2018-06-15",
+      });
+
+      const res = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe("multi_date_confirmation_required");
+
+      await expectUntouchedPending(aId);
+      await expectUntouchedPending(bId);
+    }, 30_000);
+
+    it("accepts same payer + DIFFERENT dates WITH confirmMultiDate → 200 and reconciles the group", async () => {
+      const giftId = await seedGift("1000000.00");
+      const aId = await seedStaged(giftId, "a", "600000.00", {
+        depositId: null,
+        payerName: "Arthur Rock",
+        dateReceived: "2018-05-22",
+      });
+      const bId = await seedStaged(giftId, "b", "400000.00", {
+        depositId: null,
+        payerName: "Arthur Rock",
+        dateReceived: "2018-06-15",
+      });
+
+      const res = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+        confirmMultiDate: true,
+      });
+
+      expect(res.status).toBe(200);
+
+      const a = await readStaged(aId);
+      const b = await readStaged(bId);
+      expect(a.status).toBe("approved");
+      expect(b.status).toBe("approved");
+      expect(a.groupReconciledGiftId).toBe(giftId);
+      expect(b.groupReconciledGiftId).toBe(giftId);
+      expect(a.matchedGiftId).toBe(giftId);
+      expect(b.matchedGiftId).toBeNull();
+    }, 30_000);
+
+    it("treats a null date as its own distinct date: one real + one null date needs confirmMultiDate", async () => {
+      // The client counts null as a distinct date bucket; the server must agree
+      // or a mixed null/real-date group opens no confirm dialog yet always 400s.
+      const giftId = await seedGift("100.00");
+      const aId = await seedStaged(giftId, "a", "50.00", {
+        depositId: null,
+        payerName: "Mixed Date Donor",
+        dateReceived: "2025-01-01",
+      });
+      const bId = await seedStaged(giftId, "b", "50.00", {
+        depositId: null,
+        payerName: "Mixed Date Donor",
+        dateReceived: null,
+      });
+
+      const blocked = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+      });
+      expect(blocked.status).toBe(400);
+      expect(blocked.json.error).toBe("multi_date_confirmation_required");
+      await expectUntouchedPending(aId);
+      await expectUntouchedPending(bId);
+
+      const ok = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+        confirmMultiDate: true,
+      });
+      expect(ok.status).toBe(200);
+      const a = await readStaged(aId);
+      expect(a.status).toBe("approved");
+      expect(a.groupReconciledGiftId).toBe(giftId);
     }, 30_000);
 
     it("rejects when a row is already resolved with 409 not_pending and changes nothing", async () => {

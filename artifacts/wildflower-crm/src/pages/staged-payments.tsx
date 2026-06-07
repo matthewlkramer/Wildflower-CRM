@@ -215,14 +215,15 @@ function formatAmount(amount: string | null | undefined): string {
 // Grouping key for the "several QB records = one CRM gift" flow. Two staged
 // payments can be grouped when they share an underlying bank deposit
 // (qbDepositId) OR — when no deposit was captured — when they share the same
-// payer and date_received (a single wire split across multiple QB records).
-// Rows with neither key are not groupable. Mirrors the server guard in
-// POST /staged-payments/group-reconcile.
+// payer (a single wire, or a series of stock sales, split across multiple QB
+// records, possibly over several days). The date is intentionally NOT part of
+// the key; cross-date grouping is allowed but prompts an explicit confirmation
+// before it is sent (see confirmMultiDate). Rows with neither key are not
+// groupable. Mirrors the server guard in POST /staged-payments/group-reconcile.
 function groupKeyOf(row: StagedPayment): string | null {
   if (row.qbDepositId) return `dep:${row.qbDepositId}`;
   const payer = (row.payerName ?? "").trim().toLowerCase();
-  const date = row.dateReceived ?? "";
-  if (payer && date) return `pd:${payer}|${date}`;
+  if (payer) return `payer:${payer}`;
   return null;
 }
 
@@ -341,7 +342,8 @@ export default function StagedPayments() {
   // ── Payment grouping (manual) ──
   // Rows the fundraiser has checked to group into a single unit reconciled to
   // one gift. All members must share one grouping key (groupKeyOf): the same
-  // bank deposit, or — when no deposit was captured — the same payer + date.
+  // bank deposit, or — when no deposit was captured — the same payer (dates may
+  // differ, which triggers a confirmation before reconciling).
   // We store the full rows so the combined total can be shown without
   // re-fetching. A group of 2+ switches the match bar / gift rows into
   // group-reconcile mode.
@@ -350,6 +352,24 @@ export default function StagedPayments() {
   const groupKey = groupRows[0] ? groupKeyOf(groupRows[0]) : null;
   const groupActive = groupRows.length >= 2;
   const groupTotal = groupRows.reduce((acc, r) => acc + Number(r.amount ?? 0), 0);
+  // Distinct receipt dates across the group. When more than one, grouping
+  // requires explicit operator confirmation (it risks collapsing unrelated
+  // same-payer gifts) — surfaced via the confirm dialog below and sent as
+  // confirmMultiDate to the server. A null date is its own distinct bucket so
+  // this matches the server guard exactly (mixed null + real dates also count
+  // as multi-date); otherwise the dialog wouldn't open but the server would
+  // still reject, stranding the operator.
+  const groupSpansMultipleDates =
+    new Set(groupRows.map((r) => r.dateReceived ?? null)).size > 1;
+  // Real (non-null) dates, sorted, for the confirm dialog's date-range label.
+  const groupRealDates = Array.from(
+    new Set(groupRows.map((r) => r.dateReceived).filter((d): d is string => !!d)),
+  ).sort();
+  const groupHasUndatedRow = groupRows.some((r) => !r.dateReceived);
+  // Holds the gift id awaiting multi-date confirmation; non-null opens the dialog.
+  const [pendingMultiDateGiftId, setPendingMultiDateGiftId] = useState<
+    string | null
+  >(null);
 
   const clearGroup = () => setGroupRows([]);
 
@@ -664,12 +684,13 @@ export default function StagedPayments() {
       onSuccess: () => {
         invalidateAll();
         clearGroup();
+        setPendingMultiDateGiftId(null);
         selectGift(null, null);
         setSelectedStaged(null);
         toast({
-          title: "Deposit group reconciled",
+          title: "Payment group reconciled",
           description:
-            "Matched the grouped deposit payments to the existing gift.",
+            "Matched the grouped payments to the existing gift.",
         });
       },
       onError: (e: unknown) =>
@@ -780,12 +801,30 @@ export default function StagedPayments() {
 
   const groupMatchGift = (giftId: string) => {
     if (!groupActive) return;
+    // Cross-date groups need an explicit confirmation first; open the dialog
+    // instead of reconciling immediately.
+    if (groupSpansMultipleDates) {
+      setPendingMultiDateGiftId(giftId);
+      return;
+    }
     groupReconcile.mutate({ data: { stagedPaymentIds: groupIds, giftId } });
   };
 
   const doGroupMatch = () => {
     if (!selectedGiftId) return;
     groupMatchGift(selectedGiftId);
+  };
+
+  // Operator confirmed grouping payments that span multiple dates.
+  const confirmMultiDateGroupMatch = () => {
+    if (!groupActive || !pendingMultiDateGiftId) return;
+    groupReconcile.mutate({
+      data: {
+        stagedPaymentIds: groupIds,
+        giftId: pendingMultiDateGiftId,
+        confirmMultiDate: true,
+      },
+    });
   };
 
   return (
@@ -1190,6 +1229,60 @@ export default function StagedPayments() {
           }
         }}
       />
+
+      {/* Multi-date grouping confirmation. Grouping same-payer payments from
+          different days could collapse unrelated gifts (e.g. recurring
+          donations), so we require an explicit confirmation before sending. */}
+      <Dialog
+        open={pendingMultiDateGiftId != null}
+        onOpenChange={(open) => {
+          if (!open) setPendingMultiDateGiftId(null);
+        }}
+      >
+        <DialogContent data-testid="group-multi-date-dialog">
+          <DialogHeader>
+            <DialogTitle>Group payments from different dates?</DialogTitle>
+            <DialogDescription>
+              These {groupRows.length} payments are not all on the same date.
+              Only group them if they're truly one gift (for example a single
+              wire or a series of stock sales split across days).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1 text-sm">
+            <div>
+              <span className="text-muted-foreground">Dates: </span>
+              {groupRealDates.length > 0
+                ? `${groupRealDates[0]} → ${
+                    groupRealDates[groupRealDates.length - 1]
+                  }${groupHasUndatedRow ? " (+ undated)" : ""}`
+                : "Undated"}
+            </div>
+            <div>
+              <span className="text-muted-foreground">Combined total: </span>
+              {formatAmount(String(groupTotal))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setPendingMultiDateGiftId(null)}
+              disabled={groupReconcile.isPending}
+              data-testid="group-multi-date-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmMultiDateGroupMatch}
+              disabled={groupReconcile.isPending}
+              data-testid="group-multi-date-confirm"
+            >
+              {groupReconcile.isPending
+                ? "Matching…"
+                : "Group across dates"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

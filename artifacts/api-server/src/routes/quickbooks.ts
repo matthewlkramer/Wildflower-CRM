@@ -1015,10 +1015,12 @@ router.post(
 // GROUP to ONE existing CRM gift (which typically carries multiple allocations).
 // Members must form one coherent group: either they share ONE underlying bank
 // Deposit (qbDepositId), or — when no deposit was captured — they share the same
-// payer name and date_received (a single wire split across several QB records).
-// No new gift is minted and QuickBooks is never written back. Guards: at least
-// two rows; every row pending and not already resolved; all rows share one
-// grouping key (deposit, or payer+date); the gift exists with a single valid donor and is not
+// payer name (a single wire, or a series of stock sales, split across several QB
+// records, possibly over several days). No new gift is minted and QuickBooks is
+// never written back. Guards: at least two rows; every row pending and not
+// already resolved; all rows share one grouping key (deposit, or payer); when
+// the rows span more than one date_received the caller must pass
+// confirmMultiDate; the gift exists with a single valid donor and is not
 // already linked to any other staged row; the members' combined total sits in
 // the fee-band tolerance around the gift amount. On success EVERY member gets
 // groupReconciledGiftId = the gift; exactly one deterministic "representative"
@@ -1044,6 +1046,7 @@ router.post(
       return;
     }
     const { giftId } = parsed.data;
+    const confirmMultiDate = parsed.data.confirmMultiDate === true;
     // De-dupe and sort for a deterministic representative (smallest id).
     const ids = Array.from(new Set(parsed.data.stagedPaymentIds)).sort();
     if (ids.length < 2) {
@@ -1084,6 +1087,7 @@ router.post(
     const NOT_FOUND = "__not_found__";
     const NOT_PENDING = "__not_pending__";
     const NOT_GROUPABLE = "__not_groupable__";
+    const MULTI_DATE = "__multi_date__";
     const TOLERANCE = "__tolerance__";
     const CONFLICT = "__conflict__";
 
@@ -1112,30 +1116,38 @@ router.post(
 
         // Members must form one coherent group: either they all share exactly
         // one non-null bank deposit, OR — when no deposit was captured — they
-        // all share the same payer name and date_received (a single wire split
-        // across several QuickBooks records). Never group across deposits, and
-        // never group rows that share neither key.
+        // all share the same payer name (a single wire, or a series of stock
+        // sales, split across several QuickBooks records, possibly over several
+        // days). Never group across deposits, and never group rows that share
+        // neither key.
         const depositIds = new Set(locked.map((r) => r.qbDepositId));
         const sameDeposit =
           depositIds.size === 1 && locked[0].qbDepositId != null;
-        // The payer+date fallback applies ONLY when NO member has a captured
-        // deposit — otherwise two records from different known deposits could be
-        // force-grouped just because the payer and date coincide. This mirrors
-        // the client groupKeyOf(), which uses the payer+date key only when
-        // qbDepositId is absent.
+        // The payer fallback applies ONLY when NO member has a captured deposit
+        // — otherwise two records from different known deposits could be
+        // force-grouped just because the payer coincides. This mirrors the
+        // client groupKeyOf(), which uses the payer key only when qbDepositId is
+        // absent. The date is intentionally NOT part of the key (same-payer rows
+        // can span days); cross-date grouping is instead gated by an explicit
+        // confirmMultiDate acknowledgement below.
         const allDepositNull = locked.every((r) => r.qbDepositId == null);
         const payerKeys = new Set(
           locked.map((r) => (r.payerName ?? "").trim().toLowerCase()),
         );
-        const dateKeys = new Set(locked.map((r) => r.dateReceived));
-        const samePayerDay =
-          allDepositNull &&
-          payerKeys.size === 1 &&
-          !payerKeys.has("") &&
-          dateKeys.size === 1 &&
-          locked[0].dateReceived != null;
-        if (!sameDeposit && !samePayerDay) {
+        const samePayer =
+          allDepositNull && payerKeys.size === 1 && !payerKeys.has("");
+        if (!sameDeposit && !samePayer) {
           throw new Error(NOT_GROUPABLE);
+        }
+
+        // Grouping payments from different days risks collapsing unrelated
+        // same-payer gifts (e.g. recurring monthly donations) into one. Require
+        // the operator to have explicitly confirmed (confirmMultiDate) whenever
+        // the members don't all share one date_received. The client surfaces a
+        // confirm dialog before sending the flag; this is the server-side guard.
+        const dateKeys = new Set(locked.map((r) => r.dateReceived));
+        if (dateKeys.size > 1 && !confirmMultiDate) {
+          throw new Error(MULTI_DATE);
         }
 
         // Combined member total must sit in the fee-band tolerance around the
@@ -1223,7 +1235,15 @@ router.post(
         res.status(400).json({
           error: "not_groupable",
           message:
-            "These payments must share the same bank deposit, or the same payer and date, to be grouped.",
+            "These payments must share the same bank deposit, or the same payer, to be grouped.",
+        });
+        return;
+      }
+      if (e instanceof Error && e.message === MULTI_DATE) {
+        res.status(400).json({
+          error: "multi_date_confirmation_required",
+          message:
+            "These payments are on different dates. Confirm you want to group them into a single gift.",
         });
         return;
       }
