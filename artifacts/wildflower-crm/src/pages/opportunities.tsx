@@ -5,6 +5,7 @@ import {
   useListOpportunitiesAndPledges,
   getListOpportunitiesAndPledgesQueryKey,
   useBulkUpdateOpportunitiesAndPledges,
+  useBulkDeleteOpportunitiesAndPledges,
   useListEntities,
   type ListOpportunitiesAndPledgesParams,
   type OpportunityStatus,
@@ -25,6 +26,7 @@ import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
+import { BulkDeleteDialog } from "@/components/bulk-delete-dialog";
 import { OPPORTUNITIES_BULK_FIELDS } from "@/lib/bulk-fields";
 import { useDebounce } from "@/hooks/use-debounce";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
@@ -269,7 +271,9 @@ export default function Opportunities({
   );
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const bulkMut = useBulkUpdateOpportunitiesAndPledges();
+  const bulkDeleteMut = useBulkDeleteOpportunitiesAndPledges();
   // Lookup map so the Entities column can render slug -> human name
   // without firing one fetch per row. Same pattern as gifts.tsx.
   const entitiesQ = useListEntities();
@@ -746,8 +750,20 @@ export default function Opportunities({
       <BulkActionBar
         count={selection.count}
         onEdit={() => setBulkOpen(true)}
+        onDelete={() => setBulkDeleteOpen(true)}
         onClear={selection.clear}
         entityNoun="opportunity"
+      />
+      <BulkDeleteDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        entityNoun="opportunity"
+        selectedIds={selection.selectedIds}
+        invalidateKeys={[getListOpportunitiesAndPledgesQueryKey()]}
+        onConfirm={async () =>
+          bulkDeleteMut.mutateAsync({ data: { ids: selection.selectedIds } })
+        }
+        onDone={(r) => selection.removeMany(r.succeededIds)}
       />
       <BulkEditDialog
         open={bulkOpen}

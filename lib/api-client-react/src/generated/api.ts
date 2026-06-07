@@ -27,6 +27,7 @@ import type {
   AdminListEmailIntelFeedbackParams,
   AdminResyncGoogleUser200,
   BadRequestResponse,
+  BulkDeleteBody,
   BulkUpdateGiftsBody,
   BulkUpdateHouseholdsBody,
   BulkUpdateOpportunitiesBody,
@@ -16380,6 +16381,359 @@ export const useBulkUpdateGiftsAndPayments = <
   TContext
 > => {
   return useMutation(getBulkUpdateGiftsAndPaymentsMutationOptions(options));
+};
+
+/**
+ * @summary Permanently delete the given people. Per-row; returns succeeded + failed ids.
+ */
+export const getBulkDeletePeopleUrl = () => {
+  return `/api/people/bulk-delete`;
+};
+
+export const bulkDeletePeople = async (
+  bulkDeleteBody: BulkDeleteBody,
+  options?: RequestInit,
+): Promise<BulkUpdateResult> => {
+  return customFetch<BulkUpdateResult>(getBulkDeletePeopleUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkDeleteBody),
+  });
+};
+
+export const getBulkDeletePeopleMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkDeletePeople>>,
+    TError,
+    { data: BodyType<BulkDeleteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkDeletePeople>>,
+  TError,
+  { data: BodyType<BulkDeleteBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkDeletePeople"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkDeletePeople>>,
+    { data: BodyType<BulkDeleteBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkDeletePeople(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkDeletePeopleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkDeletePeople>>
+>;
+export type BulkDeletePeopleMutationBody = BodyType<BulkDeleteBody>;
+export type BulkDeletePeopleMutationError = ErrorType<BadRequestResponse>;
+
+/**
+ * @summary Permanently delete the given people. Per-row; returns succeeded + failed ids.
+ */
+export const useBulkDeletePeople = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkDeletePeople>>,
+    TError,
+    { data: BodyType<BulkDeleteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkDeletePeople>>,
+  TError,
+  { data: BodyType<BulkDeleteBody> },
+  TContext
+> => {
+  return useMutation(getBulkDeletePeopleMutationOptions(options));
+};
+
+/**
+ * @summary Permanently delete the given organizations. Per-row; returns succeeded + failed ids.
+ */
+export const getBulkDeleteOrganizationsUrl = () => {
+  return `/api/organizations/bulk-delete`;
+};
+
+export const bulkDeleteOrganizations = async (
+  bulkDeleteBody: BulkDeleteBody,
+  options?: RequestInit,
+): Promise<BulkUpdateResult> => {
+  return customFetch<BulkUpdateResult>(getBulkDeleteOrganizationsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkDeleteBody),
+  });
+};
+
+export const getBulkDeleteOrganizationsMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkDeleteOrganizations>>,
+    TError,
+    { data: BodyType<BulkDeleteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkDeleteOrganizations>>,
+  TError,
+  { data: BodyType<BulkDeleteBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkDeleteOrganizations"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkDeleteOrganizations>>,
+    { data: BodyType<BulkDeleteBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkDeleteOrganizations(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkDeleteOrganizationsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkDeleteOrganizations>>
+>;
+export type BulkDeleteOrganizationsMutationBody = BodyType<BulkDeleteBody>;
+export type BulkDeleteOrganizationsMutationError =
+  ErrorType<BadRequestResponse>;
+
+/**
+ * @summary Permanently delete the given organizations. Per-row; returns succeeded + failed ids.
+ */
+export const useBulkDeleteOrganizations = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkDeleteOrganizations>>,
+    TError,
+    { data: BodyType<BulkDeleteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkDeleteOrganizations>>,
+  TError,
+  { data: BodyType<BulkDeleteBody> },
+  TContext
+> => {
+  return useMutation(getBulkDeleteOrganizationsMutationOptions(options));
+};
+
+/**
+ * @summary Permanently delete the given opportunities/pledges. Per-row; returns succeeded + failed ids.
+ */
+export const getBulkDeleteOpportunitiesAndPledgesUrl = () => {
+  return `/api/opportunities-and-pledges/bulk-delete`;
+};
+
+export const bulkDeleteOpportunitiesAndPledges = async (
+  bulkDeleteBody: BulkDeleteBody,
+  options?: RequestInit,
+): Promise<BulkUpdateResult> => {
+  return customFetch<BulkUpdateResult>(
+    getBulkDeleteOpportunitiesAndPledgesUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkDeleteBody),
+    },
+  );
+};
+
+export const getBulkDeleteOpportunitiesAndPledgesMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>,
+    TError,
+    { data: BodyType<BulkDeleteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>,
+  TError,
+  { data: BodyType<BulkDeleteBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkDeleteOpportunitiesAndPledges"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>,
+    { data: BodyType<BulkDeleteBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkDeleteOpportunitiesAndPledges(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkDeleteOpportunitiesAndPledgesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>
+>;
+export type BulkDeleteOpportunitiesAndPledgesMutationBody =
+  BodyType<BulkDeleteBody>;
+export type BulkDeleteOpportunitiesAndPledgesMutationError =
+  ErrorType<BadRequestResponse>;
+
+/**
+ * @summary Permanently delete the given opportunities/pledges. Per-row; returns succeeded + failed ids.
+ */
+export const useBulkDeleteOpportunitiesAndPledges = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>,
+    TError,
+    { data: BodyType<BulkDeleteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>,
+  TError,
+  { data: BodyType<BulkDeleteBody> },
+  TContext
+> => {
+  return useMutation(
+    getBulkDeleteOpportunitiesAndPledgesMutationOptions(options),
+  );
+};
+
+/**
+ * @summary Permanently delete the given gifts/payments (and their allocations). Per-row; returns succeeded + failed ids.
+ */
+export const getBulkDeleteGiftsAndPaymentsUrl = () => {
+  return `/api/gifts-and-payments/bulk-delete`;
+};
+
+export const bulkDeleteGiftsAndPayments = async (
+  bulkDeleteBody: BulkDeleteBody,
+  options?: RequestInit,
+): Promise<BulkUpdateResult> => {
+  return customFetch<BulkUpdateResult>(getBulkDeleteGiftsAndPaymentsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkDeleteBody),
+  });
+};
+
+export const getBulkDeleteGiftsAndPaymentsMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>,
+    TError,
+    { data: BodyType<BulkDeleteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>,
+  TError,
+  { data: BodyType<BulkDeleteBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkDeleteGiftsAndPayments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>,
+    { data: BodyType<BulkDeleteBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkDeleteGiftsAndPayments(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkDeleteGiftsAndPaymentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>
+>;
+export type BulkDeleteGiftsAndPaymentsMutationBody = BodyType<BulkDeleteBody>;
+export type BulkDeleteGiftsAndPaymentsMutationError =
+  ErrorType<BadRequestResponse>;
+
+/**
+ * @summary Permanently delete the given gifts/payments (and their allocations). Per-row; returns succeeded + failed ids.
+ */
+export const useBulkDeleteGiftsAndPayments = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>,
+    TError,
+    { data: BodyType<BulkDeleteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>,
+  TError,
+  { data: BodyType<BulkDeleteBody> },
+  TContext
+> => {
+  return useMutation(getBulkDeleteGiftsAndPaymentsMutationOptions(options));
 };
 
 /**

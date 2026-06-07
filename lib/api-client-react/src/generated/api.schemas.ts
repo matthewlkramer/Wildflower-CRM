@@ -3158,6 +3158,17 @@ export interface MergeIntoPledgeResult {
 }
 
 /**
+ * Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason).
+ */
+export interface BulkDeleteBody {
+  /**
+   * @minItems 1
+   * @maxItems 1000
+   */
+  ids: string[];
+}
+
+/**
  * Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged.
  */
 export interface BulkUpdatePeoplePatch {

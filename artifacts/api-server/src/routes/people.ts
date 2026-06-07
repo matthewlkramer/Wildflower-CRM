@@ -7,10 +7,12 @@ import {
   CreatePersonBody,
   UpdatePersonBody,
   BulkUpdatePeopleBody,
+  BulkDeletePeopleBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
+import { executeBulkDelete } from "../lib/bulkDelete";
 import { mergeEntity, PERSON_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
@@ -260,6 +262,17 @@ router.post(
             syncPersonToFlodeskInBackground(id);
           }
         : undefined,
+    });
+  }),
+);
+
+router.post(
+  "/people/bulk-delete",
+  asyncHandler(async (req, res) => {
+    await executeBulkDelete(req, res, {
+      entity: "people",
+      table: people,
+      bodySchema: BulkDeletePeopleBody,
     });
   }),
 );

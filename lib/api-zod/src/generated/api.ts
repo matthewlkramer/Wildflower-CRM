@@ -9615,6 +9615,108 @@ export const BulkUpdateGiftsAndPaymentsResponse = zod.object({
 });
 
 /**
+ * @summary Permanently delete the given people. Per-row; returns succeeded + failed ids.
+ */
+export const bulkDeletePeopleBodyIdsMax = 1000;
+
+export const BulkDeletePeopleBody = zod
+  .object({
+    ids: zod.array(zod.string()).min(1).max(bulkDeletePeopleBodyIdsMax),
+  })
+  .describe(
+    "Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
+  );
+
+export const BulkDeletePeopleResponse = zod.object({
+  requested: zod.number().describe("Number of ids in the request."),
+  succeededIds: zod.array(zod.string()),
+  failed: zod.array(
+    zod.object({
+      id: zod.string(),
+      message: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Permanently delete the given organizations. Per-row; returns succeeded + failed ids.
+ */
+export const bulkDeleteOrganizationsBodyIdsMax = 1000;
+
+export const BulkDeleteOrganizationsBody = zod
+  .object({
+    ids: zod.array(zod.string()).min(1).max(bulkDeleteOrganizationsBodyIdsMax),
+  })
+  .describe(
+    "Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
+  );
+
+export const BulkDeleteOrganizationsResponse = zod.object({
+  requested: zod.number().describe("Number of ids in the request."),
+  succeededIds: zod.array(zod.string()),
+  failed: zod.array(
+    zod.object({
+      id: zod.string(),
+      message: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Permanently delete the given opportunities/pledges. Per-row; returns succeeded + failed ids.
+ */
+export const bulkDeleteOpportunitiesAndPledgesBodyIdsMax = 1000;
+
+export const BulkDeleteOpportunitiesAndPledgesBody = zod
+  .object({
+    ids: zod
+      .array(zod.string())
+      .min(1)
+      .max(bulkDeleteOpportunitiesAndPledgesBodyIdsMax),
+  })
+  .describe(
+    "Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
+  );
+
+export const BulkDeleteOpportunitiesAndPledgesResponse = zod.object({
+  requested: zod.number().describe("Number of ids in the request."),
+  succeededIds: zod.array(zod.string()),
+  failed: zod.array(
+    zod.object({
+      id: zod.string(),
+      message: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Permanently delete the given gifts/payments (and their allocations). Per-row; returns succeeded + failed ids.
+ */
+export const bulkDeleteGiftsAndPaymentsBodyIdsMax = 1000;
+
+export const BulkDeleteGiftsAndPaymentsBody = zod
+  .object({
+    ids: zod
+      .array(zod.string())
+      .min(1)
+      .max(bulkDeleteGiftsAndPaymentsBodyIdsMax),
+  })
+  .describe(
+    "Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
+  );
+
+export const BulkDeleteGiftsAndPaymentsResponse = zod.object({
+  requested: zod.number().describe("Number of ids in the request."),
+  succeededIds: zod.array(zod.string()),
+  failed: zod.array(
+    zod.object({
+      id: zod.string(),
+      message: zod.string(),
+    }),
+  ),
+});
+
+/**
  * @summary Request a presigned URL for file upload
  */
 

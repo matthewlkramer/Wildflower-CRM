@@ -81,12 +81,14 @@ import {
   CreateOpportunityOrPledgeBodyRefined,
   UpdateOpportunityOrPledgeBody,
   BulkUpdateOpportunitiesAndPledgesBody,
+  BulkDeleteOpportunitiesAndPledgesBody,
   validateOppInvariants,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
+import { executeBulkDelete } from "../lib/bulkDelete";
 import {
   applyDerivedOppFields,
   canonicalWinProbability,
@@ -577,6 +579,20 @@ router.delete(
   asyncHandler(async (req, res) => {
     await db.delete(opportunitiesAndPledges).where(eq(opportunitiesAndPledges.id, paramId(req)));
     res.status(204).end();
+  }),
+);
+
+router.post(
+  "/opportunities-and-pledges/bulk-delete",
+  asyncHandler(async (req, res) => {
+    // Mirrors the single delete above — a direct row delete. (pledge_allocations
+    // and gifts' payment_on_pledge_id FKs are handled by the schema, same as
+    // the single-delete path.)
+    await executeBulkDelete(req, res, {
+      entity: "opportunities_and_pledges",
+      table: opportunitiesAndPledges,
+      bodySchema: BulkDeleteOpportunitiesAndPledgesBody,
+    });
   }),
 );
 

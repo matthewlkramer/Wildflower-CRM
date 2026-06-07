@@ -6,6 +6,7 @@ import {
   useListOrganizations,
   getListOrganizationsQueryKey,
   useBulkUpdateOrganizations,
+  useBulkDeleteOrganizations,
   useMergeOrganizations,
   useGetCurrentUser,
   getGetOrganizationQueryOptions,
@@ -30,6 +31,7 @@ import { PresenceFilter, type PresenceValue } from "@/components/presence-filter
 import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
+import { BulkDeleteDialog } from "@/components/bulk-delete-dialog";
 import { ORGANIZATIONS_BULK_FIELDS } from "@/lib/bulk-fields";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatCapacity, formatCurrency, formatDateShort, formatEnum, formatEnthusiasm, formatOrganizationNameShort } from "@/lib/format";
@@ -337,7 +339,9 @@ export default function Organizations() {
   );
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const bulkMut = useBulkUpdateOrganizations();
+  const bulkDeleteMut = useBulkDeleteOrganizations();
   const [mergeOpen, setMergeOpen] = useState(false);
   const mergeMut = useMergeOrganizations();
 
@@ -1027,8 +1031,20 @@ export default function Organizations() {
         count={selection.count}
         onEdit={() => setBulkOpen(true)}
         onMerge={() => setMergeOpen(true)}
+        onDelete={() => setBulkDeleteOpen(true)}
         onClear={selection.clear}
         entityNoun="organization"
+      />
+      <BulkDeleteDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        entityNoun="organization"
+        selectedIds={selection.selectedIds}
+        invalidateKeys={[getListOrganizationsQueryKey()]}
+        onConfirm={async () =>
+          bulkDeleteMut.mutateAsync({ data: { ids: selection.selectedIds } })
+        }
+        onDone={(r) => selection.removeMany(r.succeededIds)}
       />
       {mergeOpen && !mergeLoading && mergeRecords.length >= 2 && (
         <MergeDialog

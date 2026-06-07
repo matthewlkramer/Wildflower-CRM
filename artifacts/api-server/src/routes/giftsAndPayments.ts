@@ -78,6 +78,7 @@ import {
   CreateGiftOrPaymentBodyRefined,
   UpdateGiftOrPaymentBody,
   BulkUpdateGiftsAndPaymentsBody,
+  BulkDeleteGiftsAndPaymentsBody,
   MergeGiftsAndPaymentsBody,
   MergeGiftsIntoPledgeBody,
   validateGiftInvariants,
@@ -87,6 +88,7 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
+import { executeBulkDelete } from "../lib/bulkDelete";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { inArray } from "drizzle-orm";
 
@@ -528,6 +530,49 @@ router.delete(
     });
     await applyDerivedOppFieldsMany(existing?.paymentOnPledgeId);
     res.status(204).end();
+  }),
+);
+
+router.post(
+  "/gifts-and-payments/bulk-delete",
+  asyncHandler(async (req, res) => {
+    // Mirrors the single gift delete: block rows linked to a QuickBooks
+    // split (409 there → per-row failure here), clear the RESTRICT-FK
+    // allocation rows inside each row's savepoint, then recompute the
+    // affected pledges' coverage once after commit.
+    await executeBulkDelete(req, res, {
+      entity: "gifts_and_payments",
+      table: giftsAndPayments,
+      bodySchema: BulkDeleteGiftsAndPaymentsBody,
+      precheck: async (row) => {
+        const splitLink = await db
+          .select({ stagedPaymentId: stagedPaymentSplits.stagedPaymentId })
+          .from(stagedPaymentSplits)
+          .where(eq(stagedPaymentSplits.giftId, row.id as string))
+          .then((r) => r[0]);
+        if (splitLink) {
+          return "This gift is part of a split-reconciled QuickBooks payment. Revert the split in QuickBooks Review before deleting the gift.";
+        }
+        return null;
+      },
+      cleanup: async (tx, row) => {
+        await tx
+          .delete(giftAllocations)
+          .where(eq(giftAllocations.giftId, row.id as string));
+      },
+      afterCommit: async (rows) => {
+        const pledgeIds = Array.from(
+          new Set(
+            rows
+              .map((r) => r.paymentOnPledgeId as string | null)
+              .filter((id): id is string => !!id),
+          ),
+        );
+        for (const pledgeId of pledgeIds) {
+          await applyDerivedOppFieldsMany(pledgeId);
+        }
+      },
+    });
   }),
 );
 

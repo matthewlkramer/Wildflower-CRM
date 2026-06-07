@@ -2298,6 +2298,42 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /people/bulk-delete:
+    post:
+      operationId: bulkDeletePeople
+      tags: [people]
+      summary: "Permanently delete the given people. Per-row; returns succeeded + failed ids."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkDeleteBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /organizations/bulk-delete:
+    post:
+      operationId: bulkDeleteOrganizations
+      tags: [organizations]
+      summary: "Permanently delete the given organizations. Per-row; returns succeeded + failed ids."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkDeleteBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /opportunities-and-pledges/bulk-delete:
+    post:
+      operationId: bulkDeleteOpportunitiesAndPledges
+      tags: [opportunities-and-pledges]
+      summary: "Permanently delete the given opportunities/pledges. Per-row; returns succeeded + failed ids."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkDeleteBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /gifts-and-payments/bulk-delete:
+    post:
+      operationId: bulkDeleteGiftsAndPayments
+      tags: [gifts-and-payments]
+      summary: "Permanently delete the given gifts/payments (and their allocations). Per-row; returns succeeded + failed ids."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkDeleteBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /storage/uploads/request-url:
     post:
@@ -5162,6 +5198,12 @@ components:
         pledgeId: { type: string, description: "The pledge the gifts were attached to." }
         giftIds: { type: array, items: { type: string }, description: "The gift ids attached as payments." }
         created: { type: boolean, description: "True if a new pledge was created, false if an existing one was used." }
+    BulkDeleteBody:
+      type: object
+      required: [ids]
+      description: "Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason)."
+      properties:
+        ids: { type: array, items: { type: string }, minItems: 1, maxItems: 1000 }
     BulkUpdatePeoplePatch:
       type: object
       description: "Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged."

@@ -6,6 +6,7 @@ import {
   useListGiftsAndPayments,
   getListGiftsAndPaymentsQueryKey,
   useBulkUpdateGiftsAndPayments,
+  useBulkDeleteGiftsAndPayments,
   getGetGiftOrPaymentQueryOptions,
   getGetGiftOrPaymentQueryKey,
   type ListGiftsAndPaymentsParams,
@@ -29,6 +30,7 @@ import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
+import { BulkDeleteDialog } from "@/components/bulk-delete-dialog";
 import {
   MergeGiftsDialog,
   MergeIntoPledgeDialog,
@@ -211,9 +213,11 @@ export default function Gifts() {
   );
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [mergeGiftOpen, setMergeGiftOpen] = useState(false);
   const [mergePledgeOpen, setMergePledgeOpen] = useState(false);
   const bulkMut = useBulkUpdateGiftsAndPayments();
+  const bulkDeleteMut = useBulkDeleteGiftsAndPayments();
 
   // Global entity filter (header dropdown). Forwarded to the server so the
   // gifts list is scoped to gifts with at least one allocation on the
@@ -677,6 +681,7 @@ export default function Gifts() {
       <BulkActionBar
         count={selection.count}
         onEdit={() => setBulkOpen(true)}
+        onDelete={() => setBulkDeleteOpen(true)}
         onClear={selection.clear}
         entityNoun="gift"
         extraActions={
@@ -699,6 +704,17 @@ export default function Gifts() {
             </Button>
           </>
         }
+      />
+      <BulkDeleteDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        entityNoun="gift"
+        selectedIds={selection.selectedIds}
+        invalidateKeys={[getListGiftsAndPaymentsQueryKey()]}
+        onConfirm={async () =>
+          bulkDeleteMut.mutateAsync({ data: { ids: selection.selectedIds } })
+        }
+        onDone={(r) => selection.removeMany(r.succeededIds)}
       />
       <MergeGiftsDialog
         open={mergeGiftOpen}

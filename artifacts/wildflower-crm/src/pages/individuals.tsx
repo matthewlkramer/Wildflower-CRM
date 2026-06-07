@@ -6,6 +6,7 @@ import {
   useListPeople,
   getListPeopleQueryKey,
   useBulkUpdatePeople,
+  useBulkDeletePeople,
   useMergePeople,
   useGetCurrentUser,
   getGetPersonQueryOptions,
@@ -29,6 +30,7 @@ import { PresenceFilter, type PresenceValue } from "@/components/presence-filter
 import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
+import { BulkDeleteDialog } from "@/components/bulk-delete-dialog";
 import { PEOPLE_BULK_FIELDS } from "@/lib/bulk-fields";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -358,7 +360,9 @@ export default function Individuals() {
   );
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const bulkMut = useBulkUpdatePeople();
+  const bulkDeleteMut = useBulkDeletePeople();
   const [mergeOpen, setMergeOpen] = useState(false);
   const mergeMut = useMergePeople();
 
@@ -1000,8 +1004,20 @@ export default function Individuals() {
         count={selection.count}
         onEdit={() => setBulkOpen(true)}
         onMerge={() => setMergeOpen(true)}
+        onDelete={() => setBulkDeleteOpen(true)}
         onClear={selection.clear}
         entityNoun="person"
+      />
+      <BulkDeleteDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        entityNoun="person"
+        selectedIds={selection.selectedIds}
+        invalidateKeys={[getListPeopleQueryKey()]}
+        onConfirm={async () =>
+          bulkDeleteMut.mutateAsync({ data: { ids: selection.selectedIds } })
+        }
+        onDone={(r) => selection.removeMany(r.succeededIds)}
       />
       {mergeOpen && !mergeLoading && mergeRecords.length >= 2 && (
         <MergeDialog

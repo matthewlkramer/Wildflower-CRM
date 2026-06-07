@@ -26,6 +26,7 @@ import {
   CreateOrganizationBody,
   UpdateOrganizationBody,
   BulkUpdateOrganizationsBody,
+  BulkDeleteOrganizationsBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import {
@@ -40,6 +41,7 @@ import {
   splitBlank,
 } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
+import { executeBulkDelete } from "../lib/bulkDelete";
 import { mergeEntity, ORGANIZATION_MERGE_CONFIG } from "../lib/mergeEntities";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
@@ -287,6 +289,17 @@ router.post(
         "entityType",
         "issuesGrants",
       ],
+    });
+  }),
+);
+
+router.post(
+  "/organizations/bulk-delete",
+  asyncHandler(async (req, res) => {
+    await executeBulkDelete(req, res, {
+      entity: "organizations",
+      table: organizations,
+      bodySchema: BulkDeleteOrganizationsBody,
     });
   }),
 );
