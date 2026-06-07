@@ -422,6 +422,11 @@ export default function Gifts() {
         .filter((d): d is GiftOrPaymentDetail => !!d),
     [mergeQueries],
   );
+  // The dialogs must operate on EVERY selected gift — never a partially loaded
+  // subset. Surface the expected count + load/error state so they can block
+  // submit until all selected records resolve.
+  const mergeExpectedCount = mergeIds.length;
+  const mergeLoadError = mergeQueries.some((q) => q.isError);
 
   const sortedRows = useMemo(
     () =>
@@ -699,12 +704,16 @@ export default function Gifts() {
         open={mergeGiftOpen}
         onOpenChange={setMergeGiftOpen}
         gifts={mergeRecords}
+        expectedCount={mergeExpectedCount}
+        loadError={mergeLoadError}
         onDone={() => selection.clear()}
       />
       <MergeIntoPledgeDialog
         open={mergePledgeOpen}
         onOpenChange={setMergePledgeOpen}
         gifts={mergeRecords}
+        expectedCount={mergeExpectedCount}
+        loadError={mergeLoadError}
         onDone={() => selection.clear()}
       />
       <BulkEditDialog

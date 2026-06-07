@@ -32,6 +32,7 @@ import {
 } from "@/components/entity-picker";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
+import { allSelectedLoaded } from "@/lib/merge-gate";
 import { cn } from "@/lib/utils";
 import { Check, ChevronsUpDown } from "lucide-react";
 import {
@@ -85,11 +86,17 @@ export function MergeGiftsDialog({
   open,
   onOpenChange,
   gifts,
+  expectedCount,
+  loadError = false,
   onDone,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   gifts: GiftOrPaymentDetail[];
+  /** Number of selected gifts the dialog must operate on (selection size). */
+  expectedCount: number;
+  /** True when any selected gift failed to load. */
+  loadError?: boolean;
   onDone?: () => void;
 }) {
   const { toast } = useToast();
@@ -131,15 +138,17 @@ export function MergeGiftsDialog({
     }
   }, [primaryId, primary]);
 
-  if (gifts.length < 2) return null;
+  if (expectedCount < 2) return null;
 
+  // Operate on EVERY selected gift — never a partially loaded subset.
+  const allLoaded = allSelectedLoaded(gifts.length, expectedCount, loadError);
   const summed = sumAmounts(gifts);
   const donorMismatch = !donorsAllAgree(gifts);
   const submitting = mut.isPending;
-  const canSubmit = !!primary && !!donorId && !submitting;
+  const canSubmit = allLoaded && !!primary && !!donorId && !submitting;
 
   const handleMerge = async () => {
-    if (!primary || !donorId) return;
+    if (!allLoaded || !primary || !donorId) return;
     const mergeIds = gifts.map((g) => g.id).filter((id) => id !== primary.id);
     try {
       await mut.mutateAsync({
@@ -196,6 +205,19 @@ export function MergeGiftsDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {!allLoaded && (
+            <p
+              className={cn(
+                "text-sm",
+                loadError ? "text-destructive" : "text-muted-foreground",
+              )}
+              data-testid="text-merge-gift-load-status"
+            >
+              {loadError
+                ? "Some selected gifts could not be loaded — close and try again."
+                : `Loading selected gifts (${gifts.length}/${expectedCount})…`}
+            </p>
+          )}
           <div className="space-y-2">
             <Label>Keep this gift (survivor)</Label>
             <RadioGroup
@@ -394,11 +416,17 @@ export function MergeIntoPledgeDialog({
   open,
   onOpenChange,
   gifts,
+  expectedCount,
+  loadError = false,
   onDone,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   gifts: GiftOrPaymentDetail[];
+  /** Number of selected gifts the dialog must operate on (selection size). */
+  expectedCount: number;
+  /** True when any selected gift failed to load. */
+  loadError?: boolean;
   onDone?: (pledgeId: string) => void;
 }) {
   const { toast } = useToast();
@@ -429,16 +457,20 @@ export function MergeIntoPledgeDialog({
     }
   }, [open, giftKey, gifts]);
 
-  if (gifts.length < 1) return null;
+  if (expectedCount < 1) return null;
 
+  // Operate on EVERY selected gift — never a partially loaded subset.
+  const allLoaded = allSelectedLoaded(gifts.length, expectedCount, loadError);
   const summed = sumAmounts(gifts);
   const donorMismatch = !donorsAllAgree(gifts);
   const submitting = mut.isPending;
   const canSubmit =
+    allLoaded &&
     !submitting &&
     (mode === "existing" ? !!existing : !!donorId);
 
   const handleSubmit = async () => {
+    if (!allLoaded) return;
     const giftIds = gifts.map((g) => g.id);
     try {
       const result = await mut.mutateAsync({
@@ -493,6 +525,19 @@ export function MergeIntoPledgeDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {!allLoaded && (
+            <p
+              className={cn(
+                "text-sm",
+                loadError ? "text-destructive" : "text-muted-foreground",
+              )}
+              data-testid="text-merge-pledge-load-status"
+            >
+              {loadError
+                ? "Some selected gifts could not be loaded — close and try again."
+                : `Loading selected gifts (${gifts.length}/${expectedCount})…`}
+            </p>
+          )}
           <RadioGroup
             value={mode}
             onValueChange={(v) => setMode(v as "new" | "existing")}
