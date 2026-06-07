@@ -8421,6 +8421,43 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
 });
 
 /**
+ * Confirms many staged-payment matches at once — the bulk equivalent of
+POST /staged-payments/{id}/confirm-match, used to clear the Auto-matched
+queue in a single action. Each id is confirmed only if it is in a
+confirmable state (a pending row with a donor, or an auto-applied approved
+row); ids that are missing, already confirmed, or otherwise not
+confirmable are silently skipped rather than failing the whole batch. Does
+not change donors or mint gifts. The response reports which ids were
+confirmed so the client can report partial results.
+
+ * @summary Bulk-confirm several auto-applied/suggested donor matches in one call.
+ */
+
+export const ConfirmStagedPaymentMatchesBody = zod
+  .object({
+    ids: zod
+      .array(zod.string())
+      .min(1)
+      .describe(
+        "Ids of the staged payments to confirm. Ids that are not in a confirmable state are skipped, not errors.",
+      ),
+  })
+  .describe(
+    "Bulk-confirm several staged-payment matches (e.g. the whole Auto-matched queue) in one call.",
+  );
+
+export const ConfirmStagedPaymentMatchesResponse = zod.object({
+  confirmedIds: zod
+    .array(zod.string())
+    .describe("Ids that were actually confirmed."),
+  requested: zod
+    .number()
+    .describe(
+      "How many ids were submitted. (requested − confirmedIds.length = skipped.)",
+    ),
+});
+
+/**
  * Stamps the donor match as human-confirmed (match_confirmed_at /
 match_confirmed_by_user_id). Works on a pending row with a donor OR an
 auto-applied approved row (graduating it from "Auto-matched" to "Done").

@@ -2028,6 +2028,24 @@ export interface GroupReconcileStagedPaymentsResponse {
 }
 
 /**
+ * Bulk-confirm several staged-payment matches (e.g. the whole Auto-matched queue) in one call.
+ */
+export interface ConfirmStagedPaymentMatchesBody {
+  /**
+   * Ids of the staged payments to confirm. Ids that are not in a confirmable state are skipped, not errors.
+   * @minItems 1
+   */
+  ids: string[];
+}
+
+export interface ConfirmStagedPaymentMatchesResponse {
+  /** Ids that were actually confirmed. */
+  confirmedIds: string[];
+  /** How many ids were submitted. (requested − confirmedIds.length = skipped.) */
+  requested: number;
+}
+
+/**
  * File the staged payment under a non-gift exclusion category.
  */
 export interface ExcludeStagedPaymentBody {

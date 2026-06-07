@@ -92,3 +92,18 @@ Incremental re-sync will NOT backfill `qb_deposit_id` on old rows (their deposit
 is out of the watermark window). Grouping simply isn't offered for rows lacking a
 deposit id. To enrich the back-catalog do a clean re-ingestion (wipe
 staged_payments + reset watermark — 0024 pattern).
+
+## Bulk confirm of the Auto-matched queue
+`POST /staged-payments/confirm-matches` (body `{ids:[]}`) clears the Auto-matched
+queue in one call. It is one atomic `UPDATE ... WHERE id IN (...)` whose
+predicate MUST stay identical to the single `/:id/confirm-match`
+(`num_nonnulls(donor) >= 1` AND `status='pending' OR (status='approved' AND
+autoApplied)`), so a raw bulk call can't confirm rows the single button would
+reject. Stale/ineligible/missing ids are SILENTLY SKIPPED (filtered by the WHERE,
+returned via `RETURNING`) — partial success, never a whole-batch failure.
+Response `{confirmedIds, requested}`: `requested` = RAW payload length (counts
+duplicates), but the ids fed to the UPDATE are deduped so one row confirms once.
+Client (`staged-payments.tsx`): per-card checkbox + select-all bar render ONLY
+for `queue==="auto_matched"`; a `rows`-keyed effect prunes the bulk selection to
+currently-visible ids so pagination / post-confirm refetch can't carry hidden ids
+into a confirm; queue switch clears the selection.

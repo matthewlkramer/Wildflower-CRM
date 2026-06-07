@@ -12,6 +12,7 @@ import {
   useRevertStagedPayment,
   useExcludeStagedPayment,
   useConfirmStagedPaymentMatch,
+  useConfirmStagedPaymentMatches,
   useUnmatchStagedPayment,
   useRunQuickbooksSync,
   useResyncQuickbooksFull,
@@ -395,6 +396,21 @@ export default function StagedPayments() {
 
   const clearGroup = () => setGroupRows([]);
 
+  // ── Bulk-confirm (Auto-matched queue) ──
+  // Ids the fundraiser has checked to confirm in one action. Only meaningful in
+  // the Auto-matched queue, where every card is an auto-applied match awaiting a
+  // "looks right" confirmation.
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const clearBulk = () => setBulkSelected(new Set());
+  const toggleBulkMember = (id: string) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const toggleGroupMember = (row: StagedPayment) => {
     const key = groupKeyOf(row);
     if (!key) return;
@@ -482,6 +498,33 @@ export default function StagedPayments() {
     invalidateStaged();
     invalidateGifts();
   };
+
+  const bulkConfirm = useConfirmStagedPaymentMatches({
+    mutation: {
+      onSuccess: (data) => {
+        clearBulk();
+        invalidateAll();
+        const confirmed = data.confirmedIds.length;
+        const skipped = data.requested - confirmed;
+        toast({
+          title:
+            confirmed === 0
+              ? "Nothing to confirm"
+              : `Confirmed ${confirmed} match${confirmed === 1 ? "" : "es"}`,
+          description:
+            skipped > 0
+              ? `${skipped} skipped — already handled or no longer confirmable.`
+              : undefined,
+        });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Bulk confirm failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
 
   // ── Inline donor creation (org / person / household) ──────────────────────
   const createOrg = useCreateOrganization();
@@ -786,6 +829,17 @@ export default function StagedPayments() {
       setSelectedStaged(null);
     }
   }, [rows, selectedStaged]);
+
+  // Keep the bulk-confirm selection limited to currently-visible rows so a page
+  // change (or a post-confirm refetch) can't carry hidden ids into a confirm.
+  useEffect(() => {
+    setBulkSelected((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(rows.map((r) => r.id));
+      const next = new Set([...prev].filter((id) => visible.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [rows]);
 
   const countFor = (q: StagedPaymentQueue): number | undefined => {
     if (!summary) return undefined;
@@ -1198,6 +1252,7 @@ export default function StagedPayments() {
                 setQueue(v as StagedPaymentQueue);
                 setPage(1);
                 setSelectedStaged(null);
+                clearBulk();
               }}
             >
               <SelectTrigger className="h-9 w-[170px]" data-testid="staged-queue">
@@ -1266,6 +1321,62 @@ export default function StagedPayments() {
             ) : null}
           </div>
 
+          {queue === "auto_matched" && rows.length > 0 ? (
+            <div
+              className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2"
+              data-testid="bulk-confirm-bar"
+            >
+              <Checkbox
+                checked={
+                  bulkSelected.size > 0 &&
+                  rows.every((r) => bulkSelected.has(r.id))
+                }
+                onCheckedChange={(c) =>
+                  setBulkSelected(
+                    c ? new Set(rows.map((r) => r.id)) : new Set(),
+                  )
+                }
+                data-testid="bulk-select-all"
+                aria-label="Select all auto-matched payments on this page"
+              />
+              <span className="text-sm text-muted-foreground">
+                {bulkSelected.size > 0
+                  ? `${bulkSelected.size} selected`
+                  : "Select all"}
+              </span>
+              <div className="ml-auto flex items-center gap-2">
+                {bulkSelected.size > 0 ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearBulk}
+                    disabled={bulkConfirm.isPending}
+                    data-testid="bulk-clear"
+                  >
+                    Clear
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    bulkConfirm.mutate({
+                      data: { ids: Array.from(bulkSelected) },
+                    })
+                  }
+                  disabled={bulkSelected.size === 0 || bulkConfirm.isPending}
+                  data-testid="bulk-confirm"
+                  title="Confirm every selected auto-matched payment; moves them to Done."
+                >
+                  {bulkConfirm.isPending
+                    ? "Confirming…"
+                    : `Confirm selected${
+                        bulkSelected.size > 0 ? ` (${bulkSelected.size})` : ""
+                      }`}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="lg:max-h-[calc(100vh-19rem)] lg:overflow-y-auto lg:pr-1">
             {listQ.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
@@ -1295,6 +1406,8 @@ export default function StagedPayments() {
                       (groupKey != null && groupKeyOf(row) !== groupKey)
                     }
                     onToggleGroup={() => toggleGroupMember(row)}
+                    bulkChecked={bulkSelected.has(row.id)}
+                    onToggleBulk={() => toggleBulkMember(row.id)}
                   />
                 ))}
               </div>
@@ -1504,6 +1617,8 @@ function StagedPaymentCard({
   groupChecked,
   groupCheckboxDisabled,
   onToggleGroup,
+  bulkChecked,
+  onToggleBulk,
 }: {
   row: StagedPayment;
   queue: StagedPaymentQueue;
@@ -1513,6 +1628,8 @@ function StagedPaymentCard({
   groupChecked: boolean;
   groupCheckboxDisabled: boolean;
   onToggleGroup: () => void;
+  bulkChecked: boolean;
+  onToggleBulk: () => void;
 }) {
   const { toast } = useToast();
 
@@ -1670,6 +1787,17 @@ function StagedPaymentCard({
                       ? "Only payments sharing the same deposit, or the same payer and date, can be grouped together."
                       : "Group payments from one deposit (or the same payer + date), then match them to one gift."
                 }
+              />
+            </div>
+          ) : null}
+          {queue === "auto_matched" ? (
+            <div className="pt-1">
+              <Checkbox
+                checked={bulkChecked}
+                onCheckedChange={() => onToggleBulk()}
+                data-testid={`staged-bulk-checkbox-${row.id}`}
+                aria-label="Select this match for bulk confirm"
+                title="Select to confirm this auto-applied match together with others."
               />
             </div>
           ) : null}

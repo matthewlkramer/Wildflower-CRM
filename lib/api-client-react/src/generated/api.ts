@@ -38,6 +38,8 @@ import type {
   CalendarMeetingFiltersConfig,
   CalendarSyncRunResponse,
   CandidateThankYouEmailList,
+  ConfirmStagedPaymentMatchesBody,
+  ConfirmStagedPaymentMatchesResponse,
   CreateAddressBody,
   CreateCorrespondentIgnoreBody,
   CreateDonorPaymentIntermediaryBody,
@@ -14739,6 +14741,106 @@ export const useGroupReconcileStagedPayments = <
   TContext
 > => {
   return useMutation(getGroupReconcileStagedPaymentsMutationOptions(options));
+};
+
+/**
+ * Confirms many staged-payment matches at once — the bulk equivalent of
+POST /staged-payments/{id}/confirm-match, used to clear the Auto-matched
+queue in a single action. Each id is confirmed only if it is in a
+confirmable state (a pending row with a donor, or an auto-applied approved
+row); ids that are missing, already confirmed, or otherwise not
+confirmable are silently skipped rather than failing the whole batch. Does
+not change donors or mint gifts. The response reports which ids were
+confirmed so the client can report partial results.
+
+ * @summary Bulk-confirm several auto-applied/suggested donor matches in one call.
+ */
+export const getConfirmStagedPaymentMatchesUrl = () => {
+  return `/api/staged-payments/confirm-matches`;
+};
+
+export const confirmStagedPaymentMatches = async (
+  confirmStagedPaymentMatchesBody: ConfirmStagedPaymentMatchesBody,
+  options?: RequestInit,
+): Promise<ConfirmStagedPaymentMatchesResponse> => {
+  return customFetch<ConfirmStagedPaymentMatchesResponse>(
+    getConfirmStagedPaymentMatchesUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(confirmStagedPaymentMatchesBody),
+    },
+  );
+};
+
+export const getConfirmStagedPaymentMatchesMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStagedPaymentMatches>>,
+    TError,
+    { data: BodyType<ConfirmStagedPaymentMatchesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmStagedPaymentMatches>>,
+  TError,
+  { data: BodyType<ConfirmStagedPaymentMatchesBody> },
+  TContext
+> => {
+  const mutationKey = ["confirmStagedPaymentMatches"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmStagedPaymentMatches>>,
+    { data: BodyType<ConfirmStagedPaymentMatchesBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return confirmStagedPaymentMatches(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConfirmStagedPaymentMatchesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmStagedPaymentMatches>>
+>;
+export type ConfirmStagedPaymentMatchesMutationBody =
+  BodyType<ConfirmStagedPaymentMatchesBody>;
+export type ConfirmStagedPaymentMatchesMutationError =
+  ErrorType<BadRequestResponse>;
+
+/**
+ * @summary Bulk-confirm several auto-applied/suggested donor matches in one call.
+ */
+export const useConfirmStagedPaymentMatches = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStagedPaymentMatches>>,
+    TError,
+    { data: BodyType<ConfirmStagedPaymentMatchesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof confirmStagedPaymentMatches>>,
+  TError,
+  { data: BodyType<ConfirmStagedPaymentMatchesBody> },
+  TContext
+> => {
+  return useMutation(getConfirmStagedPaymentMatchesMutationOptions(options));
 };
 
 /**

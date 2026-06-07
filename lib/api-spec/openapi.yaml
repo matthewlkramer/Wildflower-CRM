@@ -2048,6 +2048,26 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "A member is no longer pending, or the gift is already linked" }
+  /staged-payments/confirm-matches:
+    post:
+      operationId: confirmStagedPaymentMatches
+      tags: [staged-payments]
+      summary: Bulk-confirm several auto-applied/suggested donor matches in one call.
+      description: |
+        Confirms many staged-payment matches at once — the bulk equivalent of
+        POST /staged-payments/{id}/confirm-match, used to clear the Auto-matched
+        queue in a single action. Each id is confirmed only if it is in a
+        confirmable state (a pending row with a donor, or an auto-applied approved
+        row); ids that are missing, already confirmed, or otherwise not
+        confirmable are silently skipped rather than failing the whole batch. Does
+        not change donors or mint gifts. The response reports which ids were
+        confirmed so the client can report partial results.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConfirmStagedPaymentMatchesBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConfirmStagedPaymentMatchesResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /staged-payments/{id}/confirm-match:
     post:
       operationId: confirmStagedPaymentMatch
@@ -3998,6 +4018,22 @@ components:
         gift: { $ref: "#/components/schemas/GiftOrPayment" }
         stagedPaymentIds: { type: array, items: { type: string } }
         representativeStagedPaymentId: { type: string, description: "The group member that also carries matchedGiftId (the one that makes the gift show linked)." }
+    ConfirmStagedPaymentMatchesBody:
+      type: object
+      required: [ids]
+      description: "Bulk-confirm several staged-payment matches (e.g. the whole Auto-matched queue) in one call."
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items: { type: string }
+          description: "Ids of the staged payments to confirm. Ids that are not in a confirmable state are skipped, not errors."
+    ConfirmStagedPaymentMatchesResponse:
+      type: object
+      required: [confirmedIds, requested]
+      properties:
+        confirmedIds: { type: array, items: { type: string }, description: "Ids that were actually confirmed." }
+        requested: { type: integer, description: "How many ids were submitted. (requested − confirmedIds.length = skipped.)" }
     ExcludeStagedPaymentBody:
       type: object
       required: [exclusionReason]

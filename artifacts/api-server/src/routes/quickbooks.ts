@@ -37,6 +37,7 @@ import {
   ResolveStagedPaymentBody,
   ReconcileStagedPaymentBody,
   GroupReconcileStagedPaymentsBody,
+  ConfirmStagedPaymentMatchesBody,
   SplitStagedPaymentBody,
   ExcludeStagedPaymentBody,
 } from "@workspace/api-zod";
@@ -1586,6 +1587,51 @@ router.post(
       giftIds,
       splitTotal: splitTotal.toFixed(2),
     });
+  }),
+);
+
+// ─── POST /staged-payments/confirm-matches ─────────────────────────────────
+// Bulk equivalent of confirm-match: stamp many auto-applied/suggested matches
+// as human-confirmed in one call (used to clear the Auto-matched queue). Only
+// rows in a confirmable state (a pending row with a donor, OR an auto-applied
+// approved row) are updated; any other id is silently skipped so a partially
+// stale selection still succeeds. The single WHERE mirrors confirm-match's
+// eligibility predicate, so direct API callers can't bypass it.
+router.post(
+  "/staged-payments/confirm-matches",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const parsed = ConfirmStagedPaymentMatchesBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body", issues: parsed.error.issues });
+      return;
+    }
+    // `requested` reflects how many ids the caller submitted; dedupe only the
+    // values fed to the UPDATE so a repeated id can't be confirmed twice.
+    const requested = parsed.data.ids.length;
+    const ids = Array.from(new Set(parsed.data.ids));
+    const rows = await db
+      .update(stagedPayments)
+      .set({
+        matchStatus: "matched",
+        matchConfirmedByUserId: user.id,
+        matchConfirmedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          inArray(stagedPayments.id, ids),
+          sql`num_nonnulls(${stagedPayments.organizationId}, ${stagedPayments.individualGiverPersonId}, ${stagedPayments.householdId}) >= 1`,
+          sql`(${stagedPayments.status} = 'pending'
+               OR (${stagedPayments.status} = 'approved' AND ${stagedPayments.autoApplied} = true))`,
+        ),
+      )
+      .returning({ id: stagedPayments.id });
+    res.json({ confirmedIds: rows.map((r) => r.id), requested });
   }),
 );
 
