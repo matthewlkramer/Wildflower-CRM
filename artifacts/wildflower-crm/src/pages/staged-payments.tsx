@@ -212,6 +212,20 @@ function formatAmount(amount: string | null | undefined): string {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
 
+// Grouping key for the "several QB records = one CRM gift" flow. Two staged
+// payments can be grouped when they share an underlying bank deposit
+// (qbDepositId) OR — when no deposit was captured — when they share the same
+// payer and date_received (a single wire split across multiple QB records).
+// Rows with neither key are not groupable. Mirrors the server guard in
+// POST /staged-payments/group-reconcile.
+function groupKeyOf(row: StagedPayment): string | null {
+  if (row.qbDepositId) return `dep:${row.qbDepositId}`;
+  const payer = (row.payerName ?? "").trim().toLowerCase();
+  const date = row.dateReceived ?? "";
+  if (payer && date) return `pd:${payer}|${date}`;
+  return null;
+}
+
 // Compact one-line label for a gift, shown in the cross-pane match bar so the
 // operator can confirm exactly which gift is selected before pressing Match.
 function giftRowLabel(g: GiftOrPayment): string {
@@ -324,27 +338,30 @@ export default function StagedPayments() {
     setSelectedGiftAmount(giftId ? amount : null);
   };
 
-  // ── Deposit grouping (manual) ──
-  // Rows the fundraiser has checked to group into a single "deposit unit". All
-  // members must share one bank deposit (qbDepositId); we store the full rows so
-  // the combined total can be shown without re-fetching. A group of 2+ switches
-  // the match bar / gift rows into group-reconcile mode.
+  // ── Payment grouping (manual) ──
+  // Rows the fundraiser has checked to group into a single unit reconciled to
+  // one gift. All members must share one grouping key (groupKeyOf): the same
+  // bank deposit, or — when no deposit was captured — the same payer + date.
+  // We store the full rows so the combined total can be shown without
+  // re-fetching. A group of 2+ switches the match bar / gift rows into
+  // group-reconcile mode.
   const [groupRows, setGroupRows] = useState<StagedPayment[]>([]);
   const groupIds = groupRows.map((r) => r.id);
-  const groupDepositId = groupRows[0]?.qbDepositId ?? null;
+  const groupKey = groupRows[0] ? groupKeyOf(groupRows[0]) : null;
   const groupActive = groupRows.length >= 2;
   const groupTotal = groupRows.reduce((acc, r) => acc + Number(r.amount ?? 0), 0);
 
   const clearGroup = () => setGroupRows([]);
 
   const toggleGroupMember = (row: StagedPayment) => {
-    if (!row.qbDepositId) return;
+    const key = groupKeyOf(row);
+    if (!key) return;
     setGroupRows((prev) => {
       if (prev.some((r) => r.id === row.id)) {
         return prev.filter((r) => r.id !== row.id);
       }
-      // Never group across deposits: ignore a row from a different deposit.
-      if (prev.length > 0 && prev[0].qbDepositId !== row.qbDepositId) return prev;
+      // Never mix groups: ignore a row that doesn't share the active key.
+      if (prev.length > 0 && groupKeyOf(prev[0]) !== key) return prev;
       return [...prev, row];
     });
   };
@@ -848,13 +865,13 @@ export default function StagedPayments() {
         <CardContent className="flex flex-wrap items-center gap-3 py-3">
           <div className="text-sm">
             <span className="text-muted-foreground">
-              {groupActive ? "Deposit group: " : "Payment: "}
+              {groupActive ? "Payment group: " : "Payment: "}
             </span>
             {groupActive ? (
               <span
                 className="font-medium"
                 data-testid="match-selected-group"
-                title="These payments share one bank deposit and will be reconciled together to a single gift."
+                title="These payments will be reconciled together to a single gift."
               >
                 {groupRows.length} payments · {formatAmount(String(groupTotal))}{" "}
                 combined
@@ -900,7 +917,7 @@ export default function StagedPayments() {
                 onClick={clearGroup}
                 disabled={groupReconcile.isPending}
                 data-testid="group-clear"
-                title="Clear the deposit group selection."
+                title="Clear the payment group selection."
               >
                 Clear group
               </Button>
@@ -912,8 +929,8 @@ export default function StagedPayments() {
                 data-testid="group-match-button"
                 title={
                   selectedGiftId == null
-                    ? "Pick the existing gift on the right to reconcile this deposit group to."
-                    : "Reconcile this deposit group to the selected gift."
+                    ? "Pick the existing gift on the right to reconcile this payment group to."
+                    : "Reconcile this payment group to the selected gift."
                 }
               >
                 {groupReconcile.isPending
@@ -1050,9 +1067,8 @@ export default function StagedPayments() {
                     onChanged={invalidateAll}
                     groupChecked={groupIds.includes(row.id)}
                     groupCheckboxDisabled={
-                      row.qbDepositId == null ||
-                      (groupDepositId != null &&
-                        row.qbDepositId !== groupDepositId)
+                      groupKeyOf(row) == null ||
+                      (groupKey != null && groupKeyOf(row) !== groupKey)
                     }
                     onToggleGroup={() => toggleGroupMember(row)}
                   />
@@ -1345,13 +1361,13 @@ function StagedPaymentCard({
                 disabled={groupCheckboxDisabled && !groupChecked}
                 onCheckedChange={() => onToggleGroup()}
                 data-testid={`staged-group-checkbox-${row.id}`}
-                aria-label="Add to deposit group"
+                aria-label="Add to payment group"
                 title={
-                  row.qbDepositId == null
-                    ? "This payment isn't linked to a bank deposit, so it can't be grouped."
+                  groupKeyOf(row) == null
+                    ? "This payment has no bank deposit and no payer/date, so it can't be grouped."
                     : groupCheckboxDisabled
-                      ? "Only payments sharing the same bank deposit can be grouped together."
-                      : "Group payments that share one bank deposit, then match them to one gift."
+                      ? "Only payments sharing the same deposit, or the same payer and date, can be grouped together."
+                      : "Group payments from one deposit (or the same payer + date), then match them to one gift."
                 }
               />
             </div>
@@ -2028,7 +2044,7 @@ function GiftRow({
               onClick={() => onMatchGroup(gift.id)}
               disabled={groupMatching}
               data-testid={`gift-match-group-${gift.id}`}
-              title="Reconcile the whole deposit group to this gift."
+              title="Reconcile the whole payment group to this gift."
             >
               {groupMatching ? "Matching…" : `Match group (${groupSize}) →`}
             </Button>

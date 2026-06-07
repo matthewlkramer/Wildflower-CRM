@@ -1011,12 +1011,14 @@ router.post(
 );
 
 // ─── POST /staged-payments/group-reconcile ─────────────────────────────────
-// Manually group several staged payments that share ONE underlying bank Deposit
-// into a single "deposit unit" and reconcile the GROUP to ONE existing CRM gift
-// (which typically carries multiple allocations). No new gift is minted and
-// QuickBooks is never written back. Guards: at least two rows; every row pending
-// and not already resolved; all rows share the same non-null qbDepositId
-// (never across deposits); the gift exists with a single valid donor and is not
+// Manually group several staged payments into a single unit and reconcile the
+// GROUP to ONE existing CRM gift (which typically carries multiple allocations).
+// Members must form one coherent group: either they share ONE underlying bank
+// Deposit (qbDepositId), or — when no deposit was captured — they share the same
+// payer name and date_received (a single wire split across several QB records).
+// No new gift is minted and QuickBooks is never written back. Guards: at least
+// two rows; every row pending and not already resolved; all rows share one
+// grouping key (deposit, or payer+date); the gift exists with a single valid donor and is not
 // already linked to any other staged row; the members' combined total sits in
 // the fee-band tolerance around the gift amount. On success EVERY member gets
 // groupReconciledGiftId = the gift; exactly one deterministic "representative"
@@ -1048,7 +1050,7 @@ router.post(
       res.status(400).json({
         error: "group_too_small",
         message:
-          "Group at least two staged payments from the same deposit to reconcile as a unit.",
+          "Group at least two staged payments to reconcile as a unit.",
       });
       return;
     }
@@ -1108,10 +1110,31 @@ router.post(
           }
         }
 
-        // All members must share exactly one non-null deposit. Never group
-        // across deposits, and never group rows with no known deposit.
+        // Members must form one coherent group: either they all share exactly
+        // one non-null bank deposit, OR — when no deposit was captured — they
+        // all share the same payer name and date_received (a single wire split
+        // across several QuickBooks records). Never group across deposits, and
+        // never group rows that share neither key.
         const depositIds = new Set(locked.map((r) => r.qbDepositId));
-        if (depositIds.size !== 1 || locked[0].qbDepositId == null) {
+        const sameDeposit =
+          depositIds.size === 1 && locked[0].qbDepositId != null;
+        // The payer+date fallback applies ONLY when NO member has a captured
+        // deposit — otherwise two records from different known deposits could be
+        // force-grouped just because the payer and date coincide. This mirrors
+        // the client groupKeyOf(), which uses the payer+date key only when
+        // qbDepositId is absent.
+        const allDepositNull = locked.every((r) => r.qbDepositId == null);
+        const payerKeys = new Set(
+          locked.map((r) => (r.payerName ?? "").trim().toLowerCase()),
+        );
+        const dateKeys = new Set(locked.map((r) => r.dateReceived));
+        const samePayerDay =
+          allDepositNull &&
+          payerKeys.size === 1 &&
+          !payerKeys.has("") &&
+          dateKeys.size === 1 &&
+          locked[0].dateReceived != null;
+        if (!sameDeposit && !samePayerDay) {
           throw new Error(NOT_GROUPABLE);
         }
 
@@ -1200,7 +1223,7 @@ router.post(
         res.status(400).json({
           error: "not_groupable",
           message:
-            "These payments must all come from the same bank deposit to be grouped.",
+            "These payments must share the same bank deposit, or the same payer and date, to be grouped.",
         });
         return;
       }

@@ -14,9 +14,13 @@ import type { Server } from "node:http";
  * End-to-end coverage for the QuickBooks deposit group-reconcile GUARDRAILS.
  *
  * Companion to `quickbooks-group-reconcile.integration.test.ts` (which covers
- * the happy path + revert). This file asserts the route's rejection paths each
- * return the right status/error AND leave every row untouched:
- *   - DIFFERENT bank deposits (or no deposit at all)   → 400 not_groupable
+ * the happy path + revert). This file asserts the route's grouping-key +
+ * rejection paths each return the right status/error AND (for rejections) leave
+ * every row untouched:
+ *   - DIFFERENT bank deposits                          → 400 not_groupable
+ *   - no deposit AND different payer/date              → 400 not_groupable
+ *   - no deposit but SAME payer + date                 → 200, reconciled
+ *   - same payer+date but DIFFERENT non-null deposits  → 400 not_groupable
  *   - one row already resolved/approved                → 409 not_pending
  *   - gift already linked to a staged row outside group → 409 link_conflict
  *   - fewer than two rows                              → 400 group_too_small
@@ -119,6 +123,8 @@ async function seedStaged(
     status?: "pending" | "approved" | "rejected";
     matchedGiftId?: string | null;
     groupReconciledGiftId?: string | null;
+    payerName?: string | null;
+    dateReceived?: string | null;
   },
 ): Promise<string> {
   const id = stagedId(giftId, label);
@@ -133,6 +139,8 @@ async function seedStaged(
     status: opts.status ?? "pending",
     matchedGiftId: opts.matchedGiftId ?? null,
     groupReconciledGiftId: opts.groupReconciledGiftId ?? null,
+    payerName: opts.payerName ?? null,
+    dateReceived: opts.dateReceived ?? null,
     organizationId: ORG_ID,
   });
   return id;
@@ -248,6 +256,66 @@ describe.skipIf(!HAS_DB)(
       const giftId = await seedGift("100.00");
       const aId = await seedStaged(giftId, "a", "50.00", { depositId: null });
       const bId = await seedStaged(giftId, "b", "50.00", { depositId: null });
+
+      const res = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe("not_groupable");
+
+      await expectUntouchedPending(aId);
+      await expectUntouchedPending(bId);
+    }, 30_000);
+
+    it("accepts rows with NO deposit that share the same payer + date → 200 and reconciles the group", async () => {
+      const giftId = await seedGift("120000.00");
+      const aId = await seedStaged(giftId, "a", "80000.00", {
+        depositId: null,
+        payerName: "The Howley Foundation",
+        dateReceived: "2025-07-25",
+      });
+      const bId = await seedStaged(giftId, "b", "40000.00", {
+        depositId: null,
+        payerName: "The Howley Foundation",
+        dateReceived: "2025-07-25",
+      });
+
+      const res = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+      });
+
+      expect(res.status).toBe(200);
+
+      // Representative (smallest id — "a") carries matchedGiftId; both rows get
+      // groupReconciledGiftId and flip to approved.
+      const a = await readStaged(aId);
+      const b = await readStaged(bId);
+      expect(a.status).toBe("approved");
+      expect(b.status).toBe("approved");
+      expect(a.groupReconciledGiftId).toBe(giftId);
+      expect(b.groupReconciledGiftId).toBe(giftId);
+      expect(a.matchedGiftId).toBe(giftId);
+      expect(b.matchedGiftId).toBeNull();
+    }, 30_000);
+
+    it("rejects same payer + date but DIFFERENT non-null deposits with 400 not_groupable and changes nothing", async () => {
+      // The critical guard: the payer+date fallback must apply ONLY when no
+      // member has a captured deposit. Two records from different known deposits
+      // must never be force-grouped just because payer and date coincide.
+      const giftId = await seedGift("100.00");
+      const aId = await seedStaged(giftId, "a", "50.00", {
+        depositId: `${RUN}_depX`,
+        payerName: "Same Payer",
+        dateReceived: "2025-01-01",
+      });
+      const bId = await seedStaged(giftId, "b", "50.00", {
+        depositId: `${RUN}_depY`,
+        payerName: "Same Payer",
+        dateReceived: "2025-01-01",
+      });
 
       const res = await api("/api/staged-payments/group-reconcile", {
         giftId,

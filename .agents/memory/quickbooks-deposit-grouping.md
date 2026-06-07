@@ -5,10 +5,29 @@ description: Manual grouping of staged payments sharing one bank deposit, reconc
 
 # QuickBooks deposit grouping
 
-Fundraisers MANUALLY group several QB staged payments that share ONE bank Deposit
-into a "deposit unit" and match the group to ONE existing CRM gift. Fee-band
-gated (combined member total ≈ gift amount), reversible, idempotent under
-re-sync. No auto-grouping, no mint, no QB writeback, no cross-deposit grouping.
+Fundraisers MANUALLY group several QB staged payments and match the group to ONE
+existing CRM gift. Fee-band gated (combined member total ≈ gift amount),
+reversible, idempotent under re-sync. No auto-grouping, no mint, no QB writeback.
+
+## Grouping key (deposit OR payer+date)
+A group is coherent when members share ONE grouping key:
+- `dep:<qbDepositId>` when a deposit was captured, OR
+- `pd:<payer>|<date_received>` (payer trimmed+lowercased, non-empty; date
+  non-null) — used ONLY when **every** member has a null `qbDepositId`.
+
+**Why:** many real rows (Wend, Walton, Chan Zuckerberg, Arthur Rock, Howley) are
+a single wire split across several QB records with NO captured deposit; without
+the fallback they couldn't be grouped at all.
+
+**Lockstep invariant:** client `groupKeyOf(row)` and the server guard in
+`POST /staged-payments/group-reconcile` must agree. The payer+date fallback is
+gated on `allDepositNull` on BOTH sides — otherwise a direct API call could
+force-group rows from DIFFERENT known deposits just because payer+date coincide
+(the client never offers it, but the server is the real boundary). Guard:
+`if (!sameDeposit && !samePayerDay) throw NOT_GROUPABLE`, where
+`samePayerDay = allDepositNull && one non-empty payer && one non-null date`.
+All other gates (pending-only, fee-band tolerance, gift single-donor XOR,
+gift-not-already-linked, partial-unique index) are unchanged.
 
 ## Representative pattern (key design choice)
 ALL group members get `group_reconciled_gift_id = giftId`; only the
