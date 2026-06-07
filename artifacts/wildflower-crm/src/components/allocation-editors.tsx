@@ -47,6 +47,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { RegionMultiCombobox } from "@/components/region-multi-combobox";
+import { InlineEditMultiRegionPicker } from "@/components/multi-select-picker";
+import { useRegionNameMap } from "@/components/region-picker";
 import { formatCurrency, formatEnum } from "@/lib/format";
 
 const INTENDED_USAGE_OPTIONS = [
@@ -133,7 +136,7 @@ function DialogSelect({
       <SelectTrigger id={id} className="h-8 text-sm">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className="max-h-72">
         <SelectItem value="__none__">{placeholder}</SelectItem>
         {options.map((o) => (
           <SelectItem key={o.value} value={o.value}>
@@ -213,6 +216,7 @@ function NewPledgeAllocationDialog({
     status?: PledgeAllocationStatus;
     conditions?: string;
     notes?: string;
+    regionIds?: string[];
   }) => Promise<void>;
 }) {
   const entityOptions = useEntityOptions();
@@ -228,6 +232,7 @@ function NewPledgeAllocationDialog({
   const [status, setStatus] = useState("");
   const [conditions, setConditions] = useState("");
   const [notes, setNotes] = useState("");
+  const [regionIds, setRegionIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   function reset() {
@@ -240,6 +245,7 @@ function NewPledgeAllocationDialog({
     setStatus("");
     setConditions("");
     setNotes("");
+    setRegionIds([]);
   }
 
   function handleClose() {
@@ -274,6 +280,7 @@ function NewPledgeAllocationDialog({
       }
       if (conditions.trim()) payload.conditions = conditions.trim();
       if (notes.trim()) payload.notes = notes.trim();
+      if (regionIds.length > 0) payload.regionIds = regionIds;
       await onCreate(payload);
       reset();
     } finally {
@@ -355,6 +362,13 @@ function NewPledgeAllocationDialog({
               placeholder="— None —"
             />
           </DialogField>
+          <DialogField label="Regional focus" htmlFor="pa-regions">
+            <RegionMultiCombobox
+              testId="pa-regions"
+              value={regionIds}
+              onChange={setRegionIds}
+            />
+          </DialogField>
           <DialogField label="Conditions" htmlFor="pa-conditions">
             <Textarea
               id="pa-conditions"
@@ -414,6 +428,7 @@ function NewGiftAllocationDialog({
     schoolRecipientId?: string;
     spendingStart?: string;
     spendingEnd?: string;
+    regionIds?: string[];
   }) => Promise<void>;
 }) {
   const entityOptions = useEntityOptions();
@@ -430,6 +445,7 @@ function NewGiftAllocationDialog({
   const [schoolRecipientId, setSchoolRecipientId] = useState("");
   const [spendingStart, setSpendingStart] = useState("");
   const [spendingEnd, setSpendingEnd] = useState("");
+  const [regionIds, setRegionIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   function reset() {
@@ -443,6 +459,7 @@ function NewGiftAllocationDialog({
     setSchoolRecipientId("");
     setSpendingStart("");
     setSpendingEnd("");
+    setRegionIds([]);
   }
 
   function handleClose() {
@@ -476,6 +493,7 @@ function NewGiftAllocationDialog({
       if (schoolRecipientId.trim()) payload.schoolRecipientId = schoolRecipientId.trim();
       if (spendingStart.trim()) payload.spendingStart = spendingStart;
       if (spendingEnd.trim()) payload.spendingEnd = spendingEnd;
+      if (regionIds.length > 0) payload.regionIds = regionIds;
       await onCreate(payload);
       reset();
     } finally {
@@ -567,6 +585,13 @@ function NewGiftAllocationDialog({
                 { value: "true", label: "Yes" },
               ]}
               placeholder="No"
+            />
+          </DialogField>
+          <DialogField label="Regional focus" htmlFor="ga-regions">
+            <RegionMultiCombobox
+              testId="ga-regions"
+              value={regionIds}
+              onChange={setRegionIds}
             />
           </DialogField>
           <DialogField label="Spending start" htmlFor="ga-start">
@@ -697,6 +722,7 @@ function PledgeAllocationRow({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const fiscalYearOptions = useFiscalYearOptions();
+  const regionNames = useRegionNameMap();
   const invalidate = () =>
     queryClient.invalidateQueries({
       queryKey: getGetOpportunityOrPledgeQueryKey(pledgeOrOpportunityId),
@@ -739,13 +765,26 @@ function PledgeAllocationRow({
   const entityLabel = alloc.entityId
     ? (entityNameById.get(alloc.entityId) ?? alloc.entityId)
     : null;
+  const regionLabels = (alloc.regionIds ?? []).map(
+    (id) => regionNames.get(id) ?? id,
+  );
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-sm font-medium truncate">
-          {formatCurrency(alloc.subAmount)}
-          {entityLabel ? <span className="text-muted-foreground"> • {entityLabel}</span> : null}
+        <div className="min-w-0">
+          <div className="text-sm font-medium truncate">
+            {formatCurrency(alloc.subAmount)}
+            {entityLabel ? <span className="text-muted-foreground"> • {entityLabel}</span> : null}
+          </div>
+          {regionLabels.length > 0 ? (
+            <div
+              className="text-xs text-muted-foreground truncate"
+              data-testid={`text-${tid}-regions`}
+            >
+              {regionLabels.join(", ")}
+            </div>
+          ) : null}
         </div>
         {confirming ? (
           <div className="flex items-center gap-1">
@@ -848,6 +887,13 @@ function PledgeAllocationRow({
         testIdBase={tid}
         onSave={(next) => patch({ fundableProjectId: next })}
       />
+      <Field label="Regional focus">
+        <InlineEditMultiRegionPicker
+          testIdBase={`${tid}-regions`}
+          value={alloc.regionIds ?? []}
+          onSave={(next) => patch({ regionIds: next ?? [] })}
+        />
+      </Field>
       <Field label="Conditions">
         <InlineEditText
           label="Conditions"
@@ -968,6 +1014,7 @@ function GiftAllocationRow({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const fiscalYearOptions = useFiscalYearOptions();
+  const regionNames = useRegionNameMap();
   const invalidate = () =>
     queryClient.invalidateQueries({
       queryKey: getGetGiftOrPaymentQueryKey(giftId),
@@ -1010,16 +1057,29 @@ function GiftAllocationRow({
   const entityLabel = alloc.entityId
     ? (entityNameById.get(alloc.entityId) ?? alloc.entityId)
     : null;
+  const regionLabels = (alloc.regionIds ?? []).map(
+    (id) => regionNames.get(id) ?? id,
+  );
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-sm font-medium truncate">
-          {formatCurrency(alloc.subAmount)}
-          {alloc.displayUsage ? (
-            <span className="text-muted-foreground"> • {alloc.displayUsage}</span>
-          ) : entityLabel ? (
-            <span className="text-muted-foreground"> • {entityLabel}</span>
+        <div className="min-w-0">
+          <div className="text-sm font-medium truncate">
+            {formatCurrency(alloc.subAmount)}
+            {alloc.displayUsage ? (
+              <span className="text-muted-foreground"> • {alloc.displayUsage}</span>
+            ) : entityLabel ? (
+              <span className="text-muted-foreground"> • {entityLabel}</span>
+            ) : null}
+          </div>
+          {regionLabels.length > 0 ? (
+            <div
+              className="text-xs text-muted-foreground truncate"
+              data-testid={`text-${tid}-regions`}
+            >
+              {regionLabels.join(", ")}
+            </div>
           ) : null}
         </div>
         {confirming ? (
@@ -1131,6 +1191,13 @@ function GiftAllocationRow({
           display={alloc.formalFundUseRestriction ? "Yes" : "No"}
           onSave={(next) => patch({ formalFundUseRestriction: next ?? false })}
           allowNull={false}
+        />
+      </Field>
+      <Field label="Regional focus">
+        <InlineEditMultiRegionPicker
+          testIdBase={`${tid}-regions`}
+          value={alloc.regionIds ?? []}
+          onSave={(next) => patch({ regionIds: next ?? [] })}
         />
       </Field>
       <Field label="Spending start">
