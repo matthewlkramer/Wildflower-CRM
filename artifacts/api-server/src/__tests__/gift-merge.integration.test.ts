@@ -397,6 +397,65 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
     expect((await readGift(a)).paymentOnPledgeId).toBe(pledgeId);
   }, 30_000);
 
+  it("rejects (409 donor_mismatch) attaching a gift whose donor differs from the existing pledge", async () => {
+    const pledgeId = nextId("pledge");
+    await db.insert(schema.opportunitiesAndPledges).values({
+      id: pledgeId,
+      name: `Donor Mismatch Pledge ${RUN}`,
+      organizationId: ORG_ID,
+      awardedAmount: "500.00",
+      stage: "written_commitment",
+      wasPledge: true,
+    });
+    seededPledgeIds.push(pledgeId);
+    // Gift belongs to a PERSON, not the pledge's organization.
+    const a = await seedGiftWithAllocation("50.00", {
+      individualGiverPersonId: PERSON_ID,
+    });
+
+    const res = await api("/api/gifts-and-payments/merge-into-pledge", {
+      giftIds: [a],
+      pledgeId,
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("donor_mismatch");
+    // The gift must NOT have been re-pointed at the pledge.
+    expect((await readGift(a)).paymentOnPledgeId).toBeNull();
+  }, 30_000);
+
+  it("rejects (409 gift_already_on_pledge) re-pointing a gift already on another pledge", async () => {
+    const firstPledgeId = nextId("pledge");
+    await db.insert(schema.opportunitiesAndPledges).values({
+      id: firstPledgeId,
+      name: `First Pledge ${RUN}`,
+      organizationId: ORG_ID,
+      awardedAmount: "100.00",
+      stage: "written_commitment",
+      wasPledge: true,
+    });
+    seededPledgeIds.push(firstPledgeId);
+    const a = await seedGiftWithAllocation("80.00");
+
+    // Attach the gift to the first pledge — this part succeeds.
+    const attach = await api("/api/gifts-and-payments/merge-into-pledge", {
+      giftIds: [a],
+      pledgeId: firstPledgeId,
+    });
+    expect(attach.status).toBe(200);
+    expect((await readGift(a)).paymentOnPledgeId).toBe(firstPledgeId);
+
+    // Now try to merge it into a brand-new pledge — must be surfaced, not moved.
+    const res = await api("/api/gifts-and-payments/merge-into-pledge", {
+      giftIds: [a],
+      name: `Second Pledge ${RUN}`,
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("gift_already_on_pledge");
+    // Still attached to the first pledge.
+    expect((await readGift(a)).paymentOnPledgeId).toBe(firstPledgeId);
+  }, 30_000);
+
   it("returns 409 when the target pledge does not exist", async () => {
     const a = await seedGiftWithAllocation("10.00");
     const res = await api("/api/gifts-and-payments/merge-into-pledge", {

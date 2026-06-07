@@ -536,6 +536,22 @@ router.delete(
 // ──────────────────────────────────────────────────────────────────
 
 /**
+ * Donor identity key for a row carrying the three donor FKs — used to compare
+ * whether two records (gifts, pledges) share the same donor. "none" when no
+ * donor FK is set (shouldn't happen for valid rows, which enforce donor XOR).
+ */
+function donorKeyOf(r: {
+  organizationId: string | null;
+  individualGiverPersonId: string | null;
+  householdId: string | null;
+}): string {
+  if (r.organizationId != null) return `org:${r.organizationId}`;
+  if (r.individualGiverPersonId != null) return `person:${r.individualGiverPersonId}`;
+  if (r.householdId != null) return `household:${r.householdId}`;
+  return "none";
+}
+
+/**
  * Merge several gifts into one. The survivor (`primaryId`) absorbs every
  * loser's (`mergeIds`) allocation rows, its `amount` becomes the SUM of all
  * selected gifts, and the losers are permanently deleted. Exactly one donor
@@ -782,13 +798,38 @@ router.post(
       const pledges = new Set<string>();
       for (const g of gifts) if (g.paymentOnPledgeId) pledges.add(g.paymentOnPledgeId);
 
+      // A gift that already pays a DIFFERENT pledge must be surfaced, not
+      // silently re-pointed (the pledge payment link is RESTRICT and moving it
+      // would quietly alter another pledge's paid total). Gifts already on the
+      // requested target pledge are an idempotent no-op re-attach and allowed;
+      // for a NEW pledge (no body.pledgeId) any existing link conflicts.
+      const alreadyLinked = gifts.filter(
+        (g) => g.paymentOnPledgeId != null && g.paymentOnPledgeId !== body.pledgeId,
+      );
+      if (alreadyLinked.length) {
+        return {
+          ok: false,
+          status: 409,
+          json: {
+            error: "gift_already_on_pledge",
+            message: `${alreadyLinked.length} selected gift(s) already pay a different pledge. Detach them from that pledge before merging.`,
+          },
+        };
+      }
+
       let pledgeId: string;
       let created: boolean;
 
       if (body.pledgeId) {
-        // Lock the target pledge so it can't be deleted mid-merge.
+        // Lock the target pledge so it can't be deleted mid-merge, and read its
+        // donor so we can confirm every gift belongs to it.
         const pledge = await tx
-          .select({ id: opportunitiesAndPledges.id })
+          .select({
+            id: opportunitiesAndPledges.id,
+            organizationId: opportunitiesAndPledges.organizationId,
+            individualGiverPersonId: opportunitiesAndPledges.individualGiverPersonId,
+            householdId: opportunitiesAndPledges.householdId,
+          })
           .from(opportunitiesAndPledges)
           .where(eq(opportunitiesAndPledges.id, body.pledgeId))
           .for("update")
@@ -798,6 +839,23 @@ router.post(
             ok: false,
             status: 409,
             json: { error: "pledge_not_found", message: "Target pledge not found." },
+          };
+        }
+        // Every selected gift must belong to the pledge's donor — otherwise a
+        // payment would be filed under the wrong donor. Existing-pledge attach
+        // has no donor picker, so a mismatch is rejected (create a new pledge to
+        // resolve mixed donors instead).
+        const pledgeDonor = donorKeyOf(pledge);
+        const mismatched = gifts.filter((g) => donorKeyOf(g) !== pledgeDonor);
+        if (mismatched.length) {
+          return {
+            ok: false,
+            status: 409,
+            json: {
+              error: "donor_mismatch",
+              message:
+                "The selected gift(s) don't all belong to this pledge's donor. Attach gifts from the same donor, or create a new pledge instead.",
+            },
           };
         }
         pledgeId = pledge.id;

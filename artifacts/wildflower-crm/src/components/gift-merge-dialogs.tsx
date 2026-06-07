@@ -41,6 +41,7 @@ import {
   useListOpportunitiesAndPledges,
   getListOpportunitiesAndPledgesQueryKey,
   type GiftOrPayment,
+  type GiftOrPaymentDetail,
 } from "@workspace/api-client-react";
 
 /** Donor (type, id) for a gift, or null when the gift has no donor set. */
@@ -88,7 +89,7 @@ export function MergeGiftsDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  gifts: GiftOrPayment[];
+  gifts: GiftOrPaymentDetail[];
   onDone?: () => void;
 }) {
   const { toast } = useToast();
@@ -99,6 +100,14 @@ export function MergeGiftsDialog({
   const [donorId, setDonorId] = useState<string | null>(null);
 
   const giftKey = useMemo(() => gifts.map((g) => g.id).join(","), [gifts]);
+
+  // Combined allocation line-items across all selected gifts — these are what
+  // roll onto the survivor, shown so the user can verify the money trail before
+  // the destructive confirm.
+  const combinedAllocations = useMemo(
+    () => gifts.flatMap((g) => g.allocations ?? []),
+    [gifts],
+  );
 
   // Default the survivor to the first selected gift whenever the set changes.
   useEffect(() => {
@@ -233,6 +242,36 @@ export function MergeGiftsDialog({
               testIdBase="merge-gift-donor"
             />
           </div>
+
+          {combinedAllocations.length > 0 && (
+            <div className="space-y-2">
+              <Label>
+                Combined allocations ({combinedAllocations.length})
+              </Label>
+              <div
+                className="max-h-40 divide-y overflow-auto rounded-md border text-sm"
+                data-testid="list-merge-gift-allocations"
+              >
+                {combinedAllocations.map((a) => (
+                  <div
+                    key={a.id}
+                    className="flex items-center justify-between gap-3 px-2 py-1.5"
+                    data-testid={`row-merge-gift-allocation-${a.id}`}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                      {a.displayUsage || "Unspecified allocation"}
+                    </span>
+                    <span className="shrink-0 tabular-nums">
+                      {formatCurrency(a.subAmount ?? "0")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                All of these line-items move onto the surviving gift.
+              </p>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -359,7 +398,7 @@ export function MergeIntoPledgeDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  gifts: GiftOrPayment[];
+  gifts: GiftOrPaymentDetail[];
   onDone?: (pledgeId: string) => void;
 }) {
   const { toast } = useToast();

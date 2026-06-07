@@ -12,6 +12,7 @@ import {
   type GiftType,
   type GiftPaymentMethod,
   type GiftOrPayment,
+  type GiftOrPaymentDetail,
   useListEntities,
   getListEntitiesQueryKey,
 } from "@workspace/api-client-react";
@@ -414,8 +415,11 @@ export default function Gifts() {
       }),
     ),
   });
-  const mergeRecords = useMemo<GiftOrPayment[]>(
-    () => mergeQueries.map((q) => q.data).filter((d): d is GiftOrPayment => !!d),
+  const mergeRecords = useMemo<GiftOrPaymentDetail[]>(
+    () =>
+      mergeQueries
+        .map((q) => q.data)
+        .filter((d): d is GiftOrPaymentDetail => !!d),
     [mergeQueries],
   );
 
