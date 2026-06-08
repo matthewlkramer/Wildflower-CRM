@@ -20,3 +20,19 @@ NOT part of the XOR and stay independent (allowNull ok).
 **How to apply:** reuse this pattern for any detail page that decomposes a
 donor/XOR group into per-entity pickers. The composite InlineEditDonor already
 does this internally; mirror its buildDonorBody behavior.
+
+## Gift → pledge link (payment_on_pledge_id) is donor-scoped
+
+A gift's pledge link can be edited inline on gift-detail (not only at gift
+creation). The pledge picker is SCOPED to the gift's current donor, and the
+three donor setters also send `paymentOnPledgeId: null`.
+
+**Why:** a payment must stay on a pledge belonging to its own donor. The picker
+scoping prevents choosing a mismatched pledge; the only remaining mismatch
+vector is changing the donor AFTER linking, so donor changes clear the link.
+Server PATCH currently enforces only donor XOR, not gift↔pledge donor parity —
+the consistency is UI-side. If a server-side guard is ever added, keep it in
+lockstep with this UI behavior.
+
+**How to apply:** when adding any field that depends on the donor identity,
+clear/realign it in the donor setters too.

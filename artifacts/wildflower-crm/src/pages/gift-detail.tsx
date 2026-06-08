@@ -53,6 +53,7 @@ import {
   HideInactiveToggle,
   type Highlight,
 } from "@/components/record-layout";
+import { GiftPledgeLink, type PledgeDonorScope } from "@/components/pledge-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -293,12 +294,15 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
 
   // The donor is one of (funder, individual giver, household), DB-enforced XOR.
   // Each setter sends all three FK fields so exactly one stays populated.
+  // Changing the donor also clears any linked pledge: the pledge picker is
+  // donor-scoped, so a payment must stay on a pledge belonging to its donor —
+  // keeping a stale link would point the gift at a different donor's pledge.
   const setFunderDonor = (next: string | null) =>
-    patch({ organizationId: next, individualGiverPersonId: null, householdId: null });
+    patch({ organizationId: next, individualGiverPersonId: null, householdId: null, paymentOnPledgeId: null });
   const setHouseholdDonor = (next: string | null) =>
-    patch({ householdId: next, organizationId: null, individualGiverPersonId: null });
+    patch({ householdId: next, organizationId: null, individualGiverPersonId: null, paymentOnPledgeId: null });
   const setIndividualDonor = (next: string | null) =>
-    patch({ individualGiverPersonId: next, organizationId: null, householdId: null });
+    patch({ individualGiverPersonId: next, organizationId: null, householdId: null, paymentOnPledgeId: null });
 
   async function saveName() {
     const trimmed = nameValue.trim();
@@ -441,7 +445,15 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   ];
 
   const allocations = gift.allocations ?? [];
-  const hasRelated = Boolean(gift.paymentOnPledgeId || gift.giftBeingMatchedId);
+  // A gift's donor (DB-enforced XOR) scopes the pledge picker so you can only
+  // link a payment to one of that donor's opportunities/pledges.
+  const pledgeDonorScope: PledgeDonorScope = gift.organizationId
+    ? { organizationId: gift.organizationId }
+    : gift.householdId
+      ? { householdId: gift.householdId }
+      : gift.individualGiverPersonId
+        ? { individualGiverPersonId: gift.individualGiverPersonId }
+        : null;
 
   return (
     <RecordLayout
@@ -648,26 +660,22 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
             ) : null}
           </RelatedCard>
 
-          {hasRelated ? (
+          <RelatedCard title="Linked pledges">
+            <GiftPledgeLink
+              value={gift.paymentOnPledgeId ?? null}
+              scope={pledgeDonorScope}
+              onSave={(next) => patch({ paymentOnPledgeId: next })}
+            />
+          </RelatedCard>
+
+          {gift.giftBeingMatchedId ? (
             <RelatedCard title="Related">
-              <div>
-                {gift.paymentOnPledgeId ? (
-                  <RelatedRow
-                    name="Payment on pledge"
-                    href={`/pledges/${gift.paymentOnPledgeId}`}
-                    tone="primary"
-                    sub={gift.paymentOnPledgeId}
-                  />
-                ) : null}
-                {gift.giftBeingMatchedId ? (
-                  <RelatedRow
-                    name="Matching gift"
-                    href={`/gifts/${gift.giftBeingMatchedId}`}
-                    tone="primary"
-                    sub={gift.giftBeingMatchedId}
-                  />
-                ) : null}
-              </div>
+              <RelatedRow
+                name="Matching gift"
+                href={`/gifts/${gift.giftBeingMatchedId}`}
+                tone="primary"
+                sub={gift.giftBeingMatchedId}
+              />
             </RelatedCard>
           ) : null}
         </>
