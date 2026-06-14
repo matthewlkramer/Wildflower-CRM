@@ -1,3 +1,4 @@
+- [email-messages cross-mailbox dedup](email-messages-cross-mailbox-dedup.md) — same Gmail message stored once per mailbox; list endpoint uses DISTINCT ON (gmail_message_id) to deduplicate.
 - [wildflower-crm detail routes](wildflower-crm-routes.md) — organizations live at /organizations (was /funding-entities); pledge detail inherits opportunity.
 - [funders→organizations consolidation](funders-organizations-consolidation.md) — funders+organizations merged; issuesGrants flag distinguishes grant-makers; DonorType "funder"→"organization"; Airtable importer still needs updating.
 - [wildflower-crm activity feed scoping](wildflower-activity-feed-scoping.md) — keep notes/tasks scope separate from donor-relationship scope; API list filters AND together.

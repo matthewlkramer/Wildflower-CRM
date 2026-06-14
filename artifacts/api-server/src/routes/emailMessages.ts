@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { emailAttachments, emailMessages } from "@workspace/db/schema";
-import { and, count, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import {
   ListEmailMessagesQueryParams,
   UpdateEmailMessagePrivacyBody,
@@ -81,34 +81,53 @@ router.get(
       );
     }
     const where = and(...filters);
+
+    // Deduplicate across mailboxes: the same physical Gmail message is stored
+    // once per synced mailbox (unique key = mailboxUserId + gmailMessageId), so
+    // a donor who corresponds with two staff users whose Gmail is synced would
+    // otherwise see the same email twice. DISTINCT ON (gmail_message_id) keeps
+    // one row per thread message, preferring the SENT copy over an INBOX copy
+    // for a richer "from" perspective, then falling back to sentAt DESC.
+    const selectedFields = {
+      id: emailMessages.id,
+      gmailMessageId: emailMessages.gmailMessageId,
+      gmailThreadId: emailMessages.gmailThreadId,
+      mailboxUserId: emailMessages.mailboxUserId,
+      direction: emailMessages.direction,
+      sentAt: emailMessages.sentAt,
+      subject: emailMessages.subject,
+      snippet: emailMessages.snippet,
+      fromEmail: emailMessages.fromEmail,
+      toEmails: emailMessages.toEmails,
+      ccEmails: emailMessages.ccEmails,
+      bccEmails: emailMessages.bccEmails,
+      hasAttachments: emailMessages.hasAttachments,
+      isPrivate: emailMessages.isPrivate,
+      matchedPersonIds: emailMessages.matchedPersonIds,
+      matchedOrganizationIds: emailMessages.matchedOrganizationIds,
+      matchedHouseholdIds: emailMessages.matchedHouseholdIds,
+      aiSummary: emailMessages.aiSummary,
+    };
+    const deduped = db
+      .selectDistinctOn([emailMessages.gmailMessageId], selectedFields)
+      .from(emailMessages)
+      .where(where)
+      .orderBy(
+        emailMessages.gmailMessageId,
+        // Prefer sent over inbox so the outgoing perspective is canonical.
+        sql`(CASE WHEN ${emailMessages.direction} = 'sent' THEN 0 ELSE 1 END)`,
+        desc(emailMessages.sentAt),
+      )
+      .as("deduped");
+
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
-        .select({
-          id: emailMessages.id,
-          gmailMessageId: emailMessages.gmailMessageId,
-          gmailThreadId: emailMessages.gmailThreadId,
-          mailboxUserId: emailMessages.mailboxUserId,
-          direction: emailMessages.direction,
-          sentAt: emailMessages.sentAt,
-          subject: emailMessages.subject,
-          snippet: emailMessages.snippet,
-          fromEmail: emailMessages.fromEmail,
-          toEmails: emailMessages.toEmails,
-          ccEmails: emailMessages.ccEmails,
-          bccEmails: emailMessages.bccEmails,
-          hasAttachments: emailMessages.hasAttachments,
-          isPrivate: emailMessages.isPrivate,
-          matchedPersonIds: emailMessages.matchedPersonIds,
-          matchedOrganizationIds: emailMessages.matchedOrganizationIds,
-          matchedHouseholdIds: emailMessages.matchedHouseholdIds,
-          aiSummary: emailMessages.aiSummary,
-        })
-        .from(emailMessages)
-        .where(where)
-        .orderBy(desc(emailMessages.sentAt))
+        .select()
+        .from(deduped)
+        .orderBy(desc(deduped.sentAt))
         .limit(limit)
         .offset(offset),
-      db.select({ value: count() }).from(emailMessages).where(where),
+      db.select({ value: count() }).from(deduped),
     ]);
     const trackingMap = await computeTracking(rows, {
       personId: q.personId,
