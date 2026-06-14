@@ -77,20 +77,33 @@ router.get(
     if (q.startBefore) {
       filters.push(lt(calendarEvents.startAt, new Date(q.startBefore)));
     }
-    const orderBy =
+    const outerOrderBy =
       q.order === "asc"
         ? asc(calendarEvents.startAt)
         : desc(calendarEvents.startAt);
     const where = and(...filters);
+
+    // Deduplicate across calendars: the same Google Calendar event is stored
+    // once per synced staff user (unique key = calendarUserId + gcalCalendarId
+    // + gcalEventId), so a shared meeting with two sync-enabled attendees would
+    // otherwise appear twice in a donor's feed. DISTINCT ON (gcal_event_id)
+    // keeps one row per physical event; calendarUserId provides a deterministic
+    // tiebreak.
+    const deduped = db
+      .selectDistinctOn([calendarEvents.gcalEventId])
+      .from(calendarEvents)
+      .where(where)
+      .orderBy(calendarEvents.gcalEventId, calendarEvents.calendarUserId)
+      .as("deduped");
+
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
         .select()
-        .from(calendarEvents)
-        .where(where)
-        .orderBy(orderBy)
+        .from(deduped)
+        .orderBy(outerOrderBy)
         .limit(limit)
         .offset(offset),
-      db.select({ value: count() }).from(calendarEvents).where(where),
+      db.select({ value: count() }).from(deduped),
     ]);
     res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
   }),
