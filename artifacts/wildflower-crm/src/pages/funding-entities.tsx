@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListOrganizations,
@@ -11,13 +11,17 @@ import {
   useGetCurrentUser,
   getGetOrganizationQueryOptions,
   getGetOrganizationQueryKey,
+  useUpdateOrganization,
   type ListOrganizationsParams,
   type Organization,
   type ConnectionStatus,
+  type Enthusiasm,
   type ActiveStatus,
   type CapacityRating,
   type Priority,
 } from "@workspace/api-client-react";
+import { LayoutList, Columns3 } from "lucide-react";
+import { EntityKanban, DraggableCard, type EntityKanbanPatch } from "@/components/entity-kanban";
 import { MergeDialog, type MergeField, type MergeRecord } from "@/components/merge-dialog";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
@@ -337,6 +341,7 @@ export default function Organizations() {
     "wf.list.funders.filters",
     null,
   );
+  const [viewMode, setViewMode] = usePersistedState<"list" | "kanban">("wf.list.funders.view", "list");
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -344,12 +349,14 @@ export default function Organizations() {
   const bulkDeleteMut = useBulkDeleteOrganizations();
   const [mergeOpen, setMergeOpen] = useState(false);
   const mergeMut = useMergeOrganizations();
+  const queryClient = useQueryClient();
+  const updateOrganization = useUpdateOrganization();
 
   const ts = useTableState("funding-entities");
   const sortActive = ts.sort.key !== null;
   const params: ListOrganizationsParams = {
-    limit: sortActive ? 10000 : PAGE_SIZE,
-    page: sortActive ? 1 : page,
+    limit: viewMode === "kanban" ? 500 : (sortActive ? 10000 : PAGE_SIZE),
+    page: viewMode === "kanban" ? 1 : (sortActive ? 1 : page),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(issuesGrants !== undefined ? { issuesGrants } : {}),
     ...(makesPris !== undefined ? { makesPris } : {}),
@@ -379,6 +386,7 @@ export default function Organizations() {
 
   const rows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
+  const kanbanTruncated = viewMode === "kanban" && total > rows.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const userNames = useUserNameMap();
@@ -437,6 +445,16 @@ export default function Organizations() {
   };
 
   const viewer = useGetCurrentUser().data ?? null;
+  function handleOrgMove(id: string, patch: EntityKanbanPatch) {
+    queryClient.setQueryData<{ data: Organization[]; pagination: { page: number; limit: number; total: number } }>(
+      getListOrganizationsQueryKey(params),
+      (prev) => prev ? { ...prev, data: prev.data.map((o) => o.id === id ? { ...o, ...patch } as Organization : o) } : prev,
+    );
+    updateOrganization.mutate(
+      { id, data: { connectionStatus: (patch.connectionStatus ?? null) as ConnectionStatus | null, enthusiasm: (patch.enthusiasm ?? null) as Enthusiasm | null } },
+      { onSettled: () => queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() }) },
+    );
+  }
   const registry = useMemo(() => buildColumns({ userNames, regionNames, viewer }), [userNames, regionNames, viewer]);
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
@@ -939,19 +957,68 @@ export default function Organizations() {
         )}
 
         <div className="ml-auto flex items-end gap-2">
+          <div className="flex rounded-md border overflow-hidden">
+            <Button
+              variant={viewMode === "list" ? "secondary" : "ghost"}
+              size="sm"
+              className="rounded-none border-0 px-2"
+              onClick={() => setViewMode("list")}
+              title="List view"
+              aria-label="Switch to list view"
+            >
+              <LayoutList className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === "kanban" ? "secondary" : "ghost"}
+              size="sm"
+              className="rounded-none border-0 px-2"
+              onClick={() => setViewMode("kanban")}
+              title="Kanban view"
+              aria-label="Switch to kanban view"
+            >
+              <Columns3 className="h-4 w-4" />
+            </Button>
+          </div>
           <FiltersMenu
             registry={filterRegistry}
             state={filtersState}
             onChange={setFiltersState}
           />
-          <ColumnsMenu
-            registry={registry}
-            state={columnsState}
-            onChange={setColumnsState}
-          />
+          {viewMode === "list" && (
+            <ColumnsMenu
+              registry={registry}
+              state={columnsState}
+              onChange={setColumnsState}
+            />
+          )}
         </div>
       </div>
 
+      {viewMode === "kanban" ? (
+        <EntityKanban
+          rows={rows}
+          isLoading={isLoading}
+          isError={isError}
+          error={error}
+          truncated={kanbanTruncated}
+          onMove={handleOrgMove}
+          renderCard={(org, { hidden, isOverlay }) => (
+            <DraggableCard id={org.id} hidden={hidden} isOverlay={isOverlay}>
+              <Link
+                href={`/organizations/${org.id}`}
+                className="font-medium text-foreground hover:text-primary line-clamp-1 text-sm"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                {canSeeIdentity(org, viewer) ? displayOrganizationName(org, viewer) : ANONYMOUS_LABEL}
+              </Link>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {formatEnum(org.entityType)}
+              </div>
+            </DraggableCard>
+          )}
+        />
+      ) : (
       <div className="rounded-md border bg-card overflow-hidden">
         <Table>
           <TableHeader>
@@ -1026,15 +1093,18 @@ export default function Organizations() {
           </TableBody>
         </Table>
       </div>
+      )}
 
-      <BulkActionBar
-        count={selection.count}
-        onEdit={() => setBulkOpen(true)}
-        onMerge={() => setMergeOpen(true)}
-        onDelete={() => setBulkDeleteOpen(true)}
-        onClear={selection.clear}
-        entityNoun="organization"
-      />
+      {viewMode === "list" && (
+        <BulkActionBar
+          count={selection.count}
+          onEdit={() => setBulkOpen(true)}
+          onMerge={() => setMergeOpen(true)}
+          onDelete={() => setBulkDeleteOpen(true)}
+          onClear={selection.clear}
+          entityNoun="organization"
+        />
+      )}
       <BulkDeleteDialog
         open={bulkDeleteOpen}
         onOpenChange={setBulkDeleteOpen}
@@ -1078,7 +1148,7 @@ export default function Organizations() {
         }}
       />
 
-      {totalPages > 1 && (
+      {viewMode === "list" && totalPages > 1 && (
         <Pagination>
           <PaginationContent>
             <PaginationItem>

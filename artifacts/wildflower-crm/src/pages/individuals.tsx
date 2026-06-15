@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListPeople,
@@ -11,11 +11,15 @@ import {
   useGetCurrentUser,
   getGetPersonQueryOptions,
   getGetPersonQueryKey,
+  useUpdatePerson,
   type ListPeopleParams,
   type CapacityRating,
   type ConnectionStatus,
+  type Enthusiasm,
   type Person,
 } from "@workspace/api-client-react";
+import { LayoutList, Columns3 } from "lucide-react";
+import { EntityKanban, DraggableCard, type EntityKanbanPatch } from "@/components/entity-kanban";
 import { MergeDialog, type MergeField, type MergeRecord } from "@/components/merge-dialog";
 import { canSeeIdentity, displayPersonName, ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
 import { useRowSelection } from "@/hooks/use-row-selection";
@@ -358,6 +362,7 @@ export default function Individuals() {
     "wf.list.people.columns",
     null,
   );
+  const [viewMode, setViewMode] = usePersistedState<"list" | "kanban">("wf.list.people.view", "list");
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -365,12 +370,14 @@ export default function Individuals() {
   const bulkDeleteMut = useBulkDeletePeople();
   const [mergeOpen, setMergeOpen] = useState(false);
   const mergeMut = useMergePeople();
+  const queryClient = useQueryClient();
+  const updatePerson = useUpdatePerson();
 
   const ts = useTableState("individuals");
   const sortActive = ts.sort.key !== null;
   const params: ListPeopleParams = {
-    limit: sortActive ? 10000 : PAGE_SIZE,
-    page: sortActive ? 1 : page,
+    limit: viewMode === "kanban" ? 500 : (sortActive ? 10000 : PAGE_SIZE),
+    page: viewMode === "kanban" ? 1 : (sortActive ? 1 : page),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     // Only send the boolean when exactly one option is picked. 0 or 2 = unfiltered.
     ...(deceasedSel.length === 1
@@ -401,6 +408,7 @@ export default function Individuals() {
 
   const rows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
+  const kanbanTruncated = viewMode === "kanban" && total > rows.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const regionNames = useRegionNameMap();
   const userNames = useUserNameMap();
@@ -467,6 +475,16 @@ export default function Individuals() {
   };
 
   const viewer = useGetCurrentUser().data ?? null;
+  function handlePersonMove(id: string, patch: EntityKanbanPatch) {
+    queryClient.setQueryData<{ data: Person[]; pagination: { page: number; limit: number; total: number } }>(
+      getListPeopleQueryKey(params),
+      (prev) => prev ? { ...prev, data: prev.data.map((p) => p.id === id ? { ...p, ...patch } as Person : p) } : prev,
+    );
+    updatePerson.mutate(
+      { id, data: { connectionStatus: (patch.connectionStatus ?? null) as ConnectionStatus | null, enthusiasm: (patch.enthusiasm ?? null) as Enthusiasm | null } },
+      { onSettled: () => queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() }) },
+    );
+  }
   const registry = useMemo(
     () => buildColumns({ regionNames, userNames, viewer }),
     [regionNames, userNames, viewer],
@@ -912,19 +930,70 @@ export default function Individuals() {
         )}
 
         <div className="ml-auto flex items-end gap-2">
+          <div className="flex rounded-md border overflow-hidden">
+            <Button
+              variant={viewMode === "list" ? "secondary" : "ghost"}
+              size="sm"
+              className="rounded-none border-0 px-2"
+              onClick={() => setViewMode("list")}
+              title="List view"
+              aria-label="Switch to list view"
+            >
+              <LayoutList className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === "kanban" ? "secondary" : "ghost"}
+              size="sm"
+              className="rounded-none border-0 px-2"
+              onClick={() => setViewMode("kanban")}
+              title="Kanban view"
+              aria-label="Switch to kanban view"
+            >
+              <Columns3 className="h-4 w-4" />
+            </Button>
+          </div>
           <FiltersMenu
             registry={filterRegistry}
             state={filtersState}
             onChange={setFiltersState}
           />
-          <ColumnsMenu
-            registry={registry}
-            state={columnsState}
-            onChange={setColumnsState}
-          />
+          {viewMode === "list" && (
+            <ColumnsMenu
+              registry={registry}
+              state={columnsState}
+              onChange={setColumnsState}
+            />
+          )}
         </div>
       </div>
 
+      {viewMode === "kanban" ? (
+        <EntityKanban
+          rows={rows}
+          isLoading={isLoading}
+          isError={isError}
+          error={error}
+          truncated={kanbanTruncated}
+          onMove={handlePersonMove}
+          renderCard={(person, { hidden, isOverlay }) => (
+            <DraggableCard id={person.id} hidden={hidden} isOverlay={isOverlay}>
+              <Link
+                href={`/individuals/${person.id}`}
+                className="font-medium text-foreground hover:text-primary line-clamp-1 text-sm"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                {canSeeIdentity(person, viewer) ? displayPersonName(person, viewer) : ANONYMOUS_LABEL}
+              </Link>
+              {person.currentHomeRegionId && (
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {regionNames.get(person.currentHomeRegionId) ?? person.currentHomeRegionId}
+                </div>
+              )}
+            </DraggableCard>
+          )}
+        />
+      ) : (
       <div className="rounded-md border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
@@ -999,15 +1068,18 @@ export default function Individuals() {
           </TableBody>
         </Table>
       </div>
+      )}
 
-      <BulkActionBar
-        count={selection.count}
-        onEdit={() => setBulkOpen(true)}
-        onMerge={() => setMergeOpen(true)}
-        onDelete={() => setBulkDeleteOpen(true)}
-        onClear={selection.clear}
-        entityNoun="person"
-      />
+      {viewMode === "list" && (
+        <BulkActionBar
+          count={selection.count}
+          onEdit={() => setBulkOpen(true)}
+          onMerge={() => setMergeOpen(true)}
+          onDelete={() => setBulkDeleteOpen(true)}
+          onClear={selection.clear}
+          entityNoun="person"
+        />
+      )}
       <BulkDeleteDialog
         open={bulkDeleteOpen}
         onOpenChange={setBulkDeleteOpen}
@@ -1053,7 +1125,7 @@ export default function Individuals() {
         }}
       />
 
-      {totalPages > 1 && (
+      {viewMode === "list" && totalPages > 1 && (
         <Pagination>
           <PaginationContent>
             <PaginationItem>

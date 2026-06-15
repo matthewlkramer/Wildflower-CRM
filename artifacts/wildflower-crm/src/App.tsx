@@ -16,7 +16,6 @@ import HouseholdDetail from "@/pages/household-detail";
 import Organizations from "@/pages/funding-entities";
 import OrganizationDetail from "@/pages/funding-entity-detail";
 import Opportunities from "@/pages/opportunities";
-import Pipeline from "@/pages/pipeline";
 import OpportunityDetail from "@/pages/opportunity-detail";
 import Pledges from "@/pages/pledges";
 import PledgeDetail from "@/pages/pledge-detail";
@@ -199,7 +198,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/payment-intermediaries"><ProtectedRoute component={PaymentIntermediaries} /></Route>
           <Route path="/payment-intermediaries/:id"><ProtectedRoute component={PaymentIntermediaryDetail} /></Route>
           
-          <Route path="/pipeline"><ProtectedRoute component={Pipeline} /></Route>
+          <Route path="/pipeline"><Redirect to="/opportunities" /></Route>
           <Route path="/opportunities"><ProtectedRoute component={() => <Opportunities pledgeView="opportunities" />} /></Route>
           <Route path="/opportunities/:id"><ProtectedRoute component={OpportunityDetail} /></Route>
           

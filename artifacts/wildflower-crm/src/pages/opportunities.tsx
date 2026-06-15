@@ -56,7 +56,10 @@ import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
 import { useUserNameMap } from "@/components/user-picker";
+import { LayoutList, Columns3 } from "lucide-react";
+import { OpportunityKanban } from "@/components/opportunity-kanban";
 
+const KANBAN_LIMIT = 500;
 const STATUSES: OpportunityStatus[] = ["open", "pledge", "cash_in", "dormant", "lost"];
 const STAGES: OpportunityStage[] = [
   "cold_lead",
@@ -269,6 +272,7 @@ export default function Opportunities({
     `${persistNs}.filters`,
     null,
   );
+  const [viewMode, setViewMode] = usePersistedState<"list" | "kanban">(`${persistNs}.view`, "list");
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -296,8 +300,8 @@ export default function Opportunities({
   const ts = useTableState("opportunities");
   const sortActive = ts.sort.key !== null;
   const params: ListOpportunitiesAndPledgesParams = {
-    limit: sortActive ? 10000 : PAGE_SIZE,
-    page: sortActive ? 1 : page,
+    limit: viewMode === "kanban" ? KANBAN_LIMIT : (sortActive ? 10000 : PAGE_SIZE),
+    page: viewMode === "kanban" ? 1 : (sortActive ? 1 : page),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(pledgeView ? { pledgeView } : {}),
     ...(effectiveStatuses.length > 0
@@ -513,6 +517,7 @@ export default function Opportunities({
     [rows, ts.sort, userNames],
   );
   const total = data?.pagination.total ?? 0;
+  const kanbanTruncated = viewMode === "kanban" && total > rows.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pagedRows = useMemo(() => {
     if (!sortActive) return sortedRows;
@@ -671,19 +676,53 @@ export default function Opportunities({
         )}
 
         <div className="ml-auto flex items-end gap-2">
+          <div className="flex rounded-md border overflow-hidden">
+            <Button
+              variant={viewMode === "list" ? "secondary" : "ghost"}
+              size="sm"
+              className="rounded-none border-0 px-2"
+              onClick={() => setViewMode("list")}
+              title="List view"
+              aria-label="Switch to list view"
+            >
+              <LayoutList className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === "kanban" ? "secondary" : "ghost"}
+              size="sm"
+              className="rounded-none border-0 px-2"
+              onClick={() => setViewMode("kanban")}
+              title="Kanban view"
+              aria-label="Switch to kanban view"
+            >
+              <Columns3 className="h-4 w-4" />
+            </Button>
+          </div>
           <FiltersMenu
             registry={filterRegistry}
             state={filtersState}
             onChange={setFiltersState}
           />
-          <ColumnsMenu
-            registry={registry}
-            state={columnsState}
-            onChange={setColumnsState}
-          />
+          {viewMode === "list" && (
+            <ColumnsMenu
+              registry={registry}
+              state={columnsState}
+              onChange={setColumnsState}
+            />
+          )}
         </div>
       </div>
 
+      {viewMode === "kanban" ? (
+        <OpportunityKanban
+          rows={rows}
+          isLoading={isLoading}
+          isError={isError}
+          error={error}
+          queryKey={getListOpportunitiesAndPledgesQueryKey(params)}
+          truncated={kanbanTruncated}
+        />
+      ) : (
       <div className="rounded-md border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
@@ -746,14 +785,17 @@ export default function Opportunities({
           </TableBody>
         </Table>
       </div>
+      )}
 
-      <BulkActionBar
-        count={selection.count}
-        onEdit={() => setBulkOpen(true)}
-        onDelete={() => setBulkDeleteOpen(true)}
-        onClear={selection.clear}
-        entityNoun="opportunity"
-      />
+      {viewMode === "list" && (
+        <BulkActionBar
+          count={selection.count}
+          onEdit={() => setBulkOpen(true)}
+          onDelete={() => setBulkDeleteOpen(true)}
+          onClear={selection.clear}
+          entityNoun="opportunity"
+        />
+      )}
       <BulkDeleteDialog
         open={bulkDeleteOpen}
         onOpenChange={setBulkDeleteOpen}
@@ -782,7 +824,7 @@ export default function Opportunities({
         }}
       />
 
-      {totalPages > 1 && (
+      {viewMode === "list" && totalPages > 1 && (
         <Pagination>
           <PaginationContent>
             <PaginationItem>
