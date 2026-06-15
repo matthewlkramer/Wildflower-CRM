@@ -5231,6 +5231,7 @@ components:
         priority:             { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
         entityType:           { type: string, nullable: true }
         issuesGrants:         { type: boolean }
+        makesPris:            { type: boolean, nullable: true }
     BulkUpdateOrganizationsBody:
       type: object
       required: [ids, patch]

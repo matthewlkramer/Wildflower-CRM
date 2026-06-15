@@ -9313,6 +9313,7 @@ export const BulkUpdateOrganizationsBody = zod.object({
     priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
     entityType: zod.string().nullish(),
     issuesGrants: zod.boolean().optional(),
+    makesPris: zod.boolean().nullish(),
   }),
 });
 

@@ -130,6 +130,20 @@ export const ORGANIZATIONS_BULK_FIELDS: ReadonlyArray<BulkField> = [
     ],
   },
   {
+    kind: "boolean",
+    key: "issuesGrants",
+    label: "Makes grants",
+    trueLabel: "Makes grants",
+    falseLabel: "Does not make grants",
+  },
+  {
+    kind: "boolean",
+    key: "makesPris",
+    label: "Makes PRIs",
+    trueLabel: "Makes PRIs",
+    falseLabel: "Does not make PRIs",
+  },
+  {
     kind: "enum",
     key: "entityType",
     label: "Funder subtype",

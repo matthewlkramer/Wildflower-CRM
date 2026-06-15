@@ -3199,6 +3199,7 @@ export interface BulkUpdateOrganizationsPatch {
   priority?: Priority | null;
   entityType?: string | null;
   issuesGrants?: boolean;
+  makesPris?: boolean | null;
 }
 
 export interface BulkUpdateOrganizationsBody {

@@ -288,6 +288,7 @@ router.post(
         "priority",
         "entityType",
         "issuesGrants",
+        "makesPris",
       ],
     });
   }),
