@@ -47,3 +47,4 @@ export * from "./quickbooksConnections";
 export * from "./stagedPayments";
 export * from "./stagedPaymentSplits";
 export * from "./flodeskSyncState";
+export * from "./connectionEnthusiasmHistory";

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { people, peopleEntityRoles, emails, phoneNumbers, addresses } from "@workspace/db/schema";
+import { people, peopleEntityRoles, emails, phoneNumbers, addresses, connectionEnthusiasmHistory } from "@workspace/db/schema";
+import { getAppUser } from "../lib/appRequest";
 import { and, asc, count, eq, getTableColumns, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   ListPeopleQueryParams,
@@ -302,12 +303,45 @@ router.patch(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(UpdatePersonBody, req.body, res);
     if (!body) return;
+    const id = paramId(req);
+
+    // Pre-fetch the tracked fields only when they appear in the patch body,
+    // so we can detect what actually changed for the history log.
+    const trackingFields = ["connectionStatus", "enthusiasm"] as const;
+    const needsTracking = trackingFields.some((f) => f in body);
+    let before: { connectionStatus: string | null; enthusiasm: string | null } | undefined;
+    if (needsTracking) {
+      const [cur] = await db
+        .select({ connectionStatus: people.connectionStatus, enthusiasm: people.enthusiasm })
+        .from(people)
+        .where(eq(people.id, id));
+      before = cur;
+    }
+
     const [row] = await db
       .update(people)
       .set({ ...body, updatedAt: new Date() })
-      .where(eq(people.id, paramId(req)))
+      .where(eq(people.id, id))
       .returning();
     if (!row) return notFound(res, "person");
+
+    // Write history entries for any tracked fields that actually changed.
+    if (before !== undefined) {
+      const user = getAppUser(req);
+      if (user) {
+        const entries: (typeof connectionEnthusiasmHistory.$inferInsert)[] = [];
+        if ("connectionStatus" in body && row.connectionStatus !== before.connectionStatus) {
+          entries.push({ id: newId(), entityType: "person", entityId: row.id, field: "connectionStatus", fromValue: before.connectionStatus, toValue: row.connectionStatus, changedByUserId: user.id });
+        }
+        if ("enthusiasm" in body && row.enthusiasm !== before.enthusiasm) {
+          entries.push({ id: newId(), entityType: "person", entityId: row.id, field: "enthusiasm", fromValue: before.enthusiasm, toValue: row.enthusiasm, changedByUserId: user.id });
+        }
+        if (entries.length > 0) {
+          await db.insert(connectionEnthusiasmHistory).values(entries);
+        }
+      }
+    }
+
     // Propagate newsletter/unsubscribe changes out to Flodesk (fire-and-forget).
     syncPersonToFlodeskInBackground(row.id);
     res.json(row);

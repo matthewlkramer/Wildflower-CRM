@@ -7,7 +7,9 @@ import {
   phoneNumbers,
   addresses,
   paymentIntermediaries,
+  connectionEnthusiasmHistory,
 } from "@workspace/db/schema";
+import { getAppUser } from "../lib/appRequest";
 import {
   and,
   asc,
@@ -330,21 +332,48 @@ router.patch(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(UpdateOrganizationBody, req.body, res);
     if (!body) return;
-    if (
-      body.parentOrganizationId != null &&
-      body.parentOrganizationId === paramId(req)
-    ) {
-      res
-        .status(400)
-        .json({ error: "An organization cannot be its own parent." });
+    const id = paramId(req);
+    if (body.parentOrganizationId != null && body.parentOrganizationId === id) {
+      res.status(400).json({ error: "An organization cannot be its own parent." });
       return;
     }
+
+    // Pre-fetch the tracked fields only when they appear in the patch body.
+    const trackingFields = ["connectionStatus", "enthusiasm"] as const;
+    const needsTracking = trackingFields.some((f) => f in body);
+    let before: { connectionStatus: string | null; enthusiasm: string | null } | undefined;
+    if (needsTracking) {
+      const [cur] = await db
+        .select({ connectionStatus: organizations.connectionStatus, enthusiasm: organizations.enthusiasm })
+        .from(organizations)
+        .where(eq(organizations.id, id));
+      before = cur;
+    }
+
     const [row] = await db
       .update(organizations)
       .set({ ...body, updatedAt: new Date() } as never)
-      .where(eq(organizations.id, paramId(req)))
+      .where(eq(organizations.id, id))
       .returning();
     if (!row) return notFound(res, "organization");
+
+    // Write history entries for any tracked fields that actually changed.
+    if (before !== undefined) {
+      const user = getAppUser(req);
+      if (user) {
+        const entries: (typeof connectionEnthusiasmHistory.$inferInsert)[] = [];
+        if ("connectionStatus" in body && row.connectionStatus !== before.connectionStatus) {
+          entries.push({ id: newId(), entityType: "organization", entityId: row.id, field: "connectionStatus", fromValue: before.connectionStatus, toValue: row.connectionStatus, changedByUserId: user.id });
+        }
+        if ("enthusiasm" in body && row.enthusiasm !== before.enthusiasm) {
+          entries.push({ id: newId(), entityType: "organization", entityId: row.id, field: "enthusiasm", fromValue: before.enthusiasm, toValue: row.enthusiasm, changedByUserId: user.id });
+        }
+        if (entries.length > 0) {
+          await db.insert(connectionEnthusiasmHistory).values(entries);
+        }
+      }
+    }
+
     res.json(row);
   }),
 );
