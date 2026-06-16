@@ -77,10 +77,6 @@ router.get(
     if (q.startBefore) {
       filters.push(lt(calendarEvents.startAt, new Date(q.startBefore)));
     }
-    const outerOrderBy =
-      q.order === "asc"
-        ? asc(calendarEvents.startAt)
-        : desc(calendarEvents.startAt);
     const where = and(...filters);
 
     // Deduplicate across calendars: the same Google Calendar event is stored
@@ -95,6 +91,13 @@ router.get(
       .where(where)
       .orderBy(calendarEvents.gcalEventId, calendarEvents.calendarUserId)
       .as("deduped");
+
+    // Order by the deduped subquery's column, NOT the base table: the outer
+    // query's FROM clause is `deduped`, so referencing `calendar_events.*`
+    // here raises "missing FROM-clause entry for table calendar_events" and
+    // 500s the endpoint.
+    const outerOrderBy =
+      q.order === "asc" ? asc(deduped.startAt) : desc(deduped.startAt);
 
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
