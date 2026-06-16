@@ -16,7 +16,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
 import EmailProposalsCard from "@/components/EmailProposalsCard";
-import UpcomingMeetingsCard from "@/components/upcoming-meetings-card";
+import UpcomingMeetingsCard, {
+  TeamUpcomingMeetingsCard,
+} from "@/components/upcoming-meetings-card";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 
 export default function Dashboard() {
@@ -198,7 +200,10 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <UpcomingMeetingsCard />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <UpcomingMeetingsCard />
+        <TeamUpcomingMeetingsCard />
+      </div>
 
       <TopPrioritiesRow />
 

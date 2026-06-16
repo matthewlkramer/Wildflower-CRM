@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Calendar, Video, Circle, NotebookPen } from "lucide-react";
 import { AddMeetingNoteDialog } from "@/components/meeting-notes-panel";
+import { useUserNameMap } from "@/components/user-picker";
 
 /**
  * Extract a join URL for the meeting. Wildflower mostly uses Zoom; we also
@@ -65,6 +66,67 @@ function formatWhen(startIso: string, endIso?: string | null) {
   return endT ? `${day} · ${startT}–${endT}` : `${day} · ${startT}`;
 }
 
+/** The shared next-7-days window, computed once per render. */
+function useWeekWindow() {
+  return useMemo(() => {
+    const now = new Date();
+    const week = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    return { startAfter: now.toISOString(), startBefore: week.toISOString() };
+  }, []);
+}
+
+/**
+ * Card shell shared by the "My" and "Team" meeting widgets. Both render the
+ * same row + states; they differ only in which events they query and whether
+ * each row is attributed to a team member (`resolveOwnerName`).
+ */
+function MeetingsCard({
+  title,
+  testId,
+  isLoading,
+  isError,
+  events,
+  emptyMessage,
+  errorMessage,
+  resolveOwnerName,
+}: {
+  title: string;
+  testId: string;
+  isLoading: boolean;
+  isError: boolean;
+  events: CalendarEvent[];
+  emptyMessage: string;
+  errorMessage: string;
+  resolveOwnerName?: (ev: CalendarEvent) => string | undefined;
+}) {
+  return (
+    <Card data-testid={testId}>
+      <CardHeader>
+        <CardTitle className="text-lg">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : isError ? (
+          <p className="text-sm text-muted-foreground">{errorMessage}</p>
+        ) : events.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+        ) : (
+          <ul className="space-y-2">
+            {events.map((ev) => (
+              <UpcomingMeetingRow
+                key={ev.id}
+                ev={ev}
+                ownerName={resolveOwnerName?.(ev)}
+              />
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 /**
  * Dashboard widget: shows the caller's calendar events for the next 7 days
  * (scoped via `calendarUserId = me.id`, which is how the synced events are
@@ -78,14 +140,9 @@ export default function UpcomingMeetingsCard() {
   const { data: me } = useGetCurrentUser();
   const userId = me?.id;
 
-  // Compute the 7-day window once per render. The query key includes
-  // startBefore so react-query will refetch naturally as the window slides
-  // (re-mounts on navigation produce a fresh window).
-  const { startAfter, startBefore } = useMemo(() => {
-    const now = new Date();
-    const week = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    return { startAfter: now.toISOString(), startBefore: week.toISOString() };
-  }, []);
+  // The query key includes startBefore so react-query refetches naturally as
+  // the window slides (re-mounts on navigation produce a fresh window).
+  const { startAfter, startBefore } = useWeekWindow();
 
   const params = userId
     ? {
@@ -104,39 +161,66 @@ export default function UpcomingMeetingsCard() {
     },
   });
 
-  const events = (data?.data ?? []).filter(
-    (ev) => ev.status !== "cancelled",
-  );
+  const events = (data?.data ?? []).filter((ev) => ev.status !== "cancelled");
 
   return (
-    <Card data-testid="card-upcoming-meetings">
-      <CardHeader>
-        <CardTitle className="text-lg">My upcoming meetings</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {!userId || isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : isError ? (
-          <p className="text-sm text-muted-foreground">
-            Couldn't load your calendar.
-          </p>
-        ) : events.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nothing scheduled in the next 7 days.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {events.map((ev) => (
-              <UpcomingMeetingRow key={ev.id} ev={ev} />
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+    <MeetingsCard
+      title="My upcoming meetings"
+      testId="card-upcoming-meetings"
+      isLoading={!userId || isLoading}
+      isError={isError}
+      events={events}
+      emptyMessage="Nothing scheduled in the next 7 days."
+      errorMessage="Couldn't load your calendar."
+    />
   );
 }
 
-function UpcomingMeetingRow({ ev }: { ev: CalendarEvent }) {
+/**
+ * Dashboard widget: the whole team's calendar events for the next 7 days.
+ * Omits `calendarUserId`, so the server returns every event visible to the
+ * caller (all non-private events plus the caller's own), deduplicated to one
+ * row per physical meeting. Each row is attributed to the staff member whose
+ * calendar it came from.
+ */
+export function TeamUpcomingMeetingsCard() {
+  const { startAfter, startBefore } = useWeekWindow();
+  const userNames = useUserNameMap();
+
+  const params = {
+    startAfter,
+    startBefore,
+    order: "asc" as const,
+    limit: 50,
+  };
+
+  const { data, isLoading, isError } = useListCalendarEvents(params, {
+    query: { queryKey: getListCalendarEventsQueryKey(params) },
+  });
+
+  const events = (data?.data ?? []).filter((ev) => ev.status !== "cancelled");
+
+  return (
+    <MeetingsCard
+      title="Team upcoming meetings"
+      testId="card-team-upcoming-meetings"
+      isLoading={isLoading}
+      isError={isError}
+      events={events}
+      emptyMessage="Nothing scheduled for the team in the next 7 days."
+      errorMessage="Couldn't load the team calendar."
+      resolveOwnerName={(ev) => userNames.get(ev.calendarUserId)}
+    />
+  );
+}
+
+function UpcomingMeetingRow({
+  ev,
+  ownerName,
+}: {
+  ev: CalendarEvent;
+  ownerName?: string;
+}) {
   const [notesOpen, setNotesOpen] = useState(false);
   const join = extractJoinUrl(ev);
   const title = ev.summary?.trim() || "(no title)";
@@ -168,6 +252,7 @@ function UpcomingMeetingRow({ ev }: { ev: CalendarEvent }) {
         <div className="font-medium truncate">{title}</div>
         <div className="text-xs text-muted-foreground">
           {formatWhen(ev.startAt, ev.endAt)}
+          {ownerName ? ` · ${ownerName}` : ""}
         </div>
       </div>
       <TooltipProvider delayDuration={200}>
