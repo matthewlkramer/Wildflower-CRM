@@ -2735,7 +2735,7 @@ components:
         endDate:   { type: string, format: date }
     FiscalYearMetrics:
       type: object
-      required: [fiscalYear, openPipelineAsk, openPipelineWeighted, received, goal]
+      required: [fiscalYear, openPipelineAsk, openPipelineWeighted, committed, received, goal]
       description: |
         Per-fiscal-year fundraising metrics. All money values are decimal strings
         (PostgreSQL numeric) to preserve precision — format with `formatCurrency`
@@ -2745,6 +2745,7 @@ components:
         fiscalYear:           { $ref: "#/components/schemas/DashboardFiscalYear" }
         openPipelineAsk:      { type: string, description: "SUM(pledge_allocations.sub_amount) for status='open' opps with grant_year = this FY." }
         openPipelineWeighted: { type: string, description: "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps with grant_year = this FY." }
+        committed:            { type: string, description: "SUM(pledge_allocations.sub_amount) for status='pledge' (written commitment, not yet fully paid) opps with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only)." }
         received:             { type: string, description: "SUM(gift_allocations.sub_amount) for allocations with grant_year = this FY." }
         goal:                 { type: string, nullable: true, description: "Fundraising goal for the FY (from fiscal_years.goal_amount); null if not set." }
     DashboardSummary:

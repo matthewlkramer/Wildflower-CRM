@@ -9062,6 +9062,11 @@ export const GetDashboardSummaryResponse = zod.object({
             .describe(
               "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps with grant_year = this FY.",
             ),
+          committed: zod
+            .string()
+            .describe(
+              "SUM(pledge_allocations.sub_amount) for status='pledge' (written commitment, not yet fully paid) opps with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
+            ),
           received: zod
             .string()
             .describe(

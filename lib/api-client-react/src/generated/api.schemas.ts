@@ -629,6 +629,8 @@ export interface FiscalYearMetrics {
   openPipelineAsk: string;
   /** SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps with grant_year = this FY. */
   openPipelineWeighted: string;
+  /** SUM(pledge_allocations.sub_amount) for status='pledge' (written commitment, not yet fully paid) opps with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only). */
+  committed: string;
   /** SUM(gift_allocations.sub_amount) for allocations with grant_year = this FY. */
   received: string;
   /** Fundraising goal for the FY (from fiscal_years.goal_amount); null if not set. */

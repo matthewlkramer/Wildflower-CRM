@@ -84,7 +84,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   // "all entities" — pass-through with no filter. The goal is summed from
   // the per-entity `fiscal_year_entity_goals` table, also entity-scoped.
   const hasEntityFilter = !!entityIds && entityIds.length > 0;
-  const [[openRow], [receivedRow], [goalRow]] = await Promise.all([
+  const [[openRow], [committedRow], [receivedRow], [goalRow]] = await Promise.all([
     db
       .select({
         ask: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
@@ -98,6 +98,29 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
       .where(
         and(
           eq(opportunitiesAndPledges.status, "open"),
+          eq(pledgeAllocations.grantYear, fy.id),
+          hasEntityFilter
+            ? inArray(pledgeAllocations.entityId, entityIds!)
+            : undefined,
+        ),
+      ),
+    // "Committed" = written commitments not yet fully paid (status='pledge').
+    // Disjoint from the open pipeline above (status='open') by construction, so
+    // a weighted projection of received + committed + openPipelineWeighted
+    // never double-counts these two pledge buckets. (A partial payment already
+    // booked against a 'pledge' opp does still land in `received`.)
+    db
+      .select({
+        v: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
+      })
+      .from(pledgeAllocations)
+      .innerJoin(
+        opportunitiesAndPledges,
+        eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
+      )
+      .where(
+        and(
+          eq(opportunitiesAndPledges.status, "pledge"),
           eq(pledgeAllocations.grantYear, fy.id),
           hasEntityFilter
             ? inArray(pledgeAllocations.entityId, entityIds!)
@@ -136,6 +159,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
     fiscalYear: fy,
     openPipelineAsk: openRow?.ask ?? "0",
     openPipelineWeighted: openRow?.weighted ?? "0",
+    committed: committedRow?.v ?? "0",
     received: receivedRow?.v ?? "0",
     goal: goalRow?.goal ?? null,
   };

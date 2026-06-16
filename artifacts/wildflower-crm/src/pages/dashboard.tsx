@@ -83,12 +83,28 @@ export default function Dashboard() {
           : `Fundraising goal for ${fyLabel} (${selectedEntityIds.length} entities)`
         : `Total fundraising goal across all entities for ${fyLabel}`
       : `No goal set for ${fyLabel}`;
+    // Weighted projection = money in (received) + written commitments not yet
+    // fully paid (committed) + probability-weighted open pipeline. `committed`
+    // (status='pledge') and `openPipelineWeighted` (status='open') are disjoint
+    // by status, so they never double-count each other. Composite figure with
+    // no single drilldown — like Goal, it carries no href.
+    const weightedProjection = (
+      Number(m.received) + Number(m.committed) + Number(m.openPipelineWeighted)
+    ).toFixed(2);
     return [
       {
         label: `Goal ${fyLabel}`,
         value: m.goal ?? undefined,
         sub: goalSub,
         testId: `tile-goal-${fySlug}`,
+      },
+      {
+        label: `Weighted projection ${fyLabel}`,
+        value: weightedProjection,
+        sub: multiEntityFilterActive
+          ? `Received + committed + weighted open asks across ${selectedEntityIds.length} entities`
+          : `Received + committed + weighted open asks for ${fyLabel}`,
+        testId: `tile-weighted-projection-${fySlug}`,
       },
       {
         label: `Received ${fyLabel}`,
@@ -153,7 +169,7 @@ export default function Dashboard() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {moneyTiles.map((t) => {
           const card = (
             <Card
