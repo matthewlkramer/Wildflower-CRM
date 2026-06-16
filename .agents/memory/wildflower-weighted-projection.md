@@ -12,8 +12,8 @@ Per-FY tile sitting right after "Goal":
 Component → data mapping (all entity-scoped at the allocation level, by `grant_year`):
 
 - **received** = `SUM(gift_allocations.sub_amount)` — money actually in.
-- **committed** = `SUM(pledge_allocations.sub_amount)` for opportunities with
-  `status='pledge'` (written commitment, not yet fully paid).
+- **committed** = the UNPAID remainder of `status='pledge'` commitments for the
+  FY: per opp, `GREATEST(SUM(pledge_allocations.sub_amount) − payments_received_against_that_pledge_this_fy, 0)`, summed. The paid portion already lives in `received`; only the not-yet-paid portion lands here. Clamp is per-opp so an over-paid-this-year pledge can't offset another opp.
 - **weighted open asks** = `SUM(pledge_allocations.sub_amount × win_probability)`
   for opportunities with `status='open'`.
 
@@ -22,14 +22,12 @@ Component → data mapping (all entity-scoped at the allocation level, by `grant
 still in the funnel. So `committed` (status=pledge) and `weighted open asks`
 (status=open) are **disjoint by status** — they can never double-count each other.
 
-**The one overlap to watch:** a partial payment booked against a `status='pledge'`
-opp lands in **received**, while that opp's full pledge allocation lands in
-**committed**. If both the commitment and the partial payment are allocated to the
-*same* grant_year, the projection overstates by the paid portion. As of this build
-that overlap is $0 in the dev data (no pledge-status opps have allocations in the
-current/next FY), so it's latent, not active. If a future request needs a clean
-"expected FY total", switch `committed` to the *unpaid remaining* balance instead
-of the full pledge allocation.
+**Partial-payment dedupe (already done):** a partial payment booked against a
+`status='pledge'` opp lands in **received**. To avoid double-counting it, `committed`
+is the *unpaid remainder* — server-side it nets each pledge's payments-this-FY out
+of that pledge's allocation-this-FY (per-opp, clamped at 0). So a partial payment is
+counted once: paid portion in `received`, unpaid portion in `committed`. **Do not**
+revert `committed` to the full pledge allocation — that reintroduces the overlap.
 
 **How to apply:** keep server exposing raw components (`received`, `committed`,
 `openPipelineWeighted`, `openPipelineAsk`, `goal`) and let the client compose the

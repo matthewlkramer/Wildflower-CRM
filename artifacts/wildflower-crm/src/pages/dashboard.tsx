@@ -52,7 +52,6 @@ export default function Dashboard() {
 
   const countTiles = [
     { label: "People", value: counts?.people, href: "/individuals", testId: "tile-people" },
-    { label: "Funding entities", value: counts?.organizations, href: "/organizations", testId: "tile-funders" },
     { label: "Organizations", value: counts?.organizations, href: "/organizations", testId: "tile-orgs" },
     { label: "Opportunities", value: counts?.opportunities, href: "/opportunities", testId: "tile-opps" },
     { label: "Open opps", value: counts?.openOpportunities, href: "/opportunities", testId: "tile-open-opps" },
@@ -83,11 +82,11 @@ export default function Dashboard() {
           : `Fundraising goal for ${fyLabel} (${selectedEntityIds.length} entities)`
         : `Total fundraising goal across all entities for ${fyLabel}`
       : `No goal set for ${fyLabel}`;
-    // Weighted projection = money in (received) + written commitments not yet
-    // fully paid (committed) + probability-weighted open pipeline. `committed`
-    // (status='pledge') and `openPipelineWeighted` (status='open') are disjoint
-    // by status, so they never double-count each other. Composite figure with
-    // no single drilldown — like Goal, it carries no href.
+    // Weighted projection = money in (received) + the UNPAID remainder of
+    // written commitments (committed — the server nets out payments already in
+    // `received`) + probability-weighted open pipeline. The three buckets are
+    // disjoint, so a partial payment on a pledge is counted once. Composite
+    // figure with no single drilldown — like Goal, it carries no href.
     const weightedProjection = (
       Number(m.received) + Number(m.committed) + Number(m.openPipelineWeighted)
     ).toFixed(2);

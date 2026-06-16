@@ -84,6 +84,46 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   // "all entities" — pass-through with no filter. The goal is summed from
   // the per-entity `fiscal_year_entity_goals` table, also entity-scoped.
   const hasEntityFilter = !!entityIds && entityIds.length > 0;
+
+  // Per-opp pledged amount for this FY (status='pledge' written commitments).
+  const pledgedPerOpp = db
+    .select({
+      oppId: sql<string>`${pledgeAllocations.pledgeOrOpportunityId}`.as("opp_id"),
+      pledged: sql<string>`SUM(${pledgeAllocations.subAmount})`.as("pledged"),
+    })
+    .from(pledgeAllocations)
+    .innerJoin(
+      opportunitiesAndPledges,
+      eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
+    )
+    .where(
+      and(
+        eq(opportunitiesAndPledges.status, "pledge"),
+        eq(pledgeAllocations.grantYear, fy.id),
+        hasEntityFilter ? inArray(pledgeAllocations.entityId, entityIds!) : undefined,
+      ),
+    )
+    .groupBy(pledgeAllocations.pledgeOrOpportunityId)
+    .as("pledged_per_opp");
+
+  // Payments already booked against those pledges, scoped to the same FY +
+  // entities as `received`, so we only ever subtract money `received` counts.
+  const paidPerOpp = db
+    .select({
+      oppId: sql<string>`${giftsAndPayments.paymentOnPledgeId}`.as("opp_id"),
+      paid: sql<string>`SUM(${giftAllocations.subAmount})`.as("paid"),
+    })
+    .from(giftAllocations)
+    .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
+    .where(
+      and(
+        eq(giftAllocations.grantYear, fy.id),
+        hasEntityFilter ? inArray(giftAllocations.entityId, entityIds!) : undefined,
+      ),
+    )
+    .groupBy(giftsAndPayments.paymentOnPledgeId)
+    .as("paid_per_opp");
+
   const [[openRow], [committedRow], [receivedRow], [goalRow]] = await Promise.all([
     db
       .select({
@@ -104,29 +144,19 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
             : undefined,
         ),
       ),
-    // "Committed" = written commitments not yet fully paid (status='pledge').
-    // Disjoint from the open pipeline above (status='open') by construction, so
-    // a weighted projection of received + committed + openPipelineWeighted
-    // never double-counts these two pledge buckets. (A partial payment already
-    // booked against a 'pledge' opp does still land in `received`.)
+    // "Committed" = UNPAID remainder of written commitments (status='pledge')
+    // for this FY: pledged amount minus payments already received against each
+    // pledge (see pledgedPerOpp / paidPerOpp above). This dedupes partial
+    // payments — the paid portion stays in `received`, only the not-yet-paid
+    // portion lands in `committed`, so received + committed + openPipelineWeighted
+    // counts each dollar once. GREATEST(..,0) clamps each opp's remainder at
+    // zero so an over-paid-this-year pledge can't offset another opp.
     db
       .select({
-        v: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
+        v: sql<string>`COALESCE(SUM(GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0)), 0)::text`,
       })
-      .from(pledgeAllocations)
-      .innerJoin(
-        opportunitiesAndPledges,
-        eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
-      )
-      .where(
-        and(
-          eq(opportunitiesAndPledges.status, "pledge"),
-          eq(pledgeAllocations.grantYear, fy.id),
-          hasEntityFilter
-            ? inArray(pledgeAllocations.entityId, entityIds!)
-            : undefined,
-        ),
-      ),
+      .from(pledgedPerOpp)
+      .leftJoin(paidPerOpp, eq(pledgedPerOpp.oppId, paidPerOpp.oppId)),
     db
       .select({
         v: sql<string>`COALESCE(SUM(${giftAllocations.subAmount}), 0)::text`,
