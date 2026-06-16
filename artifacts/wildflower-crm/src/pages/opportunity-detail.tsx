@@ -705,6 +705,7 @@ function OppView({
                 <PledgeAllocationsEditor
                   pledgeOrOpportunityId={opp.id}
                   allocations={opp.allocations ?? []}
+                  totalAmount={targetAmount}
                 />
               </div>
             </RelatedCard>

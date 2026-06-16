@@ -3664,7 +3664,7 @@ components:
     # ─── Pledge allocations ────────────────────────────────────────────────────
     PledgeAllocation:
       type: object
-      required: [id, directToSchool, createdAt, updatedAt]
+      required: [id, directToSchool, formallyRestricted, createdAt, updatedAt]
       properties:
         id:                     { type: string }
         pledgeOrOpportunityId:  { type: string, nullable: true }
@@ -3674,6 +3674,7 @@ components:
         intendedUsage:          { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
         fundableProjectId:      { type: string, nullable: true }
         directToSchool:         { type: boolean }
+        formallyRestricted:     { type: boolean, description: "True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent." }
         status:                 { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         conditions:             { type: string, nullable: true }
         notes:                  { type: string, nullable: true }
@@ -3696,6 +3697,7 @@ components:
         intendedUsage:         { $ref: "#/components/schemas/IntendedUsage" }
         fundableProjectId:     { type: string }
         directToSchool:        { type: boolean }
+        formallyRestricted:    { type: boolean }
         status:                { $ref: "#/components/schemas/PledgeAllocationStatus" }
         conditions:            { type: string }
         notes:                 { type: string }
@@ -3710,6 +3712,7 @@ components:
         intendedUsage:         { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
         fundableProjectId:     { type: string, nullable: true }
         directToSchool:        { type: boolean }
+        formallyRestricted:    { type: boolean }
         status:                { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         conditions:            { type: string, nullable: true }
         notes:                 { type: string, nullable: true }

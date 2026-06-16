@@ -39,6 +39,11 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
     { onDelete: "restrict" },
   ),
   directToSchool: boolean("direct_to_school").default(false).notNull(),
+  // Whether this allocation is FORMALLY restricted by the grant letter (true)
+  // vs. just our documented understanding of the donor's intent (false). The
+  // gift_allocations equivalent is split into regional + fund-use booleans; at
+  // the opportunity/pledge stage a single flag is sufficient.
+  formallyRestricted: boolean("formally_restricted").default(false).notNull(),
   status: pledgeAllocationStatusEnum("status"),
   conditions: text("conditions"),
   notes: text("notes"),

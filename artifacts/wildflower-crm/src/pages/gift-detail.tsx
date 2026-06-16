@@ -486,6 +486,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
               <GiftAllocationsEditor
                 giftId={gift.id}
                 allocations={gift.allocations ?? []}
+                totalAmount={gift.amount ?? null}
               />
             </div>
           </RelatedCard>

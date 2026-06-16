@@ -3908,6 +3908,11 @@ export const GetOpportunityOrPledgeResponse = zod
               .nullish(),
             fundableProjectId: zod.string().nullish(),
             directToSchool: zod.boolean(),
+            formallyRestricted: zod
+              .boolean()
+              .describe(
+                "True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent.",
+              ),
             status: zod
               .enum([
                 "working",
@@ -4213,6 +4218,11 @@ export const ListPledgeAllocationsResponse = zod.object({
         .nullish(),
       fundableProjectId: zod.string().nullish(),
       directToSchool: zod.boolean(),
+      formallyRestricted: zod
+        .boolean()
+        .describe(
+          "True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent.",
+        ),
       status: zod
         .enum([
           "working",
@@ -4254,6 +4264,7 @@ export const CreatePledgeAllocationBody = zod.object({
     .optional(),
   fundableProjectId: zod.string().optional(),
   directToSchool: zod.boolean().optional(),
+  formallyRestricted: zod.boolean().optional(),
   status: zod
     .enum([
       "working",
@@ -4290,6 +4301,7 @@ export const UpdatePledgeAllocationBody = zod.object({
     .nullish(),
   fundableProjectId: zod.string().nullish(),
   directToSchool: zod.boolean().optional(),
+  formallyRestricted: zod.boolean().optional(),
   status: zod
     .enum([
       "working",
@@ -4323,6 +4335,11 @@ export const UpdatePledgeAllocationResponse = zod.object({
     .nullish(),
   fundableProjectId: zod.string().nullish(),
   directToSchool: zod.boolean(),
+  formallyRestricted: zod
+    .boolean()
+    .describe(
+      "True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent.",
+    ),
   status: zod
     .enum([
       "working",

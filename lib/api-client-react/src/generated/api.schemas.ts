@@ -1404,6 +1404,8 @@ export interface PledgeAllocation {
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
   directToSchool: boolean;
+  /** True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent. */
+  formallyRestricted: boolean;
   status?: PledgeAllocationStatus | null;
   conditions?: string | null;
   notes?: string | null;
@@ -1550,6 +1552,7 @@ export interface CreatePledgeAllocationBody {
   intendedUsage?: IntendedUsage;
   fundableProjectId?: string;
   directToSchool?: boolean;
+  formallyRestricted?: boolean;
   status?: PledgeAllocationStatus;
   conditions?: string;
   notes?: string;
@@ -1564,6 +1567,7 @@ export interface UpdatePledgeAllocationBody {
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
   directToSchool?: boolean;
+  formallyRestricted?: boolean;
   status?: PledgeAllocationStatus | null;
   conditions?: string | null;
   notes?: string | null;
