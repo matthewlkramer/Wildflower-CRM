@@ -1,18 +1,70 @@
+import { useState } from "react";
 import { Link, useRoute } from "wouter";
+import { Pencil } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetPaymentIntermediary,
+  useUpdatePaymentIntermediary,
   getGetPaymentIntermediaryQueryKey,
+  getListPaymentIntermediariesQueryKey,
+  PaymentIntermediaryType,
 } from "@workspace/api-client-react";
 import { formatEnum, formatDate } from "@/lib/format";
+import {
+  INTERMEDIARY_TYPES,
+  NONE_TYPE,
+  intermediaryTypeLabel,
+} from "@/lib/payment-intermediary";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
 
 export default function PaymentIntermediaryDetail() {
   const [, params] = useRoute<{ id: string }>("/payment-intermediaries/:id");
   const id = params?.id ?? "";
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [draftType, setDraftType] = useState<string>(NONE_TYPE);
 
   const { data, isLoading, isError, error } = useGetPaymentIntermediary(id, {
     query: { queryKey: getGetPaymentIntermediaryQueryKey(id), enabled: !!id },
+  });
+
+  const updateMut = useUpdatePaymentIntermediary({
+    mutation: {
+      onSuccess: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: getGetPaymentIntermediaryQueryKey(id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListPaymentIntermediariesQueryKey(),
+          }),
+        ]);
+        toast({ title: "Payment intermediary updated" });
+        setEditing(false);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
   });
 
   if (isLoading) {
@@ -35,6 +87,24 @@ export default function PaymentIntermediaryDetail() {
   const emails = data.emails ?? [];
   const people = data.people ?? [];
 
+  const startEdit = () => {
+    setDraftName(data.name);
+    setDraftType(data.type ?? NONE_TYPE);
+    setEditing(true);
+  };
+
+  const trimmed = draftName.trim();
+  const saveEdit = () => {
+    if (!trimmed) return;
+    updateMut.mutate({
+      id,
+      data: {
+        name: trimmed,
+        type: draftType === NONE_TYPE ? null : (draftType as PaymentIntermediaryType),
+      },
+    });
+  };
+
   return (
     <div className="space-y-6 max-w-3xl">
       <div>
@@ -43,10 +113,23 @@ export default function PaymentIntermediaryDetail() {
         </Link>
       </div>
 
-      <div className="space-y-1">
-        <h1 className="text-3xl font-serif font-bold text-foreground">{data.name}</h1>
-        {data.type && (
-          <Badge variant="outline" className="mt-1">{formatEnum(data.type)}</Badge>
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-serif font-bold text-foreground">{data.name}</h1>
+          {data.type && (
+            <Badge variant="outline" className="mt-1">{formatEnum(data.type)}</Badge>
+          )}
+        </div>
+        {!editing && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={startEdit}
+            data-testid="button-edit-payint-detail"
+          >
+            <Pencil className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
         )}
       </div>
 
@@ -55,16 +138,65 @@ export default function PaymentIntermediaryDetail() {
           Details
         </h2>
         <Separator />
-        <dl className="grid grid-cols-[160px_1fr] gap-y-2 text-sm">
-          <dt className="text-muted-foreground">Name</dt>
-          <dd>{data.name}</dd>
-          <dt className="text-muted-foreground">Type</dt>
-          <dd>{data.type ? formatEnum(data.type) : "—"}</dd>
-          <dt className="text-muted-foreground">Created</dt>
-          <dd>{formatDate(data.createdAt)}</dd>
-          <dt className="text-muted-foreground">Updated</dt>
-          <dd>{formatDate(data.updatedAt)}</dd>
-        </dl>
+        {editing ? (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="detail-payint-name">Name</Label>
+              <Input
+                id="detail-payint-name"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                autoFocus
+                required
+                data-testid="input-detail-payint-name"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="detail-payint-type">Type</Label>
+              <Select value={draftType} onValueChange={setDraftType}>
+                <SelectTrigger id="detail-payint-type" data-testid="select-detail-payint-type">
+                  <SelectValue placeholder="Select a type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_TYPE}>None</SelectItem>
+                  {INTERMEDIARY_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {intermediaryTypeLabel(t)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => setEditing(false)}
+                disabled={updateMut.isPending}
+                data-testid="button-cancel-payint-detail"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={saveEdit}
+                disabled={!trimmed || updateMut.isPending}
+                data-testid="button-save-payint-detail"
+              >
+                {updateMut.isPending ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <dl className="grid grid-cols-[160px_1fr] gap-y-2 text-sm">
+            <dt className="text-muted-foreground">Name</dt>
+            <dd>{data.name}</dd>
+            <dt className="text-muted-foreground">Type</dt>
+            <dd>{data.type ? formatEnum(data.type) : "—"}</dd>
+            <dt className="text-muted-foreground">Created</dt>
+            <dd>{formatDate(data.createdAt)}</dd>
+            <dt className="text-muted-foreground">Updated</dt>
+            <dd>{formatDate(data.updatedAt)}</dd>
+          </dl>
+        )}
       </div>
 
       {emails.length > 0 && (

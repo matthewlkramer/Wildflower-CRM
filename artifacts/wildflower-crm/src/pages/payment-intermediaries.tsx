@@ -1,8 +1,11 @@
-import { useMemo } from "react";
-import { Link } from "wouter";
+import { useMemo, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListPaymentIntermediaries,
+  useUpdatePaymentIntermediary,
+  useDeletePaymentIntermediary,
   getListPaymentIntermediariesQueryKey,
   type ListPaymentIntermediariesParams,
   type PaymentIntermediary,
@@ -16,7 +19,13 @@ import { FiltersMenu } from "@/components/filters-menu";
 import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
 import { resolveFilters, type FilterDef, type FiltersState } from "@/lib/filters";
 import { formatEnum } from "@/lib/format";
+import {
+  INTERMEDIARY_TYPES,
+  NONE_TYPE,
+  intermediaryTypeLabel,
+} from "@/lib/payment-intermediary";
 import { useDebounce } from "@/hooks/use-debounce";
+import { useToast } from "@/hooks/use-toast";
 import type { SortState } from "@/lib/table-helpers";
 import {
   Table,
@@ -29,8 +38,19 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
-import { PaymentIntermediaryRowActions } from "@/components/payment-intermediary-row-actions";
+import {
+  RowActionIcons,
+  InlineRowSaveActions,
+} from "@/components/row-action-icons";
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { CreatePaymentIntermediaryDialog } from "@/components/create-payment-intermediary-dialog";
 import {
   Pagination,
@@ -43,34 +63,82 @@ import {
 
 const PAGE_SIZE = 50;
 
-const INTERMEDIARY_TYPES: PaymentIntermediaryType[] = [
-  PaymentIntermediaryType.daf,
-  PaymentIntermediaryType.giving_platform,
-  PaymentIntermediaryType.private_wealth_manager,
-];
+type RowEditContext = {
+  editingId: string | null;
+  draftName: string;
+  draftType: string;
+  setDraftName: (v: string) => void;
+  setDraftType: (v: string) => void;
+  isSaving: boolean;
+  onStartEdit: (p: PaymentIntermediary) => void;
+  onCancelEdit: () => void;
+  onSaveEdit: () => void;
+  onOpen: (p: PaymentIntermediary) => void;
+  onAskDelete: (p: PaymentIntermediary) => void;
+};
 
-function buildColumns(): ColumnDef<PaymentIntermediary>[] {
+function buildColumns(ctx: RowEditContext): ColumnDef<PaymentIntermediary>[] {
+  const isEditing = (p: PaymentIntermediary) => ctx.editingId === p.id;
   return [
     {
       key: "name",
       label: "Name",
       required: true,
       tdClassName: "font-medium",
-      cell: (p) => (
-        <Link href={`/payment-intermediaries/${p.id}`} className="block w-full hover:underline">
-          {p.name}
-        </Link>
-      ),
+      cell: (p) =>
+        isEditing(p) ? (
+          <Input
+            value={ctx.draftName}
+            onChange={(e) => ctx.setDraftName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                ctx.onSaveEdit();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                ctx.onCancelEdit();
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            autoFocus
+            className="h-8"
+            aria-label="Name"
+            data-testid={`input-inline-name-payint-${p.id}`}
+          />
+        ) : (
+          <Link
+            href={`/payment-intermediaries/${p.id}`}
+            className="block w-full hover:underline"
+          >
+            {p.name}
+          </Link>
+        ),
     },
     {
       key: "type",
       label: "Type",
       cell: (p) =>
-        p.type ? (
+        isEditing(p) ? (
+          <Select value={ctx.draftType} onValueChange={ctx.setDraftType}>
+            <SelectTrigger
+              className="h-8"
+              aria-label="Type"
+              data-testid={`select-inline-type-payint-${p.id}`}
+            >
+              <SelectValue placeholder="Select a type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE_TYPE}>None</SelectItem>
+              {INTERMEDIARY_TYPES.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {intermediaryTypeLabel(t)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : p.type ? (
           <Badge variant="outline">
-            {p.type === PaymentIntermediaryType.daf
-              ? "DAF"
-              : formatEnum(p.type)}
+            {p.type === PaymentIntermediaryType.daf ? "DAF" : formatEnum(p.type)}
           </Badge>
         ) : (
           "—"
@@ -82,9 +150,27 @@ function buildColumns(): ColumnDef<PaymentIntermediary>[] {
       required: true,
       sortable: false,
       align: "right",
-      thClassName: "w-12",
+      thClassName: "w-32",
       tdClassName: "text-right",
-      cell: (p) => <PaymentIntermediaryRowActions intermediary={p} />,
+      cell: (p) =>
+        isEditing(p) ? (
+          <InlineRowSaveActions
+            onSave={ctx.onSaveEdit}
+            onCancel={ctx.onCancelEdit}
+            saving={ctx.isSaving}
+            saveDisabled={!ctx.draftName.trim()}
+            testIdPrefix={`payint-${p.id}`}
+          />
+        ) : (
+          <RowActionIcons
+            entityLabel={p.name}
+            testIdPrefix={`payint-${p.id}`}
+            disabled={ctx.editingId !== null}
+            onOpen={() => ctx.onOpen(p)}
+            onEdit={() => ctx.onStartEdit(p)}
+            onDelete={() => ctx.onAskDelete(p)}
+          />
+        ),
     },
   ];
 }
@@ -98,6 +184,10 @@ type PaymentIntermediariesView = {
 };
 
 export default function PaymentIntermediaries() {
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
   const [search, setSearch] = usePersistedState<string>("wf.list.payint.search", "");
   const debouncedSearch = useDebounce(search, 250);
   const [typesSel, setTypesSel] = usePersistedState<string[]>("wf.list.payint.types", []);
@@ -110,6 +200,11 @@ export default function PaymentIntermediaries() {
     "wf.list.payint.filters",
     null,
   );
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [draftType, setDraftType] = useState<string>(NONE_TYPE);
+  const [deleteTarget, setDeleteTarget] = useState<PaymentIntermediary | null>(null);
 
   const ts = useTableState("payment-intermediaries");
   const sortActive = ts.sort.key !== null;
@@ -127,12 +222,86 @@ export default function PaymentIntermediaries() {
     query: { queryKey: getListPaymentIntermediariesQueryKey(params) },
   });
 
+  const refresh = () =>
+    queryClient.invalidateQueries({
+      queryKey: getListPaymentIntermediariesQueryKey(),
+    });
+
+  const updateMut = useUpdatePaymentIntermediary({
+    mutation: {
+      onSuccess: async () => {
+        await refresh();
+        toast({ title: "Payment intermediary updated" });
+        setEditingId(null);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const deleteMut = useDeletePaymentIntermediary({
+    mutation: {
+      onSuccess: async () => {
+        await refresh();
+        toast({ title: "Payment intermediary deleted" });
+        setDeleteTarget(null);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Delete failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const startEdit = (p: PaymentIntermediary) => {
+    setEditingId(p.id);
+    setDraftName(p.name);
+    setDraftType(p.type ?? NONE_TYPE);
+  };
+  const cancelEdit = () => setEditingId(null);
+  const saveEdit = () => {
+    const trimmed = draftName.trim();
+    if (!trimmed || !editingId) return;
+    updateMut.mutate({
+      id: editingId,
+      data: {
+        name: trimmed,
+        type: draftType === NONE_TYPE ? null : (draftType as PaymentIntermediaryType),
+      },
+    });
+  };
+
   const rawRows = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const registry = useMemo(() => buildColumns(), []);
-  const visibleCols = useMemo(() => resolveColumns(registry, columnsState), [registry, columnsState]);
+  const editCtx: RowEditContext = {
+    editingId,
+    draftName,
+    draftType,
+    setDraftName,
+    setDraftType,
+    isSaving: updateMut.isPending,
+    onStartEdit: startEdit,
+    onCancelEdit: cancelEdit,
+    onSaveEdit: saveEdit,
+    onOpen: (p) => navigate(`/payment-intermediaries/${p.id}`),
+    onAskDelete: (p) => setDeleteTarget(p),
+  };
+
+  const registry = buildColumns(editCtx);
+  const visibleCols = useMemo(
+    () => resolveColumns(registry, columnsState),
+    [registry, columnsState],
+  );
   const colSpan = visibleCols.length;
 
   const sortedRows = useMemo(
@@ -308,7 +477,7 @@ export default function PaymentIntermediaries() {
               pagedRows.map((row) => (
                 <TableRow
                   key={row.id}
-                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  className="hover:bg-muted/50 transition-colors"
                   data-testid={`row-payint-${row.id}`}
                 >
                   {visibleCols.map((col) => (
@@ -359,6 +528,18 @@ export default function PaymentIntermediaries() {
           </PaginationContent>
         </Pagination>
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteTarget !== null}
+        onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}
+        title={deleteTarget ? `Delete ${deleteTarget.name}?` : "Delete payment intermediary?"}
+        description="This will permanently remove this payment intermediary. This action cannot be undone."
+        confirmTestId="button-confirm-delete-payint"
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          return deleteMut.mutateAsync({ id: deleteTarget.id });
+        }}
+      />
     </div>
   );
 }
