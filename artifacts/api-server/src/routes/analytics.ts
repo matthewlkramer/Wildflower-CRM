@@ -88,7 +88,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   // Per-opp pledged amount for this FY (status='pledge' written commitments).
   const pledgedPerOpp = db
     .select({
-      oppId: sql<string>`${pledgeAllocations.pledgeOrOpportunityId}`.as("opp_id"),
+      oppId: sql<string>`${pledgeAllocations.pledgeOrOpportunityId}`.as("pledged_opp_id"),
       pledged: sql<string>`SUM(${pledgeAllocations.subAmount})`.as("pledged"),
     })
     .from(pledgeAllocations)
@@ -110,7 +110,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   // entities as `received`, so we only ever subtract money `received` counts.
   const paidPerOpp = db
     .select({
-      oppId: sql<string>`${giftsAndPayments.paymentOnPledgeId}`.as("opp_id"),
+      oppId: sql<string>`${giftsAndPayments.paymentOnPledgeId}`.as("paid_opp_id"),
       paid: sql<string>`SUM(${giftAllocations.subAmount})`.as("paid"),
     })
     .from(giftAllocations)
