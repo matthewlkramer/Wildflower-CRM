@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
 import EmailProposalsCard from "@/components/EmailProposalsCard";
+import GrantLeadsCard from "@/components/GrantLeadsCard";
 import UpcomingMeetingsCard, {
   TeamUpcomingMeetingsCard,
 } from "@/components/upcoming-meetings-card";
@@ -224,7 +225,10 @@ export default function Dashboard() {
 
       <MyTasksAndMentionsRow />
 
-      <EmailProposalsCard />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <EmailProposalsCard />
+        <GrantLeadsCard />
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Link href="/projections">
