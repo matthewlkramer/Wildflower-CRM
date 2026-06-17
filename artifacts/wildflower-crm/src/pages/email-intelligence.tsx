@@ -6,6 +6,7 @@ import {
   useAcceptEmailProposal,
   useRejectEmailProposal,
   useRetryEmailProposal,
+  useReviseEmailProposal,
   useListUnrecognizedCorrespondents,
   useCreateCorrespondentIgnore,
   useCreateEmail,
@@ -41,7 +42,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { EmailDetailDialog } from "@/components/email-detail-dialog";
-import { Mail, Check, X, MessageSquarePlus, ExternalLink, RefreshCw } from "lucide-react";
+import { Mail, Check, X, MessageSquarePlus, ExternalLink, RefreshCw, Lightbulb } from "lucide-react";
 
 type Kind =
   | "linkedin_job_change"
@@ -279,6 +280,49 @@ function ProposalList({ kind }: { kind: Kind }) {
     retry.mutate({ id });
   };
 
+  // "Propose alternative": the reviewer types a plain-English correction
+  // ("that's an invalid email for him — make the jfk@ one primary"); we
+  // POST it to the revise endpoint, which folds the guidance into the
+  // per-proposal prompt, re-runs the AI synchronously, and returns the
+  // refreshed proposal. The proposal stays pending; invalidating the
+  // list re-renders its suggested actions (or a fresh error) in place.
+  const [proposeTarget, setProposeTarget] = useState<{
+    id: string;
+    summary: string;
+  } | null>(null);
+  const [proposeText, setProposeText] = useState("");
+  const [revisingId, setRevisingId] = useState<string | null>(null);
+  const closeProposeDialog = () => {
+    setProposeTarget(null);
+    setProposeText("");
+  };
+  const revise = useReviseEmailProposal({
+    mutation: {
+      onSuccess: (res) => {
+        invalidate();
+        const reanalyzeError = res?.actionsError;
+        if (reanalyzeError) {
+          toast({
+            title: "Re-analysis failed",
+            description:
+              "Your note was saved, but the AI could not refresh the suggestion. Try again shortly.",
+            variant: "destructive",
+          });
+        } else {
+          toast({ title: "Suggestion updated" });
+        }
+        closeProposeDialog();
+      },
+      onError: (e) =>
+        toast({
+          title: "Could not update suggestion",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+      onSettled: () => setRevisingId(null),
+    },
+  });
+
   if (isLoading) {
     return <div className="text-sm text-muted-foreground">Loading…</div>;
   }
@@ -313,11 +357,11 @@ function ProposalList({ kind }: { kind: Kind }) {
                 {new Date(p.emailSentAt ?? p.createdAt).toLocaleString()}
               </p>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-2 flex-shrink-0">
+            <div className="flex items-center gap-3 flex-shrink-0">
               {p.targetPersonId ? (
                 <Link
                   href={`/individuals/${p.targetPersonId}`}
-                  className="text-xs text-primary hover:underline"
+                  className="text-xs text-primary hover:underline whitespace-nowrap"
                 >
                   View person
                 </Link>
@@ -326,6 +370,7 @@ function ProposalList({ kind }: { kind: Kind }) {
                 <Button
                   size="sm"
                   variant="ghost"
+                  className="h-8"
                   onClick={() => setViewEmailId(p.sourceMessageId ?? null)}
                   data-testid={`btn-view-email-${p.id}`}
                 >
@@ -339,7 +384,7 @@ function ProposalList({ kind }: { kind: Kind }) {
                     href={`https://mail.google.com/mail/u/0/#all/${gmailId}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground whitespace-nowrap"
                     data-testid={`btn-view-gmail-${p.id}`}
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
@@ -347,44 +392,14 @@ function ProposalList({ kind }: { kind: Kind }) {
                   </a>
                 ) : null;
               })()}
+            </div>
+          </CardHeader>
+          <div className="px-6 pb-3 flex flex-wrap items-center gap-x-2 gap-y-2">
+            {/* Positive group */}
+            <div className="flex items-center gap-2">
               <Button
-                size="icon"
-                variant="outline"
-                className="h-8 w-8 text-red-600 hover:text-red-700"
-                disabled={reject.isPending}
-                onClick={() => reject.mutate({ id: p.id, data: {} })}
-                title="Dismiss"
-                aria-label="Dismiss"
-                data-testid={`btn-reject-${p.id}`}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                className="h-8 w-8 text-red-600 hover:text-red-700"
-                disabled={reject.isPending}
-                onClick={() => {
-                  setReviewerNote("");
-                  setNoteTarget({
-                    id: p.id,
-                    summary: summarizeProposal(p),
-                    mode: "reject",
-                  });
-                }}
-                title="Dismiss + Feedback"
-                aria-label="Dismiss with feedback"
-                data-testid={`btn-reject-feedback-${p.id}`}
-              >
-                <span className="relative inline-flex">
-                  <X className="h-4 w-4" />
-                  <MessageSquarePlus className="h-3 w-3 absolute -bottom-1 -right-1.5" />
-                </span>
-              </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                className="h-8 w-8 text-green-600 hover:text-green-700"
+                size="sm"
+                className="h-8 bg-green-600 text-white hover:bg-green-700"
                 disabled={accept.isPending}
                 onClick={() => {
                   const sel = selectionFor(p);
@@ -393,16 +408,15 @@ function ProposalList({ kind }: { kind: Kind }) {
                     data: sel ? { selectedActionIndexes: sel } : {},
                   });
                 }}
-                title="Accept"
-                aria-label="Accept"
                 data-testid={`btn-accept-${p.id}`}
               >
-                <Check className="h-4 w-4" />
+                <Check className="h-4 w-4 mr-1.5" />
+                Accept
               </Button>
               <Button
-                size="icon"
+                size="sm"
                 variant="outline"
-                className="h-8 w-8 text-green-600 hover:text-green-700"
+                className="h-8 text-green-700 border-green-600/40 hover:bg-green-50 hover:text-green-800"
                 disabled={accept.isPending}
                 onClick={() => {
                   setReviewerNote("");
@@ -413,17 +427,70 @@ function ProposalList({ kind }: { kind: Kind }) {
                     selection: selectionFor(p),
                   });
                 }}
-                title="Accept + Feedback"
-                aria-label="Accept with feedback"
                 data-testid={`btn-accept-feedback-${p.id}`}
               >
-                <span className="relative inline-flex">
-                  <Check className="h-4 w-4" />
-                  <MessageSquarePlus className="h-3 w-3 absolute -bottom-1 -right-1.5" />
-                </span>
+                <MessageSquarePlus className="h-4 w-4 mr-1.5" />
+                Accept + note
               </Button>
             </div>
-          </CardHeader>
+
+            {/* Propose alternative — neutral, separated from verdict groups */}
+            <div className="flex items-center gap-2">
+              <div className="hidden sm:block h-6 w-px bg-border mx-1" />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8"
+                disabled={revisingId === p.id}
+                onClick={() => {
+                  setProposeText("");
+                  setProposeTarget({ id: p.id, summary: summarizeProposal(p) });
+                }}
+                data-testid={`btn-propose-alt-${p.id}`}
+              >
+                <Lightbulb
+                  className={`h-4 w-4 mr-1.5 ${
+                    revisingId === p.id ? "animate-pulse" : ""
+                  }`}
+                />
+                {revisingId === p.id ? "Re-analyzing…" : "Propose alternative"}
+              </Button>
+            </div>
+
+            {/* Destructive group */}
+            <div className="flex items-center gap-2 sm:ml-auto">
+              <div className="hidden sm:block h-6 w-px bg-border mx-1" />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-red-600 border-red-600/40 hover:bg-red-50 hover:text-red-700"
+                disabled={reject.isPending}
+                onClick={() => reject.mutate({ id: p.id, data: {} })}
+                data-testid={`btn-reject-${p.id}`}
+              >
+                <X className="h-4 w-4 mr-1.5" />
+                Dismiss
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-red-600 border-red-600/40 hover:bg-red-50 hover:text-red-700"
+                disabled={reject.isPending}
+                onClick={() => {
+                  setReviewerNote("");
+                  setNoteTarget({
+                    id: p.id,
+                    summary: summarizeProposal(p),
+                    mode: "reject",
+                  });
+                }}
+                data-testid={`btn-reject-feedback-${p.id}`}
+              >
+                <MessageSquarePlus className="h-4 w-4 mr-1.5" />
+                Dismiss + note
+              </Button>
+            </div>
+          </div>
           <CardContent>
             <ProposalDetail kind={kind} payload={p.payload ?? {}} />
             <ProposedActionsBlock
@@ -520,6 +587,82 @@ function ProposalList({ kind }: { kind: Kind }) {
               }
             >
               {noteTarget?.mode === "accept" ? "Accept" : "Dismiss"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={proposeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && revisingId === null) closeProposeDialog();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Propose alternative</DialogTitle>
+            <DialogDescription>
+              Tell the AI how to fix its suggestion in plain English — e.g.
+              "that's an invalid email for him, mark it invalid and make the
+              jfk@ one his primary." It re-runs with your guidance and updates
+              the suggested actions in place. Your comment is saved with the
+              other reviewer notes.
+            </DialogDescription>
+          </DialogHeader>
+          {proposeTarget ? (
+            <div className="space-y-3 min-w-0">
+              <div className="text-sm font-medium truncate min-w-0">
+                {proposeTarget.summary}
+              </div>
+              <div className="space-y-1.5 min-w-0">
+                <Label htmlFor="propose-alt-text">Your instruction</Label>
+                <Textarea
+                  id="propose-alt-text"
+                  value={proposeText}
+                  onChange={(e) => setProposeText(e.target.value)}
+                  rows={4}
+                  cols={1}
+                  placeholder="e.g. Mark jfk-old@ invalid and promote jfk@keswickpartners.com to primary"
+                  data-testid="input-propose-alt"
+                  className="w-full resize-y"
+                  disabled={revisingId === proposeTarget.id}
+                />
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={closeProposeDialog}
+              disabled={revisingId !== null}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                !proposeTarget ||
+                !proposeText.trim() ||
+                revisingId !== null
+              }
+              onClick={() => {
+                if (!proposeTarget) return;
+                const text = proposeText.trim();
+                if (!text) return;
+                setRevisingId(proposeTarget.id);
+                revise.mutate({
+                  id: proposeTarget.id,
+                  data: { reviewerGuidance: text },
+                });
+              }}
+              data-testid="btn-confirm-propose-alt"
+            >
+              {revisingId !== null ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
+                  Re-analyzing…
+                </>
+              ) : (
+                "Re-analyze"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

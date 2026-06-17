@@ -2730,6 +2730,11 @@ export interface RejectEmailProposalBody {
   reviewerNote?: string | null;
 }
 
+export interface ReviseEmailProposalBody {
+  /** @minLength 1 */
+  reviewerGuidance: string;
+}
+
 export type TaskProposalStatus =
   (typeof TaskProposalStatus)[keyof typeof TaskProposalStatus];
 

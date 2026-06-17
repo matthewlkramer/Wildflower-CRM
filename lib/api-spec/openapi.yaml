@@ -121,6 +121,32 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /email-proposals/{id}/revise:
+    post:
+      operationId: reviseEmailProposal
+      tags: [email-proposals]
+      summary: >-
+        Re-run AI action-proposal for one pending proposal with a human
+        reviewer's plain-English correction folded into the per-proposal
+        prompt (owner-scoped, pending-only). Appends the reviewer's comment
+        to the reviewer-note field (preserving prior comments and any later
+        verdict note), resets the error + analyzed-at fields, re-analyzes
+        through the shared AI concurrency limiter + rate-limit-retry wrapper,
+        leaves the proposal pending, and returns the refreshed proposal (new
+        actions, or a fresh error).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ReviseEmailProposalBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposal" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The proposal is no longer pending (already resolved), so it cannot be revised.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   # ─── Task intelligence (AI-suggested next-step cultivation tasks) ────────────
   /task-proposals:
@@ -5102,6 +5128,15 @@ components:
       type: object
       properties:
         reviewerNote: { type: string, nullable: true }
+    ReviseEmailProposalBody:
+      # The reviewer's plain-English correction (e.g. "that's an invalid
+      # email for him — mark it invalid and make the jfk@ one primary").
+      # Required and non-empty: the whole point of this endpoint is to
+      # re-run the AI with the reviewer's guidance folded in.
+      type: object
+      required: [reviewerGuidance]
+      properties:
+        reviewerGuidance: { type: string, minLength: 1 }
 
     # ─── Task intelligence ──────────────────────────────────────────────────────
     TaskProposalStatus:

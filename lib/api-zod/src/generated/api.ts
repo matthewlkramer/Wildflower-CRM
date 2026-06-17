@@ -330,6 +330,76 @@ export const RetryEmailProposalResponse = zod.object({
 });
 
 /**
+ * @summary Re-run AI action-proposal for one pending proposal with a human reviewer's plain-English correction folded into the per-proposal prompt (owner-scoped, pending-only). Appends the reviewer's comment to the reviewer-note field (preserving prior comments and any later verdict note), resets the error + analyzed-at fields, re-analyzes through the shared AI concurrency limiter + rate-limit-retry wrapper, leaves the proposal pending, and returns the refreshed proposal (new actions, or a fresh error).
+ */
+export const ReviseEmailProposalParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ReviseEmailProposalBody = zod.object({
+  reviewerGuidance: zod.string().min(1),
+});
+
+export const ReviseEmailProposalResponse = zod.object({
+  id: zod.string(),
+  mailboxUserId: zod.string(),
+  kind: zod.enum([
+    "linkedin_job_change",
+    "auto_responder_move",
+    "bounce_invalid",
+    "bounce_soft",
+    "signature_update",
+    "grant_opportunity",
+    "thank_you_acknowledgment",
+  ]),
+  status: zod.enum(["pending", "applied", "rejected", "ignored"]),
+  sourceMessageId: zod.string().nullish(),
+  targetPersonId: zod.string().nullish(),
+  targetOrganizationId: zod.string().nullish(),
+  targetEmailId: zod.string().nullish(),
+  subjectEmail: zod.string().nullish(),
+  subjectName: zod.string().nullish(),
+  subjectDomain: zod.string().nullish(),
+  emailSentAt: zod.string().datetime({}).nullish(),
+  payload: zod.record(zod.string(), zod.unknown()),
+  proposedActions: zod
+    .array(
+      zod.object({
+        type: zod.enum([
+          "deactivate_per",
+          "create_per",
+          "create_person_with_per",
+          "add_email",
+          "set_primary_email",
+          "mark_email_invalid",
+          "create_grant_opportunity",
+        ]),
+        reason: zod.string(),
+      }),
+    )
+    .optional(),
+  actionsAnalyzedAt: zod.string().datetime({}).nullish(),
+  actionsModel: zod.string().nullish(),
+  actionsError: zod.string().nullish(),
+  appliedActions: zod
+    .array(
+      zod.object({
+        type: zod.string(),
+        status: zod.enum(["applied", "skipped", "failed"]),
+        message: zod.string().nullish(),
+        createdId: zod.string().nullish(),
+      }),
+    )
+    .nullish(),
+  dedupeKey: zod.string(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  resolvedAt: zod.string().datetime({}).nullish(),
+  resolvedByUserId: zod.string().nullish(),
+  reviewerNote: zod.string().nullish(),
+});
+
+/**
  * @summary Current AI-suggested next-step task for a person OR organization. Generates + caches one on first view when none exists and the entity isn't low-priority. Provide exactly one of personId / organizationId.
  */
 export const GetTaskProposalQueryParams = zod.object({

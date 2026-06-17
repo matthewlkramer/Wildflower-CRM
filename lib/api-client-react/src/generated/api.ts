@@ -216,6 +216,7 @@ import type {
   ResolveStagedPaymentBody,
   RevertStagedPaymentMatchesBody,
   RevertStagedPaymentMatchesResponse,
+  ReviseEmailProposalBody,
   SaveEmailIntelPromptBody,
   SavedView,
   SavedViewList,
@@ -696,6 +697,95 @@ export const useRetryEmailProposal = <
   TContext
 > => {
   return useMutation(getRetryEmailProposalMutationOptions(options));
+};
+
+/**
+ * @summary Re-run AI action-proposal for one pending proposal with a human reviewer's plain-English correction folded into the per-proposal prompt (owner-scoped, pending-only). Appends the reviewer's comment to the reviewer-note field (preserving prior comments and any later verdict note), resets the error + analyzed-at fields, re-analyzes through the shared AI concurrency limiter + rate-limit-retry wrapper, leaves the proposal pending, and returns the refreshed proposal (new actions, or a fresh error).
+ */
+export const getReviseEmailProposalUrl = (id: string) => {
+  return `/api/email-proposals/${id}/revise`;
+};
+
+export const reviseEmailProposal = async (
+  id: string,
+  reviseEmailProposalBody: ReviseEmailProposalBody,
+  options?: RequestInit,
+): Promise<EmailProposal> => {
+  return customFetch<EmailProposal>(getReviseEmailProposalUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(reviseEmailProposalBody),
+  });
+};
+
+export const getReviseEmailProposalMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reviseEmailProposal>>,
+    TError,
+    { id: string; data: BodyType<ReviseEmailProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reviseEmailProposal>>,
+  TError,
+  { id: string; data: BodyType<ReviseEmailProposalBody> },
+  TContext
+> => {
+  const mutationKey = ["reviseEmailProposal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reviseEmailProposal>>,
+    { id: string; data: BodyType<ReviseEmailProposalBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return reviseEmailProposal(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReviseEmailProposalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reviseEmailProposal>>
+>;
+export type ReviseEmailProposalMutationBody = BodyType<ReviseEmailProposalBody>;
+export type ReviseEmailProposalMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | ErrorResponse
+>;
+
+/**
+ * @summary Re-run AI action-proposal for one pending proposal with a human reviewer's plain-English correction folded into the per-proposal prompt (owner-scoped, pending-only). Appends the reviewer's comment to the reviewer-note field (preserving prior comments and any later verdict note), resets the error + analyzed-at fields, re-analyzes through the shared AI concurrency limiter + rate-limit-retry wrapper, leaves the proposal pending, and returns the refreshed proposal (new actions, or a fresh error).
+ */
+export const useReviseEmailProposal = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reviseEmailProposal>>,
+    TError,
+    { id: string; data: BodyType<ReviseEmailProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reviseEmailProposal>>,
+  TError,
+  { id: string; data: BodyType<ReviseEmailProposalBody> },
+  TContext
+> => {
+  return useMutation(getReviseEmailProposalMutationOptions(options));
 };
 
 /**

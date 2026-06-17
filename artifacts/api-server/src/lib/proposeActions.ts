@@ -709,8 +709,9 @@ function buildUserPrompt(args: {
   targetOrgId: string | null;
   targetOrgName: string | null;
   messageBody: string | null;
+  reviewerGuidance?: string | null;
 }): string {
-  const { proposal, personContext, organizationCandidates, targetOrgId, targetOrgName, messageBody } = args;
+  const { proposal, personContext, organizationCandidates, targetOrgId, targetOrgName, messageBody, reviewerGuidance } = args;
   const lines: string[] = [];
   lines.push(`PROPOSAL KIND: ${proposal.kind}`);
   lines.push(`PROPOSAL SUBJECT: ${proposal.subjectName ?? proposal.subjectEmail ?? "(none)"}`);
@@ -763,6 +764,13 @@ function buildUserPrompt(args: {
     lines.push("EMAIL MESSAGE (truncated to 4000 chars):");
     lines.push(messageBody.slice(0, 4000));
   }
+  if (reviewerGuidance && reviewerGuidance.trim()) {
+    lines.push("");
+    lines.push(
+      "REVIEWER GUIDANCE (a human reviewer corrected the previous suggestion — treat this as authoritative and honor it when proposing actions; where it conflicts with your own interpretation, follow the reviewer):",
+    );
+    lines.push(reviewerGuidance.trim().slice(0, 2000));
+  }
   return lines.join("\n");
 }
 
@@ -777,7 +785,10 @@ function buildUserPrompt(args: {
  * caught and recorded on the row in `actions_error`; the calling
  * sync/backfill loop is unaffected.
  */
-export async function proposeActionsForProposal(proposalId: string): Promise<{
+export async function proposeActionsForProposal(
+  proposalId: string,
+  opts?: { reviewerGuidance?: string | null; disableAutoSuppress?: boolean },
+): Promise<{
   ranAI: boolean;
   actions?: ProposedAction[];
   error?: string;
@@ -867,6 +878,7 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
       targetOrgId,
       targetOrgName,
       messageBody,
+      reviewerGuidance: opts?.reviewerGuidance ?? null,
     });
 
     // Load the admin-editable system prompt (active DB version, or the
@@ -970,7 +982,13 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
     // it so the reviewer never has to triage it. Guard: never suppress a
     // proposal that also carries concrete CRM mutations — if there's
     // something for the reviewer to apply, the item must stay visible.
-    const shouldIgnore = suppress?.shouldSuppress === true && actions.length === 0;
+    // `disableAutoSuppress` (set by the reviewer-driven /revise path) keeps
+    // the proposal pending no matter what the model returns: the reviewer
+    // explicitly asked to re-run it and expects it to stay in their queue.
+    const shouldIgnore =
+      !opts?.disableAutoSuppress &&
+      suppress?.shouldSuppress === true &&
+      actions.length === 0;
 
     // Two writes, deliberately not combined: the first ALWAYS records the
     // analysis result (clearing the in-flight epoch sentinel), so the row

@@ -9,6 +9,7 @@ import { and, count, desc, eq, sql, type SQL } from "drizzle-orm";
 import {
   ListEmailProposalsQueryParams,
   AcceptEmailProposalBody,
+  ReviseEmailProposalBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
@@ -44,6 +45,22 @@ import { proposeActionsForProposal } from "../lib/proposeActions";
 
 const router: IRouter = Router();
 router.use(requireAuth);
+
+/**
+ * Build a SQL expression that appends `addition` to the existing
+ * `reviewer_note` instead of overwriting it, so multiple reviewer
+ * comments on one proposal (e.g. successive "propose alternative"
+ * corrections followed by a final accept/reject note) all survive for
+ * prompt-tuning. When the column is currently empty we just store the
+ * addition; otherwise we join with a visible separator.
+ */
+function appendReviewerNoteSql(addition: string): SQL {
+  return sql`case
+    when ${emailProposals.reviewerNote} is null or ${emailProposals.reviewerNote} = ''
+      then ${addition}
+    else ${emailProposals.reviewerNote} || ${"\n\n---\n\n"} || ${addition}
+  end`;
+}
 
 router.get(
   "/email-proposals",
@@ -155,7 +172,11 @@ router.post(
           status: "applied",
           resolvedAt: new Date(),
           resolvedByUserId: user.id,
-          reviewerNote,
+          // Append the verdict note so any earlier "propose alternative"
+          // comments survive; leave the column untouched when no note.
+          ...(reviewerNote
+            ? { reviewerNote: appendReviewerNoteSql(reviewerNote) }
+            : {}),
           updatedAt: new Date(),
         })
         .where(
@@ -392,7 +413,11 @@ router.post(
         status: "rejected",
         resolvedAt: new Date(),
         resolvedByUserId: user.id,
-        reviewerNote,
+        // Append so earlier "propose alternative" comments survive the
+        // verdict; leave the column untouched when no note was given.
+        ...(reviewerNote
+          ? { reviewerNote: appendReviewerNoteSql(reviewerNote) }
+          : {}),
         updatedAt: new Date(),
       })
       .where(
@@ -494,6 +519,101 @@ router.post(
     // limiter inside proposeActionsForProposal). Errors are recorded on
     // the row, never thrown, so we just re-read the refreshed state.
     await proposeActionsForProposal(id);
+    const [updated] = await db
+      .select()
+      .from(emailProposals)
+      .where(eq(emailProposals.id, id))
+      .limit(1);
+    if (!updated) return notFound(res, "email proposal");
+    res.json(updated);
+  }),
+);
+
+/**
+ * Re-run AI action-proposal for one PENDING proposal, folding in a human
+ * reviewer's plain-English correction (e.g. "that's an invalid email for
+ * him — mark it invalid and make the jfk@ one primary"). Same ownership
+ * + state guards and 404-vs-409 behavior as the retry handler: a user
+ * can only revise their own mailbox's pending proposals.
+ *
+ * Unlike retry, the reviewer's comment is appended to `reviewer_note`
+ * (not overwritten) so successive corrections — and any later accept/
+ * reject verdict note — all survive for prompt-tuning. We reset
+ * `actions_error` and `actions_analyzed_at` so the atomic claim inside
+ * `proposeActionsForProposal` can re-take the row, then re-run the
+ * shared per-proposal analysis WITH the reviewer guidance (routed
+ * through the AI concurrency limiter + rate-limit-retry wrapper). The
+ * proposal stays pending; we return the refreshed row (new actions, or
+ * a fresh error) for an in-place UI update.
+ */
+router.post(
+  "/email-proposals/:id/revise",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const body = parseOrBadRequest(ReviseEmailProposalBody, req.body ?? {}, res);
+    if (!body) return;
+    const guidance = body.reviewerGuidance.trim();
+    if (!guidance) {
+      res.status(400).json({
+        error: "invalid_request",
+        message: "reviewerGuidance must not be empty.",
+      });
+      return;
+    }
+    const id = paramId(req);
+    // Claim the row for re-analysis: append the reviewer's comment, clear
+    // the stored error, and reset the analyzed timestamp to NULL — scoped
+    // to the caller's own pending proposal. The conditional UPDATE doubles
+    // as the ownership + state guard (non-pending / not-yours → 0 rows).
+    const [reset] = await db
+      .update(emailProposals)
+      .set({
+        reviewerNote: appendReviewerNoteSql(`Proposed alternative: ${guidance}`),
+        actionsError: null,
+        actionsAnalyzedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(emailProposals.id, id),
+          eq(emailProposals.mailboxUserId, user.id),
+          eq(emailProposals.status, "pending"),
+        ),
+      )
+      .returning({ id: emailProposals.id });
+    if (!reset) {
+      // Distinguish "doesn't exist / not yours" (404) from "already
+      // resolved" (409) the same way accept/reject/retry do.
+      const [existing] = await db
+        .select()
+        .from(emailProposals)
+        .where(
+          and(
+            eq(emailProposals.id, id),
+            eq(emailProposals.mailboxUserId, user.id),
+          ),
+        )
+        .limit(1);
+      if (!existing) return notFound(res, "email proposal");
+      res.status(409).json({
+        error: "proposal_not_pending",
+        status: existing.status,
+        message: `Cannot revise proposal in status '${existing.status}'.`,
+      });
+      return;
+    }
+    // Re-run analysis WITH the reviewer's guidance (bounded by the
+    // per-call timeout + AI concurrency limiter inside
+    // proposeActionsForProposal). Errors are recorded on the row, never
+    // thrown, so we just re-read the refreshed state.
+    await proposeActionsForProposal(id, {
+      reviewerGuidance: guidance,
+      disableAutoSuppress: true,
+    });
     const [updated] = await db
       .select()
       .from(emailProposals)
