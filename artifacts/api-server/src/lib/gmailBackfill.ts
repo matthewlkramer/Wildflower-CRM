@@ -360,6 +360,7 @@ async function promoteSkipToMatched(
     await processIntelForMatched({
       mailboxUserId: grant.userId,
       messageRowId,
+      gmailMessageId: gmailId,
       fromEmail: fromFull[0] ?? null,
       subject,
       bodyText: parts.bodyText,
@@ -465,6 +466,7 @@ async function phaseB(
   while (true) {
     const rows: Array<{
       id: string;
+      gmailMessageId: string | null;
       fromEmail: string | null;
       subject: string | null;
       bodyText: string | null;
@@ -475,6 +477,7 @@ async function phaseB(
     }> = await db
       .select({
         id: emailMessages.id,
+        gmailMessageId: emailMessages.gmailMessageId,
         fromEmail: emailMessages.fromEmail,
         subject: emailMessages.subject,
         bodyText: emailMessages.bodyText,
@@ -505,6 +508,7 @@ async function phaseB(
         await processIntelForMatched({
           mailboxUserId: userId,
           messageRowId: row.id,
+          gmailMessageId: row.gmailMessageId,
           fromEmail: row.fromEmail,
           subject: row.subject,
           bodyText: row.bodyText,

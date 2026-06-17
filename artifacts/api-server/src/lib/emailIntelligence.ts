@@ -94,6 +94,11 @@ export async function processIntelForUnmatched(args: {
 export async function processIntelForMatched(args: {
   mailboxUserId: string;
   messageRowId: string;
+  // The raw Gmail message ID (e.g. "18f2a3b4c5d6e7f8"). Optional so
+  // callers that only have the internal row id still work, but passing
+  // the real Gmail id is strongly preferred — it lets grant-lead
+  // sightings be looked up by Gmail message id across paths.
+  gmailMessageId?: string | null;
   fromEmail: string | null;
   subject: string | null;
   bodyText: string | null;
@@ -125,7 +130,10 @@ export async function processIntelForMatched(args: {
     if (isLikelyGrantDigest(args.fromEmail, args.subject)) {
       await handleGrants({
         mailboxUserId: args.mailboxUserId,
-        gmailMessageId: args.messageRowId,
+        // Prefer the real Gmail message ID; fall back to the internal
+        // email_messages row id so sighting deduplication still works
+        // for callers that can't provide the Gmail id.
+        gmailMessageId: args.gmailMessageId ?? args.messageRowId,
         messageRowId: args.messageRowId,
         fromEmail: args.fromEmail,
         subject: args.subject,

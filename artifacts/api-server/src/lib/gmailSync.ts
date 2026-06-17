@@ -843,6 +843,7 @@ async function processOneMessage(
       await processIntelForMatched({
         mailboxUserId: grant.userId,
         messageRowId,
+        gmailMessageId: gmailId,
         fromEmail: fromFull[0] ?? null,
         subject,
         bodyText: parts.bodyText,
