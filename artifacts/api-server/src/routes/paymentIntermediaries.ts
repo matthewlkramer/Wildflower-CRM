@@ -10,6 +10,7 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
+import { activeOnlyUnlessAdmin, archiveOne, unarchiveOne } from "../lib/archive";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -23,6 +24,8 @@ router.get(
     const filters: SQL[] = [];
     if (q.type) filters.push(eq(paymentIntermediaries.type, q.type));
     if (q.search) filters.push(ilike(paymentIntermediaries.name, `%${q.search}%`));
+    const archived = activeOnlyUnlessAdmin(req, paymentIntermediaries.archivedAt);
+    if (archived) filters.push(archived);
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db.select().from(paymentIntermediaries).where(where).orderBy(asc(paymentIntermediaries.name)).limit(limit).offset(offset),
@@ -72,11 +75,17 @@ router.patch(
   }),
 );
 
-router.delete(
-  "/payment-intermediaries/:id",
+router.post(
+  "/payment-intermediaries/:id/archive",
   asyncHandler(async (req, res) => {
-    await db.delete(paymentIntermediaries).where(eq(paymentIntermediaries.id, paramId(req)));
-    res.status(204).end();
+    await archiveOne(req, res, { entity: "payment intermediary", table: paymentIntermediaries });
+  }),
+);
+
+router.post(
+  "/payment-intermediaries/:id/unarchive",
+  asyncHandler(async (req, res) => {
+    await unarchiveOne(req, res, { entity: "payment intermediary", table: paymentIntermediaries });
   }),
 );
 

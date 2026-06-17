@@ -4405,84 +4405,6 @@ export const useUpdatePaymentIntermediary = <
   return useMutation(getUpdatePaymentIntermediaryMutationOptions(options));
 };
 
-export const getDeletePaymentIntermediaryUrl = (id: string) => {
-  return `/api/payment-intermediaries/${id}`;
-};
-
-export const deletePaymentIntermediary = async (
-  id: string,
-  options?: RequestInit,
-): Promise<void> => {
-  return customFetch<void>(getDeletePaymentIntermediaryUrl(id), {
-    ...options,
-    method: "DELETE",
-  });
-};
-
-export const getDeletePaymentIntermediaryMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deletePaymentIntermediary>>,
-    TError,
-    { id: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deletePaymentIntermediary>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  const mutationKey = ["deletePaymentIntermediary"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deletePaymentIntermediary>>,
-    { id: string }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return deletePaymentIntermediary(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type DeletePaymentIntermediaryMutationResult = NonNullable<
-  Awaited<ReturnType<typeof deletePaymentIntermediary>>
->;
-
-export type DeletePaymentIntermediaryMutationError = ErrorType<unknown>;
-
-export const useDeletePaymentIntermediary = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deletePaymentIntermediary>>,
-    TError,
-    { id: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof deletePaymentIntermediary>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  return useMutation(getDeletePaymentIntermediaryMutationOptions(options));
-};
-
 export const getListHouseholdsUrl = (params?: ListHouseholdsParams) => {
   const normalizedParams = new URLSearchParams();
 
@@ -17198,6 +17120,171 @@ export const useUnarchiveGiftOrPayment = <
   TContext
 > => {
   return useMutation(getUnarchiveGiftOrPaymentMutationOptions(options));
+};
+
+export const getArchivePaymentIntermediaryUrl = (id: string) => {
+  return `/api/payment-intermediaries/${id}/archive`;
+};
+
+export const archivePaymentIntermediary = async (
+  id: string,
+  options?: RequestInit,
+): Promise<PaymentIntermediary> => {
+  return customFetch<PaymentIntermediary>(
+    getArchivePaymentIntermediaryUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getArchivePaymentIntermediaryMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archivePaymentIntermediary>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archivePaymentIntermediary>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["archivePaymentIntermediary"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archivePaymentIntermediary>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return archivePaymentIntermediary(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchivePaymentIntermediaryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archivePaymentIntermediary>>
+>;
+
+export type ArchivePaymentIntermediaryMutationError =
+  ErrorType<NotFoundResponse>;
+
+export const useArchivePaymentIntermediary = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archivePaymentIntermediary>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archivePaymentIntermediary>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getArchivePaymentIntermediaryMutationOptions(options));
+};
+
+export const getUnarchivePaymentIntermediaryUrl = (id: string) => {
+  return `/api/payment-intermediaries/${id}/unarchive`;
+};
+
+export const unarchivePaymentIntermediary = async (
+  id: string,
+  options?: RequestInit,
+): Promise<PaymentIntermediary> => {
+  return customFetch<PaymentIntermediary>(
+    getUnarchivePaymentIntermediaryUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getUnarchivePaymentIntermediaryMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchivePaymentIntermediary>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchivePaymentIntermediary>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unarchivePaymentIntermediary"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchivePaymentIntermediary>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unarchivePaymentIntermediary(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchivePaymentIntermediaryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchivePaymentIntermediary>>
+>;
+
+export type UnarchivePaymentIntermediaryMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export const useUnarchivePaymentIntermediary = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchivePaymentIntermediary>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchivePaymentIntermediary>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnarchivePaymentIntermediaryMutationOptions(options));
 };
 
 export const getArchiveFundableProjectUrl = (id: string) => {

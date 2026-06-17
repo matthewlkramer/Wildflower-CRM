@@ -2045,6 +2045,13 @@ export const GetOrganizationResponse = zod
             .describe(
               "QuickBooks Online Customer Id this payment intermediary maps to.",
             ),
+          archivedAt: zod
+            .string()
+            .datetime({})
+            .nullish()
+            .describe(
+              "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+            ),
           createdAt: zod.string().datetime({}),
           updatedAt: zod.string().datetime({}),
         })
@@ -2322,6 +2329,12 @@ export const ListPaymentIntermediariesQueryParams = zod.object({
   type: zod
     .enum(["daf", "giving_platform", "private_wealth_manager"])
     .optional(),
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.",
+    ),
   limit: zod.coerce
     .number()
     .min(1)
@@ -2346,6 +2359,13 @@ export const ListPaymentIntermediariesResponse = zod.object({
         .nullish()
         .describe(
           "QuickBooks Online Customer Id this payment intermediary maps to.",
+        ),
+      archivedAt: zod
+        .string()
+        .datetime({})
+        .nullish()
+        .describe(
+          "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
         ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -2382,6 +2402,13 @@ export const GetPaymentIntermediaryResponse = zod
       .nullish()
       .describe(
         "QuickBooks Online Customer Id this payment intermediary maps to.",
+      ),
+    archivedAt: zod
+      .string()
+      .datetime({})
+      .nullish()
+      .describe(
+        "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
       ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
@@ -2492,12 +2519,15 @@ export const UpdatePaymentIntermediaryResponse = zod.object({
     .describe(
       "QuickBooks Online Customer Id this payment intermediary maps to.",
     ),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
-});
-
-export const DeletePaymentIntermediaryParams = zod.object({
-  id: zod.coerce.string(),
 });
 
 export const listHouseholdsQueryLimitDefault = 50;
@@ -3601,6 +3631,13 @@ export const ListDonorPaymentIntermediariesResponse = zod.object({
           .describe(
             "QuickBooks Online Customer Id this payment intermediary maps to.",
           ),
+        archivedAt: zod
+          .string()
+          .datetime({})
+          .nullish()
+          .describe(
+            "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+          ),
         createdAt: zod.string().datetime({}),
         updatedAt: zod.string().datetime({}),
       }),
@@ -3620,6 +3657,13 @@ export const ListDonorPaymentIntermediariesResponse = zod.object({
         .nullish()
         .describe(
           "QuickBooks Online Customer Id this payment intermediary maps to.",
+        ),
+      archivedAt: zod
+        .string()
+        .datetime({})
+        .nullish()
+        .describe(
+          "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
         ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -11072,6 +11116,60 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
     .array(zod.string())
     .nullish()
     .describe("Distinct grant_year values from gift_allocations."),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const ArchivePaymentIntermediaryParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ArchivePaymentIntermediaryResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  type: zod
+    .enum(["daf", "giving_platform", "private_wealth_manager"])
+    .nullish(),
+  quickbooksCustomerId: zod
+    .string()
+    .nullish()
+    .describe(
+      "QuickBooks Online Customer Id this payment intermediary maps to.",
+    ),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UnarchivePaymentIntermediaryParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnarchivePaymentIntermediaryResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  type: zod
+    .enum(["daf", "giving_platform", "private_wealth_manager"])
+    .nullish(),
+  quickbooksCustomerId: zod
+    .string()
+    .nullish()
+    .describe(
+      "QuickBooks Online Customer Id this payment intermediary maps to.",
+    ),
   archivedAt: zod
     .string()
     .datetime({})

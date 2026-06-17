@@ -961,6 +961,8 @@ export interface PaymentIntermediary {
   type?: PaymentIntermediaryType | null;
   /** QuickBooks Online Customer Id this payment intermediary maps to. */
   quickbooksCustomerId?: string | null;
+  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -3661,6 +3663,10 @@ export const ListOrganizationsPrimaryContactPresence = {
 export type ListPaymentIntermediariesParams = {
   search?: string;
   type?: PaymentIntermediaryType;
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
   /**
    * @minimum 1
    * @maximum 10000

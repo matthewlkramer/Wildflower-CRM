@@ -579,6 +579,7 @@ paths:
       parameters:
         - { name: search, in: query, schema: { type: string } }
         - { name: type, in: query, schema: { $ref: "#/components/schemas/PaymentIntermediaryType" } }
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -607,11 +608,6 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentIntermediary" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
-    delete:
-      operationId: deletePaymentIntermediary
-      tags: [payment-intermediaries]
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses: { "204": { description: Deleted } }
 
   # ─── Households ────────────────────────────────────────────────────────────
   /households:
@@ -2414,6 +2410,23 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /payment-intermediaries/{id}/archive:
+    post:
+      operationId: archivePaymentIntermediary
+      tags: [payment-intermediaries]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentIntermediary" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /payment-intermediaries/{id}/unarchive:
+    post:
+      operationId: unarchivePaymentIntermediary
+      tags: [payment-intermediaries]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentIntermediary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /fundable-projects/{id}/archive:
     post:
       operationId: archiveFundableProject
@@ -3315,6 +3328,7 @@ components:
         name:       { type: string }
         type:       { allOf: [ { $ref: "#/components/schemas/PaymentIntermediaryType" } ], nullable: true }
         quickbooksCustomerId: { type: string, nullable: true, description: "QuickBooks Online Customer Id this payment intermediary maps to." }
+        archivedAt: { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:  { type: string, format: date-time }
         updatedAt:  { type: string, format: date-time }
     PaymentIntermediaryDetail:

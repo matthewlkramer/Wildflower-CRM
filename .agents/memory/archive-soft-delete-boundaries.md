@@ -1,48 +1,55 @@
 ---
-name: archive soft-delete rollout boundaries
-description: Where the archived_at soft-delete applies (list pages) vs where hard delete intentionally stays (detail pages), and what is deliberately out of scope.
+name: archive soft-delete boundaries
+description: archived_at soft-delete REPLACED hard delete app-wide (list + detail); the only deliberate hard-delete exceptions; and the admin-gating / dropped-surface / aggregates boundaries that are by design, not bugs.
 ---
 
 # Archive soft-delete: scope boundaries (by design, not bugs)
 
 `archived_at` is a SEPARATE axis from real statuses (activeStatus / active /
-lossType / deceased) and from hard delete. The rollout was scoped to **list
-("big") pages** only.
+lossType / deceased). The project-wide goal "get rid of ALL delete functionality
+in favor of archive" is COMPLETE across CRM entities, on **both list and detail
+pages**.
 
-## What archive replaces
-- On LIST pages, archive REPLACES delete: per-row hard delete and bulk delete
-  were removed from list UIs; bulk delete → bulk archive. Anyone can archive.
-- DETAIL pages intentionally KEEP their hard-delete button, and the per-row
-  `DELETE /{entity}/{id}` server routes stay (individual/funding-entity/
-  household/gift/opportunity detail). Do NOT "fix" these as leftovers.
-- payment-intermediaries is the reference page and keeps hard delete entirely
-  (it is a small ref table, not a soft-delete entity).
+## Archive has replaced hard delete everywhere
+- All CRM entities archive instead of delete: list pages (per-row + bulk),
+  detail pages, and the corresponding `DELETE /{entity}/{id}` server routes were
+  removed in favor of `POST /{entity}/{id}/archive` + `/unarchive`.
+- payment-intermediaries also archives now (schema `archived_at` + index,
+  archive/unarchive routes, list `includeArchived`, FE ShowArchivedToggle).
+- Shared helpers: `activeOnlyUnlessAdmin` / `archiveOne` / `unarchiveOne` in
+  `artifacts/api-server/src/lib/archive.ts`.
+- FE pattern: list pages archive DIRECTLY (no confirm dialog) — see
+  `funding-entities.tsx`; payment-intermediaries mirrors it. Anyone can archive.
+
+## The ONLY hard-delete exceptions (user-confirmed — keep them)
+- **Gift merge / consolidation** still hard-deletes the merged-away gift.
+- **QuickBooks staged-payment revert** still hard-deletes its staged rows.
+Do NOT convert these two to archive unless the user explicitly asks.
 
 ## Admin gating is LIST-only by design
 - "Show archived" + unarchive is admin-only and **server-enforced**, but only on
-  LIST endpoints (`activeOnlyUnlessAdmin` / `canIncludeArchived`): default
-  `archived_at IS NULL`; a non-admin's `includeArchived` is ignored.
-- Detail GET-by-id still returns archived records to any authed user. This is
-  intentional — the user's decision scoped "only admins can view" to the
-  list Show-archived feature. Do NOT add 404/403 on detail GET/PATCH unless the
-  user explicitly asks.
+  LIST endpoints (`activeOnlyUnlessAdmin`): default `archived_at IS NULL`; a
+  non-admin's `includeArchived` is ignored. `ShowArchivedToggle` returns null for
+  non-admins.
+- Detail GET-by-id still returns archived records to any authed user. Intentional
+  — do NOT add 404/403 on detail GET/PATCH unless the user asks.
 
-## Dropped surfaces
-- households / schools / regions / fiscal-years were DROPPED from the FE archive
-  rollout: they have NO list pages/routes/nav (only detail pages + an admin.tsx
-  fiscal-year goal matrix). Backend archive endpoints exist but there is no list
-  UI to attach row actions to.
+## Dropped surfaces (no list UI to attach actions to)
+- households / schools / regions / fiscal-years have NO list pages/routes/nav
+  (detail pages only + an admin.tsx fiscal-year goal matrix). Backend archive
+  endpoints may exist but there is no list UI for row actions.
 
 ## Known gap (out of scope)
 - Aggregates (lifetimeGiving / dashboard-summary / projections / grants-calendar
-  sums) still include archived gifts/opps. Whether archive should remove records
-  from operational reporting is a separate, explicit decision.
+  sums) still include archived gifts/opps. Removing archived from operational
+  reporting is a separate, explicit decision.
 
-**Why:** the user's authoritative decision scoped "no hard delete" and
-"only admins view archived" to list pages; extending to detail pages, detail
-GETs, or aggregates is unspecified product work that could break existing flows.
+**Why:** the user's authoritative decision was "no hard delete, use archive"
+app-wide, with only the gift-merge and QuickBooks-revert hard-deletes explicitly
+retained; extending archived-hiding to detail GETs or aggregates is unspecified
+product work that could break existing flows.
 
-**How to apply:** when touching list pages, route deletes through archive; when
-touching detail pages, leave the existing delete affordance; don't treat
-detail-page delete, detail-GET archived visibility, or archived-in-aggregates as
-bugs — they are deliberate boundaries.
+**How to apply:** route every new delete affordance through archive; never
+reintroduce a hard-delete button or `DELETE` route except the two confirmed
+exceptions; keep show-archived/unarchive admin-gated and LIST-only; don't treat
+detail-GET archived visibility or archived-in-aggregates as bugs.

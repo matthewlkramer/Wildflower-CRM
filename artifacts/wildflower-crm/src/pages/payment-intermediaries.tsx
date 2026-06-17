@@ -5,7 +5,8 @@ import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListPaymentIntermediaries,
   useUpdatePaymentIntermediary,
-  useDeletePaymentIntermediary,
+  useArchivePaymentIntermediary,
+  useUnarchivePaymentIntermediary,
   getListPaymentIntermediariesQueryKey,
   type ListPaymentIntermediariesParams,
   type PaymentIntermediary,
@@ -50,7 +51,8 @@ import {
   RowActionIcons,
   InlineRowSaveActions,
 } from "@/components/row-action-icons";
-import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { ShowArchivedToggle } from "@/components/show-archived-toggle";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 import { CreatePaymentIntermediaryDialog } from "@/components/create-payment-intermediary-dialog";
 import {
   Pagination,
@@ -74,7 +76,9 @@ type RowEditContext = {
   onCancelEdit: () => void;
   onSaveEdit: () => void;
   onOpen: (p: PaymentIntermediary) => void;
-  onAskDelete: (p: PaymentIntermediary) => void;
+  onArchive: (p: PaymentIntermediary) => void;
+  onUnarchive: (p: PaymentIntermediary) => void;
+  isAdmin: boolean;
 };
 
 function buildColumns(ctx: RowEditContext): ColumnDef<PaymentIntermediary>[] {
@@ -166,9 +170,16 @@ function buildColumns(ctx: RowEditContext): ColumnDef<PaymentIntermediary>[] {
             entityLabel={p.name}
             testIdPrefix={`payint-${p.id}`}
             disabled={ctx.editingId !== null}
+            archived={!!p.archivedAt}
             onOpen={() => ctx.onOpen(p)}
             onEdit={() => ctx.onStartEdit(p)}
-            onDelete={() => ctx.onAskDelete(p)}
+            onArchive={
+              p.archivedAt
+                ? ctx.isAdmin
+                  ? () => ctx.onUnarchive(p)
+                  : undefined
+                : () => ctx.onArchive(p)
+            }
           />
         ),
     },
@@ -204,7 +215,12 @@ export default function PaymentIntermediaries() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
   const [draftType, setDraftType] = useState<string>(NONE_TYPE);
-  const [deleteTarget, setDeleteTarget] = useState<PaymentIntermediary | null>(null);
+
+  const isAdmin = useIsAdmin();
+  const [showArchived, setShowArchived] = usePersistedState<boolean>(
+    "wf.list.payint.showArchived",
+    false,
+  );
 
   const ts = useTableState("payment-intermediaries");
   const sortActive = ts.sort.key !== null;
@@ -216,6 +232,7 @@ export default function PaymentIntermediaries() {
     ...(typesSel.length > 0
       ? { type: typesSel[0] as PaymentIntermediaryType }
       : {}),
+    ...(isAdmin && showArchived ? { includeArchived: true } : {}),
   };
 
   const { data, isLoading, isError } = useListPaymentIntermediaries(params, {
@@ -244,22 +261,42 @@ export default function PaymentIntermediaries() {
     },
   });
 
-  const deleteMut = useDeletePaymentIntermediary({
-    mutation: {
-      onSuccess: async () => {
-        await refresh();
-        toast({ title: "Payment intermediary deleted" });
-        setDeleteTarget(null);
+  const archiveMut = useArchivePaymentIntermediary();
+  const unarchiveMut = useUnarchivePaymentIntermediary();
+
+  const archivePi = (p: PaymentIntermediary) =>
+    archiveMut.mutate(
+      { id: p.id },
+      {
+        onSuccess: async () => {
+          await refresh();
+          toast({ title: "Payment intermediary archived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Archive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
       },
-      onError: (err: unknown) => {
-        toast({
-          title: "Delete failed",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "destructive",
-        });
+    );
+
+  const unarchivePi = (p: PaymentIntermediary) =>
+    unarchiveMut.mutate(
+      { id: p.id },
+      {
+        onSuccess: async () => {
+          await refresh();
+          toast({ title: "Payment intermediary unarchived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Unarchive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
       },
-    },
-  });
+    );
 
   const startEdit = (p: PaymentIntermediary) => {
     setEditingId(p.id);
@@ -294,7 +331,9 @@ export default function PaymentIntermediaries() {
     onCancelEdit: cancelEdit,
     onSaveEdit: saveEdit,
     onOpen: (p) => navigate(`/payment-intermediaries/${p.id}`),
-    onAskDelete: (p) => setDeleteTarget(p),
+    onArchive: archivePi,
+    onUnarchive: unarchivePi,
+    isAdmin,
   };
 
   const registry = buildColumns(editCtx);
@@ -423,6 +462,7 @@ export default function PaymentIntermediaries() {
           </Button>
         )}
         <div className="ml-auto flex items-end gap-2">
+          <ShowArchivedToggle value={showArchived} onChange={setShowArchived} />
           <FiltersMenu
             registry={filterRegistry}
             state={filtersState}
@@ -528,18 +568,6 @@ export default function PaymentIntermediaries() {
           </PaginationContent>
         </Pagination>
       )}
-
-      <ConfirmDeleteDialog
-        open={deleteTarget !== null}
-        onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}
-        title={deleteTarget ? `Delete ${deleteTarget.name}?` : "Delete payment intermediary?"}
-        description="This will permanently remove this payment intermediary. This action cannot be undone."
-        confirmTestId="button-confirm-delete-payint"
-        onConfirm={() => {
-          if (!deleteTarget) return;
-          return deleteMut.mutateAsync({ id: deleteTarget.id });
-        }}
-      />
     </div>
   );
 }
