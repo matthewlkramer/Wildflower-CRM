@@ -392,6 +392,20 @@ export function hasDonationLine(input: ClassifierInput): boolean {
  * payer rule already covers. Scans the same family of patterns used for the
  * payer, plural-aware, so balance-sheet loan accounts and "… Repayment" deposit
  * lines are caught. Honored only behind the donation-first guard.
+ *
+ * DELIBERATELY does NOT scan `lineClasses`. A QuickBooks Class is the org's own
+ * categorization bucket and is NOT a safe loan marker: evaluated against real
+ * prod data (2026-06-17), the only loan-bearing class that would catch the
+ * reported class-only school-loan rows (the "…:Loans" bucket, e.g. the $75k
+ * "Flor do Loto" deposit posted to "702 Grants to Schools") ALSO carries a
+ * tracked $500k US Bank CDFI "loan_fund_investment" gift that a fundraiser
+ * deliberately reconciled to an existing CRM gift. There is no class-level
+ * signal that separates noise school-loan repayments from tracked loan-fund
+ * investments, so auto-excluding by class would wrongly hide money the org
+ * actively reviews. Class-only loan rows therefore stay a manual exclusion.
+ * Full evaluation: lib/db/migrations/0043_quickbooks_loan_class_decision_RUNBOOK.md.
+ * (The `fiscally_sponsored` rule DOES read classes, but only for an explicit,
+ * curated project allowlist — never a broad loan-word match.)
  */
 function isLoanLineOrText(input: ClassifierInput): boolean {
   if (LOAN_LINE_TEXT_PATTERNS.length === 0) return false;

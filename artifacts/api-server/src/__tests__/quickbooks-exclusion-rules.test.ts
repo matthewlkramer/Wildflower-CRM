@@ -642,6 +642,47 @@ describe("classifyStagedPayment", () => {
     ).toBe(false);
   });
 
+  // ─── loan marker on the CLASS only is NOT auto-excluded (deliberate) ───────
+  // Evaluated against prod (2026-06-17): the "…:Loans" QuickBooks class bucket
+  // that carries class-only school-loan rows (e.g. the $75k "Flor do Loto"
+  // deposit) ALSO carries a tracked $500k US Bank CDFI loan-fund-investment gift
+  // the org reconciles. The class can't tell them apart, so isLoanLineOrText
+  // deliberately does NOT scan lineClasses — these rows stay in the queue for
+  // manual review. See 0043_quickbooks_loan_class_decision_RUNBOOK.md.
+  it("does NOT exclude a row whose only loan marker is on the QuickBooks class", () => {
+    // The reported "Flor do Loto" shape: loan marker ONLY on the class.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "Flor De Loto Montessori Corp",
+        lineClasses: ["National (deleted):Loans (deleted)"],
+        lineAccountNames: ["702 Grants to Schools"],
+      }).excluded,
+    ).toBe(false);
+    // A bare "Loan Payment" class with no other marker also stays in the queue.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineClasses: ["Loan Payment (deleted)"],
+      }).excluded,
+    ).toBe(false);
+  });
+
+  it("still excludes a class-loan row when a loan marker ALSO sits on a scanned field", () => {
+    // The class is ignored, but the existing line-detail rule still fires off
+    // the posting account — so genuine school-loan repayments are unaffected.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "WNYCS",
+        lineClasses: ["National (deleted):Loans (deleted)"],
+        lineAccountNames: ["1600 Loans to Schools"],
+        rawReference: "WNYCS Loan Payment",
+      }).reason,
+    ).toBe("loan");
+  });
+
   // ─── expense_refund (the word "refund") ───────────────────────────────────
   it("excludes a refund of the org's own expense as expense_refund", () => {
     expect(
