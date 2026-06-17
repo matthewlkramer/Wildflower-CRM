@@ -111,6 +111,14 @@ back-catalog (those rows sit behind the watermark). Line-based backfills need a
 (`0014_quickbooks_reset_watermark.sql` pattern) then syncing. Verify
 `count(*) FILTER (WHERE line_item_names IS NOT NULL)` before assuming enrichment.
 
+**Pending-only backfills must ALSO guard `classification_source='auto'`.** Both
+the human exclude AND the human re-include routes pin `classification_source='manual'`,
+and `reclassifyStagedPayments()` only ever touches `auto` rows. A backfill that
+guards on `status='pending'` alone (the older 0033 pattern) will silently
+re-exclude a row a fundraiser deliberately re-included as a gift. New loan/noise
+re-sweeps (e.g. 0042) add `AND classification_source = 'auto'` so manual decisions
+are permanent — mirror this in any future backfill.
+
 **Re-pull enriches but does NOT reclassify.** The sync `onConflictDoUpdate`
 (quickbooksSync.ts) only refreshes `line_*` detail + `updated_at` on existing
 pending/excluded rows; status & exclusion_reason are intentionally left untouched
