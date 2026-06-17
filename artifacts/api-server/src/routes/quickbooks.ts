@@ -8,6 +8,7 @@ import {
   households,
   people,
   paymentIntermediaries,
+  quickbooksHandlingRules,
 } from "@workspace/db/schema";
 import {
   and,
@@ -96,6 +97,8 @@ function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void 
 
 // The gift a staged row resolved to (reconciled OR minted), for display.
 const resolvedGift = alias(giftsAndPayments, "resolved_gift");
+// The handling rule that auto-classified this row (excluded / auto-approved), for display.
+const matchedRule = alias(quickbooksHandlingRules, "matched_rule");
 
 // Derived queue bucket for a staged row (kept in sync with the where-clauses
 // in queueWhere below).
@@ -154,6 +157,7 @@ const stagedSelect = {
     JOIN gifts_and_payments g ON g.id = sps.gift_id
     WHERE sps.staged_payment_id = ${stagedPayments.id}
   )`.as("split_gift_names"),
+  matchedRuleName: matchedRule.name,
   // "Gift likely not created yet": this row has no gift of its own, and every
   // same-donor / similar-amount gift is already linked to a DIFFERENT staged
   // payment (no unlinked candidate is left to match). Signals the fundraiser to
@@ -218,7 +222,8 @@ function withJoins<T extends PgSelect>(q: T) {
     .leftJoin(
       resolvedGift,
       sql`${resolvedGift.id} = COALESCE(${stagedPayments.matchedGiftId}, ${stagedPayments.createdGiftId}, ${stagedPayments.groupReconciledGiftId})`,
-    );
+    )
+    .leftJoin(matchedRule, eq(matchedRule.id, stagedPayments.matchedRuleId));
 }
 
 type Queue = "needs_review" | "auto_matched" | "excluded" | "done" | "rejected";

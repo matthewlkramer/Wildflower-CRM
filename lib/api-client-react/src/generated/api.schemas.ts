@@ -2083,6 +2083,10 @@ export interface StagedPayment {
   splitGiftNames?: string[] | null;
   /** True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate). */
   giftAlreadyLinkedElsewhere?: boolean;
+  /** Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule. */
+  matchedRuleId?: string | null;
+  /** Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted. */
+  matchedRuleName?: string | null;
   createdAt: string;
   updatedAt: string;
 }

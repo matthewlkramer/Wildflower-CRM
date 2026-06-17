@@ -2044,9 +2044,11 @@ function StagedPaymentCard({
               {row.exclusionReason
                 ? ` (${EXCLUSION_REASON_LABELS[row.exclusionReason] ?? row.exclusionReason})`
                 : ""}
-              {row.classificationSource === "manual"
-                ? " — set by hand"
-                : " — auto-classified"}
+              {row.matchedRuleName
+                ? ` — auto-excluded by rule: ${row.matchedRuleName}`
+                : row.classificationSource === "manual"
+                  ? " — set by hand"
+                  : " — auto-classified"}
               . Not deleted — re-include it, or change its category below.
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -2165,6 +2167,9 @@ function ResolvedSummary({
       <div className="text-sm text-muted-foreground">
         Donor: {donorLabel ?? "—"}
         {row.intermediaryName ? ` · via ${row.intermediaryName}` : ""}
+        {row.matchedRuleName
+          ? ` · auto-approved by rule: ${row.matchedRuleName}`
+          : null}
       </div>
       {isSplit ? (
         <div className="text-sm" data-testid={`staged-split-summary-${row.id}`}>
@@ -2852,6 +2857,7 @@ function StagedPaymentDetails({
         ? (EXCLUSION_REASON_LABELS[row.exclusionReason] ?? row.exclusionReason)
         : null,
     },
+    { label: "Matched rule", value: row.matchedRuleName ?? null },
     { label: "Donor", value: donorLabel },
     { label: "Intermediary", value: row.intermediaryName },
     { label: "Reconciled gift ID", value: row.matchedGiftId },

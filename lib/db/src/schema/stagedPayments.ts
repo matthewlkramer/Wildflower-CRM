@@ -26,6 +26,7 @@ import { households } from "./households";
 import { paymentIntermediaries } from "./paymentIntermediaries";
 import { giftsAndPayments } from "./giftsAndPayments";
 import { users } from "./users";
+import { quickbooksHandlingRules } from "./quickbooksHandlingRules";
 
 /**
  * Review queue for incoming-money records pulled one-way from QuickBooks
@@ -240,6 +241,16 @@ export const stagedPayments = pgTable(
     // the resolved-gift join's COALESCE. Cleared for the whole group on revert.
     groupReconciledGiftId: text("group_reconciled_gift_id").references(
       () => giftsAndPayments.id,
+      { onDelete: "set null" },
+    ),
+
+    // The admin-editable handling rule (quickbooks_handling_rules) that caused
+    // this row to be auto-excluded or auto-created+approved at ingest / apply
+    // time. NULL for rows classified by the legacy code-only classifier, rows
+    // that were manually classified, or rows that matched no rule at all.
+    // SET NULL on rule delete so audit rows are never orphaned.
+    matchedRuleId: text("matched_rule_id").references(
+      () => quickbooksHandlingRules.id,
       { onDelete: "set null" },
     ),
 

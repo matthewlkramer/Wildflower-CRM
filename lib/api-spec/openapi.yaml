@@ -4460,6 +4460,8 @@ components:
         splitTotal:                { type: string, nullable: true, description: "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split." }
         splitGiftNames:            { type: array, items: { type: string }, nullable: true, description: "Names of the gifts this staged payment is split across, for display. Null when not split." }
         giftAlreadyLinkedElsewhere: { type: boolean, description: "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate)." }
+        matchedRuleId:             { type: string, nullable: true, description: "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule." }
+        matchedRuleName:           { type: string, nullable: true, description: "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted." }
         createdAt:                 { type: string, format: date-time }
         updatedAt:                 { type: string, format: date-time }
     StagedPaymentList:

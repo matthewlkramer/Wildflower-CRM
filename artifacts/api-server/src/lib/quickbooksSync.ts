@@ -360,6 +360,7 @@ async function applyAutoCreateRule(
         organizationId: orgId,
         individualGiverPersonId: null,
         householdId: null,
+        matchedRuleId: rule.ruleId,
         updatedAt: new Date(),
       })
       .where(eq(stagedPayments.id, stagedId));
@@ -427,6 +428,7 @@ export async function applyRuleToPendingPayments(
           status: "excluded",
           exclusionReason: result.reason,
           classificationSource: "manual",
+          matchedRuleId: result.ruleId,
           updatedAt: new Date(),
         })
         .where(
@@ -541,6 +543,7 @@ async function applyAutoCreateRuleToRow(
         organizationId: orgId,
         individualGiverPersonId: null,
         householdId: null,
+        matchedRuleId: rule.ruleId,
         updatedAt: new Date(),
       })
       .where(eq(stagedPayments.id, stagedId));
@@ -660,6 +663,7 @@ export async function syncQuickbooks(
         status: excluded ? "excluded" : "pending",
         exclusionReason,
         classificationSource: "auto",
+        matchedRuleId: ruleHit?.ruleId ?? null,
         matchStatus,
         matchScore: scored && scored.method ? scored.score : null,
         matchMethod: scored ? scored.method : null,

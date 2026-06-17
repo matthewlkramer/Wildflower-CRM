@@ -8059,6 +8059,18 @@ export const ListStagedPaymentsResponse = zod.object({
         .describe(
           "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate).",
         ),
+      matchedRuleId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.",
+        ),
+      matchedRuleName: zod
+        .string()
+        .nullish()
+        .describe(
+          "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -8263,6 +8275,18 @@ export const ResolveStagedPaymentResponse = zod.object({
     .describe(
       "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate).",
     ),
+  matchedRuleId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.",
+    ),
+  matchedRuleName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -8414,6 +8438,18 @@ export const RejectStagedPaymentResponse = zod.object({
     .describe(
       "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate).",
     ),
+  matchedRuleId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.",
+    ),
+  matchedRuleName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -8557,6 +8593,18 @@ export const ReIncludeStagedPaymentResponse = zod.object({
     .optional()
     .describe(
       "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate).",
+    ),
+  matchedRuleId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.",
+    ),
+  matchedRuleName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -8730,6 +8778,18 @@ export const ExcludeStagedPaymentResponse = zod.object({
     .optional()
     .describe(
       "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate).",
+    ),
+  matchedRuleId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.",
+    ),
+  matchedRuleName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -9586,6 +9646,18 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
     .describe(
       "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate).",
     ),
+  matchedRuleId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.",
+    ),
+  matchedRuleName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -9729,6 +9801,18 @@ export const UnmatchStagedPaymentResponse = zod.object({
     .optional()
     .describe(
       "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate).",
+    ),
+  matchedRuleId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.",
+    ),
+  matchedRuleName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -9880,6 +9964,18 @@ export const RevertStagedPaymentResponse = zod.object({
     .optional()
     .describe(
       "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate).",
+    ),
+  matchedRuleId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.",
+    ),
+  matchedRuleName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
