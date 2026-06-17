@@ -503,6 +503,36 @@ async function findOrganizationCandidates(
     .map((r) => ({ id: r.id, name: r.name, issuesGrants: r.issuesGrants }));
 }
 
+// Resolve an organization by the sender's email domain (e.g.
+// "edforwarddc.org"). Critical for departure / "I've moved" auto-replies
+// where the subject person is NOT a matched CRM record (so there's no
+// role context to surface the org) but the email still names a successor
+// at the same org. The org's emailDomain column ties the sender domain to
+// an existing entity so the model can attach the new contact to it.
+async function findOrganizationsByDomain(
+  domain: string | null | undefined,
+): Promise<OrganizationCandidate[]> {
+  const term = domain?.trim().toLowerCase();
+  if (!term || !term.includes(".")) return [];
+  const rows = await db
+    .select({ id: organizations.id, name: organizations.name, issuesGrants: organizations.issuesGrants })
+    .from(organizations)
+    .where(ilike(organizations.emailDomain, term))
+    .limit(5);
+  return rows
+    .filter((r): r is { id: string; name: string; issuesGrants: boolean } => r.name !== null)
+    .map((r) => ({ id: r.id, name: r.name, issuesGrants: r.issuesGrants }));
+}
+
+// Extract the domain part of an email address ("a@b.org" -> "b.org").
+function emailDomainOf(email: string | null | undefined): string | null {
+  if (!email) return null;
+  const at = email.lastIndexOf("@");
+  if (at < 0) return null;
+  const domain = email.slice(at + 1).trim().toLowerCase();
+  return domain.includes(".") ? domain : null;
+}
+
 // Dedupe "create a new employer + attach role" actions against the CRM.
 // Both create_org_with_per and create_funder_with_per name an employer the
 // model believes is missing. Before we propose creating it, look the name
@@ -632,7 +662,9 @@ export function buildDefaultSystemPrompt(): string {
     "• Use the email message body (quoted at the bottom) as the source of truth for what the sender actually said. Don't generalize beyond it.",
     "• `reason` on each action should quote or paraphrase the specific phrase in the message that justifies the change. Keep it under 140 chars.",
     "• For LinkedIn job changes: typical pattern is one `deactivate_per` for the role they're leaving + one `create_per` for the new role at the new company when that company resolves to a funder/organization id in context — otherwise, for a new NON-FUNDER employer, use `create_org_with_per`. If the message names a replacement, add `create_person_with_per` for that successor.",
-    "• For auto-responder 'I've moved' messages: deactivate the old role if a new company is named, create the new role if it resolves to a known entity, add the new email if one is given (with setPrimary=true if they say it's their new primary).",
+    "• For auto-responder 'I've moved' / departure / 'I'm no longer here' messages: deactivate the old role if a new company is named, create the new role if it resolves to a known entity, add the new email if one is given (with setPrimary=true if they say it's their new primary).",
+    "• CRITICAL for departure/move auto-replies: these messages frequently name a SUCCESSOR / new point of contact at the SAME org (e.g. 'reach out to my colleague Jane Doe at jane@org.org'). When the message names such a replacement who is NOT already in the CRM, you MUST propose adding them with `create_person_with_per` — firstName + lastName, their emailAddress and externalTitleOrRole (title/role) when the message gives them — attached via organizationId to the org they belong to (the departing person's org). Resolve that organizationId from the CRM CONTEXT: the matched person's current/past role entity, the 'Matched organization', or the 'Organization candidates by name lookup' (the sender's domain is matched there). If the org is NOT in context at all, fall back to `create_org_with_per` (or `create_funder_with_per` for a clear grantmaker) naming the successor's employer the same way you would for any employer-not-in-context — never silently drop the successor. This add-successor action is IN ADDITION to any legitimate change to the departing person, not instead of it.",
+    "• A SUCCESSOR must be a DIFFERENT, specifically NAMED individual (a real first AND last name). The departing / subject person themselves is NOT a successor — never create_person_with_per for the very person whose departure the auto-reply announces. A generic role mailbox or unnamed group is NOT a successor either — e.g. info@/grants@/contact@ addresses, 'a member of the team', 'your regular point of contact', 'the SeaChange team'. If the auto-reply names no specific replacement individual — only a generic inbox, a team, or just the departing person — and the departing person's own record needs no change, there is nothing new: leave actions empty and suppress as before.",
     "• For signature_update proposals: the payload.parsed object holds {name,title,company,phone,email}. Cross-check EACH parsed field against the CRM CONTEXT and emit an action ONLY for fields that are genuinely NEW or changed. Never restate the status quo. Specifically:",
     "    – email: if it already appears under 'Emails on file' (case-insensitive), emit nothing for it.",
     "    – phone: compare digits only (ignore spaces/dashes/parens/country code) against 'Phones on file'. If a matching number is already on file, emit nothing. If it is genuinely new, emit `set_phone` with the person's id.",
@@ -644,7 +676,8 @@ export function buildDefaultSystemPrompt(): string {
     "• For grant opportunities: emit one `create_grant_opportunity` per distinct RFP / grant program named, with organizationId only if the grant-making organization appears in context. Use cold_lead unless the message indicates an active invitation (then warm_lead). Don't invent ask amounts — only set askAmount if the message states one. NEVER create a grant opportunity whose application deadline is already in the past relative to TODAY'S DATE shown below — skip it entirely.",
     "",
     "Suppression (separate from actions):",
-    "• Set `suppress.shouldSuppress=true` when the WHOLE proposal is noise the reviewer should never see. Concretely: grant WINNER / recipient announcements (celebrating awards already made, not a new opening); promo / newsletter / event-registration / sponsorship blasts; an RFP to hire a vendor/contractor/consultant (the sender is buying services, not offering grant funding); a grant whose application DEADLINE has already passed relative to TODAY'S DATE shown below; a plain out-of-office / vacation auto-reply where the person is still at their org (only a genuine departure or new-job move is worth surfacing); a signature_update whose parsed name clearly belongs to a different person than the highlighted CRM person; a signature_update where every parsed field (email / phone / title / company) already matches the CRM state so there is nothing new for the reviewer to do.",
+    "• Set `suppress.shouldSuppress=true` when the WHOLE proposal is noise the reviewer should never see. Concretely: grant WINNER / recipient announcements (celebrating awards already made, not a new opening); promo / newsletter / event-registration / sponsorship blasts; an RFP to hire a vendor/contractor/consultant (the sender is buying services, not offering grant funding); a grant whose application DEADLINE has already passed relative to TODAY'S DATE shown below; a plain out-of-office / vacation auto-reply where the person is still at their org AND names no new contact (only a genuine departure or new-job move is worth surfacing); a signature_update whose parsed name clearly belongs to a different person than the highlighted CRM person; a signature_update where every parsed field (email / phone / title / company) already matches the CRM state so there is nothing new for the reviewer to do.",
+    "• NEVER suppress a departure / 'I'm no longer here' / 'I've moved' auto-reply SOLELY because the subject person needs no change or isn't a matched CRM person. If the message names a successor / new point of contact who isn't already in the CRM (a new person, a new email, or a role change worth recording), the proposal MUST stay visible with the corresponding action(s) — emit them and leave shouldSuppress=false. Only suppress such a message when there is genuinely nothing new for a human: no new person named, no new email, no role change.",
     "• When you suppress, you should normally also return an empty actions array.",
     "• Be conservative: suppression hides the item from the reviewer entirely, so when in doubt, leave shouldSuppress=false and let the reviewer decide.",
     "",
@@ -810,6 +843,15 @@ export async function proposeActionsForProposal(proposalId: string): Promise<{
     for (const list of organizationCandidatesNested) {
       for (const c of list) dedupedOrgsById.set(c.id, c);
     }
+    // Also resolve the sender's email domain to an existing org. This is
+    // what lets a departure / "I've moved" auto-reply attach the named
+    // successor to the right org even when the subject person isn't a
+    // matched CRM record (no role context to surface the org otherwise).
+    const senderDomain =
+      emailDomainOf(proposal.subjectEmail) ??
+      emailDomainOf(typeof payload.fromEmail === "string" ? payload.fromEmail : null);
+    const domainOrgs = await findOrganizationsByDomain(senderDomain);
+    for (const c of domainOrgs) dedupedOrgsById.set(c.id, c);
     if (targetOrgId) dedupedOrgsById.delete(targetOrgId);
     const organizationCandidates = Array.from(dedupedOrgsById.values()).slice(0, 8);
 
