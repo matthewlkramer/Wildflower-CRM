@@ -44,6 +44,7 @@ import internalEmailDomainsRouter from "./internalEmailDomainsRoute";
 import topPrioritiesRouter from "./topPriorities";
 import quickbooksOauthRouter from "./quickbooksOauth";
 import quickbooksRouter from "./quickbooks";
+import quickbooksRulesRouter from "./quickbooksRules";
 
 const router: IRouter = Router();
 
@@ -102,5 +103,6 @@ router.use(internalEmailDomainsRouter);
 router.use(topPrioritiesRouter);
 router.use(quickbooksOauthRouter);
 router.use(quickbooksRouter);
+router.use(quickbooksRulesRouter);
 
 export default router;

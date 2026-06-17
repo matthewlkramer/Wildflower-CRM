@@ -535,3 +535,16 @@ export const stagedPaymentClassificationSourceEnum = pgEnum(
   "staged_payment_classification_source",
   ["auto", "manual"],
 );
+
+// Action an admin-editable QuickBooks handling rule performs when it matches an
+// incoming staged payment (see quickbooks_handling_rules):
+//   exclude             — mark the row excluded with one of the existing
+//                         staged_payment_exclusion_reason categories (noise).
+//   auto_create_approve — mint a gift attributed to the rule's target
+//                         organization, allocate it (target intended usage /
+//                         fundable project), match the staged row to that gift,
+//                         and land it in the auto (approved + auto-applied) queue.
+export const quickbooksRuleActionEnum = pgEnum("quickbooks_rule_action", [
+  "exclude",
+  "auto_create_approve",
+]);

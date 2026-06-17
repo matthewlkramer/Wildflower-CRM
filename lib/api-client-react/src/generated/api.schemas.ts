@@ -1888,6 +1888,113 @@ export interface QuickbooksReclassifySummary {
   included: number;
 }
 
+export type QuickbooksRuleAction =
+  (typeof QuickbooksRuleAction)[keyof typeof QuickbooksRuleAction];
+
+export const QuickbooksRuleAction = {
+  exclude: "exclude",
+  auto_create_approve: "auto_create_approve",
+} as const;
+
+export type QuickbooksRuleConditionField =
+  (typeof QuickbooksRuleConditionField)[keyof typeof QuickbooksRuleConditionField];
+
+export const QuickbooksRuleConditionField = {
+  payer_name: "payer_name",
+  line_item_name: "line_item_name",
+  line_account_name: "line_account_name",
+  memo_reference: "memo_reference",
+  line_description: "line_description",
+  qb_class: "qb_class",
+  any_text: "any_text",
+  amount: "amount",
+} as const;
+
+export type QuickbooksRuleConditionMode =
+  (typeof QuickbooksRuleConditionMode)[keyof typeof QuickbooksRuleConditionMode];
+
+export const QuickbooksRuleConditionMode = {
+  contains: "contains",
+  exact: "exact",
+  prefix: "prefix",
+  regex: "regex",
+  lte: "lte",
+} as const;
+
+export type QuickbooksRuleMatchLogic =
+  (typeof QuickbooksRuleMatchLogic)[keyof typeof QuickbooksRuleMatchLogic];
+
+export const QuickbooksRuleMatchLogic = {
+  any: "any",
+  all: "all",
+} as const;
+
+export interface QuickbooksRuleCondition {
+  field: QuickbooksRuleConditionField;
+  mode: QuickbooksRuleConditionMode;
+  /** Match value. For mode=lte this is a numeric threshold (as a string); for regex it is a JS regex source; otherwise a literal compared case-insensitively. */
+  value: string;
+}
+
+export interface QuickbooksHandlingRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** Ascending evaluation order; first matching enabled rule wins. */
+  priority: number;
+  action: QuickbooksRuleAction;
+  /** Required when action=exclude. */
+  exclusionReason?: StagedPaymentExclusionReason | null;
+  /** When true, the rule is suppressed on rows carrying a real donation line. */
+  donationGuard: boolean;
+  matchLogic: QuickbooksRuleMatchLogic;
+  conditions: QuickbooksRuleCondition[];
+  /** Donor org for the minted gift (action=auto_create_approve). */
+  targetOrganizationId?: string | null;
+  /** Allocation intended usage (action=auto_create_approve). */
+  targetIntendedUsage?: IntendedUsage | null;
+  /** Specific fundable project, only when targetIntendedUsage=project. */
+  targetFundableProjectId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateQuickbooksRuleBody {
+  /** @minLength 1 */
+  name: string;
+  /** Defaults to true. */
+  enabled?: boolean;
+  action: QuickbooksRuleAction;
+  exclusionReason?: StagedPaymentExclusionReason | null;
+  /** Defaults to false. */
+  donationGuard?: boolean;
+  /** Defaults to any. */
+  matchLogic?: QuickbooksRuleMatchLogic;
+  conditions: QuickbooksRuleCondition[];
+  targetOrganizationId?: string | null;
+  targetIntendedUsage?: IntendedUsage | null;
+  targetFundableProjectId?: string | null;
+}
+
+export interface UpdateQuickbooksRuleBody {
+  /** @minLength 1 */
+  name?: string;
+  enabled?: boolean;
+  action?: QuickbooksRuleAction;
+  exclusionReason?: StagedPaymentExclusionReason | null;
+  donationGuard?: boolean;
+  matchLogic?: QuickbooksRuleMatchLogic;
+  conditions?: QuickbooksRuleCondition[];
+  targetOrganizationId?: string | null;
+  targetIntendedUsage?: IntendedUsage | null;
+  targetFundableProjectId?: string | null;
+}
+
+export interface ReorderQuickbooksRulesBody {
+  /** All rule ids in the desired evaluation order. */
+  ids: string[];
+}
+
 export type StagedPaymentQbLinkedTxnItem = {
   txnId: string;
   txnType: string;
@@ -4311,6 +4418,10 @@ export type DisconnectGoogleOauth200 = {
 };
 
 export type DisconnectQuickbooksOauth200 = {
+  ok: boolean;
+};
+
+export type AdminDeleteQuickbooksRule200 = {
   ok: boolean;
 };
 

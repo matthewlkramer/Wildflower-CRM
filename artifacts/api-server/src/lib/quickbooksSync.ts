@@ -3,6 +3,10 @@ import {
   quickbooksConnections,
   stagedPayments,
   giftsAndPayments,
+  giftAllocations,
+  quickbooksHandlingRules,
+  organizations,
+  fundableProjects,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { newId } from "./helpers";
@@ -12,7 +16,15 @@ import { getValidQuickbooksAccessToken } from "./quickbooksTokenStore";
 import { pullIncomingPayments } from "./quickbooksClient";
 import { scoreStagedPayment, type ScoredMatch } from "./quickbooksMatch";
 import { classifyStagedPayment } from "./quickbooksExclusionRules";
+import {
+  evaluateRules,
+  type EngineRule,
+  type RuleCondition,
+  type RuleMatchLogic,
+  type RuleEvalResult,
+} from "./quickbooksRules";
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
+import { validateGiftInvariants } from "@workspace/api-zod";
 
 /** Postgres unique_violation — a concurrent staged row grabbed this gift first. */
 function isUniqueViolation(e: unknown): boolean {
@@ -215,6 +227,147 @@ export function startFullResync(): FullResyncState {
   return fullResyncState;
 }
 
+/**
+ * Load the admin-editable handling rules into the engine shape. Read once per
+ * sync run (not on a hot path) so edits take effect on the NEXT sync without a
+ * restart, and queued rows are never reclassified.
+ */
+async function loadHandlingRules(): Promise<EngineRule[]> {
+  const rows = await db.select().from(quickbooksHandlingRules);
+  return rows.map((r) => ({
+    id: r.id,
+    enabled: r.enabled,
+    priority: r.priority,
+    action: r.action,
+    exclusionReason: (r.exclusionReason ??
+      null) as EngineRule["exclusionReason"],
+    donationGuard: r.donationGuard,
+    matchLogic: (r.matchLogic === "all" ? "all" : "any") as RuleMatchLogic,
+    conditions: Array.isArray(r.conditions)
+      ? (r.conditions as RuleCondition[])
+      : [],
+    targetOrganizationId: r.targetOrganizationId ?? null,
+    targetIntendedUsage: r.targetIntendedUsage ?? null,
+    targetFundableProjectId: r.targetFundableProjectId ?? null,
+  }));
+}
+
+/**
+ * Apply an `auto_create_approve` rule to a freshly-staged (pending) row: mint a
+ * gift attributed to the rule's target organization, allocate it (target
+ * intended usage / fundable project), match the staged row to that gift, and land
+ * it in the auto/approved queue (auto_applied = true, so it stays REVERTIBLE).
+ *
+ * FAIL-SAFE: returns false WITHOUT touching the row when the rule can't be
+ * applied cleanly (no/archived donor org; usage='project' with a missing/archived
+ * project; non-positive amount; Donor-XOR violation). The caller then falls back
+ * to normal scoring so the payment lands in the review queue rather than being
+ * silently dropped or mis-minted.
+ */
+async function applyAutoCreateRule(
+  stagedId: string,
+  source: Awaited<ReturnType<typeof pullIncomingPayments>>[number],
+  rule: Extract<RuleEvalResult, { action: "auto_create_approve" }>,
+): Promise<boolean> {
+  const orgId = rule.targetOrganizationId;
+  if (!orgId) return false;
+
+  const org = await db
+    .select({ id: organizations.id, archivedAt: organizations.archivedAt })
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+    .then((r) => r[0]);
+  if (!org || org.archivedAt) return false;
+
+  if (rule.targetIntendedUsage === "project") {
+    if (!rule.targetFundableProjectId) return false;
+    const proj = await db
+      .select({
+        id: fundableProjects.id,
+        archivedAt: fundableProjects.archivedAt,
+      })
+      .from(fundableProjects)
+      .where(eq(fundableProjects.id, rule.targetFundableProjectId))
+      .then((r) => r[0]);
+    if (!proj || proj.archivedAt) return false;
+  }
+
+  // Donor XOR — the minted gift is attributed solely to the rule's target org.
+  if (
+    validateGiftInvariants({
+      organizationId: orgId,
+      individualGiverPersonId: null,
+      householdId: null,
+    }).length > 0
+  ) {
+    return false;
+  }
+
+  const giftId = newId();
+  let applied = false;
+  await db.transaction(async (tx) => {
+    const locked = await tx
+      .select()
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, stagedId))
+      .for("update")
+      .then((r) => r[0]);
+    if (!locked || locked.status !== "pending") return;
+
+    const amt = locked.amount == null ? NaN : Number(locked.amount);
+    if (Number.isNaN(amt) || amt <= 0) return;
+
+    await tx.insert(giftsAndPayments).values(
+      buildGiftValuesFromStaged(
+        giftId,
+        {
+          qbEntityType: source.qbEntityType,
+          qbEntityId: source.qbEntityId,
+          amount: locked.amount,
+          dateReceived: locked.dateReceived,
+          payerName: locked.payerName,
+          rawReference: locked.rawReference,
+          organizationId: orgId,
+          individualGiverPersonId: null,
+          householdId: null,
+          matchedPaymentIntermediaryId: locked.matchedPaymentIntermediaryId,
+        },
+        // Auto-created at ingest — no acting user.
+        null,
+      ),
+    );
+
+    await tx.insert(giftAllocations).values({
+      id: newId(),
+      giftId,
+      subAmount: locked.amount,
+      intendedUsage: rule.targetIntendedUsage as
+        (typeof giftAllocations.$inferInsert)["intendedUsage"],
+      fundableProjectId:
+        rule.targetIntendedUsage === "project"
+          ? rule.targetFundableProjectId
+          : null,
+    });
+
+    await tx
+      .update(stagedPayments)
+      .set({
+        status: "approved",
+        matchStatus: "matched",
+        createdGiftId: giftId,
+        autoApplied: true,
+        // Pin the staged row's donor to the gift's donor (the target org).
+        organizationId: orgId,
+        individualGiverPersonId: null,
+        householdId: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(stagedPayments.id, stagedId));
+    applied = true;
+  });
+  return applied;
+}
+
 export async function syncQuickbooks(
   opts: { fullResync?: boolean } = {},
 ): Promise<QuickbooksSyncSummary> {
@@ -259,6 +412,10 @@ export async function syncQuickbooks(
       ? watermarkFloor.getTime()
       : null;
 
+    // Admin-editable handling rules drive the INGEST path. Loaded once per run so
+    // edits apply to NEW incoming payments only (already-queued rows untouched).
+    const handlingRules = await loadHandlingRules();
+
     for (const p of pulled) {
       if (p.lastUpdatedTime) {
         const t = new Date(p.lastUpdatedTime).getTime();
@@ -267,8 +424,9 @@ export async function syncQuickbooks(
         }
       }
 
-      // Classify first — excluded noise skips the (costlier) scorer.
-      const cls = classifyStagedPayment({
+      // Classify first via the admin-editable rules. `exclude` → noise (skips the
+      // costlier scorer); `auto_create_approve` → mint+approve after staging.
+      const ruleHit = evaluateRules(handlingRules, {
         amount: p.amount,
         payerName: p.payerName,
         lineItemNames: p.lineItemNames,
@@ -277,8 +435,10 @@ export async function syncQuickbooks(
         lineDescription: p.lineDescription,
         lineClasses: p.lineClasses,
       });
+      const excluded = ruleHit?.action === "exclude";
+      const exclusionReason = excluded ? ruleHit.reason : null;
 
-      const scored: ScoredMatch | null = cls.excluded
+      const scored: ScoredMatch | null = excluded
         ? null
         : await scoreStagedPayment({
             payerName: p.payerName,
@@ -289,7 +449,7 @@ export async function syncQuickbooks(
             dateReceived: p.dateReceived,
           });
 
-      const matchStatus = cls.excluded
+      const matchStatus = excluded
         ? "unmatched"
         : scored && scored.tier === "high"
           ? "matched"
@@ -316,8 +476,8 @@ export async function syncQuickbooks(
         payerEmail: p.payerEmail,
         rawReference: p.rawReference,
         lineDescription: p.lineDescription,
-        status: cls.excluded ? "excluded" : "pending",
-        exclusionReason: cls.reason,
+        status: excluded ? "excluded" : "pending",
+        exclusionReason,
         classificationSource: "auto",
         matchStatus,
         matchScore: scored && scored.method ? scored.score : null,
@@ -352,6 +512,17 @@ export async function syncQuickbooks(
       if (!newRow?.isInsert) continue;
       staged += 1;
       if (scored && scored.method && scored.tier !== "none") matched += 1;
+
+      // ── auto_create_approve rule: mint + allocate + approve (reversible). ──
+      // FAIL-SAFE: if the rule can't apply cleanly, fall through to normal
+      // high-confidence auto-apply so the payment still lands for review.
+      if (ruleHit?.action === "auto_create_approve") {
+        const did = await applyAutoCreateRule(newRow.id, p, ruleHit);
+        if (did) {
+          autoApplied += 1;
+          continue;
+        }
+      }
 
       // ── Auto-apply high-confidence matches (reversible). ──
       if (scored && scored.tier === "high") {

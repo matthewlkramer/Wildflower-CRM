@@ -44,6 +44,7 @@ export * from "./personSuppressionWindows";
 export * from "./calendarMeetingFilters";
 export * from "./internalEmailDomains";
 export * from "./quickbooksConnections";
+export * from "./quickbooksHandlingRules";
 export * from "./stagedPayments";
 export * from "./stagedPaymentSplits";
 export * from "./flodeskSyncState";

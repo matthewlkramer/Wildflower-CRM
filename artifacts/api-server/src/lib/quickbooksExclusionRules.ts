@@ -377,7 +377,7 @@ function anyIncludes(
 }
 
 /** True if a row carries a real donation line (donation-first guard). */
-function hasDonationLine(input: ClassifierInput): boolean {
+export function hasDonationLine(input: ClassifierInput): boolean {
   return (
     anyAccountCodeStartsWith(
       input.lineAccountNames,
@@ -470,7 +470,7 @@ function isEarnedIncomeLine(input: ClassifierInput): boolean {
  * than a specific line account: the QuickBooks Class, payer name, item / account
  * names, line description, and memo.
  */
-function allTextFields(input: ClassifierInput): string[] {
+export function allTextFields(input: ClassifierInput): string[] {
   return [
     input.payerName,
     input.rawReference,

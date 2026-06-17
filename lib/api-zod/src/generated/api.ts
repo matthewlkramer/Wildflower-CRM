@@ -7458,6 +7458,398 @@ export const ReclassifyStagedPaymentsResponse = zod.object({
     .describe("Rows newly restored to pending by this run."),
 });
 
+/**
+ * @summary List the QuickBooks auto-handling rules in evaluation order (admin only).
+ */
+export const AdminListQuickbooksRulesResponseItem = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  enabled: zod.boolean(),
+  priority: zod
+    .number()
+    .describe("Ascending evaluation order; first matching enabled rule wins."),
+  action: zod.enum(["exclude", "auto_create_approve"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish()
+    .describe("Required when action=exclude."),
+  donationGuard: zod
+    .boolean()
+    .describe(
+      "When true, the rule is suppressed on rows carrying a real donation line.",
+    ),
+  matchLogic: zod.enum(["any", "all"]),
+  conditions: zod.array(
+    zod.object({
+      field: zod.enum([
+        "payer_name",
+        "line_item_name",
+        "line_account_name",
+        "memo_reference",
+        "line_description",
+        "qb_class",
+        "any_text",
+        "amount",
+      ]),
+      mode: zod.enum(["contains", "exact", "prefix", "regex", "lte"]),
+      value: zod
+        .string()
+        .describe(
+          "Match value. For mode=lte this is a numeric threshold (as a string); for regex it is a JS regex source; otherwise a literal compared case-insensitively.",
+        ),
+    }),
+  ),
+  targetOrganizationId: zod
+    .string()
+    .nullish()
+    .describe("Donor org for the minted gift (action=auto_create_approve)."),
+  targetIntendedUsage: zod
+    .enum([
+      "gen_ops",
+      "growth",
+      "school_startup",
+      "teacher_training",
+      "project",
+    ])
+    .nullish()
+    .describe("Allocation intended usage (action=auto_create_approve)."),
+  targetFundableProjectId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Specific fundable project, only when targetIntendedUsage=project.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+export const AdminListQuickbooksRulesResponse = zod.array(
+  AdminListQuickbooksRulesResponseItem,
+);
+
+/**
+ * @summary Create a QuickBooks auto-handling rule (admin only). Applies to NEW incoming payments only.
+ */
+
+export const AdminCreateQuickbooksRuleBody = zod.object({
+  name: zod.string().min(1),
+  enabled: zod.boolean().optional().describe("Defaults to true."),
+  action: zod.enum(["exclude", "auto_create_approve"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish(),
+  donationGuard: zod.boolean().optional().describe("Defaults to false."),
+  matchLogic: zod.enum(["any", "all"]).optional().describe("Defaults to any."),
+  conditions: zod.array(
+    zod.object({
+      field: zod.enum([
+        "payer_name",
+        "line_item_name",
+        "line_account_name",
+        "memo_reference",
+        "line_description",
+        "qb_class",
+        "any_text",
+        "amount",
+      ]),
+      mode: zod.enum(["contains", "exact", "prefix", "regex", "lte"]),
+      value: zod
+        .string()
+        .describe(
+          "Match value. For mode=lte this is a numeric threshold (as a string); for regex it is a JS regex source; otherwise a literal compared case-insensitively.",
+        ),
+    }),
+  ),
+  targetOrganizationId: zod.string().nullish(),
+  targetIntendedUsage: zod
+    .enum([
+      "gen_ops",
+      "growth",
+      "school_startup",
+      "teacher_training",
+      "project",
+    ])
+    .nullish(),
+  targetFundableProjectId: zod.string().nullish(),
+});
+
+/**
+ * @summary Set the evaluation order by supplying rule ids in the desired priority order (admin only).
+ */
+export const AdminReorderQuickbooksRulesBody = zod.object({
+  ids: zod
+    .array(zod.string())
+    .describe("All rule ids in the desired evaluation order."),
+});
+
+export const AdminReorderQuickbooksRulesResponseItem = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  enabled: zod.boolean(),
+  priority: zod
+    .number()
+    .describe("Ascending evaluation order; first matching enabled rule wins."),
+  action: zod.enum(["exclude", "auto_create_approve"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish()
+    .describe("Required when action=exclude."),
+  donationGuard: zod
+    .boolean()
+    .describe(
+      "When true, the rule is suppressed on rows carrying a real donation line.",
+    ),
+  matchLogic: zod.enum(["any", "all"]),
+  conditions: zod.array(
+    zod.object({
+      field: zod.enum([
+        "payer_name",
+        "line_item_name",
+        "line_account_name",
+        "memo_reference",
+        "line_description",
+        "qb_class",
+        "any_text",
+        "amount",
+      ]),
+      mode: zod.enum(["contains", "exact", "prefix", "regex", "lte"]),
+      value: zod
+        .string()
+        .describe(
+          "Match value. For mode=lte this is a numeric threshold (as a string); for regex it is a JS regex source; otherwise a literal compared case-insensitively.",
+        ),
+    }),
+  ),
+  targetOrganizationId: zod
+    .string()
+    .nullish()
+    .describe("Donor org for the minted gift (action=auto_create_approve)."),
+  targetIntendedUsage: zod
+    .enum([
+      "gen_ops",
+      "growth",
+      "school_startup",
+      "teacher_training",
+      "project",
+    ])
+    .nullish()
+    .describe("Allocation intended usage (action=auto_create_approve)."),
+  targetFundableProjectId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Specific fundable project, only when targetIntendedUsage=project.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+export const AdminReorderQuickbooksRulesResponse = zod.array(
+  AdminReorderQuickbooksRulesResponseItem,
+);
+
+/**
+ * @summary Update a QuickBooks auto-handling rule (admin only). Applies to NEW incoming payments only.
+ */
+export const AdminUpdateQuickbooksRuleParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AdminUpdateQuickbooksRuleBody = zod.object({
+  name: zod.string().min(1).optional(),
+  enabled: zod.boolean().optional(),
+  action: zod.enum(["exclude", "auto_create_approve"]).optional(),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish(),
+  donationGuard: zod.boolean().optional(),
+  matchLogic: zod.enum(["any", "all"]).optional(),
+  conditions: zod
+    .array(
+      zod.object({
+        field: zod.enum([
+          "payer_name",
+          "line_item_name",
+          "line_account_name",
+          "memo_reference",
+          "line_description",
+          "qb_class",
+          "any_text",
+          "amount",
+        ]),
+        mode: zod.enum(["contains", "exact", "prefix", "regex", "lte"]),
+        value: zod
+          .string()
+          .describe(
+            "Match value. For mode=lte this is a numeric threshold (as a string); for regex it is a JS regex source; otherwise a literal compared case-insensitively.",
+          ),
+      }),
+    )
+    .optional(),
+  targetOrganizationId: zod.string().nullish(),
+  targetIntendedUsage: zod
+    .enum([
+      "gen_ops",
+      "growth",
+      "school_startup",
+      "teacher_training",
+      "project",
+    ])
+    .nullish(),
+  targetFundableProjectId: zod.string().nullish(),
+});
+
+export const AdminUpdateQuickbooksRuleResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  enabled: zod.boolean(),
+  priority: zod
+    .number()
+    .describe("Ascending evaluation order; first matching enabled rule wins."),
+  action: zod.enum(["exclude", "auto_create_approve"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish()
+    .describe("Required when action=exclude."),
+  donationGuard: zod
+    .boolean()
+    .describe(
+      "When true, the rule is suppressed on rows carrying a real donation line.",
+    ),
+  matchLogic: zod.enum(["any", "all"]),
+  conditions: zod.array(
+    zod.object({
+      field: zod.enum([
+        "payer_name",
+        "line_item_name",
+        "line_account_name",
+        "memo_reference",
+        "line_description",
+        "qb_class",
+        "any_text",
+        "amount",
+      ]),
+      mode: zod.enum(["contains", "exact", "prefix", "regex", "lte"]),
+      value: zod
+        .string()
+        .describe(
+          "Match value. For mode=lte this is a numeric threshold (as a string); for regex it is a JS regex source; otherwise a literal compared case-insensitively.",
+        ),
+    }),
+  ),
+  targetOrganizationId: zod
+    .string()
+    .nullish()
+    .describe("Donor org for the minted gift (action=auto_create_approve)."),
+  targetIntendedUsage: zod
+    .enum([
+      "gen_ops",
+      "growth",
+      "school_startup",
+      "teacher_training",
+      "project",
+    ])
+    .nullish()
+    .describe("Allocation intended usage (action=auto_create_approve)."),
+  targetFundableProjectId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Specific fundable project, only when targetIntendedUsage=project.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * @summary Delete a QuickBooks auto-handling rule (admin only).
+ */
+export const AdminDeleteQuickbooksRuleParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AdminDeleteQuickbooksRuleResponse = zod.object({
+  ok: zod.boolean(),
+});
+
 export const listStagedPaymentsQueryLimitDefault = 50;
 export const listStagedPaymentsQueryLimitMax = 10000;
 

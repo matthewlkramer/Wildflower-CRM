@@ -22,6 +22,7 @@ import type {
   AcceptTaskProposalResult,
   Address,
   AddressList,
+  AdminDeleteQuickbooksRule200,
   AdminDiscardEmailIntelPrompt200,
   AdminGoogleSyncList,
   AdminListEmailIntelFeedbackParams,
@@ -61,6 +62,7 @@ import type {
   CreatePersonSuppressionWindowBody,
   CreatePhoneNumberBody,
   CreatePledgeAllocationBody,
+  CreateQuickbooksRuleBody,
   CreateRegionBody,
   CreateSavedViewBody,
   CreateTaskBody,
@@ -188,6 +190,7 @@ import type {
   PledgeAllocationList,
   ProjectionsByFyEntity,
   PromoteActionItemBody,
+  QuickbooksHandlingRule,
   QuickbooksOauthStatus,
   QuickbooksReclassifySummary,
   QuickbooksRematchSummary,
@@ -198,6 +201,7 @@ import type {
   Region,
   RegionList,
   RejectEmailProposalBody,
+  ReorderQuickbooksRulesBody,
   RequestUploadUrl200,
   RequestUploadUrlBody,
   ResolveStagedPaymentBody,
@@ -252,6 +256,7 @@ import type {
   UpdatePersonSuppressionWindowBody,
   UpdatePhoneNumberBody,
   UpdatePledgeAllocationBody,
+  UpdateQuickbooksRuleBody,
   UpdateRegionBody,
   UpdateSavedViewBody,
   UpdateSchoolBody,
@@ -13326,6 +13331,448 @@ export const useReclassifyStagedPayments = <
   TContext
 > => {
   return useMutation(getReclassifyStagedPaymentsMutationOptions(options));
+};
+
+/**
+ * @summary List the QuickBooks auto-handling rules in evaluation order (admin only).
+ */
+export const getAdminListQuickbooksRulesUrl = () => {
+  return `/api/admin/quickbooks-rules`;
+};
+
+export const adminListQuickbooksRules = async (
+  options?: RequestInit,
+): Promise<QuickbooksHandlingRule[]> => {
+  return customFetch<QuickbooksHandlingRule[]>(
+    getAdminListQuickbooksRulesUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getAdminListQuickbooksRulesQueryKey = () => {
+  return [`/api/admin/quickbooks-rules`] as const;
+};
+
+export const getAdminListQuickbooksRulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminListQuickbooksRules>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminListQuickbooksRules>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminListQuickbooksRulesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminListQuickbooksRules>>
+  > = ({ signal }) => adminListQuickbooksRules({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminListQuickbooksRules>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminListQuickbooksRulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminListQuickbooksRules>>
+>;
+export type AdminListQuickbooksRulesQueryError = ErrorType<void>;
+
+/**
+ * @summary List the QuickBooks auto-handling rules in evaluation order (admin only).
+ */
+
+export function useAdminListQuickbooksRules<
+  TData = Awaited<ReturnType<typeof adminListQuickbooksRules>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminListQuickbooksRules>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminListQuickbooksRulesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a QuickBooks auto-handling rule (admin only). Applies to NEW incoming payments only.
+ */
+export const getAdminCreateQuickbooksRuleUrl = () => {
+  return `/api/admin/quickbooks-rules`;
+};
+
+export const adminCreateQuickbooksRule = async (
+  createQuickbooksRuleBody: CreateQuickbooksRuleBody,
+  options?: RequestInit,
+): Promise<QuickbooksHandlingRule> => {
+  return customFetch<QuickbooksHandlingRule>(
+    getAdminCreateQuickbooksRuleUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createQuickbooksRuleBody),
+    },
+  );
+};
+
+export const getAdminCreateQuickbooksRuleMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminCreateQuickbooksRule>>,
+    TError,
+    { data: BodyType<CreateQuickbooksRuleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminCreateQuickbooksRule>>,
+  TError,
+  { data: BodyType<CreateQuickbooksRuleBody> },
+  TContext
+> => {
+  const mutationKey = ["adminCreateQuickbooksRule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminCreateQuickbooksRule>>,
+    { data: BodyType<CreateQuickbooksRuleBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return adminCreateQuickbooksRule(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminCreateQuickbooksRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminCreateQuickbooksRule>>
+>;
+export type AdminCreateQuickbooksRuleMutationBody =
+  BodyType<CreateQuickbooksRuleBody>;
+export type AdminCreateQuickbooksRuleMutationError =
+  ErrorType<BadRequestResponse | void>;
+
+/**
+ * @summary Create a QuickBooks auto-handling rule (admin only). Applies to NEW incoming payments only.
+ */
+export const useAdminCreateQuickbooksRule = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminCreateQuickbooksRule>>,
+    TError,
+    { data: BodyType<CreateQuickbooksRuleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminCreateQuickbooksRule>>,
+  TError,
+  { data: BodyType<CreateQuickbooksRuleBody> },
+  TContext
+> => {
+  return useMutation(getAdminCreateQuickbooksRuleMutationOptions(options));
+};
+
+/**
+ * @summary Set the evaluation order by supplying rule ids in the desired priority order (admin only).
+ */
+export const getAdminReorderQuickbooksRulesUrl = () => {
+  return `/api/admin/quickbooks-rules/reorder`;
+};
+
+export const adminReorderQuickbooksRules = async (
+  reorderQuickbooksRulesBody: ReorderQuickbooksRulesBody,
+  options?: RequestInit,
+): Promise<QuickbooksHandlingRule[]> => {
+  return customFetch<QuickbooksHandlingRule[]>(
+    getAdminReorderQuickbooksRulesUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(reorderQuickbooksRulesBody),
+    },
+  );
+};
+
+export const getAdminReorderQuickbooksRulesMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminReorderQuickbooksRules>>,
+    TError,
+    { data: BodyType<ReorderQuickbooksRulesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminReorderQuickbooksRules>>,
+  TError,
+  { data: BodyType<ReorderQuickbooksRulesBody> },
+  TContext
+> => {
+  const mutationKey = ["adminReorderQuickbooksRules"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminReorderQuickbooksRules>>,
+    { data: BodyType<ReorderQuickbooksRulesBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return adminReorderQuickbooksRules(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminReorderQuickbooksRulesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminReorderQuickbooksRules>>
+>;
+export type AdminReorderQuickbooksRulesMutationBody =
+  BodyType<ReorderQuickbooksRulesBody>;
+export type AdminReorderQuickbooksRulesMutationError =
+  ErrorType<BadRequestResponse | void>;
+
+/**
+ * @summary Set the evaluation order by supplying rule ids in the desired priority order (admin only).
+ */
+export const useAdminReorderQuickbooksRules = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminReorderQuickbooksRules>>,
+    TError,
+    { data: BodyType<ReorderQuickbooksRulesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminReorderQuickbooksRules>>,
+  TError,
+  { data: BodyType<ReorderQuickbooksRulesBody> },
+  TContext
+> => {
+  return useMutation(getAdminReorderQuickbooksRulesMutationOptions(options));
+};
+
+/**
+ * @summary Update a QuickBooks auto-handling rule (admin only). Applies to NEW incoming payments only.
+ */
+export const getAdminUpdateQuickbooksRuleUrl = (id: string) => {
+  return `/api/admin/quickbooks-rules/${id}`;
+};
+
+export const adminUpdateQuickbooksRule = async (
+  id: string,
+  updateQuickbooksRuleBody: UpdateQuickbooksRuleBody,
+  options?: RequestInit,
+): Promise<QuickbooksHandlingRule> => {
+  return customFetch<QuickbooksHandlingRule>(
+    getAdminUpdateQuickbooksRuleUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateQuickbooksRuleBody),
+    },
+  );
+};
+
+export const getAdminUpdateQuickbooksRuleMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminUpdateQuickbooksRule>>,
+    TError,
+    { id: string; data: BodyType<UpdateQuickbooksRuleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminUpdateQuickbooksRule>>,
+  TError,
+  { id: string; data: BodyType<UpdateQuickbooksRuleBody> },
+  TContext
+> => {
+  const mutationKey = ["adminUpdateQuickbooksRule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminUpdateQuickbooksRule>>,
+    { id: string; data: BodyType<UpdateQuickbooksRuleBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return adminUpdateQuickbooksRule(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminUpdateQuickbooksRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminUpdateQuickbooksRule>>
+>;
+export type AdminUpdateQuickbooksRuleMutationBody =
+  BodyType<UpdateQuickbooksRuleBody>;
+export type AdminUpdateQuickbooksRuleMutationError = ErrorType<
+  BadRequestResponse | void | NotFoundResponse
+>;
+
+/**
+ * @summary Update a QuickBooks auto-handling rule (admin only). Applies to NEW incoming payments only.
+ */
+export const useAdminUpdateQuickbooksRule = <
+  TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminUpdateQuickbooksRule>>,
+    TError,
+    { id: string; data: BodyType<UpdateQuickbooksRuleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminUpdateQuickbooksRule>>,
+  TError,
+  { id: string; data: BodyType<UpdateQuickbooksRuleBody> },
+  TContext
+> => {
+  return useMutation(getAdminUpdateQuickbooksRuleMutationOptions(options));
+};
+
+/**
+ * @summary Delete a QuickBooks auto-handling rule (admin only).
+ */
+export const getAdminDeleteQuickbooksRuleUrl = (id: string) => {
+  return `/api/admin/quickbooks-rules/${id}`;
+};
+
+export const adminDeleteQuickbooksRule = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AdminDeleteQuickbooksRule200> => {
+  return customFetch<AdminDeleteQuickbooksRule200>(
+    getAdminDeleteQuickbooksRuleUrl(id),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getAdminDeleteQuickbooksRuleMutationOptions = <
+  TError = ErrorType<void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminDeleteQuickbooksRule>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminDeleteQuickbooksRule>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["adminDeleteQuickbooksRule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminDeleteQuickbooksRule>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return adminDeleteQuickbooksRule(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminDeleteQuickbooksRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminDeleteQuickbooksRule>>
+>;
+
+export type AdminDeleteQuickbooksRuleMutationError =
+  ErrorType<void | NotFoundResponse>;
+
+/**
+ * @summary Delete a QuickBooks auto-handling rule (admin only).
+ */
+export const useAdminDeleteQuickbooksRule = <
+  TError = ErrorType<void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminDeleteQuickbooksRule>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminDeleteQuickbooksRule>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getAdminDeleteQuickbooksRuleMutationOptions(options));
 };
 
 export const getListStagedPaymentsUrl = (params?: ListStagedPaymentsParams) => {

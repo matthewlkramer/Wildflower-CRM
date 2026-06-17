@@ -1855,6 +1855,56 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "502": { description: "QuickBooks reclassify failed" }
 
+  # ─── QuickBooks handling rules (admin-editable ingest classifier) ─────────
+  /admin/quickbooks-rules:
+    get:
+      operationId: adminListQuickbooksRules
+      tags: [admin]
+      summary: List the QuickBooks auto-handling rules in evaluation order (admin only).
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/QuickbooksHandlingRule" } } } } }
+        "403": { description: Admin required }
+    post:
+      operationId: adminCreateQuickbooksRule
+      tags: [admin]
+      summary: Create a QuickBooks auto-handling rule (admin only). Applies to NEW incoming payments only.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateQuickbooksRuleBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/QuickbooksHandlingRule" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Admin required }
+  /admin/quickbooks-rules/reorder:
+    post:
+      operationId: adminReorderQuickbooksRules
+      tags: [admin]
+      summary: Set the evaluation order by supplying rule ids in the desired priority order (admin only).
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ReorderQuickbooksRulesBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/QuickbooksHandlingRule" } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Admin required }
+  /admin/quickbooks-rules/{id}:
+    patch:
+      operationId: adminUpdateQuickbooksRule
+      tags: [admin]
+      summary: Update a QuickBooks auto-handling rule (admin only). Applies to NEW incoming payments only.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateQuickbooksRuleBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickbooksHandlingRule" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Admin required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: adminDeleteQuickbooksRule
+      tags: [admin]
+      summary: Delete a QuickBooks auto-handling rule (admin only).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, required: [ok], properties: { ok: { type: boolean } } } } } }
+        "403": { description: Admin required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   # ─── Staged payments (QuickBooks review queue) ────────────────────────────
   /staged-payments:
     get:
@@ -4148,6 +4198,67 @@ components:
         scanned:  { type: integer, description: "Auto-classified pending/excluded rows examined." }
         excluded: { type: integer, description: "Rows newly moved to excluded by this run." }
         included: { type: integer, description: "Rows newly restored to pending by this run." }
+    QuickbooksRuleAction: { type: string, enum: [exclude, auto_create_approve] }
+    QuickbooksRuleConditionField: { type: string, enum: [payer_name, line_item_name, line_account_name, memo_reference, line_description, qb_class, any_text, amount] }
+    QuickbooksRuleConditionMode: { type: string, enum: [contains, exact, prefix, regex, lte] }
+    QuickbooksRuleMatchLogic: { type: string, enum: [any, all] }
+    QuickbooksRuleCondition:
+      type: object
+      required: [field, mode, value]
+      properties:
+        field: { $ref: "#/components/schemas/QuickbooksRuleConditionField" }
+        mode:  { $ref: "#/components/schemas/QuickbooksRuleConditionMode" }
+        value: { type: string, description: "Match value. For mode=lte this is a numeric threshold (as a string); for regex it is a JS regex source; otherwise a literal compared case-insensitively." }
+    QuickbooksHandlingRule:
+      type: object
+      required: [id, name, enabled, priority, action, donationGuard, matchLogic, conditions, createdAt, updatedAt]
+      properties:
+        id:                       { type: string }
+        name:                     { type: string }
+        enabled:                  { type: boolean }
+        priority:                 { type: integer, description: "Ascending evaluation order; first matching enabled rule wins." }
+        action:                   { $ref: "#/components/schemas/QuickbooksRuleAction" }
+        exclusionReason:          { allOf: [ { $ref: "#/components/schemas/StagedPaymentExclusionReason" } ], nullable: true, description: "Required when action=exclude." }
+        donationGuard:            { type: boolean, description: "When true, the rule is suppressed on rows carrying a real donation line." }
+        matchLogic:               { $ref: "#/components/schemas/QuickbooksRuleMatchLogic" }
+        conditions:               { type: array, items: { $ref: "#/components/schemas/QuickbooksRuleCondition" } }
+        targetOrganizationId:     { type: string, nullable: true, description: "Donor org for the minted gift (action=auto_create_approve)." }
+        targetIntendedUsage:      { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true, description: "Allocation intended usage (action=auto_create_approve)." }
+        targetFundableProjectId:  { type: string, nullable: true, description: "Specific fundable project, only when targetIntendedUsage=project." }
+        createdAt:                { type: string, format: date-time }
+        updatedAt:                { type: string, format: date-time }
+    CreateQuickbooksRuleBody:
+      type: object
+      required: [name, action, conditions]
+      properties:
+        name:                     { type: string, minLength: 1 }
+        enabled:                  { type: boolean, description: "Defaults to true." }
+        action:                   { $ref: "#/components/schemas/QuickbooksRuleAction" }
+        exclusionReason:          { allOf: [ { $ref: "#/components/schemas/StagedPaymentExclusionReason" } ], nullable: true }
+        donationGuard:            { type: boolean, description: "Defaults to false." }
+        matchLogic:               { allOf: [ { $ref: "#/components/schemas/QuickbooksRuleMatchLogic" } ], description: "Defaults to any." }
+        conditions:               { type: array, items: { $ref: "#/components/schemas/QuickbooksRuleCondition" } }
+        targetOrganizationId:     { type: string, nullable: true }
+        targetIntendedUsage:      { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
+        targetFundableProjectId:  { type: string, nullable: true }
+    UpdateQuickbooksRuleBody:
+      type: object
+      properties:
+        name:                     { type: string, minLength: 1 }
+        enabled:                  { type: boolean }
+        action:                   { $ref: "#/components/schemas/QuickbooksRuleAction" }
+        exclusionReason:          { allOf: [ { $ref: "#/components/schemas/StagedPaymentExclusionReason" } ], nullable: true }
+        donationGuard:            { type: boolean }
+        matchLogic:               { $ref: "#/components/schemas/QuickbooksRuleMatchLogic" }
+        conditions:               { type: array, items: { $ref: "#/components/schemas/QuickbooksRuleCondition" } }
+        targetOrganizationId:     { type: string, nullable: true }
+        targetIntendedUsage:      { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
+        targetFundableProjectId:  { type: string, nullable: true }
+    ReorderQuickbooksRulesBody:
+      type: object
+      required: [ids]
+      properties:
+        ids: { type: array, items: { type: string }, description: "All rule ids in the desired evaluation order." }
     StagedPayment:
       type: object
       required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, classificationSource, createdAt, updatedAt]

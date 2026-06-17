@@ -21,6 +21,12 @@ import {
   useAdminRevertEmailIntelPrompt,
   useAdminDiscardEmailIntelPrompt,
   useAdminListEmailIntelFeedback,
+  useAdminListQuickbooksRules,
+  useAdminCreateQuickbooksRule,
+  useAdminUpdateQuickbooksRule,
+  useAdminReorderQuickbooksRules,
+  useAdminDeleteQuickbooksRule,
+  useListFundableProjects,
   getListEntitiesQueryKey,
   getListFiscalYearEntityGoalsQueryKey,
   getGetDashboardSummaryQueryKey,
@@ -29,6 +35,8 @@ import {
   getGetInternalEmailDomainsQueryKey,
   getAdminListEmailIntelPromptsQueryKey,
   getAdminListEmailIntelFeedbackQueryKey,
+  getAdminListQuickbooksRulesQueryKey,
+  getListFundableProjectsQueryKey,
 } from "@workspace/api-client-react";
 import type {
   Entity,
@@ -37,7 +45,30 @@ import type {
   EmailIntelPrompt,
   EmailProposalKind,
   EmailProposalStatus,
+  QuickbooksHandlingRule,
+  QuickbooksRuleAction,
+  QuickbooksRuleCondition,
+  QuickbooksRuleConditionField,
+  QuickbooksRuleConditionMode,
+  QuickbooksRuleMatchLogic,
+  StagedPaymentExclusionReason,
+  IntendedUsage,
+  CreateQuickbooksRuleBody,
 } from "@workspace/api-client-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  EntityCombobox,
+  useOrganizationSearch,
+  useOrganizationName,
+} from "@/components/entity-picker";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,6 +94,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { partitionFiscalYears } from "@/lib/dropdownVisibility";
+import { formatEnum } from "@/lib/format";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -122,6 +154,7 @@ export default function Admin() {
       <AdminSyncSection />
       <CalendarMeetingFiltersSection />
       <InternalEmailDomainsSection />
+      <QuickbooksRulesSection />
       <EmailIntelligenceSection />
       <p className="text-xs text-muted-foreground">
         Looking to connect or disconnect your own Google account? That moved
@@ -1582,5 +1615,770 @@ function EmailIntelFeedbackFeed() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+// ── Admin: QuickBooks auto-handling rules ────────────────────────────────────
+// Admin-only. The DB-backed classifier that drives the QuickBooks INGEST path:
+// each incoming payment is tested top-to-bottom (ascending priority) and the
+// first enabled match wins. `exclude` drops the row into the excluded queue with
+// a reason; `auto_create_approve` mints a gift to a chosen org, allocates it, and
+// auto-approves it straight into the approved queue. Edits affect only NEW
+// payments — already-queued rows are never reclassified. Hidden from non-admins
+// (the API enforces the same rule independently).
+
+const QB_FIELD_LABELS: Record<QuickbooksRuleConditionField, string> = {
+  payer_name: "Payer name",
+  line_item_name: "Line item",
+  line_account_name: "Line account",
+  memo_reference: "Memo / reference",
+  line_description: "Line description",
+  qb_class: "QB class",
+  any_text: "Any text",
+  amount: "Amount",
+};
+
+const QB_FIELD_ORDER: QuickbooksRuleConditionField[] = [
+  "payer_name",
+  "line_item_name",
+  "line_account_name",
+  "memo_reference",
+  "line_description",
+  "qb_class",
+  "any_text",
+  "amount",
+];
+
+const QB_MODE_LABELS: Record<QuickbooksRuleConditionMode, string> = {
+  contains: "contains",
+  exact: "equals",
+  prefix: "starts with",
+  regex: "matches regex",
+  lte: "≤ (at most)",
+};
+
+// `lte` couples to the amount field, and amount only makes sense with `lte`.
+const QB_TEXT_MODES: QuickbooksRuleConditionMode[] = [
+  "contains",
+  "exact",
+  "prefix",
+  "regex",
+];
+
+const QB_ACTION_LABELS: Record<QuickbooksRuleAction, string> = {
+  exclude: "Exclude as noise",
+  auto_create_approve: "Auto-create & approve gift",
+};
+
+const QB_EXCLUSION_REASONS: StagedPaymentExclusionReason[] = [
+  "zero_amount",
+  "loan",
+  "membership",
+  "interest",
+  "government_reimbursement",
+  "tax_refund",
+  "other_revenue",
+  "earned_income",
+  "fiscally_sponsored",
+  "intercompany_transfer",
+  "other",
+  "insurance",
+  "expense_refund",
+  "expensify",
+  "returned_wire",
+];
+
+const QB_INTENDED_USAGES: IntendedUsage[] = [
+  "gen_ops",
+  "growth",
+  "school_startup",
+  "teacher_training",
+  "project",
+];
+
+type RuleDraft = {
+  id: string | null;
+  name: string;
+  enabled: boolean;
+  action: QuickbooksRuleAction;
+  exclusionReason: StagedPaymentExclusionReason | null;
+  donationGuard: boolean;
+  matchLogic: QuickbooksRuleMatchLogic;
+  conditions: QuickbooksRuleCondition[];
+  targetOrganizationId: string | null;
+  targetIntendedUsage: IntendedUsage | null;
+  targetFundableProjectId: string | null;
+};
+
+function emptyRuleDraft(): RuleDraft {
+  return {
+    id: null,
+    name: "",
+    enabled: true,
+    action: "exclude",
+    exclusionReason: "other",
+    donationGuard: false,
+    matchLogic: "any",
+    conditions: [{ field: "payer_name", mode: "contains", value: "" }],
+    targetOrganizationId: null,
+    targetIntendedUsage: "gen_ops",
+    targetFundableProjectId: null,
+  };
+}
+
+function ruleToDraft(r: QuickbooksHandlingRule): RuleDraft {
+  return {
+    id: r.id,
+    name: r.name,
+    enabled: r.enabled,
+    action: r.action,
+    exclusionReason: r.exclusionReason ?? "other",
+    donationGuard: r.donationGuard,
+    matchLogic: r.matchLogic,
+    conditions:
+      r.conditions.length > 0
+        ? r.conditions.map((c) => ({ ...c }))
+        : [{ field: "payer_name", mode: "contains", value: "" }],
+    targetOrganizationId: r.targetOrganizationId ?? null,
+    targetIntendedUsage: r.targetIntendedUsage ?? "gen_ops",
+    targetFundableProjectId: r.targetFundableProjectId ?? null,
+  };
+}
+
+function conditionSummary(r: QuickbooksHandlingRule): string {
+  if (r.conditions.length === 0) return "(no conditions)";
+  const joiner = r.matchLogic === "all" ? " AND " : " OR ";
+  return r.conditions
+    .map((c) => {
+      const field = QB_FIELD_LABELS[c.field] ?? c.field;
+      const mode = QB_MODE_LABELS[c.mode] ?? c.mode;
+      return `${field} ${mode} "${c.value}"`;
+    })
+    .join(joiner);
+}
+
+function QuickbooksRulesSection() {
+  const isAdmin = useIsAdmin();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const rulesQ = useAdminListQuickbooksRules({
+    query: {
+      queryKey: getAdminListQuickbooksRulesQueryKey(),
+      enabled: isAdmin,
+      staleTime: 30_000,
+    },
+  });
+
+  const projectsQ = useListFundableProjects(undefined, {
+    query: {
+      queryKey: getListFundableProjectsQueryKey(undefined),
+      enabled: isAdmin,
+      staleTime: 60_000,
+    },
+  });
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [draft, setDraft] = useState<RuleDraft>(emptyRuleDraft);
+
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: getAdminListQuickbooksRulesQueryKey() });
+
+  const onMutError = (err: unknown) =>
+    toast({
+      title: "Save failed",
+      description: err instanceof Error ? err.message : String(err),
+      variant: "destructive",
+    });
+
+  const create = useAdminCreateQuickbooksRule({
+    mutation: {
+      onSuccess: async () => {
+        await invalidate();
+        toast({ title: "Rule created" });
+        setDialogOpen(false);
+      },
+      onError: onMutError,
+    },
+  });
+  const update = useAdminUpdateQuickbooksRule({
+    mutation: {
+      onSuccess: async () => {
+        await invalidate();
+        setDialogOpen(false);
+      },
+      onError: onMutError,
+    },
+  });
+  const reorder = useAdminReorderQuickbooksRules({
+    mutation: { onSuccess: invalidate, onError: onMutError },
+  });
+  const del = useAdminDeleteQuickbooksRule({
+    mutation: {
+      onSuccess: async () => {
+        await invalidate();
+        toast({ title: "Rule deleted" });
+      },
+      onError: onMutError,
+    },
+  });
+
+  if (!isAdmin) return null;
+
+  const rules = rulesQ.data ?? [];
+  const projects = projectsQ.data ?? [];
+  const saving = create.isPending || update.isPending;
+
+  const openCreate = () => {
+    setDraft(emptyRuleDraft());
+    setDialogOpen(true);
+  };
+  const openEdit = (r: QuickbooksHandlingRule) => {
+    setDraft(ruleToDraft(r));
+    setDialogOpen(true);
+  };
+
+  const toggleEnabled = (r: QuickbooksHandlingRule) =>
+    update.mutate({ id: r.id, data: { enabled: !r.enabled } });
+
+  const move = (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= rules.length) return;
+    const ids = rules.map((r) => r.id);
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    reorder.mutate({ data: { ids } });
+  };
+
+  const removeRule = (r: QuickbooksHandlingRule) => {
+    if (
+      !window.confirm(
+        `Delete rule "${r.name}"? This affects only future payments.`,
+      )
+    )
+      return;
+    del.mutate({ id: r.id });
+  };
+
+  const submit = () => {
+    const conditions = draft.conditions
+      .map((c) => ({ ...c, value: c.value.trim() }))
+      .filter((c) => c.value !== "");
+    const body: CreateQuickbooksRuleBody = {
+      name: draft.name.trim(),
+      enabled: draft.enabled,
+      action: draft.action,
+      donationGuard: draft.donationGuard,
+      matchLogic: draft.matchLogic,
+      conditions,
+      exclusionReason:
+        draft.action === "exclude" ? draft.exclusionReason : null,
+      targetOrganizationId:
+        draft.action === "auto_create_approve"
+          ? draft.targetOrganizationId
+          : null,
+      targetIntendedUsage:
+        draft.action === "auto_create_approve"
+          ? draft.targetIntendedUsage
+          : null,
+      targetFundableProjectId:
+        draft.action === "auto_create_approve" &&
+        draft.targetIntendedUsage === "project"
+          ? draft.targetFundableProjectId
+          : null,
+    };
+
+    // Mirror server validation so the user sees errors before round-tripping.
+    if (!body.name) {
+      toast({ title: "Name is required", variant: "destructive" });
+      return;
+    }
+    if (conditions.length === 0) {
+      toast({
+        title: "At least one condition with a value is required",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (draft.action === "exclude" && !body.exclusionReason) {
+      toast({ title: "Pick an exclusion reason", variant: "destructive" });
+      return;
+    }
+    if (draft.action === "auto_create_approve") {
+      if (!body.targetOrganizationId) {
+        toast({
+          title: "Pick the donor organization for the gift",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (
+        draft.targetIntendedUsage === "project" &&
+        !body.targetFundableProjectId
+      ) {
+        toast({ title: "Pick a fundable project", variant: "destructive" });
+        return;
+      }
+    }
+
+    if (draft.id) update.mutate({ id: draft.id, data: body });
+    else create.mutate({ data: body });
+  };
+
+  const setCond = (i: number, patch: Partial<QuickbooksRuleCondition>) =>
+    setDraft((d) => ({
+      ...d,
+      conditions: d.conditions.map((c, idx) =>
+        idx === i ? { ...c, ...patch } : c,
+      ),
+    }));
+
+  return (
+    <Card data-testid="admin-quickbooks-rules-section">
+      <CardHeader>
+        <CardTitle>QuickBooks auto-handling rules</CardTitle>
+        <CardDescription>
+          As QuickBooks payments are pulled in, each row is tested against these
+          rules top to bottom — the first enabled match wins. Use them to drop
+          recurring noise (loans, refunds, membership dues) or to auto-create and
+          approve a gift for known recurring donors. Changes apply to{" "}
+          <strong>new payments only</strong>; rows already in the review queue are
+          left as-is.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4">
+          <Button size="sm" onClick={openCreate} data-testid="qb-rule-add">
+            Add rule
+          </Button>
+        </div>
+        {rulesQ.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : rules.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No rules configured.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-16">Order</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead>Conditions</TableHead>
+                <TableHead className="w-20">Enabled</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rules.map((r, i) => (
+                <TableRow key={r.id} data-testid={`qb-rule-row-${r.id}`}>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        disabled={i === 0 || reorder.isPending}
+                        onClick={() => move(i, -1)}
+                        aria-label="Move up"
+                        data-testid={`qb-rule-up-${r.id}`}
+                      >
+                        ↑
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        disabled={i === rules.length - 1 || reorder.isPending}
+                        onClick={() => move(i, 1)}
+                        aria-label="Move down"
+                        data-testid={`qb-rule-down-${r.id}`}
+                      >
+                        ↓
+                      </Button>
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      <Badge
+                        variant={
+                          r.action === "exclude" ? "secondary" : "default"
+                        }
+                      >
+                        {QB_ACTION_LABELS[r.action]}
+                      </Badge>
+                      {r.action === "exclude" && r.exclusionReason ? (
+                        <span className="text-xs text-muted-foreground">
+                          {formatEnum(r.exclusionReason)}
+                        </span>
+                      ) : null}
+                      {r.action === "auto_create_approve" ? (
+                        <span className="text-xs text-muted-foreground">
+                          → {formatEnum(r.targetIntendedUsage ?? "")}
+                        </span>
+                      ) : null}
+                      {r.donationGuard ? (
+                        <span className="text-xs text-muted-foreground">
+                          donation-guarded
+                        </span>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-md">
+                    {conditionSummary(r)}
+                  </TableCell>
+                  <TableCell>
+                    <Switch
+                      checked={r.enabled}
+                      onCheckedChange={() => toggleEnabled(r)}
+                      disabled={update.isPending}
+                      data-testid={`qb-rule-toggle-${r.id}`}
+                    />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openEdit(r)}
+                        data-testid={`qb-rule-edit-${r.id}`}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive"
+                        onClick={() => removeRule(r)}
+                        disabled={del.isPending}
+                        data-testid={`qb-rule-delete-${r.id}`}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{draft.id ? "Edit rule" : "Add rule"}</DialogTitle>
+            <DialogDescription>
+              Applies to newly synced QuickBooks payments only.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="qb-rule-name">Name</Label>
+              <Input
+                id="qb-rule-name"
+                value={draft.name}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, name: e.target.value }))
+                }
+                placeholder="e.g. AmazonSmile → Amazon Foundation"
+                data-testid="qb-rule-name-input"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Action</Label>
+                <Select
+                  value={draft.action}
+                  onValueChange={(v) =>
+                    setDraft((d) => ({
+                      ...d,
+                      action: v as QuickbooksRuleAction,
+                    }))
+                  }
+                >
+                  <SelectTrigger data-testid="qb-rule-action">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(
+                      Object.keys(QB_ACTION_LABELS) as QuickbooksRuleAction[]
+                    ).map((a) => (
+                      <SelectItem key={a} value={a}>
+                        {QB_ACTION_LABELS[a]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Match logic</Label>
+                <Select
+                  value={draft.matchLogic}
+                  onValueChange={(v) =>
+                    setDraft((d) => ({
+                      ...d,
+                      matchLogic: v as QuickbooksRuleMatchLogic,
+                    }))
+                  }
+                >
+                  <SelectTrigger data-testid="qb-rule-matchlogic">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="any">Match ANY condition</SelectItem>
+                    <SelectItem value="all">Match ALL conditions</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={draft.donationGuard}
+                onCheckedChange={(v) =>
+                  setDraft((d) => ({ ...d, donationGuard: v }))
+                }
+                data-testid="qb-rule-donationguard"
+              />
+              <Label className="cursor-default">
+                Skip this rule when the row carries a real donation line
+              </Label>
+            </div>
+
+            {draft.action === "exclude" ? (
+              <div>
+                <Label>Exclusion reason</Label>
+                <Select
+                  value={draft.exclusionReason ?? "other"}
+                  onValueChange={(v) =>
+                    setDraft((d) => ({
+                      ...d,
+                      exclusionReason: v as StagedPaymentExclusionReason,
+                    }))
+                  }
+                >
+                  <SelectTrigger data-testid="qb-rule-exclusionreason">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {QB_EXCLUSION_REASONS.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {formatEnum(r)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-4 rounded-md border border-border p-3">
+                <div>
+                  <Label>Donor organization (gift attribution)</Label>
+                  <EntityCombobox
+                    useSearch={useOrganizationSearch}
+                    useResolve={useOrganizationName}
+                    value={draft.targetOrganizationId}
+                    onChange={(id) =>
+                      setDraft((d) => ({ ...d, targetOrganizationId: id }))
+                    }
+                    placeholder="Search organizations…"
+                    allowNull={false}
+                    testId="qb-rule-org"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Allocation</Label>
+                    <Select
+                      value={draft.targetIntendedUsage ?? "gen_ops"}
+                      onValueChange={(v) =>
+                        setDraft((d) => ({
+                          ...d,
+                          targetIntendedUsage: v as IntendedUsage,
+                          targetFundableProjectId:
+                            v === "project" ? d.targetFundableProjectId : null,
+                        }))
+                      }
+                    >
+                      <SelectTrigger data-testid="qb-rule-usage">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {QB_INTENDED_USAGES.map((u) => (
+                          <SelectItem key={u} value={u}>
+                            {formatEnum(u)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {draft.targetIntendedUsage === "project" ? (
+                    <div>
+                      <Label>Fundable project</Label>
+                      <Select
+                        value={draft.targetFundableProjectId ?? ""}
+                        onValueChange={(v) =>
+                          setDraft((d) => ({
+                            ...d,
+                            targetFundableProjectId: v,
+                          }))
+                        }
+                      >
+                        <SelectTrigger data-testid="qb-rule-project">
+                          <SelectValue placeholder="Pick a project…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {projects.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Conditions</Label>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setDraft((d) => ({
+                      ...d,
+                      conditions: [
+                        ...d.conditions,
+                        { field: "payer_name", mode: "contains", value: "" },
+                      ],
+                    }))
+                  }
+                  data-testid="qb-rule-add-condition"
+                >
+                  Add condition
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {draft.conditions.map((c, i) => {
+                  const isAmount = c.field === "amount";
+                  return (
+                    <div
+                      key={i}
+                      className="flex items-center gap-2"
+                      data-testid={`qb-rule-condition-${i}`}
+                    >
+                      <Select
+                        value={c.field}
+                        onValueChange={(v) => {
+                          const field = v as QuickbooksRuleConditionField;
+                          setCond(i, {
+                            field,
+                            mode:
+                              field === "amount"
+                                ? "lte"
+                                : c.mode === "lte"
+                                  ? "contains"
+                                  : c.mode,
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {QB_FIELD_ORDER.map((f) => (
+                            <SelectItem key={f} value={f}>
+                              {QB_FIELD_LABELS[f]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={c.mode}
+                        onValueChange={(v) =>
+                          setCond(i, {
+                            mode: v as QuickbooksRuleConditionMode,
+                          })
+                        }
+                        disabled={isAmount}
+                      >
+                        <SelectTrigger className="w-36">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {isAmount ? (
+                            <SelectItem value="lte">
+                              {QB_MODE_LABELS.lte}
+                            </SelectItem>
+                          ) : (
+                            QB_TEXT_MODES.map((m) => (
+                              <SelectItem key={m} value={m}>
+                                {QB_MODE_LABELS[m]}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        value={c.value}
+                        onChange={(e) => setCond(i, { value: e.target.value })}
+                        placeholder={isAmount ? "amount, e.g. 100" : "value"}
+                        className="flex-1"
+                        data-testid={`qb-rule-condition-value-${i}`}
+                      />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-destructive"
+                        disabled={draft.conditions.length <= 1}
+                        onClick={() =>
+                          setDraft((d) => ({
+                            ...d,
+                            conditions: d.conditions.filter(
+                              (_, idx) => idx !== i,
+                            ),
+                          }))
+                        }
+                        aria-label="Remove condition"
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={draft.enabled}
+                onCheckedChange={(v) =>
+                  setDraft((d) => ({ ...d, enabled: v }))
+                }
+                data-testid="qb-rule-enabled"
+              />
+              <Label className="cursor-default">Enabled</Label>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDialogOpen(false)}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button onClick={submit} disabled={saving} data-testid="qb-rule-save">
+              {saving ? "Saving…" : "Save rule"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
