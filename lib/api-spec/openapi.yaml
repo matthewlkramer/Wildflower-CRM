@@ -1386,6 +1386,7 @@ paths:
         - { name: householdId, in: query, schema: { type: string } }
         - { name: opportunityId, in: query, schema: { type: string } }
         - { name: giftId, in: query, schema: { type: string } }
+        - { name: grantLeadId, in: query, schema: { type: string } }
         - { name: mentionUserId, in: query, schema: { type: string } }
         - { name: assigneeUserId, in: query, schema: { type: string } }
         - { name: createdByUserId, in: query, schema: { type: string } }

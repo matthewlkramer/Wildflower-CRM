@@ -102,6 +102,7 @@ interface PanelContext {
   householdId?: string;
   opportunityId?: string;
   giftId?: string;
+  grantLeadId?: string;
   /** Additional IDs to pre-fill (checked but removable) when the dialog opens. */
   defaultLinks?: Partial<EntityLinks>;
 }
@@ -113,6 +114,7 @@ export function TasksPanel(ctx: PanelContext) {
     householdId: ctx.householdId,
     opportunityId: ctx.opportunityId,
     giftId: ctx.giftId,
+    grantLeadId: ctx.grantLeadId,
     limit: 50,
   });
   const rows: Task[] = data?.data ?? [];
@@ -558,6 +560,7 @@ export function AddTaskDialog({
                 householdIds: mergeLinks(pinned.householdIds, links.householdIds),
                 opportunityIds: mergeLinks(pinned.opportunityIds, links.opportunityIds),
                 giftIds: mergeLinks(pinned.giftIds, links.giftIds),
+                grantLeadIds: mergeLinks(pinned.grantLeadIds, links.grantLeadIds),
                 mentionUserIds: mentions.length > 0 ? mentions : undefined,
               },
             });
@@ -739,6 +742,7 @@ function pinnedFromCtx(ctx: PanelContext): EntityLinks {
     householdIds: ctx.householdId ? [ctx.householdId] : [],
     opportunityIds: ctx.opportunityId ? [ctx.opportunityId] : [],
     giftIds: ctx.giftId ? [ctx.giftId] : [],
+    grantLeadIds: ctx.grantLeadId ? [ctx.grantLeadId] : [],
   };
 }
 
@@ -755,5 +759,6 @@ function linksFromDefault(defaultLinks?: Partial<EntityLinks>): EntityLinks {
     householdIds: defaultLinks.householdIds ?? [],
     opportunityIds: defaultLinks.opportunityIds ?? [],
     giftIds: defaultLinks.giftIds ?? [],
+    grantLeadIds: defaultLinks.grantLeadIds ?? [],
   };
 }

@@ -4413,6 +4413,7 @@ export type ListTasksParams = {
   householdId?: string;
   opportunityId?: string;
   giftId?: string;
+  grantLeadId?: string;
   mentionUserId?: string;
   assigneeUserId?: string;
   createdByUserId?: string;

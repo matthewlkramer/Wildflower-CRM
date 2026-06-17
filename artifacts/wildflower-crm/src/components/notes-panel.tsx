@@ -254,6 +254,7 @@ function pinnedFromCtx(ctx: PanelContext): EntityLinks {
     householdIds: ctx.householdId ? [ctx.householdId] : [],
     opportunityIds: ctx.opportunityId ? [ctx.opportunityId] : [],
     giftIds: ctx.giftId ? [ctx.giftId] : [],
+    grantLeadIds: [],
   };
 }
 
@@ -270,5 +271,6 @@ function linksFromDefault(defaultLinks?: Partial<EntityLinks>): EntityLinks {
     householdIds: defaultLinks.householdIds ?? [],
     opportunityIds: defaultLinks.opportunityIds ?? [],
     giftIds: defaultLinks.giftIds ?? [],
+    grantLeadIds: defaultLinks.grantLeadIds ?? [],
   };
 }

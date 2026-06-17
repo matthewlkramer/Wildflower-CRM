@@ -40,8 +40,9 @@ import {
   usePersonName,
   useHouseholdName,
 } from "@/components/entity-picker";
-import { Lightbulb, MoreHorizontal, ExternalLink, Inbox, UserCheck } from "lucide-react";
+import { Lightbulb, MoreHorizontal, ExternalLink, Inbox, UserCheck, ClipboardList, ChevronDown, ChevronUp } from "lucide-react";
 import type { GrantLead } from "@workspace/api-client-react";
+import { TasksPanel, AddTaskDialog } from "@/components/tasks-panel";
 
 type StatusFilter = "active" | "all" | "archived" | "converted";
 
@@ -208,6 +209,7 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
   const claim = useClaimGrantLead();
   const archive = useArchiveGrantLead();
   const [convertOpen, setConvertOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
 
   const invalidate = () =>
     void qc.invalidateQueries({ queryKey: ["/api/grant-leads"] });
@@ -252,6 +254,16 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
               <Badge variant={statusInfo.variant} className="text-xs">
                 {statusInfo.label}
               </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-xs text-muted-foreground"
+                onClick={() => setTasksOpen((v) => !v)}
+              >
+                <ClipboardList className="h-3.5 w-3.5" />
+                Tasks
+                {tasksOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </Button>
               {isActive && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -268,6 +280,10 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
                     )}
                     <DropdownMenuItem onClick={() => setConvertOpen(true)}>
                       Convert to opportunity
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setTasksOpen(true)}>
+                      <ClipboardList className="h-4 w-4 mr-2" />
+                      Add task
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={handleArchive}
@@ -334,6 +350,12 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
             <p className="text-xs italic text-muted-foreground border-l-2 pl-2 mt-1 line-clamp-2">
               "{lead.snippet}"
             </p>
+          )}
+
+          {tasksOpen && (
+            <div className="mt-3 pt-3 border-t">
+              <TasksPanel grantLeadId={lead.id} />
+            </div>
           )}
         </div>
       </div>

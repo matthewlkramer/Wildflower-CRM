@@ -6065,6 +6065,7 @@ export const ListTasksQueryParams = zod.object({
   householdId: zod.coerce.string().optional(),
   opportunityId: zod.coerce.string().optional(),
   giftId: zod.coerce.string().optional(),
+  grantLeadId: zod.coerce.string().optional(),
   mentionUserId: zod.coerce.string().optional(),
   assigneeUserId: zod.coerce.string().optional(),
   createdByUserId: zod.coerce.string().optional(),

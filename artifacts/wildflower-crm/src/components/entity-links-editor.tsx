@@ -27,6 +27,9 @@ import {
   useListGiftsAndPayments,
   useGetGiftOrPayment,
   getGetGiftOrPaymentQueryKey,
+  useListGrantLeads,
+  useGetGrantLead,
+  getGetGrantLeadQueryKey,
 } from "@workspace/api-client-react";
 
 /* Opportunity/Gift search hooks (light) */
@@ -70,7 +73,27 @@ function useGiftName(id: string | null): string | null {
   return data ? giftLabel(data) : null;
 }
 
-type EntityType = "person" | "organization" | "household" | "opportunity" | "gift";
+function useGrantLeadSearch(query: string): { items: PickerItem[]; isLoading: boolean } {
+  const { data, isLoading } = useListGrantLeads({
+    search: query || undefined,
+    limit: 20,
+    includeArchived: true,
+  });
+  const items: PickerItem[] = (data?.data ?? []).map((gl) => ({
+    id: gl.id,
+    label: gl.title,
+    sublabel: gl.funderName ?? undefined,
+  }));
+  return { items, isLoading };
+}
+function useGrantLeadName(id: string | null): string | null {
+  const { data } = useGetGrantLead(id ?? "", {
+    query: { enabled: !!id, queryKey: getGetGrantLeadQueryKey(id ?? "") },
+  });
+  return data?.title ?? null;
+}
+
+type EntityType = "person" | "organization" | "household" | "opportunity" | "gift" | "grant-lead";
 
 const TYPE_LABEL: Record<EntityType, string> = {
   person: "Person",
@@ -78,6 +101,7 @@ const TYPE_LABEL: Record<EntityType, string> = {
   household: "Household",
   opportunity: "Opportunity",
   gift: "Gift",
+  "grant-lead": "Grant Lead",
 };
 
 export interface EntityLinks {
@@ -86,6 +110,7 @@ export interface EntityLinks {
   householdIds: string[];
   opportunityIds: string[];
   giftIds: string[];
+  grantLeadIds: string[];
 }
 
 export const EMPTY_LINKS: EntityLinks = {
@@ -94,6 +119,7 @@ export const EMPTY_LINKS: EntityLinks = {
   householdIds: [],
   opportunityIds: [],
   giftIds: [],
+  grantLeadIds: [],
 };
 
 function FieldOf(t: EntityType): keyof EntityLinks {
@@ -103,6 +129,7 @@ function FieldOf(t: EntityType): keyof EntityLinks {
     household: "householdIds",
     opportunity: "opportunityIds",
     gift: "giftIds",
+    "grant-lead": "grantLeadIds",
   } as const)[t];
 }
 
@@ -122,6 +149,7 @@ function AddPicker({
       case "household": return useHouseholdSearch;
       case "opportunity": return useOpportunitySearch;
       case "gift": return useGiftSearch;
+      case "grant-lead": return useGrantLeadSearch;
     }
   })();
   const { items, isLoading } = search(q);
@@ -213,6 +241,7 @@ function ResolvedChip({ type, id, onRemove }: { type: EntityType; id: string; on
       case "household": return useHouseholdName;
       case "opportunity": return useOpportunityName;
       case "gift": return useGiftName;
+      case "grant-lead": return useGrantLeadName;
     }
   })();
   const name = resolver(id) ?? id;
@@ -229,7 +258,7 @@ export function EntityLinksEditor({
   /** IDs that came from page context — shown but not removable. */
   pinned?: Partial<EntityLinks>;
 }) {
-  const types: EntityType[] = ["person", "organization", "household", "opportunity", "gift"];
+  const types: EntityType[] = ["person", "organization", "household", "opportunity", "gift", "grant-lead"];
   const pin = pinned ?? {};
   function add(type: EntityType, id: string) {
     const field = FieldOf(type);

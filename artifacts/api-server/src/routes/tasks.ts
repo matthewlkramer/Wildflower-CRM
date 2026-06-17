@@ -63,6 +63,7 @@ router.get(
     if (q.householdId) filters.push(sql`${tasks.householdIds} @> ARRAY[${q.householdId}]::text[]`);
     if (q.opportunityId) filters.push(sql`${tasks.opportunityIds} @> ARRAY[${q.opportunityId}]::text[]`);
     if (q.giftId) filters.push(sql`${tasks.giftIds} @> ARRAY[${q.giftId}]::text[]`);
+    if (q.grantLeadId) filters.push(sql`${tasks.grantLeadIds} @> ARRAY[${q.grantLeadId}]::text[]`);
     if (q.mentionUserId) filters.push(sql`${tasks.mentionUserIds} @> ARRAY[${q.mentionUserId}]::text[]`);
     const where = filters.length ? and(...filters) : undefined;
     // Order: nulls-last on due_date, then ascending so soonest-due rises.
