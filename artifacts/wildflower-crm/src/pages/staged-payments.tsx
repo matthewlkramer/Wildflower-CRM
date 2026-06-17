@@ -155,6 +155,8 @@ const MATCH_METHOD_LABELS: Record<StagedPaymentMatchMethod, string> = {
   email: "Email match",
   name: "Name match",
   name_amount_date: "Name + amount + date",
+  // Deprecated/unused: the matcher no longer guesses a donor from amount + date
+  // alone. Kept to satisfy the exhaustive Record over the enum; never produced.
   amount_date: "Amount + date",
   memo: "Memo match",
   intermediary: "Payment intermediary",

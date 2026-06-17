@@ -510,7 +510,9 @@ export const stagedPaymentMatchStatusEnum = pgEnum(
 //   email            — exact email hit (strongest)
 //   name             — fuzzy/exact CRM name hit (trigram)
 //   name_amount_date — name plus corroborating amount + date proximity
-//   amount_date      — amount + date proximity to an existing CRM gift
+//   amount_date      — DEPRECATED (unused): the matcher no longer guesses a
+//                      donor purely from amount + date proximity to an unrelated
+//                      gift. Value retained to avoid a destructive enum drop.
 //   memo             — donor name parsed out of a free-text memo/reference
 //   intermediary     — payer resolved to a payment intermediary, donor via memo
 //   manual           — a human picked the donor/gift in the reconciler

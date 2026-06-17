@@ -20,9 +20,10 @@ import { sql } from "drizzle-orm";
  *   2. EXISTING GIFT — once a donor is resolved, look for an already-recorded
  *        gift for that donor with the SAME amount within a date window. Exactly
  *        one ⇒ a reconcile target (matchedGiftId); zero ⇒ safe to mint a new
- *        gift; many ⇒ ambiguous, leave for a human. When no donor resolves we
- *        still try a donor-less amount+date lookup and adopt the matched gift's
- *        donor as a suggestion.
+ *        gift; many ⇒ ambiguous, leave for a human. A donor is only ever taken
+ *        from real evidence on the QuickBooks record (email, payer name, or a
+ *        name in the memo) — never guessed from a coincidental amount/date
+ *        collision with an unrelated gift.
  *
  *   3. INTERMEDIARY — when the payer name resolves to a payment intermediary
  *        (DAF / giving platform / wealth manager), the conduit is recorded and
@@ -52,7 +53,6 @@ export type MatchMethod =
   | "email"
   | "name"
   | "name_amount_date"
-  | "amount_date"
   | "memo"
   | "intermediary";
 
@@ -82,8 +82,6 @@ export const SUGGEST_THRESHOLD = 70;
 
 /** ± days around the staged date that counts as the same gift. */
 const GIFT_WINDOW_DAYS = 60;
-/** Tighter window for the donor-less amount+date suggestion. */
-const AMOUNT_DATE_WINDOW_DAYS = 10;
 /** Trigram similarity at/above which a payer is treated as an intermediary. */
 const INTERMEDIARY_SIM = 0.6;
 
@@ -291,46 +289,6 @@ export function reconcileTarget(
   return null;
 }
 
-/**
- * Donor-less fallback: a single same-amount gift within a tight date window.
- * Adopts that gift's donor as a suggestion. Returns null unless exactly one
- * gift (with a donor) is found.
- */
-async function suggestByAmountDate(
-  amount: string,
-  dateReceived: string,
-): Promise<{ donor: DonorMatch; giftId: string } | null> {
-  const rows = (
-    await db.execute(sql`
-      SELECT id, organization_id, individual_giver_person_id, household_id
-      FROM gifts_and_payments
-      WHERE amount = ${amount}::numeric
-        AND date_received IS NOT NULL
-        AND ABS(date_received - ${dateReceived}::date) <= ${AMOUNT_DATE_WINDOW_DAYS}
-      LIMIT 2
-    `)
-  ).rows as Array<{
-    id: string;
-    organization_id: string | null;
-    individual_giver_person_id: string | null;
-    household_id: string | null;
-  }>;
-  if (rows.length !== 1) return null;
-  const r = rows[0];
-  const donor: DonorMatch = {
-    organizationId: r.organization_id,
-    individualGiverPersonId: r.individual_giver_person_id,
-    householdId: r.household_id,
-  };
-  const count = [
-    donor.organizationId,
-    donor.individualGiverPersonId,
-    donor.householdId,
-  ].filter(Boolean).length;
-  if (count !== 1) return null;
-  return { donor, giftId: r.id };
-}
-
 /** Email is the strongest donor signal — exact, owner-unique → 100. */
 async function matchByEmail(email: string): Promise<DonorMatch | null> {
   const rows = (
@@ -471,17 +429,6 @@ export async function scoreStagedPayment(
     ) {
       method = "name_amount_date";
       score = Math.max(score, HIGH_THRESHOLD);
-    }
-  }
-
-  // ── Donor-less amount+date suggestion ──
-  if (!method && input.amount && input.dateReceived) {
-    const byAmt = await suggestByAmountDate(input.amount, input.dateReceived);
-    if (byAmt) {
-      donor = byAmt.donor;
-      score = SUGGEST_THRESHOLD;
-      method = "amount_date";
-      giftCandidateCount = 1;
     }
   }
 
