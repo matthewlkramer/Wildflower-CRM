@@ -5,6 +5,7 @@ import {
   useListEmailProposals,
   useAcceptEmailProposal,
   useRejectEmailProposal,
+  useRetryEmailProposal,
   useListUnrecognizedCorrespondents,
   useCreateCorrespondentIgnore,
   useCreateEmail,
@@ -40,7 +41,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { EmailDetailDialog } from "@/components/email-detail-dialog";
-import { Mail, Check, X, MessageSquarePlus, ExternalLink } from "lucide-react";
+import { Mail, Check, X, MessageSquarePlus, ExternalLink, RefreshCw } from "lucide-react";
 
 type Kind =
   | "linkedin_job_change"
@@ -254,6 +255,32 @@ function ProposalList({ kind }: { kind: Kind }) {
     },
   });
 
+  // Per-proposal AI re-analysis for the "AI analysis failed" failure
+  // box. We track which proposal is currently retrying so only its
+  // button shows a spinner (the mutation's isPending is global). On
+  // success we invalidate the list so the refreshed proposal (now with
+  // real actions, or a fresh error) renders in place.
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const retry = useRetryEmailProposal({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        toast({ title: "Re-analyzed" });
+      },
+      onError: (e) =>
+        toast({
+          title: "Could not re-analyze",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+      onSettled: () => setRetryingId(null),
+    },
+  });
+  const onRetry = (id: string) => {
+    setRetryingId(id);
+    retry.mutate({ id });
+  };
+
   if (isLoading) {
     return <div className="text-sm text-muted-foreground">Loading…</div>;
   }
@@ -408,6 +435,8 @@ function ProposalList({ kind }: { kind: Kind }) {
               error={p.actionsError ?? null}
               checked={checkedFor(p)}
               onToggle={(idx) => toggleAction(p, idx)}
+              onRetry={() => onRetry(p.id)}
+              retrying={retryingId === p.id}
             />
           </CardContent>
         </Card>
@@ -518,6 +547,8 @@ function ProposedActionsBlock({
   error,
   checked,
   onToggle,
+  onRetry,
+  retrying,
 }: {
   proposalId: string;
   actions: ProposedActionView[];
@@ -525,14 +556,34 @@ function ProposedActionsBlock({
   error: string | null;
   checked: Set<number>;
   onToggle: (idx: number) => void;
+  onRetry: () => void;
+  retrying: boolean;
 }) {
   if (error) {
     return (
       <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3">
-        <div className="text-xs font-medium text-destructive">
-          AI analysis failed
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-destructive">
+              AI analysis failed
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">{error}</div>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onRetry}
+            disabled={retrying}
+            className="shrink-0"
+            data-testid={`btn-retry-${proposalId}`}
+          >
+            <RefreshCw
+              className={`h-4 w-4 mr-1.5 ${retrying ? "animate-spin" : ""}`}
+            />
+            {retrying ? "Retrying…" : "Retry"}
+          </Button>
         </div>
-        <div className="text-xs text-muted-foreground mt-1">{error}</div>
       </div>
     );
   }

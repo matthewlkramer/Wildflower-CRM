@@ -21,6 +21,7 @@ import {
 } from "../lib/helpers";
 import { applyAction, validateAction, type ApplyActionResult } from "../lib/applyProposalActions";
 import { emailMessages, giftsAndPayments } from "@workspace/db/schema";
+import { proposeActionsForProposal } from "../lib/proposeActions";
 
 /**
  * Email-intelligence proposal queue.
@@ -428,6 +429,78 @@ router.post(
       status: existing.status,
       message: `Cannot reject proposal in status '${existing.status}'.`,
     });
+  }),
+);
+
+/**
+ * Re-run AI action-proposal for one errored proposal. Same ownership
+ * guard as accept/reject — a user can only retry their own mailbox's
+ * proposals. Used by the per-proposal "Retry" button in the failure UI.
+ *
+ * We reset `actions_error` and `actions_analyzed_at` (so the atomic
+ * claim inside `proposeActionsForProposal` can re-take the row), then
+ * re-run the shared per-proposal analysis. That call routes through the
+ * process-global AI concurrency limiter + rate-limit-retry wrapper, so a
+ * burst of manual retries can't re-create a rate-limit storm. The
+ * (re)analysis is synchronous so the response carries the refreshed
+ * proposal (new actions, or a fresh error) for an in-place UI update.
+ */
+router.post(
+  "/email-proposals/:id/retry",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const id = paramId(req);
+    // Claim the row for re-analysis: clear the stored error and reset the
+    // analyzed timestamp to NULL, scoped to the caller's own pending
+    // proposal. The conditional UPDATE doubles as the ownership + state
+    // guard — a non-pending or someone else's row matches zero rows.
+    const [reset] = await db
+      .update(emailProposals)
+      .set({ actionsError: null, actionsAnalyzedAt: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(emailProposals.id, id),
+          eq(emailProposals.mailboxUserId, user.id),
+          eq(emailProposals.status, "pending"),
+        ),
+      )
+      .returning({ id: emailProposals.id });
+    if (!reset) {
+      // Distinguish "doesn't exist / not yours" (404) from "already
+      // resolved" (409) the same way accept/reject do.
+      const [existing] = await db
+        .select()
+        .from(emailProposals)
+        .where(
+          and(
+            eq(emailProposals.id, id),
+            eq(emailProposals.mailboxUserId, user.id),
+          ),
+        )
+        .limit(1);
+      if (!existing) return notFound(res, "email proposal");
+      res.status(409).json({
+        error: "proposal_not_pending",
+        status: existing.status,
+        message: `Cannot retry proposal in status '${existing.status}'.`,
+      });
+      return;
+    }
+    // Re-run analysis (bounded by the per-call timeout + AI concurrency
+    // limiter inside proposeActionsForProposal). Errors are recorded on
+    // the row, never thrown, so we just re-read the refreshed state.
+    await proposeActionsForProposal(id);
+    const [updated] = await db
+      .select()
+      .from(emailProposals)
+      .where(eq(emailProposals.id, id))
+      .limit(1);
+    if (!updated) return notFound(res, "email proposal");
+    res.json(updated);
   }),
 );
 

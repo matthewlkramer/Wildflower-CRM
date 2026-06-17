@@ -102,6 +102,24 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposal" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
+  /email-proposals/{id}/retry:
+    post:
+      operationId: retryEmailProposal
+      tags: [email-proposals]
+      summary: >-
+        Re-run AI action-proposal for one errored proposal (owner-scoped).
+        Clears the stored error, re-analyzes through the shared AI
+        concurrency limiter + rate-limit-retry wrapper, and returns the
+        refreshed proposal (new actions, or a fresh error).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposal" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The proposal is no longer pending (already resolved), so it cannot be retried.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   # ─── Task intelligence (AI-suggested next-step cultivation tasks) ────────────
   /task-proposals:

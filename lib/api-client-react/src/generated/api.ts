@@ -86,6 +86,7 @@ import type {
   EmailProposalList,
   EmailProposalSummary,
   Entity,
+  ErrorResponse,
   ExcludeStagedPaymentBody,
   ExtensionTokenResponse,
   FiscalYear,
@@ -593,6 +594,92 @@ export const useRejectEmailProposal = <
   TContext
 > => {
   return useMutation(getRejectEmailProposalMutationOptions(options));
+};
+
+/**
+ * @summary Re-run AI action-proposal for one errored proposal (owner-scoped). Clears the stored error, re-analyzes through the shared AI concurrency limiter + rate-limit-retry wrapper, and returns the refreshed proposal (new actions, or a fresh error).
+ */
+export const getRetryEmailProposalUrl = (id: string) => {
+  return `/api/email-proposals/${id}/retry`;
+};
+
+export const retryEmailProposal = async (
+  id: string,
+  options?: RequestInit,
+): Promise<EmailProposal> => {
+  return customFetch<EmailProposal>(getRetryEmailProposalUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRetryEmailProposalMutationOptions = <
+  TError = ErrorType<NotFoundResponse | ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof retryEmailProposal>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof retryEmailProposal>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["retryEmailProposal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof retryEmailProposal>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return retryEmailProposal(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RetryEmailProposalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof retryEmailProposal>>
+>;
+
+export type RetryEmailProposalMutationError = ErrorType<
+  NotFoundResponse | ErrorResponse
+>;
+
+/**
+ * @summary Re-run AI action-proposal for one errored proposal (owner-scoped). Clears the stored error, re-analyzes through the shared AI concurrency limiter + rate-limit-retry wrapper, and returns the refreshed proposal (new actions, or a fresh error).
+ */
+export const useRetryEmailProposal = <
+  TError = ErrorType<NotFoundResponse | ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof retryEmailProposal>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof retryEmailProposal>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getRetryEmailProposalMutationOptions(options));
 };
 
 /**

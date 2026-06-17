@@ -6,6 +6,7 @@ import { startMediaIngestScheduler } from "./lib/mediaIngestScheduler";
 import { startQuickbooksSyncScheduler } from "./lib/quickbooksSyncScheduler";
 import { startFlodeskSyncScheduler } from "./lib/flodeskSyncScheduler";
 import { startTaskSuggestionScheduler } from "./lib/taskSuggestionScheduler";
+import { startEmailIntelRecoveryScheduler } from "./lib/emailIntelRecoveryScheduler";
 import { runTaskSuggestionBackfillIfDue } from "./lib/taskSuggestionBackfill";
 import { backfillIntelForUser } from "./lib/gmailBackfill";
 import { analyzePendingForUser } from "./lib/analyzePending";
@@ -36,6 +37,7 @@ app.listen(port, (err) => {
   startQuickbooksSyncScheduler();
   startFlodeskSyncScheduler();
   startTaskSuggestionScheduler();
+  startEmailIntelRecoveryScheduler();
 
   // One-time upfront task-suggestion backfill: ensures every non-low-priority
   // person + organization has a cached next-step suggestion. Triggered by

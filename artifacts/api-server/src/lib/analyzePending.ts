@@ -19,11 +19,37 @@ import { logger } from "./logger";
  * Strictly sequential to keep token spend and proxy load bounded;
  * per-row errors are counted and logged, never aborting the sweep.
  */
+export interface AnalyzePendingOptions {
+  /**
+   * Which phases to run. Defaults to both:
+   *   - "fresh" → rows never analyzed (actions_analyzed_at IS NULL).
+   *   - "retry" → rows that previously errored (actions_error IS NOT NULL).
+   * The scheduled auto-recovery passes `["retry"]` so it only re-attempts
+   * the errored backlog without re-touching freshly-detected rows the
+   * inline sync fan-out already owns.
+   */
+  phases?: ("fresh" | "retry")[];
+  /**
+   * When set, the retry phase only re-attempts rows whose last analysis
+   * (actions_analyzed_at) is older than this many ms — the 24h
+   * retry-cooldown that bounds how often we re-spend tokens on a
+   * chronically-failing row. The operator-triggered cleanup leaves this
+   * null (drain the backlog immediately); the scheduled recovery passes
+   * 24h to mirror the backfill's phase-D cooldown.
+   */
+  retryCooldownMs?: number | null;
+}
+
 export async function analyzePendingForUser(
   userId: string,
+  opts?: AnalyzePendingOptions,
 ): Promise<{ analyzed: number; errors: number }> {
   let analyzed = 0;
   let errors = 0;
+  const phases = opts?.phases ?? (["fresh", "retry"] as const);
+  const retryCooldownMs = opts?.retryCooldownMs ?? null;
+  const retryAfter =
+    retryCooldownMs != null ? new Date(Date.now() - retryCooldownMs) : null;
 
   // Stale-claim recovery. proposeActionsForProposal atomically claims a
   // row by stamping actionsAnalyzedAt with the unix epoch sentinel before
@@ -55,13 +81,15 @@ export async function analyzePendingForUser(
   // Two phases, each strictly sequential:
   //   - "fresh"  → rows never analyzed (actions_analyzed_at IS NULL).
   //   - "retry"  → rows that previously errored (actions_error IS NOT NULL).
-  // Unlike the backfill's phase-D retry pass, this on-demand sweep does NOT
-  // gate retries on the 24h cooldown: it's an operator-triggered cleanup
-  // meant to drain the existing rate-limit error backlog immediately once
-  // the backoff fix is in. A per-phase seenIds set prevents reprocessing a
-  // row within the same sweep (a row that errors again would otherwise keep
-  // matching the retry predicate forever).
-  for (const phase of ["fresh", "retry"] as const) {
+  // By default (operator-triggered cleanup) the retry phase does NOT gate
+  // on the 24h cooldown — it drains the existing rate-limit error backlog
+  // immediately once the backoff fix is in. The scheduled auto-recovery
+  // passes retryCooldownMs (24h) so a chronically-failing row isn't
+  // retried more than once a day, mirroring the backfill's phase-D pass.
+  // A per-phase seenIds set prevents reprocessing a row within the same
+  // sweep (a row that errors again would otherwise keep matching the
+  // retry predicate forever).
+  for (const phase of phases) {
     const seenIds = new Set<string>();
     while (true) {
       const rows = await db
@@ -73,7 +101,9 @@ export async function analyzePendingForUser(
             eq(emailProposals.status, "pending"),
             phase === "fresh"
               ? sql`${emailProposals.actionsAnalyzedAt} is null`
-              : sql`${emailProposals.actionsError} is not null`,
+              : retryAfter
+                ? sql`${emailProposals.actionsError} is not null and ${emailProposals.actionsAnalyzedAt} < ${retryAfter}`
+                : sql`${emailProposals.actionsError} is not null`,
           ),
         )
         .limit(50);
