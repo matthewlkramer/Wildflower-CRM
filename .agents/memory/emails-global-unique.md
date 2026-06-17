@@ -7,8 +7,16 @@ description: email addresses are globally unique on lower(email); how it's enfor
 
 An email address may be attached to exactly ONE `emails` row anywhere in the CRM
 (person / organization / payment-intermediary / household). Uniqueness is on
-`lower(email)` (no trim), enforced by the `emails_email_lower_unique` functional
-unique index + an API `23505 → 409` map in `routes/emails.ts` (POST + PATCH).
+`lower(email)`, enforced by the `emails_email_lower_unique` functional unique
+index + an API `23505 → 409` map in `routes/emails.ts` (POST + PATCH).
+
+Input is trimmed (`email.trim()`) on POST/PATCH before storing, so stored values
+carry no leading/trailing whitespace. The DB index itself is `lower(email)` (NOT
+`lower(trim(email))`) — trimming lives in the app layer, so a direct DB insert of
+a whitespace-padded value would still bypass it. As of 2026-06-17 there were 0
+untrimmed rows in dev or prod. `CreateEmailBody.email` is a bare `zod.string()`
+(no `.email()` format check), so padded input reaches the route and is trimmed
+rather than 400-rejected.
 
 **Why:** confirmed product rule ("no email entered twice anywhere"); real data
 held a case-only duplicate, so the index normalizes on `lower(email)` to match

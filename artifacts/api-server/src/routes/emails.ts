@@ -51,6 +51,9 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateEmailBody, req.body, res);
     if (!body) return;
+    // Trim before storing so whitespace-padded input can't create a near-dup
+    // that slips past the case-insensitive uniqueness rule.
+    if (typeof body.email === "string") body.email = body.email.trim();
     try {
       const [row] = await db.insert(emails).values({ id: newId(), ...body }).returning();
       res.status(201).json(row);
@@ -72,6 +75,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(UpdateEmailBody, req.body, res);
     if (!body) return;
+    if (typeof body.email === "string") body.email = body.email.trim();
     try {
       const [row] = await db
         .update(emails)
