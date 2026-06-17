@@ -94,6 +94,9 @@ export const organizations = pgTable("organizations", {
   // When true, the organization's real name is hidden in the UI (shown as
   // "Anonymous") from everyone except the record owner and admins. UI-only.
   anonymous: boolean("anonymous").default(false).notNull(),
+  // Soft-delete: non-null = archived (hidden from non-admins). Separate from
+  // activeStatus (active/defunct/spenddown); never set by status workflows.
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -102,6 +105,7 @@ export const organizations = pgTable("organizations", {
   index("organizations_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
   index("organizations_priority_idx").on(t.priority),
   index("organizations_issues_grants_idx").on(t.issuesGrants),
+  index("organizations_archived_at_idx").on(t.archivedAt),
   index("organizations_region_ids_gin_idx").using("gin", t.regionIds),
   index("organizations_interests_thematic_gin_idx").using("gin", t.interestsThematic),
   index("organizations_interests_ages_gin_idx").using("gin", t.interestsAges),

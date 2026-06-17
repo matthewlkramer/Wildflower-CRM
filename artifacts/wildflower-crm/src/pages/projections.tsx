@@ -45,7 +45,7 @@ export default function Projections() {
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey() },
   });
-  const fyQ = useListFiscalYears({
+  const fyQ = useListFiscalYears(undefined, {
     query: { queryKey: getListFiscalYearsQueryKey() },
   });
 

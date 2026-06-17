@@ -53,3 +53,4 @@
 - [Allocation restriction model + total guard](wildflower-allocation-restriction-ux.md) — pledge=1 restriction flag, gift=2; displayUsage is trigger-only (never write); normalize parent total to null when not >0 before %/footer; POST omits empties, PATCH sends null.
 - [drizzle ANY(array) cast pitfall](drizzle-any-array-cast.md) — `ANY(${jsArray}::text[])` in a drizzle sql template renders a row-constructor → runtime "cannot cast record to text[]"; use inArray() (typecheck won't catch it).
 - [Bulk-action by-id load gate](bulk-action-load-gate.md) — dialogs resolving selection by id must block submit until loaded==expectedCount (selection size), else partial subset silently runs.
+- [archive soft-delete rollout boundaries](archive-soft-delete-boundaries.md) — archive replaces delete on LIST pages only; detail pages keep hard delete; admin show-archived gating is list-only by design; aggregates still include archived.

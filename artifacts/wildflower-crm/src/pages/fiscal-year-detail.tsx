@@ -95,7 +95,7 @@ export default function FiscalYearDetail() {
     },
   });
   // All fiscal years so the dropdown isn't limited to just current+next.
-  const fyListQ = useListFiscalYears({
+  const fyListQ = useListFiscalYears(undefined, {
     query: { queryKey: getListFiscalYearsQueryKey(), staleTime: 5 * 60_000 },
   });
   // Entities list is still loaded so we can resolve the selected entity's

@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useCallback, useMemo, useState } from "react";
+import { Link, useLocation } from "wouter";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListPeople,
   getListPeopleQueryKey,
   useBulkUpdatePeople,
-  useBulkDeletePeople,
+  useBulkArchivePeople,
+  useArchivePerson,
+  useUnarchivePerson,
   useMergePeople,
   useGetCurrentUser,
   getGetPersonQueryOptions,
@@ -16,6 +18,7 @@ import {
   type CapacityRating,
   type ConnectionStatus,
   type Enthusiasm,
+  type Priority,
   type Person,
 } from "@workspace/api-client-react";
 import { LayoutList, Columns3 } from "lucide-react";
@@ -34,9 +37,24 @@ import { PresenceFilter, type PresenceValue } from "@/components/presence-filter
 import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
-import { BulkDeleteDialog } from "@/components/bulk-delete-dialog";
+import { BulkArchiveDialog } from "@/components/bulk-archive-dialog";
 import { PEOPLE_BULK_FIELDS } from "@/lib/bulk-fields";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  RowActionIcons,
+  InlineRowSaveActions,
+} from "@/components/row-action-icons";
+import { ShowArchivedToggle } from "@/components/show-archived-toggle";
+import { useIsAdmin } from "@/hooks/use-is-admin";
+import { useInlineRowEdit } from "@/hooks/use-inline-row-edit";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   formatCapacity,
   formatCurrency,
@@ -128,6 +146,27 @@ const NEWSLETTER_SORT: Record<NewsletterStatus, number> = {
   unsubscribed: 0,
 };
 
+// Inline-edit draft for the per-row pencil. Only the simple enum cells are
+// editable inline; everything relational lives on the detail page. "__none__"
+// is the sentinel for "clear this enum" (Radix Select forbids an empty value).
+const NONE = "__none__";
+type PersonDraft = {
+  priority: string;
+  capacityRating: string;
+  connectionStatus: string;
+  enthusiasm: string;
+};
+
+type InlineCtx = {
+  editingId: string | null;
+  draft: PersonDraft | null;
+  isEditing: (id: string) => boolean;
+  patch: (partial: Partial<PersonDraft>) => void;
+  save: () => void;
+  cancel: () => void;
+  saving: boolean;
+};
+
 // Lookups the column cell renderers close over. Bundled into a single
 // context object so `buildColumns` stays a pure function of its inputs
 // (easier to memoize, easier to read).
@@ -135,6 +174,12 @@ type ColCtx = {
   regionNames: Map<string, string>;
   userNames: Map<string, string>;
   viewer: Viewer;
+  isAdmin: boolean;
+  inline: InlineCtx;
+  onOpen: (p: Person) => void;
+  onStartEdit: (p: Person) => void;
+  onArchive: (p: Person) => void;
+  onUnarchive: (p: Person) => void;
 };
 
 function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
@@ -162,7 +207,29 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
       key: "priorityTier",
       label: "Priority tier",
       cell: (p) =>
-        p.priority ? (
+        ctx.inline.isEditing(p.id) ? (
+          <Select
+            value={ctx.inline.draft?.priority ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ priority: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Priority"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-priority-person-${p.id}`}
+            >
+              <SelectValue placeholder="Priority" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {PRIORITIES.map((pr) => (
+                <SelectItem key={pr} value={pr}>
+                  {PRIORITY_LABEL[pr] ?? pr}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : p.priority ? (
           <Badge variant="outline">{PRIORITY_LABEL[p.priority] ?? p.priority}</Badge>
         ) : (
           "—"
@@ -184,7 +251,32 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
     {
       key: "capacity",
       label: "Capacity",
-      cell: (p) => formatCapacity(p.capacityRating),
+      cell: (p) =>
+        ctx.inline.isEditing(p.id) ? (
+          <Select
+            value={ctx.inline.draft?.capacityRating ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ capacityRating: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Capacity"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-capacity-person-${p.id}`}
+            >
+              <SelectValue placeholder="Capacity" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {CAPACITY_TIERS.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {formatCapacity(t) ?? t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          formatCapacity(p.capacityRating)
+        ),
     },
     {
       key: "lastContacted",
@@ -278,13 +370,63 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
       key: "connectionStatus",
       label: "Connection",
       defaultVisible: false,
-      cell: (p) => formatEnum(p.connectionStatus),
+      cell: (p) =>
+        ctx.inline.isEditing(p.id) ? (
+          <Select
+            value={ctx.inline.draft?.connectionStatus ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ connectionStatus: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Connection"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-connection-person-${p.id}`}
+            >
+              <SelectValue placeholder="Connection" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {CONNECTION_STATUSES.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {formatEnum(c)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          formatEnum(p.connectionStatus)
+        ),
     },
     {
       key: "enthusiasm",
       label: "Enthusiasm",
       defaultVisible: false,
-      cell: (p) => formatEnthusiasm(p.enthusiasm),
+      cell: (p) =>
+        ctx.inline.isEditing(p.id) ? (
+          <Select
+            value={ctx.inline.draft?.enthusiasm ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ enthusiasm: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Enthusiasm"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-enthusiasm-person-${p.id}`}
+            >
+              <SelectValue placeholder="Enthusiasm" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {ENTHUSIASM_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          formatEnthusiasm(p.enthusiasm)
+        ),
     },
     {
       key: "interestsAges",
@@ -331,10 +473,49 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
         return ids.map((id) => ctx.regionNames.get(id) ?? id).join(", ");
       },
     },
+    {
+      key: "actions",
+      label: "",
+      required: true,
+      sortable: false,
+      align: "right",
+      thClassName: "w-32",
+      tdClassName: "text-right",
+      cell: (p) =>
+        ctx.inline.isEditing(p.id) ? (
+          <InlineRowSaveActions
+            onSave={ctx.inline.save}
+            onCancel={ctx.inline.cancel}
+            saving={ctx.inline.saving}
+            testIdPrefix={`person-${p.id}`}
+          />
+        ) : (
+          <RowActionIcons
+            entityLabel={
+              canSeeIdentity(p, ctx.viewer)
+                ? personDisplayName(p)
+                : ANONYMOUS_LABEL
+            }
+            testIdPrefix={`person-${p.id}`}
+            disabled={ctx.inline.editingId !== null}
+            archived={!!p.archivedAt}
+            onOpen={() => ctx.onOpen(p)}
+            onEdit={() => ctx.onStartEdit(p)}
+            onArchive={
+              p.archivedAt
+                ? ctx.isAdmin
+                  ? () => ctx.onUnarchive(p)
+                  : undefined
+                : () => ctx.onArchive(p)
+            }
+          />
+        ),
+    },
   ];
 }
 
 export default function Individuals() {
+  const [, navigate] = useLocation();
   // Filter state persists per-tab so back-navigation from a person
   // detail page restores the same filtered view.
   const [search, setSearch] = usePersistedState<string>("wf.list.people.search", "");
@@ -365,19 +546,28 @@ export default function Individuals() {
   const [viewMode, setViewMode] = usePersistedState<"list" | "kanban">("wf.list.people.view", "list");
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
   const bulkMut = useBulkUpdatePeople();
-  const bulkDeleteMut = useBulkDeletePeople();
+  const bulkArchiveMut = useBulkArchivePeople();
+  const archiveMut = useArchivePerson();
+  const unarchiveMut = useUnarchivePerson();
   const [mergeOpen, setMergeOpen] = useState(false);
   const mergeMut = useMergePeople();
   const queryClient = useQueryClient();
   const updatePerson = useUpdatePerson();
+  const { toast } = useToast();
+  const isAdmin = useIsAdmin();
+  const [showArchived, setShowArchived] = usePersistedState<boolean>(
+    "wf.list.people.showArchived",
+    false,
+  );
 
   const ts = useTableState("individuals");
   const sortActive = ts.sort.key !== null;
   const params: ListPeopleParams = {
     limit: viewMode === "kanban" ? 500 : (sortActive ? 10000 : PAGE_SIZE),
     page: viewMode === "kanban" ? 1 : (sortActive ? 1 : page),
+    ...(isAdmin && showArchived ? { includeArchived: true } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     // Only send the boolean when exactly one option is picked. 0 or 2 = unfiltered.
     ...(deceasedSel.length === 1
@@ -485,9 +675,101 @@ export default function Individuals() {
       { onSettled: () => queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() }) },
     );
   }
+  const refreshList = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() }),
+    [queryClient],
+  );
+
+  const inlineEdit = useInlineRowEdit<Person, PersonDraft>({
+    getId: (p) => p.id,
+    toDraft: (p) => ({
+      priority: p.priority ?? NONE,
+      capacityRating: p.capacityRating ?? NONE,
+      connectionStatus: p.connectionStatus ?? NONE,
+      enthusiasm: p.enthusiasm ?? NONE,
+    }),
+    onSave: async (id, d) => {
+      await updatePerson.mutateAsync({
+        id,
+        data: {
+          priority: d.priority === NONE ? null : (d.priority as Priority),
+          capacityRating:
+            d.capacityRating === NONE
+              ? null
+              : (d.capacityRating as CapacityRating),
+          connectionStatus:
+            d.connectionStatus === NONE
+              ? null
+              : (d.connectionStatus as ConnectionStatus),
+          enthusiasm:
+            d.enthusiasm === NONE ? null : (d.enthusiasm as Enthusiasm),
+        },
+      });
+      await refreshList();
+      toast({ title: "Person updated" });
+    },
+  });
+
+  const archivePerson = (p: Person) =>
+    archiveMut.mutate(
+      { id: p.id },
+      {
+        onSuccess: async () => {
+          await refreshList();
+          selection.removeMany([p.id]);
+          toast({ title: "Person archived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Archive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+
+  const unarchivePerson = (p: Person) =>
+    unarchiveMut.mutate(
+      { id: p.id },
+      {
+        onSuccess: async () => {
+          await refreshList();
+          toast({ title: "Person unarchived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Unarchive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+
   const registry = useMemo(
-    () => buildColumns({ regionNames, userNames, viewer }),
-    [regionNames, userNames, viewer],
+    () =>
+      buildColumns({
+        regionNames,
+        userNames,
+        viewer,
+        isAdmin,
+        inline: {
+          editingId: inlineEdit.editingId,
+          draft: inlineEdit.draft,
+          isEditing: inlineEdit.isEditing,
+          patch: inlineEdit.patch,
+          save: () => {
+            void inlineEdit.save();
+          },
+          cancel: inlineEdit.cancel,
+          saving: inlineEdit.saving,
+        },
+        onOpen: (p) => navigate(`/individuals/${p.id}`),
+        onStartEdit: (p) => inlineEdit.start(p),
+        onArchive: archivePerson,
+        onUnarchive: unarchivePerson,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [regionNames, userNames, viewer, isAdmin, inlineEdit, navigate],
   );
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
@@ -930,6 +1212,15 @@ export default function Individuals() {
         )}
 
         <div className="ml-auto flex items-end gap-2">
+          <ShowArchivedToggle
+            value={showArchived}
+            onChange={(v) => {
+              setShowArchived(v);
+              setPage(1);
+              selection.clear();
+            }}
+            testId="toggle-show-archived-people"
+          />
           <div className="flex rounded-md border overflow-hidden">
             <Button
               variant={viewMode === "list" ? "secondary" : "ghost"}
@@ -1075,19 +1366,19 @@ export default function Individuals() {
           count={selection.count}
           onEdit={() => setBulkOpen(true)}
           onMerge={() => setMergeOpen(true)}
-          onDelete={() => setBulkDeleteOpen(true)}
+          onArchive={() => setBulkArchiveOpen(true)}
           onClear={selection.clear}
           entityNoun="person"
         />
       )}
-      <BulkDeleteDialog
-        open={bulkDeleteOpen}
-        onOpenChange={setBulkDeleteOpen}
+      <BulkArchiveDialog
+        open={bulkArchiveOpen}
+        onOpenChange={setBulkArchiveOpen}
         entityNoun="person"
         selectedIds={selection.selectedIds}
         invalidateKeys={[getListPeopleQueryKey()]}
         onConfirm={async () =>
-          bulkDeleteMut.mutateAsync({ data: { ids: selection.selectedIds } })
+          bulkArchiveMut.mutateAsync({ data: { ids: selection.selectedIds } })
         }
         onDone={(r) => selection.removeMany(r.succeededIds)}
       />

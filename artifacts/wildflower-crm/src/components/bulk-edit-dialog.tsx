@@ -359,7 +359,7 @@ export function BulkEditDialog({
   }, [regionsData]);
 
   // Allocation-table option sets — only fetched when actually needed.
-  const { data: fyData } = useListFiscalYears({
+  const { data: fyData } = useListFiscalYears(undefined, {
     query: {
       queryKey: getListFiscalYearsQueryKey(),
       staleTime: 5 * 60_000,
@@ -392,7 +392,7 @@ export function BulkEditDialog({
   // Fundable projects — only fetched when an intended-usage field is
   // present. Active projects only (retired ones can't be newly assigned
   // in bulk), sorted by name.
-  const { data: fundableProjectsData } = useListFundableProjects({
+  const { data: fundableProjectsData } = useListFundableProjects(undefined, {
     query: {
       queryKey: getListFundableProjectsQueryKey(),
       staleTime: 5 * 60_000,

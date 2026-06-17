@@ -741,6 +741,12 @@ export const listRegionsQueryLimitMax = 10000;
 export const listRegionsQueryPageDefault = 1;
 
 export const ListRegionsQueryParams = zod.object({
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.",
+    ),
   type: zod
     .enum([
       "state",
@@ -790,6 +796,13 @@ export const ListRegionsResponse = zod.object({
         ])
         .nullish(),
       parentRegionId: zod.string().nullish(),
+      archivedAt: zod
+        .string()
+        .datetime({})
+        .nullish()
+        .describe(
+          "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -844,6 +857,76 @@ export const GetRegionResponse = zod.object({
     ])
     .nullish(),
   parentRegionId: zod.string().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UpdateRegionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateRegionBody = zod
+  .object({
+    name: zod.string().min(1).optional(),
+    displayPath: zod.string().optional(),
+    stateAbbreviation: zod.string().nullish(),
+    type: zod
+      .enum([
+        "state",
+        "metro_area",
+        "city",
+        "neighborhood",
+        "region_within_state",
+        "multi_state_region",
+        "country",
+        "continent",
+      ])
+      .nullish(),
+  })
+  .describe(
+    "Inline-editable simple fields for a region. The slug (`id`) is immutable and the parent region (relational) is edited on the detail page, not here.",
+  );
+
+export const UpdateRegionResponse = zod.object({
+  id: zod
+    .string()
+    .describe(
+      "Human-readable slug PK, e.g. `united_states__minnesota__saint_paul`. Built from the region's name plus its included-type ancestors (continent \/ country \/ state \/ city \/ neighborhood); intermediate aggregation layers (multi_state_region, region_within_state, metro_area) are skipped.",
+    ),
+  name: zod.string(),
+  displayPath: zod
+    .string()
+    .describe(
+      "Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display.",
+    ),
+  stateAbbreviation: zod.string().nullish(),
+  type: zod
+    .enum([
+      "state",
+      "metro_area",
+      "city",
+      "neighborhood",
+      "region_within_state",
+      "multi_state_region",
+      "country",
+      "continent",
+    ])
+    .nullish(),
+  parentRegionId: zod.string().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -854,6 +937,12 @@ export const listSchoolsQueryLimitMax = 10000;
 export const listSchoolsQueryPageDefault = 1;
 
 export const ListSchoolsQueryParams = zod.object({
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.",
+    ),
   status: zod
     .enum([
       "emerging",
@@ -919,6 +1008,13 @@ export const ListSchoolsResponse = zod.object({
       stageStatus: zod.string().nullish(),
       currentMailingAddress: zod.string().nullish(),
       currentPhysicalAddress: zod.string().nullish(),
+      archivedAt: zod
+        .string()
+        .datetime({})
+        .nullish()
+        .describe(
+          "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -966,6 +1062,95 @@ export const GetSchoolResponse = zod.object({
   stageStatus: zod.string().nullish(),
   currentMailingAddress: zod.string().nullish(),
   currentPhysicalAddress: zod.string().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UpdateSchoolParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateSchoolBody = zod
+  .object({
+    name: zod.string().min(1).optional(),
+    longName: zod.string().nullish(),
+    shortName: zod.string().nullish(),
+    status: zod
+      .enum([
+        "emerging",
+        "open",
+        "paused",
+        "closing",
+        "permanently_closed",
+        "disaffiliating",
+        "disaffiliated",
+        "placeholder",
+        "abandoned",
+      ])
+      .nullish(),
+    governanceModel: zod
+      .enum([
+        "independent",
+        "district",
+        "charter",
+        "exploring_charter",
+        "community_partnership",
+      ])
+      .nullish(),
+    stageStatus: zod.string().nullish(),
+    currentMailingAddress: zod.string().nullish(),
+    currentPhysicalAddress: zod.string().nullish(),
+  })
+  .describe(
+    "Inline-editable simple scalar\/enum fields for a school. Array\/relational fields are edited on the detail page or synced upstream from Airtable.",
+  );
+
+export const UpdateSchoolResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  longName: zod.string().nullish(),
+  shortName: zod.string().nullish(),
+  status: zod
+    .enum([
+      "emerging",
+      "open",
+      "paused",
+      "closing",
+      "permanently_closed",
+      "disaffiliating",
+      "disaffiliated",
+      "placeholder",
+      "abandoned",
+    ])
+    .nullish(),
+  governanceModel: zod
+    .enum([
+      "independent",
+      "district",
+      "charter",
+      "exploring_charter",
+      "community_partnership",
+    ])
+    .nullish(),
+  agesPlanes: zod.array(zod.string()).nullish(),
+  logoMainSquareUrl: zod.string().nullish(),
+  stageStatus: zod.string().nullish(),
+  currentMailingAddress: zod.string().nullish(),
+  currentPhysicalAddress: zod.string().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -1061,6 +1246,15 @@ export const DeleteFiscalYearEntityGoalParams = zod.object({
   entityId: zod.coerce.string(),
 });
 
+export const ListFundableProjectsQueryParams = zod.object({
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.",
+    ),
+});
+
 export const ListFundableProjectsResponseItem = zod.object({
   id: zod.string(),
   name: zod.string(),
@@ -1080,6 +1274,13 @@ export const ListFundableProjectsResponseItem = zod.object({
     .string()
     .nullish()
     .describe("Decimal string (numeric(14,2)). Null on legacy rows."),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -1130,6 +1331,13 @@ export const GetFundableProjectResponse = zod.object({
     .string()
     .nullish()
     .describe("Decimal string (numeric(14,2)). Null on legacy rows."),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -1173,6 +1381,13 @@ export const UpdateFundableProjectResponse = zod.object({
     .string()
     .nullish()
     .describe("Decimal string (numeric(14,2)). Null on legacy rows."),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -1197,11 +1412,27 @@ export const GetFundableProjectsProgressResponse = zod.array(
   GetFundableProjectsProgressResponseItem,
 );
 
+export const ListFiscalYearsQueryParams = zod.object({
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.",
+    ),
+});
+
 export const ListFiscalYearsResponseItem = zod.object({
   id: zod.string(),
   label: zod.string(),
   startDate: zod.string().date().nullish(),
   endDate: zod.string().date().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -1213,6 +1444,12 @@ export const listOrganizationsQueryLimitMax = 10000;
 export const listOrganizationsQueryPageDefault = 1;
 
 export const ListOrganizationsQueryParams = zod.object({
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.",
+    ),
   search: zod.coerce.string().optional(),
   issuesGrants: zod.coerce
     .boolean()
@@ -1420,6 +1657,13 @@ export const ListOrganizationsResponse = zod.object({
         .nullish()
         .describe(
           "Count of opportunities_and_pledges where organization_id matches and status='open'.",
+        ),
+      archivedAt: zod
+        .string()
+        .datetime({})
+        .nullish()
+        .describe(
+          "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
         ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -1681,6 +1925,13 @@ export const GetOrganizationResponse = zod
       .nullish()
       .describe(
         "Count of opportunities_and_pledges where organization_id matches and status='open'.",
+      ),
+    archivedAt: zod
+      .string()
+      .datetime({})
+      .nullish()
+      .describe(
+        "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
       ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
@@ -2050,6 +2301,13 @@ export const UpdateOrganizationResponse = zod.object({
     .describe(
       "Count of opportunities_and_pledges where organization_id matches and status='open'.",
     ),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -2252,6 +2510,12 @@ export const listHouseholdsQueryLimitMax = 10000;
 export const listHouseholdsQueryPageDefault = 1;
 
 export const ListHouseholdsQueryParams = zod.object({
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.",
+    ),
   search: zod.coerce.string().optional(),
   active: zod.coerce.boolean().optional(),
   limit: zod.coerce
@@ -2286,6 +2550,13 @@ export const ListHouseholdsResponse = zod.object({
         .nullish()
         .describe(
           "Count of opportunities_and_pledges where household_id matches and status='open'.",
+        ),
+      archivedAt: zod
+        .string()
+        .datetime({})
+        .nullish()
+        .describe(
+          "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
         ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -2330,6 +2601,13 @@ export const GetHouseholdResponse = zod
       .nullish()
       .describe(
         "Count of opportunities_and_pledges where household_id matches and status='open'.",
+      ),
+    archivedAt: zod
+      .string()
+      .datetime({})
+      .nullish()
+      .describe(
+        "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
       ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
@@ -2448,6 +2726,13 @@ export const UpdateHouseholdResponse = zod.object({
     .describe(
       "Count of opportunities_and_pledges where household_id matches and status='open'.",
     ),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -2462,6 +2747,12 @@ export const listPeopleQueryLimitMax = 10000;
 export const listPeopleQueryPageDefault = 1;
 
 export const ListPeopleQueryParams = zod.object({
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.",
+    ),
   search: zod.coerce.string().optional(),
   deceased: zod.coerce.boolean().optional(),
   regionId: zod.coerce.string().optional(),
@@ -2645,6 +2936,13 @@ export const ListPeopleResponse = zod.object({
         .nullish()
         .describe(
           "Names of organizations the person previously held a role at (people_entity_roles.current='past').",
+        ),
+      archivedAt: zod
+        .string()
+        .datetime({})
+        .nullish()
+        .describe(
+          "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
         ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -2834,6 +3132,13 @@ export const GetPersonResponse = zod
       .nullish()
       .describe(
         "Names of organizations the person previously held a role at (people_entity_roles.current='past').",
+      ),
+    archivedAt: zod
+      .string()
+      .datetime({})
+      .nullish()
+      .describe(
+        "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
       ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
@@ -3113,6 +3418,13 @@ export const UpdatePersonResponse = zod.object({
     .nullish()
     .describe(
       "Names of organizations the person previously held a role at (people_entity_roles.current='past').",
+    ),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -3601,6 +3913,12 @@ export const listOpportunitiesAndPledgesQueryLimitMax = 10000;
 export const listOpportunitiesAndPledgesQueryPageDefault = 1;
 
 export const ListOpportunitiesAndPledgesQueryParams = zod.object({
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.",
+    ),
   search: zod.coerce.string().optional(),
   paidPresence: zod
     .enum(["has", "blank"])
@@ -3737,6 +4055,13 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       fiscalYear: zod.string().nullish(),
       coveredFiscalYears: zod.array(zod.string()).nullish(),
       entityIds: zod.array(zod.string()).nullish(),
+      archivedAt: zod
+        .string()
+        .datetime({})
+        .nullish()
+        .describe(
+          "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
       promptForReportingDeadlines: zod.boolean().optional(),
@@ -3883,6 +4208,13 @@ export const GetOpportunityOrPledgeResponse = zod
     fiscalYear: zod.string().nullish(),
     coveredFiscalYears: zod.array(zod.string()).nullish(),
     entityIds: zod.array(zod.string()).nullish(),
+    archivedAt: zod
+      .string()
+      .datetime({})
+      .nullish()
+      .describe(
+        "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+      ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
     promptForReportingDeadlines: zod.boolean().optional(),
@@ -4031,6 +4363,13 @@ export const GetOpportunityOrPledgeResponse = zod
               .array(zod.string())
               .nullish()
               .describe("Distinct grant_year values from gift_allocations."),
+            archivedAt: zod
+              .string()
+              .datetime({})
+              .nullish()
+              .describe(
+                "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+              ),
             createdAt: zod.string().datetime({}),
             updatedAt: zod.string().datetime({}),
           }),
@@ -4172,6 +4511,13 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   fiscalYear: zod.string().nullish(),
   coveredFiscalYears: zod.array(zod.string()).nullish(),
   entityIds: zod.array(zod.string()).nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
   promptForReportingDeadlines: zod.boolean().optional(),
@@ -4368,6 +4714,12 @@ export const listGiftsAndPaymentsQueryLimitMax = 10000;
 export const listGiftsAndPaymentsQueryPageDefault = 1;
 
 export const ListGiftsAndPaymentsQueryParams = zod.object({
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.",
+    ),
   search: zod.coerce.string().optional(),
   entitiesPresence: zod
     .enum(["has", "blank"])
@@ -4540,6 +4892,13 @@ export const ListGiftsAndPaymentsResponse = zod.object({
         .array(zod.string())
         .nullish()
         .describe("Distinct grant_year values from gift_allocations."),
+      archivedAt: zod
+        .string()
+        .datetime({})
+        .nullish()
+        .describe(
+          "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -4692,6 +5051,13 @@ export const GetGiftOrPaymentResponse = zod
       .array(zod.string())
       .nullish()
       .describe("Distinct grant_year values from gift_allocations."),
+    archivedAt: zod
+      .string()
+      .datetime({})
+      .nullish()
+      .describe(
+        "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+      ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   })
@@ -4875,6 +5241,13 @@ export const UpdateGiftOrPaymentResponse = zod.object({
     .array(zod.string())
     .nullish()
     .describe("Distinct grant_year values from gift_allocations."),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -5021,6 +5394,13 @@ export const LinkThankYouEmailResponse = zod
       .array(zod.string())
       .nullish()
       .describe("Distinct grant_year values from gift_allocations."),
+    archivedAt: zod
+      .string()
+      .datetime({})
+      .nullish()
+      .describe(
+        "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+      ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   })
@@ -7949,6 +8329,13 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
           .array(zod.string())
           .nullish()
           .describe("Distinct grant_year values from gift_allocations."),
+        archivedAt: zod
+          .string()
+          .datetime({})
+          .nullish()
+          .describe(
+            "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+          ),
         createdAt: zod.string().datetime({}),
         updatedAt: zod.string().datetime({}),
       })
@@ -8092,6 +8479,13 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
           .array(zod.string())
           .nullish()
           .describe("Distinct grant_year values from gift_allocations."),
+        archivedAt: zod
+          .string()
+          .datetime({})
+          .nullish()
+          .describe(
+            "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+          ),
         createdAt: zod.string().datetime({}),
         updatedAt: zod.string().datetime({}),
       })
@@ -8228,6 +8622,13 @@ export const ReconcileStagedPaymentResponse = zod.object({
       .array(zod.string())
       .nullish()
       .describe("Distinct grant_year values from gift_allocations."),
+    archivedAt: zod
+      .string()
+      .datetime({})
+      .nullish()
+      .describe(
+        "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+      ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   }),
@@ -8426,6 +8827,13 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
       .array(zod.string())
       .nullish()
       .describe("Distinct grant_year values from gift_allocations."),
+    archivedAt: zod
+      .string()
+      .datetime({})
+      .nullish()
+      .describe(
+        "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+      ),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
   }),
@@ -9638,19 +10046,19 @@ export const BulkUpdateGiftsAndPaymentsResponse = zod.object({
 });
 
 /**
- * @summary Permanently delete the given people. Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given people. Per-row; returns succeeded + failed ids.
  */
-export const bulkDeletePeopleBodyIdsMax = 1000;
+export const bulkArchivePeopleBodyIdsMax = 1000;
 
-export const BulkDeletePeopleBody = zod
+export const BulkArchivePeopleBody = zod
   .object({
-    ids: zod.array(zod.string()).min(1).max(bulkDeletePeopleBodyIdsMax),
+    ids: zod.array(zod.string()).min(1).max(bulkArchivePeopleBodyIdsMax),
   })
   .describe(
-    "Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
+    "Ids of the records to archive (soft-delete). Stamps archived_at on each row instead of removing it. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
   );
 
-export const BulkDeletePeopleResponse = zod.object({
+export const BulkArchivePeopleResponse = zod.object({
   requested: zod.number().describe("Number of ids in the request."),
   succeededIds: zod.array(zod.string()),
   failed: zod.array(
@@ -9662,19 +10070,19 @@ export const BulkDeletePeopleResponse = zod.object({
 });
 
 /**
- * @summary Permanently delete the given organizations. Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given organizations. Per-row; returns succeeded + failed ids.
  */
-export const bulkDeleteOrganizationsBodyIdsMax = 1000;
+export const bulkArchiveOrganizationsBodyIdsMax = 1000;
 
-export const BulkDeleteOrganizationsBody = zod
+export const BulkArchiveOrganizationsBody = zod
   .object({
-    ids: zod.array(zod.string()).min(1).max(bulkDeleteOrganizationsBodyIdsMax),
+    ids: zod.array(zod.string()).min(1).max(bulkArchiveOrganizationsBodyIdsMax),
   })
   .describe(
-    "Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
+    "Ids of the records to archive (soft-delete). Stamps archived_at on each row instead of removing it. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
   );
 
-export const BulkDeleteOrganizationsResponse = zod.object({
+export const BulkArchiveOrganizationsResponse = zod.object({
   requested: zod.number().describe("Number of ids in the request."),
   succeededIds: zod.array(zod.string()),
   failed: zod.array(
@@ -9686,22 +10094,22 @@ export const BulkDeleteOrganizationsResponse = zod.object({
 });
 
 /**
- * @summary Permanently delete the given opportunities/pledges. Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given opportunities/pledges. Per-row; returns succeeded + failed ids.
  */
-export const bulkDeleteOpportunitiesAndPledgesBodyIdsMax = 1000;
+export const bulkArchiveOpportunitiesAndPledgesBodyIdsMax = 1000;
 
-export const BulkDeleteOpportunitiesAndPledgesBody = zod
+export const BulkArchiveOpportunitiesAndPledgesBody = zod
   .object({
     ids: zod
       .array(zod.string())
       .min(1)
-      .max(bulkDeleteOpportunitiesAndPledgesBodyIdsMax),
+      .max(bulkArchiveOpportunitiesAndPledgesBodyIdsMax),
   })
   .describe(
-    "Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
+    "Ids of the records to archive (soft-delete). Stamps archived_at on each row instead of removing it. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
   );
 
-export const BulkDeleteOpportunitiesAndPledgesResponse = zod.object({
+export const BulkArchiveOpportunitiesAndPledgesResponse = zod.object({
   requested: zod.number().describe("Number of ids in the request."),
   succeededIds: zod.array(zod.string()),
   failed: zod.array(
@@ -9713,22 +10121,22 @@ export const BulkDeleteOpportunitiesAndPledgesResponse = zod.object({
 });
 
 /**
- * @summary Permanently delete the given gifts/payments (and their allocations). Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given gifts/payments. Per-row; returns succeeded + failed ids.
  */
-export const bulkDeleteGiftsAndPaymentsBodyIdsMax = 1000;
+export const bulkArchiveGiftsAndPaymentsBodyIdsMax = 1000;
 
-export const BulkDeleteGiftsAndPaymentsBody = zod
+export const BulkArchiveGiftsAndPaymentsBody = zod
   .object({
     ids: zod
       .array(zod.string())
       .min(1)
-      .max(bulkDeleteGiftsAndPaymentsBodyIdsMax),
+      .max(bulkArchiveGiftsAndPaymentsBodyIdsMax),
   })
   .describe(
-    "Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
+    "Ids of the records to archive (soft-delete). Stamps archived_at on each row instead of removing it. Processed per-row; the response reports which ids succeeded and which failed (with a reason).",
   );
 
-export const BulkDeleteGiftsAndPaymentsResponse = zod.object({
+export const BulkArchiveGiftsAndPaymentsResponse = zod.object({
   requested: zod.number().describe("Number of ids in the request."),
   succeededIds: zod.array(zod.string()),
   failed: zod.array(
@@ -9737,6 +10145,1378 @@ export const BulkDeleteGiftsAndPaymentsResponse = zod.object({
       message: zod.string(),
     }),
   ),
+});
+
+export const ArchivePersonParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ArchivePersonResponse = zod.object({
+  id: zod.string(),
+  prefix: zod.string().nullish(),
+  firstName: zod.string().nullish(),
+  nickname: zod.string().nullish(),
+  middleName: zod.string().nullish(),
+  lastName: zod.string().nullish(),
+  suffix: zod.string().nullish(),
+  fullName: zod.string().nullish(),
+  pronouns: zod
+    .enum(["he_him_his", "she_her_hers", "they_them_theirs", "other"])
+    .nullish(),
+  deceased: zod.boolean(),
+  currentHomeRegionId: zod.string().nullish(),
+  details: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  tags: zod.string().nullish(),
+  lastContacted: zod.string().date().nullish(),
+  interactionCount: zod.number().nullish(),
+  linkedin: zod.string().nullish(),
+  x: zod.string().nullish(),
+  facebook: zod.string().nullish(),
+  instagram: zod.string().nullish(),
+  aboutMe: zod.string().nullish(),
+  youtube: zod.string().nullish(),
+  website: zod.string().nullish(),
+  interestsThematic: zod.array(zod.string()).nullish(),
+  interestsAges: zod.array(zod.string()).nullish(),
+  interestsGovModels: zod.array(zod.string()).nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
+  newsletter: zod.boolean(),
+  unsubscribedToNewsletter: zod.boolean(),
+  childrenAtWf: zod.string().nullish(),
+  meetingLink: zod.string().nullish(),
+  assistantPersonId: zod.string().nullish(),
+  capacityRating: zod
+    .enum([
+      "tier_1k_10k",
+      "tier_10k_50k",
+      "tier_50k_250k",
+      "tier_250k_1m",
+      "tier_1m_plus",
+    ])
+    .nullish(),
+  netWorth: zod
+    .string()
+    .nullish()
+    .describe("Estimated net worth for this individual. Decimal as string."),
+  connectionStatus: zod
+    .enum(["connected", "have_a_connector", "no_connection"])
+    .nullish(),
+  enthusiasm: zod
+    .enum([
+      "7-advocate",
+      "6-supportive",
+      "5-warm",
+      "4-neutral",
+      "3-cool",
+      "2-unsupportive",
+      "1-hostile",
+    ])
+    .nullish(),
+  quickbooksCustomerId: zod
+    .string()
+    .nullish()
+    .describe("QuickBooks Online Customer Id this individual maps to."),
+  priority: zod
+    .enum(["top", "high", "medium", "low"])
+    .nullish()
+    .describe(
+      "Solicitation priority tier (top\/high\/medium\/low). The 'top' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.",
+    ),
+  anonymous: zod
+    .boolean()
+    .describe(
+      "When true, hide the person's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
+    ),
+  lifetimeGiving: zod
+    .string()
+    .nullish()
+    .describe(
+      "Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string.",
+    ),
+  mostRecentGiftDate: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Most recent date_received across direct individual gifts and gifts to households the person belongs to.",
+    ),
+  openOpportunityCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Count of opportunities_and_pledges where this person is the individual giver and status='open'.",
+    ),
+  activeOrganizationNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of organizations the person currently holds a role at (people_entity_roles.current='current').",
+    ),
+  pastOrganizationNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of organizations the person previously held a role at (people_entity_roles.current='past').",
+    ),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UnarchivePersonParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnarchivePersonResponse = zod.object({
+  id: zod.string(),
+  prefix: zod.string().nullish(),
+  firstName: zod.string().nullish(),
+  nickname: zod.string().nullish(),
+  middleName: zod.string().nullish(),
+  lastName: zod.string().nullish(),
+  suffix: zod.string().nullish(),
+  fullName: zod.string().nullish(),
+  pronouns: zod
+    .enum(["he_him_his", "she_her_hers", "they_them_theirs", "other"])
+    .nullish(),
+  deceased: zod.boolean(),
+  currentHomeRegionId: zod.string().nullish(),
+  details: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  tags: zod.string().nullish(),
+  lastContacted: zod.string().date().nullish(),
+  interactionCount: zod.number().nullish(),
+  linkedin: zod.string().nullish(),
+  x: zod.string().nullish(),
+  facebook: zod.string().nullish(),
+  instagram: zod.string().nullish(),
+  aboutMe: zod.string().nullish(),
+  youtube: zod.string().nullish(),
+  website: zod.string().nullish(),
+  interestsThematic: zod.array(zod.string()).nullish(),
+  interestsAges: zod.array(zod.string()).nullish(),
+  interestsGovModels: zod.array(zod.string()).nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
+  newsletter: zod.boolean(),
+  unsubscribedToNewsletter: zod.boolean(),
+  childrenAtWf: zod.string().nullish(),
+  meetingLink: zod.string().nullish(),
+  assistantPersonId: zod.string().nullish(),
+  capacityRating: zod
+    .enum([
+      "tier_1k_10k",
+      "tier_10k_50k",
+      "tier_50k_250k",
+      "tier_250k_1m",
+      "tier_1m_plus",
+    ])
+    .nullish(),
+  netWorth: zod
+    .string()
+    .nullish()
+    .describe("Estimated net worth for this individual. Decimal as string."),
+  connectionStatus: zod
+    .enum(["connected", "have_a_connector", "no_connection"])
+    .nullish(),
+  enthusiasm: zod
+    .enum([
+      "7-advocate",
+      "6-supportive",
+      "5-warm",
+      "4-neutral",
+      "3-cool",
+      "2-unsupportive",
+      "1-hostile",
+    ])
+    .nullish(),
+  quickbooksCustomerId: zod
+    .string()
+    .nullish()
+    .describe("QuickBooks Online Customer Id this individual maps to."),
+  priority: zod
+    .enum(["top", "high", "medium", "low"])
+    .nullish()
+    .describe(
+      "Solicitation priority tier (top\/high\/medium\/low). The 'top' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.",
+    ),
+  anonymous: zod
+    .boolean()
+    .describe(
+      "When true, hide the person's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
+    ),
+  lifetimeGiving: zod
+    .string()
+    .nullish()
+    .describe(
+      "Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string.",
+    ),
+  mostRecentGiftDate: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Most recent date_received across direct individual gifts and gifts to households the person belongs to.",
+    ),
+  openOpportunityCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Count of opportunities_and_pledges where this person is the individual giver and status='open'.",
+    ),
+  activeOrganizationNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of organizations the person currently holds a role at (people_entity_roles.current='current').",
+    ),
+  pastOrganizationNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of organizations the person previously held a role at (people_entity_roles.current='past').",
+    ),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const ArchiveOrganizationParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ArchiveOrganizationResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  issuesGrants: zod
+    .boolean()
+    .describe(
+      "True for grant-making organizations (formerly 'funders'); false for non-grant entities.",
+    ),
+  entityType: zod
+    .enum([
+      "family_foundation",
+      "institutional_foundation",
+      "corporate_foundation",
+      "community_foundation",
+      "bank_foundation",
+      "family_office_trust",
+      "intermediary",
+      "government",
+      "nonprofit",
+      "corporation",
+      "capital_provider",
+      "philanthropic_advisor",
+      "cdfi",
+      "education_forprofit",
+      "competition",
+      "public_private",
+      "daf_platform",
+      "platform",
+      "advocacy_membership_lobbyist",
+      "authorizer",
+      "education_vendor",
+      "elected_official",
+      "higher_ed",
+      "investor",
+      "law_firm",
+      "media",
+      "real_estate",
+      "school",
+      "school_district",
+      "school_network",
+      "small_business_consulting",
+      "tribal",
+    ])
+    .nullish()
+    .describe("Normalized entity type (school_network, nonprofit, etc.)."),
+  makesPris: zod.boolean().nullish(),
+  numberOfEmployees: zod
+    .enum([
+      "e_1",
+      "e_2_10",
+      "e_11_50",
+      "e_51_250",
+      "e_251_1000",
+      "e_1001_10000",
+      "e_10000_plus",
+    ])
+    .nullish(),
+  capacityRating: zod
+    .enum([
+      "tier_1k_10k",
+      "tier_10k_50k",
+      "tier_50k_250k",
+      "tier_250k_1m",
+      "tier_1m_plus",
+    ])
+    .nullish(),
+  totalAssets: zod
+    .string()
+    .nullish()
+    .describe("Estimated total assets \/ endowment size. Decimal as string."),
+  priorityAreasNotes: zod.string().nullish(),
+  about: zod.string().nullish(),
+  activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
+  otherNames: zod.string().nullish(),
+  historicalNames: zod.array(zod.string()).nullish(),
+  details: zod.string().nullish(),
+  emailDomain: zod.string().nullish(),
+  orgEmail: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  tags: zod.string().nullish(),
+  website: zod.string().nullish(),
+  connectionStatus: zod
+    .enum(["connected", "have_a_connector", "no_connection"])
+    .nullish(),
+  enthusiasm: zod
+    .enum([
+      "7-advocate",
+      "6-supportive",
+      "5-warm",
+      "4-neutral",
+      "3-cool",
+      "2-unsupportive",
+      "1-hostile",
+    ])
+    .nullish(),
+  strategicAlignment: zod.enum(["high", "medium", "low"]).nullish(),
+  interestsThematic: zod.array(zod.string()).nullish(),
+  interestsAges: zod.array(zod.string()).nullish(),
+  interestsGovModels: zod.array(zod.string()).nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
+  parentOrganizationId: zod.string().nullish(),
+  paymentIntermediaryId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Payment intermediary (e.g. a DAF) this organization gives through.",
+    ),
+  anonymous: zod
+    .boolean()
+    .describe(
+      "When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
+    ),
+  lastContacted: zod.string().date().nullish(),
+  x: zod.string().nullish(),
+  linkedin: zod.string().nullish(),
+  facebook: zod.string().nullish(),
+  instagram: zod.string().nullish(),
+  youtube: zod.string().nullish(),
+  crunchbase: zod.string().nullish(),
+  quickbooksCustomerId: zod
+    .string()
+    .nullish()
+    .describe("QuickBooks Online Customer Id this organization maps to."),
+  priority: zod
+    .enum(["top", "high", "medium", "low"])
+    .nullish()
+    .describe("Solicitation priority tier (top\/high\/medium\/low)."),
+  primaryContactPersonId: zod.string().nullish(),
+  primaryContactPersonName: zod.string().nullish(),
+  lifetimeGiving: zod
+    .string()
+    .nullish()
+    .describe(
+      "Sum of gifts.amount where organization_id matches. Decimal as string.",
+    ),
+  openOpportunityCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Count of opportunities_and_pledges where organization_id matches and status='open'.",
+    ),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UnarchiveOrganizationParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnarchiveOrganizationResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  issuesGrants: zod
+    .boolean()
+    .describe(
+      "True for grant-making organizations (formerly 'funders'); false for non-grant entities.",
+    ),
+  entityType: zod
+    .enum([
+      "family_foundation",
+      "institutional_foundation",
+      "corporate_foundation",
+      "community_foundation",
+      "bank_foundation",
+      "family_office_trust",
+      "intermediary",
+      "government",
+      "nonprofit",
+      "corporation",
+      "capital_provider",
+      "philanthropic_advisor",
+      "cdfi",
+      "education_forprofit",
+      "competition",
+      "public_private",
+      "daf_platform",
+      "platform",
+      "advocacy_membership_lobbyist",
+      "authorizer",
+      "education_vendor",
+      "elected_official",
+      "higher_ed",
+      "investor",
+      "law_firm",
+      "media",
+      "real_estate",
+      "school",
+      "school_district",
+      "school_network",
+      "small_business_consulting",
+      "tribal",
+    ])
+    .nullish()
+    .describe("Normalized entity type (school_network, nonprofit, etc.)."),
+  makesPris: zod.boolean().nullish(),
+  numberOfEmployees: zod
+    .enum([
+      "e_1",
+      "e_2_10",
+      "e_11_50",
+      "e_51_250",
+      "e_251_1000",
+      "e_1001_10000",
+      "e_10000_plus",
+    ])
+    .nullish(),
+  capacityRating: zod
+    .enum([
+      "tier_1k_10k",
+      "tier_10k_50k",
+      "tier_50k_250k",
+      "tier_250k_1m",
+      "tier_1m_plus",
+    ])
+    .nullish(),
+  totalAssets: zod
+    .string()
+    .nullish()
+    .describe("Estimated total assets \/ endowment size. Decimal as string."),
+  priorityAreasNotes: zod.string().nullish(),
+  about: zod.string().nullish(),
+  activeStatus: zod.enum(["active", "defunct", "spenddown"]).nullish(),
+  otherNames: zod.string().nullish(),
+  historicalNames: zod.array(zod.string()).nullish(),
+  details: zod.string().nullish(),
+  emailDomain: zod.string().nullish(),
+  orgEmail: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  tags: zod.string().nullish(),
+  website: zod.string().nullish(),
+  connectionStatus: zod
+    .enum(["connected", "have_a_connector", "no_connection"])
+    .nullish(),
+  enthusiasm: zod
+    .enum([
+      "7-advocate",
+      "6-supportive",
+      "5-warm",
+      "4-neutral",
+      "3-cool",
+      "2-unsupportive",
+      "1-hostile",
+    ])
+    .nullish(),
+  strategicAlignment: zod.enum(["high", "medium", "low"]).nullish(),
+  interestsThematic: zod.array(zod.string()).nullish(),
+  interestsAges: zod.array(zod.string()).nullish(),
+  interestsGovModels: zod.array(zod.string()).nullish(),
+  regionIds: zod.array(zod.string()).nullish(),
+  parentOrganizationId: zod.string().nullish(),
+  paymentIntermediaryId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Payment intermediary (e.g. a DAF) this organization gives through.",
+    ),
+  anonymous: zod
+    .boolean()
+    .describe(
+      "When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
+    ),
+  lastContacted: zod.string().date().nullish(),
+  x: zod.string().nullish(),
+  linkedin: zod.string().nullish(),
+  facebook: zod.string().nullish(),
+  instagram: zod.string().nullish(),
+  youtube: zod.string().nullish(),
+  crunchbase: zod.string().nullish(),
+  quickbooksCustomerId: zod
+    .string()
+    .nullish()
+    .describe("QuickBooks Online Customer Id this organization maps to."),
+  priority: zod
+    .enum(["top", "high", "medium", "low"])
+    .nullish()
+    .describe("Solicitation priority tier (top\/high\/medium\/low)."),
+  primaryContactPersonId: zod.string().nullish(),
+  primaryContactPersonName: zod.string().nullish(),
+  lifetimeGiving: zod
+    .string()
+    .nullish()
+    .describe(
+      "Sum of gifts.amount where organization_id matches. Decimal as string.",
+    ),
+  openOpportunityCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Count of opportunities_and_pledges where organization_id matches and status='open'.",
+    ),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const ArchiveOpportunityOrPledgeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ArchiveOpportunityOrPledgeResponse = zod.object({
+  id: zod.string(),
+  name: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  askAmount: zod.string().nullish(),
+  awardedAmount: zod.string().nullish(),
+  paidAmount: zod.string().optional(),
+  type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
+  conditional: zod
+    .enum([
+      "unconditional",
+      "conditional_unspecified",
+      "reimbursable",
+      "conditional_on_funder_determination",
+      "conditional_on_target",
+    ])
+    .nullish(),
+  conditions: zod.string().nullish(),
+  conditionsMet: zod.boolean(),
+  individualGiverPersonId: zod.string().nullish(),
+  individualAdvisorPersonId: zod.string().nullish(),
+  matchId: zod.string().nullish(),
+  status: zod
+    .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+    .describe(
+      "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage = written_commitment                      → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage = written, or conditional\/grant-letter sticky flag)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+    )
+    .nullish(),
+  lossType: zod
+    .enum(["dormant", "lost"])
+    .describe(
+      "User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to 'dormant'\n(paused) or 'lost' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n",
+    )
+    .nullish(),
+  projectedCloseDate: zod.string().date().nullish(),
+  actualCompletionDate: zod.string().date().nullish(),
+  winProbability: zod.string().nullish(),
+  stage: zod
+    .enum([
+      "cold_lead",
+      "warm_lead",
+      "in_conversation",
+      "convince",
+      "conditional_commitment",
+      "probable_renewal",
+      "verbal_confirmation",
+      "written_commitment",
+      "cash_in",
+    ])
+    .nullish(),
+  lossReason: zod.string().nullish(),
+  applicationDeadline: zod.string().date().nullish(),
+  paymentDetails: zod.string().nullish(),
+  usageNotes: zod.string().nullish(),
+  copperPledgeId: zod.string().nullish(),
+  wasPledge: zod.boolean(),
+  grantLetterUrl: zod.string().nullish(),
+  grantLetterFilename: zod.string().nullish(),
+  grantLetterUploadedAt: zod.string().datetime({}).nullish(),
+  primaryContactPersonId: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+  individualGiverPersonPriority: zod
+    .enum(["top", "high", "medium", "low"])
+    .nullish(),
+  primaryContactPersonName: zod.string().nullish(),
+  fiscalYear: zod.string().nullish(),
+  coveredFiscalYears: zod.array(zod.string()).nullish(),
+  entityIds: zod.array(zod.string()).nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  promptForReportingDeadlines: zod.boolean().optional(),
+});
+
+export const UnarchiveOpportunityOrPledgeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnarchiveOpportunityOrPledgeResponse = zod.object({
+  id: zod.string(),
+  name: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  askAmount: zod.string().nullish(),
+  awardedAmount: zod.string().nullish(),
+  paidAmount: zod.string().optional(),
+  type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
+  conditional: zod
+    .enum([
+      "unconditional",
+      "conditional_unspecified",
+      "reimbursable",
+      "conditional_on_funder_determination",
+      "conditional_on_target",
+    ])
+    .nullish(),
+  conditions: zod.string().nullish(),
+  conditionsMet: zod.boolean(),
+  individualGiverPersonId: zod.string().nullish(),
+  individualAdvisorPersonId: zod.string().nullish(),
+  matchId: zod.string().nullish(),
+  status: zod
+    .enum(["open", "pledge", "cash_in", "dormant", "lost"])
+    .describe(
+      "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage = written_commitment                      → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage = written, or conditional\/grant-letter sticky flag)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+    )
+    .nullish(),
+  lossType: zod
+    .enum(["dormant", "lost"])
+    .describe(
+      "User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to 'dormant'\n(paused) or 'lost' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n",
+    )
+    .nullish(),
+  projectedCloseDate: zod.string().date().nullish(),
+  actualCompletionDate: zod.string().date().nullish(),
+  winProbability: zod.string().nullish(),
+  stage: zod
+    .enum([
+      "cold_lead",
+      "warm_lead",
+      "in_conversation",
+      "convince",
+      "conditional_commitment",
+      "probable_renewal",
+      "verbal_confirmation",
+      "written_commitment",
+      "cash_in",
+    ])
+    .nullish(),
+  lossReason: zod.string().nullish(),
+  applicationDeadline: zod.string().date().nullish(),
+  paymentDetails: zod.string().nullish(),
+  usageNotes: zod.string().nullish(),
+  copperPledgeId: zod.string().nullish(),
+  wasPledge: zod.boolean(),
+  grantLetterUrl: zod.string().nullish(),
+  grantLetterFilename: zod.string().nullish(),
+  grantLetterUploadedAt: zod.string().datetime({}).nullish(),
+  primaryContactPersonId: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+  individualGiverPersonPriority: zod
+    .enum(["top", "high", "medium", "low"])
+    .nullish(),
+  primaryContactPersonName: zod.string().nullish(),
+  fiscalYear: zod.string().nullish(),
+  coveredFiscalYears: zod.array(zod.string()).nullish(),
+  entityIds: zod.array(zod.string()).nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  promptForReportingDeadlines: zod.boolean().optional(),
+});
+
+export const ArchiveGiftOrPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ArchiveGiftOrPaymentResponse = zod.object({
+  id: zod.string(),
+  legacyGiftId: zod.string().nullish(),
+  name: zod.string().nullish(),
+  details: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  paymentMethod: zod
+    .enum([
+      "ach",
+      "check",
+      "wire",
+      "stock",
+      "donor_box",
+      "daf_ach",
+      "daf_check",
+      "daf_bill_com",
+    ])
+    .nullish(),
+  amount: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  type: zod
+    .enum([
+      "standard_gift",
+      "pledge_payment",
+      "directed_gift",
+      "loan_fund_investment",
+      "matching_gift",
+    ])
+    .nullish(),
+  paymentOnPledgeId: zod.string().nullish(),
+  advisorPersonId: zod.string().nullish(),
+  grantYear: zod.string().nullish(),
+  giftBeingMatchedId: zod.string().nullish(),
+  primaryContactPersonId: zod.string().nullish(),
+  paymentIntermediaryId: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  designatedToSchool: zod.boolean(),
+  tags: zod.string().nullish(),
+  thankYouSentAt: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time.",
+    ),
+  thankYouEmailMessageId: zod
+    .string()
+    .nullish()
+    .describe(
+      "FK to the email_messages row that was identified as the thank-you. Read-only; set via \/link-thank-you-email or the thank_you_acknowledgment proposal accept.",
+    ),
+  thankYouAttachments: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        filename: zod.string().nullish(),
+        mimeType: zod.string().nullish(),
+        sizeBytes: zod.number().nullish(),
+        downloadUrl: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
+    ),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  paymentIntermediaryName: zod.string().nullish(),
+  quickbooksStagedPaymentId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.",
+    ),
+  organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+  individualGiverPersonPriority: zod
+    .enum(["top", "high", "medium", "low"])
+    .nullish(),
+  entityIds: zod
+    .array(zod.string())
+    .nullish()
+    .describe("Distinct entity_id values from gift_allocations."),
+  displayUsages: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Distinct display_usage values from gift_allocations (server-computed labels).",
+    ),
+  grantYears: zod
+    .array(zod.string())
+    .nullish()
+    .describe("Distinct grant_year values from gift_allocations."),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UnarchiveGiftOrPaymentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnarchiveGiftOrPaymentResponse = zod.object({
+  id: zod.string(),
+  legacyGiftId: zod.string().nullish(),
+  name: zod.string().nullish(),
+  details: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  paymentMethod: zod
+    .enum([
+      "ach",
+      "check",
+      "wire",
+      "stock",
+      "donor_box",
+      "daf_ach",
+      "daf_check",
+      "daf_bill_com",
+    ])
+    .nullish(),
+  amount: zod.string().nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  type: zod
+    .enum([
+      "standard_gift",
+      "pledge_payment",
+      "directed_gift",
+      "loan_fund_investment",
+      "matching_gift",
+    ])
+    .nullish(),
+  paymentOnPledgeId: zod.string().nullish(),
+  advisorPersonId: zod.string().nullish(),
+  grantYear: zod.string().nullish(),
+  giftBeingMatchedId: zod.string().nullish(),
+  primaryContactPersonId: zod.string().nullish(),
+  paymentIntermediaryId: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  designatedToSchool: zod.boolean(),
+  tags: zod.string().nullish(),
+  thankYouSentAt: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time.",
+    ),
+  thankYouEmailMessageId: zod
+    .string()
+    .nullish()
+    .describe(
+      "FK to the email_messages row that was identified as the thank-you. Read-only; set via \/link-thank-you-email or the thank_you_acknowledgment proposal accept.",
+    ),
+  thankYouAttachments: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        filename: zod.string().nullish(),
+        mimeType: zod.string().nullish(),
+        sizeBytes: zod.number().nullish(),
+        downloadUrl: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.",
+    ),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  paymentIntermediaryName: zod.string().nullish(),
+  quickbooksStagedPaymentId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.",
+    ),
+  organizationPriority: zod.enum(["top", "high", "medium", "low"]).nullish(),
+  individualGiverPersonPriority: zod
+    .enum(["top", "high", "medium", "low"])
+    .nullish(),
+  entityIds: zod
+    .array(zod.string())
+    .nullish()
+    .describe("Distinct entity_id values from gift_allocations."),
+  displayUsages: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Distinct display_usage values from gift_allocations (server-computed labels).",
+    ),
+  grantYears: zod
+    .array(zod.string())
+    .nullish()
+    .describe("Distinct grant_year values from gift_allocations."),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const ArchiveFundableProjectParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ArchiveFundableProjectResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  active: zod.boolean(),
+  fundraisingStart: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Fundraising start date (YYYY-MM-DD). Null on legacy rows; UI prompts to fill in.",
+    ),
+  fundraisingEnd: zod.string().date().nullish(),
+  spendingStart: zod.string().date().nullish(),
+  spendingEnd: zod.string().date().nullish(),
+  fundraisingGoal: zod
+    .string()
+    .nullish()
+    .describe("Decimal string (numeric(14,2)). Null on legacy rows."),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UnarchiveFundableProjectParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnarchiveFundableProjectResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  active: zod.boolean(),
+  fundraisingStart: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Fundraising start date (YYYY-MM-DD). Null on legacy rows; UI prompts to fill in.",
+    ),
+  fundraisingEnd: zod.string().date().nullish(),
+  spendingStart: zod.string().date().nullish(),
+  spendingEnd: zod.string().date().nullish(),
+  fundraisingGoal: zod
+    .string()
+    .nullish()
+    .describe("Decimal string (numeric(14,2)). Null on legacy rows."),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const ArchiveHouseholdParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ArchiveHouseholdResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  active: zod.boolean(),
+  lifetimeGiving: zod
+    .string()
+    .nullish()
+    .describe(
+      "Sum of gifts to this household + gifts directly to its member individuals. Decimal as string.",
+    ),
+  mostRecentGiftDate: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Most recent date_received across household gifts and member individual gifts.",
+    ),
+  openOpportunityCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Count of opportunities_and_pledges where household_id matches and status='open'.",
+    ),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UnarchiveHouseholdParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnarchiveHouseholdResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  active: zod.boolean(),
+  lifetimeGiving: zod
+    .string()
+    .nullish()
+    .describe(
+      "Sum of gifts to this household + gifts directly to its member individuals. Decimal as string.",
+    ),
+  mostRecentGiftDate: zod
+    .string()
+    .date()
+    .nullish()
+    .describe(
+      "Most recent date_received across household gifts and member individual gifts.",
+    ),
+  openOpportunityCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Count of opportunities_and_pledges where household_id matches and status='open'.",
+    ),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const ArchiveSchoolParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ArchiveSchoolResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  longName: zod.string().nullish(),
+  shortName: zod.string().nullish(),
+  status: zod
+    .enum([
+      "emerging",
+      "open",
+      "paused",
+      "closing",
+      "permanently_closed",
+      "disaffiliating",
+      "disaffiliated",
+      "placeholder",
+      "abandoned",
+    ])
+    .nullish(),
+  governanceModel: zod
+    .enum([
+      "independent",
+      "district",
+      "charter",
+      "exploring_charter",
+      "community_partnership",
+    ])
+    .nullish(),
+  agesPlanes: zod.array(zod.string()).nullish(),
+  logoMainSquareUrl: zod.string().nullish(),
+  stageStatus: zod.string().nullish(),
+  currentMailingAddress: zod.string().nullish(),
+  currentPhysicalAddress: zod.string().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UnarchiveSchoolParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnarchiveSchoolResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  longName: zod.string().nullish(),
+  shortName: zod.string().nullish(),
+  status: zod
+    .enum([
+      "emerging",
+      "open",
+      "paused",
+      "closing",
+      "permanently_closed",
+      "disaffiliating",
+      "disaffiliated",
+      "placeholder",
+      "abandoned",
+    ])
+    .nullish(),
+  governanceModel: zod
+    .enum([
+      "independent",
+      "district",
+      "charter",
+      "exploring_charter",
+      "community_partnership",
+    ])
+    .nullish(),
+  agesPlanes: zod.array(zod.string()).nullish(),
+  logoMainSquareUrl: zod.string().nullish(),
+  stageStatus: zod.string().nullish(),
+  currentMailingAddress: zod.string().nullish(),
+  currentPhysicalAddress: zod.string().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const ArchiveRegionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ArchiveRegionResponse = zod.object({
+  id: zod
+    .string()
+    .describe(
+      "Human-readable slug PK, e.g. `united_states__minnesota__saint_paul`. Built from the region's name plus its included-type ancestors (continent \/ country \/ state \/ city \/ neighborhood); intermediate aggregation layers (multi_state_region, region_within_state, metro_area) are skipped.",
+    ),
+  name: zod.string(),
+  displayPath: zod
+    .string()
+    .describe(
+      "Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display.",
+    ),
+  stateAbbreviation: zod.string().nullish(),
+  type: zod
+    .enum([
+      "state",
+      "metro_area",
+      "city",
+      "neighborhood",
+      "region_within_state",
+      "multi_state_region",
+      "country",
+      "continent",
+    ])
+    .nullish(),
+  parentRegionId: zod.string().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UnarchiveRegionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnarchiveRegionResponse = zod.object({
+  id: zod
+    .string()
+    .describe(
+      "Human-readable slug PK, e.g. `united_states__minnesota__saint_paul`. Built from the region's name plus its included-type ancestors (continent \/ country \/ state \/ city \/ neighborhood); intermediate aggregation layers (multi_state_region, region_within_state, metro_area) are skipped.",
+    ),
+  name: zod.string(),
+  displayPath: zod
+    .string()
+    .describe(
+      "Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display.",
+    ),
+  stateAbbreviation: zod.string().nullish(),
+  type: zod
+    .enum([
+      "state",
+      "metro_area",
+      "city",
+      "neighborhood",
+      "region_within_state",
+      "multi_state_region",
+      "country",
+      "continent",
+    ])
+    .nullish(),
+  parentRegionId: zod.string().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const GetFiscalYearParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetFiscalYearResponse = zod.object({
+  id: zod.string(),
+  label: zod.string(),
+  startDate: zod.string().date().nullish(),
+  endDate: zod.string().date().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UpdateFiscalYearParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateFiscalYearBody = zod
+  .object({
+    label: zod.string().min(1).optional(),
+    startDate: zod.string().date().nullish(),
+    endDate: zod.string().date().nullish(),
+    goalAmount: zod
+      .string()
+      .nullish()
+      .describe(
+        "Decimal string (numeric(14,2)). Use plain digits with optional decimal, no commas.",
+      ),
+  })
+  .describe(
+    "Inline-editable simple fields for a fiscal year. The slug (`id`) is immutable.",
+  );
+
+export const UpdateFiscalYearResponse = zod.object({
+  id: zod.string(),
+  label: zod.string(),
+  startDate: zod.string().date().nullish(),
+  endDate: zod.string().date().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const ArchiveFiscalYearParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ArchiveFiscalYearResponse = zod.object({
+  id: zod.string(),
+  label: zod.string(),
+  startDate: zod.string().date().nullish(),
+  endDate: zod.string().date().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+export const UnarchiveFiscalYearParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnarchiveFiscalYearResponse = zod.object({
+  id: zod.string(),
+  label: zod.string(),
+  startDate: zod.string().date().nullish(),
+  endDate: zod.string().date().nullish(),
+  archivedAt: zod
+    .string()
+    .datetime({})
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. Non-null = archived; only admins can view\/restore.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });
 
 /**

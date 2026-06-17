@@ -78,7 +78,7 @@ import {
   CreateGiftOrPaymentBodyRefined,
   UpdateGiftOrPaymentBody,
   BulkUpdateGiftsAndPaymentsBody,
-  BulkDeleteGiftsAndPaymentsBody,
+  BulkArchiveGiftsAndPaymentsBody,
   MergeGiftsAndPaymentsBody,
   MergeGiftsIntoPledgeBody,
   validateGiftInvariants,
@@ -88,7 +88,7 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { executeBulkDelete } from "../lib/bulkDelete";
+import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { inArray } from "drizzle-orm";
 
@@ -219,6 +219,8 @@ router.get(
     }
     if (q.thankYouSentAtPresence === "has") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NOT NULL`);
     else if (q.thankYouSentAtPresence === "blank") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NULL`);
+    const archivedFilter = activeOnlyUnlessAdmin(req, giftsAndPayments.archivedAt);
+    if (archivedFilter) filters.push(archivedFilter);
     const where = filters.length ? and(...filters) : undefined;
     // Sort order (default date_desc). Amount is a numeric text column, so cast
     // for a true numeric sort; a NULLS LAST tiebreaker on dateReceived keeps the
@@ -534,45 +536,30 @@ router.delete(
 );
 
 router.post(
-  "/gifts-and-payments/bulk-delete",
+  "/gifts-and-payments/bulk-archive",
   asyncHandler(async (req, res) => {
-    // Mirrors the single gift delete: block rows linked to a QuickBooks
-    // split (409 there → per-row failure here), clear the RESTRICT-FK
-    // allocation rows inside each row's savepoint, then recompute the
-    // affected pledges' coverage once after commit.
-    await executeBulkDelete(req, res, {
+    // Archive is non-destructive: it only stamps archived_at, so unlike the
+    // bulk DELETE it neither removes allocation rows nor needs the QuickBooks
+    // split-link guard (the link is preserved) nor a pledge-coverage recompute.
+    await executeBulkArchive(req, res, {
       entity: "gifts_and_payments",
       table: giftsAndPayments,
-      bodySchema: BulkDeleteGiftsAndPaymentsBody,
-      precheck: async (row) => {
-        const splitLink = await db
-          .select({ stagedPaymentId: stagedPaymentSplits.stagedPaymentId })
-          .from(stagedPaymentSplits)
-          .where(eq(stagedPaymentSplits.giftId, row.id as string))
-          .then((r) => r[0]);
-        if (splitLink) {
-          return "This gift is part of a split-reconciled QuickBooks payment. Revert the split in QuickBooks Review before deleting the gift.";
-        }
-        return null;
-      },
-      cleanup: async (tx, row) => {
-        await tx
-          .delete(giftAllocations)
-          .where(eq(giftAllocations.giftId, row.id as string));
-      },
-      afterCommit: async (rows) => {
-        const pledgeIds = Array.from(
-          new Set(
-            rows
-              .map((r) => r.paymentOnPledgeId as string | null)
-              .filter((id): id is string => !!id),
-          ),
-        );
-        for (const pledgeId of pledgeIds) {
-          await applyDerivedOppFieldsMany(pledgeId);
-        }
-      },
+      bodySchema: BulkArchiveGiftsAndPaymentsBody,
     });
+  }),
+);
+
+router.post(
+  "/gifts-and-payments/:id/archive",
+  asyncHandler(async (req, res) => {
+    await archiveOne(req, res, { entity: "gift", table: giftsAndPayments });
+  }),
+);
+
+router.post(
+  "/gifts-and-payments/:id/unarchive",
+  asyncHandler(async (req, res) => {
+    await unarchiveOne(req, res, { entity: "gift", table: giftsAndPayments });
   }),
 );
 

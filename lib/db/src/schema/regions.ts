@@ -13,10 +13,13 @@ export const regions = pgTable("regions", {
     (): AnyPgColumn => regions.id,
     { onDelete: "set null" },
   ),
+  // Soft-delete: non-null = archived (hidden from non-admins).
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("regions_parent_region_id_idx").on(t.parentRegionId),
+  index("regions_archived_at_idx").on(t.archivedAt),
 ]);
 
 export type Region = typeof regions.$inferSelect;

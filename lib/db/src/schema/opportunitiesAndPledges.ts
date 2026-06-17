@@ -165,6 +165,9 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   ),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
+  // Soft-delete: non-null = archived (hidden from non-admins). Separate from
+  // the calculated `status` and the `lossType` override; never set by them.
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -175,6 +178,7 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   index("opportunities_and_pledges_match_id_idx").on(t.matchId),
   index("opportunities_and_pledges_owner_user_id_idx").on(t.ownerUserId),
   index("opportunities_and_pledges_primary_contact_person_id_idx").on(t.primaryContactPersonId),
+  index("opportunities_and_pledges_archived_at_idx").on(t.archivedAt),
   // Partial indexes for the two phase-specific hot paths. See
   // "Column validity by status" comment above.
   index("opportunities_and_pledges_open_pipeline_idx")

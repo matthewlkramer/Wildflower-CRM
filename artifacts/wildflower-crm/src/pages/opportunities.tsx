@@ -1,11 +1,15 @@
-import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useCallback, useMemo, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListOpportunitiesAndPledges,
   getListOpportunitiesAndPledgesQueryKey,
   useBulkUpdateOpportunitiesAndPledges,
-  useBulkDeleteOpportunitiesAndPledges,
+  useBulkArchiveOpportunitiesAndPledges,
+  useArchiveOpportunityOrPledge,
+  useUnarchiveOpportunityOrPledge,
+  useUpdateOpportunityOrPledge,
   useListEntities,
   type ListOpportunitiesAndPledgesParams,
   type OpportunityStatus,
@@ -26,8 +30,23 @@ import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
-import { BulkDeleteDialog } from "@/components/bulk-delete-dialog";
+import { BulkArchiveDialog } from "@/components/bulk-archive-dialog";
 import { OPPORTUNITIES_BULK_FIELDS } from "@/lib/bulk-fields";
+import {
+  RowActionIcons,
+  InlineRowSaveActions,
+} from "@/components/row-action-icons";
+import { ShowArchivedToggle } from "@/components/show-archived-toggle";
+import { useIsAdmin } from "@/hooks/use-is-admin";
+import { useInlineRowEdit } from "@/hooks/use-inline-row-edit";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useDebounce } from "@/hooks/use-debounce";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 import {
@@ -76,11 +95,32 @@ const TYPES: OpportunityType[] = ["solicitation", "renewal", "open_application"]
 
 const PAGE_SIZE = 50;
 
+const NONE = "__none__";
+type OppDraft = {
+  type: string;
+};
+
+type InlineCtx = {
+  editingId: string | null;
+  draft: OppDraft | null;
+  isEditing: (id: string) => boolean;
+  patch: (partial: Partial<OppDraft>) => void;
+  save: () => void;
+  cancel: () => void;
+  saving: boolean;
+};
+
 type ColCtx = {
   isPledgeView: boolean;
   basePath: string;
   userNames: Map<string, string>;
   entityNameById: Map<string, string>;
+  isAdmin: boolean;
+  inline: InlineCtx;
+  onOpen: (o: OpportunityOrPledge) => void;
+  onStartEdit: (o: OpportunityOrPledge) => void;
+  onArchive: (o: OpportunityOrPledge) => void;
+  onUnarchive: (o: OpportunityOrPledge) => void;
 };
 
 // Single registry covers both pledge and opportunity views. The view
@@ -195,7 +235,32 @@ function buildColumns(ctx: ColCtx): ColumnDef<OpportunityOrPledge>[] {
       key: "type",
       label: "Type",
       defaultVisible: false,
-      cell: (o) => formatEnum(o.type),
+      cell: (o) =>
+        ctx.inline.isEditing(o.id) ? (
+          <Select
+            value={ctx.inline.draft?.type ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ type: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Type"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-type-opp-${o.id}`}
+            >
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {TYPES.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {formatEnum(t)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          formatEnum(o.type)
+        ),
     },
     {
       key: "applicationDeadline",
@@ -211,6 +276,40 @@ function buildColumns(ctx: ColCtx): ColumnDef<OpportunityOrPledge>[] {
       tdClassName: "text-right tabular-nums",
       cell: (o) =>
         o.winProbability != null ? `${Math.round(Number(o.winProbability) * 100)}%` : "—",
+    },
+    {
+      key: "actions",
+      label: "",
+      required: true,
+      sortable: false,
+      align: "right",
+      thClassName: "w-32",
+      tdClassName: "text-right",
+      cell: (o) =>
+        ctx.inline.isEditing(o.id) ? (
+          <InlineRowSaveActions
+            onSave={ctx.inline.save}
+            onCancel={ctx.inline.cancel}
+            saving={ctx.inline.saving}
+            testIdPrefix={`opp-${o.id}`}
+          />
+        ) : (
+          <RowActionIcons
+            entityLabel={o.name ?? `Untitled ${o.id}`}
+            testIdPrefix={`opp-${o.id}`}
+            disabled={ctx.inline.editingId !== null}
+            archived={!!o.archivedAt}
+            onOpen={() => ctx.onOpen(o)}
+            onEdit={() => ctx.onStartEdit(o)}
+            onArchive={
+              o.archivedAt
+                ? ctx.isAdmin
+                  ? () => ctx.onUnarchive(o)
+                  : undefined
+                : () => ctx.onArchive(o)
+            }
+          />
+        ),
     },
   ];
 }
@@ -274,10 +373,21 @@ export default function Opportunities({
   );
   const [viewMode, setViewMode] = usePersistedState<"list" | "kanban">(`${persistNs}.view`, "list");
   const selection = useRowSelection();
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const isAdmin = useIsAdmin();
+  const queryClient = useQueryClient();
+  const [showArchived, setShowArchived] = usePersistedState<boolean>(
+    `${persistNs}.showArchived`,
+    false,
+  );
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
   const bulkMut = useBulkUpdateOpportunitiesAndPledges();
-  const bulkDeleteMut = useBulkDeleteOpportunitiesAndPledges();
+  const bulkArchiveMut = useBulkArchiveOpportunitiesAndPledges();
+  const archiveMut = useArchiveOpportunityOrPledge();
+  const unarchiveMut = useUnarchiveOpportunityOrPledge();
+  const updateOpp = useUpdateOpportunityOrPledge();
   // Lookup map so the Entities column can render slug -> human name
   // without firing one fetch per row. Same pattern as gifts.tsx.
   const entitiesQ = useListEntities();
@@ -302,6 +412,7 @@ export default function Opportunities({
   const params: ListOpportunitiesAndPledgesParams = {
     limit: viewMode === "kanban" ? KANBAN_LIMIT : (sortActive ? 10000 : PAGE_SIZE),
     page: viewMode === "kanban" ? 1 : (sortActive ? 1 : page),
+    ...(isAdmin && showArchived ? { includeArchived: true } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(pledgeView ? { pledgeView } : {}),
     ...(effectiveStatuses.length > 0
@@ -326,6 +437,63 @@ export default function Opportunities({
   const rows = data?.data ?? [];
   const isPledgeView = pledgeView === "pledges";
   const userNames = useUserNameMap();
+
+  const refreshList = useCallback(
+    () =>
+      queryClient.invalidateQueries({
+        queryKey: getListOpportunitiesAndPledgesQueryKey(),
+      }),
+    [queryClient],
+  );
+
+  const inlineEdit = useInlineRowEdit<OpportunityOrPledge, OppDraft>({
+    getId: (o) => o.id,
+    toDraft: (o) => ({ type: o.type ?? NONE }),
+    onSave: async (id, d) => {
+      await updateOpp.mutateAsync({
+        id,
+        data: { type: d.type === NONE ? null : (d.type as OpportunityType) },
+      });
+      await refreshList();
+      toast({ title: "Opportunity updated" });
+    },
+  });
+
+  const archiveOpp = (o: OpportunityOrPledge) =>
+    archiveMut.mutate(
+      { id: o.id },
+      {
+        onSuccess: async () => {
+          await refreshList();
+          selection.removeMany([o.id]);
+          toast({ title: "Opportunity archived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Archive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+
+  const unarchiveOpp = (o: OpportunityOrPledge) =>
+    unarchiveMut.mutate(
+      { id: o.id },
+      {
+        onSuccess: async () => {
+          await refreshList();
+          toast({ title: "Opportunity unarchived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Unarchive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+
   const registry = useMemo(
     () =>
       buildColumns({
@@ -333,8 +501,25 @@ export default function Opportunities({
         basePath,
         userNames,
         entityNameById,
+        isAdmin,
+        inline: {
+          editingId: inlineEdit.editingId,
+          draft: inlineEdit.draft,
+          isEditing: inlineEdit.isEditing,
+          patch: inlineEdit.patch,
+          save: () => {
+            void inlineEdit.save();
+          },
+          cancel: inlineEdit.cancel,
+          saving: inlineEdit.saving,
+        },
+        onOpen: (o) => navigate(`${basePath}/${o.id}`),
+        onStartEdit: (o) => inlineEdit.start(o),
+        onArchive: archiveOpp,
+        onUnarchive: unarchiveOpp,
       }),
-    [isPledgeView, basePath, userNames, entityNameById],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isPledgeView, basePath, userNames, entityNameById, isAdmin, inlineEdit, navigate],
   );
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
@@ -676,6 +861,15 @@ export default function Opportunities({
         )}
 
         <div className="ml-auto flex items-end gap-2">
+          <ShowArchivedToggle
+            value={showArchived}
+            onChange={(v) => {
+              setShowArchived(v);
+              setPage(1);
+              selection.clear();
+            }}
+            testId="toggle-show-archived-opportunities"
+          />
           <div className="flex rounded-md border overflow-hidden">
             <Button
               variant={viewMode === "list" ? "secondary" : "ghost"}
@@ -791,19 +985,19 @@ export default function Opportunities({
         <BulkActionBar
           count={selection.count}
           onEdit={() => setBulkOpen(true)}
-          onDelete={() => setBulkDeleteOpen(true)}
+          onArchive={() => setBulkArchiveOpen(true)}
           onClear={selection.clear}
           entityNoun="opportunity"
         />
       )}
-      <BulkDeleteDialog
-        open={bulkDeleteOpen}
-        onOpenChange={setBulkDeleteOpen}
+      <BulkArchiveDialog
+        open={bulkArchiveOpen}
+        onOpenChange={setBulkArchiveOpen}
         entityNoun="opportunity"
         selectedIds={selection.selectedIds}
         invalidateKeys={[getListOpportunitiesAndPledgesQueryKey()]}
         onConfirm={async () =>
-          bulkDeleteMut.mutateAsync({ data: { ids: selection.selectedIds } })
+          bulkArchiveMut.mutateAsync({ data: { ids: selection.selectedIds } })
         }
         onDone={(r) => selection.removeMany(r.succeededIds)}
       />

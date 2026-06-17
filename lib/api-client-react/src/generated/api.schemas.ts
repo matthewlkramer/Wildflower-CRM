@@ -465,6 +465,44 @@ export interface CreateRegionBody {
   displayPath?: string;
 }
 
+/**
+ * Inline-editable simple fields for a region. The slug (`id`) is immutable and the parent region (relational) is edited on the detail page, not here.
+ */
+export interface UpdateRegionBody {
+  /** @minLength 1 */
+  name?: string;
+  displayPath?: string;
+  stateAbbreviation?: string | null;
+  type?: RegionType | null;
+}
+
+/**
+ * Inline-editable simple scalar/enum fields for a school. Array/relational fields are edited on the detail page or synced upstream from Airtable.
+ */
+export interface UpdateSchoolBody {
+  /** @minLength 1 */
+  name?: string;
+  longName?: string | null;
+  shortName?: string | null;
+  status?: SchoolStatus | null;
+  governanceModel?: GovernanceModel | null;
+  stageStatus?: string | null;
+  currentMailingAddress?: string | null;
+  currentPhysicalAddress?: string | null;
+}
+
+/**
+ * Inline-editable simple fields for a fiscal year. The slug (`id`) is immutable.
+ */
+export interface UpdateFiscalYearBody {
+  /** @minLength 1 */
+  label?: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  /** Decimal string (numeric(14,2)). Use plain digits with optional decimal, no commas. */
+  goalAmount?: string | null;
+}
+
 export interface Region {
   /** Human-readable slug PK, e.g. `united_states__minnesota__saint_paul`. Built from the region's name plus its included-type ancestors (continent / country / state / city / neighborhood); intermediate aggregation layers (multi_state_region, region_within_state, metro_area) are skipped. */
   id: string;
@@ -474,6 +512,8 @@ export interface Region {
   stateAbbreviation?: string | null;
   type?: RegionType | null;
   parentRegionId?: string | null;
+  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -495,6 +535,8 @@ export interface School {
   stageStatus?: string | null;
   currentMailingAddress?: string | null;
   currentPhysicalAddress?: string | null;
+  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -551,6 +593,8 @@ export interface FundableProject {
   spendingEnd?: string | null;
   /** Decimal string (numeric(14,2)). Null on legacy rows. */
   fundraisingGoal?: string | null;
+  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -593,6 +637,8 @@ export interface FiscalYear {
   label: string;
   startDate?: string | null;
   endDate?: string | null;
+  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -839,6 +885,8 @@ export interface Organization {
   readonly lifetimeGiving?: string | null;
   /** Count of opportunities_and_pledges where organization_id matches and status='open'. */
   readonly openOpportunityCount?: number | null;
+  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1066,6 +1114,8 @@ export interface Household {
   readonly mostRecentGiftDate?: string | null;
   /** Count of opportunities_and_pledges where household_id matches and status='open'. */
   readonly openOpportunityCount?: number | null;
+  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1145,6 +1195,8 @@ export interface Person {
   readonly activeOrganizationNames?: readonly string[] | null;
   /** Names of organizations the person previously held a role at (people_entity_roles.current='past'). */
   readonly pastOrganizationNames?: readonly string[] | null;
+  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1392,6 +1444,8 @@ export interface OpportunityOrPledge {
   readonly fiscalYear?: string | null;
   readonly coveredFiscalYears?: readonly string[] | null;
   readonly entityIds?: readonly string[] | null;
+  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   readonly promptForReportingDeadlines?: boolean;
@@ -1465,6 +1519,8 @@ export interface GiftOrPayment {
   readonly displayUsages?: readonly string[] | null;
   /** Distinct grant_year values from gift_allocations. */
   readonly grantYears?: readonly string[] | null;
+  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -3164,9 +3220,9 @@ export interface MergeIntoPledgeResult {
 }
 
 /**
- * Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason).
+ * Ids of the records to archive (soft-delete). Stamps archived_at on each row instead of removing it. Processed per-row; the response reports which ids succeeded and which failed (with a reason).
  */
-export interface BulkDeleteBody {
+export interface BulkArchiveBody {
   /**
    * @minItems 1
    * @maxItems 1000
@@ -3384,6 +3440,11 @@ export type LimitParameter = number;
 
 export type PageParameter = number;
 
+/**
+ * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+ */
+export type IncludeArchivedQueryParameter = boolean;
+
 export type ListEmailProposalsParams = {
   kind?: EmailProposalKind;
   status?: EmailProposalStatus;
@@ -3450,6 +3511,10 @@ export type ListUnrecognizedCorrespondentsParams = {
 };
 
 export type ListRegionsParams = {
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
   type?: RegionType;
   search?: string;
   /**
@@ -3464,6 +3529,10 @@ export type ListRegionsParams = {
 };
 
 export type ListSchoolsParams = {
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
   status?: SchoolStatus;
   governanceModel?: GovernanceModel;
   search?: string;
@@ -3489,7 +3558,25 @@ export type ListFiscalYearEntityGoalsParams = {
   entityId?: string;
 };
 
+export type ListFundableProjectsParams = {
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
+};
+
+export type ListFiscalYearsParams = {
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
+};
+
 export type ListOrganizationsParams = {
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
   search?: string;
   /**
    * Filter to grant-making organizations only (true) or non-grant entities only (false). Omit for all.
@@ -3586,6 +3673,10 @@ export type ListPaymentIntermediariesParams = {
 };
 
 export type ListHouseholdsParams = {
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
   search?: string;
   active?: boolean;
   /**
@@ -3600,6 +3691,10 @@ export type ListHouseholdsParams = {
 };
 
 export type ListPeopleParams = {
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
   search?: string;
   deceased?: boolean;
   regionId?: string;
@@ -3782,6 +3877,10 @@ export type ListAddressesParams = {
 };
 
 export type ListOpportunitiesAndPledgesParams = {
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
   search?: string;
   /**
    * Rollup presence filter on paid amount (`has` = >0, `blank` = none).
@@ -3887,6 +3986,10 @@ export type ListPledgeAllocationsParams = {
 };
 
 export type ListGiftsAndPaymentsParams = {
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
   search?: string;
   /**
    * Presence filter on linked entities (`has` = any allocation, `blank` = none).

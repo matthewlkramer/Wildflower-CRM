@@ -8,12 +8,12 @@ import {
   CreatePersonBody,
   UpdatePersonBody,
   BulkUpdatePeopleBody,
-  BulkDeletePeopleBody,
+  BulkArchivePeopleBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { executeBulkDelete } from "../lib/bulkDelete";
+import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { mergeEntity, PERSON_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
@@ -207,6 +207,8 @@ router.get(
         .filter((c): c is SQL => !!c);
       if (clauses.length > 0) filters.push(or(...clauses)!);
     }
+    const archivedFilter = activeOnlyUnlessAdmin(req, people.archivedAt);
+    if (archivedFilter) filters.push(archivedFilter);
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
@@ -268,13 +270,27 @@ router.post(
 );
 
 router.post(
-  "/people/bulk-delete",
+  "/people/bulk-archive",
   asyncHandler(async (req, res) => {
-    await executeBulkDelete(req, res, {
+    await executeBulkArchive(req, res, {
       entity: "people",
       table: people,
-      bodySchema: BulkDeletePeopleBody,
+      bodySchema: BulkArchivePeopleBody,
     });
+  }),
+);
+
+router.post(
+  "/people/:id/archive",
+  asyncHandler(async (req, res) => {
+    await archiveOne(req, res, { entity: "person", table: people });
+  }),
+);
+
+router.post(
+  "/people/:id/unarchive",
+  asyncHandler(async (req, res) => {
+    await unarchiveOne(req, res, { entity: "person", table: people });
   }),
 );
 

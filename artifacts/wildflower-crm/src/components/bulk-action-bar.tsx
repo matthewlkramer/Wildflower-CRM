@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Trash2, X } from "lucide-react";
+import { Archive, X } from "lucide-react";
 
 /**
  * Sticky bottom action bar that appears while at least one row is
@@ -10,7 +10,7 @@ export function BulkActionBar({
   count,
   onEdit,
   onMerge,
-  onDelete,
+  onArchive,
   onClear,
   entityNoun,
   extraActions,
@@ -19,8 +19,8 @@ export function BulkActionBar({
   onEdit: () => void;
   /** When provided, a "Merge" button appears once 2+ rows are selected. */
   onMerge?: () => void;
-  /** When provided, a destructive "Delete" button appears for any selection. */
-  onDelete?: () => void;
+  /** When provided, an "Archive" button appears for any selection. */
+  onArchive?: () => void;
   onClear: () => void;
   /** Singular noun used in the label, e.g. "person" → "1 person selected". */
   entityNoun: string;
@@ -58,15 +58,15 @@ export function BulkActionBar({
           </Button>
         )}
         {count >= 2 && extraActions}
-        {onDelete && (
+        {onArchive && (
           <Button
             size="sm"
-            variant="destructive"
-            onClick={onDelete}
-            data-testid="button-bulk-delete"
+            variant="secondary"
+            onClick={onArchive}
+            data-testid="button-bulk-archive"
           >
-            <Trash2 className="h-4 w-4" />
-            Delete
+            <Archive className="h-4 w-4" />
+            Archive
           </Button>
         )}
         <Button

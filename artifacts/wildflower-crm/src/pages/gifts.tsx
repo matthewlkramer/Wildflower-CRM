@@ -1,12 +1,15 @@
-import { useMemo, useState } from "react";
-import { useQueries } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { useCallback, useMemo, useState } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListGiftsAndPayments,
   getListGiftsAndPaymentsQueryKey,
   useBulkUpdateGiftsAndPayments,
-  useBulkDeleteGiftsAndPayments,
+  useBulkArchiveGiftsAndPayments,
+  useArchiveGiftOrPayment,
+  useUnarchiveGiftOrPayment,
+  useUpdateGiftOrPayment,
   getGetGiftOrPaymentQueryOptions,
   getGetGiftOrPaymentQueryKey,
   type ListGiftsAndPaymentsParams,
@@ -30,11 +33,26 @@ import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
-import { BulkDeleteDialog } from "@/components/bulk-delete-dialog";
+import { BulkArchiveDialog } from "@/components/bulk-archive-dialog";
 import {
   MergeGiftsDialog,
   MergeIntoPledgeDialog,
 } from "@/components/gift-merge-dialogs";
+import {
+  RowActionIcons,
+  InlineRowSaveActions,
+} from "@/components/row-action-icons";
+import { ShowArchivedToggle } from "@/components/show-archived-toggle";
+import { useIsAdmin } from "@/hooks/use-is-admin";
+import { useInlineRowEdit } from "@/hooks/use-inline-row-edit";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { GIFTS_BULK_FIELDS } from "@/lib/bulk-fields";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -84,9 +102,31 @@ const PAYMENT_METHODS: GiftPaymentMethod[] = [
 
 const PAGE_SIZE = 50;
 
+const NONE = "__none__";
+type GiftDraft = {
+  type: string;
+  paymentMethod: string;
+};
+
+type InlineCtx = {
+  editingId: string | null;
+  draft: GiftDraft | null;
+  isEditing: (id: string) => boolean;
+  patch: (partial: Partial<GiftDraft>) => void;
+  save: () => void;
+  cancel: () => void;
+  saving: boolean;
+};
+
 type ColCtx = {
   userNames: Map<string, string>;
   entityNameById: Map<string, string>;
+  isAdmin: boolean;
+  inline: InlineCtx;
+  onOpen: (g: GiftOrPayment) => void;
+  onStartEdit: (g: GiftOrPayment) => void;
+  onArchive: (g: GiftOrPayment) => void;
+  onUnarchive: (g: GiftOrPayment) => void;
 };
 
 function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
@@ -126,7 +166,32 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
     {
       key: "type",
       label: "Type",
-      cell: (g) => formatEnum(g.type),
+      cell: (g) =>
+        ctx.inline.isEditing(g.id) ? (
+          <Select
+            value={ctx.inline.draft?.type ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ type: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Type"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-type-gift-${g.id}`}
+            >
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {TYPES.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {formatEnum(t)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          formatEnum(g.type)
+        ),
     },
     {
       key: "amount",
@@ -178,13 +243,72 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       key: "paymentMethod",
       label: "Payment method",
       defaultVisible: false,
-      cell: (g) => formatEnum(g.paymentMethod),
+      cell: (g) =>
+        ctx.inline.isEditing(g.id) ? (
+          <Select
+            value={ctx.inline.draft?.paymentMethod ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ paymentMethod: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Payment method"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-paymentMethod-gift-${g.id}`}
+            >
+              <SelectValue placeholder="Payment method" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {PAYMENT_METHODS.map((m) => (
+                <SelectItem key={m} value={m}>
+                  {formatEnum(m)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          formatEnum(g.paymentMethod)
+        ),
     },
     {
       key: "thankYouSentAt",
       label: "Thank-you sent",
       defaultVisible: false,
       cell: (g) => formatDateShort(g.thankYouSentAt),
+    },
+    {
+      key: "actions",
+      label: "",
+      required: true,
+      sortable: false,
+      align: "right",
+      thClassName: "w-32",
+      tdClassName: "text-right",
+      cell: (g) =>
+        ctx.inline.isEditing(g.id) ? (
+          <InlineRowSaveActions
+            onSave={ctx.inline.save}
+            onCancel={ctx.inline.cancel}
+            saving={ctx.inline.saving}
+            testIdPrefix={`gift-${g.id}`}
+          />
+        ) : (
+          <RowActionIcons
+            entityLabel={g.name ?? `Gift ${g.id}`}
+            testIdPrefix={`gift-${g.id}`}
+            disabled={ctx.inline.editingId !== null}
+            archived={!!g.archivedAt}
+            onOpen={() => ctx.onOpen(g)}
+            onEdit={() => ctx.onStartEdit(g)}
+            onArchive={
+              g.archivedAt
+                ? ctx.isAdmin
+                  ? () => ctx.onUnarchive(g)
+                  : undefined
+                : () => ctx.onArchive(g)
+            }
+          />
+        ),
     },
   ];
 }
@@ -212,12 +336,23 @@ export default function Gifts() {
     null,
   );
   const selection = useRowSelection();
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const isAdmin = useIsAdmin();
+  const queryClient = useQueryClient();
+  const [showArchived, setShowArchived] = usePersistedState<boolean>(
+    "wf.list.gifts.showArchived",
+    false,
+  );
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
   const [mergeGiftOpen, setMergeGiftOpen] = useState(false);
   const [mergePledgeOpen, setMergePledgeOpen] = useState(false);
   const bulkMut = useBulkUpdateGiftsAndPayments();
-  const bulkDeleteMut = useBulkDeleteGiftsAndPayments();
+  const bulkArchiveMut = useBulkArchiveGiftsAndPayments();
+  const archiveMut = useArchiveGiftOrPayment();
+  const unarchiveMut = useUnarchiveGiftOrPayment();
+  const updateGift = useUpdateGiftOrPayment();
 
   // Global entity filter (header dropdown). Forwarded to the server so the
   // gifts list is scoped to gifts with at least one allocation on the
@@ -229,6 +364,7 @@ export default function Gifts() {
   const params: ListGiftsAndPaymentsParams = {
     limit: sortActive ? 10000 : PAGE_SIZE,
     page: sortActive ? 1 : page,
+    ...(isAdmin && showArchived ? { includeArchived: true } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as GiftType[] } : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
@@ -256,9 +392,95 @@ export default function Gifts() {
     [entitiesQ.data],
   );
 
+  const refreshList = useCallback(
+    () =>
+      queryClient.invalidateQueries({
+        queryKey: getListGiftsAndPaymentsQueryKey(),
+      }),
+    [queryClient],
+  );
+
+  const inlineEdit = useInlineRowEdit<GiftOrPayment, GiftDraft>({
+    getId: (g) => g.id,
+    toDraft: (g) => ({
+      type: g.type ?? NONE,
+      paymentMethod: g.paymentMethod ?? NONE,
+    }),
+    onSave: async (id, d) => {
+      await updateGift.mutateAsync({
+        id,
+        data: {
+          type: d.type === NONE ? null : (d.type as GiftType),
+          paymentMethod:
+            d.paymentMethod === NONE
+              ? null
+              : (d.paymentMethod as GiftPaymentMethod),
+        },
+      });
+      await refreshList();
+      toast({ title: "Gift updated" });
+    },
+  });
+
+  const archiveGift = (g: GiftOrPayment) =>
+    archiveMut.mutate(
+      { id: g.id },
+      {
+        onSuccess: async () => {
+          await refreshList();
+          selection.removeMany([g.id]);
+          toast({ title: "Gift archived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Archive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+
+  const unarchiveGift = (g: GiftOrPayment) =>
+    unarchiveMut.mutate(
+      { id: g.id },
+      {
+        onSuccess: async () => {
+          await refreshList();
+          toast({ title: "Gift unarchived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Unarchive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+
   const registry = useMemo(
-    () => buildColumns({ userNames, entityNameById }),
-    [userNames, entityNameById],
+    () =>
+      buildColumns({
+        userNames,
+        entityNameById,
+        isAdmin,
+        inline: {
+          editingId: inlineEdit.editingId,
+          draft: inlineEdit.draft,
+          isEditing: inlineEdit.isEditing,
+          patch: inlineEdit.patch,
+          save: () => {
+            void inlineEdit.save();
+          },
+          cancel: inlineEdit.cancel,
+          saving: inlineEdit.saving,
+        },
+        onOpen: (g) => navigate(`/gifts/${g.id}`),
+        onStartEdit: (g) => inlineEdit.start(g),
+        onArchive: archiveGift,
+        onUnarchive: unarchiveGift,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [userNames, entityNameById, isAdmin, inlineEdit, navigate],
   );
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
@@ -602,6 +824,15 @@ export default function Gifts() {
         )}
 
         <div className="ml-auto flex items-end gap-2">
+          <ShowArchivedToggle
+            value={showArchived}
+            onChange={(v) => {
+              setShowArchived(v);
+              setPage(1);
+              selection.clear();
+            }}
+            testId="toggle-show-archived-gifts"
+          />
           <FiltersMenu
             registry={filterRegistry}
             state={filtersState}
@@ -681,7 +912,7 @@ export default function Gifts() {
       <BulkActionBar
         count={selection.count}
         onEdit={() => setBulkOpen(true)}
-        onDelete={() => setBulkDeleteOpen(true)}
+        onArchive={() => setBulkArchiveOpen(true)}
         onClear={selection.clear}
         entityNoun="gift"
         extraActions={
@@ -705,14 +936,14 @@ export default function Gifts() {
           </>
         }
       />
-      <BulkDeleteDialog
-        open={bulkDeleteOpen}
-        onOpenChange={setBulkDeleteOpen}
+      <BulkArchiveDialog
+        open={bulkArchiveOpen}
+        onOpenChange={setBulkArchiveOpen}
         entityNoun="gift"
         selectedIds={selection.selectedIds}
         invalidateKeys={[getListGiftsAndPaymentsQueryKey()]}
         onConfirm={async () =>
-          bulkDeleteMut.mutateAsync({ data: { ids: selection.selectedIds } })
+          bulkArchiveMut.mutateAsync({ data: { ids: selection.selectedIds } })
         }
         onDone={(r) => selection.removeMany(r.succeededIds)}
       />

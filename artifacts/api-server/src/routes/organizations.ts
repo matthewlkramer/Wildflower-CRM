@@ -28,7 +28,7 @@ import {
   CreateOrganizationBody,
   UpdateOrganizationBody,
   BulkUpdateOrganizationsBody,
-  BulkDeleteOrganizationsBody,
+  BulkArchiveOrganizationsBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import {
@@ -43,7 +43,7 @@ import {
   splitBlank,
 } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { executeBulkDelete } from "../lib/bulkDelete";
+import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { mergeEntity, ORGANIZATION_MERGE_CONFIG } from "../lib/mergeEntities";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
@@ -220,6 +220,8 @@ router.get(
     else if (q.primaryContactPresence === "blank")
       filters.push(sql`${orgsPrimaryContactIdExpr} IS NULL`);
 
+    const archivedFilter = activeOnlyUnlessAdmin(req, organizations.archivedAt);
+    if (archivedFilter) filters.push(archivedFilter);
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
@@ -297,13 +299,27 @@ router.post(
 );
 
 router.post(
-  "/organizations/bulk-delete",
+  "/organizations/bulk-archive",
   asyncHandler(async (req, res) => {
-    await executeBulkDelete(req, res, {
+    await executeBulkArchive(req, res, {
       entity: "organizations",
       table: organizations,
-      bodySchema: BulkDeleteOrganizationsBody,
+      bodySchema: BulkArchiveOrganizationsBody,
     });
+  }),
+);
+
+router.post(
+  "/organizations/:id/archive",
+  asyncHandler(async (req, res) => {
+    await archiveOne(req, res, { entity: "organization", table: organizations });
+  }),
+);
+
+router.post(
+  "/organizations/:id/unarchive",
+  asyncHandler(async (req, res) => {
+    await unarchiveOne(req, res, { entity: "organization", table: organizations });
   }),
 );
 

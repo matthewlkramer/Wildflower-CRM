@@ -4,11 +4,20 @@ import {
   useListFundableProjects,
   useCreateFundableProject,
   useUpdateFundableProject,
+  useArchiveFundableProject,
+  useUnarchiveFundableProject,
   useGetFundableProjectsProgress,
   getListFundableProjectsQueryKey,
   getGetFundableProjectsProgressQueryKey,
 } from "@workspace/api-client-react";
-import type { FundableProject } from "@workspace/api-client-react";
+import type {
+  FundableProject,
+  ListFundableProjectsParams,
+} from "@workspace/api-client-react";
+import { RowActionIcons } from "@/components/row-action-icons";
+import { ShowArchivedToggle } from "@/components/show-archived-toggle";
+import { useIsAdmin } from "@/hooks/use-is-admin";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -85,8 +94,21 @@ function blankToNull(s: string): string | null {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function FundableProjects() {
-  const projectsQ = useListFundableProjects({
-    query: { queryKey: getListFundableProjectsQueryKey(), staleTime: 30_000 },
+  const isAdmin = useIsAdmin();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [showArchived, setShowArchived] = usePersistedState<boolean>(
+    "wf.list.fundable-projects.showArchived",
+    false,
+  );
+
+  const listParams: ListFundableProjectsParams | undefined =
+    isAdmin && showArchived ? { includeArchived: true } : undefined;
+  const projectsQ = useListFundableProjects(listParams, {
+    query: {
+      queryKey: getListFundableProjectsQueryKey(listParams),
+      staleTime: 30_000,
+    },
   });
   const progressQ = useGetFundableProjectsProgress({
     query: { queryKey: getGetFundableProjectsProgressQueryKey(), staleTime: 30_000 },
@@ -95,16 +117,63 @@ export default function FundableProjects() {
   const projects = projectsQ.data ?? [];
   const progress = progressQ.data ?? [];
 
+  const archiveMut = useArchiveFundableProject();
+  const unarchiveMut = useUnarchiveFundableProject();
+
+  // Invalidate the base list key (no params) so both the active-only and
+  // include-archived variants refetch after an archive/unarchive.
+  const refreshList = () =>
+    queryClient.invalidateQueries({
+      queryKey: getListFundableProjectsQueryKey(),
+    });
+
+  const archiveProject = (p: FundableProject) =>
+    archiveMut.mutate(
+      { id: p.id },
+      {
+        onSuccess: async () => {
+          await refreshList();
+          toast({ title: "Project archived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Archive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+
+  const unarchiveProject = (p: FundableProject) =>
+    unarchiveMut.mutate(
+      { id: p.id },
+      {
+        onSuccess: async () => {
+          await refreshList();
+          toast({ title: "Project unarchived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Unarchive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+
   const raisedMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of progress) m.set(p.fundableProjectId, p.raised);
     return m;
   }, [progress]);
 
-  // Active first, then retired, alphabetical within each.
+  // Active first, then retired, then archived, alphabetical within each group.
   const sorted = useMemo(() => {
     const copy = [...projects];
     copy.sort((a, b) => {
+      const aArch = a.archivedAt ? 1 : 0;
+      const bArch = b.archivedAt ? 1 : 0;
+      if (aArch !== bArch) return aArch - bArch;
       if (a.active !== b.active) return a.active ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
@@ -135,9 +204,16 @@ export default function FundableProjects() {
             allocations — pick it carefully.
           </p>
         </div>
-        <Button onClick={openCreate} data-testid="add-fundable-project">
-          Add project
-        </Button>
+        <div className="flex items-center gap-2">
+          <ShowArchivedToggle
+            value={showArchived}
+            onChange={setShowArchived}
+            testId="toggle-show-archived-fundable-projects"
+          />
+          <Button onClick={openCreate} data-testid="add-fundable-project">
+            Add project
+          </Button>
+        </div>
       </div>
 
       <Card data-testid="fundable-projects-card">
@@ -153,7 +229,10 @@ export default function FundableProjects() {
             projects={sorted}
             raisedMap={raisedMap}
             loading={projectsQ.isLoading}
+            isAdmin={isAdmin}
             onEdit={openEdit}
+            onArchive={archiveProject}
+            onUnarchive={unarchiveProject}
           />
         </CardContent>
       </Card>
@@ -174,12 +253,18 @@ function ProjectsTable({
   projects,
   raisedMap,
   loading,
+  isAdmin,
   onEdit,
+  onArchive,
+  onUnarchive,
 }: {
   projects: FundableProject[];
   raisedMap: Map<string, string>;
   loading: boolean;
+  isAdmin: boolean;
   onEdit: (project: FundableProject) => void;
+  onArchive: (project: FundableProject) => void;
+  onUnarchive: (project: FundableProject) => void;
 }) {
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading fundable projects…</p>;
@@ -198,6 +283,9 @@ function ProjectsTable({
           <TableHead className="text-right">Goal</TableHead>
           <TableHead className="w-[220px]">Progress</TableHead>
           <TableHead className="w-[80px] text-right">Status</TableHead>
+          <TableHead className="w-[100px] text-right">
+            <span className="sr-only">Actions</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -206,7 +294,10 @@ function ProjectsTable({
             key={p.id}
             project={p}
             raised={raisedMap.get(p.id) ?? "0"}
+            isAdmin={isAdmin}
             onEdit={onEdit}
+            onArchive={onArchive}
+            onUnarchive={onUnarchive}
           />
         ))}
       </TableBody>
@@ -217,11 +308,17 @@ function ProjectsTable({
 function ProjectRow({
   project,
   raised,
+  isAdmin,
   onEdit,
+  onArchive,
+  onUnarchive,
 }: {
   project: FundableProject;
   raised: string;
+  isAdmin: boolean;
   onEdit: (project: FundableProject) => void;
+  onArchive: (project: FundableProject) => void;
+  onUnarchive: (project: FundableProject) => void;
 }) {
   const goal = project.fundraisingGoal;
   const goalNum = goal ? Number(goal) : 0;
@@ -269,9 +366,28 @@ function ProjectRow({
         )}
       </TableCell>
       <TableCell className="text-right">
-        <span className={`text-xs ${project.active ? "text-muted-foreground" : "text-amber-700 font-medium"}`}>
-          {project.active ? "Active" : "Retired"}
-        </span>
+        {project.archivedAt ? (
+          <span className="text-xs text-destructive font-medium">Archived</span>
+        ) : (
+          <span className={`text-xs ${project.active ? "text-muted-foreground" : "text-amber-700 font-medium"}`}>
+            {project.active ? "Active" : "Retired"}
+          </span>
+        )}
+      </TableCell>
+      <TableCell className="text-right">
+        <RowActionIcons
+          entityLabel={project.name}
+          testIdPrefix={`fundable-project-${project.id}`}
+          archived={!!project.archivedAt}
+          onEdit={() => onEdit(project)}
+          onArchive={
+            project.archivedAt
+              ? isAdmin
+                ? () => onUnarchive(project)
+                : undefined
+              : () => onArchive(project)
+          }
+        />
       </TableCell>
     </TableRow>
   );

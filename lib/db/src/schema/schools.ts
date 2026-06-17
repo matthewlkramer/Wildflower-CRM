@@ -13,10 +13,14 @@ export const schools = pgTable("schools", {
   stageStatus: text("stage_status"),
   currentMailingAddress: text("current_mailing_address"),
   currentPhysicalAddress: text("current_physical_address"),
+  // Soft-delete: non-null = archived (hidden from non-admins). Separate from
+  // the real `status` enum.
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("schools_ages_planes_gin_idx").using("gin", t.agesPlanes),
+  index("schools_archived_at_idx").on(t.archivedAt),
 ]);
 
 export type School = typeof schools.$inferSelect;

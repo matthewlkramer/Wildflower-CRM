@@ -11,6 +11,7 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
+import { activeOnlyUnlessAdmin, archiveOne, unarchiveOne } from "../lib/archive";
 import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
 
 const router: IRouter = Router();
@@ -71,6 +72,8 @@ router.get(
     // See parseBoolQuery — bypass the buggy generated zod boolean coercion.
     const active = parseBoolQuery(req, "active");
     if (active !== undefined) filters.push(eq(households.active, active));
+    const archivedFilter = activeOnlyUnlessAdmin(req, households.archivedAt);
+    if (archivedFilter) filters.push(archivedFilter);
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
@@ -135,6 +138,20 @@ router.patch(
       .returning();
     if (!row) return notFound(res, "household");
     res.json(row);
+  }),
+);
+
+router.post(
+  "/households/:id/archive",
+  asyncHandler(async (req, res) => {
+    await archiveOne(req, res, { entity: "household", table: households });
+  }),
+);
+
+router.post(
+  "/households/:id/unarchive",
+  asyncHandler(async (req, res) => {
+    await unarchiveOne(req, res, { entity: "household", table: households });
   }),
 );
 

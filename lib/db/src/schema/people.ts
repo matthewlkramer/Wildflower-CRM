@@ -96,6 +96,9 @@ export const people = pgTable("people", {
   // "Anonymous") from everyone except the record owner and admins. This is a
   // UI-only courtesy flag — the name is still stored and returned by the API.
   anonymous: boolean("anonymous").default(false).notNull(),
+  // Soft-delete: non-null = archived (hidden from non-admins). Separate from
+  // real status fields (deceased); never set by status workflows.
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -103,6 +106,7 @@ export const people = pgTable("people", {
   index("people_owner_user_id_idx").on(t.ownerUserId),
   index("people_assistant_person_id_idx").on(t.assistantPersonId),
   index("people_priority_idx").on(t.priority),
+  index("people_archived_at_idx").on(t.archivedAt),
   index("people_region_ids_gin_idx").using("gin", t.regionIds),
   index("people_interests_thematic_gin_idx").using("gin", t.interestsThematic),
   index("people_interests_ages_gin_idx").using("gin", t.interestsAges),

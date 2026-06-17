@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, date, numeric } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, boolean, date, numeric } from "drizzle-orm/pg-core";
 
 // Specific fundable projects (e.g. SSJ, MDD, Charter Growth). Referenced
 // from opportunities_and_pledges / pledge_allocations / gifts_and_payments /
@@ -21,9 +21,14 @@ export const fundableProjects = pgTable("fundable_projects", {
   // Fundraising goal in dollars. Decimal string convention (numeric(14,2)),
   // mirroring fiscal_year_entity_goals.goalAmount.
   fundraisingGoal: numeric("fundraising_goal", { precision: 14, scale: 2 }),
+  // Soft-delete: non-null = archived (hidden from non-admins). Separate from
+  // the `active` flag, which is a real lifecycle status.
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("fundable_projects_archived_at_idx").on(t.archivedAt),
+]);
 
 export type FundableProject = typeof fundableProjects.$inferSelect;
 export type NewFundableProject = typeof fundableProjects.$inferInsert;

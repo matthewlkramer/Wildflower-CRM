@@ -2,9 +2,10 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { regions } from "@workspace/db/schema";
 import { and, asc, count, eq, ilike, sql, type SQL } from "drizzle-orm";
-import { CreateRegionBody, ListRegionsQueryParams } from "@workspace/api-zod";
+import { CreateRegionBody, ListRegionsQueryParams, UpdateRegionBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { activeOnlyUnlessAdmin, archiveOne, unarchiveOne } from "../lib/archive";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -18,6 +19,8 @@ router.get(
     const filters: SQL[] = [];
     if (q.type) filters.push(eq(regions.type, q.type));
     if (q.search) filters.push(ilike(regions.name, `%${q.search}%`));
+    const archivedFilter = activeOnlyUnlessAdmin(req, regions.archivedAt);
+    if (archivedFilter) filters.push(archivedFilter);
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db.select().from(regions).where(where).orderBy(asc(regions.name)).limit(limit).offset(offset),
@@ -57,6 +60,42 @@ router.get(
     const row = await db.select().from(regions).where(eq(regions.id, paramId(req))).then((r) => r[0]);
     if (!row) return notFound(res, "region");
     res.json(row);
+  }),
+);
+
+// Minimal PATCH for inline editing of simple scalar fields only. The slug PK
+// (`id`) is immutable and parentRegionId (relational) is edited on the detail
+// page, not inline.
+router.patch(
+  "/regions/:id",
+  asyncHandler(async (req, res) => {
+    const body = parseOrBadRequest(UpdateRegionBody, req.body, res);
+    if (!body) return;
+    if (Object.keys(body).length === 0) {
+      res.status(400).json({ error: "validation_error", message: "Empty update body." });
+      return;
+    }
+    const [row] = await db
+      .update(regions)
+      .set({ ...body, updatedAt: new Date() })
+      .where(eq(regions.id, paramId(req)))
+      .returning();
+    if (!row) return notFound(res, "region");
+    res.json(row);
+  }),
+);
+
+router.post(
+  "/regions/:id/archive",
+  asyncHandler(async (req, res) => {
+    await archiveOne(req, res, { entity: "region", table: regions });
+  }),
+);
+
+router.post(
+  "/regions/:id/unarchive",
+  asyncHandler(async (req, res) => {
+    await unarchiveOne(req, res, { entity: "region", table: regions });
   }),
 );
 

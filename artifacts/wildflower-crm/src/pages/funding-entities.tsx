@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useCallback, useMemo, useState } from "react";
+import { Link, useLocation } from "wouter";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListOrganizations,
   getListOrganizationsQueryKey,
   useBulkUpdateOrganizations,
-  useBulkDeleteOrganizations,
+  useBulkArchiveOrganizations,
+  useArchiveOrganization,
+  useUnarchiveOrganization,
   useMergeOrganizations,
   useGetCurrentUser,
   getGetOrganizationQueryOptions,
@@ -19,6 +21,7 @@ import {
   type ActiveStatus,
   type CapacityRating,
   type Priority,
+  type StrategicAlignment,
 } from "@workspace/api-client-react";
 import { LayoutList, Columns3 } from "lucide-react";
 import { EntityKanban, DraggableCard, type EntityKanbanPatch } from "@/components/entity-kanban";
@@ -35,9 +38,24 @@ import { PresenceFilter, type PresenceValue } from "@/components/presence-filter
 import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
-import { BulkDeleteDialog } from "@/components/bulk-delete-dialog";
+import { BulkArchiveDialog } from "@/components/bulk-archive-dialog";
 import { ORGANIZATIONS_BULK_FIELDS } from "@/lib/bulk-fields";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  RowActionIcons,
+  InlineRowSaveActions,
+} from "@/components/row-action-icons";
+import { ShowArchivedToggle } from "@/components/show-archived-toggle";
+import { useIsAdmin } from "@/hooks/use-is-admin";
+import { useInlineRowEdit } from "@/hooks/use-inline-row-edit";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatCapacity, formatCurrency, formatDateShort, formatEnum, formatEnthusiasm, formatOrganizationNameShort } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
@@ -121,6 +139,25 @@ const ENTHUSIASM_OPTIONS = [
 ] as const;
 const STRATEGIC_ALIGNMENTS = ["high", "medium", "low"] as const;
 
+const NONE = "__none__";
+type OrgDraft = {
+  priority: string;
+  capacityRating: string;
+  connectionStatus: string;
+  enthusiasm: string;
+  strategicAlignment: string;
+};
+
+type InlineCtx = {
+  editingId: string | null;
+  draft: OrgDraft | null;
+  isEditing: (id: string) => boolean;
+  patch: (partial: Partial<OrgDraft>) => void;
+  save: () => void;
+  cancel: () => void;
+  saving: boolean;
+};
+
 const PAGE_SIZE = 50;
 const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
 
@@ -128,6 +165,12 @@ type ColCtx = {
   userNames: Map<string, string>;
   regionNames: Map<string, string>;
   viewer: Viewer;
+  isAdmin: boolean;
+  inline: InlineCtx;
+  onOpen: (f: Organization) => void;
+  onStartEdit: (f: Organization) => void;
+  onArchive: (f: Organization) => void;
+  onUnarchive: (f: Organization) => void;
 };
 
 function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
@@ -161,7 +204,29 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
         </span>
       ),
       cell: (f) =>
-        f.priority ? (
+        ctx.inline.isEditing(f.id) ? (
+          <Select
+            value={ctx.inline.draft?.priority ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ priority: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Priority tier"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-priority-org-${f.id}`}
+            >
+              <SelectValue placeholder="Priority tier" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {PRIORITIES.map((pr) => (
+                <SelectItem key={pr} value={pr}>
+                  {PRIORITY_LABEL[pr] ?? pr}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : f.priority ? (
           <Badge variant="outline">{PRIORITY_LABEL[f.priority] ?? f.priority}</Badge>
         ) : (
           "—"
@@ -199,22 +264,122 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
     {
       key: "connection",
       label: "Connection",
-      cell: (f) => formatEnum(f.connectionStatus),
+      cell: (f) =>
+        ctx.inline.isEditing(f.id) ? (
+          <Select
+            value={ctx.inline.draft?.connectionStatus ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ connectionStatus: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Connection"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-connection-org-${f.id}`}
+            >
+              <SelectValue placeholder="Connection" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {CONNECTION_STATUSES.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {formatEnum(c)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          formatEnum(f.connectionStatus)
+        ),
     },
     {
       key: "enthusiasm",
       label: "Enthusiasm",
-      cell: (f) => formatEnthusiasm(f.enthusiasm),
+      cell: (f) =>
+        ctx.inline.isEditing(f.id) ? (
+          <Select
+            value={ctx.inline.draft?.enthusiasm ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ enthusiasm: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Enthusiasm"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-enthusiasm-org-${f.id}`}
+            >
+              <SelectValue placeholder="Enthusiasm" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {ENTHUSIASM_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          formatEnthusiasm(f.enthusiasm)
+        ),
     },
     {
       key: "strategicAlignment",
       label: "Strategic alignment",
-      cell: (f) => formatEnum(f.strategicAlignment),
+      cell: (f) =>
+        ctx.inline.isEditing(f.id) ? (
+          <Select
+            value={ctx.inline.draft?.strategicAlignment ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ strategicAlignment: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Strategic alignment"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-strategic-org-${f.id}`}
+            >
+              <SelectValue placeholder="Strategic alignment" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {STRATEGIC_ALIGNMENTS.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {formatEnum(s)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          formatEnum(f.strategicAlignment)
+        ),
     },
     {
       key: "capacity",
       label: "Capacity",
-      cell: (f) => formatCapacity(f.capacityRating),
+      cell: (f) =>
+        ctx.inline.isEditing(f.id) ? (
+          <Select
+            value={ctx.inline.draft?.capacityRating ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ capacityRating: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Capacity"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-capacity-org-${f.id}`}
+            >
+              <SelectValue placeholder="Capacity" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {CAPACITY_TIERS.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {formatCapacity(t) ?? t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          formatCapacity(f.capacityRating)
+        ),
     },
     {
       key: "primaryContact",
@@ -310,10 +475,49 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
         return ids.map((id) => ctx.regionNames.get(id) ?? id).join(", ");
       },
     },
+    {
+      key: "actions",
+      label: "",
+      required: true,
+      sortable: false,
+      align: "right",
+      thClassName: "w-32",
+      tdClassName: "text-right",
+      cell: (f) =>
+        ctx.inline.isEditing(f.id) ? (
+          <InlineRowSaveActions
+            onSave={ctx.inline.save}
+            onCancel={ctx.inline.cancel}
+            saving={ctx.inline.saving}
+            testIdPrefix={`org-${f.id}`}
+          />
+        ) : (
+          <RowActionIcons
+            entityLabel={
+              canSeeIdentity(f, ctx.viewer)
+                ? formatOrganizationNameShort(f.name)
+                : ANONYMOUS_LABEL
+            }
+            testIdPrefix={`org-${f.id}`}
+            disabled={ctx.inline.editingId !== null}
+            archived={!!f.archivedAt}
+            onOpen={() => ctx.onOpen(f)}
+            onEdit={() => ctx.onStartEdit(f)}
+            onArchive={
+              f.archivedAt
+                ? ctx.isAdmin
+                  ? () => ctx.onUnarchive(f)
+                  : undefined
+                : () => ctx.onArchive(f)
+            }
+          />
+        ),
+    },
   ];
 }
 
 export default function Organizations() {
+  const [, navigate] = useLocation();
   // Filter state persists per-tab so back-navigation from a funder
   // detail restores the same filtered view.
   const [search, setSearch] = usePersistedState<string>("wf.list.funders.search", "");
@@ -344,19 +548,28 @@ export default function Organizations() {
   const [viewMode, setViewMode] = usePersistedState<"list" | "kanban">("wf.list.funders.view", "list");
   const selection = useRowSelection();
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
   const bulkMut = useBulkUpdateOrganizations();
-  const bulkDeleteMut = useBulkDeleteOrganizations();
+  const bulkArchiveMut = useBulkArchiveOrganizations();
+  const archiveMut = useArchiveOrganization();
+  const unarchiveMut = useUnarchiveOrganization();
   const [mergeOpen, setMergeOpen] = useState(false);
   const mergeMut = useMergeOrganizations();
   const queryClient = useQueryClient();
   const updateOrganization = useUpdateOrganization();
+  const { toast } = useToast();
+  const isAdmin = useIsAdmin();
+  const [showArchived, setShowArchived] = usePersistedState<boolean>(
+    "wf.list.funders.showArchived",
+    false,
+  );
 
   const ts = useTableState("funding-entities");
   const sortActive = ts.sort.key !== null;
   const params: ListOrganizationsParams = {
     limit: viewMode === "kanban" ? 500 : (sortActive ? 10000 : PAGE_SIZE),
     page: viewMode === "kanban" ? 1 : (sortActive ? 1 : page),
+    ...(isAdmin && showArchived ? { includeArchived: true } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(issuesGrants !== undefined ? { issuesGrants } : {}),
     ...(makesPris !== undefined ? { makesPris } : {}),
@@ -455,7 +668,107 @@ export default function Organizations() {
       { onSettled: () => queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() }) },
     );
   }
-  const registry = useMemo(() => buildColumns({ userNames, regionNames, viewer }), [userNames, regionNames, viewer]);
+  const refreshList = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() }),
+    [queryClient],
+  );
+
+  const inlineEdit = useInlineRowEdit<Organization, OrgDraft>({
+    getId: (f) => f.id,
+    toDraft: (f) => ({
+      priority: f.priority ?? NONE,
+      capacityRating: f.capacityRating ?? NONE,
+      connectionStatus: f.connectionStatus ?? NONE,
+      enthusiasm: f.enthusiasm ?? NONE,
+      strategicAlignment: f.strategicAlignment ?? NONE,
+    }),
+    onSave: async (id, d) => {
+      await updateOrganization.mutateAsync({
+        id,
+        data: {
+          priority: d.priority === NONE ? null : (d.priority as Priority),
+          capacityRating:
+            d.capacityRating === NONE
+              ? null
+              : (d.capacityRating as CapacityRating),
+          connectionStatus:
+            d.connectionStatus === NONE
+              ? null
+              : (d.connectionStatus as ConnectionStatus),
+          enthusiasm:
+            d.enthusiasm === NONE ? null : (d.enthusiasm as Enthusiasm),
+          strategicAlignment:
+            d.strategicAlignment === NONE
+              ? null
+              : (d.strategicAlignment as StrategicAlignment),
+        },
+      });
+      await refreshList();
+      toast({ title: "Organization updated" });
+    },
+  });
+
+  const archiveOrg = (f: Organization) =>
+    archiveMut.mutate(
+      { id: f.id },
+      {
+        onSuccess: async () => {
+          await refreshList();
+          selection.removeMany([f.id]);
+          toast({ title: "Organization archived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Archive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+
+  const unarchiveOrg = (f: Organization) =>
+    unarchiveMut.mutate(
+      { id: f.id },
+      {
+        onSuccess: async () => {
+          await refreshList();
+          toast({ title: "Organization unarchived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Unarchive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+
+  const registry = useMemo(
+    () =>
+      buildColumns({
+        userNames,
+        regionNames,
+        viewer,
+        isAdmin,
+        inline: {
+          editingId: inlineEdit.editingId,
+          draft: inlineEdit.draft,
+          isEditing: inlineEdit.isEditing,
+          patch: inlineEdit.patch,
+          save: () => {
+            void inlineEdit.save();
+          },
+          cancel: inlineEdit.cancel,
+          saving: inlineEdit.saving,
+        },
+        onOpen: (f) => navigate(`/organizations/${f.id}`),
+        onStartEdit: (f) => inlineEdit.start(f),
+        onArchive: archiveOrg,
+        onUnarchive: unarchiveOrg,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [userNames, regionNames, viewer, isAdmin, inlineEdit, navigate],
+  );
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
     [registry, columnsState],
@@ -957,6 +1270,15 @@ export default function Organizations() {
         )}
 
         <div className="ml-auto flex items-end gap-2">
+          <ShowArchivedToggle
+            value={showArchived}
+            onChange={(v) => {
+              setShowArchived(v);
+              setPage(1);
+              selection.clear();
+            }}
+            testId="toggle-show-archived-organizations"
+          />
           <div className="flex rounded-md border overflow-hidden">
             <Button
               variant={viewMode === "list" ? "secondary" : "ghost"}
@@ -1100,19 +1422,19 @@ export default function Organizations() {
           count={selection.count}
           onEdit={() => setBulkOpen(true)}
           onMerge={() => setMergeOpen(true)}
-          onDelete={() => setBulkDeleteOpen(true)}
+          onArchive={() => setBulkArchiveOpen(true)}
           onClear={selection.clear}
           entityNoun="organization"
         />
       )}
-      <BulkDeleteDialog
-        open={bulkDeleteOpen}
-        onOpenChange={setBulkDeleteOpen}
+      <BulkArchiveDialog
+        open={bulkArchiveOpen}
+        onOpenChange={setBulkArchiveOpen}
         entityNoun="organization"
         selectedIds={selection.selectedIds}
         invalidateKeys={[getListOrganizationsQueryKey()]}
         onConfirm={async () =>
-          bulkDeleteMut.mutateAsync({ data: { ids: selection.selectedIds } })
+          bulkArchiveMut.mutateAsync({ data: { ids: selection.selectedIds } })
         }
         onDone={(r) => selection.removeMany(r.succeededIds)}
       />

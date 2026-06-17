@@ -10,16 +10,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { buttonVariants } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import type { BulkResult } from "@/components/bulk-edit-dialog";
 
-export interface BulkDeleteDialogProps {
+export interface BulkArchiveDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Singular noun used in titles + confirmation copy. */
+  /** Singular noun used in titles + copy. */
   entityNoun: string;
   /** Selected ids — the dialog stays presentation-only. */
   selectedIds: ReadonlyArray<string>;
@@ -30,7 +28,7 @@ export interface BulkDeleteDialogProps {
   onConfirm: () => Promise<BulkResult>;
   /**
    * React Query keys to invalidate after a successful (or partially
-   * successful) delete so the list re-fetches.
+   * successful) archive so the list re-fetches.
    */
   invalidateKeys?: ReadonlyArray<readonly unknown[]>;
   /** Called after submit settles (success or partial). */
@@ -38,12 +36,12 @@ export interface BulkDeleteDialogProps {
 }
 
 /**
- * Confirmation dialog for the destructive bulk-delete action. Always
- * requires an explicit confirm (deletes are irreversible) and surfaces a
- * results panel listing per-row failures so the user can see (and copy)
- * which rows couldn't be deleted and why.
+ * Confirmation dialog for the bulk-archive action. Archiving is reversible
+ * (admins can unarchive), so the copy is non-destructive, but a confirm is
+ * still required and a results panel lists any per-row failures so the user
+ * can see which rows couldn't be archived and why.
  */
-export function BulkDeleteDialog({
+export function BulkArchiveDialog({
   open,
   onOpenChange,
   entityNoun,
@@ -51,7 +49,7 @@ export function BulkDeleteDialog({
   onConfirm,
   invalidateKeys = [],
   onDone,
-}: BulkDeleteDialogProps) {
+}: BulkArchiveDialogProps) {
   const [submitting, setSubmitting] = useState(false);
   const [resultPanel, setResultPanel] = useState<BulkResult | null>(null);
   const queryClient = useQueryClient();
@@ -60,7 +58,7 @@ export function BulkDeleteDialog({
   const count = selectedIds.length;
   const noun = `${entityNoun}${count === 1 ? "" : "s"}`;
 
-  async function performDelete() {
+  async function performArchive() {
     setSubmitting(true);
     try {
       const result = await onConfirm();
@@ -72,8 +70,8 @@ export function BulkDeleteDialog({
       toast({
         title:
           failCount === 0
-            ? `Deleted ${successCount.toLocaleString()} of ${result.requested.toLocaleString()} ${entityNoun}${result.requested === 1 ? "" : "s"}`
-            : `Deleted ${successCount.toLocaleString()} of ${result.requested.toLocaleString()} (${failCount.toLocaleString()} failed — see details)`,
+            ? `Archived ${successCount.toLocaleString()} of ${result.requested.toLocaleString()} ${entityNoun}${result.requested === 1 ? "" : "s"}`
+            : `Archived ${successCount.toLocaleString()} of ${result.requested.toLocaleString()} (${failCount.toLocaleString()} failed — see details)`,
         variant: failCount > 0 && successCount === 0 ? "destructive" : undefined,
       });
       onDone(result);
@@ -83,7 +81,7 @@ export function BulkDeleteDialog({
       }
     } catch (e) {
       toast({
-        title: "Bulk delete failed",
+        title: "Bulk archive failed",
         description: e instanceof Error ? e.message : "Unknown error",
         variant: "destructive",
       });
@@ -100,29 +98,30 @@ export function BulkDeleteDialog({
           if (!submitting) onOpenChange(o);
         }}
       >
-        <AlertDialogContent data-testid="bulk-delete-confirm">
+        <AlertDialogContent data-testid="bulk-archive-confirm">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Delete {count.toLocaleString()} {noun}?
+              Archive {count.toLocaleString()} {noun}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the selected {noun} and cannot be undone.
+              The selected {noun} will be hidden from the list. An admin can
+              restore them later from "Show archived". This does not change any
+              status fields.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className={cn(buttonVariants({ variant: "destructive" }))}
               disabled={submitting || count === 0}
               onClick={(e) => {
                 // Keep the dialog mounted while the request is in flight;
-                // performDelete closes it on settle.
+                // performArchive closes it on settle.
                 e.preventDefault();
-                void performDelete();
+                void performArchive();
               }}
-              data-testid="button-bulk-delete-confirm"
+              data-testid="button-bulk-archive-confirm"
             >
-              {submitting ? "Deleting…" : `Delete ${count.toLocaleString()} ${noun}`}
+              {submitting ? "Archiving…" : `Archive ${count.toLocaleString()} ${noun}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -138,12 +137,12 @@ export function BulkDeleteDialog({
       >
         <AlertDialogContent className="max-w-lg">
           <AlertDialogHeader>
-            <AlertDialogTitle>Bulk delete results</AlertDialogTitle>
+            <AlertDialogTitle>Bulk archive results</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 {resultPanel && (
                   <p>
-                    Deleted{" "}
+                    Archived{" "}
                     <strong>{resultPanel.succeededIds.length.toLocaleString()}</strong>{" "}
                     of {resultPanel.requested.toLocaleString()} {entityNoun}
                     {resultPanel.requested === 1 ? "" : "s"}.{" "}
@@ -176,7 +175,7 @@ export function BulkDeleteDialog({
           <AlertDialogFooter>
             <AlertDialogAction
               onClick={() => setResultPanel(null)}
-              data-testid="button-bulk-delete-results-close"
+              data-testid="button-bulk-archive-results-close"
             >
               Close
             </AlertDialogAction>

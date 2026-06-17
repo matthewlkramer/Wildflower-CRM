@@ -284,6 +284,7 @@ paths:
       operationId: listRegions
       tags: [regions]
       parameters:
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
         - { name: type, in: query, schema: { $ref: "#/components/schemas/RegionType" } }
         - { name: search, in: query, schema: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
@@ -306,6 +307,15 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Region" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateRegion
+      tags: [regions]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateRegionBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Region" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Schools (read-only; synced from Airtable) ─────────────────────────────
   /schools:
@@ -313,6 +323,7 @@ paths:
       operationId: listSchools
       tags: [schools]
       parameters:
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
         - { name: status, in: query, schema: { $ref: "#/components/schemas/SchoolStatus" } }
         - { name: governanceModel, in: query, schema: { $ref: "#/components/schemas/GovernanceModel" } }
         - { name: search, in: query, schema: { type: string } }
@@ -327,6 +338,15 @@ paths:
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/School" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateSchool
+      tags: [schools]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateSchoolBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/School" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Entities (fund entities) ──────────────────────────────────────────────
@@ -398,6 +418,8 @@ paths:
     get:
       operationId: listFundableProjects
       tags: [fundable-projects]
+      parameters:
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FundableProject" } } } } }
     post:
@@ -444,6 +466,8 @@ paths:
     get:
       operationId: listFiscalYears
       tags: [fiscal-years]
+      parameters:
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FiscalYear" } } } } }
 
@@ -453,6 +477,7 @@ paths:
       operationId: listOrganizations
       tags: [organizations]
       parameters:
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
         - { name: search, in: query, schema: { type: string } }
         - { name: issuesGrants, in: query, schema: { type: boolean }, description: "Filter to grant-making organizations only (true) or non-grant entities only (false). Omit for all." }
         - { name: makesPris, in: query, schema: { type: boolean }, description: "Filter to organizations that make PRIs (true) or do not (false). Omit for all." }
@@ -599,6 +624,7 @@ paths:
       operationId: listHouseholds
       tags: [households]
       parameters:
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
         - { name: search, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
         - { $ref: "#/components/parameters/Limit" }
@@ -641,6 +667,7 @@ paths:
       operationId: listPeople
       tags: [people]
       parameters:
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
         - { name: search, in: query, schema: { type: string } }
         - { name: deceased, in: query, schema: { type: boolean } }
         - { name: regionId, in: query, schema: { type: string } }
@@ -920,6 +947,7 @@ paths:
       operationId: listOpportunitiesAndPledges
       tags: [opportunities-and-pledges]
       parameters:
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
         - { name: search, in: query, schema: { type: string } }
         # Presence filters on computed rollup fields. `has` keeps rows with a
         # value, `blank` keeps rows with none. Omit for no constraint.
@@ -1062,6 +1090,7 @@ paths:
       operationId: listGiftsAndPayments
       tags: [gifts-and-payments]
       parameters:
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
         - { name: search, in: query, schema: { type: string } }
         # Presence filters on computed rollup fields. `has` keeps rows with a
         # value, `blank` keeps rows with none. Omit for no constraint.
@@ -2298,42 +2327,220 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
-  /people/bulk-delete:
+  # ─── Bulk archive (soft-delete) ──────────────────────────────────────────────
+  # Replaces the former per-entity bulk-delete. Stamps archived_at on each id
+  # instead of removing the row; anyone authenticated may archive. Per-row;
+  # returns succeeded + failed ids.
+  /people/bulk-archive:
     post:
-      operationId: bulkDeletePeople
+      operationId: bulkArchivePeople
       tags: [people]
-      summary: "Permanently delete the given people. Per-row; returns succeeded + failed ids."
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkDeleteBody" } } } }
+      summary: "Archive (soft-delete) the given people. Per-row; returns succeeded + failed ids."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkArchiveBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
-  /organizations/bulk-delete:
+  /organizations/bulk-archive:
     post:
-      operationId: bulkDeleteOrganizations
+      operationId: bulkArchiveOrganizations
       tags: [organizations]
-      summary: "Permanently delete the given organizations. Per-row; returns succeeded + failed ids."
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkDeleteBody" } } } }
+      summary: "Archive (soft-delete) the given organizations. Per-row; returns succeeded + failed ids."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkArchiveBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
-  /opportunities-and-pledges/bulk-delete:
+  /opportunities-and-pledges/bulk-archive:
     post:
-      operationId: bulkDeleteOpportunitiesAndPledges
+      operationId: bulkArchiveOpportunitiesAndPledges
       tags: [opportunities-and-pledges]
-      summary: "Permanently delete the given opportunities/pledges. Per-row; returns succeeded + failed ids."
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkDeleteBody" } } } }
+      summary: "Archive (soft-delete) the given opportunities/pledges. Per-row; returns succeeded + failed ids."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkArchiveBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
-  /gifts-and-payments/bulk-delete:
+  /gifts-and-payments/bulk-archive:
     post:
-      operationId: bulkDeleteGiftsAndPayments
+      operationId: bulkArchiveGiftsAndPayments
       tags: [gifts-and-payments]
-      summary: "Permanently delete the given gifts/payments (and their allocations). Per-row; returns succeeded + failed ids."
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkDeleteBody" } } } }
+      summary: "Archive (soft-delete) the given gifts/payments. Per-row; returns succeeded + failed ids."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkArchiveBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BulkUpdateResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+
+  # ─── Per-entity archive / unarchive (soft-delete) ────────────────────────────
+  # POST /{entity}/{id}/archive — anyone authenticated may archive (replaces the
+  # row delete). POST /{entity}/{id}/unarchive — admin-only (403 otherwise).
+  /people/{id}/archive:
+    post:
+      operationId: archivePerson
+      tags: [people]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Person" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /people/{id}/unarchive:
+    post:
+      operationId: unarchivePerson
+      tags: [people]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Person" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /organizations/{id}/archive:
+    post:
+      operationId: archiveOrganization
+      tags: [organizations]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Organization" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /organizations/{id}/unarchive:
+    post:
+      operationId: unarchiveOrganization
+      tags: [organizations]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Organization" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /opportunities-and-pledges/{id}/archive:
+    post:
+      operationId: archiveOpportunityOrPledge
+      tags: [opportunities-and-pledges]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /opportunities-and-pledges/{id}/unarchive:
+    post:
+      operationId: unarchiveOpportunityOrPledge
+      tags: [opportunities-and-pledges]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /gifts-and-payments/{id}/archive:
+    post:
+      operationId: archiveGiftOrPayment
+      tags: [gifts-and-payments]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /gifts-and-payments/{id}/unarchive:
+    post:
+      operationId: unarchiveGiftOrPayment
+      tags: [gifts-and-payments]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /fundable-projects/{id}/archive:
+    post:
+      operationId: archiveFundableProject
+      tags: [fundable-projects]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FundableProject" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /fundable-projects/{id}/unarchive:
+    post:
+      operationId: unarchiveFundableProject
+      tags: [fundable-projects]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FundableProject" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /households/{id}/archive:
+    post:
+      operationId: archiveHousehold
+      tags: [households]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Household" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /households/{id}/unarchive:
+    post:
+      operationId: unarchiveHousehold
+      tags: [households]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Household" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /schools/{id}/archive:
+    post:
+      operationId: archiveSchool
+      tags: [schools]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/School" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /schools/{id}/unarchive:
+    post:
+      operationId: unarchiveSchool
+      tags: [schools]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/School" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /regions/{id}/archive:
+    post:
+      operationId: archiveRegion
+      tags: [regions]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Region" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /regions/{id}/unarchive:
+    post:
+      operationId: unarchiveRegion
+      tags: [regions]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Region" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /fiscal-years/{id}:
+    get:
+      operationId: getFiscalYear
+      tags: [fiscal-years]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYear" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateFiscalYear
+      tags: [fiscal-years]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateFiscalYearBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYear" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /fiscal-years/{id}/archive:
+    post:
+      operationId: archiveFiscalYear
+      tags: [fiscal-years]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYear" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /fiscal-years/{id}/unarchive:
+    post:
+      operationId: unarchiveFiscalYear
+      tags: [fiscal-years]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYear" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /storage/uploads/request-url:
     post:
@@ -2452,6 +2659,7 @@ components:
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 50 } }
     Page:  { name: page,  in: query, schema: { type: integer, minimum: 1, default: 1 } }
     IdPath: { name: id, in: path, required: true, schema: { type: string } }
+    IncludeArchivedQuery: { name: includeArchived, in: query, required: false, description: "Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.", schema: { type: boolean } }
 
   responses:
     NotFound:
@@ -2575,6 +2783,34 @@ components:
       properties:
         name:        { type: string, minLength: 1, description: "Human-readable region name, e.g. 'Greater Boston'." }
         displayPath: { type: string, description: "Full display path, e.g. 'United States, Massachusetts, Greater Boston'. Defaults to name when omitted." }
+    UpdateRegionBody:
+      type: object
+      description: "Inline-editable simple fields for a region. The slug (`id`) is immutable and the parent region (relational) is edited on the detail page, not here."
+      properties:
+        name:              { type: string, minLength: 1 }
+        displayPath:       { type: string }
+        stateAbbreviation: { type: string, nullable: true }
+        type:              { allOf: [ { $ref: "#/components/schemas/RegionType" } ], nullable: true }
+    UpdateSchoolBody:
+      type: object
+      description: "Inline-editable simple scalar/enum fields for a school. Array/relational fields are edited on the detail page or synced upstream from Airtable."
+      properties:
+        name:                   { type: string, minLength: 1 }
+        longName:               { type: string, nullable: true }
+        shortName:              { type: string, nullable: true }
+        status:                 { allOf: [ { $ref: "#/components/schemas/SchoolStatus" } ], nullable: true }
+        governanceModel:        { allOf: [ { $ref: "#/components/schemas/GovernanceModel" } ], nullable: true }
+        stageStatus:            { type: string, nullable: true }
+        currentMailingAddress:  { type: string, nullable: true }
+        currentPhysicalAddress: { type: string, nullable: true }
+    UpdateFiscalYearBody:
+      type: object
+      description: "Inline-editable simple fields for a fiscal year. The slug (`id`) is immutable."
+      properties:
+        label:      { type: string, minLength: 1 }
+        startDate:  { type: string, format: date, nullable: true }
+        endDate:    { type: string, format: date, nullable: true }
+        goalAmount: { type: string, nullable: true, description: "Decimal string (numeric(14,2)). Use plain digits with optional decimal, no commas." }
     Region:
       type: object
       required: [id, name, displayPath, createdAt, updatedAt]
@@ -2585,6 +2821,7 @@ components:
         stateAbbreviation:  { type: string, nullable: true }
         type:               { allOf: [ { $ref: "#/components/schemas/RegionType" } ], nullable: true }
         parentRegionId:     { type: string, nullable: true }
+        archivedAt:         { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:          { type: string, format: date-time }
         updatedAt:          { type: string, format: date-time }
     RegionList:
@@ -2610,6 +2847,7 @@ components:
         stageStatus:              { type: string, nullable: true }
         currentMailingAddress:    { type: string, nullable: true }
         currentPhysicalAddress:   { type: string, nullable: true }
+        archivedAt:               { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:                { type: string, format: date-time }
         updatedAt:                { type: string, format: date-time }
     SchoolList:
@@ -2668,6 +2906,7 @@ components:
         spendingStart:    { type: string, format: date, nullable: true }
         spendingEnd:      { type: string, format: date, nullable: true }
         fundraisingGoal:  { type: string, nullable: true, description: "Decimal string (numeric(14,2)). Null on legacy rows." }
+        archivedAt:       { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:        { type: string, format: date-time }
         updatedAt:        { type: string, format: date-time }
     CreateFundableProjectBody:
@@ -2708,6 +2947,7 @@ components:
         label:      { type: string }
         startDate:  { type: string, format: date, nullable: true }
         endDate:    { type: string, format: date, nullable: true }
+        archivedAt: { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:  { type: string, format: date-time }
         updatedAt:  { type: string, format: date-time }
 
@@ -2960,6 +3200,7 @@ components:
         primaryContactPersonName: { type: string, nullable: true, readOnly: true }
         lifetimeGiving:           { type: string, nullable: true, readOnly: true, description: "Sum of gifts.amount where organization_id matches. Decimal as string." }
         openOpportunityCount:     { type: integer, nullable: true, readOnly: true, description: "Count of opportunities_and_pledges where organization_id matches and status='open'." }
+        archivedAt:            { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:             { type: string, format: date-time }
         updatedAt:             { type: string, format: date-time }
     OrganizationDetail:
@@ -3141,6 +3382,7 @@ components:
         lifetimeGiving:           { type: string, nullable: true, readOnly: true, description: "Sum of gifts to this household + gifts directly to its member individuals. Decimal as string." }
         mostRecentGiftDate:       { type: string, format: date, nullable: true, readOnly: true, description: "Most recent date_received across household gifts and member individual gifts." }
         openOpportunityCount:     { type: integer, nullable: true, readOnly: true, description: "Count of opportunities_and_pledges where household_id matches and status='open'." }
+        archivedAt:               { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:                { type: string, format: date-time }
         updatedAt:                { type: string, format: date-time }
     HouseholdDetail:
@@ -3222,6 +3464,7 @@ components:
         openOpportunityCount:     { type: integer, nullable: true, readOnly: true, description: "Count of opportunities_and_pledges where this person is the individual giver and status='open'." }
         activeOrganizationNames:  { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of organizations the person currently holds a role at (people_entity_roles.current='current')." }
         pastOrganizationNames:    { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Names of organizations the person previously held a role at (people_entity_roles.current='past')." }
+        archivedAt:               { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:                { type: string, format: date-time }
         updatedAt:                { type: string, format: date-time }
     PersonDetail:
@@ -3577,6 +3820,7 @@ components:
         # opp, sorted ascending. Empty array if no allocations have an
         # entity set.
         entityIds:                  { type: array, items: { type: string }, nullable: true, readOnly: true }
+        archivedAt:                 { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
         # PATCH-response only. True when this update flipped status into
@@ -3766,6 +4010,7 @@ components:
         entityIds:                  { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct entity_id values from gift_allocations." }
         displayUsages:              { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct display_usage values from gift_allocations (server-computed labels)." }
         grantYears:                 { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct grant_year values from gift_allocations." }
+        archivedAt:                 { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
     GiftOrPaymentDetail:
@@ -5202,10 +5447,10 @@ components:
         pledgeId: { type: string, description: "The pledge the gifts were attached to." }
         giftIds: { type: array, items: { type: string }, description: "The gift ids attached as payments." }
         created: { type: boolean, description: "True if a new pledge was created, false if an existing one was used." }
-    BulkDeleteBody:
+    BulkArchiveBody:
       type: object
       required: [ids]
-      description: "Ids of the records to permanently delete. Processed per-row; the response reports which ids succeeded and which failed (with a reason)."
+      description: "Ids of the records to archive (soft-delete). Stamps archived_at on each row instead of removing it. Processed per-row; the response reports which ids succeeded and which failed (with a reason)."
       properties:
         ids: { type: array, items: { type: string }, minItems: 1, maxItems: 1000 }
     BulkUpdatePeoplePatch:

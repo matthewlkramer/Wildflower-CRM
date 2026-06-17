@@ -2,9 +2,14 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { fundableProjects, fiscalYears, giftAllocations } from "@workspace/db/schema";
 import { asc, eq, sql } from "drizzle-orm";
-import { CreateFundableProjectBody, UpdateFundableProjectBody } from "@workspace/api-zod";
+import {
+  CreateFundableProjectBody,
+  UpdateFundableProjectBody,
+  UpdateFiscalYearBody,
+} from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound, paramId, parseOrBadRequest } from "../lib/helpers";
+import { activeOnlyUnlessAdmin, archiveOne, unarchiveOne } from "../lib/archive";
 
 // NOTE: /entities (GET/POST/PATCH) and /fiscal-year-entity-goals routes live
 // in their own files (entities.ts, fiscalYearEntityGoals.ts). This file holds
@@ -14,8 +19,13 @@ router.use(requireAuth);
 
 router.get(
   "/fundable-projects",
-  asyncHandler(async (_req, res) => {
-    const rows = await db.select().from(fundableProjects).orderBy(asc(fundableProjects.name));
+  asyncHandler(async (req, res) => {
+    const archivedFilter = activeOnlyUnlessAdmin(req, fundableProjects.archivedAt);
+    const rows = await db
+      .select()
+      .from(fundableProjects)
+      .where(archivedFilter)
+      .orderBy(asc(fundableProjects.name));
     res.json(rows);
   }),
 );
@@ -109,11 +119,77 @@ router.patch(
   }),
 );
 
+router.post(
+  "/fundable-projects/:id/archive",
+  asyncHandler(async (req, res) => {
+    await archiveOne(req, res, { entity: "fundable project", table: fundableProjects });
+  }),
+);
+
+router.post(
+  "/fundable-projects/:id/unarchive",
+  asyncHandler(async (req, res) => {
+    await unarchiveOne(req, res, { entity: "fundable project", table: fundableProjects });
+  }),
+);
+
 router.get(
   "/fiscal-years",
-  asyncHandler(async (_req, res) => {
-    const rows = await db.select().from(fiscalYears).orderBy(asc(fiscalYears.id));
+  asyncHandler(async (req, res) => {
+    const archivedFilter = activeOnlyUnlessAdmin(req, fiscalYears.archivedAt);
+    const rows = await db
+      .select()
+      .from(fiscalYears)
+      .where(archivedFilter)
+      .orderBy(asc(fiscalYears.id));
     res.json(rows);
+  }),
+);
+
+router.get(
+  "/fiscal-years/:id",
+  asyncHandler(async (req, res) => {
+    const row = await db
+      .select()
+      .from(fiscalYears)
+      .where(eq(fiscalYears.id, paramId(req)))
+      .then((r) => r[0]);
+    if (!row) return notFound(res, "fiscal year");
+    res.json(row);
+  }),
+);
+
+// Minimal PATCH for inline editing of simple scalar fields only (e.g. goal).
+router.patch(
+  "/fiscal-years/:id",
+  asyncHandler(async (req, res) => {
+    const body = parseOrBadRequest(UpdateFiscalYearBody, req.body, res);
+    if (!body) return;
+    if (Object.keys(body).length === 0) {
+      res.status(400).json({ error: "validation_error", message: "Empty update body." });
+      return;
+    }
+    const [row] = await db
+      .update(fiscalYears)
+      .set({ ...body, updatedAt: new Date() })
+      .where(eq(fiscalYears.id, paramId(req)))
+      .returning();
+    if (!row) return notFound(res, "fiscal year");
+    res.json(row);
+  }),
+);
+
+router.post(
+  "/fiscal-years/:id/archive",
+  asyncHandler(async (req, res) => {
+    await archiveOne(req, res, { entity: "fiscal year", table: fiscalYears });
+  }),
+);
+
+router.post(
+  "/fiscal-years/:id/unarchive",
+  asyncHandler(async (req, res) => {
+    await unarchiveOne(req, res, { entity: "fiscal year", table: fiscalYears });
   }),
 );
 

@@ -1,11 +1,15 @@
 import { useMemo } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListOpportunitiesAndPledges,
+  useArchiveOpportunityOrPledge,
   getListOpportunitiesAndPledgesQueryKey,
   type OpportunityOrPledge,
 } from "@workspace/api-client-react";
+import { RowActionIcons } from "@/components/row-action-icons";
+import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 import {
   Table,
@@ -51,6 +55,32 @@ export default function GrantsCalendar() {
     queryParams,
     { query: { queryKey: getListOpportunitiesAndPledgesQueryKey(queryParams) } },
   );
+
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const archiveMut = useArchiveOpportunityOrPledge();
+
+  // Archiving an opportunity here soft-deletes the underlying record; the list
+  // is active-only, so it drops out of the calendar on the next refetch.
+  const archiveOpportunity = (o: OpportunityOrPledge) =>
+    archiveMut.mutate(
+      { id: o.id },
+      {
+        onSuccess: async () => {
+          await queryClient.invalidateQueries({
+            queryKey: getListOpportunitiesAndPledgesQueryKey(),
+          });
+          toast({ title: "Opportunity archived" });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Archive failed",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
 
   const ts = useTableState("grants-calendar", { key: "applicationDeadline", dir: "asc" });
   const STAGE_ORDER: Record<string, number> = {
@@ -113,19 +143,22 @@ export default function GrantsCalendar() {
               <SortableTH colKey="primaryContact" {...ts}>Primary contact</SortableTH>
               <SortableTH colKey="stage" {...ts}>Stage</SortableTH>
               <SortableTH colKey="ask" align="right" {...ts}>Ask</SortableTH>
+              <TableHead className="w-[100px] text-right">
+                <span className="sr-only">Actions</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center h-24 text-destructive">
+                <TableCell colSpan={8} className="text-center h-24 text-destructive">
                   {error instanceof Error ? error.message : "Failed to load opportunities."}
                 </TableCell>
               </TableRow>
             ) : sortedUpcoming.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">No open opportunities with deadlines today or later.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">No open opportunities with deadlines today or later.</TableCell></TableRow>
             ) : (
               sortedUpcoming.map((o: OpportunityOrPledge) => (
                 <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-cal-${o.id}`}>
@@ -163,6 +196,17 @@ export default function GrantsCalendar() {
                   </TableCell>
                   <TableCell>{formatEnum(o.stage)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(o.askAmount)}</TableCell>
+                  <TableCell
+                    className="text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <RowActionIcons
+                      entityLabel={o.name ?? `Opportunity ${o.id}`}
+                      testIdPrefix={`cal-${o.id}`}
+                      onOpen={() => navigate(`/opportunities/${o.id}`)}
+                      onArchive={() => archiveOpportunity(o)}
+                    />
+                  </TableCell>
                 </TableRow>
               ))
             )}

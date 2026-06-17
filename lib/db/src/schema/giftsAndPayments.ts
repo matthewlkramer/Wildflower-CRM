@@ -104,6 +104,9 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   thankYouEmailMessageId: text("thank_you_email_message_id"),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
+  // Soft-delete: non-null = archived (hidden from non-admins). Financial
+  // records aren't hard-deleted; archiving hides them from default views.
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -117,6 +120,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
   index("gifts_and_payments_owner_user_id_idx").on(t.ownerUserId),
   index("gifts_and_payments_grant_year_idx").on(t.grantYear),
+  index("gifts_and_payments_archived_at_idx").on(t.archivedAt),
   index("gifts_and_payments_thank_you_email_msg_idx").on(t.thankYouEmailMessageId),
   index("gifts_and_payments_thank_you_sent_at_idx").on(t.thankYouSentAt),
   // Donor exclusivity: exactly one of organization / individual-giver / household.

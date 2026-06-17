@@ -81,14 +81,14 @@ import {
   CreateOpportunityOrPledgeBodyRefined,
   UpdateOpportunityOrPledgeBody,
   BulkUpdateOpportunitiesAndPledgesBody,
-  BulkDeleteOpportunitiesAndPledgesBody,
+  BulkArchiveOpportunitiesAndPledgesBody,
   validateOppInvariants,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { executeBulkDelete } from "../lib/bulkDelete";
+import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import {
   applyDerivedOppFields,
   canonicalWinProbability,
@@ -274,6 +274,8 @@ router.get(
     } else if (q.entitiesPresence === "blank") {
       filters.push(sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`);
     }
+    const archivedFilter = activeOnlyUnlessAdmin(req, opportunitiesAndPledges.archivedAt);
+    if (archivedFilter) filters.push(archivedFilter);
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
@@ -583,15 +585,32 @@ router.delete(
 );
 
 router.post(
-  "/opportunities-and-pledges/bulk-delete",
+  "/opportunities-and-pledges/bulk-archive",
   asyncHandler(async (req, res) => {
-    // Mirrors the single delete above — a direct row delete. (pledge_allocations
-    // and gifts' payment_on_pledge_id FKs are handled by the schema, same as
-    // the single-delete path.)
-    await executeBulkDelete(req, res, {
+    await executeBulkArchive(req, res, {
       entity: "opportunities_and_pledges",
       table: opportunitiesAndPledges,
-      bodySchema: BulkDeleteOpportunitiesAndPledgesBody,
+      bodySchema: BulkArchiveOpportunitiesAndPledgesBody,
+    });
+  }),
+);
+
+router.post(
+  "/opportunities-and-pledges/:id/archive",
+  asyncHandler(async (req, res) => {
+    await archiveOne(req, res, {
+      entity: "opportunity",
+      table: opportunitiesAndPledges,
+    });
+  }),
+);
+
+router.post(
+  "/opportunities-and-pledges/:id/unarchive",
+  asyncHandler(async (req, res) => {
+    await unarchiveOne(req, res, {
+      entity: "opportunity",
+      table: opportunitiesAndPledges,
     });
   }),
 );

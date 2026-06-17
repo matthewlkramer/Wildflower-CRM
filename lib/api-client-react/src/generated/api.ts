@@ -27,7 +27,7 @@ import type {
   AdminListEmailIntelFeedbackParams,
   AdminResyncGoogleUser200,
   BadRequestResponse,
-  BulkDeleteBody,
+  BulkArchiveBody,
   BulkUpdateGiftsBody,
   BulkUpdateHouseholdsBody,
   BulkUpdateOpportunitiesBody,
@@ -124,6 +124,8 @@ import type {
   ListEmailProposalsParams,
   ListEmailsParams,
   ListFiscalYearEntityGoalsParams,
+  ListFiscalYearsParams,
+  ListFundableProjectsParams,
   ListGiftAllocationsParams,
   ListGiftsAndPaymentsParams,
   ListHouseholdsParams,
@@ -232,6 +234,7 @@ import type {
   UpdateEmailBody,
   UpdateEmailMessagePrivacyBody,
   UpdateEntityBody,
+  UpdateFiscalYearBody,
   UpdateFundableProjectBody,
   UpdateGiftAllocationBody,
   UpdateGiftOrPaymentBody,
@@ -248,7 +251,9 @@ import type {
   UpdatePersonSuppressionWindowBody,
   UpdatePhoneNumberBody,
   UpdatePledgeAllocationBody,
+  UpdateRegionBody,
   UpdateSavedViewBody,
+  UpdateSchoolBody,
   UpdateTaskBody,
   UpsertFiscalYearEntityGoalBody,
   User,
@@ -2272,6 +2277,89 @@ export function useGetRegion<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+export const getUpdateRegionUrl = (id: string) => {
+  return `/api/regions/${id}`;
+};
+
+export const updateRegion = async (
+  id: string,
+  updateRegionBody: UpdateRegionBody,
+  options?: RequestInit,
+): Promise<Region> => {
+  return customFetch<Region>(getUpdateRegionUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateRegionBody),
+  });
+};
+
+export const getUpdateRegionMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRegion>>,
+    TError,
+    { id: string; data: BodyType<UpdateRegionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateRegion>>,
+  TError,
+  { id: string; data: BodyType<UpdateRegionBody> },
+  TContext
+> => {
+  const mutationKey = ["updateRegion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateRegion>>,
+    { id: string; data: BodyType<UpdateRegionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateRegion(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateRegionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateRegion>>
+>;
+export type UpdateRegionMutationBody = BodyType<UpdateRegionBody>;
+export type UpdateRegionMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useUpdateRegion = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRegion>>,
+    TError,
+    { id: string; data: BodyType<UpdateRegionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateRegion>>,
+  TError,
+  { id: string; data: BodyType<UpdateRegionBody> },
+  TContext
+> => {
+  return useMutation(getUpdateRegionMutationOptions(options));
+};
+
 export const getListSchoolsUrl = (params?: ListSchoolsParams) => {
   const normalizedParams = new URLSearchParams();
 
@@ -2436,6 +2524,89 @@ export function useGetSchool<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getUpdateSchoolUrl = (id: string) => {
+  return `/api/schools/${id}`;
+};
+
+export const updateSchool = async (
+  id: string,
+  updateSchoolBody: UpdateSchoolBody,
+  options?: RequestInit,
+): Promise<School> => {
+  return customFetch<School>(getUpdateSchoolUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateSchoolBody),
+  });
+};
+
+export const getUpdateSchoolMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSchool>>,
+    TError,
+    { id: string; data: BodyType<UpdateSchoolBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSchool>>,
+  TError,
+  { id: string; data: BodyType<UpdateSchoolBody> },
+  TContext
+> => {
+  const mutationKey = ["updateSchool"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSchool>>,
+    { id: string; data: BodyType<UpdateSchoolBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateSchool(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSchoolMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSchool>>
+>;
+export type UpdateSchoolMutationBody = BodyType<UpdateSchoolBody>;
+export type UpdateSchoolMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useUpdateSchool = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSchool>>,
+    TError,
+    { id: string; data: BodyType<UpdateSchoolBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateSchool>>,
+  TError,
+  { id: string; data: BodyType<UpdateSchoolBody> },
+  TContext
+> => {
+  return useMutation(getUpdateSchoolMutationOptions(options));
+};
 
 export const getListEntitiesUrl = () => {
   return `/api/entities`;
@@ -3041,41 +3212,63 @@ export const useDeleteFiscalYearEntityGoal = <
   return useMutation(getDeleteFiscalYearEntityGoalMutationOptions(options));
 };
 
-export const getListFundableProjectsUrl = () => {
-  return `/api/fundable-projects`;
+export const getListFundableProjectsUrl = (
+  params?: ListFundableProjectsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/fundable-projects?${stringifiedParams}`
+    : `/api/fundable-projects`;
 };
 
 export const listFundableProjects = async (
+  params?: ListFundableProjectsParams,
   options?: RequestInit,
 ): Promise<FundableProject[]> => {
-  return customFetch<FundableProject[]>(getListFundableProjectsUrl(), {
+  return customFetch<FundableProject[]>(getListFundableProjectsUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getListFundableProjectsQueryKey = () => {
-  return [`/api/fundable-projects`] as const;
+export const getListFundableProjectsQueryKey = (
+  params?: ListFundableProjectsParams,
+) => {
+  return [`/api/fundable-projects`, ...(params ? [params] : [])] as const;
 };
 
 export const getListFundableProjectsQueryOptions = <
   TData = Awaited<ReturnType<typeof listFundableProjects>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listFundableProjects>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ListFundableProjectsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listFundableProjects>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListFundableProjectsQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getListFundableProjectsQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof listFundableProjects>>
-  > = ({ signal }) => listFundableProjects({ signal, ...requestOptions });
+  > = ({ signal }) =>
+    listFundableProjects(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listFundableProjects>>,
@@ -3092,15 +3285,18 @@ export type ListFundableProjectsQueryError = ErrorType<unknown>;
 export function useListFundableProjects<
   TData = Awaited<ReturnType<typeof listFundableProjects>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listFundableProjects>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListFundableProjectsQueryOptions(options);
+>(
+  params?: ListFundableProjectsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listFundableProjects>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListFundableProjectsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -3440,41 +3636,57 @@ export function useGetFundableProjectsProgress<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
-export const getListFiscalYearsUrl = () => {
-  return `/api/fiscal-years`;
+export const getListFiscalYearsUrl = (params?: ListFiscalYearsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/fiscal-years?${stringifiedParams}`
+    : `/api/fiscal-years`;
 };
 
 export const listFiscalYears = async (
+  params?: ListFiscalYearsParams,
   options?: RequestInit,
 ): Promise<FiscalYear[]> => {
-  return customFetch<FiscalYear[]>(getListFiscalYearsUrl(), {
+  return customFetch<FiscalYear[]>(getListFiscalYearsUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getListFiscalYearsQueryKey = () => {
-  return [`/api/fiscal-years`] as const;
+export const getListFiscalYearsQueryKey = (params?: ListFiscalYearsParams) => {
+  return [`/api/fiscal-years`, ...(params ? [params] : [])] as const;
 };
 
 export const getListFiscalYearsQueryOptions = <
   TData = Awaited<ReturnType<typeof listFiscalYears>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listFiscalYears>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ListFiscalYearsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listFiscalYears>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListFiscalYearsQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getListFiscalYearsQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listFiscalYears>>> = ({
     signal,
-  }) => listFiscalYears({ signal, ...requestOptions });
+  }) => listFiscalYears(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listFiscalYears>>,
@@ -3491,15 +3703,18 @@ export type ListFiscalYearsQueryError = ErrorType<unknown>;
 export function useListFiscalYears<
   TData = Awaited<ReturnType<typeof listFiscalYears>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listFiscalYears>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListFiscalYearsQueryOptions(options);
+>(
+  params?: ListFiscalYearsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listFiscalYears>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListFiscalYearsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -16384,42 +16599,42 @@ export const useBulkUpdateGiftsAndPayments = <
 };
 
 /**
- * @summary Permanently delete the given people. Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given people. Per-row; returns succeeded + failed ids.
  */
-export const getBulkDeletePeopleUrl = () => {
-  return `/api/people/bulk-delete`;
+export const getBulkArchivePeopleUrl = () => {
+  return `/api/people/bulk-archive`;
 };
 
-export const bulkDeletePeople = async (
-  bulkDeleteBody: BulkDeleteBody,
+export const bulkArchivePeople = async (
+  bulkArchiveBody: BulkArchiveBody,
   options?: RequestInit,
 ): Promise<BulkUpdateResult> => {
-  return customFetch<BulkUpdateResult>(getBulkDeletePeopleUrl(), {
+  return customFetch<BulkUpdateResult>(getBulkArchivePeopleUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(bulkDeleteBody),
+    body: JSON.stringify(bulkArchiveBody),
   });
 };
 
-export const getBulkDeletePeopleMutationOptions = <
+export const getBulkArchivePeopleMutationOptions = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof bulkDeletePeople>>,
+    Awaited<ReturnType<typeof bulkArchivePeople>>,
     TError,
-    { data: BodyType<BulkDeleteBody> },
+    { data: BodyType<BulkArchiveBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof bulkDeletePeople>>,
+  Awaited<ReturnType<typeof bulkArchivePeople>>,
   TError,
-  { data: BodyType<BulkDeleteBody> },
+  { data: BodyType<BulkArchiveBody> },
   TContext
 > => {
-  const mutationKey = ["bulkDeletePeople"];
+  const mutationKey = ["bulkArchivePeople"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -16429,83 +16644,83 @@ export const getBulkDeletePeopleMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof bulkDeletePeople>>,
-    { data: BodyType<BulkDeleteBody> }
+    Awaited<ReturnType<typeof bulkArchivePeople>>,
+    { data: BodyType<BulkArchiveBody> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return bulkDeletePeople(data, requestOptions);
+    return bulkArchivePeople(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type BulkDeletePeopleMutationResult = NonNullable<
-  Awaited<ReturnType<typeof bulkDeletePeople>>
+export type BulkArchivePeopleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkArchivePeople>>
 >;
-export type BulkDeletePeopleMutationBody = BodyType<BulkDeleteBody>;
-export type BulkDeletePeopleMutationError = ErrorType<BadRequestResponse>;
+export type BulkArchivePeopleMutationBody = BodyType<BulkArchiveBody>;
+export type BulkArchivePeopleMutationError = ErrorType<BadRequestResponse>;
 
 /**
- * @summary Permanently delete the given people. Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given people. Per-row; returns succeeded + failed ids.
  */
-export const useBulkDeletePeople = <
+export const useBulkArchivePeople = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof bulkDeletePeople>>,
+    Awaited<ReturnType<typeof bulkArchivePeople>>,
     TError,
-    { data: BodyType<BulkDeleteBody> },
+    { data: BodyType<BulkArchiveBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof bulkDeletePeople>>,
+  Awaited<ReturnType<typeof bulkArchivePeople>>,
   TError,
-  { data: BodyType<BulkDeleteBody> },
+  { data: BodyType<BulkArchiveBody> },
   TContext
 > => {
-  return useMutation(getBulkDeletePeopleMutationOptions(options));
+  return useMutation(getBulkArchivePeopleMutationOptions(options));
 };
 
 /**
- * @summary Permanently delete the given organizations. Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given organizations. Per-row; returns succeeded + failed ids.
  */
-export const getBulkDeleteOrganizationsUrl = () => {
-  return `/api/organizations/bulk-delete`;
+export const getBulkArchiveOrganizationsUrl = () => {
+  return `/api/organizations/bulk-archive`;
 };
 
-export const bulkDeleteOrganizations = async (
-  bulkDeleteBody: BulkDeleteBody,
+export const bulkArchiveOrganizations = async (
+  bulkArchiveBody: BulkArchiveBody,
   options?: RequestInit,
 ): Promise<BulkUpdateResult> => {
-  return customFetch<BulkUpdateResult>(getBulkDeleteOrganizationsUrl(), {
+  return customFetch<BulkUpdateResult>(getBulkArchiveOrganizationsUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(bulkDeleteBody),
+    body: JSON.stringify(bulkArchiveBody),
   });
 };
 
-export const getBulkDeleteOrganizationsMutationOptions = <
+export const getBulkArchiveOrganizationsMutationOptions = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof bulkDeleteOrganizations>>,
+    Awaited<ReturnType<typeof bulkArchiveOrganizations>>,
     TError,
-    { data: BodyType<BulkDeleteBody> },
+    { data: BodyType<BulkArchiveBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof bulkDeleteOrganizations>>,
+  Awaited<ReturnType<typeof bulkArchiveOrganizations>>,
   TError,
-  { data: BodyType<BulkDeleteBody> },
+  { data: BodyType<BulkArchiveBody> },
   TContext
 > => {
-  const mutationKey = ["bulkDeleteOrganizations"];
+  const mutationKey = ["bulkArchiveOrganizations"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -16515,87 +16730,87 @@ export const getBulkDeleteOrganizationsMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof bulkDeleteOrganizations>>,
-    { data: BodyType<BulkDeleteBody> }
+    Awaited<ReturnType<typeof bulkArchiveOrganizations>>,
+    { data: BodyType<BulkArchiveBody> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return bulkDeleteOrganizations(data, requestOptions);
+    return bulkArchiveOrganizations(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type BulkDeleteOrganizationsMutationResult = NonNullable<
-  Awaited<ReturnType<typeof bulkDeleteOrganizations>>
+export type BulkArchiveOrganizationsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkArchiveOrganizations>>
 >;
-export type BulkDeleteOrganizationsMutationBody = BodyType<BulkDeleteBody>;
-export type BulkDeleteOrganizationsMutationError =
+export type BulkArchiveOrganizationsMutationBody = BodyType<BulkArchiveBody>;
+export type BulkArchiveOrganizationsMutationError =
   ErrorType<BadRequestResponse>;
 
 /**
- * @summary Permanently delete the given organizations. Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given organizations. Per-row; returns succeeded + failed ids.
  */
-export const useBulkDeleteOrganizations = <
+export const useBulkArchiveOrganizations = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof bulkDeleteOrganizations>>,
+    Awaited<ReturnType<typeof bulkArchiveOrganizations>>,
     TError,
-    { data: BodyType<BulkDeleteBody> },
+    { data: BodyType<BulkArchiveBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof bulkDeleteOrganizations>>,
+  Awaited<ReturnType<typeof bulkArchiveOrganizations>>,
   TError,
-  { data: BodyType<BulkDeleteBody> },
+  { data: BodyType<BulkArchiveBody> },
   TContext
 > => {
-  return useMutation(getBulkDeleteOrganizationsMutationOptions(options));
+  return useMutation(getBulkArchiveOrganizationsMutationOptions(options));
 };
 
 /**
- * @summary Permanently delete the given opportunities/pledges. Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given opportunities/pledges. Per-row; returns succeeded + failed ids.
  */
-export const getBulkDeleteOpportunitiesAndPledgesUrl = () => {
-  return `/api/opportunities-and-pledges/bulk-delete`;
+export const getBulkArchiveOpportunitiesAndPledgesUrl = () => {
+  return `/api/opportunities-and-pledges/bulk-archive`;
 };
 
-export const bulkDeleteOpportunitiesAndPledges = async (
-  bulkDeleteBody: BulkDeleteBody,
+export const bulkArchiveOpportunitiesAndPledges = async (
+  bulkArchiveBody: BulkArchiveBody,
   options?: RequestInit,
 ): Promise<BulkUpdateResult> => {
   return customFetch<BulkUpdateResult>(
-    getBulkDeleteOpportunitiesAndPledgesUrl(),
+    getBulkArchiveOpportunitiesAndPledgesUrl(),
     {
       ...options,
       method: "POST",
       headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(bulkDeleteBody),
+      body: JSON.stringify(bulkArchiveBody),
     },
   );
 };
 
-export const getBulkDeleteOpportunitiesAndPledgesMutationOptions = <
+export const getBulkArchiveOpportunitiesAndPledgesMutationOptions = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>,
+    Awaited<ReturnType<typeof bulkArchiveOpportunitiesAndPledges>>,
     TError,
-    { data: BodyType<BulkDeleteBody> },
+    { data: BodyType<BulkArchiveBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>,
+  Awaited<ReturnType<typeof bulkArchiveOpportunitiesAndPledges>>,
   TError,
-  { data: BodyType<BulkDeleteBody> },
+  { data: BodyType<BulkArchiveBody> },
   TContext
 > => {
-  const mutationKey = ["bulkDeleteOpportunitiesAndPledges"];
+  const mutationKey = ["bulkArchiveOpportunitiesAndPledges"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -16605,87 +16820,87 @@ export const getBulkDeleteOpportunitiesAndPledgesMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>,
-    { data: BodyType<BulkDeleteBody> }
+    Awaited<ReturnType<typeof bulkArchiveOpportunitiesAndPledges>>,
+    { data: BodyType<BulkArchiveBody> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return bulkDeleteOpportunitiesAndPledges(data, requestOptions);
+    return bulkArchiveOpportunitiesAndPledges(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type BulkDeleteOpportunitiesAndPledgesMutationResult = NonNullable<
-  Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>
+export type BulkArchiveOpportunitiesAndPledgesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkArchiveOpportunitiesAndPledges>>
 >;
-export type BulkDeleteOpportunitiesAndPledgesMutationBody =
-  BodyType<BulkDeleteBody>;
-export type BulkDeleteOpportunitiesAndPledgesMutationError =
+export type BulkArchiveOpportunitiesAndPledgesMutationBody =
+  BodyType<BulkArchiveBody>;
+export type BulkArchiveOpportunitiesAndPledgesMutationError =
   ErrorType<BadRequestResponse>;
 
 /**
- * @summary Permanently delete the given opportunities/pledges. Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given opportunities/pledges. Per-row; returns succeeded + failed ids.
  */
-export const useBulkDeleteOpportunitiesAndPledges = <
+export const useBulkArchiveOpportunitiesAndPledges = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>,
+    Awaited<ReturnType<typeof bulkArchiveOpportunitiesAndPledges>>,
     TError,
-    { data: BodyType<BulkDeleteBody> },
+    { data: BodyType<BulkArchiveBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof bulkDeleteOpportunitiesAndPledges>>,
+  Awaited<ReturnType<typeof bulkArchiveOpportunitiesAndPledges>>,
   TError,
-  { data: BodyType<BulkDeleteBody> },
+  { data: BodyType<BulkArchiveBody> },
   TContext
 > => {
   return useMutation(
-    getBulkDeleteOpportunitiesAndPledgesMutationOptions(options),
+    getBulkArchiveOpportunitiesAndPledgesMutationOptions(options),
   );
 };
 
 /**
- * @summary Permanently delete the given gifts/payments (and their allocations). Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given gifts/payments. Per-row; returns succeeded + failed ids.
  */
-export const getBulkDeleteGiftsAndPaymentsUrl = () => {
-  return `/api/gifts-and-payments/bulk-delete`;
+export const getBulkArchiveGiftsAndPaymentsUrl = () => {
+  return `/api/gifts-and-payments/bulk-archive`;
 };
 
-export const bulkDeleteGiftsAndPayments = async (
-  bulkDeleteBody: BulkDeleteBody,
+export const bulkArchiveGiftsAndPayments = async (
+  bulkArchiveBody: BulkArchiveBody,
   options?: RequestInit,
 ): Promise<BulkUpdateResult> => {
-  return customFetch<BulkUpdateResult>(getBulkDeleteGiftsAndPaymentsUrl(), {
+  return customFetch<BulkUpdateResult>(getBulkArchiveGiftsAndPaymentsUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(bulkDeleteBody),
+    body: JSON.stringify(bulkArchiveBody),
   });
 };
 
-export const getBulkDeleteGiftsAndPaymentsMutationOptions = <
+export const getBulkArchiveGiftsAndPaymentsMutationOptions = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>,
+    Awaited<ReturnType<typeof bulkArchiveGiftsAndPayments>>,
     TError,
-    { data: BodyType<BulkDeleteBody> },
+    { data: BodyType<BulkArchiveBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>,
+  Awaited<ReturnType<typeof bulkArchiveGiftsAndPayments>>,
   TError,
-  { data: BodyType<BulkDeleteBody> },
+  { data: BodyType<BulkArchiveBody> },
   TContext
 > => {
-  const mutationKey = ["bulkDeleteGiftsAndPayments"];
+  const mutationKey = ["bulkArchiveGiftsAndPayments"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -16695,45 +16910,1637 @@ export const getBulkDeleteGiftsAndPaymentsMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>,
-    { data: BodyType<BulkDeleteBody> }
+    Awaited<ReturnType<typeof bulkArchiveGiftsAndPayments>>,
+    { data: BodyType<BulkArchiveBody> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return bulkDeleteGiftsAndPayments(data, requestOptions);
+    return bulkArchiveGiftsAndPayments(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type BulkDeleteGiftsAndPaymentsMutationResult = NonNullable<
-  Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>
+export type BulkArchiveGiftsAndPaymentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkArchiveGiftsAndPayments>>
 >;
-export type BulkDeleteGiftsAndPaymentsMutationBody = BodyType<BulkDeleteBody>;
-export type BulkDeleteGiftsAndPaymentsMutationError =
+export type BulkArchiveGiftsAndPaymentsMutationBody = BodyType<BulkArchiveBody>;
+export type BulkArchiveGiftsAndPaymentsMutationError =
   ErrorType<BadRequestResponse>;
 
 /**
- * @summary Permanently delete the given gifts/payments (and their allocations). Per-row; returns succeeded + failed ids.
+ * @summary Archive (soft-delete) the given gifts/payments. Per-row; returns succeeded + failed ids.
  */
-export const useBulkDeleteGiftsAndPayments = <
+export const useBulkArchiveGiftsAndPayments = <
   TError = ErrorType<BadRequestResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>,
+    Awaited<ReturnType<typeof bulkArchiveGiftsAndPayments>>,
     TError,
-    { data: BodyType<BulkDeleteBody> },
+    { data: BodyType<BulkArchiveBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof bulkDeleteGiftsAndPayments>>,
+  Awaited<ReturnType<typeof bulkArchiveGiftsAndPayments>>,
   TError,
-  { data: BodyType<BulkDeleteBody> },
+  { data: BodyType<BulkArchiveBody> },
   TContext
 > => {
-  return useMutation(getBulkDeleteGiftsAndPaymentsMutationOptions(options));
+  return useMutation(getBulkArchiveGiftsAndPaymentsMutationOptions(options));
+};
+
+export const getArchivePersonUrl = (id: string) => {
+  return `/api/people/${id}/archive`;
+};
+
+export const archivePerson = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Person> => {
+  return customFetch<Person>(getArchivePersonUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getArchivePersonMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archivePerson>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archivePerson>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["archivePerson"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archivePerson>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return archivePerson(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchivePersonMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archivePerson>>
+>;
+
+export type ArchivePersonMutationError = ErrorType<NotFoundResponse>;
+
+export const useArchivePerson = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archivePerson>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archivePerson>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getArchivePersonMutationOptions(options));
+};
+
+export const getUnarchivePersonUrl = (id: string) => {
+  return `/api/people/${id}/unarchive`;
+};
+
+export const unarchivePerson = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Person> => {
+  return customFetch<Person>(getUnarchivePersonUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnarchivePersonMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchivePerson>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchivePerson>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unarchivePerson"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchivePerson>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unarchivePerson(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchivePersonMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchivePerson>>
+>;
+
+export type UnarchivePersonMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export const useUnarchivePerson = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchivePerson>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchivePerson>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnarchivePersonMutationOptions(options));
+};
+
+export const getArchiveOrganizationUrl = (id: string) => {
+  return `/api/organizations/${id}/archive`;
+};
+
+export const archiveOrganization = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Organization> => {
+  return customFetch<Organization>(getArchiveOrganizationUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getArchiveOrganizationMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveOrganization>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveOrganization>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["archiveOrganization"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveOrganization>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return archiveOrganization(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveOrganizationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveOrganization>>
+>;
+
+export type ArchiveOrganizationMutationError = ErrorType<NotFoundResponse>;
+
+export const useArchiveOrganization = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveOrganization>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveOrganization>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getArchiveOrganizationMutationOptions(options));
+};
+
+export const getUnarchiveOrganizationUrl = (id: string) => {
+  return `/api/organizations/${id}/unarchive`;
+};
+
+export const unarchiveOrganization = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Organization> => {
+  return customFetch<Organization>(getUnarchiveOrganizationUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnarchiveOrganizationMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveOrganization>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchiveOrganization>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unarchiveOrganization"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchiveOrganization>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unarchiveOrganization(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchiveOrganizationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchiveOrganization>>
+>;
+
+export type UnarchiveOrganizationMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export const useUnarchiveOrganization = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveOrganization>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchiveOrganization>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnarchiveOrganizationMutationOptions(options));
+};
+
+export const getArchiveOpportunityOrPledgeUrl = (id: string) => {
+  return `/api/opportunities-and-pledges/${id}/archive`;
+};
+
+export const archiveOpportunityOrPledge = async (
+  id: string,
+  options?: RequestInit,
+): Promise<OpportunityOrPledge> => {
+  return customFetch<OpportunityOrPledge>(
+    getArchiveOpportunityOrPledgeUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getArchiveOpportunityOrPledgeMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveOpportunityOrPledge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveOpportunityOrPledge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["archiveOpportunityOrPledge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveOpportunityOrPledge>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return archiveOpportunityOrPledge(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveOpportunityOrPledgeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveOpportunityOrPledge>>
+>;
+
+export type ArchiveOpportunityOrPledgeMutationError =
+  ErrorType<NotFoundResponse>;
+
+export const useArchiveOpportunityOrPledge = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveOpportunityOrPledge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveOpportunityOrPledge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getArchiveOpportunityOrPledgeMutationOptions(options));
+};
+
+export const getUnarchiveOpportunityOrPledgeUrl = (id: string) => {
+  return `/api/opportunities-and-pledges/${id}/unarchive`;
+};
+
+export const unarchiveOpportunityOrPledge = async (
+  id: string,
+  options?: RequestInit,
+): Promise<OpportunityOrPledge> => {
+  return customFetch<OpportunityOrPledge>(
+    getUnarchiveOpportunityOrPledgeUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getUnarchiveOpportunityOrPledgeMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveOpportunityOrPledge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchiveOpportunityOrPledge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unarchiveOpportunityOrPledge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchiveOpportunityOrPledge>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unarchiveOpportunityOrPledge(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchiveOpportunityOrPledgeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchiveOpportunityOrPledge>>
+>;
+
+export type UnarchiveOpportunityOrPledgeMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export const useUnarchiveOpportunityOrPledge = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveOpportunityOrPledge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchiveOpportunityOrPledge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnarchiveOpportunityOrPledgeMutationOptions(options));
+};
+
+export const getArchiveGiftOrPaymentUrl = (id: string) => {
+  return `/api/gifts-and-payments/${id}/archive`;
+};
+
+export const archiveGiftOrPayment = async (
+  id: string,
+  options?: RequestInit,
+): Promise<GiftOrPayment> => {
+  return customFetch<GiftOrPayment>(getArchiveGiftOrPaymentUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getArchiveGiftOrPaymentMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveGiftOrPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveGiftOrPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["archiveGiftOrPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveGiftOrPayment>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return archiveGiftOrPayment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveGiftOrPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveGiftOrPayment>>
+>;
+
+export type ArchiveGiftOrPaymentMutationError = ErrorType<NotFoundResponse>;
+
+export const useArchiveGiftOrPayment = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveGiftOrPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveGiftOrPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getArchiveGiftOrPaymentMutationOptions(options));
+};
+
+export const getUnarchiveGiftOrPaymentUrl = (id: string) => {
+  return `/api/gifts-and-payments/${id}/unarchive`;
+};
+
+export const unarchiveGiftOrPayment = async (
+  id: string,
+  options?: RequestInit,
+): Promise<GiftOrPayment> => {
+  return customFetch<GiftOrPayment>(getUnarchiveGiftOrPaymentUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnarchiveGiftOrPaymentMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveGiftOrPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchiveGiftOrPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unarchiveGiftOrPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchiveGiftOrPayment>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unarchiveGiftOrPayment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchiveGiftOrPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchiveGiftOrPayment>>
+>;
+
+export type UnarchiveGiftOrPaymentMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export const useUnarchiveGiftOrPayment = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveGiftOrPayment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchiveGiftOrPayment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnarchiveGiftOrPaymentMutationOptions(options));
+};
+
+export const getArchiveFundableProjectUrl = (id: string) => {
+  return `/api/fundable-projects/${id}/archive`;
+};
+
+export const archiveFundableProject = async (
+  id: string,
+  options?: RequestInit,
+): Promise<FundableProject> => {
+  return customFetch<FundableProject>(getArchiveFundableProjectUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getArchiveFundableProjectMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveFundableProject>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveFundableProject>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["archiveFundableProject"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveFundableProject>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return archiveFundableProject(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveFundableProjectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveFundableProject>>
+>;
+
+export type ArchiveFundableProjectMutationError = ErrorType<NotFoundResponse>;
+
+export const useArchiveFundableProject = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveFundableProject>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveFundableProject>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getArchiveFundableProjectMutationOptions(options));
+};
+
+export const getUnarchiveFundableProjectUrl = (id: string) => {
+  return `/api/fundable-projects/${id}/unarchive`;
+};
+
+export const unarchiveFundableProject = async (
+  id: string,
+  options?: RequestInit,
+): Promise<FundableProject> => {
+  return customFetch<FundableProject>(getUnarchiveFundableProjectUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnarchiveFundableProjectMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveFundableProject>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchiveFundableProject>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unarchiveFundableProject"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchiveFundableProject>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unarchiveFundableProject(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchiveFundableProjectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchiveFundableProject>>
+>;
+
+export type UnarchiveFundableProjectMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export const useUnarchiveFundableProject = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveFundableProject>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchiveFundableProject>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnarchiveFundableProjectMutationOptions(options));
+};
+
+export const getArchiveHouseholdUrl = (id: string) => {
+  return `/api/households/${id}/archive`;
+};
+
+export const archiveHousehold = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Household> => {
+  return customFetch<Household>(getArchiveHouseholdUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getArchiveHouseholdMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveHousehold>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveHousehold>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["archiveHousehold"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveHousehold>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return archiveHousehold(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveHouseholdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveHousehold>>
+>;
+
+export type ArchiveHouseholdMutationError = ErrorType<NotFoundResponse>;
+
+export const useArchiveHousehold = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveHousehold>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveHousehold>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getArchiveHouseholdMutationOptions(options));
+};
+
+export const getUnarchiveHouseholdUrl = (id: string) => {
+  return `/api/households/${id}/unarchive`;
+};
+
+export const unarchiveHousehold = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Household> => {
+  return customFetch<Household>(getUnarchiveHouseholdUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnarchiveHouseholdMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveHousehold>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchiveHousehold>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unarchiveHousehold"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchiveHousehold>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unarchiveHousehold(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchiveHouseholdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchiveHousehold>>
+>;
+
+export type UnarchiveHouseholdMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export const useUnarchiveHousehold = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveHousehold>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchiveHousehold>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnarchiveHouseholdMutationOptions(options));
+};
+
+export const getArchiveSchoolUrl = (id: string) => {
+  return `/api/schools/${id}/archive`;
+};
+
+export const archiveSchool = async (
+  id: string,
+  options?: RequestInit,
+): Promise<School> => {
+  return customFetch<School>(getArchiveSchoolUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getArchiveSchoolMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveSchool>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveSchool>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["archiveSchool"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveSchool>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return archiveSchool(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveSchoolMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveSchool>>
+>;
+
+export type ArchiveSchoolMutationError = ErrorType<NotFoundResponse>;
+
+export const useArchiveSchool = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveSchool>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveSchool>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getArchiveSchoolMutationOptions(options));
+};
+
+export const getUnarchiveSchoolUrl = (id: string) => {
+  return `/api/schools/${id}/unarchive`;
+};
+
+export const unarchiveSchool = async (
+  id: string,
+  options?: RequestInit,
+): Promise<School> => {
+  return customFetch<School>(getUnarchiveSchoolUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnarchiveSchoolMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveSchool>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchiveSchool>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unarchiveSchool"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchiveSchool>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unarchiveSchool(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchiveSchoolMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchiveSchool>>
+>;
+
+export type UnarchiveSchoolMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export const useUnarchiveSchool = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveSchool>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchiveSchool>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnarchiveSchoolMutationOptions(options));
+};
+
+export const getArchiveRegionUrl = (id: string) => {
+  return `/api/regions/${id}/archive`;
+};
+
+export const archiveRegion = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Region> => {
+  return customFetch<Region>(getArchiveRegionUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getArchiveRegionMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveRegion>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveRegion>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["archiveRegion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveRegion>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return archiveRegion(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveRegionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveRegion>>
+>;
+
+export type ArchiveRegionMutationError = ErrorType<NotFoundResponse>;
+
+export const useArchiveRegion = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveRegion>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveRegion>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getArchiveRegionMutationOptions(options));
+};
+
+export const getUnarchiveRegionUrl = (id: string) => {
+  return `/api/regions/${id}/unarchive`;
+};
+
+export const unarchiveRegion = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Region> => {
+  return customFetch<Region>(getUnarchiveRegionUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnarchiveRegionMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveRegion>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchiveRegion>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unarchiveRegion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchiveRegion>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unarchiveRegion(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchiveRegionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchiveRegion>>
+>;
+
+export type UnarchiveRegionMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export const useUnarchiveRegion = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveRegion>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchiveRegion>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnarchiveRegionMutationOptions(options));
+};
+
+export const getGetFiscalYearUrl = (id: string) => {
+  return `/api/fiscal-years/${id}`;
+};
+
+export const getFiscalYear = async (
+  id: string,
+  options?: RequestInit,
+): Promise<FiscalYear> => {
+  return customFetch<FiscalYear>(getGetFiscalYearUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetFiscalYearQueryKey = (id: string) => {
+  return [`/api/fiscal-years/${id}`] as const;
+};
+
+export const getGetFiscalYearQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFiscalYear>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFiscalYear>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetFiscalYearQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFiscalYear>>> = ({
+    signal,
+  }) => getFiscalYear(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFiscalYear>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFiscalYearQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFiscalYear>>
+>;
+export type GetFiscalYearQueryError = ErrorType<NotFoundResponse>;
+
+export function useGetFiscalYear<
+  TData = Awaited<ReturnType<typeof getFiscalYear>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFiscalYear>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFiscalYearQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateFiscalYearUrl = (id: string) => {
+  return `/api/fiscal-years/${id}`;
+};
+
+export const updateFiscalYear = async (
+  id: string,
+  updateFiscalYearBody: UpdateFiscalYearBody,
+  options?: RequestInit,
+): Promise<FiscalYear> => {
+  return customFetch<FiscalYear>(getUpdateFiscalYearUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateFiscalYearBody),
+  });
+};
+
+export const getUpdateFiscalYearMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFiscalYear>>,
+    TError,
+    { id: string; data: BodyType<UpdateFiscalYearBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateFiscalYear>>,
+  TError,
+  { id: string; data: BodyType<UpdateFiscalYearBody> },
+  TContext
+> => {
+  const mutationKey = ["updateFiscalYear"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateFiscalYear>>,
+    { id: string; data: BodyType<UpdateFiscalYearBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateFiscalYear(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateFiscalYearMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateFiscalYear>>
+>;
+export type UpdateFiscalYearMutationBody = BodyType<UpdateFiscalYearBody>;
+export type UpdateFiscalYearMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useUpdateFiscalYear = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFiscalYear>>,
+    TError,
+    { id: string; data: BodyType<UpdateFiscalYearBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateFiscalYear>>,
+  TError,
+  { id: string; data: BodyType<UpdateFiscalYearBody> },
+  TContext
+> => {
+  return useMutation(getUpdateFiscalYearMutationOptions(options));
+};
+
+export const getArchiveFiscalYearUrl = (id: string) => {
+  return `/api/fiscal-years/${id}/archive`;
+};
+
+export const archiveFiscalYear = async (
+  id: string,
+  options?: RequestInit,
+): Promise<FiscalYear> => {
+  return customFetch<FiscalYear>(getArchiveFiscalYearUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getArchiveFiscalYearMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveFiscalYear>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveFiscalYear>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["archiveFiscalYear"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveFiscalYear>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return archiveFiscalYear(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveFiscalYearMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveFiscalYear>>
+>;
+
+export type ArchiveFiscalYearMutationError = ErrorType<NotFoundResponse>;
+
+export const useArchiveFiscalYear = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveFiscalYear>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveFiscalYear>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getArchiveFiscalYearMutationOptions(options));
+};
+
+export const getUnarchiveFiscalYearUrl = (id: string) => {
+  return `/api/fiscal-years/${id}/unarchive`;
+};
+
+export const unarchiveFiscalYear = async (
+  id: string,
+  options?: RequestInit,
+): Promise<FiscalYear> => {
+  return customFetch<FiscalYear>(getUnarchiveFiscalYearUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnarchiveFiscalYearMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveFiscalYear>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchiveFiscalYear>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unarchiveFiscalYear"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchiveFiscalYear>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unarchiveFiscalYear(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchiveFiscalYearMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchiveFiscalYear>>
+>;
+
+export type UnarchiveFiscalYearMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+export const useUnarchiveFiscalYear = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveFiscalYear>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchiveFiscalYear>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnarchiveFiscalYearMutationOptions(options));
 };
 
 /**
