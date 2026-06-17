@@ -244,14 +244,22 @@ async function handleBounce(args: {
   if (!parsed) return;
 
   // Only act on bounces for addresses that exist in our `emails` table
-  // — bouncing on a random one-off recipient isn't actionable.
-  const email = await db
-    .select({ id: emails.id })
+  // — bouncing on a random one-off recipient isn't actionable. Match by
+  // normalized equality ('%'/'_' in an address are literal text, not ILIKE
+  // wildcards); order by id so the chosen row is deterministic.
+  const rows = await db
+    .select({ id: emails.id, personId: emails.personId })
     .from(emails)
-    .where(ilike(emails.email, parsed.recipient))
-    .limit(1)
-    .then((r) => r[0]);
-  if (!email) return;
+    .where(eq(sql`lower(${emails.email})`, parsed.recipient.trim().toLowerCase()))
+    .orderBy(emails.id);
+  if (rows.length === 0) return;
+  // An address belongs to at most one person, though the same address may also
+  // sit on an org/household row (personId null). Link the bounce to that person
+  // if present; point targetEmailId at their row so the "mark email invalid"
+  // action has a target, else fall back to the first matching row.
+  const personRow = rows.find((r) => r.personId);
+  const email = personRow ?? rows[0];
+  const targetPersonId = personRow?.personId ?? null;
 
   const kind = parsed.isHard ? "bounce_invalid" : "bounce_soft";
   // Hard bounces dedupe per address (one pending proposal per bad
@@ -268,6 +276,10 @@ async function handleBounce(args: {
     kind,
     dedupeKey,
     targetEmailId: email.id,
+    // Link the bounce to the address's owner so the action-proposal step
+    // has their CRM context (roles + perId). Without this, reviewer guidance
+    // like "mark the role inactive" has no person/role to act on.
+    targetPersonId: email.personId ?? null,
     subjectEmail: parsed.recipient,
     subjectDomain: domainOf(parsed.recipient),
     subjectName: null,

@@ -11,7 +11,7 @@ import {
   phoneNumbers,
   type EmailProposal,
 } from "@workspace/db/schema";
-import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { anthropic, withRateLimitRetry } from "@workspace/integrations-anthropic-ai";
 import { deadlineHasPassed } from "./intelDetectors";
 import { aiProposalLimit } from "./aiConcurrency";
@@ -474,6 +474,32 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
   };
 }
 
+// Resolve a CRM person from an email address (exact, case-insensitive).
+// Used as a fallback when a proposal has no targetPersonId but its subject
+// email is on file for a person — e.g. a bounce row created before we started
+// linking the bounced address to its owner. Lets reviewer guidance like
+// "mark the role inactive" reach that person's roles (+ perId).
+async function resolvePersonByEmail(email: string | null): Promise<string | null> {
+  const normalized = email?.trim().toLowerCase();
+  if (!normalized) return null;
+  // Normalized equality (NOT ilike — '%'/'_' in an address are literal text,
+  // not LIKE wildcards). An address belongs to at most one person, though the
+  // same address may also sit on an org/household row (personId null), so
+  // filter to the person owner. Order by id so the match is deterministic.
+  const [row] = await db
+    .select({ personId: emailsTable.personId })
+    .from(emailsTable)
+    .where(
+      and(
+        eq(sql`lower(${emailsTable.email})`, normalized),
+        isNotNull(emailsTable.personId),
+      ),
+    )
+    .orderBy(emailsTable.id)
+    .limit(1);
+  return row?.personId ?? null;
+}
+
 interface OrganizationCandidate {
   id: string;
   name: string;
@@ -824,9 +850,23 @@ export async function proposeActionsForProposal(
 
   try {
     // Gather CRM context for whatever the proposal references.
-    const personContext = proposal.targetPersonId
+    let personContext = proposal.targetPersonId
       ? await loadPersonContext(proposal.targetPersonId)
       : null;
+    // Fallback for BOUNCE proposals with no explicit person link (older bounce
+    // rows created before we linked the bounced address to its owner): if the
+    // subject email is unambiguously on file for one CRM person, load that
+    // person's context so reviewer guidance can act on their roles (+ perId).
+    // Scoped to bounces on purpose — for a non-bounce proposal the subject
+    // email is the sender/correspondent, not necessarily the record an action
+    // targets, so resolving it could inject the wrong person's context.
+    if (
+      !personContext &&
+      (proposal.kind === "bounce_invalid" || proposal.kind === "bounce_soft")
+    ) {
+      const resolvedPersonId = await resolvePersonByEmail(proposal.subjectEmail);
+      if (resolvedPersonId) personContext = await loadPersonContext(resolvedPersonId);
+    }
 
     // For the organization side: prefer the detector-emitted hint
     // (targetFunderId, stored legacy name), else attempt a name lookup
