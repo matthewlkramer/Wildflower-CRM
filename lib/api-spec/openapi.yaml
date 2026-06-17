@@ -1905,6 +1905,18 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { type: object, required: [ok], properties: { ok: { type: boolean } } } } } }
         "403": { description: Admin required }
         "404": { $ref: "#/components/responses/NotFound" }
+  /admin/quickbooks-rules/{id}/apply-to-pending:
+    post:
+      operationId: adminApplyQuickbooksRuleToPending
+      tags: [admin]
+      summary: Preview or apply a single rule to currently-pending staged payments (admin only). Set dryRun=true to get a match count before committing.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ApplyRuleToPendingBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ApplyRuleToPendingResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Admin required }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Staged payments (QuickBooks review queue) ────────────────────────────
   /staged-payments:
@@ -4357,6 +4369,19 @@ components:
       required: [ids]
       properties:
         ids: { type: array, items: { type: string }, description: "All rule ids in the desired evaluation order." }
+    ApplyRuleToPendingBody:
+      type: object
+      required: [dryRun]
+      properties:
+        dryRun: { type: boolean, description: "When true, counts matching pending rows without applying any changes." }
+    ApplyRuleToPendingResult:
+      type: object
+      required: [matched, excluded, autoCreated, skipped]
+      properties:
+        matched:     { type: integer, description: "Number of pending rows the rule matches (preview count when dryRun=true)." }
+        excluded:    { type: integer, description: "Rows marked excluded (0 when dryRun=true)." }
+        autoCreated: { type: integer, description: "Gifts minted and auto-approved (0 when dryRun=true)." }
+        skipped:     { type: integer, description: "Matched rows the rule could not apply to cleanly, left pending (0 when dryRun=true)." }
     StagedPayment:
       type: object
       required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, classificationSource, createdAt, updatedAt]

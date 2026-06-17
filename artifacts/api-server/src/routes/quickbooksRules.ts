@@ -21,6 +21,15 @@ import {
   paramId,
   parseOrBadRequest,
 } from "../lib/helpers";
+import {
+  applyRuleToPendingPayments,
+  type ApplyRuleToPendingResult,
+} from "../lib/quickbooksSync";
+import type {
+  EngineRule,
+  RuleCondition,
+  RuleMatchLogic,
+} from "../lib/quickbooksRules";
 
 /**
  * Admin-editable QuickBooks auto-handling rules (the INGEST classifier).
@@ -371,6 +380,51 @@ router.delete(
       .delete(quickbooksHandlingRules)
       .where(eq(quickbooksHandlingRules.id, id));
     res.json({ ok: true });
+  }),
+);
+
+router.post(
+  "/admin/quickbooks-rules/:id/apply-to-pending",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const id = paramId(req);
+
+    const rawBody = req.body as Record<string, unknown>;
+    if (typeof rawBody?.dryRun !== "boolean") {
+      res.status(400).json({ error: "validation_error", message: "dryRun must be a boolean." });
+      return;
+    }
+    const dryRun: boolean = rawBody.dryRun;
+
+    const row = await db
+      .select()
+      .from(quickbooksHandlingRules)
+      .where(eq(quickbooksHandlingRules.id, id))
+      .then((r) => r[0]);
+    if (!row) return notFound(res, "quickbooks rule");
+
+    // Convert the DB row to the engine shape (same as loadHandlingRules in sync).
+    const engineRule: EngineRule = {
+      id: row.id,
+      enabled: row.enabled,
+      priority: row.priority,
+      action: row.action,
+      exclusionReason: (row.exclusionReason ?? null) as EngineRule["exclusionReason"],
+      donationGuard: row.donationGuard,
+      matchLogic: (row.matchLogic === "all" ? "all" : "any") as RuleMatchLogic,
+      conditions: Array.isArray(row.conditions)
+        ? (row.conditions as RuleCondition[])
+        : [],
+      targetOrganizationId: row.targetOrganizationId ?? null,
+      targetIntendedUsage: row.targetIntendedUsage ?? null,
+      targetFundableProjectId: row.targetFundableProjectId ?? null,
+    };
+
+    const result: ApplyRuleToPendingResult = await applyRuleToPendingPayments(
+      engineRule,
+      dryRun,
+    );
+    res.json(result);
   }),
 );
 

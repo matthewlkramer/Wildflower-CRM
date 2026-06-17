@@ -26,6 +26,7 @@ import {
   useAdminUpdateQuickbooksRule,
   useAdminReorderQuickbooksRules,
   useAdminDeleteQuickbooksRule,
+  useAdminApplyQuickbooksRuleToPending,
   useListFundableProjects,
   getListEntitiesQueryKey,
   getListFiscalYearEntityGoalsQueryKey,
@@ -54,6 +55,7 @@ import type {
   StagedPaymentExclusionReason,
   IntendedUsage,
   CreateQuickbooksRuleBody,
+  ApplyRuleToPendingResult,
 } from "@workspace/api-client-react";
 import {
   Dialog,
@@ -1781,6 +1783,13 @@ function QuickbooksRulesSection() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draft, setDraft] = useState<RuleDraft>(emptyRuleDraft);
 
+  type ApplyStep = "idle" | "previewing" | "confirming" | "applying";
+  const [applyTargetRule, setApplyTargetRule] =
+    useState<QuickbooksHandlingRule | null>(null);
+  const [applyStep, setApplyStep] = useState<ApplyStep>("idle");
+  const [applyPreview, setApplyPreview] =
+    useState<ApplyRuleToPendingResult | null>(null);
+
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: getAdminListQuickbooksRulesQueryKey() });
 
@@ -1790,6 +1799,60 @@ function QuickbooksRulesSection() {
       description: err instanceof Error ? err.message : String(err),
       variant: "destructive",
     });
+
+  const applyToPending = useAdminApplyQuickbooksRuleToPending({
+    mutation: {
+      onError: (err) =>
+        toast({
+          title: "Apply failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const openApplyDialog = (r: QuickbooksHandlingRule) => {
+    setApplyTargetRule(r);
+    setApplyPreview(null);
+    setApplyStep("previewing");
+    applyToPending.mutate(
+      { id: r.id, data: { dryRun: true } },
+      {
+        onSuccess: (data) => {
+          setApplyPreview(data);
+          setApplyStep("confirming");
+        },
+        onError: () => setApplyStep("idle"),
+      },
+    );
+  };
+
+  const confirmApply = () => {
+    if (!applyTargetRule) return;
+    setApplyStep("applying");
+    applyToPending.mutate(
+      { id: applyTargetRule.id, data: { dryRun: false } },
+      {
+        onSuccess: (data) => {
+          setApplyStep("idle");
+          const parts: string[] = [];
+          if (data.excluded > 0) parts.push(`${data.excluded} excluded`);
+          if (data.autoCreated > 0)
+            parts.push(`${data.autoCreated} gift(s) created`);
+          if (data.skipped > 0) parts.push(`${data.skipped} skipped`);
+          toast({
+            title: "Rule applied",
+            description:
+              parts.length > 0 ? parts.join(", ") : "No matching rows found.",
+          });
+          setApplyTargetRule(null);
+          qc.invalidateQueries({ queryKey: ["/api/staged-payments"] });
+          qc.invalidateQueries({ queryKey: ["/api/staged-payments-summary"] });
+        },
+        onError: () => setApplyStep("idle"),
+      },
+    );
+  };
 
   const create = useAdminCreateQuickbooksRule({
     mutation: {
@@ -2039,6 +2102,15 @@ function QuickbooksRulesSection() {
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={() => openApplyDialog(r)}
+                        disabled={applyToPending.isPending}
+                        data-testid={`qb-rule-apply-${r.id}`}
+                      >
+                        Apply to pending
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => openEdit(r)}
                         data-testid={`qb-rule-edit-${r.id}`}
                       >
@@ -2062,6 +2134,78 @@ function QuickbooksRulesSection() {
           </Table>
         )}
       </CardContent>
+
+      <Dialog
+        open={applyStep === "confirming" || applyStep === "applying"}
+        onOpenChange={(open) => {
+          if (!open && applyStep !== "applying") {
+            setApplyStep("idle");
+            setApplyTargetRule(null);
+          }
+        }}
+      >
+        <DialogContent data-testid="qb-rule-apply-dialog">
+          <DialogHeader>
+            <DialogTitle>Apply rule to pending payments</DialogTitle>
+            <DialogDescription>
+              This will run{" "}
+              <strong>{applyTargetRule?.name ?? "this rule"}</strong> against
+              all payments currently in the review queue. Only{" "}
+              <strong>pending</strong> rows (not yet approved, rejected, or
+              excluded) will be affected.
+            </DialogDescription>
+          </DialogHeader>
+          {applyPreview && (
+            <div className="rounded-md border border-border p-4 space-y-1 text-sm">
+              <p>
+                <strong>{applyPreview.matched}</strong> pending payment
+                {applyPreview.matched !== 1 ? "s" : ""} match this rule.
+              </p>
+              {applyTargetRule?.action === "exclude" && (
+                <p className="text-muted-foreground">
+                  They will be marked <em>excluded</em> (
+                  {applyTargetRule.exclusionReason ?? "reason unset"}).
+                </p>
+              )}
+              {applyTargetRule?.action === "auto_create_approve" && (
+                <p className="text-muted-foreground">
+                  A gift will be minted and auto-approved for each matching row
+                  (same fail-safe as ingest — rows where the rule can't apply
+                  cleanly are left pending).
+                </p>
+              )}
+              {applyPreview.matched === 0 && (
+                <p className="text-muted-foreground">
+                  Nothing to do — no pending rows match this rule right now.
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setApplyStep("idle");
+                setApplyTargetRule(null);
+              }}
+              disabled={applyStep === "applying"}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmApply}
+              disabled={
+                applyStep === "applying" ||
+                !applyPreview ||
+                applyPreview.matched === 0
+              }
+              data-testid="qb-rule-apply-confirm"
+            >
+              {applyStep === "applying" ? "Applying…" : "Apply now"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">

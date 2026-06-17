@@ -7856,6 +7856,38 @@ export const AdminDeleteQuickbooksRuleResponse = zod.object({
   ok: zod.boolean(),
 });
 
+/**
+ * @summary Preview or apply a single rule to currently-pending staged payments (admin only). Set dryRun=true to get a match count before committing.
+ */
+export const AdminApplyQuickbooksRuleToPendingParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AdminApplyQuickbooksRuleToPendingBody = zod.object({
+  dryRun: zod
+    .boolean()
+    .describe(
+      "When true, counts matching pending rows without applying any changes.",
+    ),
+});
+
+export const AdminApplyQuickbooksRuleToPendingResponse = zod.object({
+  matched: zod
+    .number()
+    .describe(
+      "Number of pending rows the rule matches (preview count when dryRun=true).",
+    ),
+  excluded: zod.number().describe("Rows marked excluded (0 when dryRun=true)."),
+  autoCreated: zod
+    .number()
+    .describe("Gifts minted and auto-approved (0 when dryRun=true)."),
+  skipped: zod
+    .number()
+    .describe(
+      "Matched rows the rule could not apply to cleanly, left pending (0 when dryRun=true).",
+    ),
+});
+
 export const listStagedPaymentsQueryLimitDefault = 50;
 export const listStagedPaymentsQueryLimitMax = 10000;
 

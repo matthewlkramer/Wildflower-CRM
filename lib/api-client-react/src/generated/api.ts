@@ -27,6 +27,8 @@ import type {
   AdminGoogleSyncList,
   AdminListEmailIntelFeedbackParams,
   AdminResyncGoogleUser200,
+  ApplyRuleToPendingBody,
+  ApplyRuleToPendingResult,
   AssignGrantLeadBody,
   BadRequestResponse,
   BulkArchiveBody,
@@ -13782,6 +13784,101 @@ export const useAdminDeleteQuickbooksRule = <
   TContext
 > => {
   return useMutation(getAdminDeleteQuickbooksRuleMutationOptions(options));
+};
+
+/**
+ * @summary Preview or apply a single rule to currently-pending staged payments (admin only). Set dryRun=true to get a match count before committing.
+ */
+export const getAdminApplyQuickbooksRuleToPendingUrl = (id: string) => {
+  return `/api/admin/quickbooks-rules/${id}/apply-to-pending`;
+};
+
+export const adminApplyQuickbooksRuleToPending = async (
+  id: string,
+  applyRuleToPendingBody: ApplyRuleToPendingBody,
+  options?: RequestInit,
+): Promise<ApplyRuleToPendingResult> => {
+  return customFetch<ApplyRuleToPendingResult>(
+    getAdminApplyQuickbooksRuleToPendingUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(applyRuleToPendingBody),
+    },
+  );
+};
+
+export const getAdminApplyQuickbooksRuleToPendingMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminApplyQuickbooksRuleToPending>>,
+    TError,
+    { id: string; data: BodyType<ApplyRuleToPendingBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminApplyQuickbooksRuleToPending>>,
+  TError,
+  { id: string; data: BodyType<ApplyRuleToPendingBody> },
+  TContext
+> => {
+  const mutationKey = ["adminApplyQuickbooksRuleToPending"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminApplyQuickbooksRuleToPending>>,
+    { id: string; data: BodyType<ApplyRuleToPendingBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return adminApplyQuickbooksRuleToPending(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminApplyQuickbooksRuleToPendingMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminApplyQuickbooksRuleToPending>>
+>;
+export type AdminApplyQuickbooksRuleToPendingMutationBody =
+  BodyType<ApplyRuleToPendingBody>;
+export type AdminApplyQuickbooksRuleToPendingMutationError = ErrorType<
+  BadRequestResponse | void | NotFoundResponse
+>;
+
+/**
+ * @summary Preview or apply a single rule to currently-pending staged payments (admin only). Set dryRun=true to get a match count before committing.
+ */
+export const useAdminApplyQuickbooksRuleToPending = <
+  TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminApplyQuickbooksRuleToPending>>,
+    TError,
+    { id: string; data: BodyType<ApplyRuleToPendingBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminApplyQuickbooksRuleToPending>>,
+  TError,
+  { id: string; data: BodyType<ApplyRuleToPendingBody> },
+  TContext
+> => {
+  return useMutation(
+    getAdminApplyQuickbooksRuleToPendingMutationOptions(options),
+  );
 };
 
 export const getListStagedPaymentsUrl = (params?: ListStagedPaymentsParams) => {

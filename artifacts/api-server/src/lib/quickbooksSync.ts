@@ -368,6 +368,187 @@ async function applyAutoCreateRule(
   return applied;
 }
 
+export interface ApplyRuleToPendingResult {
+  matched: number;
+  excluded: number;
+  autoCreated: number;
+  skipped: number;
+}
+
+/**
+ * Apply (or dry-run preview) a single admin-editable handling rule against all
+ * currently-pending staged payments. Only `status='pending'` rows are touched;
+ * approved / rejected / excluded rows are never altered.
+ *
+ * - `exclude` rules mark matching pending rows as excluded (same reason as the
+ *   ingest path, classificationSource='manual' to distinguish from auto).
+ * - `auto_create_approve` rules mint + allocate + approve with the same
+ *   fail-safe as ingest: if the rule can't apply cleanly the row is left
+ *   pending and counted as skipped.
+ *
+ * When `dryRun=true`, no rows are written; only the `matched` count is
+ * meaningful (excluded / autoCreated / skipped will be 0).
+ */
+export async function applyRuleToPendingPayments(
+  rule: EngineRule,
+  dryRun: boolean,
+): Promise<ApplyRuleToPendingResult> {
+  const rows = await db
+    .select()
+    .from(stagedPayments)
+    .where(eq(stagedPayments.status, "pending"));
+
+  let matched = 0;
+  let excluded = 0;
+  let autoCreated = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const input = {
+      amount: row.amount,
+      payerName: row.payerName,
+      lineItemNames: row.lineItemNames,
+      lineAccountNames: row.lineAccountNames,
+      rawReference: row.rawReference,
+      lineDescription: row.lineDescription,
+      lineClasses: row.lineClasses,
+    };
+
+    const result = evaluateRules([rule], input);
+    if (!result) continue;
+    matched += 1;
+
+    if (dryRun) continue;
+
+    if (result.action === "exclude") {
+      const updated = await db
+        .update(stagedPayments)
+        .set({
+          status: "excluded",
+          exclusionReason: result.reason,
+          classificationSource: "manual",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(stagedPayments.id, row.id),
+            eq(stagedPayments.status, "pending"),
+          ),
+        );
+      if ((updated.rowCount ?? 0) > 0) excluded += 1;
+    } else if (result.action === "auto_create_approve") {
+      const did = await applyAutoCreateRuleToRow(row.id, row, result);
+      if (did) autoCreated += 1;
+      else skipped += 1;
+    }
+  }
+
+  return { matched, excluded, autoCreated, skipped };
+}
+
+/**
+ * Variant of `applyAutoCreateRule` that works from an existing staged payment
+ * DB row (all needed fields already captured) rather than a fresh QB pull
+ * source. Used by the admin "apply to pending" path.
+ */
+async function applyAutoCreateRuleToRow(
+  stagedId: string,
+  row: typeof stagedPayments.$inferSelect,
+  rule: Extract<RuleEvalResult, { action: "auto_create_approve" }>,
+): Promise<boolean> {
+  const orgId = rule.targetOrganizationId;
+  if (!orgId) return false;
+
+  const org = await db
+    .select({ id: organizations.id, archivedAt: organizations.archivedAt })
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+    .then((r) => r[0]);
+  if (!org || org.archivedAt) return false;
+
+  if (rule.targetIntendedUsage === "project") {
+    if (!rule.targetFundableProjectId) return false;
+    const proj = await db
+      .select({ id: fundableProjects.id, archivedAt: fundableProjects.archivedAt })
+      .from(fundableProjects)
+      .where(eq(fundableProjects.id, rule.targetFundableProjectId))
+      .then((r) => r[0]);
+    if (!proj || proj.archivedAt) return false;
+  }
+
+  if (
+    validateGiftInvariants({
+      organizationId: orgId,
+      individualGiverPersonId: null,
+      householdId: null,
+    }).length > 0
+  ) {
+    return false;
+  }
+
+  const giftId = newId();
+  let applied = false;
+  await db.transaction(async (tx) => {
+    const locked = await tx
+      .select()
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, stagedId))
+      .for("update")
+      .then((r) => r[0]);
+    if (!locked || locked.status !== "pending") return;
+
+    const amt = locked.amount == null ? NaN : Number(locked.amount);
+    if (Number.isNaN(amt) || amt <= 0) return;
+
+    await tx.insert(giftsAndPayments).values(
+      buildGiftValuesFromStaged(
+        giftId,
+        {
+          qbEntityType: locked.qbEntityType,
+          qbEntityId: locked.qbEntityId,
+          amount: locked.amount,
+          dateReceived: locked.dateReceived,
+          payerName: locked.payerName,
+          rawReference: locked.rawReference,
+          organizationId: orgId,
+          individualGiverPersonId: null,
+          householdId: null,
+          matchedPaymentIntermediaryId: locked.matchedPaymentIntermediaryId,
+        },
+        null,
+      ),
+    );
+
+    await tx.insert(giftAllocations).values({
+      id: newId(),
+      giftId,
+      subAmount: locked.amount,
+      intendedUsage: rule.targetIntendedUsage as
+        (typeof giftAllocations.$inferInsert)["intendedUsage"],
+      fundableProjectId:
+        rule.targetIntendedUsage === "project"
+          ? rule.targetFundableProjectId
+          : null,
+    });
+
+    await tx
+      .update(stagedPayments)
+      .set({
+        status: "approved",
+        matchStatus: "matched",
+        createdGiftId: giftId,
+        autoApplied: true,
+        organizationId: orgId,
+        individualGiverPersonId: null,
+        householdId: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(stagedPayments.id, stagedId));
+    applied = true;
+  });
+  return applied;
+}
+
 export async function syncQuickbooks(
   opts: { fullResync?: boolean } = {},
 ): Promise<QuickbooksSyncSummary> {

@@ -1995,6 +1995,22 @@ export interface ReorderQuickbooksRulesBody {
   ids: string[];
 }
 
+export interface ApplyRuleToPendingBody {
+  /** When true, counts matching pending rows without applying any changes. */
+  dryRun: boolean;
+}
+
+export interface ApplyRuleToPendingResult {
+  /** Number of pending rows the rule matches (preview count when dryRun=true). */
+  matched: number;
+  /** Rows marked excluded (0 when dryRun=true). */
+  excluded: number;
+  /** Gifts minted and auto-approved (0 when dryRun=true). */
+  autoCreated: number;
+  /** Matched rows the rule could not apply to cleanly, left pending (0 when dryRun=true). */
+  skipped: number;
+}
+
 export type StagedPaymentQbLinkedTxnItem = {
   txnId: string;
   txnType: string;
