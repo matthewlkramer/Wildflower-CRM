@@ -3,7 +3,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetHousehold,
   useUpdateHousehold,
-  useDeleteHousehold,
+  useArchiveHousehold,
   getGetHouseholdQueryKey,
   getListHouseholdsQueryKey,
   type HouseholdDetail,
@@ -86,16 +86,16 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
     },
   });
 
-  const del = useDeleteHousehold({
+  const archive = useArchiveHousehold({
     mutation: {
       onSuccess: async () => {
         await queryClient.invalidateQueries({ queryKey: getListHouseholdsQueryKey() });
-        toast({ title: "Household deleted" });
+        toast({ title: "Household archived" });
         navigate("/individuals");
       },
       onError: (err: unknown) => {
         toast({
-          title: "Delete failed",
+          title: "Archive failed",
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
         });
@@ -171,12 +171,16 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
         Edit name
       </Button>
       <ConfirmDeleteDialog
-        title={`Delete ${household.name}?`}
-        description="This household record will be removed. Member links from people and references from opportunities or gifts may need to be reassigned."
-        onConfirm={() => del.mutateAsync({ id: household.id })}
-        disabled={del.isPending}
-        triggerTestId="button-delete-household"
-        confirmTestId="button-confirm-delete-household"
+        title={`Archive ${household.name}?`}
+        description="It will be hidden from lists. An admin can restore it from the archived view."
+        confirmLabel="Archive"
+        triggerLabel="Archive"
+        busyLabel="Archiving…"
+        destructive={false}
+        onConfirm={() => archive.mutateAsync({ id: household.id })}
+        disabled={archive.isPending}
+        triggerTestId="button-archive-household"
+        confirmTestId="button-confirm-archive-household"
       />
     </>
   );

@@ -490,51 +490,6 @@ router.patch(
   }),
 );
 
-router.delete(
-  "/gifts-and-payments/:id",
-  asyncHandler(async (req, res) => {
-    const id = paramId(req);
-    // Capture the link before delete so we can still recompute the
-    // pledge's coverage afterwards. (Deletion can only *reduce* paid
-    // total, so the helper will no-op unless a concurrent insert just
-    // pushed it over — cheap to call regardless.)
-    const existing = await db
-      .select({ paymentOnPledgeId: giftsAndPayments.paymentOnPledgeId })
-      .from(giftsAndPayments)
-      .where(eq(giftsAndPayments.id, id))
-      .then((r) => r[0]);
-    // staged_payment_splits.gift_id is RESTRICT: a split-reconciled QuickBooks
-    // payment points at this gift as one of its portions. Silently deleting it
-    // would leave that staged payment with an incomplete split (the remaining
-    // portions no longer sum to the payout), so block the delete with a clean
-    // 409 and tell the user to revert the split first.
-    const splitLink = await db
-      .select({ stagedPaymentId: stagedPaymentSplits.stagedPaymentId })
-      .from(stagedPaymentSplits)
-      .where(eq(stagedPaymentSplits.giftId, id))
-      .then((r) => r[0]);
-    if (splitLink) {
-      res.status(409).json({
-        error: "split_linked",
-        message:
-          "This gift is part of a split-reconciled QuickBooks payment. Revert the split in QuickBooks Review before deleting the gift.",
-      });
-      return;
-    }
-    // gift_allocations FK is RESTRICT (allocations are money-trail line items),
-    // so the parent gift can't be deleted until its allocation rows are gone.
-    // Every gift carries at least one allocation row, so this cleanup is
-    // effectively always required — do both in one transaction so a gift is
-    // never left orphaned of (or partially stripped of) its allocations.
-    await db.transaction(async (tx) => {
-      await tx.delete(giftAllocations).where(eq(giftAllocations.giftId, id));
-      await tx.delete(giftsAndPayments).where(eq(giftsAndPayments.id, id));
-    });
-    await applyDerivedOppFieldsMany(existing?.paymentOnPledgeId);
-    res.status(204).end();
-  }),
-);
-
 router.post(
   "/gifts-and-payments/bulk-archive",
   asyncHandler(async (req, res) => {

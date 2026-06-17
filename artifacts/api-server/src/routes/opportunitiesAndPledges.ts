@@ -576,14 +576,6 @@ router.patch(
   }),
 );
 
-router.delete(
-  "/opportunities-and-pledges/:id",
-  asyncHandler(async (req, res) => {
-    await db.delete(opportunitiesAndPledges).where(eq(opportunitiesAndPledges.id, paramId(req)));
-    res.status(204).end();
-  }),
-);
-
 router.post(
   "/opportunities-and-pledges/bulk-archive",
   asyncHandler(async (req, res) => {

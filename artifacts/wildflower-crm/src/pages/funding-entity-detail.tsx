@@ -4,7 +4,7 @@ import {
   useGetOrganization,
   useListOrganizations,
   useUpdateOrganization,
-  useDeleteOrganization,
+  useArchiveOrganization,
   useGetCurrentUser,
   getGetOrganizationQueryKey,
   getListOrganizationsQueryKey,
@@ -223,16 +223,16 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
     },
   });
 
-  const del = useDeleteOrganization({
+  const archive = useArchiveOrganization({
     mutation: {
       onSuccess: async () => {
         await queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() });
-        toast({ title: "Organization deleted" });
+        toast({ title: "Organization archived" });
         navigate("/organizations");
       },
       onError: (err: unknown) => {
         toast({
-          title: "Delete failed",
+          title: "Archive failed",
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
         });
@@ -300,12 +300,16 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
         </Button>
       )}
       <ConfirmDeleteDialog
-        title={`Delete ${displayName}?`}
-        description="This organization and any direct references to it will be removed. Linked opportunities and gifts may need to be reassigned."
-        onConfirm={() => del.mutateAsync({ id: org.id })}
-        disabled={del.isPending}
-        triggerTestId="button-delete-organization"
-        confirmTestId="button-confirm-delete-organization"
+        title={`Archive ${displayName}?`}
+        description="It will be hidden from lists. An admin can restore it from the archived view."
+        confirmLabel="Archive"
+        triggerLabel="Archive"
+        busyLabel="Archiving…"
+        destructive={false}
+        onConfirm={() => archive.mutateAsync({ id: org.id })}
+        disabled={archive.isPending}
+        triggerTestId="button-archive-organization"
+        confirmTestId="button-confirm-archive-organization"
       />
     </>
   );

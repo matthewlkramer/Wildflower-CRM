@@ -3,7 +3,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetGiftOrPayment,
   useUpdateGiftOrPayment,
-  useDeleteGiftOrPayment,
+  useArchiveGiftOrPayment,
   useGetOrganization,
   useGetHousehold,
   useGetPaymentIntermediary,
@@ -271,16 +271,16 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
     },
   });
 
-  const del = useDeleteGiftOrPayment({
+  const archive = useArchiveGiftOrPayment({
     mutation: {
       onSuccess: async () => {
         await queryClient.invalidateQueries({ queryKey: getListGiftsAndPaymentsQueryKey() });
-        toast({ title: "Gift deleted" });
+        toast({ title: "Gift archived" });
         navigate("/gifts");
       },
       onError: (err: unknown) => {
         toast({
-          title: "Delete failed",
+          title: "Archive failed",
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
         });
@@ -358,12 +358,16 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
         Edit name
       </Button>
       <ConfirmDeleteDialog
-        title="Delete this gift?"
-        description="This gift or payment record and its allocations will be removed."
-        onConfirm={() => del.mutateAsync({ id: gift.id })}
-        disabled={del.isPending}
-        triggerTestId="button-delete-gift"
-        confirmTestId="button-confirm-delete-gift"
+        title="Archive this gift?"
+        description="It will be hidden from lists. An admin can restore it from the archived view."
+        confirmLabel="Archive"
+        triggerLabel="Archive"
+        busyLabel="Archiving…"
+        destructive={false}
+        onConfirm={() => archive.mutateAsync({ id: gift.id })}
+        disabled={archive.isPending}
+        triggerTestId="button-archive-gift"
+        confirmTestId="button-confirm-archive-gift"
       />
     </>
   );

@@ -3,7 +3,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetPerson,
   useUpdatePerson,
-  useDeletePerson,
+  useArchivePerson,
   useGetHousehold,
   useGetOrganization,
   useGetPaymentIntermediary,
@@ -27,7 +27,7 @@ import {
   type EntityRoleType,
   type PersonSuppressionWindow,
 } from "@workspace/api-client-react";
-import { Check, Pencil, Trash2, X } from "lucide-react";
+import { Archive, Check, Pencil, Trash2, X } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import {
   EmailsEditor,
@@ -232,16 +232,16 @@ function PersonView({ person }: { person: PersonDetail }) {
     },
   });
 
-  const del = useDeletePerson({
+  const archive = useArchivePerson({
     mutation: {
       onSuccess: async () => {
         await queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() });
-        toast({ title: "Person deleted" });
+        toast({ title: "Person archived" });
         navigate("/individuals");
       },
       onError: (err: unknown) => {
         toast({
-          title: "Delete failed",
+          title: "Archive failed",
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
         });
@@ -356,22 +356,25 @@ function PersonView({ person }: { person: PersonDetail }) {
         </Button>
       )}
       <ConfirmDeleteDialog
-        title={`Delete ${canSeeName ? personDisplayName(person) : ANONYMOUS_LABEL}?`}
-        description="This person record will be removed. Household memberships and links from opportunities or gifts may need to be cleaned up separately."
-        onConfirm={() => del.mutateAsync({ id: person.id })}
-        disabled={del.isPending}
-        confirmTestId="button-confirm-delete-person"
+        title={`Archive ${canSeeName ? personDisplayName(person) : ANONYMOUS_LABEL}?`}
+        description="It will be hidden from lists. An admin can restore it from the archived view."
+        confirmLabel="Archive"
+        busyLabel="Archiving…"
+        destructive={false}
+        onConfirm={() => archive.mutateAsync({ id: person.id })}
+        disabled={archive.isPending}
+        confirmTestId="button-confirm-archive-person"
         trigger={
           <Button
             type="button"
             size="icon"
             variant="ghost"
-            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-            disabled={del.isPending}
-            aria-label="Delete person"
-            data-testid="button-delete-person"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            disabled={archive.isPending}
+            aria-label="Archive person"
+            data-testid="button-archive-person"
           >
-            <Trash2 className="h-4 w-4" />
+            <Archive className="h-4 w-4" />
           </Button>
         }
       />

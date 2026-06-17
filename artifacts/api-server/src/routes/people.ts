@@ -364,12 +364,4 @@ router.patch(
   }),
 );
 
-router.delete(
-  "/people/:id",
-  asyncHandler(async (req, res) => {
-    await db.delete(people).where(eq(people.id, paramId(req)));
-    res.status(204).end();
-  }),
-);
-
 export default router;

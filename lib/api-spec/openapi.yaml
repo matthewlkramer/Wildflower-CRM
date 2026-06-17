@@ -570,11 +570,6 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Organization" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
-    delete:
-      operationId: deleteOrganization
-      tags: [organizations]
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses: { "204": { description: Deleted } }
 
   # ─── Payment intermediaries ────────────────────────────────────────────────
   /payment-intermediaries:
@@ -655,11 +650,6 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Household" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
-    delete:
-      operationId: deleteHousehold
-      tags: [households]
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses: { "204": { description: Deleted } }
 
   # ─── People ────────────────────────────────────────────────────────────────
   /people:
@@ -764,11 +754,6 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Person" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
-    delete:
-      operationId: deletePerson
-      tags: [people]
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses: { "204": { description: Deleted } }
 
   # ─── People-entity-roles ───────────────────────────────────────────────────
   /people-entity-roles:
@@ -1044,11 +1029,6 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
-    delete:
-      operationId: deleteOpportunityOrPledge
-      tags: [opportunities-and-pledges]
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses: { "204": { description: Deleted } }
 
   # ─── Pledge allocations ────────────────────────────────────────────────────
   /pledge-allocations:
@@ -1169,11 +1149,6 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
-    delete:
-      operationId: deleteGiftOrPayment
-      tags: [gifts-and-payments]
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses: { "204": { description: Deleted } }
   /gifts-and-payments/{id}/candidate-thank-you-emails:
     get:
       operationId: listCandidateThankYouEmails

@@ -2312,10 +2312,6 @@ export const UpdateOrganizationResponse = zod.object({
   updatedAt: zod.string().datetime({}),
 });
 
-export const DeleteOrganizationParams = zod.object({
-  id: zod.coerce.string(),
-});
-
 export const listPaymentIntermediariesQueryLimitDefault = 50;
 export const listPaymentIntermediariesQueryLimitMax = 10000;
 
@@ -2735,10 +2731,6 @@ export const UpdateHouseholdResponse = zod.object({
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
-});
-
-export const DeleteHouseholdParams = zod.object({
-  id: zod.coerce.string(),
 });
 
 export const listPeopleQueryLimitDefault = 50;
@@ -3428,10 +3420,6 @@ export const UpdatePersonResponse = zod.object({
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
-});
-
-export const DeletePersonParams = zod.object({
-  id: zod.coerce.string(),
 });
 
 export const listPeopleEntityRolesQueryLimitDefault = 50;
@@ -4523,10 +4511,6 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   promptForReportingDeadlines: zod.boolean().optional(),
 });
 
-export const DeleteOpportunityOrPledgeParams = zod.object({
-  id: zod.coerce.string(),
-});
-
 export const listPledgeAllocationsQueryLimitDefault = 50;
 export const listPledgeAllocationsQueryLimitMax = 10000;
 
@@ -5250,10 +5234,6 @@ export const UpdateGiftOrPaymentResponse = zod.object({
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
-});
-
-export const DeleteGiftOrPaymentParams = zod.object({
-  id: zod.coerce.string(),
 });
 
 /**

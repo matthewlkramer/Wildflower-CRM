@@ -17,10 +17,16 @@ type Props = {
   description?: string;
   confirmLabel?: string;
   triggerLabel?: string;
+  busyLabel?: string;
   triggerTestId?: string;
   confirmTestId?: string;
   onConfirm: () => Promise<unknown> | unknown;
   disabled?: boolean;
+  /**
+   * When false, render the trigger/confirm with a neutral (non-destructive)
+   * style — used for reversible actions like Archive. Defaults to true.
+   */
+  destructive?: boolean;
   /** Custom trigger element. When provided, replaces the default Delete button. */
   trigger?: ReactNode;
   /**
@@ -36,10 +42,12 @@ export function ConfirmDeleteDialog({
   description = "This action cannot be undone.",
   confirmLabel = "Delete",
   triggerLabel = "Delete",
+  busyLabel = "Deleting…",
   triggerTestId,
   confirmTestId,
   onConfirm,
   disabled,
+  destructive = true,
   trigger,
   open: openProp,
   onOpenChange,
@@ -76,7 +84,7 @@ export function ConfirmDeleteDialog({
             <Button
               variant="outline"
               size="sm"
-              className="text-destructive hover:text-destructive"
+              className={destructive ? "text-destructive hover:text-destructive" : undefined}
               disabled={disabled}
               data-testid={triggerTestId}
             >
@@ -99,9 +107,13 @@ export function ConfirmDeleteDialog({
             }}
             disabled={busy}
             data-testid={confirmTestId}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className={
+              destructive
+                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                : undefined
+            }
           >
-            {busy ? "Deleting…" : confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

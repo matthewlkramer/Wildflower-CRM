@@ -3,7 +3,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetOpportunityOrPledge,
   useUpdateOpportunityOrPledge,
-  useDeleteOpportunityOrPledge,
+  useArchiveOpportunityOrPledge,
   useListEntities,
   useGetOrganization,
   useGetHousehold,
@@ -168,16 +168,16 @@ function OppView({
     },
   });
 
-  const del = useDeleteOpportunityOrPledge({
+  const archive = useArchiveOpportunityOrPledge({
     mutation: {
       onSuccess: async () => {
         await queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() });
-        toast({ title: `${entityLabel} deleted` });
+        toast({ title: `${entityLabel} archived` });
         navigate(backHref);
       },
       onError: (err: unknown) => {
         toast({
-          title: "Delete failed",
+          title: "Archive failed",
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
         });
@@ -397,12 +397,16 @@ function OppView({
         Edit name
       </Button>
       <ConfirmDeleteDialog
-        title={`Delete this ${entityLabel.toLowerCase()}?`}
-        description={`This ${entityLabel.toLowerCase()} record, along with its pledge and gift allocations, will be removed.`}
-        onConfirm={() => del.mutateAsync({ id: opp.id })}
-        disabled={del.isPending}
-        triggerTestId="button-delete-opp"
-        confirmTestId="button-confirm-delete-opp"
+        title={`Archive this ${entityLabel.toLowerCase()}?`}
+        description="It will be hidden from lists. An admin can restore it from the archived view."
+        confirmLabel="Archive"
+        triggerLabel="Archive"
+        busyLabel="Archiving…"
+        destructive={false}
+        onConfirm={() => archive.mutateAsync({ id: opp.id })}
+        disabled={archive.isPending}
+        triggerTestId="button-archive-opp"
+        confirmTestId="button-confirm-archive-opp"
       />
     </>
   );

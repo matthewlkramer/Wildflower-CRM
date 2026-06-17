@@ -398,27 +398,6 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     await expectUntouchedPending(spId);
   }, 30_000);
 
-  it("blocks deleting a split-linked gift → 409 split_linked, leaves the split intact", async () => {
-    const giftA = await seedGift("600.00");
-    const giftB = await seedGift("400.00");
-    const spId = await seedStaged("980.00");
-    const split = await api(`/api/staged-payments/${spId}/split`, {
-      giftIds: [giftA, giftB],
-    });
-    expect(split.status).toBe(200);
-
-    const res = await fetch(`${baseUrl}/api/gifts-and-payments/${giftA}`, {
-      method: "DELETE",
-    });
-    expect(res.status).toBe(409);
-    const json = (await res.json()) as { error?: string };
-    expect(json.error).toBe("split_linked");
-
-    // The gift and its split link are untouched.
-    const splits = await readSplits(spId);
-    expect(splits.length).toBe(2);
-  }, 30_000);
-
   it("serializes a split and a reconcile racing for the same gift → exactly one wins", async () => {
     // The cross-table invariant (a gift is claimed in staged_payments OR
     // staged_payment_splits, never both) is enforced by the gift row FOR UPDATE

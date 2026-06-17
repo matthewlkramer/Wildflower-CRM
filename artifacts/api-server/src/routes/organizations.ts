@@ -394,14 +394,4 @@ router.patch(
   }),
 );
 
-router.delete(
-  "/organizations/:id",
-  asyncHandler(async (req, res) => {
-    await db
-      .delete(organizations)
-      .where(eq(organizations.id, paramId(req)));
-    res.status(204).end();
-  }),
-);
-
 export default router;

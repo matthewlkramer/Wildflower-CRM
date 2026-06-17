@@ -155,12 +155,4 @@ router.post(
   }),
 );
 
-router.delete(
-  "/households/:id",
-  asyncHandler(async (req, res) => {
-    await db.delete(households).where(eq(households.id, paramId(req)));
-    res.status(204).end();
-  }),
-);
-
 export default router;
