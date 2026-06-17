@@ -548,3 +548,19 @@ export const quickbooksRuleActionEnum = pgEnum("quickbooks_rule_action", [
   "exclude",
   "auto_create_approve",
 ]);
+
+// ──────────────────────────────────────────────────────────────────
+// Grant Leads (team-shared, cross-inbox grant opportunity queue)
+// ──────────────────────────────────────────────────────────────────
+
+// Lifecycle of a team-shared grant lead row.
+//   new       — freshly extracted; no one has acted on it yet
+//   claimed   — a team member has taken ownership (assigneeUserId is set)
+//   converted — turned into a real opportunity (convertedOpportunityId is set)
+//   archived  — dismissed for everyone; stays in DB for history
+export const grantLeadStatusEnum = pgEnum("grant_lead_status", [
+  "new",
+  "claimed",
+  "converted",
+  "archived",
+]);

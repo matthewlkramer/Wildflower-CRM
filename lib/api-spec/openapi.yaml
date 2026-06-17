@@ -50,6 +50,7 @@ tags:
   - { name: quickbooks-oauth }
   - { name: quickbooks-sync }
   - { name: staged-payments }
+  - { name: grant-leads }
   - { name: admin }
 
 paths:
@@ -2199,6 +2200,103 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment cannot be reverted from its current state" }
+
+  # ─── Grant Leads (team-shared, cross-inbox deduped) ────────────────────────
+  /grant-leads:
+    get:
+      operationId: listGrantLeads
+      tags: [grant-leads]
+      summary: List all team grant leads (deduped across inboxes).
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/GrantLeadStatus" }, description: "Filter by status. Omit to get all active (new + claimed) leads." }
+        - { name: assigneeUserId, in: query, schema: { type: string }, description: "Filter by assignee." }
+        - { name: search, in: query, schema: { type: string }, description: "Free-text filter across title and funder name." }
+        - { name: includeArchived, in: query, schema: { type: boolean }, description: "When true, include archived and converted leads." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GrantLeadList" } } } }
+  /grant-leads/{id}:
+    get:
+      operationId: getGrantLead
+      tags: [grant-leads]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GrantLeadDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /grant-leads/{id}/claim:
+    post:
+      operationId: claimGrantLead
+      tags: [grant-leads]
+      summary: Claim this lead (set assignee to caller, status → claimed).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GrantLead" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Lead already converted or archived" }
+  /grant-leads/{id}/assign:
+    post:
+      operationId: assignGrantLead
+      tags: [grant-leads]
+      summary: Assign (or reassign) this lead to a team member.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AssignGrantLeadBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GrantLead" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Lead already converted or archived" }
+  /grant-leads/{id}/archive:
+    post:
+      operationId: archiveGrantLead
+      tags: [grant-leads]
+      summary: Archive (dismiss) this lead for everyone.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GrantLead" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Lead already converted or archived" }
+  /grant-leads/{id}/split:
+    post:
+      operationId: splitGrantLead
+      tags: [grant-leads]
+      summary: Split one lead into two separate leads.
+      description: |
+        When a single email contained multiple distinct opportunities that were
+        grouped together, this endpoint creates a second independent lead for the
+        provided alternate title/funder, clones the sightings, and leaves the
+        original lead intact with its title/funder updated to the primary.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SplitGrantLeadBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SplitGrantLeadResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Lead already converted or archived" }
+  /grant-leads/{id}/convert:
+    post:
+      operationId: convertGrantLead
+      tags: [grant-leads]
+      summary: Convert this lead into a real opportunity (cold lead stage).
+      description: |
+        Mints a new opportunities_and_pledges row at stage=cold_lead, marks
+        this lead status=converted, and returns the new opportunity id. The
+        caller must supply exactly one of organizationId / individualGiverPersonId
+        / householdId (Donor XOR). The lead's targetOrganizationId is pre-filled
+        as a convenience but can be overridden.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConvertGrantLeadBody" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConvertGrantLeadResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Lead already converted or archived" }
 
   # ─── Top Priorities ────────────────────────────────────────────────────────
   /top-priorities:
@@ -5253,6 +5351,7 @@ components:
         householdIds:     { type: array, items: { type: string }, nullable: true }
         opportunityIds:   { type: array, items: { type: string }, nullable: true }
         giftIds:          { type: array, items: { type: string }, nullable: true }
+        grantLeadIds:     { type: array, items: { type: string }, nullable: true }
         mentionUserIds:   { type: array, items: { type: string }, nullable: true }
         createdAt:        { type: string, format: date-time }
         updatedAt:        { type: string, format: date-time }
@@ -5277,6 +5376,7 @@ components:
         householdIds:    { type: array, items: { type: string } }
         opportunityIds:  { type: array, items: { type: string } }
         giftIds:         { type: array, items: { type: string } }
+        grantLeadIds:    { type: array, items: { type: string } }
         mentionUserIds:  { type: array, items: { type: string } }
     UpdateTaskBody:
       type: object
@@ -5292,7 +5392,98 @@ components:
         householdIds:    { type: array, items: { type: string }, nullable: true }
         opportunityIds:  { type: array, items: { type: string }, nullable: true }
         giftIds:         { type: array, items: { type: string }, nullable: true }
+        grantLeadIds:    { type: array, items: { type: string }, nullable: true }
         mentionUserIds:  { type: array, items: { type: string }, nullable: true }
+
+    # ─── Grant Leads ──────────────────────────────────────────────────────────
+    GrantLeadStatus:
+      type: string
+      enum: [new, claimed, converted, archived]
+    GrantLeadSighting:
+      type: object
+      required: [id, grantLeadId, mailboxUserId, createdAt]
+      properties:
+        id:              { type: string }
+        grantLeadId:     { type: string }
+        mailboxUserId:   { type: string }
+        mailboxUserName: { type: string, nullable: true, description: "Denormalized display name of the mailbox user." }
+        gmailMessageId:  { type: string, nullable: true }
+        emailMessageId:  { type: string, nullable: true }
+        emailSentAt:     { type: string, format: date-time, nullable: true }
+        createdAt:       { type: string, format: date-time }
+    GrantLead:
+      type: object
+      required: [id, dedupeKey, status, title, createdAt, updatedAt]
+      properties:
+        id:                       { type: string }
+        dedupeKey:                { type: string }
+        status:                   { $ref: "#/components/schemas/GrantLeadStatus" }
+        title:                    { type: string }
+        funderName:               { type: string, nullable: true }
+        targetOrganizationId:     { type: string, nullable: true }
+        targetOrganizationName:   { type: string, nullable: true, description: "Denormalized name of the matched CRM organization." }
+        deadline:                 { type: string, nullable: true }
+        amount:                   { type: string, nullable: true }
+        url:                      { type: string, nullable: true }
+        snippet:                  { type: string, nullable: true }
+        assigneeUserId:           { type: string, nullable: true }
+        assigneeUserName:         { type: string, nullable: true, description: "Denormalized display name of the assignee." }
+        claimedAt:                { type: string, format: date-time, nullable: true }
+        convertedAt:              { type: string, format: date-time, nullable: true }
+        convertedByUserId:        { type: string, nullable: true }
+        convertedOpportunityId:   { type: string, nullable: true }
+        archivedAt:               { type: string, format: date-time, nullable: true }
+        archivedByUserId:         { type: string, nullable: true }
+        createdAt:                { type: string, format: date-time }
+        updatedAt:                { type: string, format: date-time }
+        sightingCount:            { type: integer, description: "Number of inboxes that received this lead." }
+        sightingUserIds:          { type: array, items: { type: string }, description: "Mailbox user IDs who received this lead (for display)." }
+    GrantLeadDetail:
+      allOf:
+        - { $ref: "#/components/schemas/GrantLead" }
+        - type: object
+          required: [sightings]
+          properties:
+            sightings: { type: array, items: { $ref: "#/components/schemas/GrantLeadSighting" } }
+    GrantLeadList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/GrantLead" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    AssignGrantLeadBody:
+      type: object
+      required: [assigneeUserId]
+      properties:
+        assigneeUserId: { type: string, nullable: true, description: "Set to null to unassign." }
+    SplitGrantLeadBody:
+      type: object
+      required: [newTitle]
+      properties:
+        newTitle:      { type: string, description: "Title for the newly created split-off lead." }
+        newFunderName: { type: string, description: "Funder name for the split-off lead (optional)." }
+    SplitGrantLeadResponse:
+      type: object
+      required: [original, splitOff]
+      properties:
+        original: { $ref: "#/components/schemas/GrantLead" }
+        splitOff: { $ref: "#/components/schemas/GrantLeadDetail" }
+    ConvertGrantLeadBody:
+      type: object
+      properties:
+        organizationId:           { type: string, description: "Donor org (Donor XOR)." }
+        individualGiverPersonId:  { type: string, description: "Individual donor (Donor XOR)." }
+        householdId:              { type: string, description: "Household donor (Donor XOR)." }
+        ownerUserId:              { type: string, description: "Opportunity owner (defaults to caller)." }
+        name:                     { type: string, description: "Opportunity name (defaults to lead title)." }
+        askAmount:                { type: string, description: "Ask amount in decimal string form." }
+        applicationDeadline:      { type: string, format: date, description: "Application deadline (defaults to lead deadline)." }
+    ConvertGrantLeadResponse:
+      type: object
+      required: [grantLead, opportunity]
+      properties:
+        grantLead:   { $ref: "#/components/schemas/GrantLead" }
+        opportunity: { type: object, description: "The newly created opportunity row." }
 
     # ─── Meeting notes ────────────────────────────────────────────────────────
     MeetingActionItem:

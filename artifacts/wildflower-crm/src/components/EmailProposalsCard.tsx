@@ -13,7 +13,6 @@ const KIND_LABEL: Record<string, string> = {
   bounce_invalid: "Hard bounces",
   bounce_soft: "Soft bounces",
   signature_update: "Signature updates",
-  grant_opportunity: "Grant opportunities",
 };
 
 const ALL_KINDS = [
@@ -22,7 +21,6 @@ const ALL_KINDS = [
   "bounce_invalid",
   "bounce_soft",
   "signature_update",
-  "grant_opportunity",
 ] as const;
 
 /**

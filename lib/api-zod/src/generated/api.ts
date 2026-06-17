@@ -452,6 +452,7 @@ export const AcceptTaskProposalResponse = zod.object({
     householdIds: zod.array(zod.string()).nullish(),
     opportunityIds: zod.array(zod.string()).nullish(),
     giftIds: zod.array(zod.string()).nullish(),
+    grantLeadIds: zod.array(zod.string()).nullish(),
     mentionUserIds: zod.array(zod.string()).nullish(),
     createdAt: zod.string().datetime({}),
     updatedAt: zod.string().datetime({}),
@@ -6108,6 +6109,7 @@ export const ListTasksResponse = zod.object({
       householdIds: zod.array(zod.string()).nullish(),
       opportunityIds: zod.array(zod.string()).nullish(),
       giftIds: zod.array(zod.string()).nullish(),
+      grantLeadIds: zod.array(zod.string()).nullish(),
       mentionUserIds: zod.array(zod.string()).nullish(),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
@@ -6134,6 +6136,7 @@ export const CreateTaskBody = zod.object({
   householdIds: zod.array(zod.string()).optional(),
   opportunityIds: zod.array(zod.string()).optional(),
   giftIds: zod.array(zod.string()).optional(),
+  grantLeadIds: zod.array(zod.string()).optional(),
   mentionUserIds: zod.array(zod.string()).optional(),
 });
 
@@ -6156,6 +6159,7 @@ export const GetTaskResponse = zod.object({
   householdIds: zod.array(zod.string()).nullish(),
   opportunityIds: zod.array(zod.string()).nullish(),
   giftIds: zod.array(zod.string()).nullish(),
+  grantLeadIds: zod.array(zod.string()).nullish(),
   mentionUserIds: zod.array(zod.string()).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -6179,6 +6183,7 @@ export const UpdateTaskBody = zod.object({
   householdIds: zod.array(zod.string()).nullish(),
   opportunityIds: zod.array(zod.string()).nullish(),
   giftIds: zod.array(zod.string()).nullish(),
+  grantLeadIds: zod.array(zod.string()).nullish(),
   mentionUserIds: zod.array(zod.string()).nullish(),
 });
 
@@ -6197,6 +6202,7 @@ export const UpdateTaskResponse = zod.object({
   householdIds: zod.array(zod.string()).nullish(),
   opportunityIds: zod.array(zod.string()).nullish(),
   giftIds: zod.array(zod.string()).nullish(),
+  grantLeadIds: zod.array(zod.string()).nullish(),
   mentionUserIds: zod.array(zod.string()).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -9844,6 +9850,447 @@ export const RevertStagedPaymentResponse = zod.object({
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * @summary List all team grant leads (deduped across inboxes).
+ */
+export const listGrantLeadsQueryLimitDefault = 50;
+export const listGrantLeadsQueryLimitMax = 10000;
+
+export const listGrantLeadsQueryPageDefault = 1;
+
+export const ListGrantLeadsQueryParams = zod.object({
+  status: zod
+    .enum(["new", "claimed", "converted", "archived"])
+    .optional()
+    .describe(
+      "Filter by status. Omit to get all active (new + claimed) leads.",
+    ),
+  assigneeUserId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter by assignee."),
+  search: zod.coerce
+    .string()
+    .optional()
+    .describe("Free-text filter across title and funder name."),
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe("When true, include archived and converted leads."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listGrantLeadsQueryLimitMax)
+    .default(listGrantLeadsQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listGrantLeadsQueryPageDefault),
+});
+
+export const ListGrantLeadsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      dedupeKey: zod.string(),
+      status: zod.enum(["new", "claimed", "converted", "archived"]),
+      title: zod.string(),
+      funderName: zod.string().nullish(),
+      targetOrganizationId: zod.string().nullish(),
+      targetOrganizationName: zod
+        .string()
+        .nullish()
+        .describe("Denormalized name of the matched CRM organization."),
+      deadline: zod.string().nullish(),
+      amount: zod.string().nullish(),
+      url: zod.string().nullish(),
+      snippet: zod.string().nullish(),
+      assigneeUserId: zod.string().nullish(),
+      assigneeUserName: zod
+        .string()
+        .nullish()
+        .describe("Denormalized display name of the assignee."),
+      claimedAt: zod.string().datetime({}).nullish(),
+      convertedAt: zod.string().datetime({}).nullish(),
+      convertedByUserId: zod.string().nullish(),
+      convertedOpportunityId: zod.string().nullish(),
+      archivedAt: zod.string().datetime({}).nullish(),
+      archivedByUserId: zod.string().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+      sightingCount: zod
+        .number()
+        .optional()
+        .describe("Number of inboxes that received this lead."),
+      sightingUserIds: zod
+        .array(zod.string())
+        .optional()
+        .describe("Mailbox user IDs who received this lead (for display)."),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const GetGrantLeadParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetGrantLeadResponse = zod
+  .object({
+    id: zod.string(),
+    dedupeKey: zod.string(),
+    status: zod.enum(["new", "claimed", "converted", "archived"]),
+    title: zod.string(),
+    funderName: zod.string().nullish(),
+    targetOrganizationId: zod.string().nullish(),
+    targetOrganizationName: zod
+      .string()
+      .nullish()
+      .describe("Denormalized name of the matched CRM organization."),
+    deadline: zod.string().nullish(),
+    amount: zod.string().nullish(),
+    url: zod.string().nullish(),
+    snippet: zod.string().nullish(),
+    assigneeUserId: zod.string().nullish(),
+    assigneeUserName: zod
+      .string()
+      .nullish()
+      .describe("Denormalized display name of the assignee."),
+    claimedAt: zod.string().datetime({}).nullish(),
+    convertedAt: zod.string().datetime({}).nullish(),
+    convertedByUserId: zod.string().nullish(),
+    convertedOpportunityId: zod.string().nullish(),
+    archivedAt: zod.string().datetime({}).nullish(),
+    archivedByUserId: zod.string().nullish(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
+    sightingCount: zod
+      .number()
+      .optional()
+      .describe("Number of inboxes that received this lead."),
+    sightingUserIds: zod
+      .array(zod.string())
+      .optional()
+      .describe("Mailbox user IDs who received this lead (for display)."),
+  })
+  .and(
+    zod.object({
+      sightings: zod.array(
+        zod.object({
+          id: zod.string(),
+          grantLeadId: zod.string(),
+          mailboxUserId: zod.string(),
+          mailboxUserName: zod
+            .string()
+            .nullish()
+            .describe("Denormalized display name of the mailbox user."),
+          gmailMessageId: zod.string().nullish(),
+          emailMessageId: zod.string().nullish(),
+          emailSentAt: zod.string().datetime({}).nullish(),
+          createdAt: zod.string().datetime({}),
+        }),
+      ),
+    }),
+  );
+
+/**
+ * @summary Claim this lead (set assignee to caller, status → claimed).
+ */
+export const ClaimGrantLeadParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ClaimGrantLeadResponse = zod.object({
+  id: zod.string(),
+  dedupeKey: zod.string(),
+  status: zod.enum(["new", "claimed", "converted", "archived"]),
+  title: zod.string(),
+  funderName: zod.string().nullish(),
+  targetOrganizationId: zod.string().nullish(),
+  targetOrganizationName: zod
+    .string()
+    .nullish()
+    .describe("Denormalized name of the matched CRM organization."),
+  deadline: zod.string().nullish(),
+  amount: zod.string().nullish(),
+  url: zod.string().nullish(),
+  snippet: zod.string().nullish(),
+  assigneeUserId: zod.string().nullish(),
+  assigneeUserName: zod
+    .string()
+    .nullish()
+    .describe("Denormalized display name of the assignee."),
+  claimedAt: zod.string().datetime({}).nullish(),
+  convertedAt: zod.string().datetime({}).nullish(),
+  convertedByUserId: zod.string().nullish(),
+  convertedOpportunityId: zod.string().nullish(),
+  archivedAt: zod.string().datetime({}).nullish(),
+  archivedByUserId: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  sightingCount: zod
+    .number()
+    .optional()
+    .describe("Number of inboxes that received this lead."),
+  sightingUserIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Mailbox user IDs who received this lead (for display)."),
+});
+
+/**
+ * @summary Assign (or reassign) this lead to a team member.
+ */
+export const AssignGrantLeadParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AssignGrantLeadBody = zod.object({
+  assigneeUserId: zod.string().nullable().describe("Set to null to unassign."),
+});
+
+export const AssignGrantLeadResponse = zod.object({
+  id: zod.string(),
+  dedupeKey: zod.string(),
+  status: zod.enum(["new", "claimed", "converted", "archived"]),
+  title: zod.string(),
+  funderName: zod.string().nullish(),
+  targetOrganizationId: zod.string().nullish(),
+  targetOrganizationName: zod
+    .string()
+    .nullish()
+    .describe("Denormalized name of the matched CRM organization."),
+  deadline: zod.string().nullish(),
+  amount: zod.string().nullish(),
+  url: zod.string().nullish(),
+  snippet: zod.string().nullish(),
+  assigneeUserId: zod.string().nullish(),
+  assigneeUserName: zod
+    .string()
+    .nullish()
+    .describe("Denormalized display name of the assignee."),
+  claimedAt: zod.string().datetime({}).nullish(),
+  convertedAt: zod.string().datetime({}).nullish(),
+  convertedByUserId: zod.string().nullish(),
+  convertedOpportunityId: zod.string().nullish(),
+  archivedAt: zod.string().datetime({}).nullish(),
+  archivedByUserId: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  sightingCount: zod
+    .number()
+    .optional()
+    .describe("Number of inboxes that received this lead."),
+  sightingUserIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Mailbox user IDs who received this lead (for display)."),
+});
+
+/**
+ * @summary Archive (dismiss) this lead for everyone.
+ */
+export const ArchiveGrantLeadParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ArchiveGrantLeadResponse = zod.object({
+  id: zod.string(),
+  dedupeKey: zod.string(),
+  status: zod.enum(["new", "claimed", "converted", "archived"]),
+  title: zod.string(),
+  funderName: zod.string().nullish(),
+  targetOrganizationId: zod.string().nullish(),
+  targetOrganizationName: zod
+    .string()
+    .nullish()
+    .describe("Denormalized name of the matched CRM organization."),
+  deadline: zod.string().nullish(),
+  amount: zod.string().nullish(),
+  url: zod.string().nullish(),
+  snippet: zod.string().nullish(),
+  assigneeUserId: zod.string().nullish(),
+  assigneeUserName: zod
+    .string()
+    .nullish()
+    .describe("Denormalized display name of the assignee."),
+  claimedAt: zod.string().datetime({}).nullish(),
+  convertedAt: zod.string().datetime({}).nullish(),
+  convertedByUserId: zod.string().nullish(),
+  convertedOpportunityId: zod.string().nullish(),
+  archivedAt: zod.string().datetime({}).nullish(),
+  archivedByUserId: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  sightingCount: zod
+    .number()
+    .optional()
+    .describe("Number of inboxes that received this lead."),
+  sightingUserIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Mailbox user IDs who received this lead (for display)."),
+});
+
+/**
+ * When a single email contained multiple distinct opportunities that were
+grouped together, this endpoint creates a second independent lead for the
+provided alternate title/funder, clones the sightings, and leaves the
+original lead intact with its title/funder updated to the primary.
+
+ * @summary Split one lead into two separate leads.
+ */
+export const SplitGrantLeadParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const SplitGrantLeadBody = zod.object({
+  newTitle: zod
+    .string()
+    .describe("Title for the newly created split-off lead."),
+  newFunderName: zod
+    .string()
+    .optional()
+    .describe("Funder name for the split-off lead (optional)."),
+});
+
+export const SplitGrantLeadResponse = zod.object({
+  original: zod.object({
+    id: zod.string(),
+    dedupeKey: zod.string(),
+    status: zod.enum(["new", "claimed", "converted", "archived"]),
+    title: zod.string(),
+    funderName: zod.string().nullish(),
+    targetOrganizationId: zod.string().nullish(),
+    targetOrganizationName: zod
+      .string()
+      .nullish()
+      .describe("Denormalized name of the matched CRM organization."),
+    deadline: zod.string().nullish(),
+    amount: zod.string().nullish(),
+    url: zod.string().nullish(),
+    snippet: zod.string().nullish(),
+    assigneeUserId: zod.string().nullish(),
+    assigneeUserName: zod
+      .string()
+      .nullish()
+      .describe("Denormalized display name of the assignee."),
+    claimedAt: zod.string().datetime({}).nullish(),
+    convertedAt: zod.string().datetime({}).nullish(),
+    convertedByUserId: zod.string().nullish(),
+    convertedOpportunityId: zod.string().nullish(),
+    archivedAt: zod.string().datetime({}).nullish(),
+    archivedByUserId: zod.string().nullish(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
+    sightingCount: zod
+      .number()
+      .optional()
+      .describe("Number of inboxes that received this lead."),
+    sightingUserIds: zod
+      .array(zod.string())
+      .optional()
+      .describe("Mailbox user IDs who received this lead (for display)."),
+  }),
+  splitOff: zod
+    .object({
+      id: zod.string(),
+      dedupeKey: zod.string(),
+      status: zod.enum(["new", "claimed", "converted", "archived"]),
+      title: zod.string(),
+      funderName: zod.string().nullish(),
+      targetOrganizationId: zod.string().nullish(),
+      targetOrganizationName: zod
+        .string()
+        .nullish()
+        .describe("Denormalized name of the matched CRM organization."),
+      deadline: zod.string().nullish(),
+      amount: zod.string().nullish(),
+      url: zod.string().nullish(),
+      snippet: zod.string().nullish(),
+      assigneeUserId: zod.string().nullish(),
+      assigneeUserName: zod
+        .string()
+        .nullish()
+        .describe("Denormalized display name of the assignee."),
+      claimedAt: zod.string().datetime({}).nullish(),
+      convertedAt: zod.string().datetime({}).nullish(),
+      convertedByUserId: zod.string().nullish(),
+      convertedOpportunityId: zod.string().nullish(),
+      archivedAt: zod.string().datetime({}).nullish(),
+      archivedByUserId: zod.string().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+      sightingCount: zod
+        .number()
+        .optional()
+        .describe("Number of inboxes that received this lead."),
+      sightingUserIds: zod
+        .array(zod.string())
+        .optional()
+        .describe("Mailbox user IDs who received this lead (for display)."),
+    })
+    .and(
+      zod.object({
+        sightings: zod.array(
+          zod.object({
+            id: zod.string(),
+            grantLeadId: zod.string(),
+            mailboxUserId: zod.string(),
+            mailboxUserName: zod
+              .string()
+              .nullish()
+              .describe("Denormalized display name of the mailbox user."),
+            gmailMessageId: zod.string().nullish(),
+            emailMessageId: zod.string().nullish(),
+            emailSentAt: zod.string().datetime({}).nullish(),
+            createdAt: zod.string().datetime({}),
+          }),
+        ),
+      }),
+    ),
+});
+
+/**
+ * Mints a new opportunities_and_pledges row at stage=cold_lead, marks
+this lead status=converted, and returns the new opportunity id. The
+caller must supply exactly one of organizationId / individualGiverPersonId
+/ householdId (Donor XOR). The lead's targetOrganizationId is pre-filled
+as a convenience but can be overridden.
+
+ * @summary Convert this lead into a real opportunity (cold lead stage).
+ */
+export const ConvertGrantLeadParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ConvertGrantLeadBody = zod.object({
+  organizationId: zod.string().optional().describe("Donor org (Donor XOR)."),
+  individualGiverPersonId: zod
+    .string()
+    .optional()
+    .describe("Individual donor (Donor XOR)."),
+  householdId: zod.string().optional().describe("Household donor (Donor XOR)."),
+  ownerUserId: zod
+    .string()
+    .optional()
+    .describe("Opportunity owner (defaults to caller)."),
+  name: zod
+    .string()
+    .optional()
+    .describe("Opportunity name (defaults to lead title)."),
+  askAmount: zod
+    .string()
+    .optional()
+    .describe("Ask amount in decimal string form."),
+  applicationDeadline: zod
+    .string()
+    .date()
+    .optional()
+    .describe("Application deadline (defaults to lead deadline)."),
 });
 
 /**

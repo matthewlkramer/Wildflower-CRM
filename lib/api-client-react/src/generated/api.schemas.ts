@@ -2789,6 +2789,7 @@ export interface Task {
   householdIds?: string[] | null;
   opportunityIds?: string[] | null;
   giftIds?: string[] | null;
+  grantLeadIds?: string[] | null;
   mentionUserIds?: string[] | null;
   createdAt: string;
   updatedAt: string;
@@ -3000,6 +3001,7 @@ export interface CreateTaskBody {
   householdIds?: string[];
   opportunityIds?: string[];
   giftIds?: string[];
+  grantLeadIds?: string[];
   mentionUserIds?: string[];
 }
 
@@ -3015,7 +3017,114 @@ export interface UpdateTaskBody {
   householdIds?: string[] | null;
   opportunityIds?: string[] | null;
   giftIds?: string[] | null;
+  grantLeadIds?: string[] | null;
   mentionUserIds?: string[] | null;
+}
+
+export type GrantLeadStatus =
+  (typeof GrantLeadStatus)[keyof typeof GrantLeadStatus];
+
+export const GrantLeadStatus = {
+  new: "new",
+  claimed: "claimed",
+  converted: "converted",
+  archived: "archived",
+} as const;
+
+export interface GrantLeadSighting {
+  id: string;
+  grantLeadId: string;
+  mailboxUserId: string;
+  /** Denormalized display name of the mailbox user. */
+  mailboxUserName?: string | null;
+  gmailMessageId?: string | null;
+  emailMessageId?: string | null;
+  emailSentAt?: string | null;
+  createdAt: string;
+}
+
+export interface GrantLead {
+  id: string;
+  dedupeKey: string;
+  status: GrantLeadStatus;
+  title: string;
+  funderName?: string | null;
+  targetOrganizationId?: string | null;
+  /** Denormalized name of the matched CRM organization. */
+  targetOrganizationName?: string | null;
+  deadline?: string | null;
+  amount?: string | null;
+  url?: string | null;
+  snippet?: string | null;
+  assigneeUserId?: string | null;
+  /** Denormalized display name of the assignee. */
+  assigneeUserName?: string | null;
+  claimedAt?: string | null;
+  convertedAt?: string | null;
+  convertedByUserId?: string | null;
+  convertedOpportunityId?: string | null;
+  archivedAt?: string | null;
+  archivedByUserId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Number of inboxes that received this lead. */
+  sightingCount?: number;
+  /** Mailbox user IDs who received this lead (for display). */
+  sightingUserIds?: string[];
+}
+
+export type GrantLeadDetail = GrantLead & {
+  sightings: GrantLeadSighting[];
+};
+
+export interface GrantLeadList {
+  data: GrantLead[];
+  pagination: Pagination;
+}
+
+export interface AssignGrantLeadBody {
+  /** Set to null to unassign. */
+  assigneeUserId: string | null;
+}
+
+export interface SplitGrantLeadBody {
+  /** Title for the newly created split-off lead. */
+  newTitle: string;
+  /** Funder name for the split-off lead (optional). */
+  newFunderName?: string;
+}
+
+export interface SplitGrantLeadResponse {
+  original: GrantLead;
+  splitOff: GrantLeadDetail;
+}
+
+export interface ConvertGrantLeadBody {
+  /** Donor org (Donor XOR). */
+  organizationId?: string;
+  /** Individual donor (Donor XOR). */
+  individualGiverPersonId?: string;
+  /** Household donor (Donor XOR). */
+  householdId?: string;
+  /** Opportunity owner (defaults to caller). */
+  ownerUserId?: string;
+  /** Opportunity name (defaults to lead title). */
+  name?: string;
+  /** Ask amount in decimal string form. */
+  askAmount?: string;
+  /** Application deadline (defaults to lead deadline). */
+  applicationDeadline?: string;
+}
+
+/**
+ * The newly created opportunity row.
+ */
+export type ConvertGrantLeadResponseOpportunity = { [key: string]: unknown };
+
+export interface ConvertGrantLeadResponse {
+  grantLead: GrantLead;
+  /** The newly created opportunity row. */
+  opportunity: ConvertGrantLeadResponseOpportunity;
 }
 
 export interface MeetingActionItem {
@@ -4463,6 +4572,34 @@ export type ListStagedPaymentGiftWindowParams = {
    * @maximum 365
    */
   days?: number;
+};
+
+export type ListGrantLeadsParams = {
+  /**
+   * Filter by status. Omit to get all active (new + claimed) leads.
+   */
+  status?: GrantLeadStatus;
+  /**
+   * Filter by assignee.
+   */
+  assigneeUserId?: string;
+  /**
+   * Free-text filter across title and funder name.
+   */
+  search?: string;
+  /**
+   * When true, include archived and converted leads.
+   */
+  includeArchived?: boolean;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type GetDashboardSummaryParams = {

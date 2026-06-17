@@ -24,6 +24,7 @@ import {
   ReceiptText,
   PanelLeftClose,
   PanelLeftOpen,
+  Lightbulb,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -49,6 +50,7 @@ const navItems = [
   { href: "/grants-calendar", label: "Grants Calendar", icon: CalendarDays },
   { href: "/fundable-projects", label: "Fundable Projects", icon: FolderKanban },
   { href: "/reporting-deadlines", label: "Reporting Deadlines", icon: FileClock },
+  { href: "/grant-leads", label: "Grant Leads", icon: Lightbulb },
   { href: "/email-intelligence", label: "Email Intelligence", icon: Inbox },
   { href: "/email-tracking", label: "Email Tracking", icon: Eye },
   { href: "/settings", label: "Settings", icon: Settings },

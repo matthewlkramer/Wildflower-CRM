@@ -49,3 +49,4 @@ export * from "./stagedPayments";
 export * from "./stagedPaymentSplits";
 export * from "./flodeskSyncState";
 export * from "./connectionEnthusiasmHistory";
+export * from "./grantLeads";

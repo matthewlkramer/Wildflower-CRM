@@ -1,6 +1,8 @@
 import { db } from "@workspace/db";
 import {
   emailProposals,
+  grantLeads,
+  grantLeadSightings,
   people,
   organizations,
   peopleEntityRoles,
@@ -366,27 +368,54 @@ async function handleGrants(args: {
       if (hit) targetOrganizationId = hit.id;
     }
 
-    await upsertProposal({
-      mailboxUserId: args.mailboxUserId,
-      kind: "grant_opportunity",
-      dedupeKey,
-      targetOrganizationId,
-      subjectName: it.funderName,
-      subjectDomain: domainOf(args.fromEmail),
-      subjectEmail: args.fromEmail?.toLowerCase() ?? null,
-      emailSentAt: args.emailSentAt,
-      sourceMessageId: args.messageRowId ?? null,
-      payload: {
-        title: it.title,
-        funderName: it.funderName,
-        deadline: it.deadline,
-        amount: it.amount,
-        url: it.url,
-        snippet: it.snippet,
-        sourceDigest: args.fromEmail,
+    // Upsert the team-shared grant lead row. The partial unique index
+    // covers only active (non-archived, non-converted) rows so a fresh
+    // signal after resolution creates a new lead cleanly.
+    const leadId = newId();
+    const now = new Date();
+    const result = await db.execute(sql`
+      INSERT INTO grant_leads
+        (id, dedupe_key, status, title, funder_name, target_organization_id,
+         deadline, amount, url, snippet, payload, created_at, updated_at)
+      VALUES
+        (${leadId}, ${dedupeKey}, 'new', ${it.title},
+         ${it.funderName ?? null}, ${targetOrganizationId},
+         ${it.deadline ?? null}, ${it.amount ?? null},
+         ${it.url ?? null}, ${it.snippet ?? null},
+         ${JSON.stringify({
+           title: it.title,
+           funderName: it.funderName,
+           deadline: it.deadline,
+           amount: it.amount,
+           url: it.url,
+           snippet: it.snippet,
+           sourceDigest: args.fromEmail,
+           gmailMessageId: args.gmailMessageId,
+         })}::jsonb,
+         ${now}, ${now})
+      ON CONFLICT (dedupe_key) WHERE status NOT IN ('archived', 'converted')
+      DO UPDATE SET updated_at = EXCLUDED.updated_at
+      RETURNING id
+    `);
+
+    // Resolve the lead id (may be the just-inserted row or the existing one)
+    const rows = result.rows as { id: string }[];
+    const resolvedLeadId: string = rows[0]?.id ?? leadId;
+
+    // Record this inbox's sighting. Idempotent — the unique index on
+    // (grant_lead_id, mailbox_user_id, gmail_message_id) prevents duplicates.
+    await db
+      .insert(grantLeadSightings)
+      .values({
+        id: newId(),
+        grantLeadId: resolvedLeadId,
+        mailboxUserId: args.mailboxUserId,
         gmailMessageId: args.gmailMessageId,
-      },
-    });
+        emailMessageId: args.messageRowId ?? null,
+        emailSentAt: args.emailSentAt,
+        createdAt: now,
+      })
+      .onConflictDoNothing();
   }
 }
 

@@ -49,7 +49,6 @@ type Kind =
   | "bounce_invalid"
   | "bounce_soft"
   | "signature_update"
-  | "grant_opportunity"
   | "thank_you_acknowledgment";
 
 const KIND_TABS: { value: Kind; label: string }[] = [
@@ -58,7 +57,6 @@ const KIND_TABS: { value: Kind; label: string }[] = [
   { value: "bounce_invalid", label: "Hard bounces" },
   { value: "bounce_soft", label: "Soft bounces" },
   { value: "signature_update", label: "Signature updates" },
-  { value: "grant_opportunity", label: "Grant opportunities" },
   { value: "thank_you_acknowledgment", label: "Thank-you acks" },
 ];
 
@@ -693,7 +691,7 @@ function describeAction(a: ProposedActionView): string {
 }
 
 function summarizeProposal(p: {
-  kind: Kind;
+  kind: string;
   subjectName?: string | null;
   subjectEmail?: string | null;
   payload?: Record<string, unknown>;
@@ -720,15 +718,6 @@ function summarizeProposal(p: {
       return `Soft bounce: ${p.subjectEmail ?? "?"}`;
     case "signature_update":
       return `Signature update: ${p.subjectName ?? p.subjectEmail ?? "Someone"}`;
-    case "grant_opportunity": {
-      const title = (payload.title as string | undefined) ?? "Grant opportunity";
-      const funder = (payload.funderName as string | undefined) ?? p.subjectName;
-      const deadline = payload.deadline as string | undefined;
-      const parts = [title];
-      if (funder) parts.push(`— ${funder}`);
-      if (deadline) parts.push(`(due ${deadline})`);
-      return parts.join(" ");
-    }
     case "thank_you_acknowledgment": {
       const funder = (payload.funderName as string | undefined) ?? p.subjectName;
       const amount = payload.giftAmount as number | undefined;
@@ -737,6 +726,8 @@ function summarizeProposal(p: {
       if (amount) parts.push(`($${amount.toLocaleString()})`);
       return parts.join(" ");
     }
+    default:
+      return p.subjectName ?? p.subjectEmail ?? p.kind;
   }
 }
 
@@ -744,7 +735,7 @@ function ProposalDetail({
   kind,
   payload,
 }: {
-  kind: Kind;
+  kind: string;
   payload: Record<string, unknown>;
 }) {
   const cell = (label: string, value: unknown) =>
@@ -792,36 +783,6 @@ function ProposalDetail({
           {cell("Reason", payload.reason)}
         </div>
       );
-    case "grant_opportunity": {
-      const url = payload.url as string | undefined;
-      return (
-        <div className="space-y-1">
-          {cell("Title", payload.title)}
-          {cell("Funder", payload.funderName)}
-          {cell("Deadline", payload.deadline)}
-          {cell("Amount", payload.amount)}
-          {url ? (
-            <div className="text-sm">
-              <span className="text-muted-foreground mr-2">Link:</span>
-              <a
-                href={url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-primary hover:underline break-all"
-              >
-                {url}
-              </a>
-            </div>
-          ) : null}
-          {cell("Source", payload.sourceDigest)}
-          {payload.snippet ? (
-            <p className="text-xs italic text-muted-foreground border-l-2 pl-2 mt-2">
-              "{decodeHtmlEntities(String(payload.snippet))}"
-            </p>
-          ) : null}
-        </div>
-      );
-    }
     case "thank_you_acknowledgment":
       return (
         <div className="space-y-1">
@@ -848,6 +809,8 @@ function ProposalDetail({
         </div>
       );
     }
+    default:
+      return null;
   }
 }
 

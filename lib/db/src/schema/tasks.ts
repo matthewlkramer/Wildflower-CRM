@@ -45,6 +45,7 @@ export const tasks = pgTable(
     householdIds: text("household_ids").array(),
     opportunityIds: text("opportunity_ids").array(),
     giftIds: text("gift_ids").array(),
+    grantLeadIds: text("grant_lead_ids").array(),
     mentionUserIds: text("mention_user_ids").array(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -64,6 +65,7 @@ export const tasks = pgTable(
     index("tasks_household_ids_gin_idx").using("gin", t.householdIds),
     index("tasks_opportunity_ids_gin_idx").using("gin", t.opportunityIds),
     index("tasks_gift_ids_gin_idx").using("gin", t.giftIds),
+    index("tasks_grant_lead_ids_gin_idx").using("gin", t.grantLeadIds),
     index("tasks_mention_user_ids_gin_idx").using("gin", t.mentionUserIds),
   ],
 );
