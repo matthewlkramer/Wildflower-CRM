@@ -1,4 +1,12 @@
-import { check, index, pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import {
+  check,
+  index,
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { contactValidityEnum, emailTypeEnum } from "./_enums";
 import { people } from "./people";
@@ -38,6 +46,10 @@ export const emails = pgTable(
     index("emails_organization_id_idx").on(t.organizationId),
     index("emails_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
     index("emails_household_id_idx").on(t.householdId),
+    // An email address may be attached to exactly one record anywhere in the
+    // CRM. Case-insensitive (matches the lower(email) normalization used by
+    // every read path). Enforced in the API as a 409 (see routes/emails.ts).
+    uniqueIndex("emails_email_lower_unique").on(sql`lower(${t.email})`),
     check(
       "emails_exactly_one_owner",
       sql`num_nonnulls(${t.personId}, ${t.organizationId}, ${t.paymentIntermediaryId}, ${t.householdId}) = 1`,

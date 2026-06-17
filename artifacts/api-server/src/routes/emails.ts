@@ -13,6 +13,18 @@ import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, para
 const router: IRouter = Router();
 router.use(requireAuth);
 
+// An email address is globally unique (case-insensitive) — enforced by the
+// emails_email_lower_unique index. Surface the Postgres unique violation
+// (SQLSTATE 23505) as a 409 instead of a 500.
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === "object" &&
+    "code" in err &&
+    (err as { code?: string }).code === "23505"
+  );
+}
+
 router.get(
   "/emails",
   asyncHandler(async (req, res) => {
@@ -39,8 +51,19 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateEmailBody, req.body, res);
     if (!body) return;
-    const [row] = await db.insert(emails).values({ id: newId(), ...body }).returning();
-    res.status(201).json(row);
+    try {
+      const [row] = await db.insert(emails).values({ id: newId(), ...body }).returning();
+      res.status(201).json(row);
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        res.status(409).json({
+          error: "conflict",
+          message: `The email address "${body.email}" is already on file. An email can only be attached to one record.`,
+        });
+        return;
+      }
+      throw err;
+    }
   }),
 );
 
@@ -49,13 +72,24 @@ router.patch(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(UpdateEmailBody, req.body, res);
     if (!body) return;
-    const [row] = await db
-      .update(emails)
-      .set({ ...body, updatedAt: new Date() })
-      .where(eq(emails.id, paramId(req)))
-      .returning();
-    if (!row) return notFound(res, "email");
-    res.json(row);
+    try {
+      const [row] = await db
+        .update(emails)
+        .set({ ...body, updatedAt: new Date() })
+        .where(eq(emails.id, paramId(req)))
+        .returning();
+      if (!row) return notFound(res, "email");
+      res.json(row);
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        res.status(409).json({
+          error: "conflict",
+          message: `The email address "${body.email}" is already on file. An email can only be attached to one record.`,
+        });
+        return;
+      }
+      throw err;
+    }
   }),
 );
 
