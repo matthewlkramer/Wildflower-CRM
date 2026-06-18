@@ -37,8 +37,10 @@
  *   7. other_revenue           — clear non-gifts posted to Other Revenue (4030):
  *                                credit-card rewards / bank-account activity
  *                                (matched by memo).
- *   8. earned_income           — fees-for-service / program revenue (4020
- *                                "Services - Earned Income"). Never a gift.
+ *   8. earned_income           — fees-for-service / program revenue: the 4020
+ *                                "Services - Earned Income" account OR a memo /
+ *                                note that names it "earned income" / "service
+ *                                income". Never a gift.
  *   9. fiscally_sponsored      — money belonging to a separate fiscally
  *                                sponsored project (e.g. "Embracing Equity")
  *                                that the org does NOT reconcile here. A
