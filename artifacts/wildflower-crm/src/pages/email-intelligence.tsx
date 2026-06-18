@@ -205,6 +205,15 @@ function ProposalList({ kind }: { kind: Kind }) {
     (Array.isArray(p.proposedActions)
       ? (p.proposedActions as ProposedActionView[])
       : []);
+  // A proposal is "retriable" (re-analysis can be triggered) when its AI
+  // analysis failed (actionsError set) OR it never produced a result
+  // (actionsAnalyzedAt null — a brand-new or operator-reopened row). Both
+  // states expose a per-row Re-analyze/Retry control that routes through
+  // the same owner-scoped /retry endpoint.
+  const isRetriable = (p: {
+    actionsError?: string | null;
+    actionsAnalyzedAt?: string | null;
+  }) => p.actionsError != null || p.actionsAnalyzedAt == null;
   const checkedFor = (p: { id: string; proposedActions?: unknown }) => {
     const actions = proposalActions(p);
     return selections[p.id] ?? new Set(actions.map((_, i) => i));
@@ -280,6 +289,51 @@ function ProposalList({ kind }: { kind: Kind }) {
     retry.mutate({ id });
   };
 
+  // Bulk "Retry all": re-analyze every retriable row on the current tab.
+  // Reuses the same /retry endpoint per row but through a dedicated
+  // mutation instance so we emit ONE summary toast + ONE list invalidate
+  // at the end instead of N. Bounded client-side concurrency keeps the
+  // open-request count small; the server's AI limiter serializes the
+  // actual model calls regardless.
+  const [bulkRetrying, setBulkRetrying] = useState(false);
+  const bulkRetry = useRetryEmailProposal({ mutation: {} });
+  const onRetryAll = async (ids: string[]) => {
+    if (ids.length === 0 || bulkRetrying) return;
+    setBulkRetrying(true);
+    let ok = 0;
+    let failed = 0;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < ids.length) {
+        const id = ids[cursor];
+        cursor += 1;
+        if (id === undefined) continue;
+        try {
+          await bulkRetry.mutateAsync({ id });
+          ok += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+    };
+    try {
+      await Promise.all(
+        Array.from({ length: Math.min(4, ids.length) }, () => worker()),
+      );
+    } finally {
+      invalidate();
+      setBulkRetrying(false);
+      toast(
+        failed === 0
+          ? { title: `Re-analyzed ${ok} record${ok === 1 ? "" : "s"}` }
+          : {
+              title: `Re-analyzed ${ok}, ${failed} failed`,
+              variant: "destructive",
+            },
+      );
+    }
+  };
+
   // "Propose alternative": the reviewer types a plain-English correction
   // ("that's an invalid email for him — make the jfk@ one primary"); we
   // POST it to the revise endpoint, which folds the guidance into the
@@ -334,6 +388,7 @@ function ProposalList({ kind }: { kind: Kind }) {
     );
   }
   const rows = data?.data ?? [];
+  const retriable = rows.filter(isRetriable);
   if (rows.length === 0) {
     return (
       <Card>
@@ -346,6 +401,27 @@ function ProposalList({ kind }: { kind: Kind }) {
 
   return (
     <div className="space-y-3" data-testid={`proposal-list-${kind}`}>
+      {retriable.length > 0 ? (
+        <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
+          <div className="text-sm text-muted-foreground">
+            {retriable.length} record{retriable.length === 1 ? "" : "s"} still
+            awaiting analysis
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => onRetryAll(retriable.map((p) => p.id))}
+            disabled={bulkRetrying}
+            data-testid={`btn-retry-all-${kind}`}
+          >
+            <RefreshCw
+              className={`h-4 w-4 mr-1.5 ${bulkRetrying ? "animate-spin" : ""}`}
+            />
+            {bulkRetrying ? "Re-analyzing…" : `Retry all (${retriable.length})`}
+          </Button>
+        </div>
+      ) : null}
       {rows.map((p) => (
         <Card key={p.id} data-testid={`proposal-${p.id}`}>
           <CardHeader className="pb-2 flex flex-row items-start justify-between gap-3 space-y-0">
@@ -501,7 +577,7 @@ function ProposalList({ kind }: { kind: Kind }) {
               checked={checkedFor(p)}
               onToggle={(idx) => toggleAction(p, idx)}
               onRetry={() => onRetry(p.id)}
-              retrying={retryingId === p.id}
+              retrying={retryingId === p.id || (bulkRetrying && isRetriable(p))}
             />
           </CardContent>
         </Card>
