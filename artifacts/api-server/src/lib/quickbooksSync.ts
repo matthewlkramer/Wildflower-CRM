@@ -710,8 +710,10 @@ export async function syncQuickbooks(
       }
 
       // ── Auto-apply high-confidence matches (reversible). ──
+      // Only RECONCILES to a single existing gift; never mints a new one. Rows
+      // with no single match stay pending in the needs-review queue.
       if (scored && scored.tier === "high") {
-        const did = await autoApply(newRow.id, p, scored);
+        const did = await autoApply(newRow.id, scored);
         if (did) autoApplied += 1;
       }
     }
@@ -739,16 +741,19 @@ export async function syncQuickbooks(
 
 /**
  * Apply a high-confidence match to the ledger inside a guarded transaction.
- *   single unambiguous gift    → RECONCILE (matchedGiftId): one exact-amount
- *                                gift, or one fee-band gift when none are exact.
- *   zero in-window gifts        → MINT a new gift (createdGiftId).
- *   many                        → ambiguous; leave pending for review.
+ *   single unambiguous gift     → RECONCILE (matchedGiftId): one exact-amount
+ *                                 gift, or one fee-band gift when none are exact.
+ *   zero OR many in-window gifts → leave the row PENDING (needs review).
+ * The worker NEVER mints a gift here. Auto-creating a brand-new gift without a
+ * human is reserved for explicit admin rules (`auto_create_approve`, e.g. the
+ * AmazonSmile rule) applied at ingest BEFORE this runs. When there is no single
+ * existing gift to reconcile to, the row keeps its confident donor hint and
+ * stays in the needs-review queue so a person can create or match it.
  * Each write re-checks the row is still pending so a concurrent human action is
  * never clobbered. Returns true when an action was applied.
  */
 async function autoApply(
   stagedId: string,
-  source: Awaited<ReturnType<typeof pullIncomingPayments>>[number],
   scored: ScoredMatch,
 ): Promise<boolean> {
   const stillPending = and(
@@ -791,54 +796,10 @@ async function autoApply(
     }
   }
 
-  // MINT a new gift only when there is no plausible existing one.
-  if (scored.giftCandidateCount === 0) {
-    const giftId = newId();
-    let applied = false;
-    await db.transaction(async (tx) => {
-      const locked = await tx
-        .select()
-        .from(stagedPayments)
-        .where(eq(stagedPayments.id, stagedId))
-        .for("update")
-        .then((r) => r[0]);
-      if (!locked || locked.status !== "pending") return;
-      await tx.insert(giftsAndPayments).values(
-        buildGiftValuesFromStaged(
-          giftId,
-          {
-            qbEntityType: source.qbEntityType,
-            qbEntityId: source.qbEntityId,
-            amount: locked.amount,
-            dateReceived: locked.dateReceived,
-            payerName: locked.payerName,
-            rawReference: locked.rawReference,
-            organizationId: locked.organizationId,
-            individualGiverPersonId: locked.individualGiverPersonId,
-            householdId: locked.householdId,
-            matchedPaymentIntermediaryId: locked.matchedPaymentIntermediaryId,
-          },
-          // Auto-created in the off-hours worker — no acting user.
-          null,
-        ),
-      );
-      await tx
-        .update(stagedPayments)
-        .set({
-          status: "approved",
-          matchStatus: "matched",
-          createdGiftId: giftId,
-          autoApplied: true,
-          updatedAt: new Date(),
-        })
-        .where(eq(stagedPayments.id, stagedId));
-      applied = true;
-    });
-    return applied;
-  }
-
-  // Ambiguous (multiple candidate gifts): keep the confident donor but leave
-  // the row in "needs review" so a human picks the gift.
+  // No single existing gift to reconcile to (zero candidates → would-be new
+  // gift, or several ambiguous candidates). The worker does not mint: keep the
+  // confident donor hint and leave the row in "needs review" for a human to
+  // create the gift or pick the right match.
   return false;
 }
 
