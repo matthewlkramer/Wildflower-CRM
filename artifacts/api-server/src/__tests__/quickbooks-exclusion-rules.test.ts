@@ -226,6 +226,51 @@ describe("classifyStagedPayment", () => {
     ).toBe("earned_income");
   });
 
+  it("excludes a bare 'Services - Earned Income' account name (no 4020 code) as earned_income", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "DC Wildflower Public Charter School",
+        lineItemNames: ["Academic Support"],
+        lineAccountNames: ["Services - Earned Income"],
+      }).reason,
+    ).toBe("earned_income");
+  });
+
+  it("does not match an 'Unearned Income' account name as earned_income", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["2400 Deferred / Unearned Income"],
+      }).excluded,
+    ).toBe(false);
+  });
+
+  it("does not match a 'Service Revenue' payer name (real grant/donation) as earned_income", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "DC Wildflower PCS - Service Revenue",
+        lineAccountNames: ["4030 Other Revenue"],
+        rawReference: "CHARTER FUND INC GRANT 1 OF 1",
+      }).reason,
+    ).not.toBe("earned_income");
+  });
+
+  it("donation-first guard keeps a bundled gift even with a bare earned-income account name", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: [
+          "Services - Earned Income",
+          "Unrestricted Donations - Individual",
+        ],
+      }).excluded,
+    ).toBe(false);
+  });
+
   it("interest (4040) outranks earned_income (4020) when both lines are present", () => {
     expect(
       classifyStagedPayment({

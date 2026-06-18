@@ -65,9 +65,22 @@ SQL backfill must mirror the regex (TS `\b…\b` ⇄ Postgres `~* '\y…\y'`).
 - `earned_income` (`4020` Services - Earned Income): fees-for-service / program
   revenue, never a gift. Donation-guarded. Matches the 4020 account prefix OR an
   `"earned income"`/`"service income"` whole-word phrase on the memo
-  (`raw_reference`) OR the line description — each field tested SEPARATELY (mirrors
-  the per-field engine conditions + per-column SQL; a phrase split across the two
-  fields is intentionally not a match). Word-anchored so "unearned income" misses.
+  (`raw_reference`), the line description, OR the **account NAME**. Word-anchored
+  so "unearned income" misses. **The dominant live shape is the bare account name
+  "Services - Earned Income" with NO 4020 code AND an empty/"Paid via QuickBooks
+  Payments" memo** — a code-prefix-only + memo-only rule misses it entirely (this
+  was the 0045→0046 follow-up: 0045 matched 0 rows, 0046's account-name clause
+  caught all 17). **Payer/customer NAME is deliberately NEVER matched** — payers
+  like "DC Wildflower PCS - Service Revenue" sit on real grants (4030)/donations
+  that must stay; only memo/line-desc/account-name are tested.
+  - **Regex on a multi-value field is tested JOINED, prefix is per-element.** The
+    engine (`conditionMatches`) evaluates `regex` mode as `re.test(vals.join(" "))`
+    but `prefix`/`contains` per element. So the account-NAME phrase regex must test
+    the JOINED names (classifier `lineAccountNames.join(" ")` ⇄ SQL
+    `array_to_string(line_account_names,' ') ~* '\m(earned|service) income\M'`),
+    while the 4020 prefix stays per-element (`unnest … LIKE '4020%'`). Memo &
+    line-desc are single-value → tested per-field. Getting the join/per-element
+    split wrong silently drifts classifier ⇄ engine ⇄ SQL (typecheck won't catch).
 - `other_revenue` (`4030` Other Revenue): a grab-bag bucket — mostly non-gifts
   but real gifts are occasionally miscoded here, so the rule is deliberately
   NARROW. It excludes ONLY rows coded to 4030 whose memo reads like credit-card

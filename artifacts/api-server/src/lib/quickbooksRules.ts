@@ -463,6 +463,11 @@ export const SEED_RULES: EngineRule[] = [
         mode: "regex",
         value: "\\bearned income\\b|\\bservice income\\b",
       },
+      {
+        field: "line_account_name",
+        mode: "regex",
+        value: "\\bearned income\\b|\\bservice income\\b",
+      },
     ],
     targetOrganizationId: null,
     targetIntendedUsage: null,

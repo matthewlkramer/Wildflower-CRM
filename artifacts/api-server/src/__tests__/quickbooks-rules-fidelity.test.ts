@@ -143,6 +143,32 @@ const fixtures: { name: string; input: ClassifierInput }[] = [
     input: { ...base, lineAccountNames: ["4020 Services - Earned Income"] },
   },
   {
+    name: "earned income bare account name (no 4020 code)",
+    input: {
+      ...base,
+      payerName: "DC Wildflower Public Charter School",
+      lineItemNames: ["Academic Support"],
+      lineAccountNames: ["Services - Earned Income"],
+    },
+  },
+  {
+    name: "unearned income account must NOT match earned_income",
+    input: {
+      ...base,
+      payerName: null,
+      lineAccountNames: ["2400 Deferred / Unearned Income"],
+    },
+  },
+  {
+    name: "service revenue payer name is not earned income (real grant)",
+    input: {
+      ...base,
+      payerName: "DC Wildflower PCS - Service Revenue",
+      lineAccountNames: ["4030 Other Revenue"],
+      rawReference: "CHARTER FUND INC GRANT 1 OF 1",
+    },
+  },
+  {
     name: "earned income bundled with donation (guard suppresses)",
     input: {
       ...base,
