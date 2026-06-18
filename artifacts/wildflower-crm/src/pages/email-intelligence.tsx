@@ -729,9 +729,32 @@ function ProposedActionsBlock({
     );
   }
   if (!analyzedAt) {
+    // A pending proposal with no analysis timestamp is normally a brand-
+    // new row the inline sync fan-out is actively analyzing. But a row
+    // reopened by an operator (or whose claim died mid-flight) lands here
+    // permanently: the scheduled recovery sweep only re-attempts rows that
+    // carry a stored `actions_error`, so an error-free "Analyzing…" row has
+    // no automatic path forward. Surface the same owner-scoped re-analyze
+    // control as the failure box so a human can unstick it on demand.
     return (
-      <div className="mt-4 text-xs text-muted-foreground italic">
-        Analyzing what to do…
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="text-xs text-muted-foreground italic">
+          Analyzing what to do…
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onRetry}
+          disabled={retrying}
+          className="shrink-0"
+          data-testid={`btn-reanalyze-${proposalId}`}
+        >
+          <RefreshCw
+            className={`h-4 w-4 mr-1.5 ${retrying ? "animate-spin" : ""}`}
+          />
+          {retrying ? "Re-analyzing…" : "Re-analyze"}
+        </Button>
       </div>
     );
   }
