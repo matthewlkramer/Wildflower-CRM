@@ -273,6 +273,20 @@ export const OTHER_REVENUE_NONGIFT_MEMO_PATTERNS: readonly RegExp[] = [
  * account code; honors the donation-first guard like the other line-based rules.
  */
 export const EARNED_INCOME_ACCOUNT_CODE_PREFIXES: readonly string[] = ["4020"];
+/**
+ * Some earned-income deposits carry no 4020 account code — the only signal is the
+ * free-text memo / note (a deposit PrivateNote or a deposit-line description that
+ * reads "Service Income" / "Earned Income"). Catch those by a case-insensitive,
+ * word-anchored memo phrase as well, folded into the SAME `earned_income` reason
+ * and the SAME donation-first guard. Word boundaries keep "unearned income" from
+ * matching by accident. Lockstep: any change here must mirror the `seed_earned_income`
+ * memo conditions in quickbooksRules.ts AND the SQL backfill (TS `\b…\b` ⇄
+ * Postgres `~* '\m…\M'`).
+ */
+export const EARNED_INCOME_MEMO_PATTERNS: readonly RegExp[] = [
+  /\bearned income\b/i,
+  /\bservice income\b/i,
+];
 
 /**
  * FISCALLY SPONSORED PROJECT markers. Money belonging to a separate fiscally
@@ -472,12 +486,28 @@ function isOtherRevenueNonGift(input: ClassifierInput): boolean {
   return OTHER_REVENUE_NONGIFT_MEMO_PATTERNS.some((re) => re.test(memo));
 }
 
-/** True if a row is coded to the "Services - Earned Income" (4020) account. */
+/**
+ * True if a row is earned income / fees-for-service: coded to the "Services -
+ * Earned Income" (4020) account, OR its free-text memo / line description names
+ * it as "earned income" / "service income". Honors the donation-first guard like
+ * the other line-based rules (the caller suppresses it on a real donation line).
+ */
 function isEarnedIncomeLine(input: ClassifierInput): boolean {
-  return anyAccountCodeStartsWith(
-    input.lineAccountNames,
-    EARNED_INCOME_ACCOUNT_CODE_PREFIXES,
-  );
+  if (
+    anyAccountCodeStartsWith(
+      input.lineAccountNames,
+      EARNED_INCOME_ACCOUNT_CODE_PREFIXES,
+    )
+  ) {
+    return true;
+  }
+  // Test the memo and the line description SEPARATELY (not joined) so this
+  // exactly mirrors the engine's per-field conditions and the SQL backfill's
+  // per-column clauses — a phrase split across the two fields is intentionally
+  // NOT a match (keeps the classifier ⇄ engine ⇄ SQL lockstep exact).
+  return [input.rawReference, input.lineDescription]
+    .filter((s): s is string => !!s)
+    .some((field) => EARNED_INCOME_MEMO_PATTERNS.some((re) => re.test(field)));
 }
 
 /**

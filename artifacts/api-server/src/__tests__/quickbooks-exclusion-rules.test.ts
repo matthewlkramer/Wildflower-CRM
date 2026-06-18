@@ -252,6 +252,47 @@ describe("classifyStagedPayment", () => {
     ).toBe(false);
   });
 
+  it("excludes a memo that says earned income as earned_income", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        rawReference: "ACH deposit - earned income for consulting",
+      }).reason,
+    ).toBe("earned_income");
+  });
+
+  it("excludes a line description that says service income as earned_income", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineDescription: "Service Income - workshop fees",
+      }).reason,
+    ).toBe("earned_income");
+  });
+
+  it("donation-first guard keeps a bundled gift even with an earned-income memo", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        rawReference: "earned income",
+        lineItemNames: ["Donation - Individual Unrestricted"],
+        lineAccountNames: ["4000 Unrestricted Donations"],
+      }).excluded,
+    ).toBe(false);
+  });
+
+  it("does not match 'unearned income' as earned_income", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        rawReference: "unearned income deferral",
+      }).excluded,
+    ).toBe(false);
+  });
+
   it("excludes guaranty revenue as loan activity (line-based)", () => {
     expect(
       classifyStagedPayment({

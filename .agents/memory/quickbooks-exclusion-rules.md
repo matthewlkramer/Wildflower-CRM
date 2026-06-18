@@ -63,7 +63,11 @@ SQL backfill must mirror the regex (TS `\b…\b` ⇄ Postgres `~* '\y…\y'`).
   (4040 deposits carry an "Interest Earned" memo); UI label is "Interest /
   investment income". `government_reimbursement` (exact payer `CSP`) is its own value.
 - `earned_income` (`4020` Services - Earned Income): fees-for-service / program
-  revenue, never a gift. Account-prefix rule, donation-guarded.
+  revenue, never a gift. Donation-guarded. Matches the 4020 account prefix OR an
+  `"earned income"`/`"service income"` whole-word phrase on the memo
+  (`raw_reference`) OR the line description — each field tested SEPARATELY (mirrors
+  the per-field engine conditions + per-column SQL; a phrase split across the two
+  fields is intentionally not a match). Word-anchored so "unearned income" misses.
 - `other_revenue` (`4030` Other Revenue): a grab-bag bucket — mostly non-gifts
   but real gifts are occasionally miscoded here, so the rule is deliberately
   NARROW. It excludes ONLY rows coded to 4030 whose memo reads like credit-card

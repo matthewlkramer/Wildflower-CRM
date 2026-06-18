@@ -451,7 +451,19 @@ export const SEED_RULES: EngineRule[] = [
     exclusionReason: "earned_income",
     donationGuard: G,
     matchLogic: "any",
-    conditions: [{ field: "line_account_name", mode: "prefix", value: "4020" }],
+    conditions: [
+      { field: "line_account_name", mode: "prefix", value: "4020" },
+      {
+        field: "memo_reference",
+        mode: "regex",
+        value: "\\bearned income\\b|\\bservice income\\b",
+      },
+      {
+        field: "line_description",
+        mode: "regex",
+        value: "\\bearned income\\b|\\bservice income\\b",
+      },
+    ],
     targetOrganizationId: null,
     targetIntendedUsage: null,
     targetFundableProjectId: null,

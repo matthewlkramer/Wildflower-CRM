@@ -22,6 +22,23 @@ priority, first match wins.
   and the seed (and the idempotent migration that seeds prod) in lockstep, or the
   fidelity test fails. This mirrors the existing TS↔SQL classifier/backfill lockstep.
 
+## Changing a rule's behavior needs a persisted-row migration, NOT just code
+- The ingest path (`syncQuickbooks` → `loadHandlingRules` → `evaluateRules`) reads
+  the DB `quickbooks_handling_rules` rows, **NOT** `SEED_RULES`. `SEED_RULES` is only
+  (a) the seed source for the 0040 migration, (b) the fidelity-test reference, and
+  (c) the classifier behind the manual reclassify path. So a code / `SEED_RULES`
+  change alone does **NOT** change what NEW prod pulls do.
+- **Why:** Publish/drizzle ships schema + code but never edits data rows, so the
+  seeded rule row stays frozen at whatever the last migration wrote (0040 seeded
+  `seed_earned_income` with only the 4020 condition — memo broadening was invisible
+  in prod until a migration updated the row). The architect caught this; it's a trap.
+- **How to apply:** broadening/narrowing an exclude rule = classifier + `SEED_RULES`
+  + fidelity fixture + an idempotent migration that **(Part A)** UPDATEs the
+  persisted `quickbooks_handling_rules` row so new pulls pick it up AND **(Part B)**
+  backfills the existing queue. Guard the Part A UPDATE on the rule's FULL canonical
+  seed shape (conditions jsonb-equality + action + exclusion_reason + donation_guard
+  + match_logic) so an admin's edits are never clobbered and re-runs are no-ops.
+
 ## auto_create_approve action
 - New rule action that mints a gift, **allocates it**, links it as the matched gift,
   and lands the staged row in the auto (approved + auto-applied) queue.

@@ -150,6 +150,44 @@ const fixtures: { name: string; input: ClassifierInput }[] = [
     },
   },
   {
+    name: "earned income memo",
+    input: {
+      ...base,
+      payerName: null,
+      rawReference: "earned income - consulting fees",
+    },
+  },
+  {
+    name: "service income line description",
+    input: {
+      ...base,
+      payerName: null,
+      lineDescription: "Service Income workshop",
+    },
+  },
+  {
+    name: "earned income memo bundled with donation (guard suppresses)",
+    input: {
+      ...base,
+      rawReference: "earned income",
+      lineItemNames: ["Donation"],
+      lineAccountNames: ["4000 Contributions"],
+    },
+  },
+  {
+    name: "unearned income must NOT match earned_income",
+    input: { ...base, payerName: null, rawReference: "unearned income deferral" },
+  },
+  {
+    name: "earned/income split across memo + description must NOT match",
+    input: {
+      ...base,
+      payerName: null,
+      rawReference: "earned",
+      lineDescription: "income",
+    },
+  },
+  {
     name: "expense refund text",
     input: { ...base, rawReference: "Vendor refund check" },
   },
