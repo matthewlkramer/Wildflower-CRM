@@ -1,35 +1,43 @@
 ---
-name: QuickBooks fiscally-sponsored project exclusion
-description: Why the fiscally_sponsored staged-payment exclusion is a project-identity rule (no donation guard) and how its marker list works.
+name: Entity attribution (replaced fiscally_sponsored exclusion)
+description: The fiscally_sponsored staged-payment EXCLUSION was retired in favour of attributing money to its Wildflower entity and keeping it in the review queue.
 ---
 
-The QB staged-payment classifier excludes money belonging to a separate fiscally
-sponsored project (first instance: "Embracing Equity") via the
-`fiscally_sponsored` exclusion reason.
+**SUPERSEDED MODEL — read this before touching fiscally_sponsored.** The QB
+staged-payment classifier used to EXCLUDE money belonging to a fiscally sponsored
+project (first instance: "Embracing Equity") via the `fiscally_sponsored`
+exclusion reason (a project-IDENTITY rule that ran before the donation-first
+guard). That behaviour was **removed** during the "Finance Reconciliation"
+rebrand.
 
-**Rule shape:** it is a project-IDENTITY rule, NOT a noise rule. It runs BEFORE
-the donation-first guard and fires even when the row carries a real donation
-line — because the entire payment belongs to the other project, a donation coded
-to it is still the other project's money. Contrast with the line-based noise
-rules (interest/tax/guaranty/earned/other-revenue) which are donation-guarded.
+**Current model:** fiscally sponsored money is no longer hidden. Instead it is
+**attributed** to its entity and **kept in the review queue** for a fundraiser to
+reconcile:
 
-**Why class matters:** fiscally sponsored projects are tracked in QuickBooks by a
-**Class**. The classifier historically did not read class data at all, so adding
-this rule required threading `lineClasses` into the classifier input at both call
-sites (ingestion sync + admin reclassify). The marker is matched as a
-case-insensitive SUBSTRING across every captured field (class, payer, item,
-account, line description, memo), not class-only — intentional breadth, accepted
-false-positive risk.
+- A pure `detectEntity(input)` + `ENTITY_MARKERS` (declaration-ordered, first
+  match wins, case-insensitive substring) sets `staged_payments.entity_id`. This
+  is SEPARATE from exclusion — `classifyStagedPayment` no longer returns
+  `fiscally_sponsored`. The `fiscally_sponsored` enum VALUE is retained only for
+  historical rows (non-destructive); nothing produces it anymore.
+- `detectEntity` scans the same fields as `allTextFields` (payerName,
+  rawReference, lineDescription, lineClasses[], lineItemNames[],
+  lineAccountNames[]) — NOT qb_transaction_memo.
+- **"sunlight" is intentionally OMITTED from ENTITY_MARKERS.** `sunlight_debt`
+  and `sunlight_grants` are one entity split across two rows (debt vs revenue); a
+  bare "sunlight" marker can't disambiguate, so those rows stay unattributed
+  (Wildflower Foundation is the default/null bucket) for manual filing.
 
-**How to apply / extend:**
-- The marker list is code-owned (a substrings array in the classifier). To add
-  another fiscally sponsored project, add its distinctive name there AND add the
-  matching OR-clause to the SQL backfill — the TS classifier and the SQL backfill
-  must stay in lockstep (same invariant as the other QB exclusion rules).
-- Adding/extending an exclusion reason needs the two-file ADD VALUE enum split
-  (enum-add run withOUT `-1`, backfill run WITH `-1`) plus OpenAPI enum + the
-  `excludedByReason` counts object + the route default-counts map + the UI label
-  map — miss any and codegen/UI drift.
-- Already-approved historical rows are NOT reclassified (backfill touches only
-  `pending`; in-app reclassify skips approved). Correcting them is a manual,
-  per-row reject/unwind through the app, documented in the migration runbook.
+**Lockstep still applies:** `ENTITY_MARKERS` (TS) and the entity-backfill SQL
+must stay in sync — the SQL mirror concatenates the same columns with a `\n`
+separator (no multi-word marker contains `\n`, so a marker can't falsely span two
+array elements) and matches each marker `ILIKE '%marker%'` in declaration order.
+The persisted `seed_fiscally_sponsored` handling rule is DISABLED (not deleted)
+so runtime `evaluateRules` stops excluding; data migration also re-surfaces rows
+the system auto-excluded as fiscally_sponsored (excluded→pending, reason→null,
+`classification_source='auto'` only) and seeds/activates the entity rows.
+
+**How to add another attributed entity:** add its distinctive name to
+`ENTITY_MARKERS` AND the matching `WHEN ... ILIKE` clause to the entity-backfill
+SQL, AND ensure the `entities` row exists + is active. Approved historical rows
+are not reclassified by a backfill (touches `pending`); correct them per-row in
+the app.

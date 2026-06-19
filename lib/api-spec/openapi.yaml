@@ -2132,6 +2132,7 @@ paths:
         - { name: queue, in: query, schema: { $ref: "#/components/schemas/StagedPaymentQueue" }, description: "Which queue to list (default needs_review)." }
         - { name: sort, in: query, schema: { $ref: "#/components/schemas/StagedPaymentSort" }, description: "Sort order (default date_desc)." }
         - { name: search, in: query, schema: { type: string }, description: "Free-text filter across payer, memo, and line item / account / class detail." }
+        - { name: entity, in: query, schema: { type: string }, description: "Restrict to one Wildflower entity (entities.id). Empty or 'all' = no restriction; the Foundation id also includes unattributed (null-entity) rows." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -4688,6 +4689,8 @@ components:
         householdName:             { type: string, nullable: true }
         individualGiverPersonName: { type: string, nullable: true }
         intermediaryName:          { type: string, nullable: true }
+        entityId:                  { type: string, nullable: true, description: "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter)." }
+        entityName:                { type: string, nullable: true, description: "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted." }
         resolvedGiftId:            { type: string, nullable: true }
         resolvedGiftName:          { type: string, nullable: true }
         resolvedGiftAmount:        { type: string, nullable: true }

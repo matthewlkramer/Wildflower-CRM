@@ -114,7 +114,11 @@ mid-run as noise (retry), not a blocker.
   connects QuickBooks once via Intuit OAuth (Settings → QuickBooks). A scheduled
   (30-min) + on-demand worker pulls incoming money (SalesReceipt / Payment /
   Deposit) since a per-connection watermark, auto-matches CRM donors by name/email,
-  and stages rows in a review queue (`/staged-payments`, "QuickBooks Review" nav).
+  and stages rows in a review queue (`/staged-payments`, "Finance Reconciliation"
+  nav — formerly "QuickBooks Review"). Each staged row carries an `entity_id`
+  attributed from text markers (`detectEntity`), filterable by entity in the
+  queue; fiscally sponsored money is attributed + kept in review (no longer
+  auto-excluded). "sunlight" is intentionally not auto-attributed.
   A fundraiser fixes the donor match and approves/rejects; approve mints a
   `gifts_and_payments` row in a tx (Donor XOR via `validateGiftInvariants`).
   Idempotent by `(realmId, qbEntityType, qbEntityId)`; staged rows retained after

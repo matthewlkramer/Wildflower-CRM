@@ -43,11 +43,13 @@ const fixtures: { name: string; input: ClassifierInput }[] = [
   },
   { name: "government reimbursement CSP", input: { ...base, payerName: "CSP" } },
   {
-    name: "fiscally sponsored class",
+    // Fiscally sponsored money is no longer excluded — classifier must NOT
+    // exclude it (it is attributed to its entity via detectEntity instead).
+    name: "fiscally sponsored class (NOT excluded)",
     input: { ...base, lineClasses: ["Embracing Equity"] },
   },
   {
-    name: "fiscally sponsored on item",
+    name: "fiscally sponsored on item (NOT excluded)",
     input: { ...base, lineItemNames: ["Embracing Equity Program"] },
   },
   {

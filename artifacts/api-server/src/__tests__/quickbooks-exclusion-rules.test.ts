@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   classifyStagedPayment,
+  detectEntity,
   type ClassifierInput,
 } from "../lib/quickbooksExclusionRules";
 
@@ -507,78 +508,112 @@ describe("classifyStagedPayment", () => {
     ).toBe(false);
   });
 
-  it("excludes a fiscally sponsored project by its QuickBooks Class", () => {
-    expect(
-      classifyStagedPayment({
-        ...base,
-        lineClasses: ["Embracing Equity"],
-      }).reason,
-    ).toBe("fiscally_sponsored");
+  // ─── entity attribution (no longer excluded as fiscally_sponsored) ────────
+  // Fiscally sponsored money is now ATTRIBUTED to its entity via detectEntity
+  // and kept in the review queue, instead of being auto-excluded.
+  it("attributes a fiscally sponsored project to its entity by QuickBooks Class (not excluded)", () => {
+    const input: ClassifierInput = { ...base, lineClasses: ["Embracing Equity"] };
+    expect(classifyStagedPayment(input).excluded).toBe(false);
+    expect(detectEntity(input)).toBe("embracing_equity");
   });
 
-  it("matches the fiscally sponsored marker case-insensitively and as a substring", () => {
-    expect(
-      classifyStagedPayment({
-        ...base,
-        lineClasses: ["  EMBRACING EQUITY : Cohort 3  "],
-      }).reason,
-    ).toBe("fiscally_sponsored");
+  it("matches the entity marker case-insensitively and as a substring", () => {
+    const input: ClassifierInput = {
+      ...base,
+      lineClasses: ["  EMBRACING EQUITY : Cohort 3  "],
+    };
+    expect(classifyStagedPayment(input).excluded).toBe(false);
+    expect(detectEntity(input)).toBe("embracing_equity");
   });
 
-  it("matches the fiscally sponsored marker on payer, item, account or memo", () => {
+  it("detects the entity marker on payer, item, account, memo or description", () => {
+    expect(detectEntity({ ...base, payerName: "Embracing Equity" })).toBe(
+      "embracing_equity",
+    );
     expect(
-      classifyStagedPayment({ ...base, payerName: "Embracing Equity" }).reason,
-    ).toBe("fiscally_sponsored");
-    expect(
-      classifyStagedPayment({
+      detectEntity({
         ...base,
         payerName: null,
         lineItemNames: ["Embracing Equity workshop"],
-      }).reason,
-    ).toBe("fiscally_sponsored");
+      }),
+    ).toBe("embracing_equity");
     expect(
-      classifyStagedPayment({
+      detectEntity({
         ...base,
         payerName: null,
         lineAccountNames: ["Embracing Equity income"],
-      }).reason,
-    ).toBe("fiscally_sponsored");
+      }),
+    ).toBe("embracing_equity");
     expect(
-      classifyStagedPayment({
+      detectEntity({
         ...base,
         payerName: null,
         rawReference: "deposit for Embracing Equity",
-      }).reason,
-    ).toBe("fiscally_sponsored");
+      }),
+    ).toBe("embracing_equity");
     expect(
-      classifyStagedPayment({
+      detectEntity({
         ...base,
         payerName: null,
         lineDescription: "Embracing Equity program fees",
-      }).reason,
-    ).toBe("fiscally_sponsored");
+      }),
+    ).toBe("embracing_equity");
   });
 
-  it("excludes a fiscally sponsored project EVEN when it carries a donation line (no donation guard)", () => {
-    // A donation coded to the other project is still the other project's money.
-    expect(
-      classifyStagedPayment({
-        ...base,
-        lineClasses: ["Embracing Equity"],
-        lineItemNames: ["Donation - Individual Unrestricted"],
-        lineAccountNames: ["4000 Unrestricted Donations"],
-      }).reason,
-    ).toBe("fiscally_sponsored");
+  it("attributes (does not exclude) a fiscally sponsored project EVEN when it carries a donation line", () => {
+    // A donation coded to the other project is still the other project's money,
+    // but it now stays in the review queue attributed to that entity.
+    const input: ClassifierInput = {
+      ...base,
+      lineClasses: ["Embracing Equity"],
+      lineItemNames: ["Donation - Individual Unrestricted"],
+      lineAccountNames: ["4000 Unrestricted Donations"],
+    };
+    expect(classifyStagedPayment(input).excluded).toBe(false);
+    expect(detectEntity(input)).toBe("embracing_equity");
   });
 
-  it("does not exclude unrelated rows that merely mention 'equity'", () => {
+  it("detects each non-sunlight entity marker in declaration order", () => {
+    expect(detectEntity({ ...base, payerName: "Black Wildflowers Fund" })).toBe(
+      "black_wildflowers_fund",
+    );
+    expect(detectEntity({ ...base, payerName: "Tierra Indígena" })).toBe(
+      "tierra_indigena",
+    );
+    expect(detectEntity({ ...base, payerName: "tierra indigena" })).toBe(
+      "tierra_indigena",
+    );
     expect(
-      classifyStagedPayment({
-        ...base,
-        lineClasses: ["Equity Fund"],
-        rawReference: "private equity distribution",
-      }).excluded,
-    ).toBe(false);
+      detectEntity({ ...base, lineClasses: ["Observant Education"] }),
+    ).toBe("observation_support_tech");
+    expect(
+      detectEntity({ ...base, lineClasses: ["Observation Support Techs"] }),
+    ).toBe("observation_support_tech");
+    expect(detectEntity({ ...base, payerName: "Rising Tide" })).toBe(
+      "rising_tide",
+    );
+  });
+
+  it("does NOT attribute 'sunlight' money to an entity (ambiguous debt vs grants)", () => {
+    // sunlight_debt and sunlight_grants are one entity split across two rows; a
+    // bare "sunlight" marker cannot disambiguate, so it is intentionally omitted.
+    const input: ClassifierInput = {
+      ...base,
+      payerName: "Sunlight",
+      lineClasses: ["Sunlight Debt"],
+    };
+    expect(classifyStagedPayment(input).excluded).toBe(false);
+    expect(detectEntity(input)).toBeNull();
+  });
+
+  it("does not exclude or attribute unrelated rows that merely mention 'equity'", () => {
+    const input: ClassifierInput = {
+      ...base,
+      lineClasses: ["Equity Fund"],
+      rawReference: "private equity distribution",
+    };
+    expect(classifyStagedPayment(input).excluded).toBe(false);
+    expect(detectEntity(input)).toBeNull();
   });
 
   // ─── insurance (BASICCOBRA) ───────────────────────────────────────────────

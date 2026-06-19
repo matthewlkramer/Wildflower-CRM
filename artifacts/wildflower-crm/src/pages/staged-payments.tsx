@@ -21,6 +21,7 @@ import {
   getGetQuickbooksResyncStatusQueryKey,
   useRematchStagedPayments,
   useReclassifyStagedPayments,
+  useListEntities,
   useGetCurrentUser,
   useCreateOrganization,
   useCreatePerson,
@@ -359,6 +360,8 @@ export default function StagedPayments() {
   const [queue, setQueue] = useState<StagedPaymentQueue>("needs_review");
   const [sort, setSort] = useState<StagedPaymentSort>("date_desc");
   const [stagedSearch, setStagedSearch] = useState("");
+  // "all" = no entity restriction; otherwise an entities.id.
+  const [entity, setEntity] = useState<string>("all");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
 
@@ -521,6 +524,7 @@ export default function StagedPayments() {
     ...(debouncedStagedSearch.trim()
       ? { search: debouncedStagedSearch.trim() }
       : {}),
+    ...(entity && entity !== "all" ? { entity } : {}),
   };
   const listQ = useListStagedPayments(listParams, {
     query: { queryKey: getListStagedPaymentsQueryKey(listParams) },
@@ -528,6 +532,16 @@ export default function StagedPayments() {
   const summaryQ = useGetStagedPaymentsSummary({
     query: { queryKey: getGetStagedPaymentsSummaryQueryKey() },
   });
+  // Entity dimension (Wildflower Foundation + fiscally-sponsored projects). Used
+  // to scope the staged queue to one entity's incoming money.
+  const entitiesQ = useListEntities();
+  const entityOptions = useMemo(
+    () =>
+      (entitiesQ.data ?? [])
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [entitiesQ.data],
+  );
 
   const invalidateStaged = () => {
     // Prefix-match the generated query keys, which are namespaced under "/api"
@@ -1078,7 +1092,7 @@ export default function StagedPayments() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">
-            QuickBooks Reconciliation
+            Finance Reconciliation
           </h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
             Incoming payments from QuickBooks on the left, your CRM gifts on the
@@ -1367,6 +1381,36 @@ export default function StagedPayments() {
                     data-testid={`staged-sort-${s.value}`}
                   >
                     {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={entity}
+              onValueChange={(v) => {
+                setEntity(v);
+                setPage(1);
+                setSelectedStaged(null);
+                clearBulk();
+              }}
+            >
+              <SelectTrigger
+                className="h-9 w-[200px]"
+                data-testid="staged-entity"
+              >
+                <SelectValue placeholder="All entities" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" data-testid="staged-entity-all">
+                  All entities
+                </SelectItem>
+                {entityOptions.map((e) => (
+                  <SelectItem
+                    key={e.id}
+                    value={e.id}
+                    data-testid={`staged-entity-${e.id}`}
+                  >
+                    {e.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1930,6 +1974,16 @@ function StagedPaymentCard({
                 data-testid={`staged-select-badge-${row.id}`}
               >
                 {selected ? "Selected" : "Select"}
+              </Badge>
+            ) : null}
+            {row.entityName ? (
+              <Badge
+                variant="outline"
+                className="border-sky-500 text-sky-700 dark:text-sky-400"
+                data-testid={`staged-entity-badge-${row.id}`}
+                title={`Attributed to entity: ${row.entityName}`}
+              >
+                {row.entityName}
               </Badge>
             ) : null}
             {row.qbPayerType ? (

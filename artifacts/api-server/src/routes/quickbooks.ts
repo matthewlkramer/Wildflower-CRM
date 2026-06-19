@@ -9,6 +9,7 @@ import {
   people,
   paymentIntermediaries,
   quickbooksHandlingRules,
+  entities,
 } from "@workspace/db/schema";
 import {
   and,
@@ -134,6 +135,7 @@ const stagedSelect = {
     )
   `.as("individual_giver_person_name"),
   intermediaryName: paymentIntermediaries.name,
+  entityName: entities.name,
   resolvedGiftId: resolvedGift.id,
   resolvedGiftName: resolvedGift.name,
   resolvedGiftAmount: resolvedGift.amount,
@@ -237,7 +239,24 @@ function withJoins<T extends PgSelect>(q: T) {
       resolvedGift,
       sql`${resolvedGift.id} = COALESCE(${stagedPayments.matchedGiftId}, ${stagedPayments.createdGiftId}, ${stagedPayments.groupReconciledGiftId})`,
     )
-    .leftJoin(matchedRule, eq(matchedRule.id, stagedPayments.matchedRuleId));
+    .leftJoin(matchedRule, eq(matchedRule.id, stagedPayments.matchedRuleId))
+    .leftJoin(entities, eq(entities.id, stagedPayments.entityId));
+}
+
+// Default-entity sentinel: the queue treats unattributed rows (entity_id NULL —
+// no distinctive marker) as belonging to the Wildflower Foundation, so filtering
+// by the Foundation matches both rows explicitly attributed to it AND the NULLs.
+const FOUNDATION_ENTITY_ID = "wildflower_foundation";
+
+// Restrict the queue to one Wildflower entity. "" / "all" → no restriction;
+// the Foundation id also catches unattributed (NULL) rows; any other id is an
+// exact match. Returns undefined when no entity restriction applies.
+function entityWhere(entity: string) {
+  if (!entity || entity === "all") return undefined;
+  if (entity === FOUNDATION_ENTITY_ID) {
+    return sql`(${stagedPayments.entityId} IS NULL OR ${stagedPayments.entityId} = ${FOUNDATION_ENTITY_ID})`;
+  }
+  return eq(stagedPayments.entityId, entity);
 }
 
 type Queue = "needs_review" | "auto_matched" | "excluded" | "done" | "rejected";
@@ -337,9 +356,13 @@ router.get(
     const { limit, offset, page } = parsePagination(req.query);
     const search =
       typeof req.query["search"] === "string" ? req.query["search"].trim() : "";
-    const where = search
-      ? and(queueWhere(queue), stagedSearchWhere(search))
-      : queueWhere(queue);
+    const entity =
+      typeof req.query["entity"] === "string" ? req.query["entity"].trim() : "";
+    const where = and(
+      queueWhere(queue),
+      search ? stagedSearchWhere(search) : undefined,
+      entityWhere(entity),
+    );
 
     const [rows, totalRow] = await Promise.all([
       withJoins(db.select(stagedSelect).from(stagedPayments).$dynamic())

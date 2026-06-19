@@ -41,14 +41,12 @@
  *                                "Services - Earned Income" account OR a memo /
  *                                note that names it "earned income" / "service
  *                                income". Never a gift.
- *   9. fiscally_sponsored      — money belonging to a separate fiscally
- *                                sponsored project (e.g. "Embracing Equity")
- *                                that the org does NOT reconcile here. A
- *                                project-IDENTITY rule: matched by a project
- *                                marker (QuickBooks Class, payer, item, account,
- *                                or memo) anywhere on the row. Because the whole
- *                                payment belongs to the other project, this rule
- *                                is NOT subject to the donation-first guard.
+ *   9. fiscally_sponsored      — LEGACY (no longer applied). Money belonging to a
+ *                                fiscally sponsored Wildflower entity (e.g.
+ *                                "Embracing Equity") is NO LONGER excluded — it is
+ *                                attributed to its entity (`detectEntity` →
+ *                                entity_id) and kept in the review queue. The enum
+ *                                value is retained only for historical rows.
  *  10. insurance               — COBRA / insurance-premium reimbursements (the
  *                                "COBRA" marker on the line — e.g. "COBRA TRUST
  *                                ACCT …", "… Cobra", posted to the "Benefit
@@ -80,16 +78,15 @@
  * tax_refund, other_revenue, earned_income) never fire on a row that ALSO carries
  * a real donation line (a Donation item or a 4000/4100-series donation account),
  * so a deposit bundling a gift with a fee / interest / refund line is never
- * wrongly hidden. The IDENTITY / TEXT rules (fiscally_sponsored, insurance,
- * expensify, returned_wire, expense_refund) intentionally BYPASS this guard —
- * they identify money that is categorically not a gift regardless of how the line
- * is coded.
+ * wrongly hidden. The IDENTITY / TEXT rules (insurance, expensify, returned_wire,
+ * expense_refund) intentionally BYPASS this guard — they identify money that is
+ * categorically not a gift regardless of how the line is coded.
  *
  * Rules are applied in a deterministic order (see `classifyStagedPayment`):
- * zero_amount → loan (payer) → government_reimbursement → fiscally_sponsored →
- * insurance → expensify → returned_wire → loan (line/memo) → loan (guaranty line)
- * → interest → tax_refund → other_revenue → earned_income → expense_refund →
- * membership. The first match wins.
+ * zero_amount → loan (payer) → government_reimbursement → insurance → expensify →
+ * returned_wire → loan (line/memo) → loan (guaranty line) → interest → tax_refund
+ * → other_revenue → earned_income → expense_refund → membership. The first match
+ * wins.
  */
 
 export type ExclusionReason =
@@ -295,15 +292,46 @@ export const EARNED_INCOME_PHRASE_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
- * FISCALLY SPONSORED PROJECT markers. Money belonging to a separate fiscally
- * sponsored project the org doesn't reconcile here. Fiscally sponsored projects
- * are tracked in QuickBooks by a Class, but the marker may also surface on the
- * payer, item, account, or memo — so the `fiscally_sponsored` rule looks for any
- * of these substrings (case-insensitive) ANYWHERE on the row. Add a project's
- * distinctive name here to exclude all of its incoming money.
+ * ENTITY-ATTRIBUTION markers. Maps a distinctive marker substring to the
+ * Wildflower legal `entities.id` (slug) the incoming money belongs to.
+ *
+ * Fiscally sponsored entities (e.g. "Embracing Equity") used to be auto-EXCLUDED
+ * from the review queue. They no longer are: their money is now ATTRIBUTED to its
+ * entity here and STAYS in the queue for a fundraiser to reconcile, surfaced via
+ * the per-entity queue filter. `detectEntity` scans every captured text field
+ * (Class, payer, item, account, memo) for these substrings (case-insensitive),
+ * first match in declaration order wins.
+ *
+ * Attribution is non-destructive — a mis-attributed row is filed under the wrong
+ * entity filter, never excluded — so the markers can be broader than an exclusion
+ * marker. A NULL result (no marker) is treated as the default Wildflower
+ * Foundation bucket by the queue filter, so the Foundation needs no marker here.
+ *
+ * ⚠️ BEST-GUESS markers — the dev workspace has no QuickBooks connection, so the
+ * real QB Class names can't be read here. These mirror the historical
+ * `fiscally_sponsored` substrings plus conservative, multi-word guesses for the
+ * other entities; confirm them against production line detail and refine.
+ * Deliberately NO marker for `charter` — "charter" appears in many legitimate
+ * Foundation donor / school names, so auto-attributing it would mis-file real
+ * gifts. Charter money is attributed manually until a safe marker is confirmed.
+ *
+ * Lockstep: any change here must mirror the SQL entity backfill in the migration
+ * (TS substring ⇄ Postgres ILIKE '%…%' across the same text fields).
  */
-export const FISCALLY_SPONSORED_PROJECT_SUBSTRINGS: readonly string[] = [
-  "embracing equity",
+export const ENTITY_MARKERS: readonly { entityId: string; markers: readonly string[] }[] = [
+  { entityId: "embracing_equity", markers: ["embracing equity"] },
+  { entityId: "black_wildflowers_fund", markers: ["black wildflower"] },
+  { entityId: "tierra_indigena", markers: ["tierra indígena", "tierra indigena"] },
+  {
+    entityId: "observation_support_tech",
+    markers: ["observant education", "observation support"],
+  },
+  { entityId: "rising_tide", markers: ["rising tide"] },
+  // NOTE: "Sunlight" is intentionally NOT auto-attributed — it splits into two
+  // entities (sunlight_debt / sunlight_grants) that a bare "sunlight" marker
+  // can't disambiguate, so those rows stay unattributed (Foundation default) for
+  // a fundraiser to file by hand. Add a disambiguating marker only once the real
+  // QB Class names are confirmed against production.
 ];
 
 /**
@@ -547,16 +575,24 @@ export function allTextFields(input: ClassifierInput): string[] {
 }
 
 /**
- * True if a row belongs to a fiscally sponsored project: a project marker
- * substring appears anywhere on the row. Project-identity rule, so it scans all
- * captured text (not just the line accounts) and ignores the donation-first guard.
+ * Attribute a staged payment to the Wildflower legal entity its money belongs to,
+ * by scanning every captured text field (Class, payer, item, account, memo) for an
+ * `ENTITY_MARKERS` substring (case-insensitive). Returns the entity slug of the
+ * first marker that matches in declaration order, or null when none do (treated as
+ * the default Wildflower Foundation bucket downstream).
+ *
+ * Pure and independent of the noise classifier — attribution is orthogonal to
+ * exclusion. A row can be attributed to a fiscally sponsored entity AND still be
+ * pending (or even excluded as zero_amount); entity is just a dimension on the row.
  */
-function isFiscallySponsoredProject(input: ClassifierInput): boolean {
-  if (FISCALLY_SPONSORED_PROJECT_SUBSTRINGS.length === 0) return false;
-  const needles = FISCALLY_SPONSORED_PROJECT_SUBSTRINGS.map(normalize);
-  return allTextFields(input)
-    .map(normalize)
-    .some((h) => needles.some((n) => h.includes(n)));
+export function detectEntity(input: ClassifierInput): string | null {
+  const hay = allTextFields(input).map(normalize);
+  if (hay.length === 0) return null;
+  for (const { entityId, markers } of ENTITY_MARKERS) {
+    const needles = markers.map(normalize);
+    if (hay.some((h) => needles.some((n) => h.includes(n)))) return entityId;
+  }
+  return null;
 }
 
 /**
@@ -613,12 +649,12 @@ function isReturnedWire(input: ClassifierInput): boolean {
 /**
  * Pure noise classifier. Takes a normalized payment + its captured line detail
  * and returns whether it should be auto-excluded and why. Deterministic rule
- * order: zero_amount → loan (payer) → government_reimbursement →
- * fiscally_sponsored → insurance → expensify → returned_wire → loan (guaranty
- * line) → interest → tax_refund → other_revenue → earned_income → expense_refund →
- * membership; first match wins. The line-based rules honor the donation-first
- * guard; the identity / text rules (fiscally_sponsored, insurance, expensify,
- * returned_wire, expense_refund) intentionally bypass it.
+ * order: zero_amount → loan (payer) → government_reimbursement → insurance →
+ * expensify → returned_wire → loan (guaranty line) → interest → tax_refund →
+ * other_revenue → earned_income → expense_refund → membership; first match wins.
+ * The line-based rules honor the donation-first guard; the identity / text rules
+ * (insurance, expensify, returned_wire, expense_refund) intentionally bypass it.
+ * (Entity attribution is handled separately by `detectEntity`, not here.)
  */
 export function classifyStagedPayment(
   input: ClassifierInput,
@@ -646,13 +682,10 @@ export function classifyStagedPayment(
     return { excluded: true, reason: "government_reimbursement" };
   }
 
-  // 4. Fiscally sponsored project (e.g. "Embracing Equity"). Project-identity
-  //    rule — the whole payment belongs to a separate project the org doesn't
-  //    reconcile here, so it fires even on donation lines (BEFORE the donation
-  //    guard) and scans every captured field (Class, payer, item, account, memo).
-  if (isFiscallySponsoredProject(input)) {
-    return { excluded: true, reason: "fiscally_sponsored" };
-  }
+  // NOTE: fiscally sponsored money is NO LONGER excluded here. It is attributed
+  // to its Wildflower entity via `detectEntity` (entity_id) and kept in the
+  // review queue for a fundraiser to reconcile. The `fiscally_sponsored`
+  // exclusion reason is retained as a (now legacy) enum value for historical rows.
 
   // 4b. Insurance / COBRA reimbursements (the "BASICCOBRA" marker). Identity
   //     rule — never a gift, so it fires BEFORE the donation guard and scans

@@ -27,6 +27,7 @@ import { paymentIntermediaries } from "./paymentIntermediaries";
 import { giftsAndPayments } from "./giftsAndPayments";
 import { users } from "./users";
 import { quickbooksHandlingRules } from "./quickbooksHandlingRules";
+import { entities } from "./entities";
 
 /**
  * Review queue for incoming-money records pulled one-way from QuickBooks
@@ -254,6 +255,19 @@ export const stagedPayments = pgTable(
       { onDelete: "set null" },
     ),
 
+    // Which Wildflower legal entity this incoming money belongs to, derived at
+    // ingest / reclassify time from QuickBooks markers (Class, payer, item,
+    // account, memo) via `detectEntity`. NULL means "no distinctive entity
+    // marker" — treated as the default Wildflower Foundation bucket by the
+    // entity queue filter (so historical rows need no backfill to appear under
+    // Foundation). Read-only derived QB attribution, NOT review state: the full
+    // re-pull may refresh it on any row. Money belonging to a fiscally sponsored
+    // entity is attributed here and STAYS in the review queue (it is no longer
+    // auto-excluded). SET NULL if the entity row is ever deleted.
+    entityId: text("entity_id").references(() => entities.id, {
+      onDelete: "set null",
+    }),
+
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -288,6 +302,7 @@ export const stagedPayments = pgTable(
       t.individualGiverPersonId,
     ),
     index("staged_payments_household_id_idx").on(t.householdId),
+    index("staged_payments_entity_id_idx").on(t.entityId),
     // One-to-one staged↔gift linkage: at most one staged row may reconcile to
     // (matchedGiftId) or mint (createdGiftId) any given gift. Partial-unique so
     // the many NULLs (unresolved rows) don't collide, and so this also serves

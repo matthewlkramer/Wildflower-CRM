@@ -45,7 +45,7 @@ const navItems = [
   { href: "/opportunities", label: "Opportunities", icon: Target },
   { href: "/pledges", label: "Pledges", icon: HandCoins },
   { href: "/gifts", label: "Gifts", icon: Gift },
-  { href: "/staged-payments", label: "QuickBooks Review", icon: ReceiptText },
+  { href: "/staged-payments", label: "Finance Reconciliation", icon: ReceiptText },
   { href: "/stripe-staged-charges", label: "Stripe Review", icon: CreditCard },
   { href: "/stripe-reconciliation", label: "Stripe ↔ QB", icon: Scale },
   { href: "/moves", label: "Moves", icon: Activity },

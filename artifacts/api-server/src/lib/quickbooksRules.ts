@@ -273,21 +273,12 @@ export const SEED_RULES: EngineRule[] = [
     targetIntendedUsage: null,
     targetFundableProjectId: null,
   },
-  {
-    id: "seed_fiscally_sponsored",
-    enabled: true,
-    priority: 50,
-    action: "exclude",
-    exclusionReason: "fiscally_sponsored",
-    donationGuard: N,
-    matchLogic: "any",
-    conditions: [
-      { field: "any_text", mode: "contains", value: "embracing equity" },
-    ],
-    targetOrganizationId: null,
-    targetIntendedUsage: null,
-    targetFundableProjectId: null,
-  },
+  // NOTE: the former `seed_fiscally_sponsored` exclude rule (priority 50) was
+  // removed — fiscally sponsored money is no longer auto-excluded. It is now
+  // attributed to its Wildflower entity (entity_id) via `detectEntity` and kept
+  // in the review queue. Priority 50 is intentionally left as a gap. The
+  // migration disables/deletes the persisted seed_fiscally_sponsored handling
+  // rule so the INGEST path stops excluding too.
   {
     id: "seed_insurance",
     enabled: true,

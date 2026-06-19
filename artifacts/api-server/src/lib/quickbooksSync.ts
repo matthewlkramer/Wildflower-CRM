@@ -15,7 +15,7 @@ import { withSyncLock } from "./syncLock";
 import { getValidQuickbooksAccessToken } from "./quickbooksTokenStore";
 import { pullIncomingPayments } from "./quickbooksClient";
 import { scoreStagedPayment, type ScoredMatch } from "./quickbooksMatch";
-import { classifyStagedPayment } from "./quickbooksExclusionRules";
+import { classifyStagedPayment, detectEntity } from "./quickbooksExclusionRules";
 import {
   evaluateRules,
   type EngineRule,
@@ -90,6 +90,10 @@ export function buildStagedLineUpsert(
     qbLinkedTxn: sql`coalesce(excluded.qb_linked_txn, ${stagedPayments.qbLinkedTxn})`,
     qbRaw: sql`coalesce(excluded.qb_raw, ${stagedPayments.qbRaw})`,
     qbRawLine: sql`coalesce(excluded.qb_raw_line, ${stagedPayments.qbRawLine})`,
+    // Entity attribution is a read-only derived QB fact (like the qb_* mirrors):
+    // an incoming non-null attribution wins, an absent one keeps the stored
+    // value, so the full re-pull can refresh it without touching review state.
+    entityId: sql`coalesce(excluded.entity_id, ${stagedPayments.entityId})`,
     updatedAt: new Date(),
   };
 
@@ -622,6 +626,18 @@ export async function syncQuickbooks(
       const excluded = ruleHit?.action === "exclude";
       const exclusionReason = excluded ? ruleHit.reason : null;
 
+      // Attribute the money to its Wildflower entity (orthogonal to exclusion):
+      // even excluded rows carry their entity so historical filtering stays right.
+      const entityId = detectEntity({
+        amount: p.amount,
+        payerName: p.payerName,
+        lineItemNames: p.lineItemNames,
+        lineAccountNames: p.lineAccountNames,
+        lineClasses: p.lineClasses,
+        rawReference: p.rawReference,
+        lineDescription: p.lineDescription,
+      });
+
       const scored: ScoredMatch | null = excluded
         ? null
         : await scoreStagedPayment({
@@ -664,6 +680,7 @@ export async function syncQuickbooks(
         exclusionReason,
         classificationSource: "auto",
         matchedRuleId: ruleHit?.ruleId ?? null,
+        entityId,
         matchStatus,
         matchScore: scored && scored.method ? scored.score : null,
         matchMethod: scored ? scored.method : null,
@@ -943,7 +960,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
     let excluded = 0;
     let included = 0;
     for (const row of candidates) {
-      const cls = classifyStagedPayment({
+      const input = {
         amount: row.amount,
         payerName: row.payerName,
         lineItemNames: row.lineItemNames,
@@ -951,13 +968,18 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
         rawReference: row.rawReference,
         lineDescription: row.lineDescription,
         lineClasses: row.lineClasses,
-      });
+      };
+      const cls = classifyStagedPayment(input);
+      // Entity attribution is refreshed on every reclassified row, independent of
+      // the exclusion status transition below, so marker changes re-file rows.
+      const entityId = detectEntity(input);
       if (cls.excluded && row.status !== "excluded") {
         const upd = await db
           .update(stagedPayments)
           .set({
             status: "excluded",
             exclusionReason: cls.reason,
+            entityId,
             updatedAt: new Date(),
           })
           .where(guard(row.id))
@@ -967,7 +989,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
         // Already excluded — keep status, just refresh the reason if it drifted.
         await db
           .update(stagedPayments)
-          .set({ exclusionReason: cls.reason, updatedAt: new Date() })
+          .set({ exclusionReason: cls.reason, entityId, updatedAt: new Date() })
           .where(guard(row.id));
       } else if (!cls.excluded && row.status === "excluded") {
         const upd = await db
@@ -975,11 +997,18 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
           .set({
             status: "pending",
             exclusionReason: null,
+            entityId,
             updatedAt: new Date(),
           })
           .where(guard(row.id))
           .returning({ id: stagedPayments.id });
         if (upd.length) included += 1;
+      } else {
+        // Pending and staying pending — still refresh entity attribution.
+        await db
+          .update(stagedPayments)
+          .set({ entityId, updatedAt: new Date() })
+          .where(guard(row.id));
       }
     }
 

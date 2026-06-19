@@ -2078,6 +2078,10 @@ export interface StagedPayment {
   householdName?: string | null;
   individualGiverPersonName?: string | null;
   intermediaryName?: string | null;
+  /** Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter). */
+  entityId?: string | null;
+  /** Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted. */
+  entityName?: string | null;
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
@@ -4887,6 +4891,10 @@ export type ListStagedPaymentsParams = {
    * Free-text filter across payer, memo, and line item / account / class detail.
    */
   search?: string;
+  /**
+   * Restrict to one Wildflower entity (entities.id). Empty or 'all' = no restriction; the Foundation id also includes unattributed (null-entity) rows.
+   */
+  entity?: string;
   /**
    * @minimum 1
    * @maximum 10000

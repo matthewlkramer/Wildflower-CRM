@@ -9152,6 +9152,12 @@ export const ListStagedPaymentsQueryParams = zod.object({
     .describe(
       "Free-text filter across payer, memo, and line item \/ account \/ class detail.",
     ),
+  entity: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Restrict to one Wildflower entity (entities.id). Empty or 'all' = no restriction; the Foundation id also includes unattributed (null-entity) rows.",
+    ),
   limit: zod.coerce
     .number()
     .min(1)
@@ -9278,6 +9284,18 @@ export const ListStagedPaymentsResponse = zod.object({
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
       intermediaryName: zod.string().nullish(),
+      entityId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).",
+        ),
+      entityName: zod
+        .string()
+        .nullish()
+        .describe(
+          "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+        ),
       resolvedGiftId: zod.string().nullish(),
       resolvedGiftName: zod.string().nullish(),
       resolvedGiftAmount: zod.string().nullish(),
@@ -9505,6 +9523,18 @@ export const ResolveStagedPaymentResponse = zod.object({
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
   intermediaryName: zod.string().nullish(),
+  entityId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).",
+    ),
+  entityName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -9679,6 +9709,18 @@ export const RejectStagedPaymentResponse = zod.object({
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
   intermediaryName: zod.string().nullish(),
+  entityId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).",
+    ),
+  entityName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -9846,6 +9888,18 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
   intermediaryName: zod.string().nullish(),
+  entityId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).",
+    ),
+  entityName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -10042,6 +10096,18 @@ export const ExcludeStagedPaymentResponse = zod.object({
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
   intermediaryName: zod.string().nullish(),
+  entityId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).",
+    ),
+  entityName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -10920,6 +10986,18 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
   intermediaryName: zod.string().nullish(),
+  entityId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).",
+    ),
+  entityName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -11087,6 +11165,18 @@ export const UnmatchStagedPaymentResponse = zod.object({
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
   intermediaryName: zod.string().nullish(),
+  entityId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).",
+    ),
+  entityName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -11261,6 +11351,18 @@ export const RevertStagedPaymentResponse = zod.object({
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
   intermediaryName: zod.string().nullish(),
+  entityId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).",
+    ),
+  entityName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
