@@ -2821,34 +2821,129 @@ function StagedPaymentDetails({
   show: boolean;
   onToggle: () => void;
 }) {
-  const rows: { label: string; value: ReactNode }[] = [
+  const isDeposit = row.qbEntityType === "deposit";
+  const isPayment = row.qbEntityType === "payment";
+
+  // Each field carries its provenance: `qboField` = the exact QuickBooks field
+  // this value was copied from verbatim; `note` = how the value was derived,
+  // looked up, or reformatted on import (i.e. it is NOT a single QB field).
+  const verbatimFields: {
+    label: string;
+    value: ReactNode;
+    qboField?: string;
+  }[] = [
     {
       label: "QuickBooks type",
       value: QB_ENTITY_TYPE_LABELS[row.qbEntityType] ?? row.qbEntityType,
     },
-    { label: "QuickBooks entity ID", value: row.qbEntityId },
-    { label: "QuickBooks line ID", value: row.qbLineId },
-    { label: "Realm ID", value: row.realmId },
-    { label: "Amount", value: formatAmount(row.amount) },
-    { label: "Date received", value: row.dateReceived },
-    { label: "Payer name", value: row.payerName },
-    { label: "Payer email", value: row.payerEmail },
+    { label: "QuickBooks entity ID", value: row.qbEntityId, qboField: "Id" },
+    ...(isDeposit
+      ? [
+          {
+            label: "QuickBooks line ID",
+            value: row.qbLineId,
+            qboField: "Line.Id",
+          },
+        ]
+      : []),
+    { label: "QuickBooks company (realm) ID", value: row.realmId },
+    {
+      label: "Amount",
+      value: formatAmount(row.amount),
+      qboField: isDeposit ? "Line.Amount" : "TotalAmt",
+    },
+    { label: "Date received", value: row.dateReceived, qboField: "TxnDate" },
+    {
+      label: "Payer name",
+      value: row.payerName,
+      qboField: isDeposit
+        ? "Line.DepositLineDetail.Entity.name"
+        : "CustomerRef.name",
+    },
+    {
+      label: "Payer (QB) ID",
+      value: row.qbPayerId,
+      qboField: isDeposit
+        ? "Line.DepositLineDetail.Entity.value"
+        : "CustomerRef.value",
+    },
+    {
+      label: "Payment method",
+      value: row.qbPaymentMethod,
+      qboField: isDeposit
+        ? "Line.DepositLineDetail.PaymentMethodRef.name"
+        : "PaymentMethodRef.name",
+    },
+    {
+      label: "Check number",
+      value: row.qbCheckNumber,
+      qboField: isDeposit ? "Line.DepositLineDetail.CheckNum" : "PaymentRefNum",
+    },
+    {
+      label: "Deposit-to account",
+      value: row.qbDepositToAccountName,
+      qboField: "DepositToAccountRef.name",
+    },
+    { label: "Doc number", value: row.qbDocNumber, qboField: "DocNumber" },
+    {
+      label: "QB transaction memo",
+      value: row.qbTransactionMemo,
+      qboField: "PrivateNote",
+    },
+    { label: "Currency", value: row.qbCurrency, qboField: "CurrencyRef.value" },
+    {
+      label: "Exchange rate",
+      value: row.qbExchangeRate,
+      qboField: "ExchangeRate",
+    },
+    {
+      label: "QB created",
+      value: formatDateTime(row.qbCreateTime),
+      qboField: "MetaData.CreateTime",
+    },
+  ];
+
+  const derivedFields: {
+    label: string;
+    value: ReactNode;
+    note: string;
+  }[] = [
+    {
+      label: "Payer email",
+      value: row.payerEmail,
+      note:
+        isDeposit || isPayment
+          ? "Looked up from the QuickBooks Customer record (only when the payer is a customer) — not on the transaction itself."
+          : "From BillEmail; falls back to the Customer record's primary email.",
+    },
     {
       label: "Payer type",
       value: row.qbPayerType
         ? (QB_PAYER_TYPE_LABELS[row.qbPayerType] ?? row.qbPayerType)
         : null,
+      note: isDeposit
+        ? "Read from the deposit line's Entity type."
+        : 'Assumed "Customer" from the presence of a CustomerRef (not a stored type field).',
     },
-    { label: "Payer (QB) ID", value: row.qbPayerId },
-    { label: "Payment method", value: row.qbPaymentMethod },
-    { label: "Check number", value: row.qbCheckNumber },
-    { label: "Deposit-to account", value: row.qbDepositToAccountName },
-    { label: "Doc number", value: row.qbDocNumber },
-    { label: "Billing address", value: row.qbBillingAddress },
-    { label: "QB transaction memo", value: row.qbTransactionMemo },
-    { label: "Currency", value: row.qbCurrency },
-    { label: "Exchange rate", value: row.qbExchangeRate },
-    { label: "QB created", value: formatDateTime(row.qbCreateTime) },
+    {
+      label: "Reference / memo",
+      value: row.rawReference,
+      note: isDeposit
+        ? "Deposit PrivateNote, falling back to the bank account name."
+        : isPayment
+          ? "From PaymentRefNum."
+          : "From DocNumber, falling back to the customer memo.",
+    },
+    {
+      label: "Line description",
+      value: row.lineDescription,
+      note: "Customer memo / deposit line text / a memo inherited from the bank deposit.",
+    },
+    {
+      label: "Billing address",
+      value: row.qbBillingAddress,
+      note: "QuickBooks BillAddr (sales receipts only), flattened to a single comma-separated line.",
+    },
     {
       label: "Linked transactions",
       value:
@@ -2857,9 +2952,11 @@ function StagedPaymentDetails({
               .map((lt) => `${lt.txnType} #${lt.txnId}`)
               .join(", ")
           : null,
+      note: "From the QuickBooks LinkedTxn references.",
     },
-    { label: "Reference / memo", value: row.rawReference },
-    { label: "Line description", value: row.lineDescription },
+  ];
+
+  const reviewStateFields: { label: string; value: ReactNode }[] = [
     { label: "Status", value: row.status },
     { label: "Match status", value: row.matchStatus },
     {
@@ -2892,10 +2989,26 @@ function StagedPaymentDetails({
     { label: "Last updated", value: formatDateTime(row.updatedAt) },
   ];
 
-  const lineGroups: { label: string; values: string[] | null | undefined }[] = [
-    { label: "Line items", values: row.lineItemNames },
-    { label: "Line accounts", values: row.lineAccountNames },
-    { label: "Line classes", values: row.lineClasses },
+  const lineGroups: {
+    label: string;
+    values: string[] | null | undefined;
+    note: string;
+  }[] = [
+    {
+      label: "Line items",
+      values: row.lineItemNames,
+      note: "Product/Service names (SalesItemLineDetail.ItemRef.name); pulled from the linked invoice for Payments.",
+    },
+    {
+      label: "Line accounts",
+      values: row.lineAccountNames,
+      note: "Item lines: each item's income account (Item.IncomeAccountRef.name). Deposit lines: the posting account (DepositLineDetail.AccountRef.name).",
+    },
+    {
+      label: "Line classes",
+      values: row.lineClasses,
+      note: "QuickBooks class names (ClassRef.name).",
+    },
   ];
 
   return (
@@ -2910,37 +3023,121 @@ function StagedPaymentDetails({
         {show ? "Hide details" : "Show details"}
       </Button>
       {show ? (
-        <div className="mt-2 space-y-3" data-testid={`staged-details-${row.id}`}>
-          <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
-            {rows.map((d) => (
-              <div key={d.label} className="flex gap-2 text-sm">
-                <dt className="min-w-[7.5rem] shrink-0 text-muted-foreground">
-                  {d.label}
-                </dt>
-                <dd className="min-w-0 break-words">
-                  {d.value === null || d.value === undefined || d.value === ""
-                    ? "—"
-                    : d.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          {lineGroups.map((g) => (
-            <div key={g.label} className="text-sm">
-              <div className="text-muted-foreground">{g.label}</div>
-              {g.values && g.values.length > 0 ? (
-                <ul className="ml-4 list-disc">
-                  {g.values.map((v, i) => (
-                    <li key={`${g.label}-${i}`} className="break-words">
-                      {v}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="ml-1">—</div>
-              )}
+        <div className="mt-2 space-y-4" data-testid={`staged-details-${row.id}`}>
+          {/* Verbatim QuickBooks facts — copied 1:1 from a single QB field. */}
+          <div className="space-y-1.5">
+            <div className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
+              From QuickBooks (verbatim)
             </div>
-          ))}
+            <div className="text-xs text-muted-foreground">
+              Exact values pulled from QuickBooks. The QuickBooks field each one
+              came from is shown beneath it.
+            </div>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+              {verbatimFields.map((d) => (
+                <div key={d.label} className="flex gap-2 text-sm">
+                  <dt className="min-w-[7.5rem] shrink-0 text-muted-foreground">
+                    {d.label}
+                  </dt>
+                  <dd className="min-w-0 break-words">
+                    <div>
+                      {d.value === null ||
+                      d.value === undefined ||
+                      d.value === ""
+                        ? "—"
+                        : d.value}
+                    </div>
+                    {d.qboField ? (
+                      <div className="text-xs text-muted-foreground">
+                        QuickBooks:{" "}
+                        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
+                          {d.qboField}
+                        </code>
+                      </div>
+                    ) : null}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          {/* Values combined, reformatted, or looked up on import. */}
+          <div className="space-y-1.5">
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-500">
+              Derived on import
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Combined, reformatted, or looked up from another QuickBooks record
+              during import — not a single QuickBooks field.
+            </div>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+              {derivedFields.map((d) => (
+                <div key={d.label} className="flex gap-2 text-sm">
+                  <dt className="min-w-[7.5rem] shrink-0 text-muted-foreground">
+                    {d.label}
+                  </dt>
+                  <dd className="min-w-0 break-words">
+                    <div>
+                      {d.value === null ||
+                      d.value === undefined ||
+                      d.value === ""
+                        ? "—"
+                        : d.value}
+                    </div>
+                    <div className="text-xs italic text-muted-foreground">
+                      {d.note}
+                    </div>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <div className="space-y-2 pt-1">
+              {lineGroups.map((g) => (
+                <div key={g.label} className="text-sm">
+                  <div className="text-muted-foreground">{g.label}</div>
+                  {g.values && g.values.length > 0 ? (
+                    <ul className="ml-4 list-disc">
+                      {g.values.map((v, i) => (
+                        <li key={`${g.label}-${i}`} className="break-words">
+                          {v}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="ml-1">—</div>
+                  )}
+                  <div className="ml-1 text-xs italic text-muted-foreground">
+                    {g.note}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* CRM-generated review state — never from QuickBooks. */}
+          <div className="space-y-1.5">
+            <div className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
+              App review status (set by this CRM)
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Matching, classification, and reconciliation state generated by
+              this app — not from QuickBooks.
+            </div>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+              {reviewStateFields.map((d) => (
+                <div key={d.label} className="flex gap-2 text-sm">
+                  <dt className="min-w-[7.5rem] shrink-0 text-muted-foreground">
+                    {d.label}
+                  </dt>
+                  <dd className="min-w-0 break-words">
+                    {d.value === null || d.value === undefined || d.value === ""
+                      ? "—"
+                      : d.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         </div>
       ) : null}
     </div>
