@@ -24,6 +24,7 @@ import { GiftAllocationsEditor } from "@/components/allocation-editors";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { ThankYouPanel } from "@/components/thank-you-panel";
 import { TasksPanel } from "@/components/tasks-panel";
+import { SplitGiftIntoPledgeDialog } from "@/components/gift-merge-dialogs";
 import {
   InlineEditBoolean,
   InlineEditCurrency,
@@ -104,6 +105,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const [splitOpen, setSplitOpen] = useState(false);
   const userNames = useUserNameMap();
   const ownerDisplay = gift.ownerUserId
     ? (userNames.get(gift.ownerUserId) ?? gift.ownerUserId)
@@ -357,6 +359,16 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       >
         Edit name
       </Button>
+      {(gift.allocations?.length ?? 0) >= 2 && gift.paymentOnPledgeId == null ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setSplitOpen(true)}
+          data-testid="button-split-gift-into-pledge"
+        >
+          Split into pledge
+        </Button>
+      ) : null}
       <ConfirmDeleteDialog
         title="Archive this gift?"
         description="It will be hidden from lists. An admin can restore it from the archived view."
@@ -460,6 +472,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
         : null;
 
   return (
+    <>
     <RecordLayout
       backHref="/gifts"
       backLabel="Back to gifts"
@@ -686,6 +699,13 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
         </>
       }
     />
+    <SplitGiftIntoPledgeDialog
+      open={splitOpen}
+      onOpenChange={setSplitOpen}
+      gift={gift}
+      onDone={(pledgeId) => navigate(`/pledges/${pledgeId}`)}
+    />
+    </>
   );
 }
 

@@ -11001,6 +11001,46 @@ export const MergeGiftsIntoPledgeResponse = zod.object({
     ),
 });
 
+/**
+ * Transforms a single gift that has two or more allocations into a PLEDGE
+(awarded amount = the gift amount, donor inherited from the gift) and
+splits the gift so each `gift_allocation` becomes its own payment gift on
+that pledge. Non-destructive: the original gift is KEPT — it becomes the
+payment for its first allocation; one new gift is minted per remaining
+allocation. The allocation sub-amounts must sum to the gift amount.
+Returns 409 when the gift already pays a pledge or is linked to a
+QuickBooks staged payment (resolve that first); 400 when the gift has
+fewer than two allocations or the sub-amounts do not sum to the amount.
+
+ * @summary Convert one multi-allocation gift into a pledge plus one gift per allocation.
+ */
+export const SplitGiftIntoPledgeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const SplitGiftIntoPledgeBody = zod
+  .object({
+    name: zod
+      .string()
+      .nullish()
+      .describe("Name for the new pledge. Defaults to the gift's name."),
+  })
+  .describe(
+    "Optional overrides when splitting a gift into a pledge. The pledge inherits the gift's donor and uses the gift amount as its awarded amount; each gift_allocation becomes one payment gift.",
+  );
+
+export const SplitGiftIntoPledgeResponse = zod.object({
+  pledgeId: zod.string().describe("The pledge the gifts were attached to."),
+  giftIds: zod
+    .array(zod.string())
+    .describe("The gift ids attached as payments."),
+  created: zod
+    .boolean()
+    .describe(
+      "True if a new pledge was created, false if an existing one was used.",
+    ),
+});
+
 export const bulkUpdateHouseholdsBodyIdsMax = 1000;
 
 export const BulkUpdateHouseholdsBody = zod.object({

@@ -38,7 +38,9 @@ import { Check, ChevronsUpDown } from "lucide-react";
 import {
   useMergeGiftsAndPayments,
   useMergeGiftsIntoPledge,
+  useSplitGiftIntoPledge,
   getListGiftsAndPaymentsQueryKey,
+  getGetGiftOrPaymentQueryKey,
   useListOpportunitiesAndPledges,
   getListOpportunitiesAndPledgesQueryKey,
   type GiftOrPayment,
@@ -617,6 +619,192 @@ export function MergeIntoPledgeDialog({
               : mode === "existing"
                 ? "Attach to pledge"
                 : "Create pledge"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Cents from a decimal string, so float drift never breaks the comparison. */
+function toCents(v: string | null | undefined): number {
+  return Math.round(Number(v ?? 0) * 100);
+}
+
+/**
+ * Split ONE gift that has two or more allocations into a PLEDGE plus one
+ * payment gift per allocation. The original gift is KEPT (it becomes the
+ * payment for its first allocation); a new gift is minted for every other
+ * allocation. Use when a single recorded gift actually arrived as several
+ * separate payments (e.g. a multi-year commitment paid in installments).
+ * Non-destructive — nothing is deleted. Requires the allocation sub-amounts to
+ * sum to the gift amount, so the confirm is blocked until they reconcile.
+ */
+export function SplitGiftIntoPledgeDialog({
+  open,
+  onOpenChange,
+  gift,
+  onDone,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  gift: GiftOrPaymentDetail;
+  onDone?: (pledgeId: string) => void;
+}) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const mut = useSplitGiftIntoPledge();
+  const [name, setName] = useState("");
+
+  // Default the pledge name to the gift's name whenever the dialog (re)opens.
+  useEffect(() => {
+    if (!open) return;
+    setName(gift.name ?? "");
+  }, [open, gift.name]);
+
+  const allocations = gift.allocations ?? [];
+  const donorName =
+    gift.organizationName ||
+    gift.individualGiverPersonName ||
+    gift.householdName ||
+    "this donor";
+
+  const giftCents = toCents(gift.amount);
+  const allocCents = allocations.reduce((acc, a) => acc + toCents(a.subAmount), 0);
+  const sumMatches = allocCents === giftCents;
+  const anyNonPositive = allocations.some((a) => toCents(a.subAmount) <= 0);
+
+  const submitting = mut.isPending;
+  const canSubmit =
+    open &&
+    allocations.length >= 2 &&
+    sumMatches &&
+    !anyNonPositive &&
+    !submitting;
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    try {
+      const result = await mut.mutateAsync({
+        id: gift.id,
+        data: { name: name.trim() || null },
+      });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: getListGiftsAndPaymentsQueryKey() }),
+        qc.invalidateQueries({
+          queryKey: getListOpportunitiesAndPledgesQueryKey(),
+        }),
+        qc.invalidateQueries({ queryKey: getGetGiftOrPaymentQueryKey(gift.id) }),
+      ]);
+      toast({
+        title: "Pledge created",
+        description: `Split into ${result.giftIds.length.toLocaleString()} payment${
+          result.giftIds.length === 1 ? "" : "s"
+        } on a new pledge.`,
+      });
+      onOpenChange(false);
+      onDone?.(result.pledgeId);
+    } catch (err) {
+      toast({
+        title: "Could not split gift",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (submitting) return;
+        onOpenChange(o);
+      }}
+    >
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Split into a pledge</DialogTitle>
+          <DialogDescription>
+            This gift&apos;s {allocations.length} allocation
+            {allocations.length === 1 ? "" : "s"} become individual payment gifts
+            on a new pledge for {donorName} ({formatCurrency(gift.amount ?? "0")}).
+            The original gift is kept as the first payment — nothing is deleted.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="split-pledge-name">Pledge name (optional)</Label>
+            <Input
+              id="split-pledge-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. 2026 Multi-year pledge"
+              data-testid="input-split-pledge-name"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Payments to create ({allocations.length})</Label>
+            <div
+              className="max-h-40 divide-y overflow-auto rounded-md border text-sm"
+              data-testid="list-split-pledge-allocations"
+            >
+              {allocations.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center justify-between gap-3 px-2 py-1.5"
+                  data-testid={`row-split-pledge-allocation-${a.id}`}
+                >
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                    {a.displayUsage || "Unspecified allocation"}
+                  </span>
+                  <span className="shrink-0 tabular-nums">
+                    {formatCurrency(a.subAmount ?? "0")}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {!sumMatches && (
+              <p
+                className="text-xs text-destructive"
+                data-testid="text-split-pledge-mismatch"
+              >
+                The allocations add up to{" "}
+                {formatCurrency(String(allocCents / 100))}, but the gift is{" "}
+                {formatCurrency(gift.amount ?? "0")}. Fix the allocation amounts so
+                they match before splitting.
+              </p>
+            )}
+            {sumMatches && anyNonPositive && (
+              <p className="text-xs text-destructive">
+                Every allocation needs a positive amount to split.
+              </p>
+            )}
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            The thank-you, QuickBooks links, and other notes stay on the original
+            gift (the first payment). New payment gifts inherit the donor, date,
+            and payment method.
+          </p>
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={submitting}
+            data-testid="button-split-pledge-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            data-testid="button-split-pledge-confirm"
+          >
+            {submitting ? "Splitting…" : "Split into pledge"}
           </Button>
         </DialogFooter>
       </DialogContent>

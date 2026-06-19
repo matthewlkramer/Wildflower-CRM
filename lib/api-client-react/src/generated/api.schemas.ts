@@ -3463,6 +3463,14 @@ export interface MergeIntoPledgeResult {
 }
 
 /**
+ * Optional overrides when splitting a gift into a pledge. The pledge inherits the gift's donor and uses the gift amount as its awarded amount; each gift_allocation becomes one payment gift.
+ */
+export interface SplitGiftIntoPledgeBody {
+  /** Name for the new pledge. Defaults to the gift's name. */
+  name?: string | null;
+}
+
+/**
  * Ids of the records to archive (soft-delete). Stamps archived_at on each row instead of removing it. Processed per-row; the response reports which ids succeeded and which failed (with a reason).
  */
 export interface BulkArchiveBody {

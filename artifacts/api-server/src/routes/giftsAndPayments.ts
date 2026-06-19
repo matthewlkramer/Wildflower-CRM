@@ -81,6 +81,7 @@ import {
   BulkArchiveGiftsAndPaymentsBody,
   MergeGiftsAndPaymentsBody,
   MergeGiftsIntoPledgeBody,
+  SplitGiftIntoPledgeBody,
   validateGiftInvariants,
   validateOppInvariants,
   type InvariantIssue,
@@ -943,6 +944,274 @@ router.post(
 
     await applyDerivedOppFieldsMany(...outcome.pledges);
     res.json({ pledgeId: outcome.pledgeId, giftIds, created: outcome.created });
+  }),
+);
+
+/**
+ * Split ONE multi-allocation gift into a pledge plus one payment-gift per
+ * allocation. Motivating case: a single recorded gift that actually arrived as
+ * several separate payments (e.g. a $100k commitment paid as two QBO payments,
+ * each booked to a different allocation). Non-destructive: the original gift is
+ * KEPT and becomes the payment for its FIRST allocation; a new gift is minted
+ * for every remaining allocation and that allocation is re-pointed onto its new
+ * gift. A pledge (awarded = gift amount, donor = gift donor, was_pledge = true)
+ * is created and every payment-gift links to it via paymentOnPledgeId. Derived
+ * pledge fields are recomputed afterward — status is never written directly.
+ *
+ * Guards (all checked inside one tx; nothing changes unless every check passes):
+ *   - gift exists and is not archived
+ *   - gift has >= 2 allocations, each with a positive sub-amount
+ *   - the sub-amounts sum to the gift amount to the cent (the money trail must
+ *     be preserved exactly)
+ *   - the gift does not already pay a pledge (409)
+ *   - the gift is not linked to a QuickBooks staged payment (409) — splitting
+ *     changes its amount and would falsify an approved reconciliation; the new
+ *     payment-gifts intentionally carry no QB links
+ */
+router.post(
+  "/gifts-and-payments/:id/split-into-pledge",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const body = parseOrBadRequest(SplitGiftIntoPledgeBody, req.body ?? {}, res);
+    if (!body) return;
+
+    const actor = getAppUser(req);
+
+    type Outcome =
+      | { ok: true; pledgeId: string; giftIds: string[]; donorOrgId: string | null }
+      | { ok: false; status: number; json: Record<string, unknown> }
+      | { ok: false; invariant: InvariantIssue[] };
+
+    const outcome = await db.transaction(async (tx): Promise<Outcome> => {
+      // Lock the gift so its amount + allocation set can't race a concurrent edit.
+      const [gift] = await tx
+        .select()
+        .from(giftsAndPayments)
+        .where(eq(giftsAndPayments.id, id))
+        .for("update");
+      if (!gift) {
+        return { ok: false, status: 404, json: { error: "not_found", message: "Gift not found." } };
+      }
+      if (gift.archivedAt != null) {
+        return {
+          ok: false,
+          status: 409,
+          json: { error: "gift_archived", message: "Restore this gift before splitting it." },
+        };
+      }
+      if (gift.paymentOnPledgeId != null) {
+        return {
+          ok: false,
+          status: 409,
+          json: {
+            error: "gift_already_on_pledge",
+            message: "This gift already pays a pledge. Detach it before splitting.",
+          },
+        };
+      }
+
+      // A gift wired into a QuickBooks staged payment must be unlinked first —
+      // splitting changes its amount and would falsify an approved
+      // reconciliation. New payment-gifts intentionally carry no QB links.
+      const qbLink = await tx
+        .select({ id: stagedPayments.id })
+        .from(stagedPayments)
+        .where(
+          or(
+            eq(stagedPayments.matchedGiftId, id),
+            eq(stagedPayments.createdGiftId, id),
+            eq(stagedPayments.groupReconciledGiftId, id),
+          ),
+        )
+        .limit(1);
+      const qbSplitLink = await tx
+        .select({ id: stagedPaymentSplits.id })
+        .from(stagedPaymentSplits)
+        .where(eq(stagedPaymentSplits.giftId, id))
+        .limit(1);
+      if (qbLink.length || qbSplitLink.length) {
+        return {
+          ok: false,
+          status: 409,
+          json: {
+            error: "quickbooks_linked",
+            message:
+              "This gift is linked to a QuickBooks staged payment. Resolve that link before splitting.",
+          },
+        };
+      }
+
+      // Money-trail line items, ordered deterministically: the first stays on
+      // the original gift, the rest each spawn a new payment-gift. Lock the
+      // allocation rows too (not just the parent gift) so a concurrent edit to
+      // an allocation's sub-amount can't slip between this sum check and the
+      // re-point below and leave a gift header out of step with its allocation.
+      const allocs = await tx
+        .select()
+        .from(giftAllocations)
+        .where(eq(giftAllocations.giftId, id))
+        .orderBy(asc(giftAllocations.id))
+        .for("update");
+      if (allocs.length < 2) {
+        return {
+          ok: false,
+          status: 400,
+          json: {
+            error: "not_enough_allocations",
+            message: "A gift needs at least two allocations to split into a pledge.",
+          },
+        };
+      }
+
+      // Cents-based arithmetic so float drift never breaks the reconciliation.
+      const toCents = (v: string | null): number => Math.round(Number(v ?? 0) * 100);
+      const giftCents = toCents(gift.amount);
+      let allocCents = 0;
+      for (const a of allocs) {
+        const c = toCents(a.subAmount);
+        if (c <= 0) {
+          return {
+            ok: false,
+            status: 400,
+            json: {
+              error: "nonpositive_allocation",
+              message: "Every allocation must have a positive amount to split.",
+            },
+          };
+        }
+        allocCents += c;
+      }
+      if (allocCents !== giftCents) {
+        return {
+          ok: false,
+          status: 400,
+          json: {
+            error: "allocation_sum_mismatch",
+            message:
+              "The allocation amounts must add up to the gift amount before it can be split. Fix the allocations first.",
+          },
+        };
+      }
+
+      // Donor (XOR) carried by the gift — reused for the pledge and every
+      // payment-gift. Belt-and-suspenders validate before writing anything.
+      const donor = {
+        organizationId: gift.organizationId,
+        individualGiverPersonId: gift.individualGiverPersonId,
+        householdId: gift.householdId,
+      };
+      const oppIssues = validateOppInvariants(donor);
+      if (oppIssues.length) return { ok: false, invariant: oppIssues };
+
+      // 1. Create the pledge: awarded = gift amount, donor inherited.
+      const pledgeId = newId();
+      await tx.insert(opportunitiesAndPledges).values({
+        id: pledgeId,
+        name: body.name ?? gift.name ?? null,
+        organizationId: donor.organizationId,
+        individualGiverPersonId: donor.individualGiverPersonId,
+        householdId: donor.householdId,
+        awardedAmount: gift.amount,
+        stage: "written_commitment",
+        wasPledge: true,
+      });
+
+      // 2. Mirror each gift allocation onto a pledge allocation. The gifts are
+      // immediately canonical, so the pledge allocations are flagged
+      // superseded_by_gift (the pledge derives cash_in from the payment-gifts).
+      // pledge_allocations collapse the two gift-level restriction booleans into
+      // one and have no school column (directToSchool stands in for it).
+      for (const a of allocs) {
+        await tx.insert(pledgeAllocations).values({
+          id: newId(),
+          pledgeOrOpportunityId: pledgeId,
+          subAmount: a.subAmount,
+          grantYear: a.grantYear,
+          entityId: a.entityId,
+          intendedUsage: a.intendedUsage,
+          fundableProjectId: a.fundableProjectId,
+          regionIds: a.regionIds,
+          directToSchool: a.schoolRecipientId != null,
+          formallyRestricted: a.formalFundUseRestriction || a.formalRegionalRestriction,
+          status: "superseded_by_gift",
+        });
+      }
+
+      // 3. Transform-in-place. The original gift becomes the payment for the
+      // FIRST allocation; mint a new gift for each remaining allocation and
+      // re-point that allocation onto it. Header fields are allocation-aware
+      // (grant year follows the allocation; designated-to-school is OR'd with
+      // the allocation's school recipient) so split rows aren't mislabeled.
+      // Thank-you / QB / Airtable / archive metadata stays only on the original.
+      const [first, ...rest] = allocs;
+      const giftIds: string[] = [gift.id];
+
+      await tx
+        .update(giftsAndPayments)
+        .set({
+          amount: first.subAmount,
+          paymentOnPledgeId: pledgeId,
+          grantYear: first.grantYear ?? gift.grantYear,
+          designatedToSchool: gift.designatedToSchool || first.schoolRecipientId != null,
+          updatedAt: new Date(),
+        })
+        .where(eq(giftsAndPayments.id, gift.id));
+
+      for (const a of rest) {
+        const newGiftId = newId();
+        await tx.insert(giftsAndPayments).values({
+          id: newGiftId,
+          name: gift.name,
+          details: gift.details,
+          dateReceived: gift.dateReceived,
+          paymentMethod: gift.paymentMethod,
+          amount: a.subAmount,
+          organizationId: gift.organizationId,
+          individualGiverPersonId: gift.individualGiverPersonId,
+          householdId: gift.householdId,
+          type: gift.type,
+          paymentOnPledgeId: pledgeId,
+          advisorPersonId: gift.advisorPersonId,
+          grantYear: a.grantYear ?? gift.grantYear,
+          primaryContactPersonId: gift.primaryContactPersonId,
+          paymentIntermediaryId: gift.paymentIntermediaryId,
+          ownerUserId: gift.ownerUserId,
+          designatedToSchool: gift.designatedToSchool || a.schoolRecipientId != null,
+          tags: gift.tags,
+        });
+        // Re-point the allocation (a money-trail row — keep its id) onto the new
+        // gift. Never touch display_usage (trigger-maintained).
+        await tx
+          .update(giftAllocations)
+          .set({ giftId: newGiftId, updatedAt: new Date() })
+          .where(eq(giftAllocations.id, a.id));
+        giftIds.push(newGiftId);
+      }
+
+      if (actor) {
+        await tx.insert(bulkOperations).values({
+          id: newId(),
+          actorUserId: actor.id,
+          entity: "gifts-and-payments/split-into-pledge",
+          fields: ["amount", "paymentOnPledgeId", "grantYear", "designatedToSchool"],
+          targetIds: [gift.id],
+          succeededIds: giftIds,
+          failedIds: [],
+        });
+      }
+
+      return { ok: true, pledgeId, giftIds, donorOrgId: donor.organizationId };
+    });
+
+    if (!outcome.ok) {
+      if ("invariant" in outcome) return respondInvariantFailure(res, outcome.invariant);
+      res.status(outcome.status).json(outcome.json);
+      return;
+    }
+
+    await applyDerivedOppFieldsMany(outcome.pledgeId);
+    if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
+    res.json({ pledgeId: outcome.pledgeId, giftIds: outcome.giftIds, created: true });
   }),
 );
 

@@ -52,6 +52,8 @@ const ORG_ID = `${RUN}_org`;
 const ORG2_ID = `${RUN}_org2`;
 const PERSON_ID = `${RUN}_person`;
 const REALM_ID = `${RUN}_realm`;
+const FY_A_ID = `${RUN}_fya`;
+const FY_B_ID = `${RUN}_fyb`;
 
 type Db = typeof import("@workspace/db");
 
@@ -65,6 +67,8 @@ let schema: {
   opportunitiesAndPledges: Db["opportunitiesAndPledges"];
   pledgeAllocations: Db["pledgeAllocations"];
   stagedPayments: Db["stagedPayments"];
+  stagedPaymentSplits: Db["stagedPaymentSplits"];
+  fiscalYears: Db["fiscalYears"];
   bulkOperations: Db["bulkOperations"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -128,6 +132,45 @@ async function seedGiftWithAllocation(
   return id;
 }
 
+/**
+ * Seed a gift carrying >= 2 allocations (the split-into-pledge precondition).
+ * Allocation ids are monotonically increasing so their insertion order matches
+ * the route's `ORDER BY id` — i.e. allocs[0] is the one kept on the original
+ * gift. The gift amount defaults to the cents-exact sum of the allocations so
+ * the happy path passes the sum check; pass `giftOverrides.amount` to force a
+ * mismatch.
+ */
+async function seedGiftWithAllocations(
+  allocs: Array<{ subAmount: string; grantYear?: string | null }>,
+  donor: DonorFields = { organizationId: ORG_ID },
+  giftOverrides: { amount?: string; grantYear?: string | null } = {},
+): Promise<string> {
+  const id = nextId("gift");
+  const sumCents = allocs.reduce(
+    (s, a) => s + Math.round(Number(a.subAmount) * 100),
+    0,
+  );
+  const amount = giftOverrides.amount ?? (sumCents / 100).toFixed(2);
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    amount,
+    organizationId: donor.organizationId ?? null,
+    individualGiverPersonId: donor.individualGiverPersonId ?? null,
+    householdId: donor.householdId ?? null,
+    grantYear: giftOverrides.grantYear ?? null,
+  });
+  for (const a of allocs) {
+    await db.insert(schema.giftAllocations).values({
+      id: nextId("alloc"),
+      giftId: id,
+      subAmount: a.subAmount,
+      grantYear: a.grantYear ?? null,
+    });
+  }
+  seededGiftIds.push(id);
+  return id;
+}
+
 async function readGift(id: string) {
   const [row] = await db
     .select()
@@ -157,6 +200,8 @@ beforeAll(async () => {
     opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
     pledgeAllocations: dbMod.pledgeAllocations,
     stagedPayments: dbMod.stagedPayments,
+    stagedPaymentSplits: dbMod.stagedPaymentSplits,
+    fiscalYears: dbMod.fiscalYears,
     bulkOperations: dbMod.bulkOperations,
   };
   eqFn = drizzle.eq;
@@ -177,6 +222,10 @@ beforeAll(async () => {
     id: PERSON_ID,
     fullName: `Gift Merge Person ${RUN}`,
   });
+  await db.insert(schema.fiscalYears).values([
+    { id: FY_A_ID, label: `FY-A ${RUN}` },
+    { id: FY_B_ID, label: `FY-B ${RUN}` },
+  ]);
 
   const { default: app } = await import("../app");
   server = await new Promise<Server>((resolve) => {
@@ -191,6 +240,13 @@ afterAll(async () => {
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   // Children first: staged rows + gift allocations reference gifts; gift
   // payment links + pledge allocations reference pledges.
+  // staged_payment_splits.gift_id is a RESTRICT FK, so clear splits before
+  // their gifts (the staged_payments delete below would cascade these too).
+  if (seededGiftIds.length) {
+    await db
+      .delete(schema.stagedPaymentSplits)
+      .where(inArrayFn(schema.stagedPaymentSplits.giftId, seededGiftIds));
+  }
   await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.realmId, REALM_ID));
@@ -217,6 +273,11 @@ afterAll(async () => {
       .delete(schema.opportunitiesAndPledges)
       .where(inArrayFn(schema.opportunitiesAndPledges.id, seededPledgeIds));
   }
+  // Fiscal years are a RESTRICT FK target for gifts + (gift|pledge) allocations,
+  // so they can only be removed after every referencing row above is gone.
+  await db
+    .delete(schema.fiscalYears)
+    .where(inArrayFn(schema.fiscalYears.id, [FY_A_ID, FY_B_ID]));
   await db
     .delete(schema.bulkOperations)
     .where(eqFn(schema.bulkOperations.actorUserId, TEST_USER_ID));
@@ -509,3 +570,210 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
     expect(res.status).toBe(400);
   }, 30_000);
 });
+
+describe.skipIf(!HAS_DB)(
+  "POST /gifts-and-payments/:id/split-into-pledge",
+  () => {
+    it("splits a multi-allocation gift into a pledge + one gift per allocation", async () => {
+      const giftId = await seedGiftWithAllocations(
+        [
+          { subAmount: "60000.00", grantYear: FY_A_ID },
+          { subAmount: "40000.00", grantYear: FY_B_ID },
+        ],
+        { organizationId: ORG_ID },
+        { grantYear: FY_A_ID },
+      );
+
+      const res = await api(
+        `/api/gifts-and-payments/${giftId}/split-into-pledge`,
+        { name: `Split Pledge ${RUN}` },
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.json.created).toBe(true);
+      const pledgeId = res.json.pledgeId as string;
+      seededPledgeIds.push(pledgeId);
+      const giftIds = res.json.giftIds as string[];
+      // Track the minted gift(s) for cleanup.
+      for (const g of giftIds) {
+        if (!seededGiftIds.includes(g)) seededGiftIds.push(g);
+      }
+
+      // The original gift is kept and listed first.
+      expect(giftIds.length).toBe(2);
+      expect(giftIds[0]).toBe(giftId);
+
+      // Pledge: awarded = original gift amount, donor inherited, was_pledge.
+      const [pledge] = await db
+        .select()
+        .from(schema.opportunitiesAndPledges)
+        .where(eqFn(schema.opportunitiesAndPledges.id, pledgeId));
+      expect(Number(pledge.awardedAmount)).toBeCloseTo(100000);
+      expect(pledge.wasPledge).toBe(true);
+      // Stage is always derived (never written directly): the two payment-gifts
+      // fully fund the pledge, so applyDerivedOppFieldsMany resolves it to cash_in.
+      expect(pledge.stage).toBe("cash_in");
+      expect(pledge.organizationId).toBe(ORG_ID);
+
+      // One pledge allocation per gift allocation, all superseded by the gifts.
+      const pAllocs = await db
+        .select()
+        .from(schema.pledgeAllocations)
+        .where(eqFn(schema.pledgeAllocations.pledgeOrOpportunityId, pledgeId));
+      expect(pAllocs.length).toBe(2);
+      expect(pAllocs.every((a) => a.status === "superseded_by_gift")).toBe(true);
+
+      // Original gift: amount = first allocation, points at the pledge, FY_A.
+      const original = await readGift(giftId);
+      expect(Number(original.amount)).toBeCloseTo(60000);
+      expect(original.paymentOnPledgeId).toBe(pledgeId);
+      expect(original.grantYear).toBe(FY_A_ID);
+      const originalAllocs = await allocationsFor(giftId);
+      expect(originalAllocs.length).toBe(1);
+      expect(Number(originalAllocs[0].subAmount)).toBeCloseTo(60000);
+
+      // Minted gift: amount = second allocation, points at the pledge, FY_B.
+      const mintedId = giftIds.find((g) => g !== giftId)!;
+      const minted = await readGift(mintedId);
+      expect(Number(minted.amount)).toBeCloseTo(40000);
+      expect(minted.paymentOnPledgeId).toBe(pledgeId);
+      expect(minted.organizationId).toBe(ORG_ID);
+      expect(minted.grantYear).toBe(FY_B_ID);
+      const mintedAllocs = await allocationsFor(mintedId);
+      expect(mintedAllocs.length).toBe(1);
+      expect(Number(mintedAllocs[0].subAmount)).toBeCloseTo(40000);
+    }, 30_000);
+
+    it("rejects (400 allocation_sum_mismatch) when allocations don't add up to the amount", async () => {
+      // 90k of allocations against a 100k gift.
+      const giftId = await seedGiftWithAllocations(
+        [{ subAmount: "60000.00" }, { subAmount: "30000.00" }],
+        { organizationId: ORG_ID },
+        { amount: "100000.00" },
+      );
+
+      const res = await api(
+        `/api/gifts-and-payments/${giftId}/split-into-pledge`,
+        {},
+      );
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe("allocation_sum_mismatch");
+      // Nothing changed — no pledge link, amount intact, allocations intact.
+      const g = await readGift(giftId);
+      expect(g.paymentOnPledgeId).toBeNull();
+      expect(Number(g.amount)).toBeCloseTo(100000);
+      expect((await allocationsFor(giftId)).length).toBe(2);
+    }, 30_000);
+
+    it("rejects (400 not_enough_allocations) a gift with a single allocation", async () => {
+      const giftId = await seedGiftWithAllocation("100.00");
+      const res = await api(
+        `/api/gifts-and-payments/${giftId}/split-into-pledge`,
+        {},
+      );
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe("not_enough_allocations");
+      expect((await readGift(giftId)).paymentOnPledgeId).toBeNull();
+    }, 30_000);
+
+    it("rejects (409 gift_already_on_pledge) a gift that already pays a pledge", async () => {
+      const pledgeId = nextId("pledge");
+      await db.insert(schema.opportunitiesAndPledges).values({
+        id: pledgeId,
+        name: `Already Paid Pledge ${RUN}`,
+        organizationId: ORG_ID,
+        awardedAmount: "1000.00",
+        stage: "written_commitment",
+        wasPledge: true,
+      });
+      seededPledgeIds.push(pledgeId);
+      const giftId = await seedGiftWithAllocations([
+        { subAmount: "60.00" },
+        { subAmount: "40.00" },
+      ]);
+      await db
+        .update(schema.giftsAndPayments)
+        .set({ paymentOnPledgeId: pledgeId })
+        .where(eqFn(schema.giftsAndPayments.id, giftId));
+
+      const res = await api(
+        `/api/gifts-and-payments/${giftId}/split-into-pledge`,
+        {},
+      );
+
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("gift_already_on_pledge");
+      // No second pledge was created (still attached to the original).
+      expect((await readGift(giftId)).paymentOnPledgeId).toBe(pledgeId);
+      expect((await allocationsFor(giftId)).length).toBe(2);
+    }, 30_000);
+
+    it("blocks (409 quickbooks_linked) a gift matched to a QuickBooks staged payment", async () => {
+      const giftId = await seedGiftWithAllocations([
+        { subAmount: "60.00" },
+        { subAmount: "40.00" },
+      ]);
+      await db.insert(schema.stagedPayments).values({
+        id: nextId("sp"),
+        realmId: REALM_ID,
+        qbEntityType: "payment",
+        qbEntityId: nextId("qbe"),
+        amount: "100.00",
+        status: "approved",
+        organizationId: ORG_ID,
+        matchedGiftId: giftId,
+      });
+
+      const res = await api(
+        `/api/gifts-and-payments/${giftId}/split-into-pledge`,
+        {},
+      );
+
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("quickbooks_linked");
+      expect((await readGift(giftId)).paymentOnPledgeId).toBeNull();
+    }, 30_000);
+
+    it("blocks (409 quickbooks_linked) a gift wired into a staged-payment split", async () => {
+      const giftId = await seedGiftWithAllocations([
+        { subAmount: "60.00" },
+        { subAmount: "40.00" },
+      ]);
+      const spId = nextId("sp");
+      await db.insert(schema.stagedPayments).values({
+        id: spId,
+        realmId: REALM_ID,
+        qbEntityType: "payment",
+        qbEntityId: nextId("qbe"),
+        amount: "100.00",
+        status: "approved",
+        organizationId: ORG_ID,
+      });
+      await db.insert(schema.stagedPaymentSplits).values({
+        id: nextId("sps"),
+        stagedPaymentId: spId,
+        giftId,
+        subAmount: "100.00",
+      });
+
+      const res = await api(
+        `/api/gifts-and-payments/${giftId}/split-into-pledge`,
+        {},
+      );
+
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("quickbooks_linked");
+      expect((await readGift(giftId)).paymentOnPledgeId).toBeNull();
+    }, 30_000);
+
+    it("returns 404 when the gift does not exist", async () => {
+      const res = await api(
+        `/api/gifts-and-payments/${RUN}_missing_split/split-into-pledge`,
+        {},
+      );
+      expect(res.status).toBe(404);
+      expect(res.json.error).toBe("not_found");
+    }, 30_000);
+  },
+);

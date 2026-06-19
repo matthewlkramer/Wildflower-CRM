@@ -226,6 +226,7 @@ import type {
   SearchTrackedEmailParams,
   SendTrackedEmailBody,
   SendTrackedEmailResult,
+  SplitGiftIntoPledgeBody,
   SplitGrantLeadBody,
   SplitGrantLeadResponse,
   SplitStagedPaymentBody,
@@ -17228,6 +17229,105 @@ export const useMergeGiftsIntoPledge = <
   TContext
 > => {
   return useMutation(getMergeGiftsIntoPledgeMutationOptions(options));
+};
+
+/**
+ * Transforms a single gift that has two or more allocations into a PLEDGE
+(awarded amount = the gift amount, donor inherited from the gift) and
+splits the gift so each `gift_allocation` becomes its own payment gift on
+that pledge. Non-destructive: the original gift is KEPT — it becomes the
+payment for its first allocation; one new gift is minted per remaining
+allocation. The allocation sub-amounts must sum to the gift amount.
+Returns 409 when the gift already pays a pledge or is linked to a
+QuickBooks staged payment (resolve that first); 400 when the gift has
+fewer than two allocations or the sub-amounts do not sum to the amount.
+
+ * @summary Convert one multi-allocation gift into a pledge plus one gift per allocation.
+ */
+export const getSplitGiftIntoPledgeUrl = (id: string) => {
+  return `/api/gifts-and-payments/${id}/split-into-pledge`;
+};
+
+export const splitGiftIntoPledge = async (
+  id: string,
+  splitGiftIntoPledgeBody?: SplitGiftIntoPledgeBody,
+  options?: RequestInit,
+): Promise<MergeIntoPledgeResult> => {
+  return customFetch<MergeIntoPledgeResult>(getSplitGiftIntoPledgeUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(splitGiftIntoPledgeBody),
+  });
+};
+
+export const getSplitGiftIntoPledgeMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof splitGiftIntoPledge>>,
+    TError,
+    { id: string; data: BodyType<SplitGiftIntoPledgeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof splitGiftIntoPledge>>,
+  TError,
+  { id: string; data: BodyType<SplitGiftIntoPledgeBody> },
+  TContext
+> => {
+  const mutationKey = ["splitGiftIntoPledge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof splitGiftIntoPledge>>,
+    { id: string; data: BodyType<SplitGiftIntoPledgeBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return splitGiftIntoPledge(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SplitGiftIntoPledgeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof splitGiftIntoPledge>>
+>;
+export type SplitGiftIntoPledgeMutationBody = BodyType<SplitGiftIntoPledgeBody>;
+export type SplitGiftIntoPledgeMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Convert one multi-allocation gift into a pledge plus one gift per allocation.
+ */
+export const useSplitGiftIntoPledge = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof splitGiftIntoPledge>>,
+    TError,
+    { id: string; data: BodyType<SplitGiftIntoPledgeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof splitGiftIntoPledge>>,
+  TError,
+  { id: string; data: BodyType<SplitGiftIntoPledgeBody> },
+  TContext
+> => {
+  return useMutation(getSplitGiftIntoPledgeMutationOptions(options));
 };
 
 export const getBulkUpdateHouseholdsUrl = () => {
