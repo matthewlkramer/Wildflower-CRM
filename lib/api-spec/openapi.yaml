@@ -2000,6 +2000,58 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged charge cannot be reverted from its current state" }
 
+  /stripe-payouts/reconciliation:
+    get:
+      operationId: listStripePayoutReconciliations
+      tags: [stripe-staged-charges]
+      summary: List Stripe payouts by their QuickBooks reconciliation state (proposals to confirm, conflicts to resolve, or already-confirmed), with the active QB deposit lump and any conflicting approved gift joined for display.
+      parameters:
+        - { name: queue, in: query, schema: { $ref: "#/components/schemas/StripePayoutReconciliationQueue" }, description: "Which queue to list (default proposed)." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationList" } } } }
+  /stripe-payouts/{id}/confirm-exclude:
+    post:
+      operationId: confirmStripePayoutExclude
+      tags: [stripe-staged-charges]
+      summary: Confirm a proposed payout↔QB-deposit match — exclude the deposit lump (processor_payout, kept and linked, never deleted) and unblock the per-charge Stripe gift queue.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Payout is not in a proposed state" }
+  /stripe-payouts/{id}/confirm-keep:
+    post:
+      operationId: confirmStripePayoutKeep
+      tags: [stripe-staged-charges]
+      summary: Resolve a conflict by keeping the already-approved QuickBooks gift — record only the payout linkage, touching no gift or deposit.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Payout is not in a conflict_approved state" }
+  /stripe-payouts/{id}/confirm-replace:
+    post:
+      operationId: confirmStripePayoutReplace
+      tags: [stripe-staged-charges]
+      summary: Resolve a conflict by replacing the coarse QB-derived lump gift — archive it (kept, allocations preserved, never deleted), exclude the deposit, and unblock the per-charge Stripe gift queue. Explicit, default-off in the UI.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Payout is not in a conflict_approved state" }
+  /stripe-payouts/{id}/revert-reconciliation:
+    post:
+      operationId: revertStripePayoutReconciliation
+      tags: [stripe-staged-charges]
+      summary: Undo a confirmed payout reconciliation back to its prior proposal state. Refused once any of the payout's Stripe charges have been booked into a gift.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Payout cannot be reverted from its current state, or its charges are already booked" }
+
   # ─── QuickBooks handling rules (admin-editable ingest classifier) ─────────
   /admin/quickbooks-rules:
     get:
@@ -4773,6 +4825,66 @@ components:
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/StripeStagedCharge" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    StripePayoutReconciliationStatus:
+      type: string
+      description: "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep/replace. confirmed_excluded/keep/replace: a human decision has been applied."
+      enum: [unmatched, proposed, conflict_approved, confirmed_excluded, confirmed_keep, confirmed_replace]
+    StripePayoutReconciliationQueue:
+      type: string
+      description: "Which reconciliation bucket to list. proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state. all: every non-unmatched payout."
+      enum: [proposed, conflict, confirmed, all]
+    StripePayoutReconciliation:
+      type: object
+      required: [id, stripeAccountId, qbReconciliationStatus]
+      properties:
+        id:                              { type: string, description: "The Stripe payout id (po_...) — also the primary key." }
+        stripeAccountId:                 { type: string }
+        amount:                          { type: string, nullable: true, description: "Payout amount reported by Stripe (major units)." }
+        currency:                        { type: string, nullable: true }
+        status:                          { type: string, nullable: true }
+        arrivalDate:                     { type: string, format: date, nullable: true }
+        # Charge rollups (gross − fees − refunds = net), computed at sync time.
+        grossTotal:                      { type: string, nullable: true }
+        feeTotal:                        { type: string, nullable: true }
+        refundTotal:                     { type: string, nullable: true }
+        netTotal:                        { type: string, nullable: true }
+        chargeCount:                     { type: integer, nullable: true }
+        # QuickBooks reconciliation state + linkage (propose-then-confirm).
+        qbReconciliationStatus:          { $ref: "#/components/schemas/StripePayoutReconciliationStatus" }
+        proposedQbStagedPaymentId:       { type: string, nullable: true, description: "The pending QB deposit lump proposed as this payout's match." }
+        matchedQbStagedPaymentId:        { type: string, nullable: true, description: "The QB deposit lump confirmed (excluded + linked) for this payout." }
+        qbConflictStagedPaymentId:       { type: string, nullable: true, description: "The QB deposit lump that was already approved into a gift (conflict candidate)." }
+        qbConflictGiftId:                { type: string, nullable: true, description: "The already-approved QB gift this payout conflicts with." }
+        qbReconciliationConfirmedByUserId: { type: string, nullable: true }
+        qbReconciliationConfirmedAt:     { type: string, format: date-time, nullable: true }
+        # Active QB deposit lump (matched once confirmed, else the candidate), joined read-only.
+        depositId:                       { type: string, nullable: true }
+        depositAmount:                   { type: string, nullable: true }
+        depositDateReceived:             { type: string, format: date, nullable: true }
+        depositPayerName:                { type: string, nullable: true }
+        depositStatus:                   { type: string, nullable: true }
+        # Conflicting already-approved gift (present for conflict_approved / confirmed_replace), joined read-only.
+        conflictGiftAmount:              { type: string, nullable: true }
+        conflictGiftDate:                { type: string, format: date, nullable: true }
+        conflictGiftArchivedAt:          { type: string, format: date-time, nullable: true, description: "Set once a confirm-replace archives this gift (kept, never deleted)." }
+        conflictGiftDonorName:           { type: string, nullable: true }
+    StripePayoutReconciliationList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/StripePayoutReconciliation" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    StripePayoutReconciliationResult:
+      type: object
+      required: [ok, kind, payoutId]
+      description: "Outcome of a payout reconciliation confirm/revert transition."
+      properties:
+        ok:               { type: boolean, enum: [true] }
+        kind:             { type: string, enum: [confirmed_excluded, confirmed_keep, confirmed_replace, reverted] }
+        payoutId:         { type: string }
+        stagedPaymentId:  { type: string, nullable: true, description: "The QB deposit lump that was excluded/relinked, when applicable." }
+        archivedGiftId:   { type: string, nullable: true, description: "The QB-derived gift archived by a confirm-replace (kept, never deleted)." }
+        restoredGiftId:   { type: string, nullable: true, description: "The gift un-archived by reverting a confirm-replace." }
     DonorSearchResult:
       type: object
       required: [id, kind, name]

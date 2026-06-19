@@ -2239,6 +2239,101 @@ export interface StripeStagedChargeList {
   pagination: Pagination;
 }
 
+/**
+ * Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep/replace. confirmed_excluded/keep/replace: a human decision has been applied.
+ */
+export type StripePayoutReconciliationStatus =
+  (typeof StripePayoutReconciliationStatus)[keyof typeof StripePayoutReconciliationStatus];
+
+export const StripePayoutReconciliationStatus = {
+  unmatched: "unmatched",
+  proposed: "proposed",
+  conflict_approved: "conflict_approved",
+  confirmed_excluded: "confirmed_excluded",
+  confirmed_keep: "confirmed_keep",
+  confirmed_replace: "confirmed_replace",
+} as const;
+
+/**
+ * Which reconciliation bucket to list. proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state. all: every non-unmatched payout.
+ */
+export type StripePayoutReconciliationQueue =
+  (typeof StripePayoutReconciliationQueue)[keyof typeof StripePayoutReconciliationQueue];
+
+export const StripePayoutReconciliationQueue = {
+  proposed: "proposed",
+  conflict: "conflict",
+  confirmed: "confirmed",
+  all: "all",
+} as const;
+
+export interface StripePayoutReconciliation {
+  /** The Stripe payout id (po_...) — also the primary key. */
+  id: string;
+  stripeAccountId: string;
+  /** Payout amount reported by Stripe (major units). */
+  amount?: string | null;
+  currency?: string | null;
+  status?: string | null;
+  arrivalDate?: string | null;
+  grossTotal?: string | null;
+  feeTotal?: string | null;
+  refundTotal?: string | null;
+  netTotal?: string | null;
+  chargeCount?: number | null;
+  qbReconciliationStatus: StripePayoutReconciliationStatus;
+  /** The pending QB deposit lump proposed as this payout's match. */
+  proposedQbStagedPaymentId?: string | null;
+  /** The QB deposit lump confirmed (excluded + linked) for this payout. */
+  matchedQbStagedPaymentId?: string | null;
+  /** The QB deposit lump that was already approved into a gift (conflict candidate). */
+  qbConflictStagedPaymentId?: string | null;
+  /** The already-approved QB gift this payout conflicts with. */
+  qbConflictGiftId?: string | null;
+  qbReconciliationConfirmedByUserId?: string | null;
+  qbReconciliationConfirmedAt?: string | null;
+  depositId?: string | null;
+  depositAmount?: string | null;
+  depositDateReceived?: string | null;
+  depositPayerName?: string | null;
+  depositStatus?: string | null;
+  conflictGiftAmount?: string | null;
+  conflictGiftDate?: string | null;
+  /** Set once a confirm-replace archives this gift (kept, never deleted). */
+  conflictGiftArchivedAt?: string | null;
+  conflictGiftDonorName?: string | null;
+}
+
+export interface StripePayoutReconciliationList {
+  data: StripePayoutReconciliation[];
+  pagination: Pagination;
+}
+
+export type StripePayoutReconciliationResultKind =
+  (typeof StripePayoutReconciliationResultKind)[keyof typeof StripePayoutReconciliationResultKind];
+
+export const StripePayoutReconciliationResultKind = {
+  confirmed_excluded: "confirmed_excluded",
+  confirmed_keep: "confirmed_keep",
+  confirmed_replace: "confirmed_replace",
+  reverted: "reverted",
+} as const;
+
+/**
+ * Outcome of a payout reconciliation confirm/revert transition.
+ */
+export interface StripePayoutReconciliationResult {
+  ok: boolean;
+  kind: StripePayoutReconciliationResultKind;
+  payoutId: string;
+  /** The QB deposit lump that was excluded/relinked, when applicable. */
+  stagedPaymentId?: string | null;
+  /** The QB-derived gift archived by a confirm-replace (kept, never deleted). */
+  archivedGiftId?: string | null;
+  /** The gift un-archived by reverting a confirm-replace. */
+  restoredGiftId?: string | null;
+}
+
 export type DonorSearchResultKind =
   (typeof DonorSearchResultKind)[keyof typeof DonorSearchResultKind];
 
@@ -4693,6 +4788,22 @@ export type ListStripeStagedChargesParams = {
    * Free-text filter across payer name/email, description, and statement descriptor.
    */
   search?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
+
+export type ListStripePayoutReconciliationsParams = {
+  /**
+   * Which queue to list (default proposed).
+   */
+  queue?: StripePayoutReconciliationQueue;
   /**
    * @minimum 1
    * @maximum 10000

@@ -471,6 +471,12 @@ export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
 //   expense_refund           — refunds of the org's own expenses (vendor overpayments, ERC tax refunds, etc.); not a contribution
 //   expensify                — Expensify expense-reimbursement activity ("expensify" marker); never a gift
 //   returned_wire            — a wire transfer the org sent that bounced back ("returned wire" marker); not an incoming gift
+//   processor_payout         — a Stripe (processor) NET-payout lump that has been
+//                              reconciled to its individual Stripe charges in the
+//                              Stripe↔QB reconciliation queue. Excluded so the same
+//                              money isn't booked twice (the per-charge gross Stripe
+//                              gifts are the precise record), kept + linked for audit.
+//                              Set ONLY on human confirm — never auto-applied.
 export const stagedPaymentExclusionReasonEnum = pgEnum(
   "staged_payment_exclusion_reason",
   [
@@ -489,6 +495,7 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
     "expense_refund",
     "expensify",
     "returned_wire",
+    "processor_payout",
   ],
 );
 

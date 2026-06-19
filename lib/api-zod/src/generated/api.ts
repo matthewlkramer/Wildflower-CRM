@@ -8390,6 +8390,253 @@ export const RevertStripeStagedChargeResponse = zod.object({
 });
 
 /**
+ * @summary List Stripe payouts by their QuickBooks reconciliation state (proposals to confirm, conflicts to resolve, or already-confirmed), with the active QB deposit lump and any conflicting approved gift joined for display.
+ */
+export const listStripePayoutReconciliationsQueryLimitDefault = 50;
+export const listStripePayoutReconciliationsQueryLimitMax = 10000;
+
+export const listStripePayoutReconciliationsQueryPageDefault = 1;
+
+export const ListStripePayoutReconciliationsQueryParams = zod.object({
+  queue: zod
+    .enum(["proposed", "conflict", "confirmed", "all"])
+    .optional()
+    .describe("Which queue to list (default proposed)."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listStripePayoutReconciliationsQueryLimitMax)
+    .default(listStripePayoutReconciliationsQueryLimitDefault),
+  page: zod.coerce
+    .number()
+    .min(1)
+    .default(listStripePayoutReconciliationsQueryPageDefault),
+});
+
+export const ListStripePayoutReconciliationsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod
+        .string()
+        .describe("The Stripe payout id (po_...) — also the primary key."),
+      stripeAccountId: zod.string(),
+      amount: zod
+        .string()
+        .nullish()
+        .describe("Payout amount reported by Stripe (major units)."),
+      currency: zod.string().nullish(),
+      status: zod.string().nullish(),
+      arrivalDate: zod.string().date().nullish(),
+      grossTotal: zod.string().nullish(),
+      feeTotal: zod.string().nullish(),
+      refundTotal: zod.string().nullish(),
+      netTotal: zod.string().nullish(),
+      chargeCount: zod.number().nullish(),
+      qbReconciliationStatus: zod
+        .enum([
+          "unmatched",
+          "proposed",
+          "conflict_approved",
+          "confirmed_excluded",
+          "confirmed_keep",
+          "confirmed_replace",
+        ])
+        .describe(
+          "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep\/replace. confirmed_excluded\/keep\/replace: a human decision has been applied.",
+        ),
+      proposedQbStagedPaymentId: zod
+        .string()
+        .nullish()
+        .describe(
+          "The pending QB deposit lump proposed as this payout's match.",
+        ),
+      matchedQbStagedPaymentId: zod
+        .string()
+        .nullish()
+        .describe(
+          "The QB deposit lump confirmed (excluded + linked) for this payout.",
+        ),
+      qbConflictStagedPaymentId: zod
+        .string()
+        .nullish()
+        .describe(
+          "The QB deposit lump that was already approved into a gift (conflict candidate).",
+        ),
+      qbConflictGiftId: zod
+        .string()
+        .nullish()
+        .describe("The already-approved QB gift this payout conflicts with."),
+      qbReconciliationConfirmedByUserId: zod.string().nullish(),
+      qbReconciliationConfirmedAt: zod.string().datetime({}).nullish(),
+      depositId: zod.string().nullish(),
+      depositAmount: zod.string().nullish(),
+      depositDateReceived: zod.string().date().nullish(),
+      depositPayerName: zod.string().nullish(),
+      depositStatus: zod.string().nullish(),
+      conflictGiftAmount: zod.string().nullish(),
+      conflictGiftDate: zod.string().date().nullish(),
+      conflictGiftArchivedAt: zod
+        .string()
+        .datetime({})
+        .nullish()
+        .describe(
+          "Set once a confirm-replace archives this gift (kept, never deleted).",
+        ),
+      conflictGiftDonorName: zod.string().nullish(),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+/**
+ * @summary Confirm a proposed payout↔QB-deposit match — exclude the deposit lump (processor_payout, kept and linked, never deleted) and unblock the per-charge Stripe gift queue.
+ */
+export const ConfirmStripePayoutExcludeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ConfirmStripePayoutExcludeResponse = zod
+  .object({
+    ok: zod.literal(true),
+    kind: zod.enum([
+      "confirmed_excluded",
+      "confirmed_keep",
+      "confirmed_replace",
+      "reverted",
+    ]),
+    payoutId: zod.string(),
+    stagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QB deposit lump that was excluded\/relinked, when applicable.",
+      ),
+    archivedGiftId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QB-derived gift archived by a confirm-replace (kept, never deleted).",
+      ),
+    restoredGiftId: zod
+      .string()
+      .nullish()
+      .describe("The gift un-archived by reverting a confirm-replace."),
+  })
+  .describe("Outcome of a payout reconciliation confirm\/revert transition.");
+
+/**
+ * @summary Resolve a conflict by keeping the already-approved QuickBooks gift — record only the payout linkage, touching no gift or deposit.
+ */
+export const ConfirmStripePayoutKeepParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ConfirmStripePayoutKeepResponse = zod
+  .object({
+    ok: zod.literal(true),
+    kind: zod.enum([
+      "confirmed_excluded",
+      "confirmed_keep",
+      "confirmed_replace",
+      "reverted",
+    ]),
+    payoutId: zod.string(),
+    stagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QB deposit lump that was excluded\/relinked, when applicable.",
+      ),
+    archivedGiftId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QB-derived gift archived by a confirm-replace (kept, never deleted).",
+      ),
+    restoredGiftId: zod
+      .string()
+      .nullish()
+      .describe("The gift un-archived by reverting a confirm-replace."),
+  })
+  .describe("Outcome of a payout reconciliation confirm\/revert transition.");
+
+/**
+ * @summary Resolve a conflict by replacing the coarse QB-derived lump gift — archive it (kept, allocations preserved, never deleted), exclude the deposit, and unblock the per-charge Stripe gift queue. Explicit, default-off in the UI.
+ */
+export const ConfirmStripePayoutReplaceParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ConfirmStripePayoutReplaceResponse = zod
+  .object({
+    ok: zod.literal(true),
+    kind: zod.enum([
+      "confirmed_excluded",
+      "confirmed_keep",
+      "confirmed_replace",
+      "reverted",
+    ]),
+    payoutId: zod.string(),
+    stagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QB deposit lump that was excluded\/relinked, when applicable.",
+      ),
+    archivedGiftId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QB-derived gift archived by a confirm-replace (kept, never deleted).",
+      ),
+    restoredGiftId: zod
+      .string()
+      .nullish()
+      .describe("The gift un-archived by reverting a confirm-replace."),
+  })
+  .describe("Outcome of a payout reconciliation confirm\/revert transition.");
+
+/**
+ * @summary Undo a confirmed payout reconciliation back to its prior proposal state. Refused once any of the payout's Stripe charges have been booked into a gift.
+ */
+export const RevertStripePayoutReconciliationParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RevertStripePayoutReconciliationResponse = zod
+  .object({
+    ok: zod.literal(true),
+    kind: zod.enum([
+      "confirmed_excluded",
+      "confirmed_keep",
+      "confirmed_replace",
+      "reverted",
+    ]),
+    payoutId: zod.string(),
+    stagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QB deposit lump that was excluded\/relinked, when applicable.",
+      ),
+    archivedGiftId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QB-derived gift archived by a confirm-replace (kept, never deleted).",
+      ),
+    restoredGiftId: zod
+      .string()
+      .nullish()
+      .describe("The gift un-archived by reverting a confirm-replace."),
+  })
+  .describe("Outcome of a payout reconciliation confirm\/revert transition.");
+
+/**
  * @summary List the QuickBooks auto-handling rules in evaluation order (admin only).
  */
 export const AdminListQuickbooksRulesResponseItem = zod.object({

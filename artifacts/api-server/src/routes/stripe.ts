@@ -4,6 +4,7 @@ import {
   stripeStagedCharges,
   stripePayouts,
   stripeSyncState,
+  stagedPayments,
   giftAllocations,
   giftsAndPayments,
   organizations,
@@ -19,6 +20,7 @@ import {
   eq,
   getTableColumns,
   ilike,
+  inArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -44,6 +46,13 @@ import {
   syncStripe,
   rematchStripeCharges,
 } from "../lib/stripeSync";
+import {
+  confirmPendingQbDeposit,
+  confirmKeepApprovedQbGift,
+  confirmReplaceApprovedQbGift,
+  revertPayoutQbConfirmation,
+  type ConfirmRevertResult,
+} from "../lib/stripeConfirm";
 
 /**
  * Review queue for incoming Stripe charges plus the manual sync / rematch
@@ -487,14 +496,15 @@ router.post(
           .then((r) => r[0]);
         if (!locked || locked.status !== "pending") throw new Error(NOT_PENDING);
 
-        // Non-destructive QuickBooks supersede guard: if this charge's payout
-        // was already booked as an APPROVED net lump in QuickBooks, minting a
-        // per-charge gift here would double-count. Block until a human resolves
-        // the QB side (we never mutate QB data). Populated by the gated
-        // supersede pass — inert until then.
+        // Non-destructive QuickBooks reconciliation guard: if this charge's
+        // payout was matched to an ALREADY-APPROVED QB net lump (a conflict
+        // awaiting the human's KEEP/REPLACE decision), minting a per-charge gift
+        // here would double-count. Block until that conflict is resolved in the
+        // reconciliation queue (we never mutate QB data). Set by the proposal
+        // pass; inert (unmatched) until a proposal lands on an approved lump.
         if (locked.stripePayoutId) {
           const payout = await tx
-            .select({ qb: stripePayouts.qbSupersedeStatus })
+            .select({ qb: stripePayouts.qbReconciliationStatus })
             .from(stripePayouts)
             .where(eq(stripePayouts.id, locked.stripePayoutId))
             .then((r) => r[0]);
@@ -517,6 +527,7 @@ router.post(
             {
               chargeId: locked.id,
               grossAmount: locked.grossAmount,
+              feeAmount: locked.feeAmount,
               dateReceived: locked.dateReceived,
               payerName: locked.payerName,
               description: locked.description,
@@ -872,6 +883,208 @@ router.get(
       consecutiveErrors: state?.consecutiveErrors ?? 0,
       payoutCreatedWatermark: state?.payoutCreatedWatermark ?? null,
     });
+  }),
+);
+
+// ─── Stripe payout ↔ QuickBooks reconciliation queue ───────────────────────
+// The proposal pass (stripeReconcile.ts) classifies each payout against the QB
+// deposit lumps; humans confirm/revert here (stripeConfirm.ts). This queue lists
+// payouts that need or have had a reconciliation decision. Nothing is excluded,
+// archived, or relinked until a human confirms — propose-then-confirm.
+
+type ReconQueue = "proposed" | "conflict" | "confirmed" | "all";
+const RECON_QUEUES = ["proposed", "conflict", "confirmed", "all"] as const;
+const CONFIRMED_STATUSES = [
+  "confirmed_excluded",
+  "confirmed_keep",
+  "confirmed_replace",
+] as const;
+
+function reconQueueWhere(queue: ReconQueue) {
+  switch (queue) {
+    case "proposed":
+      return eq(stripePayouts.qbReconciliationStatus, "proposed");
+    case "conflict":
+      return eq(stripePayouts.qbReconciliationStatus, "conflict_approved");
+    case "confirmed":
+      return inArray(stripePayouts.qbReconciliationStatus, [
+        ...CONFIRMED_STATUSES,
+      ]);
+    case "all":
+      return inArray(stripePayouts.qbReconciliationStatus, [
+        "proposed",
+        "conflict_approved",
+        ...CONFIRMED_STATUSES,
+      ]);
+  }
+}
+
+// The QB deposit currently relevant to the payout's state (matched once
+// confirmed, else the proposed/conflicting candidate), and the already-approved
+// gift a conflict would replace, joined read-only for display.
+const activeDeposit = alias(stagedPayments, "active_deposit");
+const conflictGift = alias(giftsAndPayments, "conflict_gift");
+const conflictOrg = alias(organizations, "conflict_org");
+const conflictHousehold = alias(households, "conflict_household");
+const conflictPerson = alias(people, "conflict_person");
+
+const reconSelect = {
+  ...getTableColumns(stripePayouts),
+  depositId: activeDeposit.id,
+  depositAmount: activeDeposit.amount,
+  depositDateReceived: activeDeposit.dateReceived,
+  depositPayerName: activeDeposit.payerName,
+  depositStatus: activeDeposit.status,
+  conflictGiftAmount: conflictGift.amount,
+  conflictGiftDate: conflictGift.dateReceived,
+  conflictGiftArchivedAt: conflictGift.archivedAt,
+  conflictGiftDonorName: sql<string | null>`
+    COALESCE(
+      ${conflictOrg.name},
+      ${conflictHousehold.name},
+      NULLIF(TRIM(${conflictPerson.fullName}), ''),
+      NULLIF(TRIM(CONCAT_WS(' ', ${conflictPerson.firstName}, ${conflictPerson.lastName})), '')
+    )
+  `.as("conflict_gift_donor_name"),
+};
+
+// ─── GET /stripe-payouts/reconciliation ────────────────────────────────────
+router.get(
+  "/stripe-payouts/reconciliation",
+  asyncHandler(async (req, res) => {
+    const raw =
+      typeof req.query["queue"] === "string" ? req.query["queue"] : "";
+    const queue: ReconQueue = (RECON_QUEUES as readonly string[]).includes(raw)
+      ? (raw as ReconQueue)
+      : "proposed";
+    const { limit, offset, page } = parsePagination(req.query);
+    const where = reconQueueWhere(queue);
+
+    const [rows, totalRow] = await Promise.all([
+      db
+        .select(reconSelect)
+        .from(stripePayouts)
+        .leftJoin(
+          activeDeposit,
+          sql`${activeDeposit.id} = COALESCE(${stripePayouts.matchedQbStagedPaymentId}, ${stripePayouts.proposedQbStagedPaymentId}, ${stripePayouts.qbConflictStagedPaymentId})`,
+        )
+        .leftJoin(conflictGift, eq(conflictGift.id, stripePayouts.qbConflictGiftId))
+        .leftJoin(conflictOrg, eq(conflictOrg.id, conflictGift.organizationId))
+        .leftJoin(
+          conflictHousehold,
+          eq(conflictHousehold.id, conflictGift.householdId),
+        )
+        .leftJoin(
+          conflictPerson,
+          eq(conflictPerson.id, conflictGift.individualGiverPersonId),
+        )
+        .where(where)
+        .orderBy(desc(stripePayouts.arrivalDate), desc(stripePayouts.id))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ value: count() })
+        .from(stripePayouts)
+        .where(where)
+        .then((r) => r[0]),
+    ]);
+
+    res.json({
+      data: rows,
+      pagination: { page, limit, total: totalRow?.value ?? 0 },
+    });
+  }),
+);
+
+// Map a stripeConfirm discriminated result onto an HTTP response. not_found →
+// 404; every other typed transition failure (stale state, charges booked) → 409.
+function respondReconResult(res: Response, result: ConfirmRevertResult): void {
+  if (result.ok) {
+    res.json(result);
+    return;
+  }
+  res
+    .status(result.code === "not_found" ? 404 : 409)
+    .json({ error: result.code, message: result.message });
+}
+
+// ─── POST /stripe-payouts/:id/confirm-exclude ──────────────────────────────
+// proposed → confirmed_excluded: keep the pending QB deposit lump but exclude it
+// (processor_payout) and link it to this payout.
+router.post(
+  "/stripe-payouts/:id/confirm-exclude",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    respondReconResult(
+      res,
+      await confirmPendingQbDeposit({ payoutId: paramId(req), userId: user.id }),
+    );
+  }),
+);
+
+// ─── POST /stripe-payouts/:id/confirm-keep ─────────────────────────────────
+// conflict_approved → confirmed_keep: the existing approved QB gift stands; we
+// only record the payout linkage. Touches no gift or deposit.
+router.post(
+  "/stripe-payouts/:id/confirm-keep",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    respondReconResult(
+      res,
+      await confirmKeepApprovedQbGift({ payoutId: paramId(req), userId: user.id }),
+    );
+  }),
+);
+
+// ─── POST /stripe-payouts/:id/confirm-replace ──────────────────────────────
+// conflict_approved → confirmed_replace: archive the coarse QB-derived lump gift
+// (kept, never deleted; allocations preserved), exclude the deposit, and unblock
+// the per-charge Stripe gift queue. Explicit, default-off in the UI.
+router.post(
+  "/stripe-payouts/:id/confirm-replace",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    respondReconResult(
+      res,
+      await confirmReplaceApprovedQbGift({
+        payoutId: paramId(req),
+        userId: user.id,
+      }),
+    );
+  }),
+);
+
+// ─── POST /stripe-payouts/:id/revert-reconciliation ────────────────────────
+// Undo a confirm back to its prior proposal state. A confirmed_replace revert is
+// refused (409 charges_already_booked) once any of the payout's Stripe charges
+// have been booked into a gift.
+router.post(
+  "/stripe-payouts/:id/revert-reconciliation",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    respondReconResult(
+      res,
+      await revertPayoutQbConfirmation({
+        payoutId: paramId(req),
+        userId: user.id,
+      }),
+    );
   }),
 );
 

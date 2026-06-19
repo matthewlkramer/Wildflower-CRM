@@ -10,6 +10,7 @@ import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
 import { scoreStripeCharge } from "./stripeMatch";
+import { runProposalPass } from "./stripeReconcile";
 
 function isUniqueViolation(e: unknown): boolean {
   return (
@@ -262,6 +263,162 @@ async function stripeAutoApply(
   }
 }
 
+/**
+ * Stage one payout: record its rollup (idempotent) and stage one review-queue
+ * row per settled charge (idempotent by charge id, preserving review state),
+ * reconcile-only auto-applying high-confidence matches. Shared by the ongoing
+ * sync and the historical backfill. `enrichAllStatuses` lifts the upsert status
+ * guard so a full re-pull refreshes read-only Stripe facts on already-resolved
+ * rows non-destructively (never touches review/reconciliation state).
+ */
+async function stagePayoutAndCharges(
+  stripe: Stripe,
+  accountId: string,
+  payout: Stripe.Payout,
+  opts: { enrichAllStatuses?: boolean } = {},
+): Promise<{ staged: number; matched: number; autoApplied: number }> {
+  let staged = 0;
+  let matched = 0;
+  let autoApplied = 0;
+
+  // All balance transactions that settled in this payout, charge sources
+  // expanded so we can read donor facts in one pass.
+  const bts: Stripe.BalanceTransaction[] = [];
+  for await (const bt of stripe.balanceTransactions.list({
+    payout: payout.id,
+    limit: 100,
+    expand: ["data.source"],
+  })) {
+    bts.push(bt);
+  }
+  const rollup = rollupPayout(bts);
+
+  await db
+    .insert(stripePayouts)
+    .values({
+      id: payout.id,
+      stripeAccountId: accountId,
+      amount: minorToAmount(payout.amount),
+      currency: payout.currency ?? null,
+      status: payout.status ?? null,
+      automatic: payout.automatic ?? null,
+      arrivalDate: payout.arrival_date
+        ? chargeDateReceived(payout.arrival_date)
+        : null,
+      payoutCreated: payout.created ? new Date(payout.created * 1000) : null,
+      grossTotal: rollup.grossTotal,
+      feeTotal: rollup.feeTotal,
+      refundTotal: rollup.refundTotal,
+      netTotal: rollup.netTotal,
+      chargeCount: rollup.chargeCount,
+      rawPayout: payout as unknown as Record<string, unknown>,
+    })
+    .onConflictDoUpdate({
+      target: stripePayouts.id,
+      set: {
+        amount: minorToAmount(payout.amount),
+        currency: payout.currency ?? null,
+        status: payout.status ?? null,
+        automatic: payout.automatic ?? null,
+        arrivalDate: payout.arrival_date
+          ? chargeDateReceived(payout.arrival_date)
+          : null,
+        grossTotal: rollup.grossTotal,
+        feeTotal: rollup.feeTotal,
+        refundTotal: rollup.refundTotal,
+        netTotal: rollup.netTotal,
+        chargeCount: rollup.chargeCount,
+        rawPayout: payout as unknown as Record<string, unknown>,
+        updatedAt: new Date(),
+      },
+    });
+
+  for (const bt of bts) {
+    if (bt.type !== "charge" && bt.type !== "payment") continue;
+    const charge = chargeFromSource(bt.source);
+    if (!charge) continue;
+
+    const facts = extractChargeFacts(charge);
+    const scored = await scoreStripeCharge({
+      payerName: facts.payerName,
+      payerEmail: facts.payerEmail,
+      description: facts.description,
+      statementDescriptor: facts.statementDescriptor,
+      grossAmount: facts.grossAmount,
+      dateReceived: facts.dateReceived,
+    });
+
+    const matchStatus =
+      scored.tier === "high"
+        ? "matched"
+        : scored.tier === "suggested"
+          ? "suggested"
+          : "unmatched";
+    const donor =
+      scored.tier !== "none"
+        ? scored.donor
+        : {
+            organizationId: null,
+            individualGiverPersonId: null,
+            householdId: null,
+          };
+
+    const inserted = await buildStagedChargeUpsert(
+      {
+        id: charge.id,
+        stripeAccountId: accountId,
+        stripePayoutId: payout.id,
+        stripeBalanceTransactionId: bt.id,
+        stripePaymentIntentId: facts.stripePaymentIntentId,
+        stripeCustomerId: facts.stripeCustomerId,
+        grossAmount: facts.grossAmount,
+        feeAmount: minorToAmount(bt.fee),
+        netAmount: minorToAmount(bt.net),
+        amountRefunded: facts.amountRefunded,
+        currency: facts.currency,
+        chargeCreated: facts.chargeCreated,
+        dateReceived: facts.dateReceived,
+        payerName: facts.payerName,
+        payerEmail: facts.payerEmail,
+        description: facts.description,
+        statementDescriptor: facts.statementDescriptor,
+        cardBrand: facts.cardBrand,
+        metadata: facts.metadata ?? undefined,
+        refunded: facts.refunded,
+        disputed: facts.disputed,
+        rawCharge: charge as unknown as Record<string, unknown>,
+        status: "pending",
+        classificationSource: "auto",
+        matchStatus,
+        matchScore: scored.method ? scored.score : null,
+        matchMethod: scored.method,
+        organizationId: donor.organizationId,
+        individualGiverPersonId: donor.individualGiverPersonId,
+        householdId: donor.householdId,
+        matchedPaymentIntermediaryId: scored.intermediaryId,
+      },
+      { enrichAllStatuses: opts.enrichAllStatuses },
+    ).returning({
+      id: stripeStagedCharges.id,
+      isInsert: sql<boolean>`(xmax = 0)`,
+    });
+
+    const newRow = inserted[0];
+    if (!newRow?.isInsert) continue;
+    staged += 1;
+    if (scored.method && scored.tier !== "none") matched += 1;
+
+    // Reconcile-only auto-apply (mirrors QuickBooks): link to the single
+    // existing gift when confident; never mint here.
+    if (scored.tier === "high" && scored.matchedGiftId) {
+      const did = await stripeAutoApply(charge.id, scored.matchedGiftId);
+      if (did) autoApplied += 1;
+    }
+  }
+
+  return { staged, matched, autoApplied };
+}
+
 // ── Sync worker ───────────────────────────────────────────────────────────
 
 /**
@@ -350,142 +507,12 @@ export async function syncStripe(
           maxCreated = payout.created;
         }
 
-        // All balance transactions that settled in this payout, charge sources
-        // expanded so we can read donor facts in one pass.
-        const bts: Stripe.BalanceTransaction[] = [];
-        for await (const bt of stripe.balanceTransactions.list({
-          payout: payout.id,
-          limit: 100,
-          expand: ["data.source"],
-        })) {
-          bts.push(bt);
-        }
-        const rollup = rollupPayout(bts);
-
-        await db
-          .insert(stripePayouts)
-          .values({
-            id: payout.id,
-            stripeAccountId: accountId,
-            amount: minorToAmount(payout.amount),
-            currency: payout.currency ?? null,
-            status: payout.status ?? null,
-            automatic: payout.automatic ?? null,
-            arrivalDate: payout.arrival_date
-              ? chargeDateReceived(payout.arrival_date)
-              : null,
-            payoutCreated: payout.created
-              ? new Date(payout.created * 1000)
-              : null,
-            grossTotal: rollup.grossTotal,
-            feeTotal: rollup.feeTotal,
-            refundTotal: rollup.refundTotal,
-            netTotal: rollup.netTotal,
-            chargeCount: rollup.chargeCount,
-            rawPayout: payout as unknown as Record<string, unknown>,
-          })
-          .onConflictDoUpdate({
-            target: stripePayouts.id,
-            set: {
-              amount: minorToAmount(payout.amount),
-              currency: payout.currency ?? null,
-              status: payout.status ?? null,
-              automatic: payout.automatic ?? null,
-              arrivalDate: payout.arrival_date
-                ? chargeDateReceived(payout.arrival_date)
-                : null,
-              grossTotal: rollup.grossTotal,
-              feeTotal: rollup.feeTotal,
-              refundTotal: rollup.refundTotal,
-              netTotal: rollup.netTotal,
-              chargeCount: rollup.chargeCount,
-              rawPayout: payout as unknown as Record<string, unknown>,
-              updatedAt: new Date(),
-            },
-          });
-
-        for (const bt of bts) {
-          if (bt.type !== "charge" && bt.type !== "payment") continue;
-          const charge = chargeFromSource(bt.source);
-          if (!charge) continue;
-
-          const facts = extractChargeFacts(charge);
-          const scored = await scoreStripeCharge({
-            payerName: facts.payerName,
-            payerEmail: facts.payerEmail,
-            description: facts.description,
-            statementDescriptor: facts.statementDescriptor,
-            grossAmount: facts.grossAmount,
-            dateReceived: facts.dateReceived,
-          });
-
-          const matchStatus =
-            scored.tier === "high"
-              ? "matched"
-              : scored.tier === "suggested"
-                ? "suggested"
-                : "unmatched";
-          const donor =
-            scored.tier !== "none"
-              ? scored.donor
-              : {
-                  organizationId: null,
-                  individualGiverPersonId: null,
-                  householdId: null,
-                };
-
-          const inserted = await buildStagedChargeUpsert(
-            {
-              id: charge.id,
-              stripeAccountId: accountId,
-              stripePayoutId: payout.id,
-              stripeBalanceTransactionId: bt.id,
-              stripePaymentIntentId: facts.stripePaymentIntentId,
-              stripeCustomerId: facts.stripeCustomerId,
-              grossAmount: facts.grossAmount,
-              feeAmount: minorToAmount(bt.fee),
-              netAmount: minorToAmount(bt.net),
-              amountRefunded: facts.amountRefunded,
-              currency: facts.currency,
-              chargeCreated: facts.chargeCreated,
-              dateReceived: facts.dateReceived,
-              payerName: facts.payerName,
-              payerEmail: facts.payerEmail,
-              description: facts.description,
-              statementDescriptor: facts.statementDescriptor,
-              cardBrand: facts.cardBrand,
-              metadata: facts.metadata ?? undefined,
-              refunded: facts.refunded,
-              disputed: facts.disputed,
-              rawCharge: charge as unknown as Record<string, unknown>,
-              status: "pending",
-              classificationSource: "auto",
-              matchStatus,
-              matchScore: scored.method ? scored.score : null,
-              matchMethod: scored.method,
-              organizationId: donor.organizationId,
-              individualGiverPersonId: donor.individualGiverPersonId,
-              householdId: donor.householdId,
-              matchedPaymentIntermediaryId: scored.intermediaryId,
-            },
-            { enrichAllStatuses: fullResync },
-          ).returning({
-            id: stripeStagedCharges.id,
-            isInsert: sql<boolean>`(xmax = 0)`,
-          });
-
-          const newRow = inserted[0];
-          if (!newRow?.isInsert) continue;
-          staged += 1;
-          if (scored.method && scored.tier !== "none") matched += 1;
-
-          // Reconcile-only auto-apply (mirrors QuickBooks): link to the single
-          // existing gift when confident; never mint here.
-          if (scored.tier === "high" && scored.matchedGiftId) {
-            const did = await stripeAutoApply(charge.id, scored.matchedGiftId);
-            if (did) autoApplied += 1;
-          }
-        }
+        const r = await stagePayoutAndCharges(stripe, accountId, payout, {
+          enrichAllStatuses: fullResync,
+        });
+        staged += r.staged;
+        matched += r.matched;
+        autoApplied += r.autoApplied;
       }
 
       const newWatermark =
@@ -522,6 +549,113 @@ export async function syncStripe(
   if (!outcome.ran) {
     return { ran: false, payouts: 0, staged: 0, matched: 0, autoApplied: 0 };
   }
+  return { ran: true, ...outcome.result! };
+}
+
+export interface StripeBackfillSummary {
+  ran: boolean;
+  payouts: number;
+  staged: number;
+  matched: number;
+  autoApplied: number;
+  proposed: number;
+  conflicts: number;
+  cleared: number;
+}
+
+/**
+ * Historical backfill. Pulls payouts CREATED within [from, to] (open-ended end
+ * when `to` is omitted), stages their charges + payout rollups with
+ * `enrichAllStatuses` (refresh read-only Stripe facts on already-staged rows
+ * without disturbing review state), then runs the payout↔QB-deposit proposal
+ * pass over exactly the payouts it touched.
+ *
+ * UNLIKE syncStripe this NEVER moves the ongoing watermark and never seeds sync
+ * state: it is a bounded, repeatable admin pull of the back-catalogue that the
+ * first-run watermark intentionally skipped, leaving the ongoing cursor exactly
+ * where it is. Advisory-locked per account under the "stripe" tag so it
+ * serializes with the ongoing sync (no nested lock around the proposal pass).
+ */
+export async function syncStripeBackfill(opts: {
+  from: Date;
+  to?: Date;
+}): Promise<StripeBackfillSummary> {
+  const empty: StripeBackfillSummary = {
+    ran: false,
+    payouts: 0,
+    staged: 0,
+    matched: 0,
+    autoApplied: 0,
+    proposed: 0,
+    conflicts: 0,
+    cleared: 0,
+  };
+
+  let client: { stripe: Stripe; accountId: string | null };
+  try {
+    client = await getUncachableStripeClient();
+  } catch (e) {
+    logger.debug({ err: e }, "Stripe backfill: connector unavailable, skipping");
+    return empty;
+  }
+  const { stripe, accountId } = client;
+  if (!accountId) {
+    logger.warn("Stripe backfill: no account id from connector, skipping");
+    return empty;
+  }
+
+  const fromSec = Math.floor(opts.from.getTime() / 1000);
+  const toSec = opts.to ? Math.floor(opts.to.getTime() / 1000) : null;
+
+  const outcome = await withSyncLock(accountId, "stripe", async () => {
+    let payoutsSeen = 0;
+    let staged = 0;
+    let matched = 0;
+    let autoApplied = 0;
+    const seenIds: string[] = [];
+
+    const params: Stripe.PayoutListParams = {
+      limit: 100,
+      created: toSec != null ? { gte: fromSec, lte: toSec } : { gte: fromSec },
+    };
+    for await (const payout of stripe.payouts.list(params)) {
+      payoutsSeen += 1;
+      seenIds.push(payout.id);
+      const r = await stagePayoutAndCharges(stripe, accountId, payout, {
+        enrichAllStatuses: true,
+      });
+      staged += r.staged;
+      matched += r.matched;
+      autoApplied += r.autoApplied;
+    }
+
+    const prop = seenIds.length
+      ? await runProposalPass(seenIds)
+      : { evaluated: 0, proposed: 0, conflicts: 0, cleared: 0 };
+
+    logger.info(
+      {
+        accountId,
+        payouts: payoutsSeen,
+        staged,
+        proposed: prop.proposed,
+        conflicts: prop.conflicts,
+      },
+      "Stripe backfill complete",
+    );
+
+    return {
+      payouts: payoutsSeen,
+      staged,
+      matched,
+      autoApplied,
+      proposed: prop.proposed,
+      conflicts: prop.conflicts,
+      cleared: prop.cleared,
+    };
+  });
+
+  if (!outcome.ran) return empty;
   return { ran: true, ...outcome.result! };
 }
 

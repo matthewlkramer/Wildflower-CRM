@@ -1,0 +1,415 @@
+Wildflower Revenue Extractor
+Purpose
+Read any source document representing money coming into Wildflower and pull out the fields the finance team needs to record the entry in QuickBooks Online (QBO). Output is a row in a weekly revenue tracker spreadsheet.
+
+The audience is finance and ops staff at a nonprofit who may not have a deep accounting background. Use plain English over jargon.
+
+Revenue Types
+The skill handles six revenue types. Identify which one applies before extracting fields — it affects which fields are relevant and whether restriction logic applies.
+
+Revenue Type	What it looks like	Restriction logic applies?
+Grant	Foundation grant agreement, award letter, grantee agreement	Yes
+Donation	Individual gift letter, stock donation notice, anonymous gift	Yes
+Invoice	Wildflower invoicing another org for hours/services (e.g., to a charter school)	No — earned revenue for services rendered
+Federal Reimbursement	CSP (Charter School Program) federal reimbursement notice	Usually No — reimbursement of already-incurred expenses, but flag if restricted to a project
+IRS Refund	Letter or notice from the IRS issuing a refund	No
+Intercompany Transfer	Transfer from a Wildflower-affiliated entity (Sunbeam, Sunlight Loan Fund)	Yes if the transfer is restricted to a purpose; otherwise No
+If you can't tell which type applies, ask the user before proceeding.
+
+Booking Amount: Contingencies vs. Scheduled Payments (IMPORTANT)
+This rule determines what goes in the Amount field when a grant or commitment has multiple payments. Read carefully — the auditor's treatment depends on getting this right.
+
+The core distinction is whether future payments are contingent or merely scheduled.
+
+Scheduled multi-payment grants (no contingencies)
+If a grant commits to multiple payments on a fixed schedule with no deliverables, milestones, matches, certifications, or other conditions required to unlock the future payments:
+
+Book the full commitment amount as the Amount in the row
+Add a flag in Questions/Flags telling the accountant to create an Accounts Receivable (AR) entry for the future payments. The accountants handle the AR mechanics — the tracker just calls it out
+Example flag wording: "Auditor treatment: full $300,000 booked as revenue. Accountant to create AR for $200,000 in future scheduled payments ($100,000 due 7/1/2027 and $100,000 due 7/1/2028)."
+Contingent multi-payment grants
+If any future payment is contingent on a deliverable, milestone, match, report, certification, or other condition:
+
+Book only the non-contingent portion as the Amount (the tranche being received now plus any other future tranches with no contingency)
+Do not book AR for the contingent portion
+Future contingent tranches become separate revenue entries when the contingency is met
+Add a flag in Questions/Flags describing the contingent portion and what triggers it
+Partial contingency
+A grant can mix both. Example: "$100K now, $100K next year unconditionally, $100K year three contingent on submitting an interim report."
+
+Book $200,000 now (the two non-contingent payments)
+Flag the accountant to create AR for the $100,000 second payment
+The contingent $100,000 becomes a separate row when earned
+What counts as a contingency
+Contingencies include but aren't limited to:
+
+A required match or certification of additional commitments raised
+An interim or final report that must be accepted before the next payment
+Achievement of a milestone, deliverable, or program outcome
+Discretionary review by the funder before release
+Any "contingent upon" or "subject to" language tied to a future payment
+What does NOT count as a contingency
+A simple future date with no other condition ("payable July 1, 2027")
+A multi-year payout schedule with no deliverables
+Routine acknowledgment of receipt or thank-you notes
+In all cases
+Regardless of which path applies, the full payment schedule and all relevant detail must still go in Payment Schedule (full description of all installments and conditions) and in Questions/Flags (the auditor treatment note for the accountant). Don't let the booked Amount be the only place the rest of the commitment shows up.
+
+Donations via Stripe and Donor Box (Two-Row Treatment)
+When a donation comes in through Stripe or Donor Box, the platform takes a processing fee. The source document (e.g., a Stripe transaction screenshot or Donor Box receipt) will explicitly break the payment into three lines:
+
+Payment amount (gross — what the donor gave)
+Fees (the platform's cut, shown as a negative)
+Net amount (what Wildflower actually receives in cash)
+Wildflower books these as two separate rows in the tracker:
+
+Row 1: Donation revenue (gross)
+Amount = gross payment amount (the full donor-facing number)
+Object Code = whatever the normal rules dictate based on payer type and restriction (usually 4000.1 or 4100.1 for individual donations, or the matching restricted/unrestricted account if the donation is for a fiscal sponsee — see "Fiscal Sponsee Gifts" below)
+All other fields (Name, Location, Memo, Restriction, etc.) follow normal donation rules
+Memo follows normal rules: restriction tag if restricted, plain descriptive sentence if not
+Row 2: Processing fee (expense)
+Amount = the fee as a positive number (e.g., 25.88) — this is an expense, not a negative revenue entry
+Object Code = 7003 All Other Expenditures:Bank Charges — processing fees are coded as a bank charge expense, not contra-revenue
+Name = same donor as Row 1
+Transaction Date = same date as Row 1
+Location = same as Row 1
+Memo/Description = "[Platform] processing fee on [donor name] donation of $[gross amount]." Do not include a restriction tag — Row 2 is an expense entry, not a revenue entry, so restriction tags don't apply.
+Revenue Type = Donation (for tracking purposes — the row is filed alongside the donation it relates to)
+Restriction Type = N/A (this is an expense row)
+Source File = same as Row 1
+Confirmation gate for Stripe/Donor Box donations
+Show both rows to the user during the confirmation gate, clearly labeled "Row 1 (gross donation)" and "Row 2 (fee)". The user approves both at once. After approval, write both rows to the tracker.
+
+Edge case: donor covers the fee
+Some platforms let donors voluntarily add the fee on top of their intended gift. Even in that case, always book gross + negative fee. Don't try to net it out.
+
+Workflow
+Intake (run this first, every time the skill triggers). Before doing anything else, check whether the user has already given you the information you need. If they have — great, skip ahead. If not, ask for it in a single message using clear options where possible. Specifically, you need to know:
+Their name (for the conversation; used for greeting only, not stored anywhere). Skip this question if they've already introduced themselves or if their name is otherwise obvious from context.
+What document(s) they want to process — confirm the uploaded file(s) or ask them to upload/paste if nothing is attached yet.
+Which weekly file to write to — if a tracker spreadsheet is uploaded, ask whether to append to it (current week) or roll it forward to a new week. If no tracker is uploaded, let them know you'll create a fresh one for the current week and confirm that's OK.
+Anything else they want you to know upfront — e.g., "all of these should be Radicle Hub," or "I'm processing 5 grants today."
+Use the ask_user_input_v0 tool if available so the user can tap options instead of typing. Keep the question count to a minimum — don't ask for things you can already see. After the user answers, proceed to step 1. Skip the intake entirely if the user's first message already provides all the needed info (e.g., they used the suggested first-message template, or they said something like "append this grant to last week's tracker, my name is Erica"). Don't ask questions you already have answers to — that's annoying.
+Get the source document into context. It may arrive as a PDF, .docx, or pasted text. If it's a PDF or .docx, read it from /mnt/user-data/uploads/ using the appropriate skill (pdf-reading or docx). If it's pasted text, use what's in context.
+Identify the revenue type using the table above. If a single upload contains multiple documents (e.g., several grant letters in one folder), process them one at a time, with a separate confirmation gate for each.
+Figure out which weekly file to use (see "Weekly File Handling" below) — but if you already covered this in intake, just proceed.
+Extract the fields for that revenue type (see "Field Schema" below). For anything missing or ambiguous, leave the value blank and add a note in Questions/Flags rather than guessing.
+Apply restriction logic if the revenue type calls for it. Capture the exact supporting sentence verbatim in Restriction Evidence. For revenue types where restriction doesn't apply (Invoice, IRS Refund, most Federal Reimbursements), leave restriction fields blank.
+Show the user every extracted field and get explicit sign-off before writing anything. This is a hard requirement. See "Confirmation Gate" below.
+After confirmation, write the row, save to /mnt/user-data/outputs/, and present it with present_files. Briefly note which file was updated.
+Field Schema
+The tracker is one sheet. The first six columns exactly mirror the QBO entry form (in QBO's order, using QBO's field names) so the accountant can read left-to-right and type directly into QBO without translating. Everything else is supporting context to the right.
+
+QBO fields (left side — these get entered into QBO)
+Column	Notes
+Object Code	The revenue account, e.g., 4100.2 Restricted Donations - Foundation. Must be one value from the closed Revenue Account list below. See "Revenue Account Mapping"
+Transaction Date	The date that should be entered in QBO. For grants, use the date of last signature on the agreement. For donations, use the date the gift was received. For invoices, the invoice date. For refunds, the refund notice date. Format YYYY-MM-DD
+Name	The payer — donor, foundation, school being invoiced, "IRS", "Sunbeam", etc. Same as "Source/Payer"
+Location	One value from the closed Location list below. Default Foundation General if unclear. See "Locations"
+Memo/Description	A 1–2 sentence summary of the purpose, written for an external audience (auditors, public reports). See "Memo Guidance"
+Amount	Numeric, USD. When there are multiple payments, see "Booking Amount: Contingencies vs. Scheduled Payments" — that rule governs what goes here.
+Supporting context (right side — relevant but extra)
+Column	Notes
+Revenue Type	Grant, Donation, Invoice, Federal Reimbursement, IRS Refund, Intercompany Transfer
+Title / Reference #	Grant title, invoice number, Docusign envelope ID, CSP grant ID, etc.
+Period Start	For grants/intercompany with a defined term, or invoice service period start. Blank for refunds and one-time gifts
+Period End	Same
+Payment Schedule	Free text. Single payment, installments, contingencies, due dates
+Restriction Type	Unrestricted / Purpose restricted / Time restricted / Both / Unclear / N/A
+Purpose (verbatim)	Exact language from the document describing what the funds are for. Blank if N/A. (This is the raw source for the Memo/Description — keep it intact for traceability)
+Suggested Class	Usually blank. Only Black Wildflowers or Charter when the location is the matching SPO. See "Class"
+Deferred Revenue?	Yes / No / N/A + one-line reason. See "Deferred Revenue Heuristic"
+Restriction Evidence	Exact sentence(s) from the document supporting the restriction call. Blank if N/A
+Questions/Flags	Anything missing, ambiguous, or worth a human checking
+Notes	Free text — anything the user wants to add. Leave blank unless the user provides something
+Source File	Filename for traceability
+Memo Guidance
+The Memo/Description field is critical: it appears in QBO and is read by auditors and external reviewers, not just internal staff. Treat it as a public-facing description.
+
+Format for restricted revenue: When Restriction Type is Purpose restricted, Time restricted, or Both, the memo MUST start with a restriction tag, then the descriptive sentence(s), then a closing sentence stating the time constraint if there is one.
+
+Restriction tag format:
+
+Purpose only → Restricted: Purpose.
+Time only → Restricted: Time.
+Both → Restricted: Time and Purpose.
+After the tag, write 1–2 descriptive sentences. If there's a time restriction, end with a short sentence stating the deadline (e.g., "Must be spent by June 30, 2026.").
+
+For unrestricted revenue, no tag — just the descriptive sentence(s).
+
+Example (restricted, both):
+
+Restricted: Time and Purpose. Foundation grant supporting Wildflower's work to enhance the quality, accessibility, and affordability of early learning services for young children, birth through age 5, and their families. Must be spent by June 30, 2026.
+
+Example (unrestricted):
+
+Unrestricted donation in support of Wildflower's mission.
+
+General rules:
+
+1–2 descriptive sentences (the restriction tag and deadline sentence don't count toward the limit but should still be brief)
+Descriptive but professional — should clearly convey what the funds are for
+Paraphrase from the Purpose (verbatim) text; don't copy verbatim if the original is long or oddly phrased
+Never mention internal uncertainty, missing information, or flags ("purpose unclear," "donor unknown," "needs review," etc.). Those go in Questions/Flags, not the memo
+Never include speculation, guesses, or anything not directly supported by the source document
+For anonymous donors, write the memo without naming the donor (e.g., "Unrestricted donation in support of Wildflower's mission") rather than writing "Anonymous donor"
+For invoices, describe the services rendered and the period (e.g., "Charter school support services provided to DCWPCS, July 2024–June 2025")
+For IRS refunds, keep it factual (e.g., "IRS refund of overpaid payroll taxes for [period]")
+For intercompany transfers, name the entity and purpose (e.g., "Intercompany transfer from Sunlight Loan Fund for loan servicing operations")
+More examples:
+
+Restricted grant for charter school work: "Restricted: Time and Purpose. Foundation grant supporting Wildflower's expansion of community Montessori microschools, including identification and training of co-founding educators. Must be spent by June 30, 2026."
+Anonymous unrestricted stock gift: "Unrestricted donation in support of Wildflower's mission."
+Services invoice: "Wildflower Foundation services provided July 2024–June 2025."
+When in doubt, lean concise and factual. The user will verify the memo at the confirmation gate.
+
+Revenue Accounts (closed list — used for Object Code)
+The Object Code field MUST be one of these exact values. Never invent an account code or name. If none fit, use 4099 Uncategorized Revenue and add a flag.
+
+4000.1 Unrestricted Donations - Individual
+4000.2 Unrestricted Donations - Foundation
+4000.3 Unrestricted Donations - Corporation
+4000.4 Unrestricted Donations - Governmental
+4010 Interest Earned
+4020 Services - Earned Income
+4099 Uncategorized Revenue
+4100.1 Restricted Donations - Individual
+4100.2 Restricted Donations - Foundation
+4100.3 Restricted Donations - Corporation
+4100.4 Restricted Donations - Governmental
+4102 Guaranty Revenue
+4300 Intercompany Donation Allocation
+4500 Loan Fund Servicing
+Revenue Account Mapping
+Use revenue type + restriction status + payer type to pick the account. The account is Restricted (4100.x) if Restriction Type is Purpose restricted, Time restricted, or Both. Otherwise it's Unrestricted (4000.x). The .x suffix matches the payer type.
+
+Situation	Account
+Donation/grant from individual, unrestricted	4000.1 Unrestricted Donations - Individual
+Donation/grant from individual, restricted	4100.1 Restricted Donations - Individual
+Foundation grant, unrestricted	4000.2 Unrestricted Donations - Foundation
+Foundation grant, restricted	4100.2 Restricted Donations - Foundation
+Corporate gift, unrestricted	4000.3 Unrestricted Donations - Corporation
+Corporate gift, restricted	4100.3 Restricted Donations - Corporation
+Government source (federal/state/local), unrestricted	4000.4 Unrestricted Donations - Governmental
+Government source, restricted (most CSP reimbursements fit here)	4100.4 Restricted Donations - Governmental
+Invoice for services Wildflower performed	4020 Services - Earned Income
+Interest income	4010 Interest Earned
+Intercompany transfer (Sunbeam, Sunlight Loan Fund)	4300 Intercompany Donation Allocation
+Loan fund servicing fee revenue	4500 Loan Fund Servicing
+Guaranty fee revenue	4102 Guaranty Revenue
+IRS refund or anything that doesn't fit	4099 Uncategorized Revenue + flag for human review
+For anonymous donations, treat as Individual unless the document indicates the donor is a foundation or corporation.
+
+Locations (closed list — used for Location)
+The Location field MUST be one of these exact values. Never invent a location. If unclear, use Foundation General (the default) and flag for review.
+
+Development
+Foundation General ← default when unclear
+Foundation Operations
+Hub - Colorado
+Hub - District of Columbia
+Hub - Mid-Atlantic
+Hub - Minnesota
+Hub - Puerto Rico
+Loans
+Radicle Hub
+School Support
+SPO_Seed Fund
+Spo- Black Wildflowers Fund
+Spo- Charter
+Spo- Tierra Indígena
+Location Mapping Hints
+Use cues from the document. Don't reach — when in doubt, default to Foundation General and flag.
+
+Document mentions a specific geography that maps to a Hub → use that Hub (e.g., DC charter school → Hub - District of Columbia; Minnesota school → Hub - Minnesota). New Mexico, Nevada, and other states without their own Hub → Foundation General and flag.
+Loan fund activity (servicing, interest, guaranty fees, intercompany from Sunlight Loan Fund) → Loans
+Charter school work, charter applications, charter pathways → Spo- Charter
+Black Wildflowers Fund references → Spo- Black Wildflowers Fund
+Seed Fund references → SPO_Seed Fund
+Tierra Indígena references → Spo- Tierra Indígena
+Development/fundraising operations → Development
+Radicle Hub references → Radicle Hub
+School support services billed to a school → School Support
+General operating support, unrestricted, or anything genuinely unclear → Foundation General
+Class (rarely used)
+Class is only used in two cases, and only when the matching location is also set:
+
+General Operations — when Location is Spo- Black Wildflowers Fund. This is the default and most-used class for BWF.
+General Operations — when Location is Spo- Charter. This is the default and most-used class for Charter.
+For all other locations (including the other fiscal sponsee locations Spo- Tierra Indígena and SPO_Seed Fund), leave Suggested Class blank.
+
+If a Black Wildflowers or Charter gift is for a clearly different sub-purpose than general operations, flag it in Questions/Flags and leave the class as General Operations for the user to override.
+
+Restriction Logic (Grants, Donations, Intercompany)
+Purpose restricted — the document says funds are "for," "to support," "to be used for," or names a specific school, program, geography, or fund.
+
+Time restricted — the document specifies a time frame, fiscal year, multi-year term, or payment schedule tied to dates.
+
+Both — both a stated use and a defined time frame.
+
+Unrestricted — "unrestricted," "general operating support," "at your discretion," with no time limits.
+
+Unclear — general, warm language with no instructions on use or period. Mark as Unclear and flag for review. Do not silently default to unrestricted.
+
+N/A — restriction logic doesn't apply (Invoice for services rendered, IRS Refund, unrestricted intercompany transfer for general operations, federal reimbursement of already-incurred expenses).
+
+Always capture the exact sentence(s) supporting the call in Restriction Evidence. Multiple sentences are fine — include both purpose and time evidence if relevant.
+
+Fiscal Sponsee Gifts (Always Restricted)
+Wildflower hosts several fiscal sponsees. Any revenue coming in for a fiscal sponsee is automatically treated as purpose-restricted to that sponsee, regardless of whether the donor wrote any restrictive language. The "purpose" in this case is the sponsee itself, even when the donor describes the gift as unrestricted or for general operations.
+
+Fiscal sponsees (this list mirrors the SPO locations):
+
+Black Wildflowers Fund → Location Spo- Black Wildflowers Fund
+Charter → Location Spo- Charter
+Tierra Indígena → Location Spo- Tierra Indígena
+Seed Fund → Location SPO_Seed Fund
+How to code a gift for a fiscal sponsee:
+
+Object Code → restricted account (4100.x matching payer type — e.g., 4100.1 for an individual donor giving to BWF)
+Location → the matching SPO location from the list above
+Suggested Class → see "Class" section. For BWF and Charter, use General Operations as the default. Tierra Indígena and Seed Fund don't use classes.
+Restriction Type → Purpose restricted (or Both if there's also a time element)
+Memo/Description → lead with the standard restriction tag, then describe as a gift to the sponsee. Example: "Restricted: Purpose. Donation directed to Black Wildflowers Fund, a Wildflower fiscal sponsee."
+Restriction Evidence → quote whatever in the document indicates the gift is for the sponsee (e.g., a Stripe description line, a "designate to" field on a Donor Box form, a memo on a check). If the document is silent on the restriction language but the gift is clearly directed to the sponsee, write: "Funds directed to [sponsee name], a Wildflower fiscal sponsee; treated as purpose-restricted to the sponsee per Wildflower policy."
+Purpose (verbatim) → same source language as Restriction Evidence where available
+This rule applies even when the donor wrote "unrestricted." A donor cannot make a gift to a fiscal sponsee unrestricted from Wildflower's perspective, because the restriction is the sponsee.
+
+Deferred Revenue Heuristic
+Mark Yes if any of:
+
+The grant/transfer period extends into a future fiscal year and funds are restricted to that period
+A payment is contingent on a future report, milestone, or deliverable
+The document explicitly references a multi-year term
+Mark No if:
+
+Funds are unrestricted and received in the current period
+Revenue is for services already performed (invoices, reimbursements of past expenses)
+IRS refund (recognized when received)
+Mark N/A only if the concept genuinely doesn't apply.
+
+Always add a one-line reason so a reviewer can sanity-check.
+
+Confirmation Gate
+Before writing any row, present every extracted field to the user and wait for explicit approval. The user should be able to scan the entry, catch mistakes, and either approve or correct it.
+
+Structure the confirmation message in two distinct sections so the user knows exactly what to scrutinize:
+
+QBO Entry Fields (verify these carefully) — show the six QBO fields first as their own block: Object Code, Transaction Date, Name, Location, Memo/Description, Amount. These are the fields that will actually be entered into QBO. Tell the user explicitly: "Please verify the QBO coding (Object Code, Location) and the Memo/Description before approving — these are the most important to get right."
+Supporting Context — show all the other extracted fields below the QBO block.
+Format both sections as clean readable lists (field name → value), one field per line, with blanks shown as (blank).
+
+Always pause for user confirmation, even if everything looks clean. Don't write the row until they say so.
+
+At the very top of the confirmation message, call out anything especially likely to need human input:
+
+Object Code couldn't be mapped cleanly and defaulted to 4099 Uncategorized Revenue
+Location defaulted to Foundation General because the document didn't clearly map to a specific location
+Memo/Description was hard to write because the source language was thin or vague
+Restriction Type is Unclear
+The revenue type itself was a judgment call
+Any required field couldn't be extracted from the document
+Don't bury these in the field list — put them above the QBO block so they get noticed.
+
+Then ask: "Want me to write this row, or change anything first?" Wait for the user. If they ask for edits, apply them and re-present the full updated entry for another round of approval. Only write once they've clearly said yes.
+
+After writing, mention that the user can add anything to the Notes column if they want — that column is theirs.
+
+Weekly File Handling
+The tracker is organized one file per week. Use the xlsx skill (/mnt/skills/public/xlsx/SKILL.md) for all reading and writing — read its SKILL.md first if you haven't recently.
+
+Filename convention: wildflower_revenue_YYYY-MM-DD.xlsx, where the date is the Monday of that week. If the user has established a different convention, follow theirs.
+
+Case A — Current week's file is uploaded (appending):
+
+Read it, confirm headers match the schema (extra columns are fine, leave blank for the new row)
+If headers diverge significantly, stop and ask the user how to proceed
+Append the new row, preserving all existing formatting
+Save to /mnt/user-data/outputs/ with the same filename
+Case B — Prior week's file is uploaded, this is a new week (rolling forward):
+
+Read the prior week's file
+Create a new file copying the prior file's structure exactly: same headers, column widths, header formatting, frozen panes, column order. Do not copy any data rows.
+Name the new file using the same convention, advanced to the current week's Monday date
+Add the new entry as the first data row
+Save to /mnt/user-data/outputs/
+Case C — No tracker uploaded at all:
+
+Create a fresh tracker from the schema above
+Filename: wildflower_revenue_YYYY-MM-DD.xlsx using this week's Monday
+Header row in bold, frozen top row, reasonable column widths (Purpose and Evidence columns wider since they hold sentences)
+Save to /mnt/user-data/outputs/
+Determining "this week": Use the current date from context. The week starts Monday. If the user explicitly tells you which week, use what they say.
+
+If the user is ambiguous about whether to append or roll forward (e.g., they upload last week's file with no instructions), ask before doing either. Don't guess.
+
+Communicating Results
+After the user confirms and you save the file, present it with present_files and write a brief note: which file was updated (or created), and a one-liner that the row was added. The user already saw all the field values during confirmation — no need to restate them.
+
+If the user wants to add another entry to the same week's file in the same conversation, append to the file you just saved.
+
+Edge Cases and Standing Rules
+These rules emerged from testing and are now canonical.
+
+DAF Donor Naming Convention
+When a gift comes through a Donor-Advised Fund (DAF), the source document may include multiple names: the DAF sponsor (e.g., "Fidelity Charitable"), a named fund (e.g., "William Downey Memorial Fund"), a donor advisor (the person who recommended the grant), and possibly an acknowledgment recipient.
+
+Always use the named fund as the Name field. If no named fund exists, use the donor advisor's name. Do not use the DAF sponsor (Fidelity, Schwab, Vanguard, etc.) as the name — that's the platform, not the donor.
+
+Tranche Payment Notifications Without the Original Agreement
+If a payment notification arrives (e.g., "your $80,000 payment is being processed") but the original grant agreement is not visible in the conversation:
+
+Flag the user in Questions/Flags that the original grant agreement should be retrieved to confirm the full commitment amount, restriction details, and whether this is a scheduled or contingent payment
+Book the tranche amount received rather than speculating about the full commitment
+Mark Deferred Revenue? as FLAG — review original agreement rather than guessing
+Proceed with what can be extracted from the notification, but call out the gaps clearly
+Do not invent details from memory or assumptions when the original agreement is missing.
+
+Puerto Rico Act 20/22/60 Pass-Through Donations
+Donations made under Puerto Rico Act 20, Act 22, or Act 60 tax programs that pass through Wildflower to a specific Wildflower school or affiliate are treated as:
+
+Restriction Type: Purpose restricted (the purpose is the named Puerto Rico school or program)
+Location: Hub - Puerto Rico
+Memo: Lead with Restricted: Purpose. then describe as a pass-through gift to the named school/program
+The FLAG Convention for Suspect Fields
+When a critical field value is suspect (e.g., a date that looks wrong, a name that doesn't match, an amount that seems inconsistent with the rest of the document), use the FLAG convention:
+
+Prefix the field value with FLAG (e.g., FLAG — date reads 2024 but document context suggests 2026)
+Highlight the cell yellow in the tracker (use the xlsx skill's yellow fill)
+Call it out explicitly at the top of the confirmation gate message
+The accountant must remove the FLAG and verify before entering into QBO
+Do not silently accept suspect data or let a questionable value pass without flagging it.
+
+Joint or Multi-Name Donors
+When a gift comes from two named individuals (e.g., "Janet & Roger Begin"), use both names in the Name field exactly as they appear on the document. Do not split into two rows.
+
+Tranche Payment as a Separate Revenue Entry
+When a tranche payment from a previously booked grant arrives (i.e., the original grant was already recorded, and this is a subsequent payment coming in):
+
+Do not re-book the full grant amount
+Book only the tranche amount as a new row with a note in Questions/Flags referencing the original grant entry
+In Memo/Description, note it is a tranche payment (e.g., "Second tranche of 2025 Fidelity Foundation grant, per agreement dated 2/25/2026")
+Flag the accountant to reconcile against the AR entry created when the full grant was originally booked
+Grant example:
+
+Type: Grant
+Source: Acme Foundation, $50,000 "to support the launch of Rain Lily Montessori in 2026"
+Restriction: Both (purpose: Rain Lily launch; time: 2026)
+Evidence: "We are pleased to award Wildflower Schools $50,000 to support the launch of Rain Lily Montessori in 2026."
+Deferred revenue: Yes — funds restricted to a future fiscal year
+Invoice example:
+
+Type: Invoice
+Source: DC Wildflower Public Charter School
+Total: $24,965 for 132.25 hours of staff time
+Period: 7/1/2024 – 6/30/2025
+Restriction: N/A (earned revenue for services rendered)
+Deferred revenue: No — services already performed
+Stock donation example:
+
+Type: Donation
+Source: Anonymous (donor requested anonymity)
+Total: $20,071.51 (stock sale proceeds)
+Restriction: Unclear → likely Unrestricted, but flag for review since no purpose stated
+Deferred revenue: No — gift received, no future period restriction

@@ -1,0 +1,359 @@
+import { db } from "@workspace/db";
+import { stripePayouts, stagedPayments } from "@workspace/db/schema";
+import { and, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { logger } from "./logger";
+import { withSyncLock } from "./syncLock";
+import { getUncachableStripeClient } from "./stripeClient";
+
+/**
+ * Stripe payout ↔ QuickBooks deposit-lump reconciliation (the audit join).
+ *
+ * A Stripe payout is the NET bank transfer for a batch of charges
+ * (Σ gross − Σ fees − Σ refunds). When the org also books that same transfer in
+ * QuickBooks, it lands as a single net DEPOSIT (one staged_payments row, payer
+ * "Stripe"). This module PROPOSES which QB deposit lump a payout corresponds to
+ * so a human can confirm the match in the reconciliation queue.
+ *
+ * It is PURELY a proposer: it only ever writes the proposal columns on
+ * stripe_payouts (qbReconciliationStatus / proposedQbStagedPaymentId /
+ * qbConflict*). It NEVER mutates a staged_payments / QuickBooks row — the QB
+ * side is only touched on explicit human confirm (see routes/stripe.ts). It also
+ * never overwrites a CONFIRMED payout (confirmed_excluded / confirmed_keep /
+ * confirmed_replace); those are out of scope on every pass.
+ */
+
+// ── Pure scoring (unit-testable, no DB) ───────────────────────────────────
+
+/** A Stripe payout reduced to the facts the scorer needs. */
+export interface PayoutForScore {
+  /** Net amount that hit the bank (major units, string). */
+  amount: string | null;
+  /** Rollup net (gross − fees − refunds); fallback when `amount` is null. */
+  netTotal: string | null;
+  /** Bank arrival date, "YYYY-MM-DD". */
+  arrivalDate: string | null;
+}
+
+/** A candidate QuickBooks deposit-lump staged row. */
+export interface QbDepositForScore {
+  id: string;
+  /** Deposit amount (major units, string). */
+  amount: string | null;
+  /** Deposit date, "YYYY-MM-DD". */
+  dateReceived: string | null;
+  payerName: string | null;
+  lineDescription: string | null;
+  qbTransactionMemo: string | null;
+  rawReference: string | null;
+  qbDepositToAccountName: string | null;
+  status: string;
+  matchedGiftId: string | null;
+  createdGiftId: string | null;
+  groupReconciledGiftId: string | null;
+}
+
+export interface PayoutQbScore {
+  score: number;
+  amountDiffCents: number;
+  dayDiff: number;
+  stripeSignal: boolean;
+  exactAmount: boolean;
+  reasons: string[];
+}
+
+/** How far the QB deposit date may sit from the payout arrival date. */
+export const RECONCILE_WINDOW_DAYS = 10;
+/** Amount diff (cents) treated as an exact match (penny rounding tolerance). */
+const EXACT_CENTS = 1;
+/** Near-amount band (cents) allowed only when there's a textual Stripe signal. */
+const NEAR_CENTS = 100;
+/** Minimum score required to surface a proposal. */
+export const MIN_PROPOSE_SCORE = 60;
+
+function toCents(s: string | null | undefined): number | null {
+  if (s == null) return null;
+  const n = Number(s);
+  if (Number.isNaN(n)) return null;
+  return Math.round(n * 100);
+}
+
+function dayDiff(a: string, b: string): number {
+  const da = Date.parse(`${a}T00:00:00Z`);
+  const dbb = Date.parse(`${b}T00:00:00Z`);
+  if (Number.isNaN(da) || Number.isNaN(dbb)) return Number.POSITIVE_INFINITY;
+  return Math.round(Math.abs(da - dbb) / 86_400_000);
+}
+
+function hasStripeSignal(c: QbDepositForScore): boolean {
+  const hay = [
+    c.payerName,
+    c.lineDescription,
+    c.qbTransactionMemo,
+    c.rawReference,
+    c.qbDepositToAccountName,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return hay.includes("stripe");
+}
+
+/** The CRM gift a QB deposit is already booked into, if any. Accepts any row
+ * carrying the three gift-link columns (the full scoring row is a superset). */
+export function candidateGiftId(c: {
+  matchedGiftId: string | null;
+  createdGiftId: string | null;
+  groupReconciledGiftId: string | null;
+}): string | null {
+  return c.createdGiftId ?? c.matchedGiftId ?? c.groupReconciledGiftId ?? null;
+}
+
+/**
+ * Score how well a QB deposit lump matches a Stripe payout. Returns null when
+ * the candidate is not eligible (out of date window, or an amount mismatch with
+ * no Stripe signal). Higher is better; the caller proposes the best candidate at
+ * or above MIN_PROPOSE_SCORE.
+ */
+export function scoreQbDepositCandidate(
+  payout: PayoutForScore,
+  c: QbDepositForScore,
+): PayoutQbScore | null {
+  const target = toCents(payout.amount) ?? toCents(payout.netTotal);
+  const cand = toCents(c.amount);
+  if (target == null || cand == null) return null;
+  if (!payout.arrivalDate || !c.dateReceived) return null;
+
+  const dd = dayDiff(payout.arrivalDate, c.dateReceived);
+  if (dd > RECONCILE_WINDOW_DAYS) return null;
+
+  const amountDiffCents = Math.abs(target - cand);
+  const exactAmount = amountDiffCents <= EXACT_CENTS;
+  const stripeSignal = hasStripeSignal(c);
+
+  // Eligibility: an exact amount, OR a near amount backed by a "Stripe" signal.
+  if (!exactAmount && !(stripeSignal && amountDiffCents <= NEAR_CENTS)) {
+    return null;
+  }
+
+  const reasons: string[] = [];
+  let score = 50;
+  if (exactAmount) {
+    score += 30;
+    reasons.push("amount matches exactly");
+  } else {
+    score -= Math.min(20, Math.floor(amountDiffCents / 5));
+    reasons.push(`amount differs by $${(amountDiffCents / 100).toFixed(2)}`);
+  }
+  if (stripeSignal) {
+    score += 20;
+    reasons.push('payer/memo mentions "Stripe"');
+  }
+  score -= dd;
+  reasons.push(dd === 0 ? "same deposit date" : `deposit ${dd}d from arrival`);
+
+  score = Math.max(0, Math.min(100, score));
+  return { score, amountDiffCents, dayDiff: dd, stripeSignal, exactAmount, reasons };
+}
+
+// ── DB proposal pass ──────────────────────────────────────────────────────
+
+export interface ProposalSummary {
+  evaluated: number;
+  proposed: number;
+  conflicts: number;
+  cleared: number;
+}
+
+const ADD_DAY_MS = 86_400_000;
+function shiftDate(isoDate: string, days: number): string {
+  const t = Date.parse(`${isoDate}T00:00:00Z`);
+  return new Date(t + days * ADD_DAY_MS).toISOString().slice(0, 10);
+}
+
+/** Payout reconciliation states that a proposal pass may (re)compute. */
+const REPROPOSABLE = ["unmatched", "proposed", "conflict_approved"] as const;
+
+/**
+ * Recompute payout↔deposit proposals over every NON-confirmed payout (optionally
+ * restricted to `payoutIds`). Idempotent: re-running yields the same proposals.
+ * Writes ONLY stripe_payouts proposal columns and guards `qb_reconciliation_status`
+ * in every UPDATE so a concurrent human confirm is never clobbered.
+ *
+ * Lock-free: callers already holding the per-account "stripe" advisory lock (the
+ * backfill / sync workers) call this directly; the public proposePayoutMatches()
+ * wrapper takes the lock for standalone (route-triggered) runs.
+ */
+export async function runProposalPass(
+  payoutIds?: string[],
+): Promise<ProposalSummary> {
+  const where =
+    payoutIds && payoutIds.length
+      ? and(
+          inArray(stripePayouts.qbReconciliationStatus, [...REPROPOSABLE]),
+          inArray(stripePayouts.id, payoutIds),
+        )
+      : inArray(stripePayouts.qbReconciliationStatus, [...REPROPOSABLE]);
+
+  const payouts = await db
+    .select({
+      id: stripePayouts.id,
+      amount: stripePayouts.amount,
+      netTotal: stripePayouts.netTotal,
+      arrivalDate: stripePayouts.arrivalDate,
+      status: stripePayouts.qbReconciliationStatus,
+    })
+    .from(stripePayouts)
+    .where(where);
+
+  // Deposit lumps already CONFIRMED-linked to a payout are taken — never propose
+  // them to another payout.
+  const takenRows = await db
+    .select({ id: stripePayouts.matchedQbStagedPaymentId })
+    .from(stripePayouts)
+    .where(isNotNull(stripePayouts.matchedQbStagedPaymentId));
+  const taken = new Set(takenRows.map((r) => r.id).filter(Boolean) as string[]);
+  // Within a single pass, never assign one deposit lump to two payouts.
+  const assigned = new Set<string>();
+
+  let proposed = 0;
+  let conflicts = 0;
+  let cleared = 0;
+
+  for (const p of payouts) {
+    const target = p.amount ?? p.netTotal;
+    let best: { c: QbDepositForScore; s: PayoutQbScore } | null = null;
+
+    if (target && p.arrivalDate) {
+      const fromStr = shiftDate(p.arrivalDate, -RECONCILE_WINDOW_DAYS);
+      const toStr = shiftDate(p.arrivalDate, RECONCILE_WINDOW_DAYS);
+      const cands = await db
+        .select({
+          id: stagedPayments.id,
+          amount: stagedPayments.amount,
+          dateReceived: stagedPayments.dateReceived,
+          payerName: stagedPayments.payerName,
+          lineDescription: stagedPayments.lineDescription,
+          qbTransactionMemo: stagedPayments.qbTransactionMemo,
+          rawReference: stagedPayments.rawReference,
+          qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
+          status: stagedPayments.status,
+          matchedGiftId: stagedPayments.matchedGiftId,
+          createdGiftId: stagedPayments.createdGiftId,
+          groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+        })
+        .from(stagedPayments)
+        .where(
+          and(
+            eq(stagedPayments.qbEntityType, "deposit"),
+            inArray(stagedPayments.status, ["pending", "approved"]),
+            gte(stagedPayments.dateReceived, fromStr),
+            lte(stagedPayments.dateReceived, toStr),
+            sql`abs(${stagedPayments.amount} - ${target}::numeric) <= 5.00`,
+          ),
+        );
+
+      for (const c of cands) {
+        if (taken.has(c.id) || assigned.has(c.id)) continue;
+        const s = scoreQbDepositCandidate(
+          { amount: p.amount, netTotal: p.netTotal, arrivalDate: p.arrivalDate },
+          c,
+        );
+        if (!s || s.score < MIN_PROPOSE_SCORE) continue;
+        if (
+          !best ||
+          s.score > best.s.score ||
+          (s.score === best.s.score &&
+            (s.amountDiffCents < best.s.amountDiffCents ||
+              (s.amountDiffCents === best.s.amountDiffCents &&
+                s.dayDiff < best.s.dayDiff)))
+        ) {
+          best = { c, s };
+        }
+      }
+    }
+
+    if (!best) {
+      // No eligible candidate — clear any stale proposal back to unmatched.
+      if (p.status !== "unmatched") {
+        const upd = await db
+          .update(stripePayouts)
+          .set({
+            qbReconciliationStatus: "unmatched",
+            proposedQbStagedPaymentId: null,
+            qbConflictStagedPaymentId: null,
+            qbConflictGiftId: null,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(stripePayouts.id, p.id),
+              inArray(stripePayouts.qbReconciliationStatus, [...REPROPOSABLE]),
+            ),
+          )
+          .returning({ id: stripePayouts.id });
+        if (upd.length) cleared += 1;
+      }
+      continue;
+    }
+
+    assigned.add(best.c.id);
+    const giftId = candidateGiftId(best.c);
+    const isConflict = best.c.status === "approved" && giftId != null;
+
+    const upd = await db
+      .update(stripePayouts)
+      .set({
+        qbReconciliationStatus: isConflict ? "conflict_approved" : "proposed",
+        proposedQbStagedPaymentId: best.c.id,
+        qbConflictStagedPaymentId: isConflict ? best.c.id : null,
+        qbConflictGiftId: isConflict ? giftId : null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(stripePayouts.id, p.id),
+          inArray(stripePayouts.qbReconciliationStatus, [...REPROPOSABLE]),
+        ),
+      )
+      .returning({ id: stripePayouts.id });
+
+    if (upd.length) {
+      if (isConflict) conflicts += 1;
+      else proposed += 1;
+    }
+  }
+
+  return { evaluated: payouts.length, proposed, conflicts, cleared };
+}
+
+export interface ProposePayoutMatchesResult extends ProposalSummary {
+  ran: boolean;
+}
+
+/**
+ * Standalone (route-triggered) proposal pass. Takes the per-account "stripe"
+ * advisory lock so it serializes against the sync / backfill workers, then runs
+ * runProposalPass. A no-op (ran:false) when the Stripe connector is unavailable.
+ */
+export async function proposePayoutMatches(opts: {
+  payoutIds?: string[];
+} = {}): Promise<ProposePayoutMatchesResult> {
+  let accountId: string | null;
+  try {
+    ({ accountId } = await getUncachableStripeClient());
+  } catch (e) {
+    logger.debug({ err: e }, "Stripe reconcile: connector unavailable, skipping");
+    return { ran: false, evaluated: 0, proposed: 0, conflicts: 0, cleared: 0 };
+  }
+  if (!accountId) {
+    return { ran: false, evaluated: 0, proposed: 0, conflicts: 0, cleared: 0 };
+  }
+
+  const outcome = await withSyncLock(accountId, "stripe", () =>
+    runProposalPass(opts.payoutIds),
+  );
+  if (!outcome.ran) {
+    return { ran: false, evaluated: 0, proposed: 0, conflicts: 0, cleared: 0 };
+  }
+  return { ran: true, ...outcome.result! };
+}

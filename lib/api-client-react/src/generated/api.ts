@@ -158,6 +158,7 @@ import type {
   ListSchoolsParams,
   ListStagedPaymentGiftWindowParams,
   ListStagedPaymentsParams,
+  ListStripePayoutReconciliationsParams,
   ListStripeStagedChargesParams,
   ListTasksParams,
   ListTrackedEmailsByContactParams,
@@ -236,6 +237,8 @@ import type {
   StagedPayment,
   StagedPaymentList,
   StagedPaymentSummary,
+  StripePayoutReconciliationList,
+  StripePayoutReconciliationResult,
   StripeRematchSummary,
   StripeStagedCharge,
   StripeStagedChargeList,
@@ -14375,6 +14378,470 @@ export const useRevertStripeStagedCharge = <
   TContext
 > => {
   return useMutation(getRevertStripeStagedChargeMutationOptions(options));
+};
+
+/**
+ * @summary List Stripe payouts by their QuickBooks reconciliation state (proposals to confirm, conflicts to resolve, or already-confirmed), with the active QB deposit lump and any conflicting approved gift joined for display.
+ */
+export const getListStripePayoutReconciliationsUrl = (
+  params?: ListStripePayoutReconciliationsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/stripe-payouts/reconciliation?${stringifiedParams}`
+    : `/api/stripe-payouts/reconciliation`;
+};
+
+export const listStripePayoutReconciliations = async (
+  params?: ListStripePayoutReconciliationsParams,
+  options?: RequestInit,
+): Promise<StripePayoutReconciliationList> => {
+  return customFetch<StripePayoutReconciliationList>(
+    getListStripePayoutReconciliationsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListStripePayoutReconciliationsQueryKey = (
+  params?: ListStripePayoutReconciliationsParams,
+) => {
+  return [
+    `/api/stripe-payouts/reconciliation`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListStripePayoutReconciliationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStripePayoutReconciliations>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListStripePayoutReconciliationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStripePayoutReconciliations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListStripePayoutReconciliationsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listStripePayoutReconciliations>>
+  > = ({ signal }) =>
+    listStripePayoutReconciliations(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listStripePayoutReconciliations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListStripePayoutReconciliationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listStripePayoutReconciliations>>
+>;
+export type ListStripePayoutReconciliationsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List Stripe payouts by their QuickBooks reconciliation state (proposals to confirm, conflicts to resolve, or already-confirmed), with the active QB deposit lump and any conflicting approved gift joined for display.
+ */
+
+export function useListStripePayoutReconciliations<
+  TData = Awaited<ReturnType<typeof listStripePayoutReconciliations>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListStripePayoutReconciliationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStripePayoutReconciliations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListStripePayoutReconciliationsQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Confirm a proposed payout↔QB-deposit match — exclude the deposit lump (processor_payout, kept and linked, never deleted) and unblock the per-charge Stripe gift queue.
+ */
+export const getConfirmStripePayoutExcludeUrl = (id: string) => {
+  return `/api/stripe-payouts/${id}/confirm-exclude`;
+};
+
+export const confirmStripePayoutExclude = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StripePayoutReconciliationResult> => {
+  return customFetch<StripePayoutReconciliationResult>(
+    getConfirmStripePayoutExcludeUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getConfirmStripePayoutExcludeMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStripePayoutExclude>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmStripePayoutExclude>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["confirmStripePayoutExclude"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmStripePayoutExclude>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return confirmStripePayoutExclude(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConfirmStripePayoutExcludeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmStripePayoutExclude>>
+>;
+
+export type ConfirmStripePayoutExcludeMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Confirm a proposed payout↔QB-deposit match — exclude the deposit lump (processor_payout, kept and linked, never deleted) and unblock the per-charge Stripe gift queue.
+ */
+export const useConfirmStripePayoutExclude = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStripePayoutExclude>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof confirmStripePayoutExclude>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getConfirmStripePayoutExcludeMutationOptions(options));
+};
+
+/**
+ * @summary Resolve a conflict by keeping the already-approved QuickBooks gift — record only the payout linkage, touching no gift or deposit.
+ */
+export const getConfirmStripePayoutKeepUrl = (id: string) => {
+  return `/api/stripe-payouts/${id}/confirm-keep`;
+};
+
+export const confirmStripePayoutKeep = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StripePayoutReconciliationResult> => {
+  return customFetch<StripePayoutReconciliationResult>(
+    getConfirmStripePayoutKeepUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getConfirmStripePayoutKeepMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStripePayoutKeep>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmStripePayoutKeep>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["confirmStripePayoutKeep"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmStripePayoutKeep>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return confirmStripePayoutKeep(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConfirmStripePayoutKeepMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmStripePayoutKeep>>
+>;
+
+export type ConfirmStripePayoutKeepMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Resolve a conflict by keeping the already-approved QuickBooks gift — record only the payout linkage, touching no gift or deposit.
+ */
+export const useConfirmStripePayoutKeep = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStripePayoutKeep>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof confirmStripePayoutKeep>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getConfirmStripePayoutKeepMutationOptions(options));
+};
+
+/**
+ * @summary Resolve a conflict by replacing the coarse QB-derived lump gift — archive it (kept, allocations preserved, never deleted), exclude the deposit, and unblock the per-charge Stripe gift queue. Explicit, default-off in the UI.
+ */
+export const getConfirmStripePayoutReplaceUrl = (id: string) => {
+  return `/api/stripe-payouts/${id}/confirm-replace`;
+};
+
+export const confirmStripePayoutReplace = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StripePayoutReconciliationResult> => {
+  return customFetch<StripePayoutReconciliationResult>(
+    getConfirmStripePayoutReplaceUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getConfirmStripePayoutReplaceMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStripePayoutReplace>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmStripePayoutReplace>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["confirmStripePayoutReplace"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmStripePayoutReplace>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return confirmStripePayoutReplace(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConfirmStripePayoutReplaceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmStripePayoutReplace>>
+>;
+
+export type ConfirmStripePayoutReplaceMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Resolve a conflict by replacing the coarse QB-derived lump gift — archive it (kept, allocations preserved, never deleted), exclude the deposit, and unblock the per-charge Stripe gift queue. Explicit, default-off in the UI.
+ */
+export const useConfirmStripePayoutReplace = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStripePayoutReplace>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof confirmStripePayoutReplace>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getConfirmStripePayoutReplaceMutationOptions(options));
+};
+
+/**
+ * @summary Undo a confirmed payout reconciliation back to its prior proposal state. Refused once any of the payout's Stripe charges have been booked into a gift.
+ */
+export const getRevertStripePayoutReconciliationUrl = (id: string) => {
+  return `/api/stripe-payouts/${id}/revert-reconciliation`;
+};
+
+export const revertStripePayoutReconciliation = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StripePayoutReconciliationResult> => {
+  return customFetch<StripePayoutReconciliationResult>(
+    getRevertStripePayoutReconciliationUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRevertStripePayoutReconciliationMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revertStripePayoutReconciliation>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof revertStripePayoutReconciliation>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["revertStripePayoutReconciliation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revertStripePayoutReconciliation>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return revertStripePayoutReconciliation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevertStripePayoutReconciliationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revertStripePayoutReconciliation>>
+>;
+
+export type RevertStripePayoutReconciliationMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Undo a confirmed payout reconciliation back to its prior proposal state. Refused once any of the payout's Stripe charges have been booked into a gift.
+ */
+export const useRevertStripePayoutReconciliation = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revertStripePayoutReconciliation>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof revertStripePayoutReconciliation>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getRevertStripePayoutReconciliationMutationOptions(options),
+  );
 };
 
 /**

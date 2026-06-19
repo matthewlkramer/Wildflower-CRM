@@ -36,6 +36,13 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   dateReceived: date("date_received"),
   paymentMethod: giftPaymentMethodEnum("payment_method"),
   amount: numeric("amount", { precision: 14, scale: 2 }),
+  // Processor fee withheld from this gift (e.g. Stripe's per-charge fee). The
+  // donor is ALWAYS credited the GROSS `amount`; this column records the fee so
+  // net (= amount − processor_fee) can be DERIVED for payout / bank-deposit
+  // reconciliation. Never stored as a separate net column to avoid drift. NULL
+  // for gifts with no processor fee (checks, wires, manual entries, and
+  // QuickBooks-sourced gifts).
+  processorFee: numeric("processor_fee", { precision: 14, scale: 2 }),
   // RESTRICT: the organization is the giver of record.
   organizationId: text("organization_id").references(() => organizations.id, {
     onDelete: "restrict",

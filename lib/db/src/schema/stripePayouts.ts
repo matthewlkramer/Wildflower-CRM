@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { stagedPayments } from "./stagedPayments";
 import { giftsAndPayments } from "./giftsAndPayments";
+import { users } from "./users";
 
 /**
  * One row per Stripe payout (the bank transfer Stripe makes to the org).
@@ -56,8 +57,13 @@ export const stripePayouts = pgTable(
     chargeCount: integer("charge_count"),
 
     // ── Non-destructive QuickBooks supersede audit ──────────────────────
+    // DEPRECATED: the original auto-supersede model. Superseded by the
+    // human-confirmed `qbReconciliationStatus` flow below; retained (not
+    // dropped) so historical rows keep their value. Do not write to it on the
+    // new path.
     qbSupersedeStatus: text("qb_supersede_status").notNull().default("none"),
-    // The QB staged row this payout corresponds to, when auto-excluded.
+    // The QB staged row this payout is CONFIRMED-matched to (the net-payout
+    // lump). Set when a human confirms the match in the reconciliation queue.
     matchedQbStagedPaymentId: text("matched_qb_staged_payment_id").references(
       () => stagedPayments.id,
       { onDelete: "set null" },
@@ -72,6 +78,43 @@ export const stripePayouts = pgTable(
       { onDelete: "set null" },
     ),
 
+    // ── Human-confirmed Stripe↔QuickBooks reconciliation ────────────────
+    // The system PROPOSES a payout↔deposit match; a human confirms it in the
+    // reconciliation queue. Nothing on the QB side changes until confirm.
+    //   unmatched          — no proposal yet
+    //   proposed           — a candidate QB deposit lump was proposed (stored in
+    //                        proposedQbStagedPaymentId); awaiting human review
+    //   confirmed_excluded — confirmed against a PENDING QB lump; that lump is
+    //                        now excluded (processor_payout) + linked
+    //   confirmed_keep     — confirmed against an ALREADY-APPROVED QB gift; the
+    //                        existing gift was kept, just linked for audit
+    //   confirmed_replace  — confirmed against an already-approved QB gift that
+    //                        the human chose to REPLACE (old gift archived; the
+    //                        per-charge gross Stripe gifts are now the record)
+    //   conflict_approved  — proposal landed on an already-approved QB gift and
+    //                        is awaiting the human's KEEP/REPLACE decision
+    qbReconciliationStatus: text("qb_reconciliation_status")
+      .$type<
+        | "unmatched"
+        | "proposed"
+        | "confirmed_excluded"
+        | "confirmed_keep"
+        | "confirmed_replace"
+        | "conflict_approved"
+      >()
+      .notNull()
+      .default("unmatched"),
+    // The QB staged row PROPOSED as this payout's net-deposit lump (pre-confirm).
+    proposedQbStagedPaymentId: text(
+      "proposed_qb_staged_payment_id",
+    ).references(() => stagedPayments.id, { onDelete: "set null" }),
+    qbReconciliationConfirmedByUserId: text(
+      "qb_reconciliation_confirmed_by_user_id",
+    ).references(() => users.id, { onDelete: "set null" }),
+    qbReconciliationConfirmedAt: timestamp("qb_reconciliation_confirmed_at", {
+      withTimezone: true,
+    }),
+
     rawPayout: jsonb("raw_payout"),
 
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -81,6 +124,9 @@ export const stripePayouts = pgTable(
     index("stripe_payouts_account_idx").on(t.stripeAccountId),
     index("stripe_payouts_arrival_date_idx").on(t.arrivalDate),
     index("stripe_payouts_supersede_status_idx").on(t.qbSupersedeStatus),
+    index("stripe_payouts_qb_reconciliation_status_idx").on(
+      t.qbReconciliationStatus,
+    ),
   ],
 );
 

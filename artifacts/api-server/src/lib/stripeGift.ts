@@ -16,6 +16,8 @@ export interface StripeStagedGiftSource {
   chargeId: string;
   /** GROSS charge amount, major units (string). */
   grossAmount: string | null;
+  /** Processor (Stripe) fee withheld from this charge, major units (string). */
+  feeAmount: string | null;
   dateReceived: string | null;
   payerName: string | null;
   description: string | null;
@@ -36,6 +38,9 @@ export function buildGiftValuesFromStripeCharge(
     id: giftId,
     name,
     amount: staged.grossAmount,
+    // Donor is credited GROSS; the processor fee is recorded separately so net
+    // (= amount − processor_fee) can be derived for payout reconciliation.
+    processorFee: staged.feeAmount,
     dateReceived: staged.dateReceived,
     organizationId: staged.organizationId,
     individualGiverPersonId: staged.individualGiverPersonId,
