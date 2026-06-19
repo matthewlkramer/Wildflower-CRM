@@ -71,3 +71,4 @@
 - [Missing workspace symlink reads as TS2307](workspace-symlink-ts2307.md) — leaf typecheck "Cannot find module '@workspace/x'" = dropped pnpm symlink (run pnpm install), NOT stale lib decls; TS2305 is the stale-decl case.
 - [Loan-capital fundraising category](loan-capital-fundraising-category.md) — revenue vs loan_capital is a parallel analytics track never mixed; opp fundraisingCategory + goal PK includes category; all legacy data = revenue.
 - [Audit log recording model](audit-log-recording-model.md) — atomic recordAudit(tx) for in-tx writes (archive/bulk/merge); non-throwing safeRecordAudit after standalone create/PATCH so audit never breaks a save; admin-gated.
+- [Stripe restricted live key vs connector](stripe-restricted-key.md) — STRIPE_RESTRICTED_KEY (rk_live) preferred over test-only connector; account id regexed from KYC-scope error; backfill never seeds sync_state.

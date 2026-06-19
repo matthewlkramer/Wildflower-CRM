@@ -1,6 +1,6 @@
 import { logger } from "./logger";
 import { syncStripe } from "./stripeSync";
-import { stripeConnectorAvailable } from "./stripeClient";
+import { stripeConfigured } from "./stripeClient";
 
 /**
  * In-process scheduler for the ongoing one-way Stripe payout pull. Like the
@@ -33,10 +33,11 @@ export function startStripeSyncScheduler(): void {
     logger.info("Stripe sync scheduler disabled via DISABLE_STRIPE_SYNC=1");
     return;
   }
-  // No connector in this environment → nothing to pull; stay a no-op.
-  if (!stripeConnectorAvailable()) {
+  // Neither a restricted key nor a connector in this environment → nothing to
+  // pull; stay a no-op.
+  if (!stripeConfigured()) {
     logger.info(
-      "Stripe sync scheduler: connector unavailable, not scheduling",
+      "Stripe sync scheduler: no restricted key or connector, not scheduling",
     );
     return;
   }

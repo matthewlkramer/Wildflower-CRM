@@ -23,6 +23,16 @@ INCREMENTAL — each project that finishes writes its `.tsbuildinfo`. So:
 finish, generate per-target with temp single-target configs + `prettier:false`,
 then run prettier separately (delete the temp configs after).
 
+**Running a real app function as a one-off (DB-touching verification):** do NOT
+`npx tsx` a script that imports the full app graph (DB pool + pino workers) — cold
+runtime TS compilation of the whole graph blows past the foreground cap and the
+process gets reaped with NO output and no DB writes. Instead bundle it like the
+server's own `build.mjs`: temporarily add your one-off entry to that file's
+`entryPoints`, run `node build.mjs` (esbuild bundle, fast even at ~1-4mb), then
+`node dist/<entry>.mjs`. A bundled `.mjs` cold-starts in seconds (no runtime tsc)
+and shares the dev DB. Revert the `build.mjs` entry + delete the temp src/dist
+files when done. This is how Stripe restricted-key data was verified end-to-end.
+
 **e2e `runTest`:** can exceed the 600s `code_execution` hard cap purely from
 throttling even WITH `testClerkAuth: true` (the SubagentSession child workflow
 times out StartToClose). When that happens it is an ENVIRONMENT block, not a code
