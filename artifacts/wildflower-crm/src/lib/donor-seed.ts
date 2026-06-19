@@ -168,3 +168,70 @@ export function trimToEssentialName(name: string): string {
   if (kept.length === 0) return cleaned;
   return kept.join(" ");
 }
+
+// Heuristic for an UNMATCHED payer name (no CRM donor type to trust): treat it
+// as an organization when it carries a generic org / legal suffix word
+// (Foundation, Fund, Trust, Inc, LLC, ...), otherwise as a person. "The" alone
+// is ignored — it is too weak a signal and a formal personal/household name
+// ("The Smith Family") should still seed a surname. Names with no suffix word
+// (most individuals, e.g. "Kathleen Rash") fall through to the person rule so the
+// LAST name is seeded rather than the first.
+export function looksLikeOrgName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return name
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .some((w) => {
+      const t = w.toLowerCase().replace(/[.,]+$/, "");
+      return t !== "the" && GENERIC_ORG_WORDS.has(t);
+    });
+}
+
+// "and" / "&" between names signals a person-named entity ("Bill and Melinda
+// Gates Foundation", "Nic and Lindsey Barnes") — the distinctive word is then a
+// trailing surname, not a leading given name.
+function isConnectorToken(token: string): boolean {
+  return /^(?:and|&)$/i.test(token.replace(/[.,]+$/, ""));
+}
+
+// The last "meaningful" token of a name — the surname for a person/household.
+// Skips trailing connectors ("and"/"&") and bare initials ("Constance G" → the
+// "G" is skipped so we fall back to "Constance") so the seed is a real word.
+function lastMeaningfulToken(tokens: string[]): string {
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const t = tokens[i].replace(/[.,]+$/, "");
+    if (!t || isConnectorToken(t) || t.length <= 1) continue;
+    return t;
+  }
+  return tokens[tokens.length - 1].replace(/[.,]+$/, "");
+}
+
+// Reduce a donor name to the SINGLE most search-effective word. The reconciler's
+// gift search is a loose free-text match, so multi-word seeds (formal org names,
+// full personal names) often fail to surface the gift recorded under a shorter
+// donor name. We seed exactly one word:
+//   - person / household → the LAST name (last meaningful token):
+//       "Kathleen Rash" → "Rash", "Nic and Lindsey Barnes" → "Barnes".
+//   - organization → its CORE / brand word: the first token after dropping
+//     generic org words ("Walton Family Foundation" → "Walton",
+//     "CityBridge Foundation" → "CityBridge"), EXCEPT a person-named foundation
+//     (contains "and"/"&"), which seeds the surname instead
+//     ("Bill and Melinda Gates Foundation" → "Gates").
+// Single-word / empty inputs are returned unchanged. The search box stays
+// editable, so an imperfect guess is always recoverable.
+export function essentialSearchToken(
+  name: string,
+  kind: "person" | "org",
+): string {
+  const cleaned = trimToEssentialName(name).replace(/\s+/g, " ").trim();
+  if (!cleaned) return name;
+  const tokens = cleaned.split(" ");
+  if (tokens.length <= 1) return cleaned.replace(/[.,]+$/, "");
+  // Organizations lead with their brand word, unless the name is person-derived
+  // ("... and ..."), in which case the surname trails.
+  if (kind === "org" && !tokens.some(isConnectorToken)) {
+    return tokens[0].replace(/[.,]+$/, "");
+  }
+  return lastMeaningfulToken(tokens);
+}

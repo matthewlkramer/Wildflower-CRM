@@ -74,8 +74,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   looksLikeIntermediary,
+  looksLikeOrgName,
   donorNameFromMemo,
-  trimToEssentialName,
+  essentialSearchToken,
 } from "@/lib/donor-seed";
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -189,13 +190,26 @@ function donorNameFromRow(row: StagedPayment): string | null {
 
 // Best guess at the donor name to seed the gift search with: trust the matched
 // donor / payer unless it looks like a payment intermediary (or is empty), in
-// which case dig the real donor out of the memo / line description. The final
-// seed is trimmed to its essential token(s) (generic org words dropped) to
-// improve matching — e.g. "CityBridge Foundation" → "CityBridge". The search box
-// stays editable, so an imperfect guess is always recoverable.
+// which case dig the real donor out of the memo / line description. The seed is
+// then reduced to a SINGLE word — a person's last name or an org's core/brand
+// word — because the gift search is a loose free-text match and extra words make
+// it miss (e.g. "Bill and Melinda Gates Foundation" → "Gates", "Kathleen Rash"
+// → "Rash"). The search box stays editable, so an imperfect guess is recoverable.
 function donorSearchSeed(row: StagedPayment): string {
-  const base = donorNameFromRow(row) ?? row.payerName ?? "";
+  const matchedName = donorNameFromRow(row);
+  const base = matchedName ?? row.payerName ?? "";
   let seed = base;
+  // A matched donor carries its CRM type; an unmatched payer name is classified
+  // by shape (org suffix word ⇒ org, else person — so an unmatched individual
+  // still seeds a last name); a donor recovered from a memo is an individual.
+  let kind: "person" | "org" =
+    matchedName != null
+      ? donorTypeFromRow(row) === "organization"
+        ? "org"
+        : "person"
+      : looksLikeOrgName(base)
+        ? "org"
+        : "person";
   if (
     base === "" ||
     looksLikeIntermediary(base) ||
@@ -204,9 +218,12 @@ function donorSearchSeed(row: StagedPayment): string {
     const fromMemo =
       donorNameFromMemo(row.lineDescription) ??
       donorNameFromMemo(row.rawReference);
-    if (fromMemo) seed = fromMemo;
+    if (fromMemo) {
+      seed = fromMemo;
+      kind = "person";
+    }
   }
-  return trimToEssentialName(seed);
+  return essentialSearchToken(seed, kind);
 }
 
 function giftDonorName(g: GiftOrPayment): string | null {

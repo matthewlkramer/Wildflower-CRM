@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   looksLikeIntermediary,
+  looksLikeOrgName,
   donorNameFromMemo,
   trimToEssentialName,
+  essentialSearchToken,
 } from "./donor-seed";
 
 describe("looksLikeIntermediary", () => {
@@ -137,5 +139,76 @@ describe("trimToEssentialName", () => {
 
   it("returns the input unchanged when empty", () => {
     expect(trimToEssentialName("")).toBe("");
+  });
+});
+
+describe("looksLikeOrgName", () => {
+  it("flags names with a generic org / legal suffix word", () => {
+    expect(looksLikeOrgName("CityBridge Foundation")).toBe(true);
+    expect(looksLikeOrgName("Bill and Melinda Gates Foundation")).toBe(true);
+    expect(looksLikeOrgName("Acme Widgets Inc.")).toBe(true);
+    expect(looksLikeOrgName("Helios Co., LLC")).toBe(true);
+    expect(looksLikeOrgName("Rockefeller Philanthropies")).toBe(true);
+  });
+
+  it("treats plain personal / household names as NOT orgs", () => {
+    expect(looksLikeOrgName("Kathleen Rash")).toBe(false);
+    expect(looksLikeOrgName("Nic and Lindsey Barnes")).toBe(false);
+    expect(looksLikeOrgName("The Smith Family")).toBe(false); // 'the' ignored
+    expect(looksLikeOrgName("")).toBe(false);
+    expect(looksLikeOrgName(null)).toBe(false);
+  });
+});
+
+describe("essentialSearchToken", () => {
+  it("seeds a person's last name", () => {
+    expect(essentialSearchToken("Kathleen Rash", "person")).toBe("Rash");
+    expect(essentialSearchToken("Amy Hertel", "person")).toBe("Hertel");
+    expect(essentialSearchToken("Michelle Yang", "person")).toBe("Yang");
+  });
+
+  it("seeds a household's shared surname (last name)", () => {
+    expect(essentialSearchToken("Nic and Lindsey Barnes", "person")).toBe(
+      "Barnes",
+    );
+    expect(essentialSearchToken("Burgess and Mendez-Ortiz", "person")).toBe(
+      "Mendez-Ortiz",
+    );
+  });
+
+  it("skips a trailing initial so the seed is a real word", () => {
+    expect(essentialSearchToken("Constance G", "person")).toBe("Constance");
+  });
+
+  it("seeds an org's leading core / brand word", () => {
+    expect(essentialSearchToken("Walton Family Foundation", "org")).toBe(
+      "Walton",
+    );
+    expect(essentialSearchToken("CityBridge Foundation", "org")).toBe(
+      "CityBridge",
+    );
+    expect(essentialSearchToken("The Smith Family Foundation", "org")).toBe(
+      "Smith",
+    );
+    expect(essentialSearchToken("Acme Widgets Inc.", "org")).toBe("Acme");
+    expect(essentialSearchToken("Rockefeller Philanthropies", "org")).toBe(
+      "Rockefeller",
+    );
+  });
+
+  it("seeds the surname for a person-named foundation (has 'and'/'&')", () => {
+    expect(
+      essentialSearchToken("Bill and Melinda Gates Foundation", "org"),
+    ).toBe("Gates");
+    expect(essentialSearchToken("Mark & Lisa Schwartz Fund", "org")).toBe(
+      "Schwartz",
+    );
+  });
+
+  it("returns single-word and empty names unchanged", () => {
+    expect(essentialSearchToken("CityBridge", "org")).toBe("CityBridge");
+    expect(essentialSearchToken("Valhalla", "org")).toBe("Valhalla");
+    expect(essentialSearchToken("Cher", "person")).toBe("Cher");
+    expect(essentialSearchToken("", "person")).toBe("");
   });
 });
