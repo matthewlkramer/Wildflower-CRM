@@ -53,7 +53,14 @@ Do NOT convert these two to archive unless the user explicitly asks.
 app-wide, with only the gift-merge and QuickBooks-revert hard-deletes explicitly
 retained. Archive is the soft-delete; an archived gift is logically deleted, so
 it must not inflate fundraising totals — otherwise REPLACE (and any future
-archive-then-supersede flow) double-counts the same dollars.
+archive-then-supersede flow) double-counts the same dollars. The user was shown
+the tradeoff (a "housekeeping" archive of a *real* received gift, or archiving a
+gift from an already-reported/closed period, will silently drop it from totals)
+and explicitly chose the GLOBAL behavior because archive is strictly a
+soft-delete here. Do NOT revert this to "aggregates include archived." The
+considered-but-deferred alternative was an archive *reason* (duplicate / error /
+superseded / housekeeping) that excludes only the "not real money" reasons —
+revisit that only if the team starts archiving real received gifts for tidiness.
 
 **How to apply:** route every new delete affordance through archive; never
 reintroduce a hard-delete button or `DELETE` route except the two confirmed
