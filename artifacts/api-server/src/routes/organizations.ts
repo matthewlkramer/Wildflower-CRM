@@ -43,7 +43,7 @@ import {
   splitBlank,
 } from "../lib/helpers";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
+import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, requireAdmin, unarchiveOne } from "../lib/archive";
 import { mergeEntity, ORGANIZATION_MERGE_CONFIG } from "../lib/mergeEntities";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
@@ -374,6 +374,9 @@ router.post(
 router.post(
   "/organizations/merge",
   asyncHandler(async (req, res) => {
+    // Merging is irreversible (it archives the duplicate and re-points every FK)
+    // — admin-only, same gate as the potential-duplicates queue that surfaces it.
+    if (!requireAdmin(req, res)) return;
     await mergeEntity(req, res, ORGANIZATION_MERGE_CONFIG);
   }),
 );

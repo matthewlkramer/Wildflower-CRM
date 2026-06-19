@@ -73,6 +73,36 @@ paths:
         - { $ref: "#/components/parameters/IncludeArchivedQuery" }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SearchResults" } } } }
+  # ─── Potential duplicates (review queue) ────────────────────────────────────
+  /potential-duplicates:
+    get:
+      operationId: listPotentialDuplicates
+      tags: [potential-duplicates]
+      summary: >-
+        Admin-only. Likely-duplicate organization or person pairs, detected by
+        trigram name similarity plus a shared normalized phone number, ranked by
+        score. Active (non-archived) records only; pairs an admin has dismissed
+        as "not a duplicate" are excluded.
+      parameters:
+        - { name: type, in: query, required: true, schema: { type: string, enum: [organization, person] }, description: "Which entity type to scan for duplicates." }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 }, description: "Max candidate pairs to return." }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DuplicatePairList" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /potential-duplicates/dismiss:
+    post:
+      operationId: dismissPotentialDuplicate
+      tags: [potential-duplicates]
+      summary: >-
+        Admin-only. Mark a pair as "not a duplicate" so the detector never
+        re-surfaces it. Idempotent — dismissing the same pair twice is a no-op.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DismissDuplicateBody" } } }
+      responses:
+        "204": { description: Dismissed (idempotent) }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   # ─── Email intelligence proposals ──────────────────────────────────────────
   /email-proposals:
     get:
@@ -5188,6 +5218,39 @@ components:
         households:    { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
         opportunities: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
         gifts:         { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+    DuplicatePairSide:
+      type: object
+      required: [id, name, giftCount]
+      properties:
+        id:           { type: string }
+        name:         { type: string, description: "Display name (anonymous-masked when the viewer can't see the identity)." }
+        ownerName:    { type: string, nullable: true, description: "Record owner's display name." }
+        primaryEmail: { type: string, nullable: true }
+        primaryPhone: { type: string, nullable: true }
+        createdAt:    { type: string, nullable: true, description: "ISO timestamp the record was created (helps pick the canonical record)." }
+        giftCount:    { type: integer, description: "Number of gifts/payments attributed to this record." }
+    DuplicatePair:
+      type: object
+      required: [type, score, signals, a, b]
+      properties:
+        type:    { type: string, enum: [organization, person] }
+        score:   { type: number, description: "Match confidence; higher is a stronger duplicate signal." }
+        signals: { type: array, items: { type: string, enum: [name, phone] }, description: "Why the pair was flagged (similar name and/or a shared phone number)." }
+        a:       { $ref: "#/components/schemas/DuplicatePairSide" }
+        b:       { $ref: "#/components/schemas/DuplicatePairSide" }
+    DuplicatePairList:
+      type: object
+      required: [pairs]
+      properties:
+        pairs: { type: array, items: { $ref: "#/components/schemas/DuplicatePair" } }
+    DismissDuplicateBody:
+      type: object
+      required: [type, idA, idB]
+      description: "Mark a pair as not-a-duplicate. ids may be passed in any order; the server canonicalizes them (idA < idB)."
+      properties:
+        type: { type: string, enum: [organization, person] }
+        idA:  { type: string }
+        idB:  { type: string }
     ResolveStagedPaymentBody:
       type: object
       description: "Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary."

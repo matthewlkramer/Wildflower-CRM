@@ -2632,6 +2632,67 @@ export interface SearchResults {
   gifts: SearchHit[];
 }
 
+export interface DuplicatePairSide {
+  id: string;
+  /** Display name (anonymous-masked when the viewer can't see the identity). */
+  name: string;
+  /** Record owner's display name. */
+  ownerName?: string | null;
+  primaryEmail?: string | null;
+  primaryPhone?: string | null;
+  /** ISO timestamp the record was created (helps pick the canonical record). */
+  createdAt?: string | null;
+  /** Number of gifts/payments attributed to this record. */
+  giftCount: number;
+}
+
+export type DuplicatePairType =
+  (typeof DuplicatePairType)[keyof typeof DuplicatePairType];
+
+export const DuplicatePairType = {
+  organization: "organization",
+  person: "person",
+} as const;
+
+export type DuplicatePairSignalsItem =
+  (typeof DuplicatePairSignalsItem)[keyof typeof DuplicatePairSignalsItem];
+
+export const DuplicatePairSignalsItem = {
+  name: "name",
+  phone: "phone",
+} as const;
+
+export interface DuplicatePair {
+  type: DuplicatePairType;
+  /** Match confidence; higher is a stronger duplicate signal. */
+  score: number;
+  /** Why the pair was flagged (similar name and/or a shared phone number). */
+  signals: DuplicatePairSignalsItem[];
+  a: DuplicatePairSide;
+  b: DuplicatePairSide;
+}
+
+export interface DuplicatePairList {
+  pairs: DuplicatePair[];
+}
+
+export type DismissDuplicateBodyType =
+  (typeof DismissDuplicateBodyType)[keyof typeof DismissDuplicateBodyType];
+
+export const DismissDuplicateBodyType = {
+  organization: "organization",
+  person: "person",
+} as const;
+
+/**
+ * Mark a pair as not-a-duplicate. ids may be passed in any order; the server canonicalizes them (idA < idB).
+ */
+export interface DismissDuplicateBody {
+  type: DismissDuplicateBodyType;
+  idA: string;
+  idB: string;
+}
+
 /**
  * Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary.
  */
@@ -4262,6 +4323,27 @@ export type SearchParams = {
    */
   includeArchived?: IncludeArchivedQueryParameter;
 };
+
+export type ListPotentialDuplicatesParams = {
+  /**
+   * Which entity type to scan for duplicates.
+   */
+  type: ListPotentialDuplicatesType;
+  /**
+   * Max candidate pairs to return.
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ListPotentialDuplicatesType =
+  (typeof ListPotentialDuplicatesType)[keyof typeof ListPotentialDuplicatesType];
+
+export const ListPotentialDuplicatesType = {
+  organization: "organization",
+  person: "person",
+} as const;
 
 export type ListEmailProposalsParams = {
   kind?: EmailProposalKind;

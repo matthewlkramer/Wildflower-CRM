@@ -164,6 +164,99 @@ export const SearchResponse = zod.object({
   ),
 });
 
+/**
+ * @summary Admin-only. Likely-duplicate organization or person pairs, detected by trigram name similarity plus a shared normalized phone number, ranked by score. Active (non-archived) records only; pairs an admin has dismissed as "not a duplicate" are excluded.
+ */
+export const listPotentialDuplicatesQueryLimitDefault = 50;
+export const listPotentialDuplicatesQueryLimitMax = 200;
+
+export const ListPotentialDuplicatesQueryParams = zod.object({
+  type: zod
+    .enum(["organization", "person"])
+    .describe("Which entity type to scan for duplicates."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listPotentialDuplicatesQueryLimitMax)
+    .default(listPotentialDuplicatesQueryLimitDefault)
+    .describe("Max candidate pairs to return."),
+});
+
+export const ListPotentialDuplicatesResponse = zod.object({
+  pairs: zod.array(
+    zod.object({
+      type: zod.enum(["organization", "person"]),
+      score: zod
+        .number()
+        .describe("Match confidence; higher is a stronger duplicate signal."),
+      signals: zod
+        .array(zod.enum(["name", "phone"]))
+        .describe(
+          "Why the pair was flagged (similar name and\/or a shared phone number).",
+        ),
+      a: zod.object({
+        id: zod.string(),
+        name: zod
+          .string()
+          .describe(
+            "Display name (anonymous-masked when the viewer can't see the identity).",
+          ),
+        ownerName: zod
+          .string()
+          .nullish()
+          .describe("Record owner's display name."),
+        primaryEmail: zod.string().nullish(),
+        primaryPhone: zod.string().nullish(),
+        createdAt: zod
+          .string()
+          .nullish()
+          .describe(
+            "ISO timestamp the record was created (helps pick the canonical record).",
+          ),
+        giftCount: zod
+          .number()
+          .describe("Number of gifts\/payments attributed to this record."),
+      }),
+      b: zod.object({
+        id: zod.string(),
+        name: zod
+          .string()
+          .describe(
+            "Display name (anonymous-masked when the viewer can't see the identity).",
+          ),
+        ownerName: zod
+          .string()
+          .nullish()
+          .describe("Record owner's display name."),
+        primaryEmail: zod.string().nullish(),
+        primaryPhone: zod.string().nullish(),
+        createdAt: zod
+          .string()
+          .nullish()
+          .describe(
+            "ISO timestamp the record was created (helps pick the canonical record).",
+          ),
+        giftCount: zod
+          .number()
+          .describe("Number of gifts\/payments attributed to this record."),
+      }),
+    }),
+  ),
+});
+
+/**
+ * @summary Admin-only. Mark a pair as "not a duplicate" so the detector never re-surfaces it. Idempotent — dismissing the same pair twice is a no-op.
+ */
+export const DismissPotentialDuplicateBody = zod
+  .object({
+    type: zod.enum(["organization", "person"]),
+    idA: zod.string(),
+    idB: zod.string(),
+  })
+  .describe(
+    "Mark a pair as not-a-duplicate. ids may be passed in any order; the server canonicalizes them (idA < idB).",
+  );
+
 export const listEmailProposalsQueryLimitDefault = 50;
 export const listEmailProposalsQueryLimitMax = 10000;
 

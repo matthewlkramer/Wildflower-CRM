@@ -14,7 +14,7 @@ import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
+import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, requireAdmin, unarchiveOne } from "../lib/archive";
 import { mergeEntity, PERSON_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
@@ -353,6 +353,9 @@ router.post(
 router.post(
   "/people/merge",
   asyncHandler(async (req, res) => {
+    // Merging is irreversible (it archives the duplicate and re-points every FK)
+    // — admin-only, same gate as the potential-duplicates queue that surfaces it.
+    if (!requireAdmin(req, res)) return;
     await mergeEntity(req, res, PERSON_MERGE_CONFIG);
   }),
 );

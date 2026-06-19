@@ -50,6 +50,7 @@ import stripeRouter from "./stripe";
 import grantLeadsRouter from "./grantLeads";
 import auditLogRouter from "./auditLog";
 import searchRouter from "./search";
+import potentialDuplicatesRouter from "./potentialDuplicates";
 
 const router: IRouter = Router();
 
@@ -114,5 +115,6 @@ router.use(stripeRouter);
 router.use(grantLeadsRouter);
 router.use(auditLogRouter);
 router.use(searchRouter);
+router.use(potentialDuplicatesRouter);
 
 export default router;

@@ -70,5 +70,6 @@
 - [Data migration runs after Publish](data-migration-publish-ordering.md) — prod seed/backfill SQL dies "relation does not exist" unless Publish (schema diff) ran first; don't put BEGIN/COMMIT in a `psql -1`-applied file.
 - [Missing workspace symlink reads as TS2307](workspace-symlink-ts2307.md) — leaf typecheck "Cannot find module '@workspace/x'" = dropped pnpm symlink (run pnpm install), NOT stale lib decls; TS2305 is the stale-decl case.
 - [Loan-capital fundraising category](loan-capital-fundraising-category.md) — revenue vs loan_capital is a parallel analytics track never mixed; opp fundraisingCategory + goal PK includes category; all legacy data = revenue.
+- [Potential-duplicates queue](potential-duplicates-queue.md) — admin dup detection (name pg_trgm + shared phone); phone bonus must apply ONCE per pair (dedupe self-join), dismiss persists canonicalized ids.
 - [Audit log recording model](audit-log-recording-model.md) — atomic recordAudit(tx) for in-tx writes (archive/bulk/merge); non-throwing safeRecordAudit after standalone create/PATCH so audit never breaks a save; admin-gated.
 - [Stripe restricted live key vs connector](stripe-restricted-key.md) — STRIPE_RESTRICTED_KEY (rk_live) preferred over test-only connector; account id regexed from KYC-scope error; backfill never seeds sync_state.

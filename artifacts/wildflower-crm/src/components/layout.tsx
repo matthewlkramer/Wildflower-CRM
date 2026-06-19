@@ -28,6 +28,7 @@ import {
   PanelLeftOpen,
   Lightbulb,
   ScrollText,
+  CopyCheck,
 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,7 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/admin", label: "Admin", icon: Settings },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
+  { href: "/potential-duplicates", label: "Potential Duplicates", icon: CopyCheck, adminOnly: true },
 ];
 
 const SIDEBAR_COLLAPSED_KEY = "wf-sidebar-collapsed";

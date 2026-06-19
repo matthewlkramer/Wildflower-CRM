@@ -28,6 +28,7 @@ import GrantsCalendar from "@/pages/grants-calendar";
 import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import Admin from "@/pages/admin";
 import AuditLog from "@/pages/audit-log";
+import PotentialDuplicates from "@/pages/potential-duplicates";
 import FundableProjects from "@/pages/fundable-projects";
 import Settings from "@/pages/settings";
 import StagedPayments from "@/pages/staged-payments";
@@ -227,6 +228,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
           <Route path="/admin"><ProtectedRoute component={Admin} /></Route>
           <Route path="/audit-log"><ProtectedRoute component={AuditLog} /></Route>
+          <Route path="/potential-duplicates"><ProtectedRoute component={PotentialDuplicates} /></Route>
           
           <Route component={NotFound} />
         </Switch>
