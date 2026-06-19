@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronsUpDown, Pencil, Plus, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronsUpDown,
+  Pencil,
+  Plus,
+  X,
+} from "lucide-react";
 import {
   useListOrganizations,
   useListPeople,
@@ -37,6 +44,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 type SaveResult = unknown | Promise<unknown>;
 
@@ -540,6 +548,75 @@ export function useOrganizationSearch(query: string) {
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */
+/* Donor-Advised Fund sponsor guard (non-blocking)                          */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+function normalizeName(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * If the given organization's name matches a `daf`-type payment intermediary
+ * (a Donor-Advised Fund sponsor — Fidelity / Schwab / Vanguard Charitable,
+ * etc.), return that sponsor's display name; null otherwise.
+ *
+ * A DAF sponsor is the conduit, not the donor: the real donor is usually the
+ * named fund or advisor, with the sponsor recorded as the gift's payment
+ * intermediary. This only powers a non-blocking warning — community
+ * foundations DO issue direct grants under their own name, so the fundraiser
+ * decides whether it's a pass-through or a genuine direct grant.
+ */
+function useDafSponsorName(organizationId: string | null): string | null {
+  const orgName = useOrganizationName(organizationId);
+  const q = useListPaymentIntermediaries(
+    { limit: 200 },
+    {
+      query: {
+        queryKey: getListPaymentIntermediariesQueryKey({ limit: 200 }),
+        staleTime: 5 * 60_000,
+      },
+    },
+  );
+  return useMemo(() => {
+    if (!organizationId || !orgName) return null;
+    const target = normalizeName(orgName);
+    const match = (q.data?.data ?? []).find(
+      (pi) => pi.type === "daf" && normalizeName(pi.name ?? "") === target,
+    );
+    return match ? intermediaryDisplayName(match) : null;
+  }, [organizationId, orgName, q.data]);
+}
+
+/**
+ * Non-blocking banner shown when an organization donor matches a DAF sponsor.
+ * Renders nothing when there is no match (or no organization is selected), so
+ * it can be dropped unconditionally beneath any organization donor picker.
+ */
+export function DafSponsorDonorWarning({
+  organizationId,
+}: {
+  organizationId: string | null;
+}) {
+  const sponsorName = useDafSponsorName(organizationId);
+  if (!sponsorName) return null;
+  return (
+    <Alert
+      className="border-amber-300 bg-amber-50 text-amber-900 [&>svg]:text-amber-600"
+      data-testid="alert-daf-sponsor-donor"
+    >
+      <AlertTriangle className="h-4 w-4" />
+      <AlertDescription className="text-xs">
+        <span className="font-medium">{sponsorName}</span> is a Donor-Advised
+        Fund sponsor. If this gift was advised by a fund or individual, credit
+        them as the donor and record {sponsorName} as the payment intermediary
+        instead. If it&rsquo;s a direct grant from {sponsorName}, you can ignore
+        this.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────── */
 /* Ready-made InlineEdit wrappers                                           */
 /* ──────────────────────────────────────────────────────────────────────── */
 
@@ -821,6 +898,9 @@ export function InlineEditDonor({
           <X className="h-4 w-4" />
         </Button>
       </div>
+      <DafSponsorDonorWarning
+        organizationId={type === "organization" ? pickedId : null}
+      />
     </div>
   );
 }
@@ -949,6 +1029,9 @@ export function DonorFieldPicker({
           createNoun="household"
         />
       )}
+      <DafSponsorDonorWarning
+        organizationId={type === "organization" ? id : null}
+      />
     </div>
   );
 }

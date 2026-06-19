@@ -64,3 +64,4 @@
 - [QB LinkedTxn provenance](quickbooks-linkedtxn-provenance.md) — top-level LinkedTxn=deposit it was deposited into, line-level=invoices it applies to; deposit link derived read-only from qb_raw at query time, not a column.
 - [Pledge paid_amount includes archived](pledge-paid-includes-archived.md) — deriveOppFields sums ALL pledge payments incl archived; archiving a payment won't fix a wrong cash_in — hard-delete + re-derive (mirror stage advance) instead.
 - [merge-config FK inventory test](merge-config-inventory-drift.md) — any new table FK→organizations/people must be added to mergeEntities *_FK_REFS (or EXPECTED_FK_OMISSIONS); a test derives the expected set from schema & fails on drift (caught grant_leads too).
+- [DAF sponsor is never the donor](quickbooks-daf-sponsor-attribution.md) — DAF sponsor = payment intermediary, not donor; matcher guard drops sponsor-as-org donor; historical cleanup SQL repoints to advisor or flags daf-donor-review.

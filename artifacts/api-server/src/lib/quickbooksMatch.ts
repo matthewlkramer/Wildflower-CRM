@@ -437,9 +437,15 @@ export async function scoreStagedPayment(
   }
 
   if (!method) {
-    // Nothing on the donor axes; still surface the intermediary as a weak hint.
+    // Nothing on the donor axes; still surface the intermediary as a weak hint
+    // for human review.
     return intermediaryId
-      ? { ...NO_SCORE, intermediaryId, score: SUGGEST_THRESHOLD, tier: "suggested" }
+      ? {
+          ...NO_SCORE,
+          intermediaryId,
+          score: SUGGEST_THRESHOLD,
+          tier: "suggested",
+        }
       : NO_SCORE;
   }
 
