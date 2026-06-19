@@ -1,0 +1,47 @@
+import type { NewGiftOrPayment } from "@workspace/db/schema";
+
+/**
+ * Pure builder for the gifts_and_payments values minted from a Stripe staged
+ * charge — the Stripe analogue of buildGiftValuesFromStaged (QuickBooks). Shared
+ * by the manual "approve → create gift" route so the minted row is identical
+ * regardless of entry point.
+ *
+ * Mints the gift HEADER only (no gift_allocations) — a fundraiser allocates
+ * afterward, same as the QuickBooks flow. Donors are credited the GROSS charge
+ * amount (processor fees are not netted out of the donor's gift). The Donor XOR
+ * is the caller's responsibility (validate via validateGiftInvariants before
+ * inserting).
+ */
+export interface StripeStagedGiftSource {
+  chargeId: string;
+  /** GROSS charge amount, major units (string). */
+  grossAmount: string | null;
+  dateReceived: string | null;
+  payerName: string | null;
+  description: string | null;
+  organizationId: string | null;
+  individualGiverPersonId: string | null;
+  householdId: string | null;
+  /** Conduit the donor gave through (Stripe / DAF), propagated when present. */
+  matchedPaymentIntermediaryId: string | null;
+}
+
+export function buildGiftValuesFromStripeCharge(
+  giftId: string,
+  staged: StripeStagedGiftSource,
+  ownerUserId: string | null,
+): NewGiftOrPayment {
+  const name = staged.payerName ?? staged.description ?? "Stripe charge";
+  return {
+    id: giftId,
+    name,
+    amount: staged.grossAmount,
+    dateReceived: staged.dateReceived,
+    organizationId: staged.organizationId,
+    individualGiverPersonId: staged.individualGiverPersonId,
+    householdId: staged.householdId,
+    paymentIntermediaryId: staged.matchedPaymentIntermediaryId,
+    details: `Imported from Stripe (charge ${staged.chargeId}).`,
+    ownerUserId,
+  };
+}

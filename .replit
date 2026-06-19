@@ -13,7 +13,7 @@ env = { "CI" = "true" }
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
-integrations = ["airtable:1.0.0"]
+integrations = ["airtable:1.0.0", "stripe:1.0.0"]
 
 [postMerge]
 path = "scripts/post-merge.sh"

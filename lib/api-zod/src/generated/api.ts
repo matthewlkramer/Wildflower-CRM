@@ -7536,6 +7536,860 @@ export const ReclassifyStagedPaymentsResponse = zod.object({
 });
 
 /**
+ * @summary Trigger an immediate one-way Stripe → CRM payout/charge pull (admin only).
+ */
+export const RunStripeSyncResponse = zod.object({
+  ran: zod
+    .boolean()
+    .describe(
+      "False when the sync was skipped (lock contended, or the Stripe connector\/account was unavailable).",
+    ),
+  payouts: zod.number().describe("Stripe payouts seen this run."),
+  staged: zod.number().describe("Newly staged charges this run."),
+  matched: zod.number().describe("Newly staged charges given a donor hint."),
+  autoApplied: zod
+    .number()
+    .describe(
+      "Newly-staged charges auto-reconciled to an existing gift at high confidence (never mints).",
+    ),
+});
+
+/**
+ * @summary Re-run donor auto-match over still-unmatched pending Stripe charges (additive, never overwrites a human match) (admin only).
+ */
+export const RematchStripeChargesResponse = zod.object({
+  ran: zod
+    .boolean()
+    .describe(
+      "False when the rematch was skipped (a sync\/rematch was already running, or the Stripe connector was unavailable).",
+    ),
+  scanned: zod
+    .number()
+    .describe("Candidate rows examined (pending + unmatched + no donor)."),
+  matched: zod.number().describe("Rows newly given a donor hint by this run."),
+});
+
+/**
+ * @summary Read the Stripe sync cursor + health (admin only).
+ */
+export const GetStripeSyncStatusResponse = zod.object({
+  configured: zod
+    .boolean()
+    .describe(
+      "True once the sync has run at least once and seeded its per-account cursor.",
+    ),
+  lastRunAt: zod.string().datetime({}).nullable(),
+  lastRunStatus: zod
+    .string()
+    .nullable()
+    .describe("'ok' | 'error' — coarse health of the most recent run."),
+  lastError: zod.string().nullable(),
+  consecutiveErrors: zod
+    .number()
+    .describe("Consecutive errored runs (cursor held); 0 after a clean run."),
+  payoutCreatedWatermark: zod
+    .string()
+    .datetime({})
+    .nullable()
+    .describe("Only payouts created at\/after this instant are pulled."),
+});
+
+export const listStripeStagedChargesQueryLimitDefault = 50;
+export const listStripeStagedChargesQueryLimitMax = 10000;
+
+export const listStripeStagedChargesQueryPageDefault = 1;
+
+export const ListStripeStagedChargesQueryParams = zod.object({
+  queue: zod
+    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
+    .optional()
+    .describe("Which queue to list (default needs_review)."),
+  sort: zod
+    .enum([
+      "date_desc",
+      "date_asc",
+      "amount_desc",
+      "amount_asc",
+      "payer_asc",
+      "payer_desc",
+    ])
+    .optional()
+    .describe("Sort order (default date_desc)."),
+  search: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Free-text filter across payer name\/email, description, and statement descriptor.",
+    ),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listStripeStagedChargesQueryLimitMax)
+    .default(listStripeStagedChargesQueryLimitDefault),
+  page: zod.coerce
+    .number()
+    .min(1)
+    .default(listStripeStagedChargesQueryPageDefault),
+});
+
+export const ListStripeStagedChargesResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod
+        .string()
+        .describe("The Stripe charge id (ch_...) — also the primary key."),
+      stripeAccountId: zod.string(),
+      stripePayoutId: zod
+        .string()
+        .nullish()
+        .describe("The payout this charge settled in (null until paid out)."),
+      stripeBalanceTransactionId: zod.string().nullish(),
+      stripePaymentIntentId: zod.string().nullish(),
+      stripeCustomerId: zod.string().nullish(),
+      grossAmount: zod.string().nullish(),
+      feeAmount: zod.string().nullish(),
+      netAmount: zod.string().nullish(),
+      amountRefunded: zod.string().nullish(),
+      currency: zod.string().nullish(),
+      chargeCreated: zod.string().datetime({}).nullish(),
+      dateReceived: zod.string().date().nullish(),
+      payerName: zod.string().nullish(),
+      payerEmail: zod.string().nullish(),
+      description: zod.string().nullish(),
+      statementDescriptor: zod.string().nullish(),
+      cardBrand: zod.string().nullish(),
+      metadata: zod.record(zod.string(), zod.string()).nullish(),
+      refunded: zod.boolean(),
+      disputed: zod.boolean(),
+      status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+      exclusionReason: zod
+        .enum([
+          "zero_amount",
+          "loan",
+          "membership",
+          "interest",
+          "government_reimbursement",
+          "tax_refund",
+          "other_revenue",
+          "earned_income",
+          "fiscally_sponsored",
+          "intercompany_transfer",
+          "other",
+          "insurance",
+          "expense_refund",
+          "expensify",
+          "returned_wire",
+        ])
+        .nullish(),
+      classificationSource: zod.enum(["auto", "manual"]),
+      matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
+      matchScore: zod.number().nullish(),
+      matchMethod: zod
+        .enum([
+          "email",
+          "name",
+          "name_amount_date",
+          "amount_date",
+          "memo",
+          "intermediary",
+          "manual",
+        ])
+        .nullish(),
+      autoApplied: zod.boolean(),
+      matchConfirmedByUserId: zod.string().nullish(),
+      matchConfirmedAt: zod.string().datetime({}).nullish(),
+      organizationId: zod.string().nullish(),
+      individualGiverPersonId: zod.string().nullish(),
+      householdId: zod.string().nullish(),
+      matchedPaymentIntermediaryId: zod.string().nullish(),
+      matchedGiftId: zod.string().nullish(),
+      createdGiftId: zod.string().nullish(),
+      approvedByUserId: zod.string().nullish(),
+      approvedAt: zod.string().datetime({}).nullish(),
+      rejectedByUserId: zod.string().nullish(),
+      rejectedAt: zod.string().datetime({}).nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+      queue: zod
+        .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
+        .optional(),
+      organizationName: zod.string().nullish(),
+      householdName: zod.string().nullish(),
+      individualGiverPersonName: zod.string().nullish(),
+      intermediaryName: zod.string().nullish(),
+      resolvedGiftId: zod.string().nullish(),
+      resolvedGiftName: zod.string().nullish(),
+      resolvedGiftAmount: zod.string().nullish(),
+      resolvedGiftDate: zod.string().date().nullish(),
+      payoutAmount: zod.string().nullish(),
+      payoutGrossTotal: zod.string().nullish(),
+      payoutFeeTotal: zod.string().nullish(),
+      payoutRefundTotal: zod.string().nullish(),
+      payoutNetTotal: zod.string().nullish(),
+      payoutArrivalDate: zod.string().date().nullish(),
+      payoutStatus: zod.string().nullish(),
+      payoutQbSupersedeStatus: zod
+        .string()
+        .nullish()
+        .describe(
+          "Non-destructive QuickBooks supersede audit for this charge's payout: none | excluded_pending | conflict_approved. 'conflict_approved' blocks minting a per-charge gift here.",
+        ),
+      payoutQbConflictGiftId: zod
+        .string()
+        .nullish()
+        .describe(
+          "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
+        ),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const GetStripeStagedChargesSummaryResponse = zod.object({
+  needsReview: zod.number(),
+  autoMatched: zod.number(),
+  done: zod.number(),
+  rejected: zod.number(),
+  excluded: zod.number(),
+  excludedByReason: zod.object({
+    zero_amount: zod.number(),
+    loan: zod.number(),
+    membership: zod.number(),
+    interest: zod.number(),
+    government_reimbursement: zod.number(),
+    tax_refund: zod.number(),
+    other_revenue: zod.number(),
+    earned_income: zod.number(),
+    fiscally_sponsored: zod.number(),
+    intercompany_transfer: zod.number(),
+    other: zod.number(),
+    insurance: zod.number(),
+    expense_refund: zod.number(),
+    expensify: zod.number(),
+    returned_wire: zod.number(),
+  }),
+});
+
+/**
+ * @summary Set/fix the donor match on a pending Stripe charge (donor XOR).
+ */
+export const ResolveStripeStagedChargeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ResolveStripeStagedChargeBody = zod
+  .object({
+    organizationId: zod.string().nullish(),
+    individualGiverPersonId: zod.string().nullish(),
+    householdId: zod.string().nullish(),
+    paymentIntermediaryId: zod.string().nullish(),
+  })
+  .describe(
+    "Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary.",
+  );
+
+export const ResolveStripeStagedChargeResponse = zod.object({
+  id: zod
+    .string()
+    .describe("The Stripe charge id (ch_...) — also the primary key."),
+  stripeAccountId: zod.string(),
+  stripePayoutId: zod
+    .string()
+    .nullish()
+    .describe("The payout this charge settled in (null until paid out)."),
+  stripeBalanceTransactionId: zod.string().nullish(),
+  stripePaymentIntentId: zod.string().nullish(),
+  stripeCustomerId: zod.string().nullish(),
+  grossAmount: zod.string().nullish(),
+  feeAmount: zod.string().nullish(),
+  netAmount: zod.string().nullish(),
+  amountRefunded: zod.string().nullish(),
+  currency: zod.string().nullish(),
+  chargeCreated: zod.string().datetime({}).nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  description: zod.string().nullish(),
+  statementDescriptor: zod.string().nullish(),
+  cardBrand: zod.string().nullish(),
+  metadata: zod.record(zod.string(), zod.string()).nullish(),
+  refunded: zod.boolean(),
+  disputed: zod.boolean(),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish(),
+  classificationSource: zod.enum(["auto", "manual"]),
+  matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
+  matchScore: zod.number().nullish(),
+  matchMethod: zod
+    .enum([
+      "email",
+      "name",
+      "name_amount_date",
+      "amount_date",
+      "memo",
+      "intermediary",
+      "manual",
+    ])
+    .nullish(),
+  autoApplied: zod.boolean(),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  matchedPaymentIntermediaryId: zod.string().nullish(),
+  matchedGiftId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  queue: zod
+    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
+    .optional(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  intermediaryName: zod.string().nullish(),
+  resolvedGiftId: zod.string().nullish(),
+  resolvedGiftName: zod.string().nullish(),
+  resolvedGiftAmount: zod.string().nullish(),
+  resolvedGiftDate: zod.string().date().nullish(),
+  payoutAmount: zod.string().nullish(),
+  payoutGrossTotal: zod.string().nullish(),
+  payoutFeeTotal: zod.string().nullish(),
+  payoutRefundTotal: zod.string().nullish(),
+  payoutNetTotal: zod.string().nullish(),
+  payoutArrivalDate: zod.string().date().nullish(),
+  payoutStatus: zod.string().nullish(),
+  payoutQbSupersedeStatus: zod
+    .string()
+    .nullish()
+    .describe(
+      "Non-destructive QuickBooks supersede audit for this charge's payout: none | excluded_pending | conflict_approved. 'conflict_approved' blocks minting a per-charge gift here.",
+    ),
+  payoutQbConflictGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
+    ),
+});
+
+/**
+ * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR).
+ */
+export const CreateGiftFromStripeStagedChargeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary Reject a Stripe charge (retained so re-sync won't re-stage it).
+ */
+export const RejectStripeStagedChargeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RejectStripeStagedChargeResponse = zod.object({
+  id: zod
+    .string()
+    .describe("The Stripe charge id (ch_...) — also the primary key."),
+  stripeAccountId: zod.string(),
+  stripePayoutId: zod
+    .string()
+    .nullish()
+    .describe("The payout this charge settled in (null until paid out)."),
+  stripeBalanceTransactionId: zod.string().nullish(),
+  stripePaymentIntentId: zod.string().nullish(),
+  stripeCustomerId: zod.string().nullish(),
+  grossAmount: zod.string().nullish(),
+  feeAmount: zod.string().nullish(),
+  netAmount: zod.string().nullish(),
+  amountRefunded: zod.string().nullish(),
+  currency: zod.string().nullish(),
+  chargeCreated: zod.string().datetime({}).nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  description: zod.string().nullish(),
+  statementDescriptor: zod.string().nullish(),
+  cardBrand: zod.string().nullish(),
+  metadata: zod.record(zod.string(), zod.string()).nullish(),
+  refunded: zod.boolean(),
+  disputed: zod.boolean(),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish(),
+  classificationSource: zod.enum(["auto", "manual"]),
+  matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
+  matchScore: zod.number().nullish(),
+  matchMethod: zod
+    .enum([
+      "email",
+      "name",
+      "name_amount_date",
+      "amount_date",
+      "memo",
+      "intermediary",
+      "manual",
+    ])
+    .nullish(),
+  autoApplied: zod.boolean(),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  matchedPaymentIntermediaryId: zod.string().nullish(),
+  matchedGiftId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  queue: zod
+    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
+    .optional(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  intermediaryName: zod.string().nullish(),
+  resolvedGiftId: zod.string().nullish(),
+  resolvedGiftName: zod.string().nullish(),
+  resolvedGiftAmount: zod.string().nullish(),
+  resolvedGiftDate: zod.string().date().nullish(),
+  payoutAmount: zod.string().nullish(),
+  payoutGrossTotal: zod.string().nullish(),
+  payoutFeeTotal: zod.string().nullish(),
+  payoutRefundTotal: zod.string().nullish(),
+  payoutNetTotal: zod.string().nullish(),
+  payoutArrivalDate: zod.string().date().nullish(),
+  payoutStatus: zod.string().nullish(),
+  payoutQbSupersedeStatus: zod
+    .string()
+    .nullish()
+    .describe(
+      "Non-destructive QuickBooks supersede audit for this charge's payout: none | excluded_pending | conflict_approved. 'conflict_approved' blocks minting a per-charge gift here.",
+    ),
+  payoutQbConflictGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
+    ),
+});
+
+/**
+ * @summary Manually file a Stripe charge under a non-gift exclusion category.
+ */
+export const ExcludeStripeStagedChargeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ExcludeStripeStagedChargeBody = zod
+  .object({
+    exclusionReason: zod.enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ]),
+  })
+  .describe("File the staged payment under a non-gift exclusion category.");
+
+export const ExcludeStripeStagedChargeResponse = zod.object({
+  id: zod
+    .string()
+    .describe("The Stripe charge id (ch_...) — also the primary key."),
+  stripeAccountId: zod.string(),
+  stripePayoutId: zod
+    .string()
+    .nullish()
+    .describe("The payout this charge settled in (null until paid out)."),
+  stripeBalanceTransactionId: zod.string().nullish(),
+  stripePaymentIntentId: zod.string().nullish(),
+  stripeCustomerId: zod.string().nullish(),
+  grossAmount: zod.string().nullish(),
+  feeAmount: zod.string().nullish(),
+  netAmount: zod.string().nullish(),
+  amountRefunded: zod.string().nullish(),
+  currency: zod.string().nullish(),
+  chargeCreated: zod.string().datetime({}).nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  description: zod.string().nullish(),
+  statementDescriptor: zod.string().nullish(),
+  cardBrand: zod.string().nullish(),
+  metadata: zod.record(zod.string(), zod.string()).nullish(),
+  refunded: zod.boolean(),
+  disputed: zod.boolean(),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish(),
+  classificationSource: zod.enum(["auto", "manual"]),
+  matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
+  matchScore: zod.number().nullish(),
+  matchMethod: zod
+    .enum([
+      "email",
+      "name",
+      "name_amount_date",
+      "amount_date",
+      "memo",
+      "intermediary",
+      "manual",
+    ])
+    .nullish(),
+  autoApplied: zod.boolean(),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  matchedPaymentIntermediaryId: zod.string().nullish(),
+  matchedGiftId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  queue: zod
+    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
+    .optional(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  intermediaryName: zod.string().nullish(),
+  resolvedGiftId: zod.string().nullish(),
+  resolvedGiftName: zod.string().nullish(),
+  resolvedGiftAmount: zod.string().nullish(),
+  resolvedGiftDate: zod.string().date().nullish(),
+  payoutAmount: zod.string().nullish(),
+  payoutGrossTotal: zod.string().nullish(),
+  payoutFeeTotal: zod.string().nullish(),
+  payoutRefundTotal: zod.string().nullish(),
+  payoutNetTotal: zod.string().nullish(),
+  payoutArrivalDate: zod.string().date().nullish(),
+  payoutStatus: zod.string().nullish(),
+  payoutQbSupersedeStatus: zod
+    .string()
+    .nullish()
+    .describe(
+      "Non-destructive QuickBooks supersede audit for this charge's payout: none | excluded_pending | conflict_approved. 'conflict_approved' blocks minting a per-charge gift here.",
+    ),
+  payoutQbConflictGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
+    ),
+});
+
+/**
+ * @summary Move an excluded Stripe charge back to pending (pins classification to manual).
+ */
+export const ReIncludeStripeStagedChargeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ReIncludeStripeStagedChargeResponse = zod.object({
+  id: zod
+    .string()
+    .describe("The Stripe charge id (ch_...) — also the primary key."),
+  stripeAccountId: zod.string(),
+  stripePayoutId: zod
+    .string()
+    .nullish()
+    .describe("The payout this charge settled in (null until paid out)."),
+  stripeBalanceTransactionId: zod.string().nullish(),
+  stripePaymentIntentId: zod.string().nullish(),
+  stripeCustomerId: zod.string().nullish(),
+  grossAmount: zod.string().nullish(),
+  feeAmount: zod.string().nullish(),
+  netAmount: zod.string().nullish(),
+  amountRefunded: zod.string().nullish(),
+  currency: zod.string().nullish(),
+  chargeCreated: zod.string().datetime({}).nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  description: zod.string().nullish(),
+  statementDescriptor: zod.string().nullish(),
+  cardBrand: zod.string().nullish(),
+  metadata: zod.record(zod.string(), zod.string()).nullish(),
+  refunded: zod.boolean(),
+  disputed: zod.boolean(),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish(),
+  classificationSource: zod.enum(["auto", "manual"]),
+  matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
+  matchScore: zod.number().nullish(),
+  matchMethod: zod
+    .enum([
+      "email",
+      "name",
+      "name_amount_date",
+      "amount_date",
+      "memo",
+      "intermediary",
+      "manual",
+    ])
+    .nullish(),
+  autoApplied: zod.boolean(),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  matchedPaymentIntermediaryId: zod.string().nullish(),
+  matchedGiftId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  queue: zod
+    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
+    .optional(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  intermediaryName: zod.string().nullish(),
+  resolvedGiftId: zod.string().nullish(),
+  resolvedGiftName: zod.string().nullish(),
+  resolvedGiftAmount: zod.string().nullish(),
+  resolvedGiftDate: zod.string().date().nullish(),
+  payoutAmount: zod.string().nullish(),
+  payoutGrossTotal: zod.string().nullish(),
+  payoutFeeTotal: zod.string().nullish(),
+  payoutRefundTotal: zod.string().nullish(),
+  payoutNetTotal: zod.string().nullish(),
+  payoutArrivalDate: zod.string().date().nullish(),
+  payoutStatus: zod.string().nullish(),
+  payoutQbSupersedeStatus: zod
+    .string()
+    .nullish()
+    .describe(
+      "Non-destructive QuickBooks supersede audit for this charge's payout: none | excluded_pending | conflict_approved. 'conflict_approved' blocks minting a per-charge gift here.",
+    ),
+  payoutQbConflictGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
+    ),
+});
+
+/**
+ * @summary Undo an approved Stripe charge — unlink a reconciled gift or delete a gift this charge minted — returning the row to pending.
+ */
+export const RevertStripeStagedChargeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RevertStripeStagedChargeResponse = zod.object({
+  id: zod
+    .string()
+    .describe("The Stripe charge id (ch_...) — also the primary key."),
+  stripeAccountId: zod.string(),
+  stripePayoutId: zod
+    .string()
+    .nullish()
+    .describe("The payout this charge settled in (null until paid out)."),
+  stripeBalanceTransactionId: zod.string().nullish(),
+  stripePaymentIntentId: zod.string().nullish(),
+  stripeCustomerId: zod.string().nullish(),
+  grossAmount: zod.string().nullish(),
+  feeAmount: zod.string().nullish(),
+  netAmount: zod.string().nullish(),
+  amountRefunded: zod.string().nullish(),
+  currency: zod.string().nullish(),
+  chargeCreated: zod.string().datetime({}).nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  description: zod.string().nullish(),
+  statementDescriptor: zod.string().nullish(),
+  cardBrand: zod.string().nullish(),
+  metadata: zod.record(zod.string(), zod.string()).nullish(),
+  refunded: zod.boolean(),
+  disputed: zod.boolean(),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish(),
+  classificationSource: zod.enum(["auto", "manual"]),
+  matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
+  matchScore: zod.number().nullish(),
+  matchMethod: zod
+    .enum([
+      "email",
+      "name",
+      "name_amount_date",
+      "amount_date",
+      "memo",
+      "intermediary",
+      "manual",
+    ])
+    .nullish(),
+  autoApplied: zod.boolean(),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  matchedPaymentIntermediaryId: zod.string().nullish(),
+  matchedGiftId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+  queue: zod
+    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
+    .optional(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  intermediaryName: zod.string().nullish(),
+  resolvedGiftId: zod.string().nullish(),
+  resolvedGiftName: zod.string().nullish(),
+  resolvedGiftAmount: zod.string().nullish(),
+  resolvedGiftDate: zod.string().date().nullish(),
+  payoutAmount: zod.string().nullish(),
+  payoutGrossTotal: zod.string().nullish(),
+  payoutFeeTotal: zod.string().nullish(),
+  payoutRefundTotal: zod.string().nullish(),
+  payoutNetTotal: zod.string().nullish(),
+  payoutArrivalDate: zod.string().date().nullish(),
+  payoutStatus: zod.string().nullish(),
+  payoutQbSupersedeStatus: zod
+    .string()
+    .nullish()
+    .describe(
+      "Non-destructive QuickBooks supersede audit for this charge's payout: none | excluded_pending | conflict_approved. 'conflict_approved' blocks minting a per-charge gift here.",
+    ),
+  payoutQbConflictGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
+    ),
+});
+
+/**
  * @summary List the QuickBooks auto-handling rules in evaluation order (admin only).
  */
 export const AdminListQuickbooksRulesResponseItem = zod.object({

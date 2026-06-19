@@ -158,6 +158,7 @@ import type {
   ListSchoolsParams,
   ListStagedPaymentGiftWindowParams,
   ListStagedPaymentsParams,
+  ListStripeStagedChargesParams,
   ListTasksParams,
   ListTrackedEmailsByContactParams,
   ListTrackedEmailsParams,
@@ -235,6 +236,11 @@ import type {
   StagedPayment,
   StagedPaymentList,
   StagedPaymentSummary,
+  StripeRematchSummary,
+  StripeStagedCharge,
+  StripeStagedChargeList,
+  StripeSyncStatus,
+  StripeSyncSummary,
   Task,
   TaskList,
   TaskProposal,
@@ -13433,6 +13439,942 @@ export const useReclassifyStagedPayments = <
   TContext
 > => {
   return useMutation(getReclassifyStagedPaymentsMutationOptions(options));
+};
+
+/**
+ * @summary Trigger an immediate one-way Stripe → CRM payout/charge pull (admin only).
+ */
+export const getRunStripeSyncUrl = () => {
+  return `/api/stripe/sync`;
+};
+
+export const runStripeSync = async (
+  options?: RequestInit,
+): Promise<StripeSyncSummary> => {
+  return customFetch<StripeSyncSummary>(getRunStripeSyncUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRunStripeSyncMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runStripeSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runStripeSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["runStripeSync"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runStripeSync>>,
+    void
+  > = () => {
+    return runStripeSync(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunStripeSyncMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runStripeSync>>
+>;
+
+export type RunStripeSyncMutationError = ErrorType<ForbiddenResponse | void>;
+
+/**
+ * @summary Trigger an immediate one-way Stripe → CRM payout/charge pull (admin only).
+ */
+export const useRunStripeSync = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runStripeSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runStripeSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRunStripeSyncMutationOptions(options));
+};
+
+/**
+ * @summary Re-run donor auto-match over still-unmatched pending Stripe charges (additive, never overwrites a human match) (admin only).
+ */
+export const getRematchStripeChargesUrl = () => {
+  return `/api/stripe/rematch`;
+};
+
+export const rematchStripeCharges = async (
+  options?: RequestInit,
+): Promise<StripeRematchSummary> => {
+  return customFetch<StripeRematchSummary>(getRematchStripeChargesUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRematchStripeChargesMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rematchStripeCharges>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rematchStripeCharges>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["rematchStripeCharges"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rematchStripeCharges>>,
+    void
+  > = () => {
+    return rematchStripeCharges(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RematchStripeChargesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rematchStripeCharges>>
+>;
+
+export type RematchStripeChargesMutationError =
+  ErrorType<ForbiddenResponse | void>;
+
+/**
+ * @summary Re-run donor auto-match over still-unmatched pending Stripe charges (additive, never overwrites a human match) (admin only).
+ */
+export const useRematchStripeCharges = <
+  TError = ErrorType<ForbiddenResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rematchStripeCharges>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rematchStripeCharges>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRematchStripeChargesMutationOptions(options));
+};
+
+/**
+ * @summary Read the Stripe sync cursor + health (admin only).
+ */
+export const getGetStripeSyncStatusUrl = () => {
+  return `/api/stripe/sync-status`;
+};
+
+export const getStripeSyncStatus = async (
+  options?: RequestInit,
+): Promise<StripeSyncStatus> => {
+  return customFetch<StripeSyncStatus>(getGetStripeSyncStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStripeSyncStatusQueryKey = () => {
+  return [`/api/stripe/sync-status`] as const;
+};
+
+export const getGetStripeSyncStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStripeSyncStatus>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getStripeSyncStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetStripeSyncStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getStripeSyncStatus>>
+  > = ({ signal }) => getStripeSyncStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStripeSyncStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStripeSyncStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStripeSyncStatus>>
+>;
+export type GetStripeSyncStatusQueryError = ErrorType<ForbiddenResponse>;
+
+/**
+ * @summary Read the Stripe sync cursor + health (admin only).
+ */
+
+export function useGetStripeSyncStatus<
+  TData = Awaited<ReturnType<typeof getStripeSyncStatus>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getStripeSyncStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStripeSyncStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListStripeStagedChargesUrl = (
+  params?: ListStripeStagedChargesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/stripe-staged-charges?${stringifiedParams}`
+    : `/api/stripe-staged-charges`;
+};
+
+export const listStripeStagedCharges = async (
+  params?: ListStripeStagedChargesParams,
+  options?: RequestInit,
+): Promise<StripeStagedChargeList> => {
+  return customFetch<StripeStagedChargeList>(
+    getListStripeStagedChargesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListStripeStagedChargesQueryKey = (
+  params?: ListStripeStagedChargesParams,
+) => {
+  return [`/api/stripe-staged-charges`, ...(params ? [params] : [])] as const;
+};
+
+export const getListStripeStagedChargesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStripeStagedCharges>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListStripeStagedChargesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStripeStagedCharges>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListStripeStagedChargesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listStripeStagedCharges>>
+  > = ({ signal }) =>
+    listStripeStagedCharges(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listStripeStagedCharges>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListStripeStagedChargesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listStripeStagedCharges>>
+>;
+export type ListStripeStagedChargesQueryError = ErrorType<unknown>;
+
+export function useListStripeStagedCharges<
+  TData = Awaited<ReturnType<typeof listStripeStagedCharges>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListStripeStagedChargesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStripeStagedCharges>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListStripeStagedChargesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetStripeStagedChargesSummaryUrl = () => {
+  return `/api/stripe-staged-charges-summary`;
+};
+
+export const getStripeStagedChargesSummary = async (
+  options?: RequestInit,
+): Promise<StagedPaymentSummary> => {
+  return customFetch<StagedPaymentSummary>(
+    getGetStripeStagedChargesSummaryUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetStripeStagedChargesSummaryQueryKey = () => {
+  return [`/api/stripe-staged-charges-summary`] as const;
+};
+
+export const getGetStripeStagedChargesSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStripeStagedChargesSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getStripeStagedChargesSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetStripeStagedChargesSummaryQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getStripeStagedChargesSummary>>
+  > = ({ signal }) =>
+    getStripeStagedChargesSummary({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStripeStagedChargesSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStripeStagedChargesSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStripeStagedChargesSummary>>
+>;
+export type GetStripeStagedChargesSummaryQueryError = ErrorType<unknown>;
+
+export function useGetStripeStagedChargesSummary<
+  TData = Awaited<ReturnType<typeof getStripeStagedChargesSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getStripeStagedChargesSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStripeStagedChargesSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Set/fix the donor match on a pending Stripe charge (donor XOR).
+ */
+export const getResolveStripeStagedChargeUrl = (id: string) => {
+  return `/api/stripe-staged-charges/${id}/resolve`;
+};
+
+export const resolveStripeStagedCharge = async (
+  id: string,
+  resolveStagedPaymentBody: ResolveStagedPaymentBody,
+  options?: RequestInit,
+): Promise<StripeStagedCharge> => {
+  return customFetch<StripeStagedCharge>(getResolveStripeStagedChargeUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(resolveStagedPaymentBody),
+  });
+};
+
+export const getResolveStripeStagedChargeMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveStripeStagedCharge>>,
+    TError,
+    { id: string; data: BodyType<ResolveStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resolveStripeStagedCharge>>,
+  TError,
+  { id: string; data: BodyType<ResolveStagedPaymentBody> },
+  TContext
+> => {
+  const mutationKey = ["resolveStripeStagedCharge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resolveStripeStagedCharge>>,
+    { id: string; data: BodyType<ResolveStagedPaymentBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return resolveStripeStagedCharge(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResolveStripeStagedChargeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resolveStripeStagedCharge>>
+>;
+export type ResolveStripeStagedChargeMutationBody =
+  BodyType<ResolveStagedPaymentBody>;
+export type ResolveStripeStagedChargeMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Set/fix the donor match on a pending Stripe charge (donor XOR).
+ */
+export const useResolveStripeStagedCharge = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveStripeStagedCharge>>,
+    TError,
+    { id: string; data: BodyType<ResolveStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resolveStripeStagedCharge>>,
+  TError,
+  { id: string; data: BodyType<ResolveStagedPaymentBody> },
+  TContext
+> => {
+  return useMutation(getResolveStripeStagedChargeMutationOptions(options));
+};
+
+/**
+ * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR).
+ */
+export const getCreateGiftFromStripeStagedChargeUrl = (id: string) => {
+  return `/api/stripe-staged-charges/${id}/create-gift`;
+};
+
+export const createGiftFromStripeStagedCharge = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StagedGiftResponse> => {
+  return customFetch<StagedGiftResponse>(
+    getCreateGiftFromStripeStagedChargeUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getCreateGiftFromStripeStagedChargeMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["createGiftFromStripeStagedCharge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return createGiftFromStripeStagedCharge(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateGiftFromStripeStagedChargeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>
+>;
+
+export type CreateGiftFromStripeStagedChargeMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR).
+ */
+export const useCreateGiftFromStripeStagedCharge = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getCreateGiftFromStripeStagedChargeMutationOptions(options),
+  );
+};
+
+/**
+ * @summary Reject a Stripe charge (retained so re-sync won't re-stage it).
+ */
+export const getRejectStripeStagedChargeUrl = (id: string) => {
+  return `/api/stripe-staged-charges/${id}/reject`;
+};
+
+export const rejectStripeStagedCharge = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StripeStagedCharge> => {
+  return customFetch<StripeStagedCharge>(getRejectStripeStagedChargeUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRejectStripeStagedChargeMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectStripeStagedCharge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectStripeStagedCharge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["rejectStripeStagedCharge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectStripeStagedCharge>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return rejectStripeStagedCharge(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectStripeStagedChargeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectStripeStagedCharge>>
+>;
+
+export type RejectStripeStagedChargeMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Reject a Stripe charge (retained so re-sync won't re-stage it).
+ */
+export const useRejectStripeStagedCharge = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectStripeStagedCharge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rejectStripeStagedCharge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getRejectStripeStagedChargeMutationOptions(options));
+};
+
+/**
+ * @summary Manually file a Stripe charge under a non-gift exclusion category.
+ */
+export const getExcludeStripeStagedChargeUrl = (id: string) => {
+  return `/api/stripe-staged-charges/${id}/exclude`;
+};
+
+export const excludeStripeStagedCharge = async (
+  id: string,
+  excludeStagedPaymentBody: ExcludeStagedPaymentBody,
+  options?: RequestInit,
+): Promise<StripeStagedCharge> => {
+  return customFetch<StripeStagedCharge>(getExcludeStripeStagedChargeUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(excludeStagedPaymentBody),
+  });
+};
+
+export const getExcludeStripeStagedChargeMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof excludeStripeStagedCharge>>,
+    TError,
+    { id: string; data: BodyType<ExcludeStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof excludeStripeStagedCharge>>,
+  TError,
+  { id: string; data: BodyType<ExcludeStagedPaymentBody> },
+  TContext
+> => {
+  const mutationKey = ["excludeStripeStagedCharge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof excludeStripeStagedCharge>>,
+    { id: string; data: BodyType<ExcludeStagedPaymentBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return excludeStripeStagedCharge(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExcludeStripeStagedChargeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof excludeStripeStagedCharge>>
+>;
+export type ExcludeStripeStagedChargeMutationBody =
+  BodyType<ExcludeStagedPaymentBody>;
+export type ExcludeStripeStagedChargeMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Manually file a Stripe charge under a non-gift exclusion category.
+ */
+export const useExcludeStripeStagedCharge = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof excludeStripeStagedCharge>>,
+    TError,
+    { id: string; data: BodyType<ExcludeStagedPaymentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof excludeStripeStagedCharge>>,
+  TError,
+  { id: string; data: BodyType<ExcludeStagedPaymentBody> },
+  TContext
+> => {
+  return useMutation(getExcludeStripeStagedChargeMutationOptions(options));
+};
+
+/**
+ * @summary Move an excluded Stripe charge back to pending (pins classification to manual).
+ */
+export const getReIncludeStripeStagedChargeUrl = (id: string) => {
+  return `/api/stripe-staged-charges/${id}/re-include`;
+};
+
+export const reIncludeStripeStagedCharge = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StripeStagedCharge> => {
+  return customFetch<StripeStagedCharge>(
+    getReIncludeStripeStagedChargeUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getReIncludeStripeStagedChargeMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reIncludeStripeStagedCharge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reIncludeStripeStagedCharge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["reIncludeStripeStagedCharge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reIncludeStripeStagedCharge>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return reIncludeStripeStagedCharge(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReIncludeStripeStagedChargeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reIncludeStripeStagedCharge>>
+>;
+
+export type ReIncludeStripeStagedChargeMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Move an excluded Stripe charge back to pending (pins classification to manual).
+ */
+export const useReIncludeStripeStagedCharge = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reIncludeStripeStagedCharge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reIncludeStripeStagedCharge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getReIncludeStripeStagedChargeMutationOptions(options));
+};
+
+/**
+ * @summary Undo an approved Stripe charge — unlink a reconciled gift or delete a gift this charge minted — returning the row to pending.
+ */
+export const getRevertStripeStagedChargeUrl = (id: string) => {
+  return `/api/stripe-staged-charges/${id}/revert`;
+};
+
+export const revertStripeStagedCharge = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StripeStagedCharge> => {
+  return customFetch<StripeStagedCharge>(getRevertStripeStagedChargeUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRevertStripeStagedChargeMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revertStripeStagedCharge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof revertStripeStagedCharge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["revertStripeStagedCharge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revertStripeStagedCharge>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return revertStripeStagedCharge(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevertStripeStagedChargeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revertStripeStagedCharge>>
+>;
+
+export type RevertStripeStagedChargeMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Undo an approved Stripe charge — unlink a reconciled gift or delete a gift this charge minted — returning the row to pending.
+ */
+export const useRevertStripeStagedCharge = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revertStripeStagedCharge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof revertStripeStagedCharge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getRevertStripeStagedChargeMutationOptions(options));
 };
 
 /**

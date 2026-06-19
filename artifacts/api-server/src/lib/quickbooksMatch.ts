@@ -261,6 +261,10 @@ async function giftsInWindow(
           SELECT 1 FROM staged_payments sp
           WHERE sp.matched_gift_id = g.id OR sp.created_gift_id = g.id
         )
+        AND NOT EXISTS (
+          SELECT 1 FROM stripe_staged_charges sc
+          WHERE sc.matched_gift_id = g.id OR sc.created_gift_id = g.id
+        )
       ${order}
       LIMIT 10
     `)

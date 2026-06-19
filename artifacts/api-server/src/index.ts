@@ -4,6 +4,7 @@ import { logger } from "./lib/logger";
 import { startSyncScheduler } from "./lib/syncScheduler";
 import { startMediaIngestScheduler } from "./lib/mediaIngestScheduler";
 import { startQuickbooksSyncScheduler } from "./lib/quickbooksSyncScheduler";
+import { startStripeSyncScheduler } from "./lib/stripeSyncScheduler";
 import { startFlodeskSyncScheduler } from "./lib/flodeskSyncScheduler";
 import { startTaskSuggestionScheduler } from "./lib/taskSuggestionScheduler";
 import { startEmailIntelRecoveryScheduler } from "./lib/emailIntelRecoveryScheduler";
@@ -35,6 +36,7 @@ app.listen(port, (err) => {
   startSyncScheduler();
   startMediaIngestScheduler();
   startQuickbooksSyncScheduler();
+  startStripeSyncScheduler();
   startFlodeskSyncScheduler();
   startTaskSuggestionScheduler();
   startEmailIntelRecoveryScheduler();

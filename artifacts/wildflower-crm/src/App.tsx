@@ -30,6 +30,7 @@ import Admin from "@/pages/admin";
 import FundableProjects from "@/pages/fundable-projects";
 import Settings from "@/pages/settings";
 import StagedPayments from "@/pages/staged-payments";
+import StripeStagedCharges from "@/pages/stripe-staged-charges";
 import EmailIntelligence from "@/pages/email-intelligence";
 import GrantLeads from "@/pages/grant-leads";
 import EmailTracking from "@/pages/email-tracking";
@@ -209,6 +210,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/gifts"><ProtectedRoute component={Gifts} /></Route>
           <Route path="/gifts/:id"><ProtectedRoute component={GiftDetail} /></Route>
           <Route path="/staged-payments"><ProtectedRoute component={StagedPayments} /></Route>
+          <Route path="/stripe-staged-charges"><ProtectedRoute component={StripeStagedCharges} /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>
           <Route path="/interactions"><ProtectedRoute component={Interactions} /></Route>
           <Route path="/projections"><ProtectedRoute component={Projections} /></Route>

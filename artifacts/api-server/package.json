@@ -37,7 +37,8 @@
     "nanoid": "^5.1.9",
     "p-limit": "^7.3.0",
     "pino": "^9",
-    "pino-http": "^10"
+    "pino-http": "^10",
+    "stripe": "^22.2.1"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",

@@ -2130,6 +2130,115 @@ export interface StagedPaymentSummary {
   excludedByReason: StagedPaymentSummaryExcludedByReason;
 }
 
+export interface StripeSyncSummary {
+  /** False when the sync was skipped (lock contended, or the Stripe connector/account was unavailable). */
+  ran: boolean;
+  /** Stripe payouts seen this run. */
+  payouts: number;
+  /** Newly staged charges this run. */
+  staged: number;
+  /** Newly staged charges given a donor hint. */
+  matched: number;
+  /** Newly-staged charges auto-reconciled to an existing gift at high confidence (never mints). */
+  autoApplied: number;
+}
+
+export interface StripeRematchSummary {
+  /** False when the rematch was skipped (a sync/rematch was already running, or the Stripe connector was unavailable). */
+  ran: boolean;
+  /** Candidate rows examined (pending + unmatched + no donor). */
+  scanned: number;
+  /** Rows newly given a donor hint by this run. */
+  matched: number;
+}
+
+export interface StripeSyncStatus {
+  /** True once the sync has run at least once and seeded its per-account cursor. */
+  configured: boolean;
+  lastRunAt: string | null;
+  /** 'ok' | 'error' — coarse health of the most recent run. */
+  lastRunStatus: string | null;
+  lastError: string | null;
+  /** Consecutive errored runs (cursor held); 0 after a clean run. */
+  consecutiveErrors: number;
+  /** Only payouts created at/after this instant are pulled. */
+  payoutCreatedWatermark: string | null;
+}
+
+export type StripeStagedChargeMetadata = { [key: string]: string } | null;
+
+export interface StripeStagedCharge {
+  /** The Stripe charge id (ch_...) — also the primary key. */
+  id: string;
+  stripeAccountId: string;
+  /** The payout this charge settled in (null until paid out). */
+  stripePayoutId?: string | null;
+  stripeBalanceTransactionId?: string | null;
+  stripePaymentIntentId?: string | null;
+  stripeCustomerId?: string | null;
+  grossAmount?: string | null;
+  feeAmount?: string | null;
+  netAmount?: string | null;
+  amountRefunded?: string | null;
+  currency?: string | null;
+  chargeCreated?: string | null;
+  dateReceived?: string | null;
+  payerName?: string | null;
+  payerEmail?: string | null;
+  description?: string | null;
+  statementDescriptor?: string | null;
+  cardBrand?: string | null;
+  metadata?: StripeStagedChargeMetadata;
+  refunded: boolean;
+  disputed: boolean;
+  status: StagedPaymentStatus;
+  exclusionReason?: StagedPaymentExclusionReason | null;
+  classificationSource: StagedPaymentClassificationSource;
+  matchStatus: StagedPaymentMatchStatus;
+  matchScore?: number | null;
+  matchMethod?: StagedPaymentMatchMethod | null;
+  autoApplied: boolean;
+  matchConfirmedByUserId?: string | null;
+  matchConfirmedAt?: string | null;
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+  matchedPaymentIntermediaryId?: string | null;
+  matchedGiftId?: string | null;
+  createdGiftId?: string | null;
+  approvedByUserId?: string | null;
+  approvedAt?: string | null;
+  rejectedByUserId?: string | null;
+  rejectedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  queue?: StagedPaymentQueue;
+  organizationName?: string | null;
+  householdName?: string | null;
+  individualGiverPersonName?: string | null;
+  intermediaryName?: string | null;
+  resolvedGiftId?: string | null;
+  resolvedGiftName?: string | null;
+  resolvedGiftAmount?: string | null;
+  resolvedGiftDate?: string | null;
+  payoutAmount?: string | null;
+  payoutGrossTotal?: string | null;
+  payoutFeeTotal?: string | null;
+  payoutRefundTotal?: string | null;
+  payoutNetTotal?: string | null;
+  payoutArrivalDate?: string | null;
+  payoutStatus?: string | null;
+  /** Non-destructive QuickBooks supersede audit for this charge's payout: none | excluded_pending | conflict_approved. 'conflict_approved' blocks minting a per-charge gift here. */
+  payoutQbSupersedeStatus?: string | null;
+  /** The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved. */
+  payoutQbConflictGiftId?: string | null;
+}
+
+export interface StripeStagedChargeList {
+  data: StripeStagedCharge[];
+  pagination: Pagination;
+}
+
 export type DonorSearchResultKind =
   (typeof DonorSearchResultKind)[keyof typeof DonorSearchResultKind];
 
@@ -4569,6 +4678,30 @@ export type DisconnectGoogleOauth200 = {
 
 export type DisconnectQuickbooksOauth200 = {
   ok: boolean;
+};
+
+export type ListStripeStagedChargesParams = {
+  /**
+   * Which queue to list (default needs_review).
+   */
+  queue?: StagedPaymentQueue;
+  /**
+   * Sort order (default date_desc).
+   */
+  sort?: StagedPaymentSort;
+  /**
+   * Free-text filter across payer name/email, description, and statement descriptor.
+   */
+  search?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type AdminDeleteQuickbooksRule200 = {
