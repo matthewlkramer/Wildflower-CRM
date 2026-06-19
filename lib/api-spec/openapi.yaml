@@ -1219,6 +1219,15 @@ paths:
       tags: [gifts-and-payments]
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses: { "204": { description: Deleted } }
+  /gifts-and-payments/{id}/stripe-chain:
+    get:
+      operationId: getGiftStripeChain
+      tags: [gifts-and-payments]
+      summary: The read-only Stripe→QuickBooks reconciliation chain for a gift (charge → payout → QB deposit lump), for EOY audit provenance. Any leg is null when it doesn't apply.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftStripeChain" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Gift allocations ──────────────────────────────────────────────────────
   /gift-allocations:
@@ -4885,6 +4894,48 @@ components:
         stagedPaymentId:  { type: string, nullable: true, description: "The QB deposit lump that was excluded/relinked, when applicable." }
         archivedGiftId:   { type: string, nullable: true, description: "The QB-derived gift archived by a confirm-replace (kept, never deleted)." }
         restoredGiftId:   { type: string, nullable: true, description: "The gift un-archived by reverting a confirm-replace." }
+    GiftStripeChain:
+      type: object
+      required: [giftId]
+      description: "Read-only three-way audit chain for a gift: the Stripe charge it was minted from or linked to → the Stripe payout that charge settled in → the QuickBooks deposit lump that payout reconciles against. Any leg is null when it doesn't apply (non-Stripe gift, charge not yet paid out, payout with no QB deposit candidate)."
+      properties:
+        giftId: { type: string }
+        charge:
+          type: object
+          nullable: true
+          required: [id, linkage]
+          properties:
+            id:           { type: string, description: "The Stripe charge id (ch_...)." }
+            linkage:      { type: string, enum: [created, matched], description: "Whether this gift was minted from the charge (created) or the charge linked to a pre-existing gift (matched)." }
+            grossAmount:  { type: string, nullable: true }
+            feeAmount:    { type: string, nullable: true }
+            netAmount:    { type: string, nullable: true }
+            dateReceived: { type: string, format: date, nullable: true }
+            payerName:    { type: string, nullable: true }
+            currency:     { type: string, nullable: true }
+        payout:
+          type: object
+          nullable: true
+          required: [id, qbReconciliationStatus]
+          properties:
+            id:                     { type: string, description: "The Stripe payout id (po_...)." }
+            amount:                 { type: string, nullable: true }
+            arrivalDate:            { type: string, format: date, nullable: true }
+            grossTotal:             { type: string, nullable: true }
+            feeTotal:               { type: string, nullable: true }
+            netTotal:               { type: string, nullable: true }
+            chargeCount:            { type: integer, nullable: true }
+            qbReconciliationStatus: { $ref: "#/components/schemas/StripePayoutReconciliationStatus" }
+        qbDeposit:
+          type: object
+          nullable: true
+          required: [id]
+          properties:
+            id:           { type: string, description: "The QuickBooks deposit lump's staged-payment id." }
+            amount:       { type: string, nullable: true }
+            dateReceived: { type: string, format: date, nullable: true }
+            payerName:    { type: string, nullable: true }
+            status:       { type: string, nullable: true }
     DonorSearchResult:
       type: object
       required: [id, kind, name]

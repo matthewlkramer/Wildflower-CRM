@@ -39,17 +39,24 @@ Do NOT convert these two to archive unless the user explicitly asks.
   (detail pages only + an admin.tsx fiscal-year goal matrix). Backend archive
   endpoints may exist but there is no list UI for row actions.
 
-## Known gap (out of scope)
-- Aggregates (lifetimeGiving / dashboard-summary / projections / grants-calendar
-  sums) still include archived gifts/opps. Removing archived from operational
-  reporting is a separate, explicit decision.
+## Archived gifts are EXCLUDED from analytics totals (global)
+- Gift-based analytics sums now filter `giftsAndPayments.archivedAt IS NULL` at
+  every site in `analytics.ts` (lifetimeGiving, dashboard-summary, projections,
+  grants-calendar). Archiving a gift removes it from operational reporting.
+- This REVERSED the earlier "aggregates include archived" gap. The trigger was
+  the Stripe↔QB three-way reconciliation REPLACE path: it archives the coarse
+  QB-derived gift while the per-charge Stripe gifts cover the SAME money, so
+  counting archived gifts double-counts. The fix had to be global, not
+  reconciliation-only, or the double-count leaks through every aggregate.
 
 **Why:** the user's authoritative decision was "no hard delete, use archive"
 app-wide, with only the gift-merge and QuickBooks-revert hard-deletes explicitly
-retained; extending archived-hiding to detail GETs or aggregates is unspecified
-product work that could break existing flows.
+retained. Archive is the soft-delete; an archived gift is logically deleted, so
+it must not inflate fundraising totals — otherwise REPLACE (and any future
+archive-then-supersede flow) double-counts the same dollars.
 
 **How to apply:** route every new delete affordance through archive; never
 reintroduce a hard-delete button or `DELETE` route except the two confirmed
 exceptions; keep show-archived/unarchive admin-gated and LIST-only; don't treat
-detail-GET archived visibility or archived-in-aggregates as bugs.
+detail-GET archived visibility as a bug. Any NEW gift aggregate must add the
+`archivedAt IS NULL` filter to stay consistent with the four existing sites.

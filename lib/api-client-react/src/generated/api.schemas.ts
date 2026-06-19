@@ -2334,6 +2334,61 @@ export interface StripePayoutReconciliationResult {
   restoredGiftId?: string | null;
 }
 
+/**
+ * Whether this gift was minted from the charge (created) or the charge linked to a pre-existing gift (matched).
+ */
+export type GiftStripeChainChargeLinkage =
+  (typeof GiftStripeChainChargeLinkage)[keyof typeof GiftStripeChainChargeLinkage];
+
+export const GiftStripeChainChargeLinkage = {
+  created: "created",
+  matched: "matched",
+} as const;
+
+export type GiftStripeChainCharge = {
+  /** The Stripe charge id (ch_...). */
+  id: string;
+  /** Whether this gift was minted from the charge (created) or the charge linked to a pre-existing gift (matched). */
+  linkage: GiftStripeChainChargeLinkage;
+  grossAmount?: string | null;
+  feeAmount?: string | null;
+  netAmount?: string | null;
+  dateReceived?: string | null;
+  payerName?: string | null;
+  currency?: string | null;
+} | null;
+
+export type GiftStripeChainPayout = {
+  /** The Stripe payout id (po_...). */
+  id: string;
+  amount?: string | null;
+  arrivalDate?: string | null;
+  grossTotal?: string | null;
+  feeTotal?: string | null;
+  netTotal?: string | null;
+  chargeCount?: number | null;
+  qbReconciliationStatus: StripePayoutReconciliationStatus;
+} | null;
+
+export type GiftStripeChainQbDeposit = {
+  /** The QuickBooks deposit lump's staged-payment id. */
+  id: string;
+  amount?: string | null;
+  dateReceived?: string | null;
+  payerName?: string | null;
+  status?: string | null;
+} | null;
+
+/**
+ * Read-only three-way audit chain for a gift: the Stripe charge it was minted from or linked to → the Stripe payout that charge settled in → the QuickBooks deposit lump that payout reconciles against. Any leg is null when it doesn't apply (non-Stripe gift, charge not yet paid out, payout with no QB deposit candidate).
+ */
+export interface GiftStripeChain {
+  giftId: string;
+  charge?: GiftStripeChainCharge;
+  payout?: GiftStripeChainPayout;
+  qbDeposit?: GiftStripeChainQbDeposit;
+}
+
 export type DonorSearchResultKind =
   (typeof DonorSearchResultKind)[keyof typeof DonorSearchResultKind];
 

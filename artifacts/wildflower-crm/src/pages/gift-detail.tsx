@@ -7,6 +7,7 @@ import {
   useGetOrganization,
   useGetHousehold,
   useGetPaymentIntermediary,
+  useGetGiftStripeChain,
   getGetGiftOrPaymentQueryKey,
   getGetOrganizationQueryKey,
   getGetHouseholdQueryKey,
@@ -17,6 +18,7 @@ import {
   type GiftType,
   type GiftPaymentMethod,
   type PeopleEntityRole,
+  type StripePayoutReconciliationStatus,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
@@ -542,6 +544,8 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
             </div>
           </FieldCard>
 
+          <GiftStripeChainCard giftId={gift.id} />
+
           <div className="px-1 text-xs text-muted-foreground">
             Created {formatDate(gift.createdAt)} • Updated {formatDate(gift.updatedAt)}
           </div>
@@ -706,6 +710,89 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       onDone={(pledgeId) => navigate(`/pledges/${pledgeId}`)}
     />
     </>
+  );
+}
+
+const RECON_CHAIN_LABEL: Record<StripePayoutReconciliationStatus, string> = {
+  unmatched: "Not yet matched to a QuickBooks deposit",
+  proposed: "Proposed — awaiting confirm",
+  conflict_approved: "Conflict — needs a keep/replace decision",
+  confirmed_excluded: "Deposit excluded as a processor payout",
+  confirmed_keep: "Kept the existing QuickBooks gift",
+  confirmed_replace: "Replaced — old QuickBooks gift archived",
+};
+
+/**
+ * Read-only Stripe→QuickBooks provenance for a gift: the charge it was minted
+ * from (or linked to) → the payout that charge settled in → the QB deposit lump
+ * that payout reconciles against. Renders nothing for non-Stripe gifts so they
+ * aren't cluttered with an empty card.
+ */
+function GiftStripeChainCard({ giftId }: { giftId: string }) {
+  const { data } = useGetGiftStripeChain(giftId);
+  const charge = data?.charge;
+  if (!charge) return null;
+  const payout = data?.payout ?? null;
+  const deposit = data?.qbDeposit ?? null;
+
+  return (
+    <FieldCard title="Stripe → QuickBooks chain" defaultOpen={false}>
+      <div className="space-y-4">
+        <Row label="Stripe charge">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xs">{charge.id}</span>
+              <span className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                {charge.linkage === "created" ? "Minted here" : "Linked"}
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Gross {formatCurrency(charge.grossAmount)} · fee{" "}
+              {formatCurrency(charge.feeAmount)} · net{" "}
+              {formatCurrency(charge.netAmount)}
+              {charge.dateReceived ? ` · ${formatDate(charge.dateReceived)}` : ""}
+            </div>
+          </div>
+        </Row>
+
+        <Row label="Settled in payout">
+          {payout ? (
+            <div className="space-y-1">
+              <div className="font-mono text-xs">{payout.id}</div>
+              <div className="text-xs text-muted-foreground">
+                {formatCurrency(payout.amount)} ·{" "}
+                {payout.arrivalDate ? formatDate(payout.arrivalDate) : "—"}
+              </div>
+              <div className="text-xs">
+                {RECON_CHAIN_LABEL[payout.qbReconciliationStatus]}
+              </div>
+              <Link
+                href="/stripe-reconciliation"
+                className="text-xs underline-offset-2 hover:underline"
+              >
+                View reconciliation queue →
+              </Link>
+            </div>
+          ) : (
+            <span className="text-sm text-muted-foreground">Not yet paid out</span>
+          )}
+        </Row>
+
+        {deposit ? (
+          <Row label="QuickBooks deposit">
+            <div className="space-y-1">
+              <div className="font-mono text-xs">{deposit.id}</div>
+              <div className="text-xs text-muted-foreground">
+                {formatCurrency(deposit.amount)}
+                {deposit.dateReceived ? ` · ${formatDate(deposit.dateReceived)}` : ""}
+                {deposit.payerName ? ` · ${deposit.payerName}` : ""}
+                {deposit.status ? ` · ${deposit.status}` : ""}
+              </div>
+            </div>
+          </Row>
+        ) : null}
+      </div>
+    </FieldCard>
   );
 }
 

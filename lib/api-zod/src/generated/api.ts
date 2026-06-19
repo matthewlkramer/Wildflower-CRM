@@ -5609,6 +5609,71 @@ export const UnlinkThankYouEmailParams = zod.object({
   id: zod.coerce.string(),
 });
 
+/**
+ * @summary The read-only Stripe→QuickBooks reconciliation chain for a gift (charge → payout → QB deposit lump), for EOY audit provenance. Any leg is null when it doesn't apply.
+ */
+export const GetGiftStripeChainParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetGiftStripeChainResponse = zod
+  .object({
+    giftId: zod.string(),
+    charge: zod
+      .object({
+        id: zod.string().describe("The Stripe charge id (ch_...)."),
+        linkage: zod
+          .enum(["created", "matched"])
+          .describe(
+            "Whether this gift was minted from the charge (created) or the charge linked to a pre-existing gift (matched).",
+          ),
+        grossAmount: zod.string().nullish(),
+        feeAmount: zod.string().nullish(),
+        netAmount: zod.string().nullish(),
+        dateReceived: zod.string().date().nullish(),
+        payerName: zod.string().nullish(),
+        currency: zod.string().nullish(),
+      })
+      .nullish(),
+    payout: zod
+      .object({
+        id: zod.string().describe("The Stripe payout id (po_...)."),
+        amount: zod.string().nullish(),
+        arrivalDate: zod.string().date().nullish(),
+        grossTotal: zod.string().nullish(),
+        feeTotal: zod.string().nullish(),
+        netTotal: zod.string().nullish(),
+        chargeCount: zod.number().nullish(),
+        qbReconciliationStatus: zod
+          .enum([
+            "unmatched",
+            "proposed",
+            "conflict_approved",
+            "confirmed_excluded",
+            "confirmed_keep",
+            "confirmed_replace",
+          ])
+          .describe(
+            "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep\/replace. confirmed_excluded\/keep\/replace: a human decision has been applied.",
+          ),
+      })
+      .nullish(),
+    qbDeposit: zod
+      .object({
+        id: zod
+          .string()
+          .describe("The QuickBooks deposit lump's staged-payment id."),
+        amount: zod.string().nullish(),
+        dateReceived: zod.string().date().nullish(),
+        payerName: zod.string().nullish(),
+        status: zod.string().nullish(),
+      })
+      .nullish(),
+  })
+  .describe(
+    "Read-only three-way audit chain for a gift: the Stripe charge it was minted from or linked to → the Stripe payout that charge settled in → the QuickBooks deposit lump that payout reconciles against. Any leg is null when it doesn't apply (non-Stripe gift, charge not yet paid out, payout with no QB deposit candidate).",
+  );
+
 export const listGiftAllocationsQueryLimitDefault = 50;
 export const listGiftAllocationsQueryLimitMax = 10000;
 

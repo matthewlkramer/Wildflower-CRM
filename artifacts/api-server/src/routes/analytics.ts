@@ -11,7 +11,7 @@ import {
   fiscalYears,
   fiscalYearEntityGoals,
 } from "@workspace/db/schema";
-import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound } from "../lib/helpers";
 
@@ -118,6 +118,10 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
     .where(
       and(
         eq(giftAllocations.grantYear, fy.id),
+        // Archived gifts (e.g. a QB lump superseded by a Stripe REPLACE) are
+        // never counted as payments — keep them out of `paid` so `committed`
+        // (pledged − paid) doesn't get artificially reduced by dead money.
+        isNull(giftsAndPayments.archivedAt),
         hasEntityFilter ? inArray(giftAllocations.entityId, entityIds!) : undefined,
       ),
     )
@@ -162,9 +166,14 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
         v: sql<string>`COALESCE(SUM(${giftAllocations.subAmount}), 0)::text`,
       })
       .from(giftAllocations)
+      // Join the parent gift so archived gifts can be excluded from `received`
+      // (archived = doesn't count). Without this, a REPLACE would double-count
+      // the superseded QB lump alongside its per-charge Stripe gifts.
+      .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
       .where(
         and(
           eq(giftAllocations.grantYear, fy.id),
+          isNull(giftsAndPayments.archivedAt),
           hasEntityFilter
             ? inArray(giftAllocations.entityId, entityIds!)
             : undefined,
@@ -247,7 +256,10 @@ router.get(
         .where(
           sql`(${opportunitiesAndPledges.wasPledge} = true OR ${opportunitiesAndPledges.stage} IN ('conditional_commitment','written_commitment'))`,
         ),
-      db.select({ value: count() }).from(giftsAndPayments),
+      db
+        .select({ value: count() })
+        .from(giftsAndPayments)
+        .where(isNull(giftsAndPayments.archivedAt)),
       fyMetricsFor(currentFy, entityIds),
       fyMetricsFor(nextFy, entityIds),
     ]);
@@ -351,6 +363,9 @@ router.get(
         .where(
           and(
             eq(giftAllocations.grantYear, fyId),
+            // Mirror the dashboard tile: archived gifts don't count, so the
+            // drill-down rows (and their API-edge total) stay in agreement.
+            isNull(giftsAndPayments.archivedAt),
             entityIdParam ? eq(giftAllocations.entityId, entityIdParam) : undefined,
           ),
         )

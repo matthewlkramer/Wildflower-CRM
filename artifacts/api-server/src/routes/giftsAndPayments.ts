@@ -16,6 +16,8 @@ import {
   emailAttachments,
   emails,
   peopleEntityRoles,
+  stripeStagedCharges,
+  stripePayouts,
   type NewGiftAllocation,
 } from "@workspace/db/schema";
 import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
@@ -1406,6 +1408,110 @@ router.delete(
       .returning({ id: giftsAndPayments.id });
     if (!updated) return notFound(res, "gift");
     res.status(204).end();
+  }),
+);
+
+// ─── GET /gifts-and-payments/:id/stripe-chain ──────────────────────────────
+// Read-only audit provenance for a gift: the Stripe charge it was minted from
+// (or linked to) → the Stripe payout that charge settled in → the QuickBooks
+// deposit lump that payout reconciles against. Returns a null leg for anything
+// that doesn't apply (a non-Stripe gift, a charge not yet paid out, or a payout
+// with no QB deposit candidate) so the UI can render the chain progressively.
+router.get(
+  "/gifts-and-payments/:id/stripe-chain",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const gift = await db
+      .select({ id: giftsAndPayments.id })
+      .from(giftsAndPayments)
+      .where(eq(giftsAndPayments.id, id))
+      .then((r) => r[0]);
+    if (!gift) return notFound(res, "gift");
+
+    // A gift is at most one charge's created_gift_id and at most one charge's
+    // matched_gift_id (unique partial indexes). Prefer the "created" row — this
+    // gift was minted from that charge — over a "matched" linkage.
+    const row = await db
+      .select({
+        chargeId: stripeStagedCharges.id,
+        chargeCreatedGiftId: stripeStagedCharges.createdGiftId,
+        chargeGross: stripeStagedCharges.grossAmount,
+        chargeFee: stripeStagedCharges.feeAmount,
+        chargeNet: stripeStagedCharges.netAmount,
+        chargeDate: stripeStagedCharges.dateReceived,
+        chargePayer: stripeStagedCharges.payerName,
+        chargeCurrency: stripeStagedCharges.currency,
+        payoutId: stripePayouts.id,
+        payoutAmount: stripePayouts.amount,
+        payoutArrival: stripePayouts.arrivalDate,
+        payoutGross: stripePayouts.grossTotal,
+        payoutFee: stripePayouts.feeTotal,
+        payoutNet: stripePayouts.netTotal,
+        payoutChargeCount: stripePayouts.chargeCount,
+        payoutReconStatus: stripePayouts.qbReconciliationStatus,
+        depositId: stagedPayments.id,
+        depositAmount: stagedPayments.amount,
+        depositDate: stagedPayments.dateReceived,
+        depositPayer: stagedPayments.payerName,
+        depositStatus: stagedPayments.status,
+      })
+      .from(stripeStagedCharges)
+      .leftJoin(
+        stripePayouts,
+        eq(stripePayouts.id, stripeStagedCharges.stripePayoutId),
+      )
+      .leftJoin(
+        stagedPayments,
+        sql`${stagedPayments.id} = COALESCE(${stripePayouts.matchedQbStagedPaymentId}, ${stripePayouts.proposedQbStagedPaymentId}, ${stripePayouts.qbConflictStagedPaymentId})`,
+      )
+      .where(
+        or(
+          eq(stripeStagedCharges.createdGiftId, id),
+          eq(stripeStagedCharges.matchedGiftId, id),
+        ),
+      )
+      .orderBy(
+        sql`CASE WHEN ${stripeStagedCharges.createdGiftId} = ${id} THEN 0 ELSE 1 END`,
+      )
+      .limit(1)
+      .then((r) => r[0]);
+
+    return res.json({
+      giftId: id,
+      charge: row?.chargeId
+        ? {
+            id: row.chargeId,
+            linkage: row.chargeCreatedGiftId === id ? "created" : "matched",
+            grossAmount: row.chargeGross,
+            feeAmount: row.chargeFee,
+            netAmount: row.chargeNet,
+            dateReceived: row.chargeDate,
+            payerName: row.chargePayer,
+            currency: row.chargeCurrency,
+          }
+        : null,
+      payout: row?.payoutId
+        ? {
+            id: row.payoutId,
+            amount: row.payoutAmount,
+            arrivalDate: row.payoutArrival,
+            grossTotal: row.payoutGross,
+            feeTotal: row.payoutFee,
+            netTotal: row.payoutNet,
+            chargeCount: row.payoutChargeCount,
+            qbReconciliationStatus: row.payoutReconStatus,
+          }
+        : null,
+      qbDeposit: row?.depositId
+        ? {
+            id: row.depositId,
+            amount: row.depositAmount,
+            dateReceived: row.depositDate,
+            payerName: row.depositPayer,
+            status: row.depositStatus,
+          }
+        : null,
+    });
   }),
 );
 

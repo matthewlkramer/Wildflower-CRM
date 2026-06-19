@@ -1,0 +1,40 @@
+Here is a doc created by our CFO that I'd like you to look through and compare to what we're doing and surface any issues for me to consider.
+5 minutes ago
+Show less
+Analyzing CFO document comparison
+The user has pivoted to a new request: review the CFO's "Revenue Extractor" doc against what we're building and surface issues. Let me read the full document first.
+4 actions
+I've read the full CFO doc. Before I write up the comparison, let me verify a few specifics in our code so my analysis is accurate rather than speculative — how the Stripe↔QB match amounts are compared (net vs gross), what our QB exclusion classifier actually covers, and whether the gift/allocation model stores any QBO coding dimensions.
+2 actions
+Good — the match uses payout.amount (Stripe's net payout) against the QB deposit amount, so it's correctly net ↔ net (aligns with the CFO's "deposit = net cash"), with a $5 tolerance. Let me verify the exclusion classifier coverage and whether the gift/allocation model stores any QBO coding.
+3 actions
+Let me confirm the full exclusion enum values and whether earned-income/invoice revenue is covered, so I don't mis-state a gap.
+2 actions
+I've now verified enough to give you an accurate comparison. Good news first: our exclusion classifier already covers the CFO's non-donation revenue types well — earned_income (4020 invoices/services), government_reimbursement (CSP), tax_refund (IRS refunds), intercompany_transfer, interest, loan, plus other_revenue (4030). And our gross+separate-fee model with the deposit-lump exclusion is essentially the reconciliation-side mirror of the CFO's "two-row, never net out" rule. So the cash-handling philosophies line up.
+Here are the issues worth your attention, most consequential first.
+1. Cash basis (us) vs. accrual basis (CFO) — the biggest conceptual gap
+The CFO doc books revenue when committed: for a scheduled multi-year grant, the full commitment is booked at signing and the accountant creates AR for future payments; for contingent grants, only the non-contingent portion is booked now. Our three-way reconciliation is strictly cash — a CRM gift is money received, tied to a Stripe charge → payout → QB deposit.
+The risk: if anyone tries to tie CRM gift totals to QBO revenue accounts (4000.x/4100.x), scheduled multi-year grants will always look "short" by the unpaid future tranches (which live in AR, not cash). Our reconciliation is only valid against QBO cash/deposit activity, never the revenue accounts. Worth stating that scope boundary explicitly so the audit doesn't compare the wrong two numbers. (Our pledge model also doesn't distinguish contingent vs. scheduled tranches the way the CFO's AR rule requires.)
+2. The CRM has no QBO coding dimensions
+The CFO's entire output hinges on four closed-list codings per entry: Object Code (4000.x/4100.x revenue account), Location, Class (BWF/Charter → General Operations), and a Restriction Type taxonomy. Our gift_allocations carries only binary booleans (formalRegionalRestriction, formalFundUseRestriction) plus region/school/project links — no object code, no location, no class.
+We could derive Object Code from data we already have (payer type via Donor XOR × restricted flag → the 4000.x/4100.x + .x suffix), but Location and Class have no home in our schema at all. If the CRM is meant to be the audit source of truth, there's currently no bridge from a CRM gift to its QBO coding. Decision to make: do we add/derive coding in the CRM, or accept that the CFO's separate tool owns coding and our reconciliation only ties the money, not the coding?
+3. Restriction taxonomy mismatch
+The CFO distinguishes Purpose / Time / Both / Unrestricted / Unclear, and explicitly says never silently default Unclear to Unrestricted — flag it. Our model has two purpose-ish booleans and no first-class "time restricted" concept on a gift (time restriction only lives implicitly in pledge schedules), no "Both," and a boolean can't represent "Unclear/needs review." So "must be spent by FY-end" restricted gifts and ambiguous ones can't be represented faithfully.
+4. Fiscal-sponsee gifts: we exclude, the CFO books as restricted revenue ⚠️
+This is the sharpest potential conflict. The CFO says any gift for a fiscal sponsee (BWF, Charter, Tierra Indígena, Seed Fund) is always Wildflower restricted donation revenue (4100.x) — "the restriction is the sponsee," even if the donor wrote "unrestricted." Our QB classifier has fiscally_sponsored as an exclusion reason — it hides that money from the gift queue as project-identity (reads QB Class).
+If those two are describing the same dollars, we'd be excluding money the CFO counts as revenue — an undercount. But they may be targeting different things (our exclusion may key on pass-through/Class-coded flows, not inbound donor gifts designated to a sponsee). I can't tell for certain from the code which it is, so this is the one I'd most want you to confirm with the CFO before we trust either system's totals.
+5. Where does the processor fee actually get booked?
+We store gross + processor_fee and exclude the net QB deposit lump — correct, and it ties out net↔net (the match uses Stripe's net payout.amount vs. the QB deposit, $5 tolerance). But the CFO books each fee as a positive expense row (7003 Bank Charges). Our CRM holds the fee data but never pushes it anywhere, so today those 7003 expense entries are produced independently of our fee numbers. Two smaller things fall out of this:
+The per-charge fee totals we capture are the natural source for the CFO's 7003 rows — currently disconnected.
+I'd suggest a tie-out assertion: does Stripe's reported payout.amount (net) equal our computed netTotal (gross − fees − refunds)? If they ever diverge, our charge/fee capture is incomplete and the reconciliation would silently pass. Right now we prefer payout.amount and only fall back to netTotal, so a divergence wouldn't be flagged.
+6. DAF donor naming
+The CFO has a firm rule: Name = the named fund (or donor advisor), never the DAF sponsor (Fidelity/Schwab/Vanguard). Our QB auto-match is by name/email, so a "Fidelity Charitable" deposit will likely match/create a Fidelity Charitable donor — exactly what the CFO says not to do. If DAF gifts matter for donor attribution, our matcher needs DAF-aware normalization.
+7. Positive alignments worth keeping
+Human-in-the-loop: both systems are propose-then-confirm with a hard confirmation gate and no auto-write. Our REPLACE-default-off + explicit-confirm is squarely in the spirit of the CFO's gate.
+Gross + separate fee, never net: identical philosophy.
+Anonymous donors: both mask the name in outputs.
+Minor/out-of-scope: stock & other non-cash gifts won't appear in the Stripe/QB cash chain at all — just be aware they're outside the reconciliation entirely.
+
+One connection back to our build: the CFO's whole "exclude the net deposit so the same money isn't booked twice" principle is exactly the double-count risk I flagged in R6 — after a REPLACE, counting both the archived QB lump and the new per-charge gifts books the same dollars twice. So the CFO doc independently validates fixing that, and leans toward the Targeted exclusion (remove the superseded lump, keep everything else counted).
+This was advisory — I've changed no code. Want me to (a) turn any of these (esp. #2 coding bridge, #4 fiscal-sponsee, #6 DAF naming) into follow-up tasks, and (b) confirm the Targeted vs. Global analytics decision so I can resume R6?
+

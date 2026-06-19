@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { opportunitiesAndPledges, giftsAndPayments } from "@workspace/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 // Stages that, once reached, mark a row as "ever was a pledge" for the
 // purposes of the Pledges page filter (wasPledge sticky-true).
@@ -151,7 +151,15 @@ export async function applyDerivedOppFields(
       paid: sql<string>`COALESCE(SUM(${giftsAndPayments.amount}), 0)::text`,
     })
     .from(giftsAndPayments)
-    .where(eq(giftsAndPayments.paymentOnPledgeId, id));
+    .where(
+      and(
+        eq(giftsAndPayments.paymentOnPledgeId, id),
+        // Archived gifts are logically deleted and excluded from analytics
+        // totals; keep pledge paid-amount derivation consistent so an archived
+        // payment can't keep a pledge derived as cash_in.
+        isNull(giftsAndPayments.archivedAt),
+      ),
+    );
 
   const { status, stage, wasPledge } = deriveOppFields({
     stage: row.stage,

@@ -112,6 +112,7 @@ import type {
   GiftOrPayment,
   GiftOrPaymentDetail,
   GiftOrPaymentList,
+  GiftStripeChain,
   GmailSyncRunResponse,
   GoogleOauthStatus,
   GoogleSyncStatus,
@@ -8138,6 +8139,93 @@ export const useUnlinkThankYouEmail = <
 > => {
   return useMutation(getUnlinkThankYouEmailMutationOptions(options));
 };
+
+/**
+ * @summary The read-only Stripe→QuickBooks reconciliation chain for a gift (charge → payout → QB deposit lump), for EOY audit provenance. Any leg is null when it doesn't apply.
+ */
+export const getGetGiftStripeChainUrl = (id: string) => {
+  return `/api/gifts-and-payments/${id}/stripe-chain`;
+};
+
+export const getGiftStripeChain = async (
+  id: string,
+  options?: RequestInit,
+): Promise<GiftStripeChain> => {
+  return customFetch<GiftStripeChain>(getGetGiftStripeChainUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGiftStripeChainQueryKey = (id: string) => {
+  return [`/api/gifts-and-payments/${id}/stripe-chain`] as const;
+};
+
+export const getGetGiftStripeChainQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGiftStripeChain>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGiftStripeChain>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGiftStripeChainQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGiftStripeChain>>
+  > = ({ signal }) => getGiftStripeChain(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGiftStripeChain>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGiftStripeChainQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGiftStripeChain>>
+>;
+export type GetGiftStripeChainQueryError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary The read-only Stripe→QuickBooks reconciliation chain for a gift (charge → payout → QB deposit lump), for EOY audit provenance. Any leg is null when it doesn't apply.
+ */
+
+export function useGetGiftStripeChain<
+  TData = Awaited<ReturnType<typeof getGiftStripeChain>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGiftStripeChain>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGiftStripeChainQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListGiftAllocationsUrl = (
   params?: ListGiftAllocationsParams,
