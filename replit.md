@@ -244,8 +244,11 @@ mid-run as noise (retry), not a blocker.
 - **Stale importer** — `lib/db/src/import-airtable.mjs` still targets the OLD split
   funders/organizations model and must be updated before any re-import (it will
   otherwise fail). (`lib/db/SCHEMA.md` has been refreshed to the consolidated model.)
-- **FY boundary uses UTC** — `currentFiscalYear` in `/dashboard-summary` is UTC-based;
-  pin to America/Chicago before fiscal year-end to avoid an off-by-a-day flip.
+- ~~**FY boundary uses UTC**~~ — RESOLVED: `computeCurrentFiscalYear` in
+  `routes/analytics.ts` already derives the current fiscal year via
+  `Intl.DateTimeFormat` with `America/Chicago`, so the dashboard FY boundary is
+  timezone-correct. (SQL `fyBucket` derivations operate on `date` columns, which
+  carry no timezone, so they need no change.)
 - **`gmail.send` scope** — new OAuth scope; each user must reconnect Google once.
   Until then the extension cleanly falls back to the legacy single-pixel send.
 - **Anonymous masking gaps** — join-projection name references (role rows, household

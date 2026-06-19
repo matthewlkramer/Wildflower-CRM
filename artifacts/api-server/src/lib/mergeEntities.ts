@@ -4,6 +4,7 @@ import { organizations, people, bulkOperations } from "@workspace/db/schema";
 import { inArray, sql, type SQL } from "drizzle-orm";
 import { newId } from "./helpers";
 import { getAppUser } from "./appRequest";
+import { recordAudit } from "./audit";
 
 /**
  * Entity-merge engine. Collapses any number of duplicate records into a
@@ -478,6 +479,17 @@ export async function mergeEntity(
       targetIds: allIds,
       succeededIds: loserIds,
       failedIds: [],
+    });
+    // Human-readable audit row on the surviving record, so a merge shows up
+    // in the primary entity's own timeline (entityType is the singular kind).
+    await recordAudit(tx, req, {
+      action: "merge",
+      entityType: cfg.kind === "organizations" ? "organization" : "person",
+      entityId: primaryId,
+      summary: `Merged ${loserIds.length} duplicate ${
+        loserIds.length === 1 ? "record" : "records"
+      } into this ${cfg.kind === "organizations" ? "organization" : "person"}`,
+      metadata: { mergedIds: loserIds, primaryId },
     });
   });
 

@@ -10,6 +10,7 @@ import {
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { requireExtensionToken } from "../middlewares/requireExtensionToken";
+import { publicTrackingLimiter } from "../middlewares/rateLimit";
 import { asyncHandler, newId, notFound, paramId } from "../lib/helpers";
 import {
   CreateTrackedEmailBody as CreateTrackedEmailBodyZ,
@@ -330,6 +331,7 @@ router.get(
 // ─── Extension-facing endpoints (unauthenticated) ──────────────────────────
 router.post(
   "/email-tracking",
+  publicTrackingLimiter,
   asyncHandler(async (req, res) => {
     const parsed = CreateTrackedEmailBodyZ.safeParse(req.body);
     if (!parsed.success) {
@@ -493,6 +495,7 @@ router.post(
 
 router.get(
   "/email-tracking/search",
+  publicTrackingLimiter,
   asyncHandler(async (req, res) => {
     const subject = String(req.query.subject ?? "").trim();
     if (!subject) {
@@ -522,6 +525,7 @@ router.get(
 
 router.get(
   "/email-tracking/status",
+  publicTrackingLimiter,
   asyncHandler(async (_req, res) => {
     const rows = await db
       .select({
@@ -540,6 +544,7 @@ router.get(
 
 router.delete(
   "/email-tracking/:id/views/latest",
+  publicTrackingLimiter,
   asyncHandler(async (req, res) => {
     const id = paramId(req);
     const since = new Date(Date.now() - SENDER_PEEK_WINDOW_MS);

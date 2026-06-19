@@ -5,14 +5,13 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler } from "../lib/helpers";
 import { getAppUser } from "../lib/appRequest";
+import { ANON_LABEL, canSeeIdentity } from "../lib/identityVisibility";
 
 const router: IRouter = Router();
 router.use(requireAuth);
 
 const ORGS_ID = sql.raw(`"organizations"."id"`);
 const PEOPLE_ID = sql.raw(`"people"."id"`);
-
-const ANON_LABEL = "Anonymous";
 
 // ─── Correlated subquery fragments scoped to organizations.id ──────────────
 
@@ -131,19 +130,11 @@ const personLastGiftAmountExpr = sql`(
 )`;
 
 // ─── Visibility helpers (mirror UI canSeeIdentity logic server-side) ───────
-
-function canSeeIdentity(
-  entity: { anonymous: boolean; ownerUserId: string | null },
-  viewerId: string,
-  viewerRole: string,
-): boolean {
-  if (!entity.anonymous) return true;
-  if (viewerRole === "admin") return true;
-  return viewerId === entity.ownerUserId;
-}
+// canSeeIdentity is the shared helper in ../lib/identityVisibility; the local
+// mask* wrappers adapt the (viewerId, viewerRole) call sites to a Viewer.
 
 function maskOrgName(name: string, anonymous: boolean, ownerUserId: string | null, viewerId: string, viewerRole: string): string {
-  return canSeeIdentity({ anonymous, ownerUserId }, viewerId, viewerRole) ? name : ANON_LABEL;
+  return canSeeIdentity({ anonymous, ownerUserId }, { id: viewerId, role: viewerRole }) ? name : ANON_LABEL;
 }
 
 function maskPersonName(
@@ -153,7 +144,7 @@ function maskPersonName(
   viewerId: string,
   viewerRole: string,
 ): { firstName: string | null; lastName: string | null; fullName: string | null } {
-  if (canSeeIdentity({ anonymous, ownerUserId }, viewerId, viewerRole)) {
+  if (canSeeIdentity({ anonymous, ownerUserId }, { id: viewerId, role: viewerRole })) {
     return { firstName: raw.firstName, lastName: raw.lastName, fullName: raw.fullName };
   }
   return { firstName: ANON_LABEL, lastName: null, fullName: ANON_LABEL };
@@ -219,7 +210,7 @@ router.get(
     const maskedOrgs = orgRows.map((f) => {
       // Opportunity titles often embed the donor name (e.g. "FY27 Arthur Rock
       // gift"), so mask them in lockstep with the parent org's name visibility.
-      const orgVisible = canSeeIdentity({ anonymous: f.anonymous, ownerUserId: f.ownerUserId }, viewerId, viewerRole);
+      const orgVisible = canSeeIdentity({ anonymous: f.anonymous, ownerUserId: f.ownerUserId }, { id: viewerId, role: viewerRole });
       return {
         ...f,
         name: maskOrgName(f.name, f.anonymous, f.ownerUserId, viewerId, viewerRole),
@@ -228,7 +219,7 @@ router.get(
           : (f.openAsks ?? []).map((a) => ({ ...a, opportunityName: ANON_LABEL })),
         affiliatedPeople: (f.affiliatedPeople ?? []).map((p) => ({
           ...p,
-          personName: canSeeIdentity({ anonymous: p.anonymous, ownerUserId: p.ownerUserId }, viewerId, viewerRole)
+          personName: canSeeIdentity({ anonymous: p.anonymous, ownerUserId: p.ownerUserId }, { id: viewerId, role: viewerRole })
             ? p.personName
             : ANON_LABEL,
         })),
@@ -237,7 +228,7 @@ router.get(
 
     const maskedPeople = personRows.map((p) => {
       const names = maskPersonName(p, p.anonymous, p.ownerUserId, viewerId, viewerRole);
-      const personVisible = canSeeIdentity({ anonymous: p.anonymous, ownerUserId: p.ownerUserId }, viewerId, viewerRole);
+      const personVisible = canSeeIdentity({ anonymous: p.anonymous, ownerUserId: p.ownerUserId }, { id: viewerId, role: viewerRole });
       const openAsks = personVisible
         ? (p.openAsks ?? [])
         : (p.openAsks ?? []).map((a) => ({ ...a, opportunityName: ANON_LABEL }));

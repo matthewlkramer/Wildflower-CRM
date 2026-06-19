@@ -5,10 +5,23 @@ import {
   RequestUploadUrlResponse,
 } from "@workspace/api-zod";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
-import { ObjectPermission } from "../lib/objectAcl";
+import { requireAuth } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+// Every storage route requires an authenticated team member.
+//
+// This app uses a flat trust model: any signed-in @wildflowerschools.org user
+// may see any record (and the files attached to it), so access is gated at the
+// auth boundary here rather than via per-object ACLs. Uploaded objects carry no
+// ACL policy and per-object ownership enforcement is intentionally out of scope.
+//
+// Declaring `router.use(requireAuth)` also makes the gating explicit and
+// order-independent. Previously these routes were only protected as a side
+// effect of an earlier-mounted router's `router.use(requireAuth)` in
+// routes/index.ts — reordering the mounts would have silently exposed storage.
+router.use(requireAuth);
 
 /**
  * POST /storage/uploads/request-url
@@ -46,9 +59,10 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
 /**
  * GET /storage/public-objects/*
  *
- * Serve public assets from PUBLIC_OBJECT_SEARCH_PATHS.
- * These are unconditionally public — no authentication or ACL checks.
- * IMPORTANT: Always provide this endpoint when object storage is set up.
+ * Serve assets from PUBLIC_OBJECT_SEARCH_PATHS. These objects skip per-object
+ * ACL checks, but the route still requires an authenticated team member
+ * (enforced by the router-level `requireAuth` above) — there is no anonymous
+ * public consumer in this internal CRM.
  */
 router.get("/storage/public-objects/*filePath", async (req: Request, res: Response) => {
   try {
@@ -80,9 +94,9 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
 /**
  * GET /storage/objects/*
  *
- * Serve object entities from PRIVATE_OBJECT_DIR.
- * These are served from a separate path from /public-objects and can optionally
- * be protected with authentication or ACL checks based on the use case.
+ * Serve object entities from PRIVATE_OBJECT_DIR. Access requires an
+ * authenticated team member (router-level `requireAuth` above). Per-object ACL
+ * enforcement is intentionally not applied under the flat team-trust model.
  */
 router.get("/storage/objects/*path", async (req: Request, res: Response) => {
   try {
@@ -90,21 +104,6 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
     const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
     const objectPath = `/objects/${wildcardPath}`;
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
-
-    // --- Protected route example (uncomment when using replit-auth) ---
-    // if (!req.isAuthenticated()) {
-    //   res.status(401).json({ error: "Unauthorized" });
-    //   return;
-    // }
-    // const canAccess = await objectStorageService.canAccessObjectEntity({
-    //   userId: req.user.id,
-    //   objectFile,
-    //   requestedPermission: ObjectPermission.READ,
-    // });
-    // if (!canAccess) {
-    //   res.status(403).json({ error: "Forbidden" });
-    //   return;
-    // }
 
     const response = await objectStorageService.downloadObject(objectFile);
 

@@ -4157,6 +4157,42 @@ export interface UpdateInternalEmailDomainsBody {
   domains: string[];
 }
 
+export interface AuditChange {
+  field: string;
+  from?: unknown;
+  to?: unknown;
+}
+
+/**
+ * @nullable
+ */
+export type AuditLogEntryMetadata = { [key: string]: unknown } | null;
+
+export interface AuditLogEntry {
+  id: string;
+  /** @nullable */
+  actorUserId?: string | null;
+  /** @nullable */
+  actorName?: string | null;
+  /** @nullable */
+  actorEmail?: string | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  /** @nullable */
+  summary?: string | null;
+  /** @nullable */
+  changes?: AuditChange[] | null;
+  /** @nullable */
+  metadata?: AuditLogEntryMetadata;
+  createdAt: string;
+}
+
+export interface AuditLogList {
+  data: AuditLogEntry[];
+  pagination: Pagination;
+}
+
 /**
  * Not found
  */
@@ -5236,4 +5272,32 @@ export type ListPersonSuppressionWindowsParams = {
    * Filter to a specific person.
    */
   personId?: string;
+};
+
+export type ListAuditLogParams = {
+  /**
+   * Filter to one entity type (e.g. person, organization).
+   */
+  entityType?: string;
+  /**
+   * Filter to a single entity's timeline (usually paired with entityType).
+   */
+  entityId?: string;
+  /**
+   * Filter to actions taken by one user.
+   */
+  actorUserId?: string;
+  /**
+   * Filter to one action (create/update/archive/unarchive/merge/bulk_update/bulk_archive).
+   */
+  action?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };

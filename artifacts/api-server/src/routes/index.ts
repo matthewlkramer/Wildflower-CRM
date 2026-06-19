@@ -48,6 +48,7 @@ import quickbooksRulesRouter from "./quickbooksRules";
 import revenueCodingRouter from "./revenueCoding";
 import stripeRouter from "./stripe";
 import grantLeadsRouter from "./grantLeads";
+import auditLogRouter from "./auditLog";
 
 const router: IRouter = Router();
 
@@ -110,5 +111,6 @@ router.use(quickbooksRulesRouter);
 router.use(revenueCodingRouter);
 router.use(stripeRouter);
 router.use(grantLeadsRouter);
+router.use(auditLogRouter);
 
 export default router;

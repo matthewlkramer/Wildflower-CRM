@@ -12,12 +12,43 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
+import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { mergeEntity, PERSON_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
-import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
+import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
+import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
 import { syncPersonToFlodeskInBackground } from "../lib/flodeskSync";
+
+// JSON object shape carried by the active/past organization-name aggregates so
+// the consumer can mask anonymous org names server-side (see maskOrgNameList).
+type OrgNameAgg = { name: string | null; anonymous: boolean | null; ownerUserId: string | null };
+
+// Map an aggregated list of orgs back to the public string[] shape, replacing
+// anonymous orgs the viewer can't see with "Anonymous". Preserves null (the
+// ARRAY_AGG/JSONB_AGG "no rows" sentinel) so the response shape is unchanged.
+function maskOrgNameList(list: OrgNameAgg[] | null, viewer: Viewer): string[] | null {
+  if (!list) return null;
+  return list
+    .map((o) => maskName(o.name, { anonymous: o.anonymous, ownerUserId: o.ownerUserId }, viewer))
+    .filter((n): n is string => n !== null);
+}
+
+// Replace the active/past organization-name aggregates on a peopleListSelect
+// row with the masked string[] shape.
+function maskPersonRow<
+  T extends {
+    activeOrganizationNames: OrgNameAgg[] | null;
+    pastOrganizationNames: OrgNameAgg[] | null;
+  },
+>(row: T, viewer: Viewer) {
+  return {
+    ...row,
+    activeOrganizationNames: maskOrgNameList(row.activeOrganizationNames, viewer),
+    pastOrganizationNames: maskOrgNameList(row.pastOrganizationNames, viewer),
+  };
+}
 
 const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus", "enthusiasm", "ownerUserId", "priority", "regionIds", "newsletterStatus"] as const;
 
@@ -100,23 +131,39 @@ const peopleListSelect = {
   mostRecentGiftDate: sql<string | null>`${peopleMostRecentGiftExpr}`.as("most_recent_gift_date"),
   openOpportunityCount: sql<number>`${peopleOpenOppCountExpr}`.as("open_opportunity_count"),
   // DISTINCT to dedupe in case a person has multiple current role rows
-  // at the same organization (different role titles, etc.).
-  activeOrganizationNames: sql<string[] | null>`(
-    SELECT ARRAY_AGG(DISTINCT o.name ORDER BY o.name)
-    FROM people_entity_roles per
-    JOIN organizations o ON o.id = per.organization_id
-    WHERE per.person_id = ${PEOPLE_ID}
-      AND per.current = 'current'
-      AND per.organization_id IS NOT NULL
+  // at the same organization (different role titles, etc.). We aggregate
+  // JSON objects carrying name + anonymous + owner so the consumer can mask
+  // anonymous org names (see maskOrgNameList); the DISTINCT happens in the
+  // derived table (DISTINCT + ORDER BY can't coexist inside JSONB_AGG) and
+  // the public response is mapped back to string[].
+  activeOrganizationNames: sql<OrgNameAgg[] | null>`(
+    SELECT JSONB_AGG(
+      JSONB_BUILD_OBJECT('name', o.name, 'anonymous', o.anonymous, 'ownerUserId', o.owner_user_id)
+      ORDER BY o.name
+    )
+    FROM (
+      SELECT DISTINCT o.id, o.name, o.anonymous, o.owner_user_id
+      FROM people_entity_roles per
+      JOIN organizations o ON o.id = per.organization_id
+      WHERE per.person_id = ${PEOPLE_ID}
+        AND per.current = 'current'
+        AND per.organization_id IS NOT NULL
+    ) o
   )`.as("active_organization_names"),
   // Past organization roles — fallback in the list column.
-  pastOrganizationNames: sql<string[] | null>`(
-    SELECT ARRAY_AGG(DISTINCT o.name ORDER BY o.name)
-    FROM people_entity_roles per
-    JOIN organizations o ON o.id = per.organization_id
-    WHERE per.person_id = ${PEOPLE_ID}
-      AND per.current = 'past'
-      AND per.organization_id IS NOT NULL
+  pastOrganizationNames: sql<OrgNameAgg[] | null>`(
+    SELECT JSONB_AGG(
+      JSONB_BUILD_OBJECT('name', o.name, 'anonymous', o.anonymous, 'ownerUserId', o.owner_user_id)
+      ORDER BY o.name
+    )
+    FROM (
+      SELECT DISTINCT o.id, o.name, o.anonymous, o.owner_user_id
+      FROM people_entity_roles per
+      JOIN organizations o ON o.id = per.organization_id
+      WHERE per.person_id = ${PEOPLE_ID}
+        AND per.current = 'past'
+        AND per.organization_id IS NOT NULL
+    ) o
   )`.as("past_organization_names"),
 };
 
@@ -220,7 +267,9 @@ router.get(
         .offset(offset),
       db.select({ value: count() }).from(people).where(where),
     ]);
-    res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
+    const viewer = getViewer(req);
+    const data = rows.map((r) => maskPersonRow(r, viewer));
+    res.json({ data, pagination: { page, limit, total: Number(total) } });
   }),
 );
 
@@ -236,7 +285,14 @@ router.get(
       db.select().from(phoneNumbers).where(eq(phoneNumbers.personId, id)),
       db.select().from(addresses).where(eq(addresses.personId, id)),
     ]);
-    res.json({ ...row, roles, emails: emailRows, phoneNumbers: phoneRows, addresses: addressRows });
+    const viewer = getViewer(req);
+    res.json({
+      ...maskPersonRow(row, viewer),
+      roles: maskPeopleEntityRoles(roles, viewer),
+      emails: emailRows,
+      phoneNumbers: phoneRows,
+      addresses: addressRows,
+    });
   }),
 );
 
@@ -307,9 +363,12 @@ router.post(
     const body = parseOrBadRequest(CreatePersonBody, req.body, res);
     if (!body) return;
     const [row] = await db.insert(people).values({ id: newId(), ...body }).returning();
-    // Push newsletter membership to Flodesk (fire-and-forget; safe + no-op
-    // when Flodesk isn't configured or the person has no usable email).
-    if (row) syncPersonToFlodeskInBackground(row.id);
+    if (row) {
+      await auditCreate(req, "person", row.id, `Created person ${[row.firstName, row.lastName].filter(Boolean).join(" ").trim()}`.trimEnd());
+      // Push newsletter membership to Flodesk (fire-and-forget; safe + no-op
+      // when Flodesk isn't configured or the person has no usable email).
+      syncPersonToFlodeskInBackground(row.id);
+    }
     res.status(201).json(row);
   }),
 );
@@ -321,18 +380,12 @@ router.patch(
     if (!body) return;
     const id = paramId(req);
 
-    // Pre-fetch the tracked fields only when they appear in the patch body,
-    // so we can detect what actually changed for the history log.
+    // Full before-row for the audit diff (also reused for the connection/
+    // enthusiasm change history below).
+    const [auditBefore] = await db.select().from(people).where(eq(people.id, id));
     const trackingFields = ["connectionStatus", "enthusiasm"] as const;
     const needsTracking = trackingFields.some((f) => f in body);
-    let before: { connectionStatus: string | null; enthusiasm: string | null } | undefined;
-    if (needsTracking) {
-      const [cur] = await db
-        .select({ connectionStatus: people.connectionStatus, enthusiasm: people.enthusiasm })
-        .from(people)
-        .where(eq(people.id, id));
-      before = cur;
-    }
+    const before = needsTracking ? auditBefore : undefined;
 
     const [row] = await db
       .update(people)
@@ -357,6 +410,8 @@ router.patch(
         }
       }
     }
+
+    await auditUpdate(req, "person", row.id, auditBefore as Record<string, unknown> | undefined, row as Record<string, unknown>, Object.keys(body), `Updated person ${[row.firstName, row.lastName].filter(Boolean).join(" ")}`.trimEnd());
 
     // Propagate newsletter/unsubscribe changes out to Flodesk (fire-and-forget).
     syncPersonToFlodeskInBackground(row.id);

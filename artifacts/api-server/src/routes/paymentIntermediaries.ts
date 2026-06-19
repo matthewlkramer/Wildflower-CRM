@@ -9,7 +9,8 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
-import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
+import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
+import { getViewer } from "../lib/identityVisibility";
 import { activeOnlyUnlessAdmin, archiveOne, unarchiveOne } from "../lib/archive";
 
 const router: IRouter = Router();
@@ -46,7 +47,7 @@ router.get(
       db.select().from(emails).where(eq(emails.paymentIntermediaryId, id)),
       db.select().from(addresses).where(eq(addresses.paymentIntermediaryId, id)),
     ]);
-    res.json({ ...row, people, emails: emailRows, addresses: addressRows });
+    res.json({ ...row, people: maskPeopleEntityRoles(people, getViewer(req)), emails: emailRows, addresses: addressRows });
   }),
 );
 

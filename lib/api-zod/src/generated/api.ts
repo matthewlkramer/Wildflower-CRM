@@ -15100,3 +15100,71 @@ export const UpdateInternalEmailDomainsResponse = zod.object({
   domains: zod.array(zod.string()),
   updatedAt: zod.string().datetime({}).nullable(),
 });
+
+/**
+ * @summary List audit-log entries (admin only). Filterable by entity, actor, and action.
+ */
+export const listAuditLogQueryLimitDefault = 50;
+export const listAuditLogQueryLimitMax = 10000;
+
+export const listAuditLogQueryPageDefault = 1;
+
+export const ListAuditLogQueryParams = zod.object({
+  entityType: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to one entity type (e.g. person, organization)."),
+  entityId: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter to a single entity's timeline (usually paired with entityType).",
+    ),
+  actorUserId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to actions taken by one user."),
+  action: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter to one action (create\/update\/archive\/unarchive\/merge\/bulk_update\/bulk_archive).",
+    ),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listAuditLogQueryLimitMax)
+    .default(listAuditLogQueryLimitDefault),
+  page: zod.coerce.number().min(1).default(listAuditLogQueryPageDefault),
+});
+
+export const ListAuditLogResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.string(),
+      actorUserId: zod.string().nullish(),
+      actorName: zod.string().nullish(),
+      actorEmail: zod.string().nullish(),
+      action: zod.string(),
+      entityType: zod.string(),
+      entityId: zod.string(),
+      summary: zod.string().nullish(),
+      changes: zod
+        .array(
+          zod.object({
+            field: zod.string(),
+            from: zod.unknown().optional(),
+            to: zod.unknown().optional(),
+          }),
+        )
+        .nullish(),
+      metadata: zod.record(zod.string(), zod.unknown()).nullish(),
+      createdAt: zod.string().datetime({}),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});

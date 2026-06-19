@@ -27,7 +27,9 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Lightbulb,
+  ScrollText,
 } from "lucide-react";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -59,6 +61,7 @@ const navItems = [
   { href: "/email-tracking", label: "Email Tracking", icon: Eye },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/admin", label: "Admin", icon: Settings },
+  { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
 ];
 
 const SIDEBAR_COLLAPSED_KEY = "wf-sidebar-collapsed";
@@ -67,6 +70,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { signOut } = useClerk();
   const { user } = useUser();
+  const isAdmin = useIsAdmin();
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -80,7 +84,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const NavLinks = ({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) => (
     <nav className="space-y-1">
-      {navItems.map((item) => {
+      {navItems
+        .filter((item) => !("adminOnly" in item && item.adminOnly) || isAdmin)
+        .map((item) => {
         const isActive = location === item.href || location.startsWith(`${item.href}/`);
         const Icon = item.icon;
         return (

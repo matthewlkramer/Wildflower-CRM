@@ -1,0 +1,469 @@
+import { type Request, type Response } from "express";
+import { db } from "@workspace/db";
+import {
+  stagedPayments,
+  stagedPaymentSplits,
+  giftsAndPayments,
+  organizations,
+  households,
+  people,
+  paymentIntermediaries,
+  quickbooksHandlingRules,
+  entities,
+} from "@workspace/db/schema";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  ilike,
+  or,
+  sql,
+} from "drizzle-orm";
+import { alias, type PgSelect } from "drizzle-orm/pg-core";
+import { getAppUser } from "../../lib/appRequest";
+import { type InvariantIssue } from "@workspace/api-zod";
+
+export function requireAdmin(req: Request, res: Response): boolean {
+  const me = getAppUser(req);
+  if (!me || me.role !== "admin") {
+    res.status(403).json({ error: "admin_required" });
+    return false;
+  }
+  return true;
+}
+
+export function respondInvariantFailure(
+  res: Response,
+  issues: InvariantIssue[],
+): void {
+  res.status(400).json({
+    error: "validation_error",
+    message: "Request validation failed",
+    details: {
+      issues: issues.map((i) => ({ path: [i.path], message: i.message })),
+    },
+  });
+}
+
+// The gift a staged row resolved to (reconciled OR minted), for display.
+export const resolvedGift = alias(giftsAndPayments, "resolved_gift");
+// The handling rule that auto-classified this row (excluded / auto-approved), for display.
+export const matchedRule = alias(quickbooksHandlingRules, "matched_rule");
+
+// Derived queue bucket for a staged row (kept in sync with the where-clauses
+// in queueWhere below).
+export const queueExpr = sql<string>`
+  CASE
+    WHEN ${stagedPayments.status} = 'excluded' THEN 'excluded'
+    WHEN ${stagedPayments.status} = 'rejected' THEN 'rejected'
+    WHEN ${stagedPayments.status} = 'pending'  THEN 'needs_review'
+    WHEN ${stagedPayments.status} = 'approved'
+         AND ${stagedPayments.autoApplied} = true
+         AND ${stagedPayments.matchConfirmedAt} IS NULL THEN 'auto_matched'
+    ELSE 'done'
+  END
+`.as("queue");
+
+// Donor + resolved-gift + intermediary display fields joined for the queue UI.
+// The verbatim raw QB JSON (qbRaw / qbRawLine) is stored for audit but excluded
+// from every list/detail response — it is large and never needed by the UI.
+const {
+  qbRaw: _qbRaw,
+  qbRawLine: _qbRawLine,
+  ...stagedColumns
+} = getTableColumns(stagedPayments);
+export const stagedSelect = {
+  ...stagedColumns,
+  queue: queueExpr,
+  organizationName: organizations.name,
+  householdName: households.name,
+  individualGiverPersonName: sql<string | null>`
+    COALESCE(
+      NULLIF(TRIM(${people.fullName}), ''),
+      NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
+    )
+  `.as("individual_giver_person_name"),
+  intermediaryName: paymentIntermediaries.name,
+  entityName: entities.name,
+  resolvedGiftId: resolvedGift.id,
+  resolvedGiftName: resolvedGift.name,
+  resolvedGiftAmount: resolvedGift.amount,
+  resolvedGiftDate: resolvedGift.dateReceived,
+  // Split summary: when a staged row is split across several existing gifts its
+  // resolution lives entirely in staged_payment_splits (resolvedGift above is
+  // null because no single matched/created/group gift is set). These correlated
+  // subqueries surface the count, combined gross total, and gift names so the UI
+  // can render "Split across N gifts · $total". 0/null when not split.
+  splitCount: sql<number>`(
+    SELECT COUNT(*)::int FROM staged_payment_splits sps
+    WHERE sps.staged_payment_id = ${stagedPayments.id}
+  )`.as("split_count"),
+  splitTotal: sql<string | null>`(
+    SELECT SUM(sps.sub_amount) FROM staged_payment_splits sps
+    WHERE sps.staged_payment_id = ${stagedPayments.id}
+  )`.as("split_total"),
+  splitGiftNames: sql<string[] | null>`(
+    SELECT array_agg(g.name ORDER BY g.name)
+    FROM staged_payment_splits sps
+    JOIN gifts_and_payments g ON g.id = sps.gift_id
+    WHERE sps.staged_payment_id = ${stagedPayments.id}
+  )`.as("split_gift_names"),
+  matchedRuleName: matchedRule.name,
+  // Top-level QuickBooks LinkedTxn (e.g. the Deposit a Payment was deposited
+  // into) — derived READ-ONLY from the stored raw QB payload, never written onto
+  // the staged row. Surfaced for reference only. Line-level LinkedTxn (the
+  // invoices / credit memos / journal entries a payment applies to) already
+  // ships in qbLinkedTxn.
+  qbDepositLinks: sql<{ txnId: string; txnType: string }[] | null>`(
+    SELECT jsonb_agg(jsonb_build_object('txnId', lt->>'TxnId', 'txnType', lt->>'TxnType'))
+    FROM jsonb_array_elements(
+      CASE WHEN jsonb_typeof(${stagedPayments.qbRaw} -> 'LinkedTxn') = 'array'
+        THEN ${stagedPayments.qbRaw} -> 'LinkedTxn'
+        ELSE '[]'::jsonb END
+    ) lt
+    WHERE lt->>'TxnType' = 'Deposit'
+  )`.as("qb_deposit_links"),
+  // "Gift likely not created yet": this row has no gift of its own, and every
+  // same-donor / similar-amount gift is already linked to a DIFFERENT staged
+  // payment (no unlinked candidate is left to match). Signals the fundraiser to
+  // create a new gift (or exclude a true duplicate) rather than trusting a high
+  // match score that points at an already-claimed gift.
+  giftAlreadyLinkedElsewhere: sql<boolean>`(
+    ${stagedPayments.matchedGiftId} IS NULL
+    AND ${stagedPayments.createdGiftId} IS NULL
+    AND ${stagedPayments.amount} IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM gifts_and_payments g
+      WHERE (
+        (${stagedPayments.organizationId} IS NOT NULL AND g.organization_id = ${stagedPayments.organizationId})
+        OR (${stagedPayments.individualGiverPersonId} IS NOT NULL AND g.individual_giver_person_id = ${stagedPayments.individualGiverPersonId})
+        OR (${stagedPayments.householdId} IS NOT NULL AND g.household_id = ${stagedPayments.householdId})
+      )
+      AND g.amount >= ${stagedPayments.amount}::numeric - 0.01
+      AND g.amount <= ${stagedPayments.amount}::numeric * 1.10 + 1
+      AND (
+        EXISTS (
+          SELECT 1 FROM staged_payments sp2
+          WHERE (sp2.matched_gift_id = g.id OR sp2.created_gift_id = g.id)
+            AND sp2.id <> ${stagedPayments.id}
+        )
+        OR EXISTS (
+          SELECT 1 FROM staged_payment_splits spl2
+          WHERE spl2.gift_id = g.id
+            AND spl2.staged_payment_id <> ${stagedPayments.id}
+        )
+      )
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM gifts_and_payments g2
+      WHERE (
+        (${stagedPayments.organizationId} IS NOT NULL AND g2.organization_id = ${stagedPayments.organizationId})
+        OR (${stagedPayments.individualGiverPersonId} IS NOT NULL AND g2.individual_giver_person_id = ${stagedPayments.individualGiverPersonId})
+        OR (${stagedPayments.householdId} IS NOT NULL AND g2.household_id = ${stagedPayments.householdId})
+      )
+      AND g2.amount >= ${stagedPayments.amount}::numeric - 0.01
+      AND g2.amount <= ${stagedPayments.amount}::numeric * 1.10 + 1
+      AND NOT EXISTS (
+        SELECT 1 FROM staged_payments sp3
+        WHERE (sp3.matched_gift_id = g2.id OR sp3.created_gift_id = g2.id)
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM staged_payment_splits spl3
+        WHERE spl3.gift_id = g2.id
+      )
+    )
+  )`.as("gift_already_linked_elsewhere"),
+};
+
+export function withJoins<T extends PgSelect>(q: T) {
+  return q
+    .leftJoin(organizations, eq(organizations.id, stagedPayments.organizationId))
+    .leftJoin(households, eq(households.id, stagedPayments.householdId))
+    .leftJoin(people, eq(people.id, stagedPayments.individualGiverPersonId))
+    .leftJoin(
+      paymentIntermediaries,
+      eq(paymentIntermediaries.id, stagedPayments.matchedPaymentIntermediaryId),
+    )
+    .leftJoin(
+      resolvedGift,
+      sql`${resolvedGift.id} = COALESCE(${stagedPayments.matchedGiftId}, ${stagedPayments.createdGiftId}, ${stagedPayments.groupReconciledGiftId})`,
+    )
+    .leftJoin(matchedRule, eq(matchedRule.id, stagedPayments.matchedRuleId))
+    .leftJoin(entities, eq(entities.id, stagedPayments.entityId));
+}
+
+// Default-entity sentinel: the queue treats unattributed rows (entity_id NULL —
+// no distinctive marker) as belonging to the Wildflower Foundation, so filtering
+// by the Foundation matches both rows explicitly attributed to it AND the NULLs.
+export const FOUNDATION_ENTITY_ID = "wildflower_foundation";
+
+// Restrict the queue to one Wildflower entity. "" / "all" → no restriction;
+// the Foundation id also catches unattributed (NULL) rows; any other id is an
+// exact match. Returns undefined when no entity restriction applies.
+export function entityWhere(entity: string) {
+  if (!entity || entity === "all") return undefined;
+  if (entity === FOUNDATION_ENTITY_ID) {
+    return sql`(${stagedPayments.entityId} IS NULL OR ${stagedPayments.entityId} = ${FOUNDATION_ENTITY_ID})`;
+  }
+  return eq(stagedPayments.entityId, entity);
+}
+
+export type Queue =
+  | "needs_review"
+  | "auto_matched"
+  | "excluded"
+  | "done"
+  | "rejected";
+
+export const STAGED_SORTS = [
+  "date_desc",
+  "date_asc",
+  "amount_desc",
+  "amount_asc",
+  "payer_asc",
+  "payer_desc",
+] as const;
+export type StagedSort = (typeof STAGED_SORTS)[number];
+
+// Column ordering for the reconciler's sort dropdown. createdAt is the stable
+// tiebreak so paging is deterministic within a sort key.
+export function stagedOrderBy(sort: StagedSort) {
+  switch (sort) {
+    case "date_asc":
+      return [asc(stagedPayments.dateReceived), desc(stagedPayments.createdAt)];
+    case "amount_desc":
+      return [desc(stagedPayments.amount), desc(stagedPayments.createdAt)];
+    case "amount_asc":
+      return [asc(stagedPayments.amount), desc(stagedPayments.createdAt)];
+    case "payer_asc":
+      return [asc(stagedPayments.payerName), desc(stagedPayments.createdAt)];
+    case "payer_desc":
+      return [desc(stagedPayments.payerName), desc(stagedPayments.createdAt)];
+    case "date_desc":
+    default:
+      return [desc(stagedPayments.dateReceived), desc(stagedPayments.createdAt)];
+  }
+}
+
+// Escape LIKE/ILIKE wildcards so a user typing "%" or "_" searches for those
+// literal characters instead of matching (nearly) everything. PostgreSQL's
+// default ILIKE escape character is the backslash, so escaping the input is
+// enough — no explicit ESCAPE clause needed.
+export function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+// Free-text filter for the reconciler's LEFT pane. Matches the payer, the raw
+// memo/reference, the single-line description, and any of the line-detail array
+// fields (items / accounts / classes). Array columns are flattened with
+// array_to_string so a substring match works across all elements at once.
+export function stagedSearchWhere(term: string) {
+  const like = `%${escapeLike(term)}%`;
+  return or(
+    ilike(stagedPayments.payerName, like),
+    ilike(stagedPayments.rawReference, like),
+    ilike(stagedPayments.lineDescription, like),
+    sql`array_to_string(COALESCE(${stagedPayments.lineItemNames}, '{}'), ' ') ILIKE ${like}`,
+    sql`array_to_string(COALESCE(${stagedPayments.lineAccountNames}, '{}'), ' ') ILIKE ${like}`,
+    sql`array_to_string(COALESCE(${stagedPayments.lineClasses}, '{}'), ' ') ILIKE ${like}`,
+  );
+}
+
+export function queueWhere(queue: Queue) {
+  switch (queue) {
+    case "auto_matched":
+      return and(
+        eq(stagedPayments.status, "approved"),
+        eq(stagedPayments.autoApplied, true),
+        sql`${stagedPayments.matchConfirmedAt} IS NULL`,
+      );
+    case "done":
+      return and(
+        eq(stagedPayments.status, "approved"),
+        sql`(${stagedPayments.matchConfirmedAt} IS NOT NULL OR ${stagedPayments.autoApplied} = false)`,
+      );
+    case "excluded":
+      return eq(stagedPayments.status, "excluded");
+    case "rejected":
+      return eq(stagedPayments.status, "rejected");
+    case "needs_review":
+    default:
+      return eq(stagedPayments.status, "pending");
+  }
+}
+
+// Shared candidate-gift select (donor names + already-linked flag).
+export function giftCandidateSelect(excludeStagedId: string) {
+  return {
+    ...getTableColumns(giftsAndPayments),
+    organizationName: organizations.name,
+    householdName: households.name,
+    individualGiverPersonName: people.fullName,
+    alreadyLinkedStagedPaymentId: sql<string | null>`COALESCE(
+      (SELECT sp2.id FROM staged_payments sp2
+        WHERE (sp2.matched_gift_id = ${giftsAndPayments.id}
+               OR sp2.created_gift_id = ${giftsAndPayments.id})
+          AND sp2.id <> ${excludeStagedId}
+        LIMIT 1),
+      (SELECT spl.staged_payment_id FROM staged_payment_splits spl
+        WHERE spl.gift_id = ${giftsAndPayments.id}
+          AND spl.staged_payment_id <> ${excludeStagedId}
+        LIMIT 1)
+    )`,
+  };
+}
+
+export function giftCandidateJoins<T extends PgSelect>(q: T) {
+  return q
+    .leftJoin(
+      organizations,
+      eq(organizations.id, giftsAndPayments.organizationId),
+    )
+    .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
+    .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId));
+}
+
+// ─── revert helpers ────────────────────────────────────────────────────────
+// Undo an approved reconciliation/creation, returning the row to the pending
+// queue. Reversible cases:
+//   - matchedGiftId set  → clear the link (pre-existing gift untouched).
+//   - createdGiftId + autoApplied → delete the auto-minted gift + clear it.
+// A MANUALLY created gift (createdGiftId, autoApplied=false) cannot be reverted
+// — deleting it would orphan a fundraiser-created ledger row. The donor match
+// is left intact so the row can be re-resolved.
+const REVERT_NOT_FOUND = "__not_found__";
+const REVERT_NOT_REVERTIBLE = "__not_revertible__";
+
+export type RevertOutcome =
+  | { ok: true; row: typeof stagedPayments.$inferSelect | null }
+  | { ok: false; reason: "not_found" | "not_revertible" };
+
+// Shared revert transaction used by both the single-row route and the bulk
+// route. Returns a structured outcome (instead of throwing for the expected
+// not-found / not-revertible cases) so the bulk caller can skip those rows
+// without aborting the rest. Each call runs in its OWN transaction so one row's
+// rollback never undoes another's revert.
+export async function revertOneStagedPayment(
+  id: string,
+): Promise<RevertOutcome> {
+  let result: typeof stagedPayments.$inferSelect | null = null;
+  try {
+    await db.transaction(async (tx) => {
+      const locked = await tx
+        .select()
+        .from(stagedPayments)
+        .where(eq(stagedPayments.id, id))
+        .for("update")
+        .then((r) => r[0]);
+      if (!locked) throw new Error(REVERT_NOT_FOUND);
+      if (locked.status !== "approved") throw new Error(REVERT_NOT_REVERTIBLE);
+
+      // Split-aware: a row resolved by a split has no matched/created/group
+      // gift of its own, so it would fall through to the single-row branch and
+      // be rejected as not-revertible. Detect it first: delete every split
+      // link and return the row to pending. The pre-existing gifts are never
+      // touched (no mint happens in a split).
+      const splitLinks = await tx
+        .select({ id: stagedPaymentSplits.id })
+        .from(stagedPaymentSplits)
+        .where(eq(stagedPaymentSplits.stagedPaymentId, id));
+      if (splitLinks.length > 0) {
+        await tx
+          .delete(stagedPaymentSplits)
+          .where(eq(stagedPaymentSplits.stagedPaymentId, id));
+        const [row] = await tx
+          .update(stagedPayments)
+          .set({
+            status: "pending",
+            matchedGiftId: null,
+            createdGiftId: null,
+            groupReconciledGiftId: null,
+            autoApplied: false,
+            matchConfirmedByUserId: null,
+            matchConfirmedAt: null,
+            approvedByUserId: null,
+            approvedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(stagedPayments.id, id))
+          .returning();
+        result = row ?? null;
+        return;
+      }
+
+      // Group-aware: a deposit-group member (incl. the representative, which
+      // also carries matchedGiftId) reverts the WHOLE group back to pending.
+      // No gift is deleted — a group reconciles to a pre-existing gift, never
+      // a minted one. Check this first so the representative isn't handled by
+      // the single-row branch (which would orphan the other members).
+      if (locked.groupReconciledGiftId != null) {
+        const gid = locked.groupReconciledGiftId;
+        await tx
+          .select({ id: stagedPayments.id })
+          .from(stagedPayments)
+          .where(eq(stagedPayments.groupReconciledGiftId, gid))
+          .for("update");
+        await tx
+          .update(stagedPayments)
+          .set({
+            status: "pending",
+            matchedGiftId: null,
+            createdGiftId: null,
+            groupReconciledGiftId: null,
+            autoApplied: false,
+            matchConfirmedByUserId: null,
+            matchConfirmedAt: null,
+            approvedByUserId: null,
+            approvedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(stagedPayments.groupReconciledGiftId, gid));
+        const [row] = await tx
+          .select()
+          .from(stagedPayments)
+          .where(eq(stagedPayments.id, id));
+        result = row ?? null;
+        return;
+      }
+
+      const isReconcile = locked.matchedGiftId != null;
+      const isAutoMint =
+        locked.createdGiftId != null && locked.autoApplied === true;
+      if (!isReconcile && !isAutoMint) throw new Error(REVERT_NOT_REVERTIBLE);
+
+      if (isAutoMint && locked.createdGiftId) {
+        await tx
+          .delete(giftsAndPayments)
+          .where(eq(giftsAndPayments.id, locked.createdGiftId));
+      }
+
+      const [row] = await tx
+        .update(stagedPayments)
+        .set({
+          status: "pending",
+          matchedGiftId: null,
+          createdGiftId: null,
+          autoApplied: false,
+          matchConfirmedByUserId: null,
+          matchConfirmedAt: null,
+          approvedByUserId: null,
+          approvedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(stagedPayments.id, id))
+        .returning();
+      result = row ?? null;
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === REVERT_NOT_FOUND) {
+      return { ok: false, reason: "not_found" };
+    }
+    if (e instanceof Error && e.message === REVERT_NOT_REVERTIBLE) {
+      return { ok: false, reason: "not_revertible" };
+    }
+    throw e;
+  }
+  return { ok: true, row: result };
+}

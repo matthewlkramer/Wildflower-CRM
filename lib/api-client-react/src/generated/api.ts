@@ -31,6 +31,7 @@ import type {
   ApplyRuleToPendingBody,
   ApplyRuleToPendingResult,
   AssignGrantLeadBody,
+  AuditLogList,
   BadRequestResponse,
   BulkArchiveBody,
   BulkUpdateGiftsBody,
@@ -134,6 +135,7 @@ import type {
   InternalEmailDomainsConfig,
   LinkThankYouEmailBody,
   ListAddressesParams,
+  ListAuditLogParams,
   ListCalendarEventsParams,
   ListDonorPaymentIntermediariesParams,
   ListEmailMessagesParams,
@@ -22559,3 +22561,97 @@ export const useUpdateInternalEmailDomains = <
 > => {
   return useMutation(getUpdateInternalEmailDomainsMutationOptions(options));
 };
+
+/**
+ * @summary List audit-log entries (admin only). Filterable by entity, actor, and action.
+ */
+export const getListAuditLogUrl = (params?: ListAuditLogParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/audit-log?${stringifiedParams}`
+    : `/api/audit-log`;
+};
+
+export const listAuditLog = async (
+  params?: ListAuditLogParams,
+  options?: RequestInit,
+): Promise<AuditLogList> => {
+  return customFetch<AuditLogList>(getListAuditLogUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAuditLogQueryKey = (params?: ListAuditLogParams) => {
+  return [`/api/audit-log`, ...(params ? [params] : [])] as const;
+};
+
+export const getListAuditLogQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAuditLog>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  params?: ListAuditLogParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAuditLog>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAuditLogQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listAuditLog>>> = ({
+    signal,
+  }) => listAuditLog(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAuditLog>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAuditLogQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAuditLog>>
+>;
+export type ListAuditLogQueryError = ErrorType<ForbiddenResponse>;
+
+/**
+ * @summary List audit-log entries (admin only). Filterable by entity, actor, and action.
+ */
+
+export function useListAuditLog<
+  TData = Awaited<ReturnType<typeof listAuditLog>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  params?: ListAuditLogParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAuditLog>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAuditLogQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

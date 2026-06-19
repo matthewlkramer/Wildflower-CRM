@@ -127,6 +127,10 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
   index("gifts_and_payments_owner_user_id_idx").on(t.ownerUserId),
   index("gifts_and_payments_grant_year_idx").on(t.grantYear),
+  // Date-range / sort scans (gifts list defaults to date_received DESC, and the
+  // analytics fiscal-year buckets filter on date_received). Mirrors the existing
+  // index on staged_payments(date_received).
+  index("gifts_and_payments_date_received_idx").on(t.dateReceived),
   index("gifts_and_payments_archived_at_idx").on(t.archivedAt),
   index("gifts_and_payments_thank_you_email_msg_idx").on(t.thankYouEmailMessageId),
   index("gifts_and_payments_thank_you_sent_at_idx").on(t.thankYouSentAt),

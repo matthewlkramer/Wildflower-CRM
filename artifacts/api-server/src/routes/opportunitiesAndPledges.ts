@@ -19,20 +19,13 @@ const primaryContact = alias(people, "primary_contact_person");
 // COALESCE(full_name, trim(first||' '||last)).
 const donorJoinSelect = {
   ...getTableColumns(opportunitiesAndPledges),
-  organizationName: organizations.name,
-  householdName: households.name,
-  individualGiverPersonName: sql<string | null>`
-    COALESCE(
-      NULLIF(TRIM(${people.fullName}), ''),
-      NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-    )
-  `.as("individual_giver_person_name"),
-  // Denormalized priority tier so the donor cell can render a star
-  // (when priority === 'top') without an extra fetch. NULL when the
-  // corresponding ID isn't set (xor — only one of organization / household /
-  // person is non-null per row).
-  organizationPriority: organizations.priority,
-  individualGiverPersonPriority: people.priority,
+  // Shared donor display names + priorities + anonymous/owner helpers
+  // (see lib/donorJoinSelect.ts) — identical to the gifts route.
+  ...donorDisplayColumns,
+  // Primary contact (opportunities-only): its display name plus the
+  // anonymous/owner helpers, masked + stripped in maskOppDonorRow.
+  primaryContactAnonymous: primaryContact.anonymous,
+  primaryContactOwnerUserId: primaryContact.ownerUserId,
   primaryContactPersonName: sql<string | null>`
     COALESCE(
       NULLIF(TRIM(${primaryContact.fullName}), ''),
@@ -87,6 +80,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
+import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import {
@@ -95,9 +89,42 @@ import {
   deriveOppFields,
 } from "../lib/pledgeStage";
 import { rederivePledgeAllocations } from "../lib/revenueCoding";
+import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
+import {
+  donorDisplayColumns,
+  maskDonorDisplayFields,
+  type DonorDisplayHelperFields,
+} from "../lib/donorJoinSelect";
 
 const router: IRouter = Router();
 router.use(requireAuth);
+
+// Mask the denormalized donor / primary-contact display names on a
+// donorJoinSelect row and strip the anonymous/owner helper aliases so the JSON
+// response shape is unchanged. The shared donor fields go through
+// maskDonorDisplayFields; the opportunities-only primary contact is layered on
+// top here. Households are never anonymizable.
+function maskOppDonorRow<
+  T extends DonorDisplayHelperFields & {
+    primaryContactPersonName: string | null;
+    primaryContactAnonymous: boolean | null;
+    primaryContactOwnerUserId: string | null;
+  },
+>(row: T, viewer: Viewer) {
+  const { primaryContactAnonymous, primaryContactOwnerUserId, ...rest } =
+    maskDonorDisplayFields(row, viewer);
+  return {
+    ...rest,
+    primaryContactPersonName: maskName(
+      rest.primaryContactPersonName,
+      {
+        anonymous: primaryContactAnonymous,
+        ownerUserId: primaryContactOwnerUserId,
+      },
+      viewer,
+    ),
+  };
+}
 
 const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type", "ownerUserId", "entityId"] as const;
 
@@ -298,7 +325,9 @@ router.get(
         .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
         .where(where),
     ]);
-    res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
+    const viewer = getViewer(req);
+    const data = rows.map((r) => maskOppDonorRow(r, viewer));
+    res.json({ data, pagination: { page, limit, total: Number(total) } });
   }),
 );
 
@@ -320,7 +349,7 @@ router.get(
       db.select().from(pledgeAllocations).where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
       db.select().from(giftsAndPayments).where(eq(giftsAndPayments.paymentOnPledgeId, id)),
     ]);
-    res.json({ ...row, allocations, payments });
+    res.json({ ...maskOppDonorRow(row, getViewer(req)), allocations, payments });
   }),
 );
 
@@ -479,6 +508,7 @@ router.post(
     const final = row
       ? (await db.select().from(opportunitiesAndPledges).where(eq(opportunitiesAndPledges.id, row.id)).then((r) => r[0])) ?? row
       : row;
+    if (final) await auditCreate(req, "opportunity", final.id, "Created opportunity");
     res.status(201).json(final);
   }),
 );
@@ -583,6 +613,7 @@ router.patch(
       await rederivePledgeAllocations(row.id);
     }
 
+    await auditUpdate(req, "opportunity", row.id, existing as Record<string, unknown>, (final ?? row) as Record<string, unknown>, Object.keys(body), "Updated opportunity");
     res.json({ ...(final ?? row), promptForReportingDeadlines });
   }),
 );

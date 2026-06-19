@@ -55,3 +55,4 @@ export * from "./stripeStagedCharges";
 export * from "./flodeskSyncState";
 export * from "./connectionEnthusiasmHistory";
 export * from "./grantLeads";
+export * from "./auditLog";

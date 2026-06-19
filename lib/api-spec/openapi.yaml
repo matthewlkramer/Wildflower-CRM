@@ -3121,6 +3121,23 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  # ─── Audit log (admin) ──────────────────────────────────────────────────────
+  /audit-log:
+    get:
+      operationId: listAuditLog
+      tags: [audit-log]
+      summary: List audit-log entries (admin only). Filterable by entity, actor, and action.
+      parameters:
+        - { name: entityType, in: query, required: false, description: "Filter to one entity type (e.g. person, organization).", schema: { type: string } }
+        - { name: entityId, in: query, required: false, description: "Filter to a single entity's timeline (usually paired with entityType).", schema: { type: string } }
+        - { name: actorUserId, in: query, required: false, description: "Filter to actions taken by one user.", schema: { type: string } }
+        - { name: action, in: query, required: false, description: "Filter to one action (create/update/archive/unarchive/merge/bulk_update/bulk_archive).", schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AuditLogList" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
 components:
   parameters:
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 50 } }
@@ -6631,3 +6648,39 @@ components:
       required: [domains]
       properties:
         domains: { type: array, items: { type: string } }
+
+    # ─── Audit log ────────────────────────────────────────────────────────────
+    AuditChange:
+      type: object
+      required: [field]
+      properties:
+        field: { type: string }
+        from: {}
+        to: {}
+    AuditLogEntry:
+      type: object
+      required: [id, action, entityType, entityId, createdAt]
+      properties:
+        id:          { type: string }
+        actorUserId: { type: ["string", "null"] }
+        actorName:   { type: ["string", "null"] }
+        actorEmail:  { type: ["string", "null"] }
+        action:      { type: string }
+        entityType:  { type: string }
+        entityId:    { type: string }
+        summary:     { type: ["string", "null"] }
+        changes:
+          type: ["array", "null"]
+          items: { $ref: "#/components/schemas/AuditChange" }
+        metadata:
+          type: ["object", "null"]
+          additionalProperties: true
+        createdAt:   { type: string, format: date-time }
+    AuditLogList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/AuditLogEntry" }
+        pagination: { $ref: "#/components/schemas/Pagination" }

@@ -22,6 +22,17 @@ import {
 } from "@workspace/db/schema";
 import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { getAppUser } from "../lib/appRequest";
+import { getViewer, type Viewer } from "../lib/identityVisibility";
+import {
+  donorDisplayColumns,
+  maskDonorDisplayFields,
+} from "../lib/donorJoinSelect";
+
+// Gifts have no primary-contact denormalization, so the shared donor masking
+// helper (see lib/donorJoinSelect.ts) covers the full set: it masks the
+// organization / individual-giver display names and strips the anonymous/owner
+// helper aliases so the JSON response shape is unchanged.
+const maskGiftDonorRow = maskDonorDisplayFields;
 
 // See opportunitiesAndPledges.ts for rationale — same denormalized
 // donor display names joined from funders / households / people, plus
@@ -30,17 +41,9 @@ import { getAppUser } from "../lib/appRequest";
 // fanning out per-row fetches.
 const donorJoinSelect = {
   ...getTableColumns(giftsAndPayments),
-  organizationName: organizations.name,
-  householdName: households.name,
-  individualGiverPersonName: sql<string | null>`
-    COALESCE(
-      NULLIF(TRIM(${people.fullName}), ''),
-      NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-    )
-  `.as("individual_giver_person_name"),
-  // See opportunitiesAndPledges.ts donorJoinSelect for rationale.
-  organizationPriority: organizations.priority,
-  individualGiverPersonPriority: people.priority,
+  // Shared donor display names + priorities + anonymous/owner helpers
+  // (see lib/donorJoinSelect.ts) — identical to the opportunities route.
+  ...donorDisplayColumns,
   entityIds: sql<string[] | null>`(
     SELECT ARRAY_AGG(DISTINCT ga.entity_id ORDER BY ga.entity_id)
     FROM gift_allocations ga
@@ -90,6 +93,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
+import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
@@ -257,11 +261,13 @@ router.get(
         .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
         .where(where),
     ]);
-    res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
+    const viewer = getViewer(req);
+    const data = rows.map((r) => maskGiftDonorRow(r, viewer));
+    res.json({ data, pagination: { page, limit, total: Number(total) } });
   }),
 );
 
-async function buildGiftDetail(id: string) {
+async function buildGiftDetail(id: string, viewer: Viewer) {
   const row = await db
     .select(donorJoinSelect)
     .from(giftsAndPayments)
@@ -294,14 +300,14 @@ async function buildGiftDetail(id: string) {
       downloadUrl: `/api/email-attachments/${a.id}/download`,
     }));
   }
-  return { ...row, allocations, thankYouAttachments };
+  return { ...maskGiftDonorRow(row, viewer), allocations, thankYouAttachments };
 }
 
 router.get(
   "/gifts-and-payments/:id",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const detail = await buildGiftDetail(id);
+    const detail = await buildGiftDetail(id, getViewer(req));
     if (!detail) return notFound(res, "gift");
     res.json(detail);
   }),
@@ -453,6 +459,7 @@ router.post(
         organizationId: row.organizationId,
         individualGiverPersonId: row.individualGiverPersonId,
       });
+      await auditCreate(req, "gift", row.id, "Created gift");
     }
     res.status(201).json(row);
   }),
@@ -500,6 +507,7 @@ router.patch(
     ) {
       await rederiveGiftAllocations(row.id);
     }
+    await auditUpdate(req, "gift", row.id, existing as Record<string, unknown>, row as Record<string, unknown>, Object.keys(body), "Updated gift");
     res.json(row);
   }),
 );
@@ -1398,7 +1406,7 @@ router.post(
       .where(eq(giftsAndPayments.id, id))
       .returning();
     if (!updated) return notFound(res, "gift");
-    const detail = await buildGiftDetail(id);
+    const detail = await buildGiftDetail(id, getViewer(req));
     if (!detail) return notFound(res, "gift");
     return res.json(detail);
   }),

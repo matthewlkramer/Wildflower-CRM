@@ -9,7 +9,8 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
-import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
+import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
+import { getViewer } from "../lib/identityVisibility";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -31,7 +32,7 @@ router.get(
       peopleEntityRolesQuery().where(where).orderBy(desc(peopleEntityRoles.createdAt)).limit(limit).offset(offset),
       db.select({ value: count() }).from(peopleEntityRoles).where(where),
     ]);
-    res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
+    res.json({ data: maskPeopleEntityRoles(rows, getViewer(req)), pagination: { page, limit, total: Number(total) } });
   }),
 );
 

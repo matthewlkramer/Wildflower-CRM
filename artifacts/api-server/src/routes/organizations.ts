@@ -45,7 +45,9 @@ import {
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { mergeEntity, ORGANIZATION_MERGE_CONFIG } from "../lib/mergeEntities";
-import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
+import { auditCreate, auditUpdate } from "../lib/audit";
+import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
+import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
 
 const ORGANIZATIONS_ARRAY_PARAMS = [
   "entityType",
@@ -61,6 +63,29 @@ const ORGANIZATIONS_ARRAY_PARAMS = [
 
 const router: IRouter = Router();
 router.use(requireAuth);
+
+// Mask the denormalized primary-contact display name on an orgsListSelect row
+// and strip the anonymous/owner helper aliases so the JSON response shape is
+// unchanged. The org's own name carries anonymous + owner on the row, so the
+// client masks that itself; only the projected primaryContactPersonName needs
+// server-side masking here.
+function maskOrgRow<
+  T extends {
+    primaryContactPersonName: string | null;
+    primaryContactAnonymous: boolean | null;
+    primaryContactOwnerUserId: string | null;
+  },
+>(row: T, viewer: Viewer) {
+  const { primaryContactAnonymous, primaryContactOwnerUserId, ...rest } = row;
+  return {
+    ...rest,
+    primaryContactPersonName: maskName(
+      rest.primaryContactPersonName,
+      { anonymous: primaryContactAnonymous, ownerUserId: primaryContactOwnerUserId },
+      viewer,
+    ),
+  };
+}
 
 // Raw SQL fragment for the organizations table's own id, used in correlated
 // subqueries. Using sql.raw avoids Drizzle inlining it as bare "id", which
@@ -101,6 +126,26 @@ const orgsListSelect = {
     ORDER BY per.updated_at DESC
     LIMIT 1
   )`.as("primary_contact_person_name"),
+  // Anonymous-masking helpers for primaryContactPersonName: parallel
+  // subqueries (same FROM / ORDER BY / LIMIT 1 as above) so they resolve to
+  // the *same* chosen primary contact's anonymous + owner. Stripped before
+  // res.json by maskOrgRow so the response shape is unchanged.
+  primaryContactAnonymous: sql<boolean | null>`(
+    SELECT p.anonymous
+    FROM people_entity_roles per
+    JOIN people p ON p.id = per.person_id
+    WHERE per.organization_id = ${ORGS_ID} AND per.primary_contact = true
+    ORDER BY per.updated_at DESC
+    LIMIT 1
+  )`.as("primary_contact_anonymous"),
+  primaryContactOwnerUserId: sql<string | null>`(
+    SELECT p.owner_user_id
+    FROM people_entity_roles per
+    JOIN people p ON p.id = per.person_id
+    WHERE per.organization_id = ${ORGS_ID} AND per.primary_contact = true
+    ORDER BY per.updated_at DESC
+    LIMIT 1
+  )`.as("primary_contact_owner_user_id"),
   lifetimeGiving: sql<string | null>`${orgsLifetimeGivingExpr}::text`.as(
     "lifetime_giving",
   ),
@@ -233,7 +278,9 @@ router.get(
         .offset(offset),
       db.select({ value: count() }).from(organizations).where(where),
     ]);
-    res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
+    const viewer = getViewer(req);
+    const data = rows.map((r) => maskOrgRow(r, viewer));
+    res.json({ data, pagination: { page, limit, total: Number(total) } });
   }),
 );
 
@@ -265,9 +312,10 @@ router.get(
               .then((r) => r[0] ?? null)
           : Promise.resolve(null),
       ]);
+    const viewer = getViewer(req);
     res.json({
-      ...row,
-      people,
+      ...maskOrgRow(row, viewer),
+      people: maskPeopleEntityRoles(people, viewer),
       emails: emailRows,
       phoneNumbers: phoneRows,
       addresses: addressRows,
@@ -339,6 +387,7 @@ router.post(
       .insert(organizations)
       .values({ id: newId(), ...body, entityType: (body.entityType ?? null) as never })
       .returning();
+    if (row) await auditCreate(req, "organization", row.id, `Created organization ${row.name}`);
     res.status(201).json(row);
   }),
 );
@@ -354,17 +403,12 @@ router.patch(
       return;
     }
 
-    // Pre-fetch the tracked fields only when they appear in the patch body.
+    // Full before-row for the audit diff (also reused for connection/enthusiasm
+    // change history below).
+    const [auditBefore] = await db.select().from(organizations).where(eq(organizations.id, id));
     const trackingFields = ["connectionStatus", "enthusiasm"] as const;
     const needsTracking = trackingFields.some((f) => f in body);
-    let before: { connectionStatus: string | null; enthusiasm: string | null } | undefined;
-    if (needsTracking) {
-      const [cur] = await db
-        .select({ connectionStatus: organizations.connectionStatus, enthusiasm: organizations.enthusiasm })
-        .from(organizations)
-        .where(eq(organizations.id, id));
-      before = cur;
-    }
+    const before = needsTracking ? auditBefore : undefined;
 
     const [row] = await db
       .update(organizations)
@@ -390,6 +434,7 @@ router.patch(
       }
     }
 
+    await auditUpdate(req, "organization", row.id, auditBefore as Record<string, unknown> | undefined, row as Record<string, unknown>, Object.keys(body), `Updated organization ${row.name}`);
     res.json(row);
   }),
 );

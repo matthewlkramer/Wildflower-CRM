@@ -4,6 +4,7 @@ import { bulkOperations } from "@workspace/db/schema";
 import { eq, inArray, isNull, type SQL } from "drizzle-orm";
 import { newId, notFound, paramId, parseOrBadRequest } from "./helpers";
 import { getAppUser } from "./appRequest";
+import { recordAudit } from "./audit";
 
 interface ZodLike<T> {
   safeParse(
@@ -86,11 +87,23 @@ export async function archiveOne(
   cfg: ArchiveOneConfig,
 ): Promise<void> {
   const now = new Date();
-  const [row] = await db
-    .update(cfg.table)
-    .set({ archivedAt: now, updatedAt: now })
-    .where(eq(cfg.table.id, paramId(req)))
-    .returning();
+  const id = paramId(req);
+  // Update + audit row commit atomically (mirrors the bulk_operations pattern).
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(cfg.table)
+      .set({ archivedAt: now, updatedAt: now })
+      .where(eq(cfg.table.id, id))
+      .returning();
+    if (!updated) return undefined;
+    await recordAudit(tx, req, {
+      action: "archive",
+      entityType: cfg.entity,
+      entityId: id,
+      summary: `Archived ${cfg.entity}`,
+    });
+    return updated;
+  });
   if (!row) {
     notFound(res, cfg.entity);
     return;
@@ -109,11 +122,22 @@ export async function unarchiveOne(
 ): Promise<void> {
   if (!requireAdmin(req, res)) return;
   const now = new Date();
-  const [row] = await db
-    .update(cfg.table)
-    .set({ archivedAt: null, updatedAt: now })
-    .where(eq(cfg.table.id, paramId(req)))
-    .returning();
+  const id = paramId(req);
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(cfg.table)
+      .set({ archivedAt: null, updatedAt: now })
+      .where(eq(cfg.table.id, id))
+      .returning();
+    if (!updated) return undefined;
+    await recordAudit(tx, req, {
+      action: "unarchive",
+      entityType: cfg.entity,
+      entityId: id,
+      summary: `Restored ${cfg.entity}`,
+    });
+    return updated;
+  });
   if (!row) {
     notFound(res, cfg.entity);
     return;
@@ -178,6 +202,7 @@ export async function executeBulkArchive(
 
   const actor = getAppUser(req);
   const now = new Date();
+  const bulkOpId = newId();
   await db.transaction(async (tx) => {
     if (succeededIds.length > 0) {
       await tx
@@ -186,13 +211,27 @@ export async function executeBulkArchive(
         .where(inArray(cfg.table.id, succeededIds));
     }
     await tx.insert(bulkOperations).values({
-      id: newId(),
+      id: bulkOpId,
       actorUserId: actor?.id ?? "unknown",
       entity: cfg.entity,
       fields: [BULK_ARCHIVE_FIELD],
       targetIds: uniqueIds,
       succeededIds,
       failedIds: failed.map((f) => f.id),
+    });
+    // One human-readable summary row alongside the detailed bulk_operations
+    // ledger. entityId points at the bulk_operations row, not a single record.
+    await recordAudit(tx, req, {
+      action: "bulk_archive",
+      entityType: cfg.entity,
+      entityId: bulkOpId,
+      summary: `Archived ${succeededIds.length} ${cfg.entity}`,
+      metadata: {
+        bulkOperationId: bulkOpId,
+        requested: uniqueIds.length,
+        succeeded: succeededIds.length,
+        failed: failed.length,
+      },
     });
   });
 

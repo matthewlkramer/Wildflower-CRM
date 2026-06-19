@@ -5,6 +5,7 @@ import { eq, inArray, type SQL } from "drizzle-orm";
 import { newId, parseOrBadRequest } from "./helpers";
 import type { Request } from "express";
 import { getAppUser } from "./appRequest";
+import { recordAudit } from "./audit";
 
 interface ZodLike<T> {
   safeParse(
@@ -162,6 +163,7 @@ export async function executeBulkUpdate<Row extends Record<string, unknown>, P e
   const succeededIds: string[] = [];
   const failed: BulkFailure[] = [];
   const actor = getAppUser(req);
+  const bulkOpId = newId();
 
   // Single outer transaction wraps every per-row savepoint and the
   // audit insert. Per-row savepoints let DB constraint violations or
@@ -212,13 +214,28 @@ export async function executeBulkUpdate<Row extends Record<string, unknown>, P e
     }
 
     await tx.insert(bulkOperations).values({
-      id: newId(),
+      id: bulkOpId,
       actorUserId: actor?.id ?? "unknown",
       entity: cfg.entity,
       fields: touchedFields,
       targetIds: uniqueIds,
       succeededIds,
       failedIds: failed.map((f) => f.id),
+    });
+    // One human-readable summary row alongside the detailed bulk_operations
+    // ledger. entityId points at the bulk_operations row, not a single record.
+    await recordAudit(tx, req, {
+      action: "bulk_update",
+      entityType: cfg.entity,
+      entityId: bulkOpId,
+      summary: `Updated ${touchedFields.join(", ")} on ${succeededIds.length} ${cfg.entity}`,
+      metadata: {
+        bulkOperationId: bulkOpId,
+        fields: touchedFields,
+        requested: uniqueIds.length,
+        succeeded: succeededIds.length,
+        failed: failed.length,
+      },
     });
   });
 

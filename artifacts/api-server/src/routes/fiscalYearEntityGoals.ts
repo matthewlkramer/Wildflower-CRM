@@ -7,6 +7,7 @@ import {
   UpsertFiscalYearEntityGoalBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
+import { requireAdmin } from "../lib/archive";
 import { asyncHandler, notFound, parseOrBadRequest } from "../lib/helpers";
 
 const router: IRouter = Router();
@@ -51,6 +52,9 @@ function parseCategoryParam(raw: unknown): "revenue" | "loan_capital" | null {
 router.put(
   "/fiscal-year-entity-goals/:fyId/:entityId/:category",
   asyncHandler(async (req, res) => {
+    // Setting fundraising goals is an admin-only action — these numbers drive
+    // every analytics rollup, so a regular team member must not change them.
+    if (!requireAdmin(req, res)) return;
     const body = parseOrBadRequest(UpsertFiscalYearEntityGoalBody, req.body, res);
     if (!body) return;
     if (!DECIMAL_RE.test(body.goalAmount)) {
@@ -99,6 +103,8 @@ router.put(
 router.delete(
   "/fiscal-year-entity-goals/:fyId/:entityId/:category",
   asyncHandler(async (req, res) => {
+    // Deleting a goal is admin-only for the same reason as the upsert above.
+    if (!requireAdmin(req, res)) return;
     const category = parseCategoryParam(req.params.category);
     if (!category) {
       res.status(400).json({

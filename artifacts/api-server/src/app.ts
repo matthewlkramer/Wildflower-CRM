@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
-import cors from "cors";
+import cors, { type CorsOptions } from "cors";
+import helmet from "helmet";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import { CLERK_PROXY_PATH, clerkProxyMiddleware } from "./middlewares/clerkProxyMiddleware";
@@ -7,6 +8,48 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
+
+// CORS allowlist. The SPA is served same-origin with this API (both behind the
+// shared Replit proxy), so its requests carry no cross-origin Origin and pass
+// the `!origin` branch below. We additionally allow the configured app domains,
+// the user-installed Magio browser extension (which calls the tracking API
+// cross-origin from mail.google.com), and localhost in development. Every other
+// origin is refused a CORS grant, which stops arbitrary websites from making
+// credentialed requests with a signed-in user's session.
+const allowedOrigins = new Set<string>();
+for (const domain of (process.env.REPLIT_DOMAINS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)) {
+  allowedOrigins.add(`https://${domain}`);
+}
+const devDomain = process.env.REPLIT_DEV_DOMAIN?.trim();
+if (devDomain) allowedOrigins.add(`https://${devDomain}`);
+const isProduction = process.env.NODE_ENV === "production";
+
+const corsOptions: CorsOptions = {
+  credentials: true,
+  origin(origin, callback) {
+    // No Origin header: same-origin requests, server-to-server, curl, <img>
+    // pixel loads, and extension calls that omit Origin.
+    if (!origin) return callback(null, true);
+    // The user-installed Magio extension calls the tracking API cross-origin.
+    if (
+      origin.startsWith("chrome-extension://") ||
+      origin.startsWith("moz-extension://")
+    ) {
+      return callback(null, true);
+    }
+    if (allowedOrigins.has(origin)) return callback(null, true);
+    if (
+      !isProduction &&
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+};
 
 app.use(
   pinoHttp({
@@ -30,7 +73,19 @@ app.use(
 
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
-app.use(cors({ credentials: true, origin: true }));
+// Security headers. This service is a JSON + file-streaming API (no HTML pages),
+// so the document-oriented CSP doesn't apply and is disabled to avoid
+// interfering with streamed downloads; CORP is relaxed to cross-origin so the
+// SPA can load streamed objects through the shared proxy.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 

@@ -1,6 +1,7 @@
 import { peopleEntityRoles, people, emails } from "@workspace/db/schema";
 import { eq, getTableColumns, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
+import { maskName, type Viewer } from "./identityVisibility";
 
 // Shared SELECT shape for people_entity_roles that joins the related
 // person row to expose a display name. The COALESCE mirrors the
@@ -25,6 +26,11 @@ export const peopleEntityRolesSelect = {
     ORDER BY ${emails.isPreferred} DESC, ${emails.createdAt} ASC
     LIMIT 1
   )`.as("person_email"),
+  // Anonymous-masking helpers: carry the linked person's anonymous + owner so
+  // consumers can mask personName server-side. Stripped before res.json by
+  // maskPeopleEntityRoles so the response shape is unchanged.
+  personAnonymous: people.anonymous,
+  personOwnerUserId: people.ownerUserId,
 };
 
 export function peopleEntityRolesQuery() {
@@ -32,4 +38,23 @@ export function peopleEntityRolesQuery() {
     .select(peopleEntityRolesSelect)
     .from(peopleEntityRoles)
     .leftJoin(people, eq(people.id, peopleEntityRoles.personId));
+}
+
+// Mask each role row's denormalized personName and strip the anonymous/owner
+// helper aliases so the JSON response shape is unchanged.
+export function maskPeopleEntityRoles<
+  T extends {
+    personName: string | null;
+    personAnonymous: boolean | null;
+    personOwnerUserId: string | null;
+  },
+>(rows: T[], viewer: Viewer) {
+  return rows.map(({ personAnonymous, personOwnerUserId, ...rest }) => ({
+    ...rest,
+    personName: maskName(
+      rest.personName,
+      { anonymous: personAnonymous, ownerUserId: personOwnerUserId },
+      viewer,
+    ),
+  }));
 }

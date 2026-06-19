@@ -10,9 +10,11 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, unarchiveOne } from "../lib/archive";
-import { peopleEntityRolesQuery } from "../lib/peopleRolesSelect";
+import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
+import { getViewer } from "../lib/identityVisibility";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -100,7 +102,7 @@ router.get(
       db.select().from(emails).where(eq(emails.householdId, id)),
       db.select().from(addresses).where(eq(addresses.householdId, id)),
     ]);
-    res.json({ ...row, people, emails: emailRows, addresses: addressRows });
+    res.json({ ...row, people: maskPeopleEntityRoles(people, getViewer(req)), emails: emailRows, addresses: addressRows });
   }),
 );
 
@@ -122,6 +124,7 @@ router.post(
     const body = parseOrBadRequest(CreateHouseholdBody, req.body, res);
     if (!body) return;
     const [row] = await db.insert(households).values({ id: newId(), ...body }).returning();
+    if (row) await auditCreate(req, "household", row.id, `Created household ${row.name}`);
     res.status(201).json(row);
   }),
 );
@@ -131,12 +134,15 @@ router.patch(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(UpdateHouseholdBody, req.body, res);
     if (!body) return;
+    const id = paramId(req);
+    const [before] = await db.select().from(households).where(eq(households.id, id));
     const [row] = await db
       .update(households)
       .set({ ...body, updatedAt: new Date() })
-      .where(eq(households.id, paramId(req)))
+      .where(eq(households.id, id))
       .returning();
     if (!row) return notFound(res, "household");
+    await auditUpdate(req, "household", row.id, before as Record<string, unknown> | undefined, row as Record<string, unknown>, Object.keys(body), `Updated household ${row.name}`);
     res.json(row);
   }),
 );
