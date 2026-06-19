@@ -8062,6 +8062,17 @@ export const ListStagedPaymentsResponse = zod.object({
           }),
         )
         .nullish(),
+      qbDepositLinks: zod
+        .array(
+          zod.object({
+            txnId: zod.string(),
+            txnType: zod.string(),
+          }),
+        )
+        .nullish()
+        .describe(
+          "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)",
+        ),
       matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
       matchScore: zod.number().nullish(),
       matchMethod: zod
@@ -8278,6 +8289,17 @@ export const ResolveStagedPaymentResponse = zod.object({
       }),
     )
     .nullish(),
+  qbDepositLinks: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)",
+    ),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -8441,6 +8463,17 @@ export const RejectStagedPaymentResponse = zod.object({
       }),
     )
     .nullish(),
+  qbDepositLinks: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)",
+    ),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -8597,6 +8630,17 @@ export const ReIncludeStagedPaymentResponse = zod.object({
       }),
     )
     .nullish(),
+  qbDepositLinks: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)",
+    ),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -8782,6 +8826,17 @@ export const ExcludeStagedPaymentResponse = zod.object({
       }),
     )
     .nullish(),
+  qbDepositLinks: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)",
+    ),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -9649,6 +9704,17 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
       }),
     )
     .nullish(),
+  qbDepositLinks: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)",
+    ),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -9805,6 +9871,17 @@ export const UnmatchStagedPaymentResponse = zod.object({
       }),
     )
     .nullish(),
+  qbDepositLinks: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)",
+    ),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod
@@ -9968,6 +10045,17 @@ export const RevertStagedPaymentResponse = zod.object({
       }),
     )
     .nullish(),
+  qbDepositLinks: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)",
+    ),
   matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
   matchScore: zod.number().nullish(),
   matchMethod: zod

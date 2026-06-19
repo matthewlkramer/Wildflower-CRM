@@ -61,3 +61,4 @@
 - [email-intel propose-alternative + note append](email-intel-propose-alternative.md) — reviewer guidance re-runs AI in place (stays pending); accept/reject/revise all APPEND to reviewerNote, never overwrite (prompt-tuning signal).
 - [Split gift into pledge](split-gift-into-pledge.md) — transform-in-place (keep original as 1st payment); matching-gift split intentionally allowed; lock allocation rows too; pledge stage derived (cash_in when fully paid).
 - [QB sync worker never mints](quickbooks-worker-no-mint.md) — worker autoApply only reconciles to ONE existing gift; new-gift auto-create is rule-only (AmazonSmile auto_create_approve at ingest), else row stays pending for review.
+- [QB LinkedTxn provenance](quickbooks-linkedtxn-provenance.md) — top-level LinkedTxn=deposit it was deposited into, line-level=invoices it applies to; deposit link derived read-only from qb_raw at query time, not a column.

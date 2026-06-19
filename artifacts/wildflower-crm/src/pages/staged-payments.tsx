@@ -152,6 +152,31 @@ const QB_PAYER_TYPE_LABELS: Record<QuickbooksPayerType, string> = {
   employee: "Employee",
 };
 
+// Friendly labels for QuickBooks LinkedTxn transaction types.
+const QB_LINKED_TXN_TYPE_LABELS: Record<string, string> = {
+  Invoice: "Invoice",
+  CreditMemo: "Credit memo",
+  JournalEntry: "Journal entry",
+  Expense: "Expense",
+  Deposit: "Deposit",
+  Payment: "Payment",
+  SalesReceipt: "Sales receipt",
+  Bill: "Bill",
+  BillPaymentCheck: "Bill payment",
+  VendorCredit: "Vendor credit",
+};
+// Stable display order so linked records read consistently regardless of the
+// order QuickBooks returns them in.
+const QB_LINKED_TXN_TYPE_ORDER = [
+  "Invoice",
+  "CreditMemo",
+  "JournalEntry",
+  "Expense",
+  "Payment",
+  "SalesReceipt",
+  "Deposit",
+];
+
 const MATCH_METHOD_LABELS: Record<StagedPaymentMatchMethod, string> = {
   email: "Email match",
   name: "Name match",
@@ -2944,17 +2969,41 @@ function StagedPaymentDetails({
       value: row.qbBillingAddress,
       note: "QuickBooks BillAddr (sales receipts only), flattened to a single comma-separated line.",
     },
-    {
-      label: "Linked transactions",
-      value:
-        row.qbLinkedTxn && row.qbLinkedTxn.length > 0
-          ? row.qbLinkedTxn
-              .map((lt) => `${lt.txnType} #${lt.txnId}`)
-              .join(", ")
-          : null,
-      note: "From the QuickBooks LinkedTxn references.",
-    },
   ];
+
+  // ── Linked QuickBooks records (reference only) ──────────────────────────────
+  // Other QuickBooks records this payment touches: the invoices / credit memos /
+  // journal entries it applies to (line-level qbLinkedTxn), the deposit it was
+  // deposited into (top-level qbDepositLinks), and the customer / vendor record
+  // it points to. All looked up from QuickBooks — none of it is used to change
+  // any field on this staged payment.
+  const linkedByType = new Map<string, string[]>();
+  for (const lt of [...(row.qbLinkedTxn ?? []), ...(row.qbDepositLinks ?? [])]) {
+    if (!lt.txnId) continue;
+    const ids = linkedByType.get(lt.txnType) ?? [];
+    if (!ids.includes(lt.txnId)) ids.push(lt.txnId);
+    linkedByType.set(lt.txnType, ids);
+  }
+  const linkedRecordFields: { label: string; value: ReactNode }[] = [
+    ...linkedByType.entries(),
+  ]
+    .sort(
+      (a, b) =>
+        (QB_LINKED_TXN_TYPE_ORDER.indexOf(a[0]) + 1 || 99) -
+        (QB_LINKED_TXN_TYPE_ORDER.indexOf(b[0]) + 1 || 99),
+    )
+    .map(([type, ids]) => ({
+      label: QB_LINKED_TXN_TYPE_LABELS[type] ?? type,
+      value: ids.map((id) => `#${id}`).join(", "),
+    }));
+  if (row.qbPayerType && row.qbPayerId) {
+    linkedRecordFields.push({
+      label: `${QB_PAYER_TYPE_LABELS[row.qbPayerType] ?? "Customer"} record`,
+      value: row.payerName
+        ? `${row.payerName} (#${row.qbPayerId})`
+        : `#${row.qbPayerId}`,
+    });
+  }
 
   const reviewStateFields: { label: string; value: ReactNode }[] = [
     { label: "Status", value: row.status },
@@ -3091,6 +3140,27 @@ function StagedPaymentDetails({
                 </div>
               ))}
             </dl>
+            {linkedRecordFields.length > 0 ? (
+              <div className="space-y-1 pt-1">
+                <div className="text-sm font-medium text-foreground/80">
+                  Linked QuickBooks records
+                </div>
+                <div className="text-xs italic text-muted-foreground">
+                  Other QuickBooks records this payment points to — looked up for
+                  reference only; not used to change any field above.
+                </div>
+                <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+                  {linkedRecordFields.map((d) => (
+                    <div key={d.label} className="flex gap-2 text-sm">
+                      <dt className="min-w-[7.5rem] shrink-0 text-muted-foreground">
+                        {d.label}
+                      </dt>
+                      <dd className="min-w-0 break-words">{d.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            ) : null}
             <div className="space-y-2 pt-1">
               {lineGroups.map((g) => (
                 <div key={g.label} className="text-sm">

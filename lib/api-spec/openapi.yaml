@@ -4477,6 +4477,16 @@ components:
             properties:
               txnId:   { type: string }
               txnType: { type: string }
+        qbDepositLinks:
+          type: array
+          nullable: true
+          description: "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices/credit memos/journal entries a payment applies to ship in qbLinkedTxn.)"
+          items:
+            type: object
+            required: [txnId, txnType]
+            properties:
+              txnId:   { type: string }
+              txnType: { type: string }
         matchStatus:               { $ref: "#/components/schemas/StagedPaymentMatchStatus" }
         matchScore:                { type: integer, nullable: true }
         matchMethod:               { $ref: "#/components/schemas/StagedPaymentMatchMethod", nullable: true }

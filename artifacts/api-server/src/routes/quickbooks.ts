@@ -158,6 +158,20 @@ const stagedSelect = {
     WHERE sps.staged_payment_id = ${stagedPayments.id}
   )`.as("split_gift_names"),
   matchedRuleName: matchedRule.name,
+  // Top-level QuickBooks LinkedTxn (e.g. the Deposit a Payment was deposited
+  // into) — derived READ-ONLY from the stored raw QB payload, never written onto
+  // the staged row. Surfaced for reference only. Line-level LinkedTxn (the
+  // invoices / credit memos / journal entries a payment applies to) already
+  // ships in qbLinkedTxn.
+  qbDepositLinks: sql<{ txnId: string; txnType: string }[] | null>`(
+    SELECT jsonb_agg(jsonb_build_object('txnId', lt->>'TxnId', 'txnType', lt->>'TxnType'))
+    FROM jsonb_array_elements(
+      CASE WHEN jsonb_typeof(${stagedPayments.qbRaw} -> 'LinkedTxn') = 'array'
+        THEN ${stagedPayments.qbRaw} -> 'LinkedTxn'
+        ELSE '[]'::jsonb END
+    ) lt
+    WHERE lt->>'TxnType' = 'Deposit'
+  )`.as("qb_deposit_links"),
   // "Gift likely not created yet": this row has no gift of its own, and every
   // same-donor / similar-amount gift is already linked to a DIFFERENT staged
   // payment (no unlinked candidate is left to match). Signals the fundraiser to

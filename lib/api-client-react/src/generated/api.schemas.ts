@@ -2016,6 +2016,11 @@ export type StagedPaymentQbLinkedTxnItem = {
   txnType: string;
 };
 
+export type StagedPaymentQbDepositLinksItem = {
+  txnId: string;
+  txnType: string;
+};
+
 export interface StagedPayment {
   id: string;
   realmId: string;
@@ -2048,6 +2053,8 @@ export interface StagedPayment {
   qbExchangeRate?: string | null;
   qbCreateTime?: string | null;
   qbLinkedTxn?: StagedPaymentQbLinkedTxnItem[] | null;
+  /** Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices/credit memos/journal entries a payment applies to ship in qbLinkedTxn.) */
+  qbDepositLinks?: StagedPaymentQbDepositLinksItem[] | null;
   matchStatus: StagedPaymentMatchStatus;
   matchScore?: number | null;
   matchMethod?: StagedPaymentMatchMethod | null;
