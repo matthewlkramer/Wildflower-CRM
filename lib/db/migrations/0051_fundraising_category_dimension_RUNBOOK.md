@@ -27,13 +27,40 @@ Loan-capital **gifts** need no schema change — they are derived from the exist
 ## Apply
 
 ```bash
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f 0051_fundraising_category_dimension.sql
+psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f 0051_fundraising_category_dimension.sql
 ```
+
+(The file has no explicit `BEGIN`/`COMMIT`, so `-1` wraps the whole migration in
+one transaction — all-or-nothing — without conflicting.)
 
 Expected NOTICE on success:
 
 ```
 0051: opps category=revenue=<N>, goals category=revenue=<M>, goals PK columns=3 (expect 3)
+```
+
+## Verify
+
+Run after applying — expect the goals PK to have 3 columns, every existing goal +
+opportunity row classified `revenue`, and the enum to exist:
+
+```sql
+-- Goals PK is now (fiscal_year_id, entity_id, category) → pk_cols = 3
+SELECT conname, array_length(conkey, 1) AS pk_cols
+  FROM pg_constraint c
+  JOIN pg_class t ON t.oid = c.conrelid
+ WHERE t.relname = 'fiscal_year_entity_goals' AND c.contype = 'p';
+
+-- No rows lost; all pre-existing rows are 'revenue'
+SELECT count(*) AS goals,
+       count(*) FILTER (WHERE category = 'revenue') AS revenue_goals
+  FROM fiscal_year_entity_goals;
+SELECT count(*) AS opps,
+       count(*) FILTER (WHERE fundraising_category = 'revenue') AS revenue_opps
+  FROM opportunities_and_pledges;
+
+-- Enum type present with both values
+SELECT enum_range(NULL::fundraising_category);
 ```
 
 ## Ordering vs Publish

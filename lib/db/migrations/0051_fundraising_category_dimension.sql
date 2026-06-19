@@ -22,7 +22,10 @@
 --   done deliberately rather than left to an interactive push. Safe to run before
 --   OR after a Publish, and safe to re-run.
 --
---   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f 0051_fundraising_category_dimension.sql
+--   psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f 0051_fundraising_category_dimension.sql
+--
+--   The file has no explicit BEGIN/COMMIT, so `-1` wraps it in a single
+--   transaction (all-or-nothing) without conflicting.
 
 -- 1. Enum type (guarded — CREATE TYPE has no IF NOT EXISTS).
 DO $$
