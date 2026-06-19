@@ -48,6 +48,10 @@ Do NOT convert these two to archive unless the user explicitly asks.
   QB-derived gift while the per-charge Stripe gifts cover the SAME money, so
   counting archived gifts double-counts. The fix had to be global, not
   reconciliation-only, or the double-count leaks through every aggregate.
+- Pledge `paid_amount` derivation (`pledgeStage.ts` deriveOppFields) ALSO filters
+  `archivedAt IS NULL`, so archived payments no longer count toward pledge
+  fulfillment/`cash_in` (see pledge-status-rederivation.md). Earlier this SUM had
+  no archived filter; that gap is closed — keep it.
 
 **Why:** the user's authoritative decision was "no hard delete, use archive"
 app-wide, with only the gift-merge and QuickBooks-revert hard-deletes explicitly
