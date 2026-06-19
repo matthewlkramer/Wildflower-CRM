@@ -6,7 +6,12 @@ import {
   boolean,
   numeric,
 } from "drizzle-orm/pg-core";
-import { pledgeAllocationStatusEnum, intendedUsageEnum } from "./_enums";
+import {
+  pledgeAllocationStatusEnum,
+  intendedUsageEnum,
+  restrictionTypeEnum,
+  deferredRevenueEnum,
+} from "./_enums";
 import { opportunitiesAndPledges } from "./opportunitiesAndPledges";
 import { entities } from "./entities";
 import { fundableProjects } from "./fundableProjects";
@@ -45,11 +50,32 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   // the opportunity/pledge stage a single flag is sufficient.
   formallyRestricted: boolean("formally_restricted").default(false).notNull(),
   status: pledgeAllocationStatusEnum("status"),
+  // Scheduled (false, the default) vs contingent (true) future payment. The
+  // opportunity-level `conditional` enum is header-only; booking treats each
+  // pledge year/tranche separately, so contingency is captured per allocation.
+  // The free-text `conditions` below describes the contingency when set.
+  contingent: boolean("contingent").default(false).notNull(),
   conditions: text("conditions"),
   notes: text("notes"),
   // Array of regions.id values. Array columns can't carry native FK
   // constraints; the API layer is responsible for validating writes.
   regionIds: text("region_ids").array(),
+  // ── Revenue-accounting / QuickBooks coding (CFO "Revenue Extractor") ──
+  // See gift_allocations for column semantics. Captured at the pledge stage so
+  // coding intent is recorded before any cash arrives.
+  restrictionType: restrictionTypeEnum("restriction_type"),
+  restrictionEvidence: text("restriction_evidence"),
+  purposeVerbatim: text("purpose_verbatim"),
+  deferredRevenue: deferredRevenueEnum("deferred_revenue"),
+  deferredRevenueReason: text("deferred_revenue_reason"),
+  // Derived QBO coding SNAPSHOT (override via *Override columns).
+  objectCode: text("object_code"),
+  objectCodeOverride: text("object_code_override"),
+  revenueLocation: text("revenue_location"),
+  revenueLocationOverride: text("revenue_location_override"),
+  revenueClass: text("revenue_class"),
+  revenueClassOverride: text("revenue_class_override"),
+  codingFlags: text("coding_flags").array(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

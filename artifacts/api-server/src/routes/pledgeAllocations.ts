@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { derivePledgeAllocationCoding } from "../lib/revenueCoding";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -35,7 +36,24 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreatePledgeAllocationBody, req.body, res);
     if (!body) return;
-    const [row] = await db.insert(pledgeAllocations).values({ id: newId(), ...body }).returning();
+    const coding = await derivePledgeAllocationCoding(body.pledgeOrOpportunityId, {
+      restrictionType: body.restrictionType,
+      entityId: body.entityId,
+      intendedUsage: body.intendedUsage,
+      fundableProjectId: body.fundableProjectId,
+      regionIds: body.regionIds,
+    });
+    const [row] = await db
+      .insert(pledgeAllocations)
+      .values({
+        id: newId(),
+        ...body,
+        objectCode: coding.objectCode,
+        revenueLocation: coding.revenueLocation,
+        revenueClass: coding.revenueClass,
+        codingFlags: coding.codingFlags,
+      })
+      .returning();
     res.status(201).json(row);
   }),
 );
@@ -45,10 +63,30 @@ router.patch(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(UpdatePledgeAllocationBody, req.body, res);
     if (!body) return;
+    const id = paramId(req);
+    const [existing] = await db.select().from(pledgeAllocations).where(eq(pledgeAllocations.id, id));
+    if (!existing) return notFound(res, "allocation");
+    const merged = {
+      pledgeOrOpportunityId:
+        body.pledgeOrOpportunityId !== undefined ? body.pledgeOrOpportunityId : existing.pledgeOrOpportunityId,
+      restrictionType: body.restrictionType !== undefined ? body.restrictionType : existing.restrictionType,
+      entityId: body.entityId !== undefined ? body.entityId : existing.entityId,
+      intendedUsage: body.intendedUsage !== undefined ? body.intendedUsage : existing.intendedUsage,
+      fundableProjectId: body.fundableProjectId !== undefined ? body.fundableProjectId : existing.fundableProjectId,
+      regionIds: body.regionIds !== undefined ? body.regionIds : existing.regionIds,
+    };
+    const coding = await derivePledgeAllocationCoding(merged.pledgeOrOpportunityId, merged);
     const [row] = await db
       .update(pledgeAllocations)
-      .set({ ...body, updatedAt: new Date() })
-      .where(eq(pledgeAllocations.id, paramId(req)))
+      .set({
+        ...body,
+        objectCode: coding.objectCode,
+        revenueLocation: coding.revenueLocation,
+        revenueClass: coding.revenueClass,
+        codingFlags: coding.codingFlags,
+        updatedAt: new Date(),
+      })
+      .where(eq(pledgeAllocations.id, id))
       .returning();
     if (!row) return notFound(res, "allocation");
     res.json(row);

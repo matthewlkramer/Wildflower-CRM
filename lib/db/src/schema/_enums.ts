@@ -273,6 +273,25 @@ export const intendedUsageEnum = pgEnum("intended_usage", [
   "project",
 ]);
 
+// ---- Revenue-accounting capture (CFO "Revenue Extractor") ----
+// Restriction taxonomy on gift/pledge allocations. "unclear" is never silently
+// defaulted to unrestricted — it flags for human review.
+export const restrictionTypeEnum = pgEnum("restriction_type", [
+  "unrestricted",
+  "purpose",
+  "time",
+  "both",
+  "unclear",
+  "na",
+]);
+
+// Deferred-revenue capture (CRM captures the answer; it does NOT compute AR).
+export const deferredRevenueEnum = pgEnum("deferred_revenue", [
+  "yes",
+  "no",
+  "na",
+]);
+
 // ---- Schools enums (mirrored from Airtable "Schools" base) ----
 export const schoolStatusEnum = pgEnum("school_status", [
   "emerging",

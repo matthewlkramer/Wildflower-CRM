@@ -428,6 +428,30 @@ export const IntendedUsage = {
 } as const;
 
 /**
+ * CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.
+ */
+export type RestrictionType =
+  (typeof RestrictionType)[keyof typeof RestrictionType];
+
+export const RestrictionType = {
+  unrestricted: "unrestricted",
+  purpose: "purpose",
+  time: "time",
+  both: "both",
+  unclear: "unclear",
+  na: "na",
+} as const;
+
+export type DeferredRevenue =
+  (typeof DeferredRevenue)[keyof typeof DeferredRevenue];
+
+export const DeferredRevenue = {
+  yes: "yes",
+  no: "no",
+  na: "na",
+} as const;
+
+/**
  * Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.
  */
 export type EmailSyncMode = (typeof EmailSyncMode)[keyof typeof EmailSyncMode];
@@ -1465,9 +1489,25 @@ export interface PledgeAllocation {
   /** True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent. */
   formallyRestricted: boolean;
   status?: PledgeAllocationStatus | null;
+  /** Scheduled (false) vs contingent (true) future payment. */
+  contingent?: boolean;
   conditions?: string | null;
   notes?: string | null;
   regionIds?: string[] | null;
+  restrictionType?: RestrictionType | null;
+  restrictionEvidence?: string | null;
+  purposeVerbatim?: string | null;
+  deferredRevenue?: DeferredRevenue | null;
+  deferredRevenueReason?: string | null;
+  /** Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode. */
+  readonly objectCode?: string | null;
+  objectCodeOverride?: string | null;
+  readonly revenueLocation?: string | null;
+  revenueLocationOverride?: string | null;
+  readonly revenueClass?: string | null;
+  revenueClassOverride?: string | null;
+  /** Coding flags for human review (e.g. restriction_unclear, location_default). */
+  readonly codingFlags?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1614,9 +1654,18 @@ export interface CreatePledgeAllocationBody {
   directToSchool?: boolean;
   formallyRestricted?: boolean;
   status?: PledgeAllocationStatus;
+  contingent?: boolean;
   conditions?: string;
   notes?: string;
   regionIds?: string[];
+  restrictionType?: RestrictionType;
+  restrictionEvidence?: string;
+  purposeVerbatim?: string;
+  deferredRevenue?: DeferredRevenue;
+  deferredRevenueReason?: string;
+  objectCodeOverride?: string;
+  revenueLocationOverride?: string;
+  revenueClassOverride?: string;
 }
 
 export interface UpdatePledgeAllocationBody {
@@ -1629,9 +1678,18 @@ export interface UpdatePledgeAllocationBody {
   directToSchool?: boolean;
   formallyRestricted?: boolean;
   status?: PledgeAllocationStatus | null;
+  contingent?: boolean;
   conditions?: string | null;
   notes?: string | null;
   regionIds?: string[] | null;
+  restrictionType?: RestrictionType | null;
+  restrictionEvidence?: string | null;
+  purposeVerbatim?: string | null;
+  deferredRevenue?: DeferredRevenue | null;
+  deferredRevenueReason?: string | null;
+  objectCodeOverride?: string | null;
+  revenueLocationOverride?: string | null;
+  revenueClassOverride?: string | null;
 }
 
 export interface GiftAllocation {
@@ -1650,6 +1708,20 @@ export interface GiftAllocation {
   regionIds?: string[] | null;
   /** Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only. */
   readonly displayUsage?: string | null;
+  restrictionType?: RestrictionType | null;
+  restrictionEvidence?: string | null;
+  purposeVerbatim?: string | null;
+  deferredRevenue?: DeferredRevenue | null;
+  deferredRevenueReason?: string | null;
+  /** Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode. */
+  readonly objectCode?: string | null;
+  objectCodeOverride?: string | null;
+  readonly revenueLocation?: string | null;
+  revenueLocationOverride?: string | null;
+  readonly revenueClass?: string | null;
+  revenueClassOverride?: string | null;
+  /** Coding flags for human review (e.g. restriction_unclear, location_default). */
+  readonly codingFlags?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2020,6 +2092,72 @@ export interface ApplyRuleToPendingResult {
   autoCreated: number;
   /** Matched rows the rule could not apply to cleanly, left pending (0 when dryRun=true). */
   skipped: number;
+}
+
+export type RevenueAccountKind =
+  (typeof RevenueAccountKind)[keyof typeof RevenueAccountKind];
+
+export const RevenueAccountKind = {
+  unrestricted: "unrestricted",
+  restricted: "restricted",
+  special: "special",
+} as const;
+
+export type RevenueAccountPayerType =
+  | (typeof RevenueAccountPayerType)[keyof typeof RevenueAccountPayerType]
+  | null;
+
+export const RevenueAccountPayerType = {
+  individual: "individual",
+  foundation: "foundation",
+  corporation: "corporation",
+  governmental: "governmental",
+} as const;
+
+export interface RevenueAccount {
+  /** Object Code, e.g. 4000.1 / 4100.2. */
+  code: string;
+  name: string;
+  kind: RevenueAccountKind;
+  payerType?: RevenueAccountPayerType;
+  sortOrder: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EntityCodingRule {
+  /** Fund entity id this rule applies to. */
+  entityId: string;
+  /** Treat gifts to this entity as purpose-restricted regardless of donor language (fiscal sponsees). */
+  forceRestricted: boolean;
+  /** Override Location (must be a value in the closed Location list). */
+  location?: string | null;
+  /** Suggested Class. */
+  revenueClass?: string | null;
+  enabled: boolean;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateEntityCodingRuleBody {
+  entityId: string;
+  /** Defaults to false. */
+  forceRestricted?: boolean;
+  location?: string | null;
+  revenueClass?: string | null;
+  /** Defaults to true. */
+  enabled?: boolean;
+  notes?: string | null;
+}
+
+export interface UpdateEntityCodingRuleBody {
+  forceRestricted?: boolean;
+  location?: string | null;
+  revenueClass?: string | null;
+  enabled?: boolean;
+  notes?: string | null;
 }
 
 export type StagedPaymentQbLinkedTxnItem = {
@@ -2591,6 +2729,14 @@ export interface CreateGiftAllocationBody {
   spendingStart?: string;
   spendingEnd?: string;
   regionIds?: string[];
+  restrictionType?: RestrictionType;
+  restrictionEvidence?: string;
+  purposeVerbatim?: string;
+  deferredRevenue?: DeferredRevenue;
+  deferredRevenueReason?: string;
+  objectCodeOverride?: string;
+  revenueLocationOverride?: string;
+  revenueClassOverride?: string;
 }
 
 export interface UpdateGiftAllocationBody {
@@ -2606,6 +2752,14 @@ export interface UpdateGiftAllocationBody {
   spendingStart?: string | null;
   spendingEnd?: string | null;
   regionIds?: string[] | null;
+  restrictionType?: RestrictionType | null;
+  restrictionEvidence?: string | null;
+  purposeVerbatim?: string | null;
+  deferredRevenue?: DeferredRevenue | null;
+  deferredRevenueReason?: string | null;
+  objectCodeOverride?: string | null;
+  revenueLocationOverride?: string | null;
+  revenueClassOverride?: string | null;
 }
 
 export type InteractionKind =
@@ -4895,6 +5049,17 @@ export type ListStripePayoutReconciliationsParams = {
 };
 
 export type AdminDeleteQuickbooksRule200 = {
+  ok: boolean;
+};
+
+export type ListRevenueAccountsParams = {
+  /**
+   * When true, omit deactivated accounts.
+   */
+  activeOnly?: boolean;
+};
+
+export type AdminDeleteEntityCodingRule200 = {
   ok: boolean;
 };
 

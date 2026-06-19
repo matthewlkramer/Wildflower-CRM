@@ -30,6 +30,7 @@ tags:
   - { name: pledge-allocations }
   - { name: gifts-and-payments }
   - { name: gift-allocations }
+  - { name: revenue-coding }
   - { name: analytics }
   - { name: interactions }
   - { name: google-oauth }
@@ -2123,6 +2124,55 @@ paths:
         "403": { description: Admin required }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # ─── Revenue coding reference & rules ─────────────────────────────────────
+  /revenue-accounts:
+    get:
+      operationId: listRevenueAccounts
+      tags: [revenue-coding]
+      summary: List the closed set of QuickBooks revenue accounts (Object Codes).
+      parameters:
+        - { name: activeOnly, in: query, schema: { type: boolean }, description: "When true, omit deactivated accounts." }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/RevenueAccount" } } } } }
+  /admin/entity-coding-rules:
+    get:
+      operationId: adminListEntityCodingRules
+      tags: [admin]
+      summary: List per-entity revenue-coding default rules (admin only).
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EntityCodingRule" } } } } }
+        "403": { description: Admin required }
+    post:
+      operationId: adminCreateEntityCodingRule
+      tags: [admin]
+      summary: Create a per-entity revenue-coding rule (admin only).
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateEntityCodingRuleBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/EntityCodingRule" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Admin required }
+  /admin/entity-coding-rules/{id}:
+    patch:
+      operationId: adminUpdateEntityCodingRule
+      tags: [admin]
+      summary: Update a per-entity revenue-coding rule (admin only). id is the entityId.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateEntityCodingRuleBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EntityCodingRule" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Admin required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: adminDeleteEntityCodingRule
+      tags: [admin]
+      summary: Delete a per-entity revenue-coding rule (admin only).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, required: [ok], properties: { ok: { type: boolean } } } } } }
+        "403": { description: Admin required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   # ─── Staged payments (QuickBooks review queue) ────────────────────────────
   /staged-payments:
     get:
@@ -3164,6 +3214,8 @@ components:
     GiftType: { type: string, enum: [standard_gift, pledge_payment, directed_gift, loan_fund_investment, matching_gift] }
     GiftPaymentMethod: { type: string, enum: [ach, check, wire, stock, donor_box, daf_ach, daf_check, daf_bill_com] }
     IntendedUsage: { type: string, enum: [gen_ops, growth, school_startup, teacher_training, project] }
+    RestrictionType: { type: string, enum: [unrestricted, purpose, time, both, unclear, na], description: "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted." }
+    DeferredRevenue: { type: string, enum: [yes, no, na] }
 
     # ─── Users ─────────────────────────────────────────────────────────────────
     User:
@@ -4336,9 +4388,22 @@ components:
         directToSchool:         { type: boolean }
         formallyRestricted:     { type: boolean, description: "True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent." }
         status:                 { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
+        contingent:             { type: boolean, description: "Scheduled (false) vs contingent (true) future payment." }
         conditions:             { type: string, nullable: true }
         notes:                  { type: string, nullable: true }
         regionIds:              { type: array, items: { type: string }, nullable: true }
+        restrictionType:        { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }
+        restrictionEvidence:    { type: string, nullable: true }
+        purposeVerbatim:        { type: string, nullable: true }
+        deferredRevenue:        { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
+        deferredRevenueReason:  { type: string, nullable: true }
+        objectCode:             { type: string, nullable: true, readOnly: true, description: "Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode." }
+        objectCodeOverride:     { type: string, nullable: true }
+        revenueLocation:        { type: string, nullable: true, readOnly: true }
+        revenueLocationOverride: { type: string, nullable: true }
+        revenueClass:           { type: string, nullable: true, readOnly: true }
+        revenueClassOverride:   { type: string, nullable: true }
+        codingFlags:            { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Coding flags for human review (e.g. restriction_unclear, location_default)." }
         createdAt:              { type: string, format: date-time }
         updatedAt:              { type: string, format: date-time }
     PledgeAllocationList:
@@ -4359,9 +4424,18 @@ components:
         directToSchool:        { type: boolean }
         formallyRestricted:    { type: boolean }
         status:                { $ref: "#/components/schemas/PledgeAllocationStatus" }
+        contingent:            { type: boolean }
         conditions:            { type: string }
         notes:                 { type: string }
         regionIds:             { type: array, items: { type: string } }
+        restrictionType:       { $ref: "#/components/schemas/RestrictionType" }
+        restrictionEvidence:   { type: string }
+        purposeVerbatim:       { type: string }
+        deferredRevenue:       { $ref: "#/components/schemas/DeferredRevenue" }
+        deferredRevenueReason: { type: string }
+        objectCodeOverride:    { type: string }
+        revenueLocationOverride: { type: string }
+        revenueClassOverride:  { type: string }
     UpdatePledgeAllocationBody:
       type: object
       properties:
@@ -4374,9 +4448,18 @@ components:
         directToSchool:        { type: boolean }
         formallyRestricted:    { type: boolean }
         status:                { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
+        contingent:            { type: boolean }
         conditions:            { type: string, nullable: true }
         notes:                 { type: string, nullable: true }
         regionIds:             { type: array, items: { type: string }, nullable: true }
+        restrictionType:       { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }
+        restrictionEvidence:   { type: string, nullable: true }
+        purposeVerbatim:       { type: string, nullable: true }
+        deferredRevenue:       { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
+        deferredRevenueReason: { type: string, nullable: true }
+        objectCodeOverride:    { type: string, nullable: true }
+        revenueLocationOverride: { type: string, nullable: true }
+        revenueClassOverride:  { type: string, nullable: true }
 
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
@@ -4631,6 +4714,50 @@ components:
         excluded:    { type: integer, description: "Rows marked excluded (0 when dryRun=true)." }
         autoCreated: { type: integer, description: "Gifts minted and auto-approved (0 when dryRun=true)." }
         skipped:     { type: integer, description: "Matched rows the rule could not apply to cleanly, left pending (0 when dryRun=true)." }
+
+    # ─── Revenue coding reference & rules ────────────────────────────────────
+    RevenueAccount:
+      type: object
+      required: [code, name, kind, sortOrder, active, createdAt, updatedAt]
+      properties:
+        code:       { type: string, description: "Object Code, e.g. 4000.1 / 4100.2." }
+        name:       { type: string }
+        kind:       { type: string, enum: [unrestricted, restricted, special] }
+        payerType:  { type: string, nullable: true, enum: [individual, foundation, corporation, governmental] }
+        sortOrder:  { type: integer }
+        active:     { type: boolean }
+        createdAt:  { type: string, format: date-time }
+        updatedAt:  { type: string, format: date-time }
+    EntityCodingRule:
+      type: object
+      required: [entityId, forceRestricted, enabled, createdAt, updatedAt]
+      properties:
+        entityId:        { type: string, description: "Fund entity id this rule applies to." }
+        forceRestricted: { type: boolean, description: "Treat gifts to this entity as purpose-restricted regardless of donor language (fiscal sponsees)." }
+        location:        { type: string, nullable: true, description: "Override Location (must be a value in the closed Location list)." }
+        revenueClass:    { type: string, nullable: true, description: "Suggested Class." }
+        enabled:         { type: boolean }
+        notes:           { type: string, nullable: true }
+        createdAt:       { type: string, format: date-time }
+        updatedAt:       { type: string, format: date-time }
+    CreateEntityCodingRuleBody:
+      type: object
+      required: [entityId]
+      properties:
+        entityId:        { type: string }
+        forceRestricted: { type: boolean, description: "Defaults to false." }
+        location:        { type: string, nullable: true }
+        revenueClass:    { type: string, nullable: true }
+        enabled:         { type: boolean, description: "Defaults to true." }
+        notes:           { type: string, nullable: true }
+    UpdateEntityCodingRuleBody:
+      type: object
+      properties:
+        forceRestricted: { type: boolean }
+        location:        { type: string, nullable: true }
+        revenueClass:    { type: string, nullable: true }
+        enabled:         { type: boolean }
+        notes:           { type: string, nullable: true }
     StagedPayment:
       type: object
       required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, classificationSource, entitySource, createdAt, updatedAt]
@@ -5139,6 +5266,18 @@ components:
         spendingEnd:                 { type: string, format: date, nullable: true }
         regionIds:                   { type: array, items: { type: string }, nullable: true }
         displayUsage:                { type: string, nullable: true, readOnly: true, description: "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only." }
+        restrictionType:             { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }
+        restrictionEvidence:         { type: string, nullable: true }
+        purposeVerbatim:             { type: string, nullable: true }
+        deferredRevenue:             { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
+        deferredRevenueReason:       { type: string, nullable: true }
+        objectCode:                  { type: string, nullable: true, readOnly: true, description: "Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode." }
+        objectCodeOverride:          { type: string, nullable: true }
+        revenueLocation:             { type: string, nullable: true, readOnly: true }
+        revenueLocationOverride:     { type: string, nullable: true }
+        revenueClass:                { type: string, nullable: true, readOnly: true }
+        revenueClassOverride:        { type: string, nullable: true }
+        codingFlags:                 { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Coding flags for human review (e.g. restriction_unclear, location_default)." }
         createdAt:                   { type: string, format: date-time }
         updatedAt:                   { type: string, format: date-time }
     GiftAllocationList:
@@ -5162,6 +5301,14 @@ components:
         spendingStart:               { type: string, format: date }
         spendingEnd:                 { type: string, format: date }
         regionIds:                   { type: array, items: { type: string } }
+        restrictionType:             { $ref: "#/components/schemas/RestrictionType" }
+        restrictionEvidence:         { type: string }
+        purposeVerbatim:             { type: string }
+        deferredRevenue:             { $ref: "#/components/schemas/DeferredRevenue" }
+        deferredRevenueReason:       { type: string }
+        objectCodeOverride:          { type: string }
+        revenueLocationOverride:     { type: string }
+        revenueClassOverride:        { type: string }
     UpdateGiftAllocationBody:
       type: object
       properties:
@@ -5177,6 +5324,14 @@ components:
         spendingStart:               { type: string, format: date, nullable: true }
         spendingEnd:                 { type: string, format: date, nullable: true }
         regionIds:                   { type: array, items: { type: string }, nullable: true }
+        restrictionType:             { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }
+        restrictionEvidence:         { type: string, nullable: true }
+        purposeVerbatim:             { type: string, nullable: true }
+        deferredRevenue:             { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
+        deferredRevenueReason:       { type: string, nullable: true }
+        objectCodeOverride:          { type: string, nullable: true }
+        revenueLocationOverride:     { type: string, nullable: true }
+        revenueClassOverride:        { type: string, nullable: true }
 
     # ─── Interactions ─────────────────────────────────────────────────────────
     InteractionKind:

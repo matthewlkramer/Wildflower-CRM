@@ -45,6 +45,7 @@ import topPrioritiesRouter from "./topPriorities";
 import quickbooksOauthRouter from "./quickbooksOauth";
 import quickbooksRouter from "./quickbooks";
 import quickbooksRulesRouter from "./quickbooksRules";
+import revenueCodingRouter from "./revenueCoding";
 import stripeRouter from "./stripe";
 import grantLeadsRouter from "./grantLeads";
 
@@ -106,6 +107,7 @@ router.use(topPrioritiesRouter);
 router.use(quickbooksOauthRouter);
 router.use(quickbooksRouter);
 router.use(quickbooksRulesRouter);
+router.use(revenueCodingRouter);
 router.use(stripeRouter);
 router.use(grantLeadsRouter);
 

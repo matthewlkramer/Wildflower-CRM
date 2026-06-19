@@ -7,7 +7,11 @@ import {
   numeric,
   date,
 } from "drizzle-orm/pg-core";
-import { intendedUsageEnum } from "./_enums";
+import {
+  intendedUsageEnum,
+  restrictionTypeEnum,
+  deferredRevenueEnum,
+} from "./_enums";
 import { giftsAndPayments } from "./giftsAndPayments";
 import { entities } from "./entities";
 import { fundableProjects } from "./fundableProjects";
@@ -70,6 +74,26 @@ export const giftAllocations = pgTable("gift_allocations", {
   //     " - <region names>". Triggers on schools/regions/fundable_projects
   //     keep this in sync when names change.
   displayUsage: text("display_usage"),
+  // ── Revenue-accounting / QuickBooks coding (CFO "Revenue Extractor") ──
+  // Captured restriction taxonomy + supporting evidence. "unclear" is never
+  // silently treated as unrestricted — it flags for review.
+  restrictionType: restrictionTypeEnum("restriction_type"),
+  restrictionEvidence: text("restriction_evidence"),
+  purposeVerbatim: text("purpose_verbatim"),
+  deferredRevenue: deferredRevenueEnum("deferred_revenue"),
+  deferredRevenueReason: text("deferred_revenue_reason"),
+  // Derived QBO coding SNAPSHOT — recomputed from the parent donor + restriction
+  // + entity coding rules on each write (and on parent-donor change). Never edit
+  // directly; set the *Override columns to override. Effective = override ?? derived.
+  objectCode: text("object_code"),
+  objectCodeOverride: text("object_code_override"),
+  revenueLocation: text("revenue_location"),
+  revenueLocationOverride: text("revenue_location_override"),
+  revenueClass: text("revenue_class"),
+  revenueClassOverride: text("revenue_class_override"),
+  // Coding flags surfaced for human review (e.g. "restriction_unclear",
+  // "location_default", "payer_type_assumed", "loan_no_revenue_account").
+  codingFlags: text("coding_flags").array(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

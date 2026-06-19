@@ -27,7 +27,12 @@ import {
   useAdminReorderQuickbooksRules,
   useAdminDeleteQuickbooksRule,
   useAdminApplyQuickbooksRuleToPending,
+  useAdminListEntityCodingRules,
+  useAdminCreateEntityCodingRule,
+  useAdminUpdateEntityCodingRule,
+  useAdminDeleteEntityCodingRule,
   useListFundableProjects,
+  getAdminListEntityCodingRulesQueryKey,
   getListEntitiesQueryKey,
   getListFiscalYearEntityGoalsQueryKey,
   getGetDashboardSummaryQueryKey,
@@ -56,7 +61,10 @@ import type {
   IntendedUsage,
   CreateQuickbooksRuleBody,
   ApplyRuleToPendingResult,
+  EntityCodingRule,
+  CreateEntityCodingRuleBody,
 } from "@workspace/api-client-react";
+import { LOCATIONS } from "@workspace/api-zod";
 import {
   Dialog,
   DialogContent,
@@ -157,6 +165,7 @@ export default function Admin() {
       <CalendarMeetingFiltersSection />
       <InternalEmailDomainsSection />
       <QuickbooksRulesSection />
+      <EntityCodingRulesSection entities={entities} />
       <EmailIntelligenceSection />
       <p className="text-xs text-muted-foreground">
         Looking to connect or disconnect your own Google account? That moved
@@ -2524,5 +2533,295 @@ function QuickbooksRulesSection() {
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+// ── Admin: per-entity revenue coding rules ───────────────────────────────────
+// Admin-editable defaults that feed deriveRevenueCoding(): force a fund entity's
+// gifts to be treated as purpose-restricted (fiscal sponsees), and/or pin a
+// default Location / Class. Mirrors the code SEED_ENTITY_CODING_RULES (kept in
+// lockstep by a fidelity test). Effective coding on an allocation is still
+// override ?? derived — these rules only shape the derived snapshot.
+
+const NONE_LOCATION = "__none__";
+
+function EntityCodingRulesSection({ entities }: { entities: Entity[] }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const rulesQ = useAdminListEntityCodingRules({
+    query: { queryKey: getAdminListEntityCodingRulesQueryKey() },
+  });
+  const rules = rulesQ.data ?? [];
+
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: getAdminListEntityCodingRulesQueryKey() });
+
+  const entityName = (id: string) =>
+    entities.find((e) => e.id === id)?.name ?? id;
+
+  const create = useAdminCreateEntityCodingRule({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        toast({ title: "Coding rule added" });
+      },
+      onError: (err: unknown) =>
+        toast({
+          title: "Create failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    },
+  });
+  const update = useAdminUpdateEntityCodingRule({
+    mutation: {
+      onSuccess: () => invalidate(),
+      onError: (err: unknown) =>
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    },
+  });
+  const del = useAdminDeleteEntityCodingRule({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        toast({ title: "Coding rule removed" });
+      },
+      onError: (err: unknown) =>
+        toast({
+          title: "Delete failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    },
+  });
+
+  // New-rule form state.
+  const [entityId, setEntityId] = useState("");
+  const [forceRestricted, setForceRestricted] = useState(false);
+  const [location, setLocation] = useState<string>(NONE_LOCATION);
+  const [revenueClass, setRevenueClass] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const usedEntityIds = new Set(rules.map((r) => r.entityId));
+  const availableEntities = entities.filter((e) => !usedEntityIds.has(e.id));
+
+  const canSubmit = entityId.trim() !== "" && !create.isPending;
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    const body: CreateEntityCodingRuleBody = {
+      entityId,
+      forceRestricted,
+      location: location === NONE_LOCATION ? null : location,
+      revenueClass: revenueClass.trim() === "" ? null : revenueClass.trim(),
+      notes: notes.trim() === "" ? null : notes.trim(),
+    };
+    create.mutate(
+      { data: body },
+      {
+        onSuccess: () => {
+          setEntityId("");
+          setForceRestricted(false);
+          setLocation(NONE_LOCATION);
+          setRevenueClass("");
+          setNotes("");
+        },
+      },
+    );
+  };
+
+  return (
+    <Card data-testid="admin-entity-coding-rules-section">
+      <CardHeader>
+        <CardTitle>Revenue coding rules</CardTitle>
+        <CardDescription>
+          Per-entity defaults that shape the derived QuickBooks coding (Object
+          Code / Location / Class) on gift &amp; pledge allocations. Forcing an
+          entity restricted treats all its gifts as purpose-restricted (used for
+          fiscal sponsees). Allocations can still override the derived values
+          individually.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <form
+          onSubmit={submit}
+          className="space-y-3"
+          data-testid="new-coding-rule-form"
+        >
+          <h3 className="text-sm font-semibold">Add rule</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="coding-rule-entity">Entity</Label>
+              <Select value={entityId} onValueChange={setEntityId}>
+                <SelectTrigger id="coding-rule-entity" data-testid="coding-rule-entity">
+                  <SelectValue placeholder="Choose an entity…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableEntities.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="coding-rule-location">Default Location</Label>
+              <Select value={location} onValueChange={setLocation}>
+                <SelectTrigger id="coding-rule-location" data-testid="coding-rule-location">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_LOCATION}>— None —</SelectItem>
+                  {LOCATIONS.map((loc) => (
+                    <SelectItem key={loc} value={loc}>
+                      {loc}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="coding-rule-class">Default Class</Label>
+              <Input
+                id="coding-rule-class"
+                data-testid="coding-rule-class"
+                value={revenueClass}
+                onChange={(e) => setRevenueClass(e.target.value)}
+                placeholder="(optional)"
+                autoComplete="off"
+              />
+            </div>
+            <div className="flex items-center gap-2 pb-2 sm:pt-6">
+              <Switch
+                id="coding-rule-force"
+                data-testid="coding-rule-force"
+                checked={forceRestricted}
+                onCheckedChange={setForceRestricted}
+              />
+              <Label htmlFor="coding-rule-force" className="cursor-pointer">
+                Force restricted
+              </Label>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="coding-rule-notes">Notes</Label>
+            <Input
+              id="coding-rule-notes"
+              data-testid="coding-rule-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="(optional)"
+              autoComplete="off"
+            />
+          </div>
+          <Button type="submit" disabled={!canSubmit} data-testid="coding-rule-submit">
+            {create.isPending ? "Adding…" : "Add rule"}
+          </Button>
+        </form>
+
+        <EntityCodingRulesTable
+          rules={rules}
+          loading={rulesQ.isLoading}
+          entityName={entityName}
+          onToggleEnabled={(r) =>
+            update.mutate({ id: r.entityId, data: { enabled: !r.enabled } })
+          }
+          onToggleForce={(r) =>
+            update.mutate({
+              id: r.entityId,
+              data: { forceRestricted: !r.forceRestricted },
+            })
+          }
+          onDelete={(r) => del.mutate({ id: r.entityId })}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function EntityCodingRulesTable({
+  rules,
+  loading,
+  entityName,
+  onToggleEnabled,
+  onToggleForce,
+  onDelete,
+}: {
+  rules: EntityCodingRule[];
+  loading: boolean;
+  entityName: (id: string) => string;
+  onToggleEnabled: (r: EntityCodingRule) => void;
+  onToggleForce: (r: EntityCodingRule) => void;
+  onDelete: (r: EntityCodingRule) => void;
+}) {
+  const sorted = useMemo(() => {
+    const copy = [...rules];
+    copy.sort((a, b) => entityName(a.entityId).localeCompare(entityName(b.entityId)));
+    return copy;
+  }, [rules, entityName]);
+
+  if (loading) {
+    return <p className="text-sm text-muted-foreground">Loading rules…</p>;
+  }
+  if (sorted.length === 0) {
+    return <p className="text-sm text-muted-foreground">No coding rules yet.</p>;
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Entity</TableHead>
+          <TableHead>Force restricted</TableHead>
+          <TableHead>Location</TableHead>
+          <TableHead>Class</TableHead>
+          <TableHead>Notes</TableHead>
+          <TableHead>Enabled</TableHead>
+          <TableHead className="w-0" />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sorted.map((r) => (
+          <TableRow key={r.entityId} data-testid={`coding-rule-row-${r.entityId}`}>
+            <TableCell className="font-medium">{entityName(r.entityId)}</TableCell>
+            <TableCell>
+              <Switch
+                checked={r.forceRestricted}
+                onCheckedChange={() => onToggleForce(r)}
+                data-testid={`coding-rule-force-${r.entityId}`}
+              />
+            </TableCell>
+            <TableCell>{r.location ?? "—"}</TableCell>
+            <TableCell>{r.revenueClass ?? "—"}</TableCell>
+            <TableCell className="max-w-[16rem] truncate text-muted-foreground">
+              {r.notes ?? "—"}
+            </TableCell>
+            <TableCell>
+              <Switch
+                checked={r.enabled}
+                onCheckedChange={() => onToggleEnabled(r)}
+                data-testid={`coding-rule-enabled-${r.entityId}`}
+              />
+            </TableCell>
+            <TableCell>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onDelete(r)}
+                data-testid={`coding-rule-delete-${r.entityId}`}
+              >
+                Delete
+              </Button>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }

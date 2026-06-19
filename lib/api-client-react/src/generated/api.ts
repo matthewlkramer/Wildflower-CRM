@@ -22,6 +22,7 @@ import type {
   AcceptTaskProposalResult,
   Address,
   AddressList,
+  AdminDeleteEntityCodingRule200,
   AdminDeleteQuickbooksRule200,
   AdminDiscardEmailIntelPrompt200,
   AdminGoogleSyncList,
@@ -52,6 +53,7 @@ import type {
   CreateDonorPaymentIntermediaryBody,
   CreateEmailBody,
   CreateEntityBody,
+  CreateEntityCodingRuleBody,
   CreateFundableProjectBody,
   CreateGiftAllocationBody,
   CreateGiftOrPaymentBody,
@@ -93,6 +95,7 @@ import type {
   EmailProposalList,
   EmailProposalSummary,
   Entity,
+  EntityCodingRule,
   ErrorResponse,
   ExcludeStagedPaymentBody,
   ExtensionTokenResponse,
@@ -155,6 +158,7 @@ import type {
   ListPhoneNumbersParams,
   ListPledgeAllocationsParams,
   ListRegionsParams,
+  ListRevenueAccountsParams,
   ListSavedViewsParams,
   ListSchoolsParams,
   ListStagedPaymentGiftWindowParams,
@@ -217,6 +221,7 @@ import type {
   RequestUploadUrl200,
   RequestUploadUrlBody,
   ResolveStagedPaymentBody,
+  RevenueAccount,
   RevertStagedPaymentMatchesBody,
   RevertStagedPaymentMatchesResponse,
   ReviseEmailProposalBody,
@@ -263,6 +268,7 @@ import type {
   UpdateEmailBody,
   UpdateEmailMessagePrivacyBody,
   UpdateEntityBody,
+  UpdateEntityCodingRuleBody,
   UpdateFiscalYearBody,
   UpdateFundableProjectBody,
   UpdateGiftAllocationBody,
@@ -15468,6 +15474,448 @@ export const useAdminApplyQuickbooksRuleToPending = <
   return useMutation(
     getAdminApplyQuickbooksRuleToPendingMutationOptions(options),
   );
+};
+
+/**
+ * @summary List the closed set of QuickBooks revenue accounts (Object Codes).
+ */
+export const getListRevenueAccountsUrl = (
+  params?: ListRevenueAccountsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/revenue-accounts?${stringifiedParams}`
+    : `/api/revenue-accounts`;
+};
+
+export const listRevenueAccounts = async (
+  params?: ListRevenueAccountsParams,
+  options?: RequestInit,
+): Promise<RevenueAccount[]> => {
+  return customFetch<RevenueAccount[]>(getListRevenueAccountsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListRevenueAccountsQueryKey = (
+  params?: ListRevenueAccountsParams,
+) => {
+  return [`/api/revenue-accounts`, ...(params ? [params] : [])] as const;
+};
+
+export const getListRevenueAccountsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listRevenueAccounts>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListRevenueAccountsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listRevenueAccounts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListRevenueAccountsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listRevenueAccounts>>
+  > = ({ signal }) =>
+    listRevenueAccounts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listRevenueAccounts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListRevenueAccountsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listRevenueAccounts>>
+>;
+export type ListRevenueAccountsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List the closed set of QuickBooks revenue accounts (Object Codes).
+ */
+
+export function useListRevenueAccounts<
+  TData = Awaited<ReturnType<typeof listRevenueAccounts>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListRevenueAccountsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listRevenueAccounts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListRevenueAccountsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List per-entity revenue-coding default rules (admin only).
+ */
+export const getAdminListEntityCodingRulesUrl = () => {
+  return `/api/admin/entity-coding-rules`;
+};
+
+export const adminListEntityCodingRules = async (
+  options?: RequestInit,
+): Promise<EntityCodingRule[]> => {
+  return customFetch<EntityCodingRule[]>(getAdminListEntityCodingRulesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdminListEntityCodingRulesQueryKey = () => {
+  return [`/api/admin/entity-coding-rules`] as const;
+};
+
+export const getAdminListEntityCodingRulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminListEntityCodingRules>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminListEntityCodingRules>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminListEntityCodingRulesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminListEntityCodingRules>>
+  > = ({ signal }) => adminListEntityCodingRules({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminListEntityCodingRules>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminListEntityCodingRulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminListEntityCodingRules>>
+>;
+export type AdminListEntityCodingRulesQueryError = ErrorType<void>;
+
+/**
+ * @summary List per-entity revenue-coding default rules (admin only).
+ */
+
+export function useAdminListEntityCodingRules<
+  TData = Awaited<ReturnType<typeof adminListEntityCodingRules>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminListEntityCodingRules>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminListEntityCodingRulesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a per-entity revenue-coding rule (admin only).
+ */
+export const getAdminCreateEntityCodingRuleUrl = () => {
+  return `/api/admin/entity-coding-rules`;
+};
+
+export const adminCreateEntityCodingRule = async (
+  createEntityCodingRuleBody: CreateEntityCodingRuleBody,
+  options?: RequestInit,
+): Promise<EntityCodingRule> => {
+  return customFetch<EntityCodingRule>(getAdminCreateEntityCodingRuleUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createEntityCodingRuleBody),
+  });
+};
+
+export const getAdminCreateEntityCodingRuleMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminCreateEntityCodingRule>>,
+    TError,
+    { data: BodyType<CreateEntityCodingRuleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminCreateEntityCodingRule>>,
+  TError,
+  { data: BodyType<CreateEntityCodingRuleBody> },
+  TContext
+> => {
+  const mutationKey = ["adminCreateEntityCodingRule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminCreateEntityCodingRule>>,
+    { data: BodyType<CreateEntityCodingRuleBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return adminCreateEntityCodingRule(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminCreateEntityCodingRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminCreateEntityCodingRule>>
+>;
+export type AdminCreateEntityCodingRuleMutationBody =
+  BodyType<CreateEntityCodingRuleBody>;
+export type AdminCreateEntityCodingRuleMutationError =
+  ErrorType<BadRequestResponse | void>;
+
+/**
+ * @summary Create a per-entity revenue-coding rule (admin only).
+ */
+export const useAdminCreateEntityCodingRule = <
+  TError = ErrorType<BadRequestResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminCreateEntityCodingRule>>,
+    TError,
+    { data: BodyType<CreateEntityCodingRuleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminCreateEntityCodingRule>>,
+  TError,
+  { data: BodyType<CreateEntityCodingRuleBody> },
+  TContext
+> => {
+  return useMutation(getAdminCreateEntityCodingRuleMutationOptions(options));
+};
+
+/**
+ * @summary Update a per-entity revenue-coding rule (admin only). id is the entityId.
+ */
+export const getAdminUpdateEntityCodingRuleUrl = (id: string) => {
+  return `/api/admin/entity-coding-rules/${id}`;
+};
+
+export const adminUpdateEntityCodingRule = async (
+  id: string,
+  updateEntityCodingRuleBody: UpdateEntityCodingRuleBody,
+  options?: RequestInit,
+): Promise<EntityCodingRule> => {
+  return customFetch<EntityCodingRule>(getAdminUpdateEntityCodingRuleUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEntityCodingRuleBody),
+  });
+};
+
+export const getAdminUpdateEntityCodingRuleMutationOptions = <
+  TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminUpdateEntityCodingRule>>,
+    TError,
+    { id: string; data: BodyType<UpdateEntityCodingRuleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminUpdateEntityCodingRule>>,
+  TError,
+  { id: string; data: BodyType<UpdateEntityCodingRuleBody> },
+  TContext
+> => {
+  const mutationKey = ["adminUpdateEntityCodingRule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminUpdateEntityCodingRule>>,
+    { id: string; data: BodyType<UpdateEntityCodingRuleBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return adminUpdateEntityCodingRule(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminUpdateEntityCodingRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminUpdateEntityCodingRule>>
+>;
+export type AdminUpdateEntityCodingRuleMutationBody =
+  BodyType<UpdateEntityCodingRuleBody>;
+export type AdminUpdateEntityCodingRuleMutationError = ErrorType<
+  BadRequestResponse | void | NotFoundResponse
+>;
+
+/**
+ * @summary Update a per-entity revenue-coding rule (admin only). id is the entityId.
+ */
+export const useAdminUpdateEntityCodingRule = <
+  TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminUpdateEntityCodingRule>>,
+    TError,
+    { id: string; data: BodyType<UpdateEntityCodingRuleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminUpdateEntityCodingRule>>,
+  TError,
+  { id: string; data: BodyType<UpdateEntityCodingRuleBody> },
+  TContext
+> => {
+  return useMutation(getAdminUpdateEntityCodingRuleMutationOptions(options));
+};
+
+/**
+ * @summary Delete a per-entity revenue-coding rule (admin only).
+ */
+export const getAdminDeleteEntityCodingRuleUrl = (id: string) => {
+  return `/api/admin/entity-coding-rules/${id}`;
+};
+
+export const adminDeleteEntityCodingRule = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AdminDeleteEntityCodingRule200> => {
+  return customFetch<AdminDeleteEntityCodingRule200>(
+    getAdminDeleteEntityCodingRuleUrl(id),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getAdminDeleteEntityCodingRuleMutationOptions = <
+  TError = ErrorType<void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminDeleteEntityCodingRule>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminDeleteEntityCodingRule>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["adminDeleteEntityCodingRule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminDeleteEntityCodingRule>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return adminDeleteEntityCodingRule(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminDeleteEntityCodingRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminDeleteEntityCodingRule>>
+>;
+
+export type AdminDeleteEntityCodingRuleMutationError =
+  ErrorType<void | NotFoundResponse>;
+
+/**
+ * @summary Delete a per-entity revenue-coding rule (admin only).
+ */
+export const useAdminDeleteEntityCodingRule = <
+  TError = ErrorType<void | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminDeleteEntityCodingRule>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminDeleteEntityCodingRule>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getAdminDeleteEntityCodingRuleMutationOptions(options));
 };
 
 export const getListStagedPaymentsUrl = (params?: ListStagedPaymentsParams) => {

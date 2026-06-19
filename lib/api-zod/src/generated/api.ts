@@ -4425,9 +4425,49 @@ export const GetOpportunityOrPledgeResponse = zod
                 "abandoned",
               ])
               .nullish(),
+            contingent: zod
+              .boolean()
+              .optional()
+              .describe(
+                "Scheduled (false) vs contingent (true) future payment.",
+              ),
             conditions: zod.string().nullish(),
             notes: zod.string().nullish(),
             regionIds: zod.array(zod.string()).nullish(),
+            restrictionType: zod
+              .enum([
+                "unrestricted",
+                "purpose",
+                "time",
+                "both",
+                "unclear",
+                "na",
+              ])
+              .describe(
+                "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+              )
+              .nullish(),
+            restrictionEvidence: zod.string().nullish(),
+            purposeVerbatim: zod.string().nullish(),
+            deferredRevenue: zod.enum(["yes", "no", "na"]).nullish(),
+            deferredRevenueReason: zod.string().nullish(),
+            objectCode: zod
+              .string()
+              .nullish()
+              .describe(
+                "Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode.",
+              ),
+            objectCodeOverride: zod.string().nullish(),
+            revenueLocation: zod.string().nullish(),
+            revenueLocationOverride: zod.string().nullish(),
+            revenueClass: zod.string().nullish(),
+            revenueClassOverride: zod.string().nullish(),
+            codingFlags: zod
+              .array(zod.string())
+              .nullish()
+              .describe(
+                "Coding flags for human review (e.g. restriction_unclear, location_default).",
+              ),
             createdAt: zod.string().datetime({}),
             updatedAt: zod.string().datetime({}),
           }),
@@ -4745,9 +4785,40 @@ export const ListPledgeAllocationsResponse = zod.object({
           "abandoned",
         ])
         .nullish(),
+      contingent: zod
+        .boolean()
+        .optional()
+        .describe("Scheduled (false) vs contingent (true) future payment."),
       conditions: zod.string().nullish(),
       notes: zod.string().nullish(),
       regionIds: zod.array(zod.string()).nullish(),
+      restrictionType: zod
+        .enum(["unrestricted", "purpose", "time", "both", "unclear", "na"])
+        .describe(
+          "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+        )
+        .nullish(),
+      restrictionEvidence: zod.string().nullish(),
+      purposeVerbatim: zod.string().nullish(),
+      deferredRevenue: zod.enum(["yes", "no", "na"]).nullish(),
+      deferredRevenueReason: zod.string().nullish(),
+      objectCode: zod
+        .string()
+        .nullish()
+        .describe(
+          "Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode.",
+        ),
+      objectCodeOverride: zod.string().nullish(),
+      revenueLocation: zod.string().nullish(),
+      revenueLocationOverride: zod.string().nullish(),
+      revenueClass: zod.string().nullish(),
+      revenueClassOverride: zod.string().nullish(),
+      codingFlags: zod
+        .array(zod.string())
+        .nullish()
+        .describe(
+          "Coding flags for human review (e.g. restriction_unclear, location_default).",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -4787,9 +4858,23 @@ export const CreatePledgeAllocationBody = zod.object({
       "abandoned",
     ])
     .optional(),
+  contingent: zod.boolean().optional(),
   conditions: zod.string().optional(),
   notes: zod.string().optional(),
   regionIds: zod.array(zod.string()).optional(),
+  restrictionType: zod
+    .enum(["unrestricted", "purpose", "time", "both", "unclear", "na"])
+    .optional()
+    .describe(
+      "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+    ),
+  restrictionEvidence: zod.string().optional(),
+  purposeVerbatim: zod.string().optional(),
+  deferredRevenue: zod.enum(["yes", "no", "na"]).optional(),
+  deferredRevenueReason: zod.string().optional(),
+  objectCodeOverride: zod.string().optional(),
+  revenueLocationOverride: zod.string().optional(),
+  revenueClassOverride: zod.string().optional(),
 });
 
 export const UpdatePledgeAllocationParams = zod.object({
@@ -4824,9 +4909,23 @@ export const UpdatePledgeAllocationBody = zod.object({
       "abandoned",
     ])
     .nullish(),
+  contingent: zod.boolean().optional(),
   conditions: zod.string().nullish(),
   notes: zod.string().nullish(),
   regionIds: zod.array(zod.string()).nullish(),
+  restrictionType: zod
+    .enum(["unrestricted", "purpose", "time", "both", "unclear", "na"])
+    .describe(
+      "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+    )
+    .nullish(),
+  restrictionEvidence: zod.string().nullish(),
+  purposeVerbatim: zod.string().nullish(),
+  deferredRevenue: zod.enum(["yes", "no", "na"]).nullish(),
+  deferredRevenueReason: zod.string().nullish(),
+  objectCodeOverride: zod.string().nullish(),
+  revenueLocationOverride: zod.string().nullish(),
+  revenueClassOverride: zod.string().nullish(),
 });
 
 export const UpdatePledgeAllocationResponse = zod.object({
@@ -4862,9 +4961,40 @@ export const UpdatePledgeAllocationResponse = zod.object({
       "abandoned",
     ])
     .nullish(),
+  contingent: zod
+    .boolean()
+    .optional()
+    .describe("Scheduled (false) vs contingent (true) future payment."),
   conditions: zod.string().nullish(),
   notes: zod.string().nullish(),
   regionIds: zod.array(zod.string()).nullish(),
+  restrictionType: zod
+    .enum(["unrestricted", "purpose", "time", "both", "unclear", "na"])
+    .describe(
+      "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+    )
+    .nullish(),
+  restrictionEvidence: zod.string().nullish(),
+  purposeVerbatim: zod.string().nullish(),
+  deferredRevenue: zod.enum(["yes", "no", "na"]).nullish(),
+  deferredRevenueReason: zod.string().nullish(),
+  objectCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode.",
+    ),
+  objectCodeOverride: zod.string().nullish(),
+  revenueLocation: zod.string().nullish(),
+  revenueLocationOverride: zod.string().nullish(),
+  revenueClass: zod.string().nullish(),
+  revenueClassOverride: zod.string().nullish(),
+  codingFlags: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Coding flags for human review (e.g. restriction_unclear, location_default).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -5258,6 +5388,40 @@ export const GetGiftOrPaymentResponse = zod
               .describe(
                 "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only.",
               ),
+            restrictionType: zod
+              .enum([
+                "unrestricted",
+                "purpose",
+                "time",
+                "both",
+                "unclear",
+                "na",
+              ])
+              .describe(
+                "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+              )
+              .nullish(),
+            restrictionEvidence: zod.string().nullish(),
+            purposeVerbatim: zod.string().nullish(),
+            deferredRevenue: zod.enum(["yes", "no", "na"]).nullish(),
+            deferredRevenueReason: zod.string().nullish(),
+            objectCode: zod
+              .string()
+              .nullish()
+              .describe(
+                "Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode.",
+              ),
+            objectCodeOverride: zod.string().nullish(),
+            revenueLocation: zod.string().nullish(),
+            revenueLocationOverride: zod.string().nullish(),
+            revenueClass: zod.string().nullish(),
+            revenueClassOverride: zod.string().nullish(),
+            codingFlags: zod
+              .array(zod.string())
+              .nullish()
+              .describe(
+                "Coding flags for human review (e.g. restriction_unclear, location_default).",
+              ),
             createdAt: zod.string().datetime({}),
             updatedAt: zod.string().datetime({}),
           }),
@@ -5597,6 +5761,40 @@ export const LinkThankYouEmailResponse = zod
               .describe(
                 "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only.",
               ),
+            restrictionType: zod
+              .enum([
+                "unrestricted",
+                "purpose",
+                "time",
+                "both",
+                "unclear",
+                "na",
+              ])
+              .describe(
+                "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+              )
+              .nullish(),
+            restrictionEvidence: zod.string().nullish(),
+            purposeVerbatim: zod.string().nullish(),
+            deferredRevenue: zod.enum(["yes", "no", "na"]).nullish(),
+            deferredRevenueReason: zod.string().nullish(),
+            objectCode: zod
+              .string()
+              .nullish()
+              .describe(
+                "Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode.",
+              ),
+            objectCodeOverride: zod.string().nullish(),
+            revenueLocation: zod.string().nullish(),
+            revenueLocationOverride: zod.string().nullish(),
+            revenueClass: zod.string().nullish(),
+            revenueClassOverride: zod.string().nullish(),
+            codingFlags: zod
+              .array(zod.string())
+              .nullish()
+              .describe(
+                "Coding flags for human review (e.g. restriction_unclear, location_default).",
+              ),
             createdAt: zod.string().datetime({}),
             updatedAt: zod.string().datetime({}),
           }),
@@ -5719,6 +5917,33 @@ export const ListGiftAllocationsResponse = zod.object({
         .describe(
           "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only.",
         ),
+      restrictionType: zod
+        .enum(["unrestricted", "purpose", "time", "both", "unclear", "na"])
+        .describe(
+          "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+        )
+        .nullish(),
+      restrictionEvidence: zod.string().nullish(),
+      purposeVerbatim: zod.string().nullish(),
+      deferredRevenue: zod.enum(["yes", "no", "na"]).nullish(),
+      deferredRevenueReason: zod.string().nullish(),
+      objectCode: zod
+        .string()
+        .nullish()
+        .describe(
+          "Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode.",
+        ),
+      objectCodeOverride: zod.string().nullish(),
+      revenueLocation: zod.string().nullish(),
+      revenueLocationOverride: zod.string().nullish(),
+      revenueClass: zod.string().nullish(),
+      revenueClassOverride: zod.string().nullish(),
+      codingFlags: zod
+        .array(zod.string())
+        .nullish()
+        .describe(
+          "Coding flags for human review (e.g. restriction_unclear, location_default).",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -5751,6 +5976,19 @@ export const CreateGiftAllocationBody = zod.object({
   spendingStart: zod.string().date().optional(),
   spendingEnd: zod.string().date().optional(),
   regionIds: zod.array(zod.string()).optional(),
+  restrictionType: zod
+    .enum(["unrestricted", "purpose", "time", "both", "unclear", "na"])
+    .optional()
+    .describe(
+      "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+    ),
+  restrictionEvidence: zod.string().optional(),
+  purposeVerbatim: zod.string().optional(),
+  deferredRevenue: zod.enum(["yes", "no", "na"]).optional(),
+  deferredRevenueReason: zod.string().optional(),
+  objectCodeOverride: zod.string().optional(),
+  revenueLocationOverride: zod.string().optional(),
+  revenueClassOverride: zod.string().optional(),
 });
 
 export const UpdateGiftAllocationParams = zod.object({
@@ -5778,6 +6016,19 @@ export const UpdateGiftAllocationBody = zod.object({
   spendingStart: zod.string().date().nullish(),
   spendingEnd: zod.string().date().nullish(),
   regionIds: zod.array(zod.string()).nullish(),
+  restrictionType: zod
+    .enum(["unrestricted", "purpose", "time", "both", "unclear", "na"])
+    .describe(
+      "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+    )
+    .nullish(),
+  restrictionEvidence: zod.string().nullish(),
+  purposeVerbatim: zod.string().nullish(),
+  deferredRevenue: zod.enum(["yes", "no", "na"]).nullish(),
+  deferredRevenueReason: zod.string().nullish(),
+  objectCodeOverride: zod.string().nullish(),
+  revenueLocationOverride: zod.string().nullish(),
+  revenueClassOverride: zod.string().nullish(),
 });
 
 export const UpdateGiftAllocationResponse = zod.object({
@@ -5807,6 +6058,33 @@ export const UpdateGiftAllocationResponse = zod.object({
     .nullish()
     .describe(
       "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only.",
+    ),
+  restrictionType: zod
+    .enum(["unrestricted", "purpose", "time", "both", "unclear", "na"])
+    .describe(
+      "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+    )
+    .nullish(),
+  restrictionEvidence: zod.string().nullish(),
+  purposeVerbatim: zod.string().nullish(),
+  deferredRevenue: zod.enum(["yes", "no", "na"]).nullish(),
+  deferredRevenueReason: zod.string().nullish(),
+  objectCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode.",
+    ),
+  objectCodeOverride: zod.string().nullish(),
+  revenueLocation: zod.string().nullish(),
+  revenueLocationOverride: zod.string().nullish(),
+  revenueClass: zod.string().nullish(),
+  revenueClassOverride: zod.string().nullish(),
+  codingFlags: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Coding flags for human review (e.g. restriction_unclear, location_default).",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -9123,6 +9401,116 @@ export const AdminApplyQuickbooksRuleToPendingResponse = zod.object({
     .describe(
       "Matched rows the rule could not apply to cleanly, left pending (0 when dryRun=true).",
     ),
+});
+
+/**
+ * @summary List the closed set of QuickBooks revenue accounts (Object Codes).
+ */
+export const ListRevenueAccountsQueryParams = zod.object({
+  activeOnly: zod.coerce
+    .boolean()
+    .optional()
+    .describe("When true, omit deactivated accounts."),
+});
+
+export const ListRevenueAccountsResponseItem = zod.object({
+  code: zod.string().describe("Object Code, e.g. 4000.1 \/ 4100.2."),
+  name: zod.string(),
+  kind: zod.enum(["unrestricted", "restricted", "special"]),
+  payerType: zod
+    .enum(["individual", "foundation", "corporation", "governmental"])
+    .nullish(),
+  sortOrder: zod.number(),
+  active: zod.boolean(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+export const ListRevenueAccountsResponse = zod.array(
+  ListRevenueAccountsResponseItem,
+);
+
+/**
+ * @summary List per-entity revenue-coding default rules (admin only).
+ */
+export const AdminListEntityCodingRulesResponseItem = zod.object({
+  entityId: zod.string().describe("Fund entity id this rule applies to."),
+  forceRestricted: zod
+    .boolean()
+    .describe(
+      "Treat gifts to this entity as purpose-restricted regardless of donor language (fiscal sponsees).",
+    ),
+  location: zod
+    .string()
+    .nullish()
+    .describe(
+      "Override Location (must be a value in the closed Location list).",
+    ),
+  revenueClass: zod.string().nullish().describe("Suggested Class."),
+  enabled: zod.boolean(),
+  notes: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+export const AdminListEntityCodingRulesResponse = zod.array(
+  AdminListEntityCodingRulesResponseItem,
+);
+
+/**
+ * @summary Create a per-entity revenue-coding rule (admin only).
+ */
+export const AdminCreateEntityCodingRuleBody = zod.object({
+  entityId: zod.string(),
+  forceRestricted: zod.boolean().optional().describe("Defaults to false."),
+  location: zod.string().nullish(),
+  revenueClass: zod.string().nullish(),
+  enabled: zod.boolean().optional().describe("Defaults to true."),
+  notes: zod.string().nullish(),
+});
+
+/**
+ * @summary Update a per-entity revenue-coding rule (admin only). id is the entityId.
+ */
+export const AdminUpdateEntityCodingRuleParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AdminUpdateEntityCodingRuleBody = zod.object({
+  forceRestricted: zod.boolean().optional(),
+  location: zod.string().nullish(),
+  revenueClass: zod.string().nullish(),
+  enabled: zod.boolean().optional(),
+  notes: zod.string().nullish(),
+});
+
+export const AdminUpdateEntityCodingRuleResponse = zod.object({
+  entityId: zod.string().describe("Fund entity id this rule applies to."),
+  forceRestricted: zod
+    .boolean()
+    .describe(
+      "Treat gifts to this entity as purpose-restricted regardless of donor language (fiscal sponsees).",
+    ),
+  location: zod
+    .string()
+    .nullish()
+    .describe(
+      "Override Location (must be a value in the closed Location list).",
+    ),
+  revenueClass: zod.string().nullish().describe("Suggested Class."),
+  enabled: zod.boolean(),
+  notes: zod.string().nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * @summary Delete a per-entity revenue-coding rule (admin only).
+ */
+export const AdminDeleteEntityCodingRuleParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AdminDeleteEntityCodingRuleResponse = zod.object({
+  ok: zod.boolean(),
 });
 
 export const listStagedPaymentsQueryLimitDefault = 50;

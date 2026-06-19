@@ -11,17 +11,21 @@ import {
   useListEntities,
   useListFiscalYears,
   useListFundableProjects,
+  useListRevenueAccounts,
   getGetOpportunityOrPledgeQueryKey,
   getGetGiftOrPaymentQueryKey,
   type PledgeAllocation,
   type GiftAllocation,
   type IntendedUsage,
   type PledgeAllocationStatus,
+  type RestrictionType,
+  type DeferredRevenue,
   type CreatePledgeAllocationBody,
   type UpdatePledgeAllocationBody,
   type CreateGiftAllocationBody,
   type UpdateGiftAllocationBody,
 } from "@workspace/api-client-react";
+import { LOCATIONS } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -85,7 +89,31 @@ const PLEDGE_ALLOCATION_STATUS_OPTIONS: ReadonlyArray<Option> = [
   { value: "abandoned", label: "Abandoned" },
 ];
 
+const RESTRICTION_TYPE_OPTIONS: ReadonlyArray<Option> = [
+  { value: "unrestricted", label: "Unrestricted" },
+  { value: "purpose", label: "Purpose-restricted" },
+  { value: "time", label: "Time-restricted" },
+  { value: "both", label: "Purpose & time-restricted" },
+  { value: "unclear", label: "Unclear (needs review)" },
+  { value: "na", label: "N/A" },
+];
+
+const DEFERRED_REVENUE_OPTIONS: ReadonlyArray<Option> = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+  { value: "na", label: "N/A" },
+];
+
 const NONE = "__none__";
+
+// Human-readable hints for the coding flags surfaced by the derivation lib.
+const CODING_FLAG_LABELS: Record<string, string> = {
+  restriction_unclear: "Restriction unclear — set a restriction type so an Object Code can be derived.",
+  restriction_na: "Restriction is N/A — no contribution Object Code is derived.",
+  loan_no_revenue_account: "Loan-fund investment — principal movement, no revenue Object Code.",
+  payer_type_assumed: "Payer type was assumed — confirm the donor type.",
+  location_default: "Location defaulted to Foundation General — no entity/region signal.",
+};
 
 function useEntityOptions(): ReadonlyArray<Option> {
   const { data } = useListEntities();
@@ -259,6 +287,238 @@ const RESTRICTED_HINT =
   "Check if the grant letter formally restricts this. Leave unchecked if it's just our documented understanding of the donor's intent.";
 
 /* ──────────────────────────────────────────────────────────────────────── */
+/* Revenue-coding capture + derived display                                  */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+// The coding-related slice of an allocation form. Shared by pledge + gift
+// dialogs since the revenue-accounting capture fields are identical.
+type CodingFormState = {
+  restrictionType: string;
+  restrictionEvidence: string;
+  purposeVerbatim: string;
+  deferredRevenue: string;
+  deferredRevenueReason: string;
+  objectCodeOverride: string;
+  revenueLocationOverride: string;
+  revenueClassOverride: string;
+};
+
+function codingStateFrom(
+  a: Pick<
+    PledgeAllocation | GiftAllocation,
+    | "restrictionType"
+    | "restrictionEvidence"
+    | "purposeVerbatim"
+    | "deferredRevenue"
+    | "deferredRevenueReason"
+    | "objectCodeOverride"
+    | "revenueLocationOverride"
+    | "revenueClassOverride"
+  > | null,
+): CodingFormState {
+  return {
+    restrictionType: a?.restrictionType ?? "",
+    restrictionEvidence: a?.restrictionEvidence ?? "",
+    purposeVerbatim: a?.purposeVerbatim ?? "",
+    deferredRevenue: a?.deferredRevenue ?? "",
+    deferredRevenueReason: a?.deferredRevenueReason ?? "",
+    objectCodeOverride: a?.objectCodeOverride ?? "",
+    revenueLocationOverride: a?.revenueLocationOverride ?? "",
+    revenueClassOverride: a?.revenueClassOverride ?? "",
+  };
+}
+
+// Capture fields shared by the create + update bodies (both allocation types).
+type CodingBody = {
+  restrictionType?: RestrictionType | null;
+  restrictionEvidence?: string | null;
+  purposeVerbatim?: string | null;
+  deferredRevenue?: DeferredRevenue | null;
+  deferredRevenueReason?: string | null;
+  objectCodeOverride?: string | null;
+  revenueLocationOverride?: string | null;
+  revenueClassOverride?: string | null;
+};
+
+function codingBodyFrom(s: CodingFormState): CodingBody {
+  return {
+    restrictionType: (noneToNull(s.restrictionType) as RestrictionType | null) ?? null,
+    restrictionEvidence: emptyToNull(s.restrictionEvidence),
+    purposeVerbatim: emptyToNull(s.purposeVerbatim),
+    deferredRevenue: (noneToNull(s.deferredRevenue) as DeferredRevenue | null) ?? null,
+    deferredRevenueReason: emptyToNull(s.deferredRevenueReason),
+    objectCodeOverride: noneToNull(s.objectCodeOverride),
+    revenueLocationOverride: noneToNull(s.revenueLocationOverride),
+    revenueClassOverride: noneToNull(s.revenueClassOverride),
+  };
+}
+
+// Object Code options from the live revenue_accounts table (active only).
+function useRevenueAccountOptions(): ReadonlyArray<Option> {
+  const { data } = useListRevenueAccounts({ activeOnly: true });
+  return (data ?? []).map((acct) => ({
+    value: acct.code,
+    label: `${acct.code} — ${acct.name}`,
+  }));
+}
+
+const LOCATION_OPTIONS: ReadonlyArray<Option> = LOCATIONS.map((loc) => ({
+  value: loc,
+  label: loc,
+}));
+
+// Read-only "Derived / Effective" line: shows the frozen snapshot and, when an
+// override is set, the override that supersedes it.
+function CodingValue({
+  label,
+  derived,
+  override,
+}: {
+  label: string;
+  derived: string | null | undefined;
+  override: string | null | undefined;
+}) {
+  const hasOverride = override != null && override !== "";
+  const effective = hasOverride ? override : (derived ?? null);
+  return (
+    <div className="flex items-baseline justify-between gap-2 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-right">
+        {effective ? (
+          <span className="font-medium">{effective}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+        {hasOverride ? (
+          <span className="ml-1 text-muted-foreground">
+            (override{derived ? `; derived ${derived}` : ""})
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+// The full revenue-coding section rendered inside each allocation dialog's
+// "More details": capture inputs, the derived snapshot, review flags, and the
+// manual overrides. `derived` is the snapshot on the existing row (add mode has
+// none until the first save).
+function RevenueCodingFields({
+  s,
+  set,
+  derived,
+}: {
+  s: CodingFormState;
+  set: <K extends keyof CodingFormState>(k: K, v: CodingFormState[K]) => void;
+  derived: Pick<
+    PledgeAllocation | GiftAllocation,
+    "objectCode" | "revenueLocation" | "revenueClass" | "codingFlags"
+  > | null;
+}) {
+  const accountOptions = useRevenueAccountOptions();
+  const flags = derived?.codingFlags ?? [];
+  return (
+    <div className="space-y-3 rounded-md border border-border/60 p-3">
+      <p className="text-xs font-medium text-muted-foreground">Revenue accounting</p>
+
+      <DialogField label="Restriction type" htmlFor="rc-restriction">
+        <DialogSelect
+          id="rc-restriction"
+          value={s.restrictionType || NONE}
+          onValueChange={(v) => set("restrictionType", v)}
+          options={RESTRICTION_TYPE_OPTIONS}
+        />
+      </DialogField>
+      <DialogField label="Restriction evidence" htmlFor="rc-evidence">
+        <Textarea
+          id="rc-evidence"
+          className="text-sm min-h-[48px]"
+          value={s.restrictionEvidence}
+          onChange={(e) => set("restrictionEvidence", e.target.value)}
+          placeholder="Where the restriction is documented (grant letter section, email…)"
+          rows={2}
+        />
+      </DialogField>
+      <DialogField label="Purpose (verbatim)" htmlFor="rc-purpose">
+        <Textarea
+          id="rc-purpose"
+          className="text-sm min-h-[48px]"
+          value={s.purposeVerbatim}
+          onChange={(e) => set("purposeVerbatim", e.target.value)}
+          placeholder="Donor's stated purpose, copied verbatim"
+          rows={2}
+        />
+      </DialogField>
+      <DialogField label="Deferred revenue" htmlFor="rc-deferred">
+        <DialogSelect
+          id="rc-deferred"
+          value={s.deferredRevenue || NONE}
+          onValueChange={(v) => set("deferredRevenue", v)}
+          options={DEFERRED_REVENUE_OPTIONS}
+        />
+      </DialogField>
+      <DialogField label="Deferred reason" htmlFor="rc-deferred-reason">
+        <Textarea
+          id="rc-deferred-reason"
+          className="text-sm min-h-[48px]"
+          value={s.deferredRevenueReason}
+          onChange={(e) => set("deferredRevenueReason", e.target.value)}
+          placeholder="Why this is (or isn't) deferred"
+          rows={2}
+        />
+      </DialogField>
+
+      <div className="space-y-1 rounded-md bg-muted/40 p-2">
+        <p className="text-xs font-medium text-muted-foreground">Derived QuickBooks coding</p>
+        <CodingValue label="Object Code" derived={derived?.objectCode} override={s.objectCodeOverride} />
+        <CodingValue label="Location" derived={derived?.revenueLocation} override={s.revenueLocationOverride} />
+        <CodingValue label="Class" derived={derived?.revenueClass} override={s.revenueClassOverride} />
+        {flags.length ? (
+          <ul className="mt-1 space-y-0.5">
+            {flags.map((f) => (
+              <li key={f} className="text-xs text-amber-600 dark:text-amber-500">
+                {CODING_FLAG_LABELS[f] ?? f}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {derived == null ? (
+          <p className="text-xs text-muted-foreground">Coding is derived on save.</p>
+        ) : null}
+      </div>
+
+      <DialogField label="Object Code override" htmlFor="rc-oc-override">
+        <DialogSelect
+          id="rc-oc-override"
+          value={s.objectCodeOverride || NONE}
+          onValueChange={(v) => set("objectCodeOverride", v)}
+          options={accountOptions}
+          placeholder="— Use derived —"
+        />
+      </DialogField>
+      <DialogField label="Location override" htmlFor="rc-loc-override">
+        <DialogSelect
+          id="rc-loc-override"
+          value={s.revenueLocationOverride || NONE}
+          onValueChange={(v) => set("revenueLocationOverride", v)}
+          options={LOCATION_OPTIONS}
+          placeholder="— Use derived —"
+        />
+      </DialogField>
+      <DialogField label="Class override" htmlFor="rc-class-override">
+        <Input
+          id="rc-class-override"
+          className="h-8 text-sm"
+          value={s.revenueClassOverride}
+          onChange={(e) => set("revenueClassOverride", e.target.value)}
+          placeholder="— Use derived —"
+        />
+      </DialogField>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────── */
 /* Table shell                                                               */
 /* ──────────────────────────────────────────────────────────────────────── */
 
@@ -331,7 +591,7 @@ const GIFT_HEADERS = PLEDGE_HEADERS;
 /* Pledge allocation dialog (add + edit)                                     */
 /* ──────────────────────────────────────────────────────────────────────── */
 
-type PledgeFormState = {
+type PledgeFormState = CodingFormState & {
   subAmount: string;
   entityId: string;
   intendedUsage: string;
@@ -341,12 +601,14 @@ type PledgeFormState = {
   status: string;
   fundableProjectId: string;
   directToSchool: boolean;
+  contingent: boolean;
   conditions: string;
   notes: string;
 };
 
 function pledgeStateFrom(a: PledgeAllocation | null): PledgeFormState {
   return {
+    ...codingStateFrom(a),
     subAmount: a?.subAmount ?? "",
     entityId: a?.entityId ?? "",
     intendedUsage: a?.intendedUsage ?? "",
@@ -356,6 +618,7 @@ function pledgeStateFrom(a: PledgeAllocation | null): PledgeFormState {
     status: a?.status ?? "",
     fundableProjectId: a?.fundableProjectId ?? "",
     directToSchool: a?.directToSchool ?? false,
+    contingent: a?.contingent ?? false,
     conditions: a?.conditions ?? "",
     notes: a?.notes ?? "",
   };
@@ -398,6 +661,7 @@ function PledgeAllocationDialog({
 
   function buildBody(): CreatePledgeAllocationBody | UpdatePledgeAllocationBody {
     const amount = parseAmount(s.subAmount);
+    const coding = codingBodyFrom(s);
     if (mode === "edit") {
       const body: UpdatePledgeAllocationBody = {
         subAmount: amount == null ? null : String(amount),
@@ -409,14 +673,17 @@ function PledgeAllocationDialog({
         status: (noneToNull(s.status) as PledgeAllocationStatus | null) ?? null,
         fundableProjectId: noneToNull(s.fundableProjectId),
         directToSchool: s.directToSchool,
+        contingent: s.contingent,
         conditions: emptyToNull(s.conditions),
         notes: emptyToNull(s.notes),
+        ...coding,
       };
       return body;
     }
     const body: CreatePledgeAllocationBody = {
       formallyRestricted: s.formallyRestricted,
       directToSchool: s.directToSchool,
+      contingent: s.contingent,
     };
     if (amount != null) body.subAmount = String(amount);
     if (noneToNull(s.entityId)) body.entityId = s.entityId;
@@ -427,6 +694,14 @@ function PledgeAllocationDialog({
     if (noneToNull(s.fundableProjectId)) body.fundableProjectId = s.fundableProjectId;
     if (emptyToNull(s.conditions)) body.conditions = s.conditions.trim();
     if (emptyToNull(s.notes)) body.notes = s.notes.trim();
+    if (coding.restrictionType != null) body.restrictionType = coding.restrictionType;
+    if (coding.restrictionEvidence != null) body.restrictionEvidence = coding.restrictionEvidence;
+    if (coding.purposeVerbatim != null) body.purposeVerbatim = coding.purposeVerbatim;
+    if (coding.deferredRevenue != null) body.deferredRevenue = coding.deferredRevenue;
+    if (coding.deferredRevenueReason != null) body.deferredRevenueReason = coding.deferredRevenueReason;
+    if (coding.objectCodeOverride != null) body.objectCodeOverride = coding.objectCodeOverride;
+    if (coding.revenueLocationOverride != null) body.revenueLocationOverride = coding.revenueLocationOverride;
+    if (coding.revenueClassOverride != null) body.revenueClassOverride = coding.revenueClassOverride;
     return body;
   }
 
@@ -533,6 +808,15 @@ function PledgeAllocationDialog({
                 label="Funds flow directly to a school"
               />
             </DialogField>
+            <DialogField label="Payment type">
+              <CheckboxField
+                id="pa-contingent"
+                checked={s.contingent}
+                onCheckedChange={(v) => set("contingent", v)}
+                label="Contingent (not a scheduled payment)"
+                hint="Leave unchecked for a scheduled future payment; check when the payment depends on an unmet condition."
+              />
+            </DialogField>
             <DialogField label="Conditions" htmlFor="pa-conditions">
               <Textarea
                 id="pa-conditions"
@@ -553,6 +837,7 @@ function PledgeAllocationDialog({
                 rows={2}
               />
             </DialogField>
+            <RevenueCodingFields s={s} set={set} derived={initial} />
           </MoreDetails>
         </div>
         <DialogFooter className="sm:justify-between">
@@ -764,7 +1049,7 @@ export function PledgeAllocationsEditor({
 /* Gift allocation dialog (add + edit)                                       */
 /* ──────────────────────────────────────────────────────────────────────── */
 
-type GiftFormState = {
+type GiftFormState = CodingFormState & {
   subAmount: string;
   entityId: string;
   intendedUsage: string;
@@ -780,6 +1065,7 @@ type GiftFormState = {
 
 function giftStateFrom(a: GiftAllocation | null): GiftFormState {
   return {
+    ...codingStateFrom(a),
     subAmount: a?.subAmount ?? "",
     entityId: a?.entityId ?? "",
     intendedUsage: a?.intendedUsage ?? "",
@@ -831,6 +1117,7 @@ function GiftAllocationDialog({
   // NOTE: displayUsage is trigger-maintained in the DB and must never be written.
   function buildBody(): CreateGiftAllocationBody | UpdateGiftAllocationBody {
     const amount = parseAmount(s.subAmount);
+    const coding = codingBodyFrom(s);
     if (mode === "edit") {
       const body: UpdateGiftAllocationBody = {
         subAmount: amount == null ? null : String(amount),
@@ -844,6 +1131,7 @@ function GiftAllocationDialog({
         schoolRecipientId: emptyToNull(s.schoolRecipientId),
         spendingStart: emptyToNull(s.spendingStart),
         spendingEnd: emptyToNull(s.spendingEnd),
+        ...coding,
       };
       return body;
     }
@@ -860,6 +1148,14 @@ function GiftAllocationDialog({
     if (emptyToNull(s.schoolRecipientId)) body.schoolRecipientId = s.schoolRecipientId.trim();
     if (emptyToNull(s.spendingStart)) body.spendingStart = s.spendingStart;
     if (emptyToNull(s.spendingEnd)) body.spendingEnd = s.spendingEnd;
+    if (coding.restrictionType != null) body.restrictionType = coding.restrictionType;
+    if (coding.restrictionEvidence != null) body.restrictionEvidence = coding.restrictionEvidence;
+    if (coding.purposeVerbatim != null) body.purposeVerbatim = coding.purposeVerbatim;
+    if (coding.deferredRevenue != null) body.deferredRevenue = coding.deferredRevenue;
+    if (coding.deferredRevenueReason != null) body.deferredRevenueReason = coding.deferredRevenueReason;
+    if (coding.objectCodeOverride != null) body.objectCodeOverride = coding.objectCodeOverride;
+    if (coding.revenueLocationOverride != null) body.revenueLocationOverride = coding.revenueLocationOverride;
+    if (coding.revenueClassOverride != null) body.revenueClassOverride = coding.revenueClassOverride;
     return body;
   }
 
@@ -985,6 +1281,7 @@ function GiftAllocationDialog({
                 onChange={(e) => set("spendingEnd", e.target.value)}
               />
             </DialogField>
+            <RevenueCodingFields s={s} set={set} derived={initial} />
           </MoreDetails>
         </div>
         <DialogFooter className="sm:justify-between">

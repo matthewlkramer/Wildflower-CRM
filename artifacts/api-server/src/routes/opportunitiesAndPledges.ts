@@ -94,6 +94,7 @@ import {
   canonicalWinProbability,
   deriveOppFields,
 } from "../lib/pledgeStage";
+import { rederivePledgeAllocations } from "../lib/revenueCoding";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -570,6 +571,16 @@ router.patch(
           sql`${tasks.opportunityIds} @> ARRAY[${id}]::text[]`,
         ));
       if (Number(existingCount) === 0) promptForReportingDeadlines = true;
+    }
+
+    // A donor change shifts the derived revenue coding (payer type) of every
+    // allocation under this opportunity/pledge — re-derive the snapshots.
+    if (
+      existing.organizationId !== row.organizationId ||
+      existing.individualGiverPersonId !== row.individualGiverPersonId ||
+      existing.householdId !== row.householdId
+    ) {
+      await rederivePledgeAllocations(row.id);
     }
 
     res.json({ ...(final ?? row), promptForReportingDeadlines });

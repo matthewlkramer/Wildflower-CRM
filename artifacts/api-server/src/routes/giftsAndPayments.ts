@@ -93,6 +93,7 @@ import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, 
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
+import { rederiveGiftAllocations } from "../lib/revenueCoding";
 import { inArray } from "drizzle-orm";
 
 const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear"] as const;
@@ -489,6 +490,16 @@ router.patch(
     // PATCH may re-point payment_on_pledge_id — recompute on both the
     // old and the new pledge so a newly-covered target advances.
     await applyDerivedOppFieldsMany(existing.paymentOnPledgeId, row.paymentOnPledgeId);
+    // A donor or gift-type change shifts the derived revenue coding (payer type /
+    // loan exclusion) of every allocation under this gift — re-derive snapshots.
+    if (
+      existing.organizationId !== row.organizationId ||
+      existing.individualGiverPersonId !== row.individualGiverPersonId ||
+      existing.householdId !== row.householdId ||
+      existing.type !== row.type
+    ) {
+      await rederiveGiftAllocations(row.id);
+    }
     res.json(row);
   }),
 );

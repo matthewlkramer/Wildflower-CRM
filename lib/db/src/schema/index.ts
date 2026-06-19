@@ -16,6 +16,8 @@ export * from "./pledgeAllocations";
 export * from "./giftsAndPayments";
 export * from "./giftAllocations";
 export * from "./entities";
+export * from "./revenueAccounts";
+export * from "./entityCodingRules";
 export * from "./fundableProjects";
 export * from "./fiscalYears";
 export * from "./fiscalYearEntityGoals";
