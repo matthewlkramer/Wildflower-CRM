@@ -545,6 +545,18 @@ export const stagedPaymentClassificationSourceEnum = pgEnum(
   ["auto", "manual"],
 );
 
+// Whether a staged payment's Wildflower-entity attribution was derived by the
+// re-runnable `detectEntity` marker classifier (`auto`) or pinned by a human
+// (`manual`). A manual attribution survives every re-sync / reclassify: the
+// upsert and the reclassifier never overwrite the entity of a `manual` row.
+// Needed because some money (e.g. "Sunlight") is intentionally NOT
+// auto-attributed and must be filed by hand, and the broad marker match can
+// occasionally misattribute and need a human correction.
+export const stagedPaymentEntitySourceEnum = pgEnum(
+  "staged_payment_entity_source",
+  ["auto", "manual"],
+);
+
 // Action an admin-editable QuickBooks handling rule performs when it matches an
 // incoming staged payment (see quickbooks_handling_rules):
 //   exclude             — mark the row excluded with one of the existing

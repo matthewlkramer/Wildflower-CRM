@@ -90,10 +90,13 @@ export function buildStagedLineUpsert(
     qbLinkedTxn: sql`coalesce(excluded.qb_linked_txn, ${stagedPayments.qbLinkedTxn})`,
     qbRaw: sql`coalesce(excluded.qb_raw, ${stagedPayments.qbRaw})`,
     qbRawLine: sql`coalesce(excluded.qb_raw_line, ${stagedPayments.qbRawLine})`,
-    // Entity attribution is a read-only derived QB fact (like the qb_* mirrors):
-    // an incoming non-null attribution wins, an absent one keeps the stored
-    // value, so the full re-pull can refresh it without touching review state.
-    entityId: sql`coalesce(excluded.entity_id, ${stagedPayments.entityId})`,
+    // Entity attribution is normally a read-only derived QB fact (like the qb_*
+    // mirrors): an incoming non-null attribution wins, an absent one keeps the
+    // stored value, so the full re-pull can refresh it without touching review
+    // state. The ONE exception is a human-pinned attribution (entity_source =
+    // 'manual'): that is review state, so the upsert preserves both the stored
+    // entity AND its source instead of letting detectEntity clobber it.
+    entityId: sql`CASE WHEN ${stagedPayments.entitySource} = 'manual' THEN ${stagedPayments.entityId} ELSE coalesce(excluded.entity_id, ${stagedPayments.entityId}) END`,
     updatedAt: new Date(),
   };
 
@@ -934,6 +937,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
       .select({
         id: stagedPayments.id,
         status: stagedPayments.status,
+        entitySource: stagedPayments.entitySource,
         amount: stagedPayments.amount,
         payerName: stagedPayments.payerName,
         rawReference: stagedPayments.rawReference,
@@ -971,15 +975,18 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
       };
       const cls = classifyStagedPayment(input);
       // Entity attribution is refreshed on every reclassified row, independent of
-      // the exclusion status transition below, so marker changes re-file rows.
-      const entityId = detectEntity(input);
+      // the exclusion status transition below, so marker changes re-file rows —
+      // EXCEPT on rows a human pinned (entity_source = 'manual'), whose
+      // attribution is review state and must never be clobbered by detectEntity.
+      const entitySet =
+        row.entitySource === "manual" ? {} : { entityId: detectEntity(input) };
       if (cls.excluded && row.status !== "excluded") {
         const upd = await db
           .update(stagedPayments)
           .set({
             status: "excluded",
             exclusionReason: cls.reason,
-            entityId,
+            ...entitySet,
             updatedAt: new Date(),
           })
           .where(guard(row.id))
@@ -989,7 +996,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
         // Already excluded — keep status, just refresh the reason if it drifted.
         await db
           .update(stagedPayments)
-          .set({ exclusionReason: cls.reason, entityId, updatedAt: new Date() })
+          .set({ exclusionReason: cls.reason, ...entitySet, updatedAt: new Date() })
           .where(guard(row.id));
       } else if (!cls.excluded && row.status === "excluded") {
         const upd = await db
@@ -997,7 +1004,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
           .set({
             status: "pending",
             exclusionReason: null,
-            entityId,
+            ...entitySet,
             updatedAt: new Date(),
           })
           .where(guard(row.id))
@@ -1007,7 +1014,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
         // Pending and staying pending — still refresh entity attribution.
         await db
           .update(stagedPayments)
-          .set({ entityId, updatedAt: new Date() })
+          .set({ ...entitySet, updatedAt: new Date() })
           .where(guard(row.id));
       }
     }

@@ -2197,6 +2197,26 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not excluded" }
+  /staged-payments/{id}/set-entity:
+    post:
+      operationId: setStagedPaymentEntity
+      tags: [staged-payments]
+      summary: Pin or clear the Wildflower-entity attribution by hand (manual override that survives re-sync).
+      description: |
+        Reviewer sets or corrects which Wildflower legal entity a staged payment
+        belongs to. Entity attribution is orthogonal to reconcile status, so this
+        works on a row in any state. Pins entity_source='manual' so the
+        detectEntity marker classifier never overwrites it on the next sync /
+        reclassify — needed for "Sunlight" money (intentionally not
+        auto-attributed) and to fix the broad marker match's misattributions.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SetStagedPaymentEntityBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /staged-payments/{id}/exclude:
     post:
       operationId: excludeStagedPayment
@@ -4482,6 +4502,7 @@ components:
     StagedPaymentMatchStatus: { type: string, enum: [matched, suggested, unmatched] }
     StagedPaymentMatchMethod: { type: string, enum: [email, name, name_amount_date, amount_date, memo, intermediary, manual] }
     StagedPaymentClassificationSource: { type: string, enum: [auto, manual] }
+    StagedPaymentEntitySource: { type: string, enum: [auto, manual], description: "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync / reclassify." }
     StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, rejected] }
     StagedPaymentSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc, payer_asc, payer_desc] }
     GiftSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc] }
@@ -4612,7 +4633,7 @@ components:
         skipped:     { type: integer, description: "Matched rows the rule could not apply to cleanly, left pending (0 when dryRun=true)." }
     StagedPayment:
       type: object
-      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, classificationSource, createdAt, updatedAt]
+      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, classificationSource, entitySource, createdAt, updatedAt]
       properties:
         id:                        { type: string }
         realmId:                   { type: string }
@@ -4691,6 +4712,7 @@ components:
         intermediaryName:          { type: string, nullable: true }
         entityId:                  { type: string, nullable: true, description: "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter)." }
         entityName:                { type: string, nullable: true, description: "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted." }
+        entitySource:              { $ref: "#/components/schemas/StagedPaymentEntitySource" }
         resolvedGiftId:            { type: string, nullable: true }
         resolvedGiftName:          { type: string, nullable: true }
         resolvedGiftAmount:        { type: string, nullable: true }
@@ -5067,6 +5089,12 @@ components:
       description: "File the staged payment under a non-gift exclusion category."
       properties:
         exclusionReason: { $ref: "#/components/schemas/StagedPaymentExclusionReason" }
+    SetStagedPaymentEntityBody:
+      type: object
+      required: [entityId]
+      description: "Pin (or clear) the Wildflower-entity attribution by hand. Sets entitySource='manual' so detectEntity never overwrites it on re-sync. entityId null clears the attribution back to the default Foundation bucket while keeping the manual pin."
+      properties:
+        entityId: { type: string, nullable: true, description: "The entities.id to attribute this incoming money to, or null to clear the attribution (keeping the manual pin)." }
     CandidateThankYouEmail:
       type: object
       required: [emailMessageId, sentAt, hasDocumentAttachment]

@@ -19,6 +19,7 @@ import {
   stagedPaymentMatchStatusEnum,
   stagedPaymentMatchMethodEnum,
   stagedPaymentClassificationSourceEnum,
+  stagedPaymentEntitySourceEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
 import { people } from "./people";
@@ -267,6 +268,15 @@ export const stagedPayments = pgTable(
     entityId: text("entity_id").references(() => entities.id, {
       onDelete: "set null",
     }),
+    // Whether the entity attribution above was derived automatically by
+    // `detectEntity` (`auto`, default) or pinned by a human (`manual`). A
+    // `manual` attribution is review state, not a read-only QB fact: the
+    // upsert and the reclassifier never overwrite the entity of a manual row,
+    // so a hand-filed attribution (e.g. "Sunlight" money that can't be
+    // auto-attributed) or a corrected misattribution survives every re-pull.
+    entitySource: stagedPaymentEntitySourceEnum("entity_source")
+      .notNull()
+      .default("auto"),
 
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",

@@ -41,3 +41,14 @@ the system auto-excluded as fiscally_sponsored (excluded→pending, reason→nul
 SQL, AND ensure the `entities` row exists + is active. Approved historical rows
 are not reclassified by a backfill (touches `pending`); correct them per-row in
 the app.
+
+**Manual entity override (entity_source):** entity attribution can be pinned by a
+human. A separate `staged_payments.entity_source` enum ('auto'|'manual') —
+mirroring `classification_source` but ORTHOGONAL to it — guards the override: a
+'manual' row's `entity_id` is never re-touched by `detectEntity` (honoured in BOTH
+the re-pull upsert and `reclassifyStagedPayments`).
+**Why:** "Sunlight" money (omitted from ENTITY_MARKERS) must stay un-attributed
+across syncs, and broad-substring misattributions need a durable human correction.
+**How to apply:** clearing the entity to NULL still pins manual — that is exactly
+how a row is kept un-attributed without re-sync re-attributing it. Any new code
+path that writes entity_id from detectEntity must first check entity_source.

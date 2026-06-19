@@ -1789,6 +1789,17 @@ export const StagedPaymentClassificationSource = {
   manual: "manual",
 } as const;
 
+/**
+ * Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync / reclassify.
+ */
+export type StagedPaymentEntitySource =
+  (typeof StagedPaymentEntitySource)[keyof typeof StagedPaymentEntitySource];
+
+export const StagedPaymentEntitySource = {
+  auto: "auto",
+  manual: "manual",
+} as const;
+
 export type StagedPaymentQueue =
   (typeof StagedPaymentQueue)[keyof typeof StagedPaymentQueue];
 
@@ -2082,6 +2093,7 @@ export interface StagedPayment {
   entityId?: string | null;
   /** Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted. */
   entityName?: string | null;
+  entitySource: StagedPaymentEntitySource;
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
@@ -2529,6 +2541,14 @@ export interface RevertStagedPaymentMatchesResponse {
  */
 export interface ExcludeStagedPaymentBody {
   exclusionReason: StagedPaymentExclusionReason;
+}
+
+/**
+ * Pin (or clear) the Wildflower-entity attribution by hand. Sets entitySource='manual' so detectEntity never overwrites it on re-sync. entityId null clears the attribution back to the default Foundation bucket while keeping the manual pin.
+ */
+export interface SetStagedPaymentEntityBody {
+  /** The entities.id to attribute this incoming money to, or null to clear the attribution (keeping the manual pin). */
+  entityId: string | null;
 }
 
 export interface CandidateThankYouEmail {

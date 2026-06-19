@@ -229,6 +229,7 @@ import type {
   SearchTrackedEmailParams,
   SendTrackedEmailBody,
   SendTrackedEmailResult,
+  SetStagedPaymentEntityBody,
   SplitGiftIntoPledgeBody,
   SplitGrantLeadBody,
   SplitGrantLeadResponse,
@@ -16081,6 +16082,103 @@ export const useReIncludeStagedPayment = <
   TContext
 > => {
   return useMutation(getReIncludeStagedPaymentMutationOptions(options));
+};
+
+/**
+ * Reviewer sets or corrects which Wildflower legal entity a staged payment
+belongs to. Entity attribution is orthogonal to reconcile status, so this
+works on a row in any state. Pins entity_source='manual' so the
+detectEntity marker classifier never overwrites it on the next sync /
+reclassify — needed for "Sunlight" money (intentionally not
+auto-attributed) and to fix the broad marker match's misattributions.
+
+ * @summary Pin or clear the Wildflower-entity attribution by hand (manual override that survives re-sync).
+ */
+export const getSetStagedPaymentEntityUrl = (id: string) => {
+  return `/api/staged-payments/${id}/set-entity`;
+};
+
+export const setStagedPaymentEntity = async (
+  id: string,
+  setStagedPaymentEntityBody: SetStagedPaymentEntityBody,
+  options?: RequestInit,
+): Promise<StagedPayment> => {
+  return customFetch<StagedPayment>(getSetStagedPaymentEntityUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(setStagedPaymentEntityBody),
+  });
+};
+
+export const getSetStagedPaymentEntityMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setStagedPaymentEntity>>,
+    TError,
+    { id: string; data: BodyType<SetStagedPaymentEntityBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setStagedPaymentEntity>>,
+  TError,
+  { id: string; data: BodyType<SetStagedPaymentEntityBody> },
+  TContext
+> => {
+  const mutationKey = ["setStagedPaymentEntity"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setStagedPaymentEntity>>,
+    { id: string; data: BodyType<SetStagedPaymentEntityBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return setStagedPaymentEntity(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetStagedPaymentEntityMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setStagedPaymentEntity>>
+>;
+export type SetStagedPaymentEntityMutationBody =
+  BodyType<SetStagedPaymentEntityBody>;
+export type SetStagedPaymentEntityMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Pin or clear the Wildflower-entity attribution by hand (manual override that survives re-sync).
+ */
+export const useSetStagedPaymentEntity = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setStagedPaymentEntity>>,
+    TError,
+    { id: string; data: BodyType<SetStagedPaymentEntityBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setStagedPaymentEntity>>,
+  TError,
+  { id: string; data: BodyType<SetStagedPaymentEntityBody> },
+  TContext
+> => {
+  return useMutation(getSetStagedPaymentEntityMutationOptions(options));
 };
 
 /**

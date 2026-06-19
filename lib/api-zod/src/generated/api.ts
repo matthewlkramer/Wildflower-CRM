@@ -9296,6 +9296,11 @@ export const ListStagedPaymentsResponse = zod.object({
         .describe(
           "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
         ),
+      entitySource: zod
+        .enum(["auto", "manual"])
+        .describe(
+          "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+        ),
       resolvedGiftId: zod.string().nullish(),
       resolvedGiftName: zod.string().nullish(),
       resolvedGiftAmount: zod.string().nullish(),
@@ -9535,6 +9540,11 @@ export const ResolveStagedPaymentResponse = zod.object({
     .describe(
       "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
     ),
+  entitySource: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -9721,6 +9731,11 @@ export const RejectStagedPaymentResponse = zod.object({
     .describe(
       "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
     ),
+  entitySource: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -9899,6 +9914,215 @@ export const ReIncludeStagedPaymentResponse = zod.object({
     .nullish()
     .describe(
       "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
+  entitySource: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
+  resolvedGiftId: zod.string().nullish(),
+  resolvedGiftName: zod.string().nullish(),
+  resolvedGiftAmount: zod.string().nullish(),
+  resolvedGiftDate: zod.string().date().nullish(),
+  splitCount: zod
+    .number()
+    .optional()
+    .describe(
+      "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.",
+    ),
+  splitTotal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.",
+    ),
+  splitGiftNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of the gifts this staged payment is split across, for display. Null when not split.",
+    ),
+  giftAlreadyLinkedElsewhere: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate).",
+    ),
+  matchedRuleId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.",
+    ),
+  matchedRuleName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * Reviewer sets or corrects which Wildflower legal entity a staged payment
+belongs to. Entity attribution is orthogonal to reconcile status, so this
+works on a row in any state. Pins entity_source='manual' so the
+detectEntity marker classifier never overwrites it on the next sync /
+reclassify — needed for "Sunlight" money (intentionally not
+auto-attributed) and to fix the broad marker match's misattributions.
+
+ * @summary Pin or clear the Wildflower-entity attribution by hand (manual override that survives re-sync).
+ */
+export const SetStagedPaymentEntityParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const SetStagedPaymentEntityBody = zod
+  .object({
+    entityId: zod
+      .string()
+      .nullable()
+      .describe(
+        "The entities.id to attribute this incoming money to, or null to clear the attribution (keeping the manual pin).",
+      ),
+  })
+  .describe(
+    "Pin (or clear) the Wildflower-entity attribution by hand. Sets entitySource='manual' so detectEntity never overwrites it on re-sync. entityId null clears the attribution back to the default Foundation bucket while keeping the manual pin.",
+  );
+
+export const SetStagedPaymentEntityResponse = zod.object({
+  id: zod.string(),
+  realmId: zod.string(),
+  qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
+  qbEntityId: zod.string(),
+  qbLineId: zod.string().nullish(),
+  qbDepositId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).",
+    ),
+  amount: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  rawReference: zod.string().nullish(),
+  lineDescription: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish(),
+  classificationSource: zod.enum(["auto", "manual"]),
+  lineItemNames: zod.array(zod.string()).nullish(),
+  lineAccountNames: zod.array(zod.string()).nullish(),
+  lineClasses: zod.array(zod.string()).nullish(),
+  qbPayerType: zod
+    .enum(["vendor", "customer", "employee"])
+    .nullish()
+    .describe(
+      "The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).",
+    ),
+  qbPayerId: zod.string().nullish(),
+  qbPaymentMethod: zod.string().nullish(),
+  qbCheckNumber: zod.string().nullish(),
+  qbDepositToAccountName: zod.string().nullish(),
+  qbDocNumber: zod.string().nullish(),
+  qbBillingAddress: zod.string().nullish(),
+  qbTransactionMemo: zod.string().nullish(),
+  qbCurrency: zod.string().nullish(),
+  qbExchangeRate: zod.string().nullish(),
+  qbCreateTime: zod.string().datetime({}).nullish(),
+  qbLinkedTxn: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish(),
+  qbDepositLinks: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)",
+    ),
+  matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
+  matchScore: zod.number().nullish(),
+  matchMethod: zod
+    .enum([
+      "email",
+      "name",
+      "name_amount_date",
+      "amount_date",
+      "memo",
+      "intermediary",
+      "manual",
+    ])
+    .nullish(),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  matchedPaymentIntermediaryId: zod.string().nullish(),
+  matchedGiftId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  groupReconciledGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
+    ),
+  autoApplied: zod.boolean(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  queue: zod
+    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
+    .optional(),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  intermediaryName: zod.string().nullish(),
+  entityId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).",
+    ),
+  entityName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
+  entitySource: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -10107,6 +10331,11 @@ export const ExcludeStagedPaymentResponse = zod.object({
     .nullish()
     .describe(
       "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
+  entitySource: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -10998,6 +11227,11 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
     .describe(
       "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
     ),
+  entitySource: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -11176,6 +11410,11 @@ export const UnmatchStagedPaymentResponse = zod.object({
     .nullish()
     .describe(
       "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
+  entitySource: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -11362,6 +11601,11 @@ export const RevertStagedPaymentResponse = zod.object({
     .nullish()
     .describe(
       "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
+  entitySource: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),

@@ -43,6 +43,7 @@ import {
   RevertStagedPaymentMatchesBody,
   SplitStagedPaymentBody,
   ExcludeStagedPaymentBody,
+  SetStagedPaymentEntityBody,
 } from "@workspace/api-zod";
 import { donorOf, hasExactlyOneDonor } from "../lib/quickbooksLink";
 import { buildGiftValuesFromStaged } from "../lib/quickbooksGift";
@@ -779,6 +780,61 @@ router.post(
       });
       return;
     }
+    res.json(row);
+  }),
+);
+
+// ─── POST /staged-payments/:id/set-entity ──────────────────────────────────
+// Reviewer pins (or clears) the Wildflower-entity attribution by hand. Entity
+// attribution is orthogonal to reconcile status, so this is allowed on a row in
+// any state. Setting entitySource='manual' makes the choice survive every
+// re-sync / reclassify — detectEntity never overwrites a manual attribution.
+// Body: { entityId: string | null }. null clears the attribution back to the
+// default Foundation bucket but KEEPS the manual pin (so detectEntity won't
+// re-attribute it on the next pull — needed for "Sunlight" money that must not
+// be auto-attributed).
+router.post(
+  "/staged-payments/:id/set-entity",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const parsed = SetStagedPaymentEntityBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    const entityId = parsed.data.entityId ?? null;
+
+    const existing = await db
+      .select({ id: stagedPayments.id })
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (!existing) return notFound(res, "staged payment");
+
+    if (entityId !== null) {
+      const entity = await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(eq(entities.id, entityId))
+        .then((r) => r[0]);
+      if (!entity) {
+        res.status(400).json({
+          error: "invalid_entity",
+          message: "No such Wildflower entity.",
+        });
+        return;
+      }
+    }
+
+    const [row] = await db
+      .update(stagedPayments)
+      .set({ entityId, entitySource: "manual", updatedAt: new Date() })
+      .where(eq(stagedPayments.id, id))
+      .returning();
     res.json(row);
   }),
 );

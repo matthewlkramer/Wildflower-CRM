@@ -11,6 +11,7 @@ import {
   useSplitStagedPayment,
   useRevertStagedPayment,
   useExcludeStagedPayment,
+  useSetStagedPaymentEntity,
   useConfirmStagedPaymentMatch,
   useConfirmStagedPaymentMatches,
   useRevertStagedPaymentMatches,
@@ -32,6 +33,7 @@ import {
   getGetQuickbooksOauthStatusQueryKey,
   type StagedPayment,
   type StagedPaymentQueue,
+  type Entity,
   type StagedPaymentSort,
   type StagedPaymentExclusionReason,
   type StagedPaymentMatchMethod,
@@ -1542,6 +1544,7 @@ export default function StagedPayments() {
                     key={row.id}
                     row={row}
                     queue={queue}
+                    entityOptions={entityOptions}
                     selected={selectedStaged?.id === row.id}
                     onSelect={() => selectStaged(row)}
                     onChanged={invalidateAll}
@@ -1756,6 +1759,7 @@ export default function StagedPayments() {
 function StagedPaymentCard({
   row,
   queue,
+  entityOptions,
   selected,
   onSelect,
   onChanged,
@@ -1767,6 +1771,7 @@ function StagedPaymentCard({
 }: {
   row: StagedPayment;
   queue: StagedPaymentQueue;
+  entityOptions: Entity[];
   selected: boolean;
   onSelect: () => void;
   onChanged: () => void;
@@ -1806,6 +1811,20 @@ function StagedPaymentCard({
       onError: (e: unknown) =>
         toast({
           title: "Re-include failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+  const setEntity = useSetStagedPaymentEntity({
+    mutation: {
+      onSuccess: () => {
+        onChanged();
+        toast({ title: "Entity updated" });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Entity update failed",
           description: e instanceof Error ? e.message : "Unknown error",
           variant: "destructive",
         }),
@@ -1886,6 +1905,7 @@ function StagedPaymentCard({
   const busy =
     reInclude.isPending ||
     exclude.isPending ||
+    setEntity.isPending ||
     confirmMatch.isPending ||
     unmatch.isPending ||
     revert.isPending;
@@ -1902,6 +1922,61 @@ function StagedPaymentCard({
   const canRevert = wasReconciled || wasAutoMinted || wasSplit;
 
   const selectable = queue === "needs_review";
+
+  // Reviewer can pin/correct which Wildflower legal entity this money belongs to.
+  // Pinning sets entitySource='manual' server-side so detectEntity never
+  // overwrites it on the next sync — needed for "Sunlight" money (not
+  // auto-attributed) and to fix broad-substring misattributions. Clearing (the
+  // "Wildflower Foundation (default)" option = null entityId) still pins manual,
+  // so it stays cleared across re-syncs. A "set by hand" hint shows when manual.
+  const ENTITY_NONE = "__none__";
+  const entityPicker = (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm font-medium text-foreground">Entity:</span>
+      <Select
+        value={row.entityId ?? ENTITY_NONE}
+        onValueChange={(v) =>
+          setEntity.mutate({
+            id: row.id,
+            data: { entityId: v === ENTITY_NONE ? null : v },
+          })
+        }
+        disabled={busy}
+      >
+        <SelectTrigger
+          className="h-9 w-[260px]"
+          data-testid={`staged-set-entity-${row.id}`}
+        >
+          <SelectValue placeholder="Attribute to entity…" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem
+            value={ENTITY_NONE}
+            data-testid={`staged-set-entity-${row.id}-none`}
+          >
+            Wildflower Foundation (default)
+          </SelectItem>
+          {entityOptions.map((e) => (
+            <SelectItem
+              key={e.id}
+              value={e.id}
+              data-testid={`staged-set-entity-${row.id}-${e.id}`}
+            >
+              {e.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {row.entitySource === "manual" ? (
+        <span
+          className="text-xs text-muted-foreground"
+          data-testid={`staged-entity-manual-${row.id}`}
+        >
+          set by hand
+        </span>
+      ) : null}
+    </div>
+  );
 
   // When every same-donor, similar-amount gift is already claimed by another QB
   // payment, the gift for THIS payment most likely hasn't been created yet —
@@ -2133,6 +2208,7 @@ function StagedPaymentCard({
                 {exclude.isPending ? "Excluding…" : "Exclude"}
               </Button>
             </div>
+            {entityPicker}
             <p className="text-xs text-muted-foreground">
               Select this payment, then pick a gift on the right and press Match —
               or use “Create new gift”. If it isn’t a gift, exclude it.
@@ -2207,6 +2283,7 @@ function StagedPaymentCard({
                 {exclude.isPending ? "Updating…" : "Update category"}
               </Button>
             </div>
+            {entityPicker}
           </div>
         ) : queue === "rejected" ? (
           <div className="text-sm text-muted-foreground">
