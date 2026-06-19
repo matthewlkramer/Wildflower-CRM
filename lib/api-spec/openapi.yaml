@@ -53,8 +53,26 @@ tags:
   - { name: staged-payments }
   - { name: grant-leads }
   - { name: admin }
+  - { name: search }
 
 paths:
+  # ─── Global search ─────────────────────────────────────────────────────────
+  /search:
+    get:
+      operationId: search
+      tags: [search]
+      summary: >-
+        Unified cross-entity search (people, organizations, households,
+        opportunities, gifts). Hybrid substring + trigram-fuzzy match, ranked by
+        relevance. Archived rows excluded by default (admins may opt in via
+        includeArchived); anonymous names masked for viewers who aren't the owner
+        or an admin.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string }, description: "Search query (min 2 chars; shorter returns empty groups)." }
+        - { name: limitPerType, in: query, schema: { type: integer, default: 5, minimum: 1, maximum: 20 }, description: "Max hits returned per entity group." }
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SearchResults" } } } }
   # ─── Email intelligence proposals ──────────────────────────────────────────
   /email-proposals:
     get:
@@ -5152,6 +5170,24 @@ components:
       required: [data]
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/DonorSearchResult" } }
+    SearchHit:
+      type: object
+      required: [type, id, label, score]
+      properties:
+        type:     { type: string, enum: [person, organization, household, opportunity, gift] }
+        id:       { type: string }
+        label:    { type: string, description: "Display name (anonymous-masked when the viewer can't see the identity)." }
+        sublabel: { type: string, nullable: true, description: "Secondary context (e.g. donor name for opportunities/gifts)." }
+        score:    { type: number, description: "Relevance score; higher is a better match." }
+    SearchResults:
+      type: object
+      required: [people, organizations, households, opportunities, gifts]
+      properties:
+        people:        { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+        organizations: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+        households:    { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+        opportunities: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+        gifts:         { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
     ResolveStagedPaymentBody:
       type: object
       description: "Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary."

@@ -49,6 +49,7 @@ import revenueCodingRouter from "./revenueCoding";
 import stripeRouter from "./stripe";
 import grantLeadsRouter from "./grantLeads";
 import auditLogRouter from "./auditLog";
+import searchRouter from "./search";
 
 const router: IRouter = Router();
 
@@ -112,5 +113,6 @@ router.use(revenueCodingRouter);
 router.use(stripeRouter);
 router.use(grantLeadsRouter);
 router.use(auditLogRouter);
+router.use(searchRouter);
 
 export default router;

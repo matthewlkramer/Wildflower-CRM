@@ -18,20 +18,7 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
-import {
-  useListPeople,
-  useListOrganizations,
-  useListHouseholds,
-  useListOpportunitiesAndPledges,
-  useListGiftsAndPayments,
-  getListPeopleQueryKey,
-  getListOrganizationsQueryKey,
-  getListHouseholdsQueryKey,
-  getListOpportunitiesAndPledgesQueryKey,
-  getListGiftsAndPaymentsQueryKey,
-  useGetCurrentUser,
-} from "@workspace/api-client-react";
-import { displayPersonName, displayOrganizationName } from "@/lib/visibility";
+import { useSearch, getSearchQueryKey } from "@workspace/api-client-react";
 import {
   Building2,
   Gift,
@@ -79,41 +66,21 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const debounced = useDebounced(query.trim(), DEBOUNCE_MS);
   const enabled = debounced.length >= SEARCH_MIN_LEN;
-  const viewer = useGetCurrentUser().data ?? null;
 
-  // cmdk does its own client-side filtering by default. We're already
-  // filtering server-side via the `search` query param, so we disable
-  // cmdk's filter to prevent it from hiding rows that don't textually
-  // match (e.g. when the server-side match is on first_name but the
-  // CommandItem `value` is the full display name).
-  const params = { search: debounced, limit: PER_GROUP_LIMIT };
-  // The generated React Query option type requires queryKey, so we
-  // forward the matching helper to keep query identity stable across
-  // renders when params change. `enabled` gates the network call so we
-  // don't fire 5 list requests on every keystroke below the min length.
-  const people = useListPeople(params, {
-    query: { enabled, queryKey: getListPeopleQueryKey(params) },
+  // One unified server-side search across all five entities. The server
+  // ranks hits by relevance, excludes archived rows, and masks anonymous
+  // names, so the client renders `label` (and an optional donor `sublabel`)
+  // directly — no viewer-side masking needed. cmdk's own client-side filter
+  // stays disabled (shouldFilter:false) because matching already happened
+  // server-side; `enabled` gates the network call so we don't fire below the
+  // minimum length. The generated option type requires a queryKey, so we
+  // forward the matching helper to keep query identity stable across renders.
+  const params = { q: debounced, limitPerType: PER_GROUP_LIMIT };
+  const results = useSearch(params, {
+    query: { enabled, queryKey: getSearchQueryKey(params) },
   });
-  const funders = useListOrganizations(params, {
-    query: { enabled, queryKey: getListOrganizationsQueryKey(params) },
-  });
-  const households = useListHouseholds(params, {
-    query: { enabled, queryKey: getListHouseholdsQueryKey(params) },
-  });
-  const opps = useListOpportunitiesAndPledges(params, {
-    query: { enabled, queryKey: getListOpportunitiesAndPledgesQueryKey(params) },
-  });
-  const gifts = useListGiftsAndPayments(params, {
-    query: { enabled, queryKey: getListGiftsAndPaymentsQueryKey(params) },
-  });
-
-  const loading =
-    enabled &&
-    (people.isFetching ||
-      funders.isFetching ||
-      households.isFetching ||
-      opps.isFetching ||
-      gifts.isFetching);
+  const data = results.data;
+  const loading = enabled && results.isFetching;
 
   const go = useCallback(
     (path: string) => {
@@ -144,9 +111,9 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
           <CommandEmpty>No results found.</CommandEmpty>
         )}
 
-        {enabled && people.data?.data.length ? (
+        {enabled && data?.people.length ? (
           <CommandGroup heading="People">
-            {people.data.data.map((p) => (
+            {data.people.map((p) => (
               <CommandItem
                 key={`per-${p.id}`}
                 value={`per-${p.id}`}
@@ -154,17 +121,17 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
                 data-testid={`palette-person-${p.id}`}
               >
                 <Users />
-                <span className="truncate">{displayPersonName(p, viewer)}</span>
+                <span className="truncate">{p.label}</span>
               </CommandItem>
             ))}
           </CommandGroup>
         ) : null}
 
-        {enabled && funders.data?.data.length ? (
+        {enabled && data?.organizations.length ? (
           <>
             <CommandSeparator />
             <CommandGroup heading="Funding entities">
-              {funders.data.data.map((f) => (
+              {data.organizations.map((f) => (
                 <CommandItem
                   key={`fnd-${f.id}`}
                   value={`fnd-${f.id}`}
@@ -172,18 +139,18 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
                   data-testid={`palette-funder-${f.id}`}
                 >
                   <Building2 />
-                  <span className="truncate">{displayOrganizationName(f, viewer)}</span>
+                  <span className="truncate">{f.label}</span>
                 </CommandItem>
               ))}
             </CommandGroup>
           </>
         ) : null}
 
-        {enabled && households.data?.data.length ? (
+        {enabled && data?.households.length ? (
           <>
             <CommandSeparator />
             <CommandGroup heading="Households">
-              {households.data.data.map((h) => (
+              {data.households.map((h) => (
                 <CommandItem
                   key={`hh-${h.id}`}
                   value={`hh-${h.id}`}
@@ -191,18 +158,18 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
                   data-testid={`palette-household-${h.id}`}
                 >
                   <Home />
-                  <span className="truncate">{h.name}</span>
+                  <span className="truncate">{h.label}</span>
                 </CommandItem>
               ))}
             </CommandGroup>
           </>
         ) : null}
 
-        {enabled && opps.data?.data.length ? (
+        {enabled && data?.opportunities.length ? (
           <>
             <CommandSeparator />
             <CommandGroup heading="Opportunities & pledges">
-              {opps.data.data.map((o) => (
+              {data.opportunities.map((o) => (
                 <CommandItem
                   key={`opp-${o.id}`}
                   value={`opp-${o.id}`}
@@ -210,18 +177,25 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
                   data-testid={`palette-opportunity-${o.id}`}
                 >
                   <Target />
-                  <span className="truncate">{o.name ?? `Untitled (${o.id})`}</span>
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate">{o.label}</span>
+                    {o.sublabel ? (
+                      <span className="truncate text-xs text-muted-foreground">
+                        {o.sublabel}
+                      </span>
+                    ) : null}
+                  </div>
                 </CommandItem>
               ))}
             </CommandGroup>
           </>
         ) : null}
 
-        {enabled && gifts.data?.data.length ? (
+        {enabled && data?.gifts.length ? (
           <>
             <CommandSeparator />
             <CommandGroup heading="Gifts & payments">
-              {gifts.data.data.map((g) => (
+              {data.gifts.map((g) => (
                 <CommandItem
                   key={`gft-${g.id}`}
                   value={`gft-${g.id}`}
@@ -229,7 +203,14 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
                   data-testid={`palette-gift-${g.id}`}
                 >
                   <Gift />
-                  <span className="truncate">{g.name ?? `Untitled (${g.id})`}</span>
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate">{g.label}</span>
+                    {g.sublabel ? (
+                      <span className="truncate text-xs text-muted-foreground">
+                        {g.sublabel}
+                      </span>
+                    ) : null}
+                  </div>
                 </CommandItem>
               ))}
             </CommandGroup>

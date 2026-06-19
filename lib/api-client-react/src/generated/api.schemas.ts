@@ -2603,6 +2603,35 @@ export interface DonorSearchList {
   data: DonorSearchResult[];
 }
 
+export type SearchHitType = (typeof SearchHitType)[keyof typeof SearchHitType];
+
+export const SearchHitType = {
+  person: "person",
+  organization: "organization",
+  household: "household",
+  opportunity: "opportunity",
+  gift: "gift",
+} as const;
+
+export interface SearchHit {
+  type: SearchHitType;
+  id: string;
+  /** Display name (anonymous-masked when the viewer can't see the identity). */
+  label: string;
+  /** Secondary context (e.g. donor name for opportunities/gifts). */
+  sublabel?: string | null;
+  /** Relevance score; higher is a better match. */
+  score: number;
+}
+
+export interface SearchResults {
+  people: SearchHit[];
+  organizations: SearchHit[];
+  households: SearchHit[];
+  opportunities: SearchHit[];
+  gifts: SearchHit[];
+}
+
 /**
  * Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary.
  */
@@ -4216,6 +4245,23 @@ export type PageParameter = number;
  * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
  */
 export type IncludeArchivedQueryParameter = boolean;
+
+export type SearchParams = {
+  /**
+   * Search query (min 2 chars; shorter returns empty groups).
+   */
+  q: string;
+  /**
+   * Max hits returned per entity group.
+   * @minimum 1
+   * @maximum 20
+   */
+  limitPerType?: number;
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
+};
 
 export type ListEmailProposalsParams = {
   kind?: EmailProposalKind;
