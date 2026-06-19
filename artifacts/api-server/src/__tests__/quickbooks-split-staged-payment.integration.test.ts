@@ -369,7 +369,8 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
   }, 30_000);
 
   it("rejects a combined gross below the fee band → 400 amount_mismatch", async () => {
-    // Gifts gross only 700 but the payout net is 980 — far under staged-0.01.
+    // Gifts gross only 700 but the payout net is 980 — far under staged*0.9-1
+    // (=881), so still outside the (now symmetric) band.
     const giftA = await seedGift("400.00");
     const giftB = await seedGift("300.00");
     const spId = await seedStaged("980.00");
@@ -381,6 +382,26 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     expect(res.status).toBe(400);
     expect(res.json.error).toBe("amount_mismatch");
     await expectUntouchedPending(spId);
+  }, 30_000);
+
+  it("splits when the payout runs slightly ABOVE the combined gross (in band) → 200", async () => {
+    // The LISC case: a payout 50¢ over the two booked gifts (1000.50 vs
+    // 600 + 400 = 1000). The old gifts-must-cover-the-payment rule rejected this
+    // (1000 < 1000.50 - 0.01); the symmetric band now reconciles it.
+    const giftA = await seedGift("600.00");
+    const giftB = await seedGift("400.00");
+    const spId = await seedStaged("1000.50");
+
+    const res = await api(`/api/staged-payments/${spId}/split`, {
+      giftIds: [giftA, giftB],
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.json.splitTotal).toBe("1000.00");
+    const row = await readStaged(spId);
+    expect(row.status).toBe("approved");
+    const splits = await readSplits(spId);
+    expect(splits.length).toBe(2);
   }, 30_000);
 
   it("rejects a combined gross above the fee band → 400 amount_mismatch", async () => {

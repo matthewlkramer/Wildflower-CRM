@@ -1021,15 +1021,18 @@ export default function StagedPayments() {
   // ── Split derived state ──
   // Split mode is meaningful only with one pending payment selected in the
   // needs-review queue, and never alongside group mode (a deposit-group already
-  // claims the gift rows). The summed gross of the checked gifts must sit in the
-  // fee-band around the staged net amount — same band as group reconcile, with
-  // the staged amount playing the "gift" role and the gift sum the "combined".
+  // claims the gift rows). The summed gross of the checked gifts must sit in a
+  // tolerance band around the staged net amount: up to ~10% + $1 OVER (processor
+  // fees withheld before the deposit) AND up to ~10% + $1 UNDER (rounding / small
+  // overpayments). Symmetric — looser on the low side than group reconcile — so a
+  // payment a little above the gifts still reconciles. Keep in lockstep with the
+  // server check in routes/quickbooks.ts.
   const stagedAmtNum =
     selectedStaged?.amount != null ? Number(selectedStaged.amount) : null;
   const splitWithinBand =
     stagedAmtNum != null &&
     !Number.isNaN(stagedAmtNum) &&
-    splitTotal >= stagedAmtNum - 0.01 &&
+    splitTotal >= stagedAmtNum * 0.9 - 1 &&
     splitTotal <= stagedAmtNum * 1.1 + 1;
   const splitActive =
     splitMode &&

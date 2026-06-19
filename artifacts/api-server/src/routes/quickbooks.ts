@@ -1472,17 +1472,19 @@ router.post(
           .then((r) => r[0]);
         if (splitLinked) throw new Error(CONFLICT);
 
-        // Fee-band tolerance, with roles inverted vs group-reconcile: the gifts'
-        // summed GROSS total plays the "gift" role and the staged NET amount the
-        // "combined total" role — the gross sum may be at most a hair under the
-        // staged amount (rounding) and at most ~10% + $1 over (processor fees
-        // withheld before the lump-sum deposit).
+        // Tolerance band around the staged NET amount. The gifts' summed GROSS
+        // total may run up to ~10% + $1 OVER (processor fees withheld before the
+        // lump-sum deposit) AND up to ~10% + $1 UNDER (rounding / small
+        // overpayments — e.g. a payout a little above the booked gifts). This is
+        // symmetric — deliberately looser on the low side than group-reconcile —
+        // so a payment slightly larger than the combined gifts still reconciles
+        // instead of being blocked.
         const sumGifts = gifts.reduce(
           (acc, g) => acc + Number(g.amount ?? 0),
           0,
         );
         const staged = Number(locked.amount ?? 0);
-        if (!(sumGifts >= staged - 0.01 && sumGifts <= staged * 1.1 + 1)) {
+        if (!(sumGifts >= staged * 0.9 - 1 && sumGifts <= staged * 1.1 + 1)) {
           toleranceDetail = { combinedTotal: sumGifts, stagedAmount: staged };
           throw new Error(TOLERANCE);
         }
