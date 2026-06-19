@@ -10,6 +10,7 @@ import {
   getListEntitiesQueryKey,
   type FiscalYearReceivedRow,
   type FiscalYearOpenRow,
+  type FundraisingCategory,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort, formatEnum, abbreviateUsStates } from "@/lib/format";
 import { partitionFiscalYears } from "@/lib/dropdownVisibility";
@@ -39,6 +40,21 @@ const METRIC_LABELS: Record<Metric, string> = {
   "open-asks": "Open asks",
   "weighted-asks": "Weighted asks",
 };
+
+const CATEGORY_LABELS: Record<FundraisingCategory, string> = {
+  revenue: "Revenue / Gifts",
+  loan_capital: "Loan Capital",
+};
+
+const CATEGORY_OPTIONS: { value: FundraisingCategory; label: string }[] = [
+  { value: "revenue", label: "Revenue / Gifts" },
+  { value: "loan_capital", label: "Loan Capital" },
+];
+
+function parseCategory(s: string | null): FundraisingCategory {
+  if (s === "revenue" || s === "loan_capital") return s;
+  return "revenue";
+}
 
 // Fallback when no entity is in the global filter. Matches the previous
 // page default; in normal flow users arrive here from the dashboard with
@@ -76,6 +92,7 @@ export default function FiscalYearDetail() {
   const search = useSearch();
   const sp = new URLSearchParams(search);
   const metric = parseMetric(sp.get("metric"));
+  const category = parseCategory(sp.get("category"));
 
   // Entity is sourced from the global header filter. The page-local entity
   // dropdown was removed because it duplicated the header. When the header
@@ -129,14 +146,27 @@ export default function FiscalYearDetail() {
   const setMetric = (m: Metric) => {
     const next = new URLSearchParams(search);
     next.set("metric", m);
+    next.set("category", category);
     navigate(`/fiscal-year/${fyId}?${next.toString()}`, { replace: true });
   };
   const setFy = (newFyId: string) => {
     if (newFyId === fyId) return;
     const next = new URLSearchParams(search);
     next.set("metric", metric);
+    next.set("category", category);
     navigate(`/fiscal-year/${newFyId}?${next.toString()}`);
   };
+  const setCategory = (c: FundraisingCategory) => {
+    if (c === category) return;
+    const next = new URLSearchParams(search);
+    next.set("metric", metric);
+    next.set("category", c);
+    navigate(`/fiscal-year/${fyId}?${next.toString()}`, { replace: true });
+  };
+
+  // Loan-fund capital reports as a track parallel to revenue. Select the
+  // per-category slice of the breakdown; the two are never mixed.
+  const cb = category === "loan_capital" ? data?.loanCapital : data?.revenue;
 
   const fyLabel = data?.fiscalYear.label ?? fyId;
   const selectedEntityName =
@@ -151,13 +181,31 @@ export default function FiscalYearDetail() {
           <span>Fiscal year detail</span>
         </div>
         <h1 className="text-3xl font-serif font-bold text-foreground mt-1">
-          {fyLabel} · {METRIC_LABELS[metric]}
+          {fyLabel} · {CATEGORY_LABELS[category]} · {METRIC_LABELS[metric]}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           Supporting detail behind the dashboard money tiles. Filtered to{" "}
           <span className="font-medium">{selectedEntityName}</span> (change the
           entity from the header filter). Click a tile below to switch metric.
         </p>
+      </div>
+
+      <div className="flex items-center gap-1" data-testid="detail-category-toggle">
+        {CATEGORY_OPTIONS.map((c) => (
+          <button
+            key={c.value}
+            type="button"
+            data-testid={`detail-category-${c.value}`}
+            onClick={() => setCategory(c.value)}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              category === c.value
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:bg-muted/70"
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -200,24 +248,24 @@ export default function FiscalYearDetail() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SummaryTile label={`Goal ${fyLabel}`} value={fmt(data?.goal ?? null)} testId="tile-detail-goal" />
+        <SummaryTile label={`Goal ${fyLabel}`} value={fmt(cb?.goal ?? null)} testId="tile-detail-goal" />
         <SummaryTile
           label={`Received ${fyLabel}`}
-          value={fmt(data?.received.total)}
+          value={fmt(cb?.received.total)}
           testId="tile-detail-received"
           highlight={metric === "received"}
           onClick={() => setMetric("received")}
         />
         <SummaryTile
           label={`Open asks ${fyLabel}`}
-          value={fmt(data?.openPipeline.totalAsk)}
+          value={fmt(cb?.openPipeline.totalAsk)}
           testId="tile-detail-open"
           highlight={metric === "open-asks"}
           onClick={() => setMetric("open-asks")}
         />
         <SummaryTile
           label={`Weighted asks ${fyLabel}`}
-          value={fmt(data?.openPipeline.totalWeighted)}
+          value={fmt(cb?.openPipeline.totalWeighted)}
           testId="tile-detail-weighted"
           highlight={metric === "weighted-asks"}
           onClick={() => setMetric("weighted-asks")}
@@ -232,15 +280,15 @@ export default function FiscalYearDetail() {
 
       {metric === "received" ? (
         <ReceivedTable
-          rows={data?.received.rows ?? []}
-          total={data?.received.total ?? "0"}
+          rows={cb?.received.rows ?? []}
+          total={cb?.received.total ?? "0"}
           isLoading={breakdownQ.isLoading}
         />
       ) : (
         <OpenTable
-          rows={data?.openPipeline.rows ?? []}
-          totalAsk={data?.openPipeline.totalAsk ?? "0"}
-          totalWeighted={data?.openPipeline.totalWeighted ?? "0"}
+          rows={cb?.openPipeline.rows ?? []}
+          totalAsk={cb?.openPipeline.totalAsk ?? "0"}
+          totalWeighted={cb?.openPipeline.totalWeighted ?? "0"}
           highlight={metric === "weighted-asks" ? "weighted" : "ask"}
           isLoading={breakdownQ.isLoading}
         />

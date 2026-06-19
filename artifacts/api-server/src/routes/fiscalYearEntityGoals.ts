@@ -25,18 +25,31 @@ router.get(
     const filters: SQL[] = [];
     if (q.fyId) filters.push(eq(fiscalYearEntityGoals.fiscalYearId, q.fyId));
     if (q.entityId) filters.push(eq(fiscalYearEntityGoals.entityId, q.entityId));
+    if (q.category) filters.push(eq(fiscalYearEntityGoals.category, q.category));
     const where = filters.length ? and(...filters) : undefined;
     const rows = await db
       .select()
       .from(fiscalYearEntityGoals)
       .where(where)
-      .orderBy(asc(fiscalYearEntityGoals.fiscalYearId), asc(fiscalYearEntityGoals.entityId));
+      .orderBy(
+        asc(fiscalYearEntityGoals.fiscalYearId),
+        asc(fiscalYearEntityGoals.entityId),
+        asc(fiscalYearEntityGoals.category),
+      );
     res.json(rows);
   }),
 );
 
+// Fundraising category path param — defaults to 'revenue' so older clients
+// hitting the legacy two-segment path still resolve to the revenue track.
+function parseCategoryParam(raw: unknown): "revenue" | "loan_capital" | null {
+  if (raw === undefined) return "revenue";
+  if (raw === "revenue" || raw === "loan_capital") return raw;
+  return null;
+}
+
 router.put(
-  "/fiscal-year-entity-goals/:fyId/:entityId",
+  "/fiscal-year-entity-goals/:fyId/:entityId/:category",
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(UpsertFiscalYearEntityGoalBody, req.body, res);
     if (!body) return;
@@ -44,6 +57,14 @@ router.put(
       res.status(400).json({
         error: "validation_error",
         message: "goalAmount must be a decimal string like '4000000' or '1000000.50' (no commas).",
+      });
+      return;
+    }
+    const category = parseCategoryParam(req.params.category);
+    if (!category) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "category must be 'revenue' or 'loan_capital'.",
       });
       return;
     }
@@ -61,9 +82,13 @@ router.put(
 
     const [row] = await db
       .insert(fiscalYearEntityGoals)
-      .values({ fiscalYearId: fyId, entityId, goalAmount: body.goalAmount })
+      .values({ fiscalYearId: fyId, entityId, category, goalAmount: body.goalAmount })
       .onConflictDoUpdate({
-        target: [fiscalYearEntityGoals.fiscalYearId, fiscalYearEntityGoals.entityId],
+        target: [
+          fiscalYearEntityGoals.fiscalYearId,
+          fiscalYearEntityGoals.entityId,
+          fiscalYearEntityGoals.category,
+        ],
         set: { goalAmount: body.goalAmount, updatedAt: new Date() },
       })
       .returning();
@@ -72,14 +97,23 @@ router.put(
 );
 
 router.delete(
-  "/fiscal-year-entity-goals/:fyId/:entityId",
+  "/fiscal-year-entity-goals/:fyId/:entityId/:category",
   asyncHandler(async (req, res) => {
+    const category = parseCategoryParam(req.params.category);
+    if (!category) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "category must be 'revenue' or 'loan_capital'.",
+      });
+      return;
+    }
     await db
       .delete(fiscalYearEntityGoals)
       .where(
         and(
           eq(fiscalYearEntityGoals.fiscalYearId, String(req.params.fyId)),
           eq(fiscalYearEntityGoals.entityId, String(req.params.entityId)),
+          eq(fiscalYearEntityGoals.category, category),
         ),
       );
     res.status(204).end();

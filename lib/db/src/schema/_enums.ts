@@ -242,6 +242,16 @@ export const opportunityConditionalEnum = pgEnum("opportunity_conditional", [
   "conditional_on_target",
 ]);
 
+// Fundraising category — splits loan-fund capital out of revenue so the two
+// tracks can be reported in parallel (dashboard, projections, goals). Loan
+// capital = principal investments (loan_fund_investment gifts + loan-capital
+// opportunities/pledges); everything else is revenue. Default 'revenue' so
+// existing data is non-destructively classified as revenue.
+export const fundraisingCategoryEnum = pgEnum("fundraising_category", [
+  "revenue",
+  "loan_capital",
+]);
+
 // ---- Gift / payment enums ----
 export const giftTypeEnum = pgEnum("gift_type", [
   "standard_gift",

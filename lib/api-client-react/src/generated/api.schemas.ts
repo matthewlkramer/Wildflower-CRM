@@ -403,6 +403,21 @@ export const GiftType = {
   matching_gift: "matching_gift",
 } as const;
 
+/**
+ * Splits loan-fund capital out of revenue so the two tracks report in
+parallel. `loan_capital` = principal investments (`loan_fund_investment`
+gifts + opportunities/pledges flagged loan-capital); `revenue` = everything
+else. Defaults to `revenue` so existing data is treated as revenue.
+
+ */
+export type FundraisingCategory =
+  (typeof FundraisingCategory)[keyof typeof FundraisingCategory];
+
+export const FundraisingCategory = {
+  revenue: "revenue",
+  loan_capital: "loan_capital",
+} as const;
+
 export type GiftPaymentMethod =
   (typeof GiftPaymentMethod)[keyof typeof GiftPaymentMethod];
 
@@ -594,6 +609,7 @@ export interface UpdateEntityBody {
 export interface FiscalYearEntityGoal {
   fiscalYearId: string;
   entityId: string;
+  category: FundraisingCategory;
   /** Decimal string (numeric(14,2)). */
   goalAmount: string;
   createdAt: string;
@@ -687,24 +703,34 @@ export interface DashboardFiscalYear {
 }
 
 /**
- * Per-fiscal-year fundraising metrics. All money values are decimal strings
-(PostgreSQL numeric) to preserve precision — format with `formatCurrency`
-on the client. `goal` is nullable because not every FY has a goal seeded
-(e.g. far-future years).
+ * Fundraising metrics for one category (revenue OR loan_capital) within a
+fiscal year. All money values are decimal strings (PostgreSQL numeric) to
+preserve precision — format with `formatCurrency` on the client.
+
+ */
+export interface FiscalYearCategoryMetrics {
+  /** SUM(pledge_allocations.sub_amount) for status='open' opps (of this category) with grant_year = this FY. */
+  openPipelineAsk: string;
+  /** SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps (of this category) with grant_year = this FY. */
+  openPipelineWeighted: string;
+  /** Per-pledge UNPAID remainder for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only). */
+  committed: string;
+  /** SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else). */
+  received: string;
+  /** Fundraising goal for the FY+category; null if not set. */
+  goal: string | null;
+}
+
+/**
+ * Per-fiscal-year fundraising metrics, split into two parallel tracks:
+`revenue` (gifts/grants) and `loanCapital` (loan-fund principal). Loan
+money is never mixed into revenue.
 
  */
 export interface FiscalYearMetrics {
   fiscalYear: DashboardFiscalYear;
-  /** SUM(pledge_allocations.sub_amount) for status='open' opps with grant_year = this FY. */
-  openPipelineAsk: string;
-  /** SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps with grant_year = this FY. */
-  openPipelineWeighted: string;
-  /** SUM(pledge_allocations.sub_amount) for status='pledge' (written commitment, not yet fully paid) opps with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only). */
-  committed: string;
-  /** SUM(gift_allocations.sub_amount) for allocations with grant_year = this FY. */
-  received: string;
-  /** Fundraising goal for the FY (from fiscal_years.goal_amount); null if not set. */
-  goal: string | null;
+  revenue: FiscalYearCategoryMetrics;
+  loanCapital: FiscalYearCategoryMetrics;
 }
 
 export interface DashboardSummary {
@@ -719,6 +745,7 @@ export interface ProjectionByFyEntityRow {
   grantYear: string | null;
   /** entities.id, or null for unbucketed allocations. */
   entityId: string | null;
+  category: FundraisingCategory;
   allocationCount: number;
   /** SUM(sub_amount) for the group, as numeric string. */
   totalSubAmount: string;
@@ -781,6 +808,7 @@ export interface FiscalYearReceivedRow {
   allocationId: string;
   /** gift_allocations.sub_amount (numeric string). */
   subAmount: string;
+  category?: FundraisingCategory;
   entityId?: string | null;
   intendedUsage?: string | null;
   /** Server-computed human-readable usage label from gift_allocations.display_usage. */
@@ -810,6 +838,7 @@ export interface FiscalYearOpenRow {
   subAmount: string;
   /** sub_amount × COALESCE(parent.win_probability, 1) (numeric string). */
   weightedAmount: string;
+  category?: FundraisingCategory;
   allocationStatus?: string | null;
   entityId?: string | null;
   intendedUsage?: string | null;
@@ -830,13 +859,13 @@ export interface FiscalYearOpenRow {
   readonly individualGiverPersonPriority?: Priority | null;
 }
 
-export type FiscalYearBreakdownReceived = {
+export type FiscalYearCategoryBreakdownReceived = {
   /** SUM(sub_amount) across the rows (numeric string). */
   total: string;
   rows: FiscalYearReceivedRow[];
 };
 
-export type FiscalYearBreakdownOpenPipeline = {
+export type FiscalYearCategoryBreakdownOpenPipeline = {
   /** SUM(sub_amount) across the rows (numeric string). */
   totalAsk: string;
   /** SUM(weightedAmount) across the rows (numeric string). */
@@ -845,16 +874,25 @@ export type FiscalYearBreakdownOpenPipeline = {
 };
 
 /**
- * Supporting detail for a single FY's dashboard money tiles. `received` powers the
-"Received" tile (gift_allocations summed); `openPipeline` powers both the
-"Open asks" tile (totalAsk) and the "Weighted asks" tile (totalWeighted).
+ * Per-category (revenue OR loan_capital) supporting detail for one FY.
+ */
+export interface FiscalYearCategoryBreakdown {
+  goal: string | null;
+  received: FiscalYearCategoryBreakdownReceived;
+  openPipeline: FiscalYearCategoryBreakdownOpenPipeline;
+}
+
+/**
+ * Supporting detail for a single FY's dashboard money tiles, split into the two
+parallel tracks (`revenue` and `loanCapital`). Within each category `received`
+powers the "Received" tile (gift_allocations summed); `openPipeline` powers
+both the "Open asks" tile (totalAsk) and the "Weighted asks" tile (totalWeighted).
 
  */
 export interface FiscalYearBreakdown {
   fiscalYear: DashboardFiscalYear;
-  goal: string | null;
-  received: FiscalYearBreakdownReceived;
-  openPipeline: FiscalYearBreakdownOpenPipeline;
+  revenue: FiscalYearCategoryBreakdown;
+  loanCapital: FiscalYearCategoryBreakdown;
 }
 
 export interface Organization {
@@ -1434,6 +1472,7 @@ export interface OpportunityOrPledge {
   name?: string | null;
   organizationId?: string | null;
   householdId?: string | null;
+  fundraisingCategory: FundraisingCategory;
   askAmount?: string | null;
   awardedAmount?: string | null;
   readonly paidAmount?: string;
@@ -1581,6 +1620,7 @@ export interface CreateOpportunityOrPledgeBody {
   name?: string;
   organizationId?: string;
   householdId?: string;
+  fundraisingCategory?: FundraisingCategory;
   askAmount?: string;
   awardedAmount?: string;
   type?: OpportunityType;
@@ -1612,6 +1652,7 @@ export interface UpdateOpportunityOrPledgeBody {
   name?: string | null;
   organizationId?: string | null;
   householdId?: string | null;
+  fundraisingCategory?: FundraisingCategory;
   askAmount?: string | null;
   awardedAmount?: string | null;
   type?: OpportunityType | null;
@@ -4251,6 +4292,10 @@ export type ListFiscalYearEntityGoalsParams = {
    * Filter by entity.id
    */
   entityId?: string;
+  /**
+   * Filter by fundraising category (revenue | loan_capital).
+   */
+  category?: FundraisingCategory;
 };
 
 export type ListFundableProjectsParams = {

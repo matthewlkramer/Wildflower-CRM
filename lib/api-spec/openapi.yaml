@@ -436,15 +436,17 @@ paths:
       parameters:
         - { name: fyId,     in: query, schema: { type: string }, description: "Filter by fiscal_year.id" }
         - { name: entityId, in: query, schema: { type: string }, description: "Filter by entity.id" }
+        - { name: category, in: query, schema: { $ref: "#/components/schemas/FundraisingCategory" }, description: "Filter by fundraising category (revenue | loan_capital)." }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FiscalYearEntityGoal" } } } } }
-  /fiscal-year-entity-goals/{fyId}/{entityId}:
+  /fiscal-year-entity-goals/{fyId}/{entityId}/{category}:
     put:
       operationId: upsertFiscalYearEntityGoal
       tags: [fiscal-year-entity-goals]
       parameters:
         - { name: fyId,     in: path, required: true, schema: { type: string } }
         - { name: entityId, in: path, required: true, schema: { type: string } }
+        - { name: category, in: path, required: true, schema: { $ref: "#/components/schemas/FundraisingCategory" } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpsertFiscalYearEntityGoalBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYearEntityGoal" } } } }
@@ -456,6 +458,7 @@ paths:
       parameters:
         - { name: fyId,     in: path, required: true, schema: { type: string } }
         - { name: entityId, in: path, required: true, schema: { type: string } }
+        - { name: category, in: path, required: true, schema: { $ref: "#/components/schemas/FundraisingCategory" } }
       responses:
         "204": { description: Deleted }
 
@@ -3212,6 +3215,14 @@ components:
     OpportunityConditional: { type: string, enum: [unconditional, conditional_unspecified, reimbursable, conditional_on_funder_determination, conditional_on_target] }
     PledgeAllocationStatus: { type: string, enum: [working, committed, superseded, committed_with_conditions, superseded_by_pledge, superseded_by_gift, abandoned] }
     GiftType: { type: string, enum: [standard_gift, pledge_payment, directed_gift, loan_fund_investment, matching_gift] }
+    FundraisingCategory:
+      type: string
+      enum: [revenue, loan_capital]
+      description: |
+        Splits loan-fund capital out of revenue so the two tracks report in
+        parallel. `loan_capital` = principal investments (`loan_fund_investment`
+        gifts + opportunities/pledges flagged loan-capital); `revenue` = everything
+        else. Defaults to `revenue` so existing data is treated as revenue.
     GiftPaymentMethod: { type: string, enum: [ach, check, wire, stock, donor_box, daf_ach, daf_check, daf_bill_com] }
     IntendedUsage: { type: string, enum: [gen_ops, growth, school_startup, teacher_training, project] }
     RestrictionType: { type: string, enum: [unrestricted, purpose, time, both, unclear, na], description: "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted." }
@@ -3347,10 +3358,11 @@ components:
         active: { type: boolean }
     FiscalYearEntityGoal:
       type: object
-      required: [fiscalYearId, entityId, goalAmount, createdAt, updatedAt]
+      required: [fiscalYearId, entityId, category, goalAmount, createdAt, updatedAt]
       properties:
         fiscalYearId: { type: string }
         entityId:     { type: string }
+        category:     { $ref: "#/components/schemas/FundraisingCategory" }
         goalAmount:   { type: string, description: "Decimal string (numeric(14,2))." }
         createdAt:    { type: string, format: date-time }
         updatedAt:    { type: string, format: date-time }
@@ -3439,21 +3451,30 @@ components:
         label:     { type: string, description: "Human label (e.g. `FY 2026`)." }
         startDate: { type: string, format: date }
         endDate:   { type: string, format: date }
+    FiscalYearCategoryMetrics:
+      type: object
+      required: [openPipelineAsk, openPipelineWeighted, committed, received, goal]
+      description: |
+        Fundraising metrics for one category (revenue OR loan_capital) within a
+        fiscal year. All money values are decimal strings (PostgreSQL numeric) to
+        preserve precision — format with `formatCurrency` on the client.
+      properties:
+        openPipelineAsk:      { type: string, description: "SUM(pledge_allocations.sub_amount) for status='open' opps (of this category) with grant_year = this FY." }
+        openPipelineWeighted: { type: string, description: "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps (of this category) with grant_year = this FY." }
+        committed:            { type: string, description: "Per-pledge UNPAID remainder for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only)." }
+        received:             { type: string, description: "SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else)." }
+        goal:                 { type: string, nullable: true, description: "Fundraising goal for the FY+category; null if not set." }
     FiscalYearMetrics:
       type: object
-      required: [fiscalYear, openPipelineAsk, openPipelineWeighted, committed, received, goal]
+      required: [fiscalYear, revenue, loanCapital]
       description: |
-        Per-fiscal-year fundraising metrics. All money values are decimal strings
-        (PostgreSQL numeric) to preserve precision — format with `formatCurrency`
-        on the client. `goal` is nullable because not every FY has a goal seeded
-        (e.g. far-future years).
+        Per-fiscal-year fundraising metrics, split into two parallel tracks:
+        `revenue` (gifts/grants) and `loanCapital` (loan-fund principal). Loan
+        money is never mixed into revenue.
       properties:
-        fiscalYear:           { $ref: "#/components/schemas/DashboardFiscalYear" }
-        openPipelineAsk:      { type: string, description: "SUM(pledge_allocations.sub_amount) for status='open' opps with grant_year = this FY." }
-        openPipelineWeighted: { type: string, description: "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps with grant_year = this FY." }
-        committed:            { type: string, description: "SUM(pledge_allocations.sub_amount) for status='pledge' (written commitment, not yet fully paid) opps with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only)." }
-        received:             { type: string, description: "SUM(gift_allocations.sub_amount) for allocations with grant_year = this FY." }
-        goal:                 { type: string, nullable: true, description: "Fundraising goal for the FY (from fiscal_years.goal_amount); null if not set." }
+        fiscalYear:  { $ref: "#/components/schemas/DashboardFiscalYear" }
+        revenue:     { $ref: "#/components/schemas/FiscalYearCategoryMetrics" }
+        loanCapital: { $ref: "#/components/schemas/FiscalYearCategoryMetrics" }
     DashboardSummary:
       type: object
       required: [counts, currentFiscalYear, byFiscalYear]
@@ -3467,10 +3488,11 @@ components:
 
     ProjectionByFyEntityRow:
       type: object
-      required: [grantYear, entityId, allocationCount, totalSubAmount, expected]
+      required: [grantYear, entityId, category, allocationCount, totalSubAmount, expected]
       properties:
         grantYear:       { type: string, nullable: true, description: "fiscal_years.id, or null for unbucketed allocations." }
         entityId:        { type: string, nullable: true, description: "entities.id, or null for unbucketed allocations." }
+        category:        { $ref: "#/components/schemas/FundraisingCategory" }
         allocationCount: { type: integer }
         totalSubAmount:  { type: string, description: "SUM(sub_amount) for the group, as numeric string." }
         expected:        { type: string, description: "SUM(sub_amount × COALESCE(parent.win_probability, 1)) for the group, as numeric string." }
@@ -3551,6 +3573,7 @@ components:
       properties:
         allocationId:               { type: string }
         subAmount:                  { type: string, description: "gift_allocations.sub_amount (numeric string)." }
+        category:                   { $ref: "#/components/schemas/FundraisingCategory" }
         entityId:                   { type: string, nullable: true }
         intendedUsage:              { type: string, nullable: true }
         displayUsage:               { type: string, nullable: true, description: "Server-computed human-readable usage label from gift_allocations.display_usage." }
@@ -3575,6 +3598,7 @@ components:
         allocationId:               { type: string }
         subAmount:                  { type: string, description: "pledge_allocations.sub_amount (numeric string)." }
         weightedAmount:             { type: string, description: "sub_amount × COALESCE(parent.win_probability, 1) (numeric string)." }
+        category:                   { $ref: "#/components/schemas/FundraisingCategory" }
         allocationStatus:           { type: string, nullable: true }
         entityId:                   { type: string, nullable: true }
         intendedUsage:              { type: string, nullable: true }
@@ -3594,13 +3618,21 @@ components:
         individualGiverPersonPriority:  { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
     FiscalYearBreakdown:
       type: object
-      required: [fiscalYear, goal, received, openPipeline]
+      required: [fiscalYear, revenue, loanCapital]
       description: |
-        Supporting detail for a single FY's dashboard money tiles. `received` powers the
-        "Received" tile (gift_allocations summed); `openPipeline` powers both the
-        "Open asks" tile (totalAsk) and the "Weighted asks" tile (totalWeighted).
+        Supporting detail for a single FY's dashboard money tiles, split into the two
+        parallel tracks (`revenue` and `loanCapital`). Within each category `received`
+        powers the "Received" tile (gift_allocations summed); `openPipeline` powers
+        both the "Open asks" tile (totalAsk) and the "Weighted asks" tile (totalWeighted).
       properties:
-        fiscalYear: { $ref: "#/components/schemas/DashboardFiscalYear" }
+        fiscalYear:  { $ref: "#/components/schemas/DashboardFiscalYear" }
+        revenue:     { $ref: "#/components/schemas/FiscalYearCategoryBreakdown" }
+        loanCapital: { $ref: "#/components/schemas/FiscalYearCategoryBreakdown" }
+    FiscalYearCategoryBreakdown:
+      type: object
+      required: [goal, received, openPipeline]
+      description: "Per-category (revenue OR loan_capital) supporting detail for one FY."
+      properties:
         goal:       { type: string, nullable: true }
         received:
           type: object
@@ -4221,12 +4253,13 @@ components:
     # ─── Opportunities & pledges ───────────────────────────────────────────────
     OpportunityOrPledge:
       type: object
-      required: [id, conditionsMet, wasPledge, createdAt, updatedAt]
+      required: [id, conditionsMet, wasPledge, fundraisingCategory, createdAt, updatedAt]
       properties:
         id:                         { type: string }
         name:                       { type: string, nullable: true }
         organizationId:                   { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
+        fundraisingCategory:        { $ref: "#/components/schemas/FundraisingCategory" }
         askAmount:                  { type: string, nullable: true }
         awardedAmount:              { type: string, nullable: true }
         # Server-computed: SUM(gifts_and_payments.amount) for payments
@@ -4316,6 +4349,7 @@ components:
         name:                       { type: string }
         organizationId:                   { type: string }
         householdId:                { type: string }
+        fundraisingCategory:        { $ref: "#/components/schemas/FundraisingCategory" }
         askAmount:                  { type: string }
         awardedAmount:              { type: string }
         type:                       { $ref: "#/components/schemas/OpportunityType" }
@@ -4347,6 +4381,7 @@ components:
         name:                       { type: string, nullable: true }
         organizationId:                   { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
+        fundraisingCategory:        { $ref: "#/components/schemas/FundraisingCategory" }
         askAmount:                  { type: string, nullable: true }
         awardedAmount:              { type: string, nullable: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }

@@ -47,6 +47,7 @@ import {
 import type {
   Entity,
   FiscalYearEntityGoal,
+  FundraisingCategory,
   FiscalYear,
   EmailIntelPrompt,
   EmailProposalKind,
@@ -595,6 +596,9 @@ function GoalsSection({
 }) {
   const [showAllFy, setShowAllFy] = useState(false);
   const [showRetired, setShowRetired] = useState(false);
+  // Loan-fund capital goals are a track parallel to revenue. The toggle
+  // swaps which category's goals this grid shows + edits; the two never mix.
+  const [category, setCategory] = useState<FundraisingCategory>("revenue");
 
   // FY list newest-first; partition by recent vs older for the toggle.
   const sortedFy = useMemo(() => {
@@ -621,10 +625,10 @@ function GoalsSection({
   const retiredEntities = sortedEntities.filter((e) => !e.active);
   const visibleEntities = showRetired ? sortedEntities : activeEntities;
 
-  // Build (fyId, entityId) -> goalAmount map for O(1) lookup.
+  // Build (fyId, entityId, category) -> goalAmount map for O(1) lookup.
   const goalMap = useMemo(() => {
     const m = new Map<string, string>();
-    for (const g of goals) m.set(`${g.fiscalYearId}|${g.entityId}`, g.goalAmount);
+    for (const g of goals) m.set(`${g.fiscalYearId}|${g.entityId}|${g.category}`, g.goalAmount);
     return m;
   }, [goals]);
 
@@ -639,6 +643,29 @@ function GoalsSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        <div className="flex items-center gap-1" data-testid="goals-category-toggle">
+          {(
+            [
+              { value: "revenue", label: "Revenue / Gifts" },
+              { value: "loan_capital", label: "Loan Capital" },
+            ] as { value: FundraisingCategory; label: string }[]
+          ).map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              data-testid={`goals-category-${c.value}`}
+              onClick={() => setCategory(c.value)}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                category === c.value
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-muted/70"
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-center gap-3 text-xs">
           {olderFy.length > 0 ? (
             <button
@@ -689,9 +716,11 @@ function GoalsSection({
                     {visibleEntities.map((e) => (
                       <TableCell key={e.id} className="text-right">
                         <GoalCell
+                          key={`${fy.id}|${e.id}|${category}`}
                           fyId={fy.id}
                           entityId={e.id}
-                          current={goalMap.get(`${fy.id}|${e.id}`) ?? null}
+                          category={category}
+                          current={goalMap.get(`${fy.id}|${e.id}|${category}`) ?? null}
                         />
                       </TableCell>
                     ))}
@@ -709,10 +738,12 @@ function GoalsSection({
 function GoalCell({
   fyId,
   entityId,
+  category,
   current,
 }: {
   fyId: string;
   entityId: string;
+  category: FundraisingCategory;
   current: string | null;
 }) {
   const queryClient = useQueryClient();
@@ -767,7 +798,7 @@ function GoalCell({
     if (cleaned === "") {
       // Empty = clear the goal. Only call DELETE if there's currently a row.
       if (current !== null) {
-        del.mutate({ fyId, entityId });
+        del.mutate({ fyId, entityId, category });
       } else {
         setEditing(false);
       }
@@ -785,7 +816,7 @@ function GoalCell({
       setEditing(false);
       return;
     }
-    upsert.mutate({ fyId, entityId, data: { goalAmount: cleaned } });
+    upsert.mutate({ fyId, entityId, category, data: { goalAmount: cleaned } });
   };
 
   const busy = upsert.isPending || del.isPending;

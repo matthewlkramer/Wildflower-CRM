@@ -1344,11 +1344,20 @@ export const UpdateEntityResponse = zod.object({
 export const ListFiscalYearEntityGoalsQueryParams = zod.object({
   fyId: zod.coerce.string().optional().describe("Filter by fiscal_year.id"),
   entityId: zod.coerce.string().optional().describe("Filter by entity.id"),
+  category: zod
+    .enum(["revenue", "loan_capital"])
+    .optional()
+    .describe("Filter by fundraising category (revenue | loan_capital)."),
 });
 
 export const ListFiscalYearEntityGoalsResponseItem = zod.object({
   fiscalYearId: zod.string(),
   entityId: zod.string(),
+  category: zod
+    .enum(["revenue", "loan_capital"])
+    .describe(
+      "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+    ),
   goalAmount: zod.string().describe("Decimal string (numeric(14,2))."),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -1360,6 +1369,7 @@ export const ListFiscalYearEntityGoalsResponse = zod.array(
 export const UpsertFiscalYearEntityGoalParams = zod.object({
   fyId: zod.coerce.string(),
   entityId: zod.coerce.string(),
+  category: zod.enum(["revenue", "loan_capital"]),
 });
 
 export const UpsertFiscalYearEntityGoalBody = zod.object({
@@ -1373,6 +1383,11 @@ export const UpsertFiscalYearEntityGoalBody = zod.object({
 export const UpsertFiscalYearEntityGoalResponse = zod.object({
   fiscalYearId: zod.string(),
   entityId: zod.string(),
+  category: zod
+    .enum(["revenue", "loan_capital"])
+    .describe(
+      "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+    ),
   goalAmount: zod.string().describe("Decimal string (numeric(14,2))."),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -1381,6 +1396,7 @@ export const UpsertFiscalYearEntityGoalResponse = zod.object({
 export const DeleteFiscalYearEntityGoalParams = zod.object({
   fyId: zod.coerce.string(),
   entityId: zod.coerce.string(),
+  category: zod.enum(["revenue", "loan_capital"]),
 });
 
 export const ListFundableProjectsQueryParams = zod.object({
@@ -4154,6 +4170,11 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       name: zod.string().nullish(),
       organizationId: zod.string().nullish(),
       householdId: zod.string().nullish(),
+      fundraisingCategory: zod
+        .enum(["revenue", "loan_capital"])
+        .describe(
+          "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+        ),
       askAmount: zod.string().nullish(),
       awardedAmount: zod.string().nullish(),
       paidAmount: zod.string().optional(),
@@ -4247,6 +4268,12 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   name: zod.string().optional(),
   organizationId: zod.string().optional(),
   householdId: zod.string().optional(),
+  fundraisingCategory: zod
+    .enum(["revenue", "loan_capital"])
+    .optional()
+    .describe(
+      "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+    ),
   askAmount: zod.string().optional(),
   awardedAmount: zod.string().optional(),
   type: zod.enum(["solicitation", "renewal", "open_application"]).optional(),
@@ -4309,6 +4336,11 @@ export const GetOpportunityOrPledgeResponse = zod
     name: zod.string().nullish(),
     organizationId: zod.string().nullish(),
     householdId: zod.string().nullish(),
+    fundraisingCategory: zod
+      .enum(["revenue", "loan_capital"])
+      .describe(
+        "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+      ),
     askAmount: zod.string().nullish(),
     awardedAmount: zod.string().nullish(),
     paidAmount: zod.string().optional(),
@@ -4595,6 +4627,12 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
   name: zod.string().nullish(),
   organizationId: zod.string().nullish(),
   householdId: zod.string().nullish(),
+  fundraisingCategory: zod
+    .enum(["revenue", "loan_capital"])
+    .optional()
+    .describe(
+      "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+    ),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
   type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
@@ -4652,6 +4690,11 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   name: zod.string().nullish(),
   organizationId: zod.string().nullish(),
   householdId: zod.string().nullish(),
+  fundraisingCategory: zod
+    .enum(["revenue", "loan_capital"])
+    .describe(
+      "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+    ),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
   paidAmount: zod.string().optional(),
@@ -12576,35 +12619,73 @@ export const GetDashboardSummaryResponse = zod.object({
             startDate: zod.string().date(),
             endDate: zod.string().date(),
           }),
-          openPipelineAsk: zod
-            .string()
+          revenue: zod
+            .object({
+              openPipelineAsk: zod
+                .string()
+                .describe(
+                  "SUM(pledge_allocations.sub_amount) for status='open' opps (of this category) with grant_year = this FY.",
+                ),
+              openPipelineWeighted: zod
+                .string()
+                .describe(
+                  "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps (of this category) with grant_year = this FY.",
+                ),
+              committed: zod
+                .string()
+                .describe(
+                  "Per-pledge UNPAID remainder for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
+                ),
+              received: zod
+                .string()
+                .describe(
+                  "SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else).",
+                ),
+              goal: zod
+                .string()
+                .nullable()
+                .describe(
+                  "Fundraising goal for the FY+category; null if not set.",
+                ),
+            })
             .describe(
-              "SUM(pledge_allocations.sub_amount) for status='open' opps with grant_year = this FY.",
+              "Fundraising metrics for one category (revenue OR loan_capital) within a\nfiscal year. All money values are decimal strings (PostgreSQL numeric) to\npreserve precision — format with `formatCurrency` on the client.\n",
             ),
-          openPipelineWeighted: zod
-            .string()
+          loanCapital: zod
+            .object({
+              openPipelineAsk: zod
+                .string()
+                .describe(
+                  "SUM(pledge_allocations.sub_amount) for status='open' opps (of this category) with grant_year = this FY.",
+                ),
+              openPipelineWeighted: zod
+                .string()
+                .describe(
+                  "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps (of this category) with grant_year = this FY.",
+                ),
+              committed: zod
+                .string()
+                .describe(
+                  "Per-pledge UNPAID remainder for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
+                ),
+              received: zod
+                .string()
+                .describe(
+                  "SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else).",
+                ),
+              goal: zod
+                .string()
+                .nullable()
+                .describe(
+                  "Fundraising goal for the FY+category; null if not set.",
+                ),
+            })
             .describe(
-              "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps with grant_year = this FY.",
-            ),
-          committed: zod
-            .string()
-            .describe(
-              "SUM(pledge_allocations.sub_amount) for status='pledge' (written commitment, not yet fully paid) opps with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
-            ),
-          received: zod
-            .string()
-            .describe(
-              "SUM(gift_allocations.sub_amount) for allocations with grant_year = this FY.",
-            ),
-          goal: zod
-            .string()
-            .nullable()
-            .describe(
-              "Fundraising goal for the FY (from fiscal_years.goal_amount); null if not set.",
+              "Fundraising metrics for one category (revenue OR loan_capital) within a\nfiscal year. All money values are decimal strings (PostgreSQL numeric) to\npreserve precision — format with `formatCurrency` on the client.\n",
             ),
         })
         .describe(
-          "Per-fiscal-year fundraising metrics. All money values are decimal strings\n(PostgreSQL numeric) to preserve precision — format with `formatCurrency`\non the client. `goal` is nullable because not every FY has a goal seeded\n(e.g. far-future years).\n",
+          "Per-fiscal-year fundraising metrics, split into two parallel tracks:\n`revenue` (gifts\/grants) and `loanCapital` (loan-fund principal). Loan\nmoney is never mixed into revenue.\n",
         ),
     )
     .describe(
@@ -12640,6 +12721,11 @@ export const GetProjectionsByFyEntityResponse = zod.object({
         .string()
         .nullable()
         .describe("entities.id, or null for unbucketed allocations."),
+      category: zod
+        .enum(["revenue", "loan_capital"])
+        .describe(
+          "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+        ),
       allocationCount: zod.number(),
       totalSubAmount: zod
         .string()
@@ -12684,104 +12770,239 @@ export const GetFiscalYearBreakdownResponse = zod
       startDate: zod.string().date(),
       endDate: zod.string().date(),
     }),
-    goal: zod.string().nullable(),
-    received: zod.object({
-      total: zod
-        .string()
-        .describe("SUM(sub_amount) across the rows (numeric string)."),
-      rows: zod.array(
-        zod
-          .object({
-            allocationId: zod.string(),
-            subAmount: zod
-              .string()
-              .describe("gift_allocations.sub_amount (numeric string)."),
-            entityId: zod.string().nullish(),
-            intendedUsage: zod.string().nullish(),
-            displayUsage: zod
-              .string()
-              .nullish()
+    revenue: zod
+      .object({
+        goal: zod.string().nullable(),
+        received: zod.object({
+          total: zod
+            .string()
+            .describe("SUM(sub_amount) across the rows (numeric string)."),
+          rows: zod.array(
+            zod
+              .object({
+                allocationId: zod.string(),
+                subAmount: zod
+                  .string()
+                  .describe("gift_allocations.sub_amount (numeric string)."),
+                category: zod
+                  .enum(["revenue", "loan_capital"])
+                  .optional()
+                  .describe(
+                    "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+                  ),
+                entityId: zod.string().nullish(),
+                intendedUsage: zod.string().nullish(),
+                displayUsage: zod
+                  .string()
+                  .nullish()
+                  .describe(
+                    "Server-computed human-readable usage label from gift_allocations.display_usage.",
+                  ),
+                fundableProjectId: zod.string().nullish(),
+                giftId: zod.string(),
+                giftType: zod.string().nullish(),
+                dateReceived: zod.string().date().nullish(),
+                giftAmount: zod
+                  .string()
+                  .nullish()
+                  .describe("Parent gift's total amount (numeric string)."),
+                organizationId: zod.string().nullish(),
+                organizationName: zod.string().nullish(),
+                householdId: zod.string().nullish(),
+                householdName: zod.string().nullish(),
+                individualGiverPersonId: zod.string().nullish(),
+                individualGiverPersonName: zod.string().nullish(),
+                organizationPriority: zod
+                  .enum(["top", "high", "medium", "low"])
+                  .nullish(),
+                individualGiverPersonPriority: zod
+                  .enum(["top", "high", "medium", "low"])
+                  .nullish(),
+              })
               .describe(
-                "Server-computed human-readable usage label from gift_allocations.display_usage.",
+                "A single gift_allocation row booked to the FY's grant_year, denormalized with parent gift + donor info.",
               ),
-            fundableProjectId: zod.string().nullish(),
-            giftId: zod.string(),
-            giftType: zod.string().nullish(),
-            dateReceived: zod.string().date().nullish(),
-            giftAmount: zod
-              .string()
-              .nullish()
-              .describe("Parent gift's total amount (numeric string)."),
-            organizationId: zod.string().nullish(),
-            organizationName: zod.string().nullish(),
-            householdId: zod.string().nullish(),
-            householdName: zod.string().nullish(),
-            individualGiverPersonId: zod.string().nullish(),
-            individualGiverPersonName: zod.string().nullish(),
-            organizationPriority: zod
-              .enum(["top", "high", "medium", "low"])
-              .nullish(),
-            individualGiverPersonPriority: zod
-              .enum(["top", "high", "medium", "low"])
-              .nullish(),
-          })
-          .describe(
-            "A single gift_allocation row booked to the FY's grant_year, denormalized with parent gift + donor info.",
           ),
-      ),
-    }),
-    openPipeline: zod.object({
-      totalAsk: zod
-        .string()
-        .describe("SUM(sub_amount) across the rows (numeric string)."),
-      totalWeighted: zod
-        .string()
-        .describe("SUM(weightedAmount) across the rows (numeric string)."),
-      rows: zod.array(
-        zod
-          .object({
-            allocationId: zod.string(),
-            subAmount: zod
-              .string()
-              .describe("pledge_allocations.sub_amount (numeric string)."),
-            weightedAmount: zod
-              .string()
+        }),
+        openPipeline: zod.object({
+          totalAsk: zod
+            .string()
+            .describe("SUM(sub_amount) across the rows (numeric string)."),
+          totalWeighted: zod
+            .string()
+            .describe("SUM(weightedAmount) across the rows (numeric string)."),
+          rows: zod.array(
+            zod
+              .object({
+                allocationId: zod.string(),
+                subAmount: zod
+                  .string()
+                  .describe("pledge_allocations.sub_amount (numeric string)."),
+                weightedAmount: zod
+                  .string()
+                  .describe(
+                    "sub_amount × COALESCE(parent.win_probability, 1) (numeric string).",
+                  ),
+                category: zod
+                  .enum(["revenue", "loan_capital"])
+                  .optional()
+                  .describe(
+                    "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+                  ),
+                allocationStatus: zod.string().nullish(),
+                entityId: zod.string().nullish(),
+                intendedUsage: zod.string().nullish(),
+                fundableProjectId: zod.string().nullish(),
+                opportunityId: zod.string(),
+                opportunityName: zod.string().nullish(),
+                opportunityStage: zod.string().nullish(),
+                winProbability: zod
+                  .string()
+                  .nullish()
+                  .describe(
+                    "Parent opp's win_probability (0–1, numeric string).",
+                  ),
+                projectedCloseDate: zod.string().date().nullish(),
+                organizationId: zod.string().nullish(),
+                organizationName: zod.string().nullish(),
+                householdId: zod.string().nullish(),
+                householdName: zod.string().nullish(),
+                individualGiverPersonId: zod.string().nullish(),
+                individualGiverPersonName: zod.string().nullish(),
+                organizationPriority: zod
+                  .enum(["top", "high", "medium", "low"])
+                  .nullish(),
+                individualGiverPersonPriority: zod
+                  .enum(["top", "high", "medium", "low"])
+                  .nullish(),
+              })
               .describe(
-                "sub_amount × COALESCE(parent.win_probability, 1) (numeric string).",
+                "A single pledge_allocation row on an open opportunity for the FY's grant_year, denormalized with parent opp + donor info.",
               ),
-            allocationStatus: zod.string().nullish(),
-            entityId: zod.string().nullish(),
-            intendedUsage: zod.string().nullish(),
-            fundableProjectId: zod.string().nullish(),
-            opportunityId: zod.string(),
-            opportunityName: zod.string().nullish(),
-            opportunityStage: zod.string().nullish(),
-            winProbability: zod
-              .string()
-              .nullish()
-              .describe("Parent opp's win_probability (0–1, numeric string)."),
-            projectedCloseDate: zod.string().date().nullish(),
-            organizationId: zod.string().nullish(),
-            organizationName: zod.string().nullish(),
-            householdId: zod.string().nullish(),
-            householdName: zod.string().nullish(),
-            individualGiverPersonId: zod.string().nullish(),
-            individualGiverPersonName: zod.string().nullish(),
-            organizationPriority: zod
-              .enum(["top", "high", "medium", "low"])
-              .nullish(),
-            individualGiverPersonPriority: zod
-              .enum(["top", "high", "medium", "low"])
-              .nullish(),
-          })
-          .describe(
-            "A single pledge_allocation row on an open opportunity for the FY's grant_year, denormalized with parent opp + donor info.",
           ),
+        }),
+      })
+      .describe(
+        "Per-category (revenue OR loan_capital) supporting detail for one FY.",
       ),
-    }),
+    loanCapital: zod
+      .object({
+        goal: zod.string().nullable(),
+        received: zod.object({
+          total: zod
+            .string()
+            .describe("SUM(sub_amount) across the rows (numeric string)."),
+          rows: zod.array(
+            zod
+              .object({
+                allocationId: zod.string(),
+                subAmount: zod
+                  .string()
+                  .describe("gift_allocations.sub_amount (numeric string)."),
+                category: zod
+                  .enum(["revenue", "loan_capital"])
+                  .optional()
+                  .describe(
+                    "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+                  ),
+                entityId: zod.string().nullish(),
+                intendedUsage: zod.string().nullish(),
+                displayUsage: zod
+                  .string()
+                  .nullish()
+                  .describe(
+                    "Server-computed human-readable usage label from gift_allocations.display_usage.",
+                  ),
+                fundableProjectId: zod.string().nullish(),
+                giftId: zod.string(),
+                giftType: zod.string().nullish(),
+                dateReceived: zod.string().date().nullish(),
+                giftAmount: zod
+                  .string()
+                  .nullish()
+                  .describe("Parent gift's total amount (numeric string)."),
+                organizationId: zod.string().nullish(),
+                organizationName: zod.string().nullish(),
+                householdId: zod.string().nullish(),
+                householdName: zod.string().nullish(),
+                individualGiverPersonId: zod.string().nullish(),
+                individualGiverPersonName: zod.string().nullish(),
+                organizationPriority: zod
+                  .enum(["top", "high", "medium", "low"])
+                  .nullish(),
+                individualGiverPersonPriority: zod
+                  .enum(["top", "high", "medium", "low"])
+                  .nullish(),
+              })
+              .describe(
+                "A single gift_allocation row booked to the FY's grant_year, denormalized with parent gift + donor info.",
+              ),
+          ),
+        }),
+        openPipeline: zod.object({
+          totalAsk: zod
+            .string()
+            .describe("SUM(sub_amount) across the rows (numeric string)."),
+          totalWeighted: zod
+            .string()
+            .describe("SUM(weightedAmount) across the rows (numeric string)."),
+          rows: zod.array(
+            zod
+              .object({
+                allocationId: zod.string(),
+                subAmount: zod
+                  .string()
+                  .describe("pledge_allocations.sub_amount (numeric string)."),
+                weightedAmount: zod
+                  .string()
+                  .describe(
+                    "sub_amount × COALESCE(parent.win_probability, 1) (numeric string).",
+                  ),
+                category: zod
+                  .enum(["revenue", "loan_capital"])
+                  .optional()
+                  .describe(
+                    "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+                  ),
+                allocationStatus: zod.string().nullish(),
+                entityId: zod.string().nullish(),
+                intendedUsage: zod.string().nullish(),
+                fundableProjectId: zod.string().nullish(),
+                opportunityId: zod.string(),
+                opportunityName: zod.string().nullish(),
+                opportunityStage: zod.string().nullish(),
+                winProbability: zod
+                  .string()
+                  .nullish()
+                  .describe(
+                    "Parent opp's win_probability (0–1, numeric string).",
+                  ),
+                projectedCloseDate: zod.string().date().nullish(),
+                organizationId: zod.string().nullish(),
+                organizationName: zod.string().nullish(),
+                householdId: zod.string().nullish(),
+                householdName: zod.string().nullish(),
+                individualGiverPersonId: zod.string().nullish(),
+                individualGiverPersonName: zod.string().nullish(),
+                organizationPriority: zod
+                  .enum(["top", "high", "medium", "low"])
+                  .nullish(),
+                individualGiverPersonPriority: zod
+                  .enum(["top", "high", "medium", "low"])
+                  .nullish(),
+              })
+              .describe(
+                "A single pledge_allocation row on an open opportunity for the FY's grant_year, denormalized with parent opp + donor info.",
+              ),
+          ),
+        }),
+      })
+      .describe(
+        "Per-category (revenue OR loan_capital) supporting detail for one FY.",
+      ),
   })
   .describe(
-    'Supporting detail for a single FY\'s dashboard money tiles. `received` powers the\n\"Received\" tile (gift_allocations summed); `openPipeline` powers both the\n\"Open asks\" tile (totalAsk) and the \"Weighted asks\" tile (totalWeighted).\n',
+    'Supporting detail for a single FY\'s dashboard money tiles, split into the two\nparallel tracks (`revenue` and `loanCapital`). Within each category `received`\npowers the \"Received\" tile (gift_allocations summed); `openPipeline` powers\nboth the \"Open asks\" tile (totalAsk) and the \"Weighted asks\" tile (totalWeighted).\n',
   );
 
 export const bulkUpdatePeopleBodyIdsMax = 1000;
@@ -13870,6 +14091,11 @@ export const ArchiveOpportunityOrPledgeResponse = zod.object({
   name: zod.string().nullish(),
   organizationId: zod.string().nullish(),
   householdId: zod.string().nullish(),
+  fundraisingCategory: zod
+    .enum(["revenue", "loan_capital"])
+    .describe(
+      "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+    ),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
   paidAmount: zod.string().optional(),
@@ -13959,6 +14185,11 @@ export const UnarchiveOpportunityOrPledgeResponse = zod.object({
   name: zod.string().nullish(),
   organizationId: zod.string().nullish(),
   householdId: zod.string().nullish(),
+  fundraisingCategory: zod
+    .enum(["revenue", "loan_capital"])
+    .describe(
+      "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+    ),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
   paidAmount: zod.string().optional(),

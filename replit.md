@@ -96,6 +96,16 @@ mid-run as noise (retry), not a blocker.
 - **Opportunity derivation** — pledge-stage / derived fields computed by a pure
   `deriveOppFields` + a DB-touching `applyDerivedOppFields` wrapper (backfill
   script available). Grant-letter upload via object storage (presigned GCS URL).
+- **Fundraising categories (revenue vs loan capital)** — loan-fund capital is a
+  first-class track parallel to revenue across analytics, never mixed in.
+  `fundraising_category` enum (`revenue` | `loan_capital`); opportunities carry
+  `fundraisingCategory` (NOT NULL default `revenue`); `fiscal_year_entity_goals`
+  PK is `(fiscalYearId, entityId, category)` so each track has its own goal. Loan
+  money = `loan_fund_investment` gifts + loan-capital opps/pledges. Analytics
+  (`dashboard-summary`, `fiscal-year-breakdown`, projections) split per category;
+  the dashboard renders two tracks per fiscal year, each with received /
+  committed / weighted-open / goal. Goals routes take a `:category` path param
+  (defaults to `revenue`). Non-destructive: all pre-existing data is `revenue`.
 - **List-page choosers** — per-page filter + column choosers on the 4 list pages
   (individuals, organizations, opportunities, gifts), persisted in saved views.
 - **Media-mention ingestion** — daily off-hours (America/Chicago) scheduled job

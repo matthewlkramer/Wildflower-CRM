@@ -16,6 +16,7 @@ import {
   opportunityTypeEnum,
   opportunityStageEnum,
   opportunityConditionalEnum,
+  fundraisingCategoryEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
 import { people } from "./people";
@@ -94,6 +95,14 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   }),
   askAmount: numeric("ask_amount", { precision: 14, scale: 2 }),
   awardedAmount: numeric("awarded_amount", { precision: 14, scale: 2 }),
+  // Fundraising category — designates whether this opportunity/pledge is a
+  // revenue commitment or a loan-fund capital (principal) commitment. Kept
+  // independent of `status` (which is calculated) and of donor type. Default
+  // 'revenue' so all existing opps are non-destructively treated as revenue.
+  // The dashboard/projections split open + committed money by this column.
+  fundraisingCategory: fundraisingCategoryEnum("fundraising_category")
+    .notNull()
+    .default("revenue"),
   type: opportunityTypeEnum("type"),
   conditional: opportunityConditionalEnum("conditional"),
   conditions: text("conditions"),

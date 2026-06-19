@@ -11,6 +11,7 @@ import {
   getListOrganizationsQueryKey,
   type TaskStatus,
   type ListOrganizationsParams,
+  type FiscalYearMetrics,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -71,32 +72,44 @@ export default function Dashboard() {
     testId: string;
     href?: string;
   };
-  const moneyTiles: MoneyTile[] = byFy.flatMap((m) => {
-    const fySlug = m.fiscalYear.id; // e.g. "fy2026"
-    const fyLabel = m.fiscalYear.label;
-    // Goal is summed from per-entity goals (fiscal_year_entity_goals) and
-    // honors the same entity filter as the other money tiles.
-    const goalSub = m.goal
-      ? entityFilterActive
-        ? selectedEntityIds.length === 1
-          ? `Fundraising goal for ${fyLabel} (${selectedEntityIds.length} entity)`
-          : `Fundraising goal for ${fyLabel} (${selectedEntityIds.length} entities)`
-        : `Total fundraising goal across all entities for ${fyLabel}`
-      : `No goal set for ${fyLabel}`;
+
+  // Loan-fund capital reports as a track parallel to revenue — never mixed.
+  // Each fiscal year renders two rows (Revenue / Gifts + Loan Capital), each
+  // built from the same per-category metrics shape.
+  type CategoryMetrics = FiscalYearMetrics["revenue"];
+  const CATEGORY_TRACKS: {
+    key: "revenue" | "loanCapital";
+    slug: "revenue" | "loan_capital";
+    label: string;
+  }[] = [
+    { key: "revenue", slug: "revenue", label: "Revenue / Gifts" },
+    { key: "loanCapital", slug: "loan_capital", label: "Loan Capital" },
+  ];
+
+  const buildTiles = (
+    fySlug: string,
+    fyLabel: string,
+    catSlug: "revenue" | "loan_capital",
+    cm: CategoryMetrics,
+  ): MoneyTile[] => {
+    const catParam = `&category=${catSlug}`;
     // Weighted projection = money in (received) + the UNPAID remainder of
     // written commitments (committed — the server nets out payments already in
     // `received`) + probability-weighted open pipeline. The three buckets are
-    // disjoint, so a partial payment on a pledge is counted once. Composite
-    // figure with no single drilldown — like Goal, it carries no href.
+    // disjoint, so a partial payment on a pledge is counted once.
     const weightedProjection = (
-      Number(m.received) + Number(m.committed) + Number(m.openPipelineWeighted)
+      Number(cm.received) + Number(cm.committed) + Number(cm.openPipelineWeighted)
     ).toFixed(2);
     return [
       {
         label: `Goal ${fyLabel}`,
-        value: m.goal ?? undefined,
-        sub: goalSub,
-        testId: `tile-goal-${fySlug}`,
+        value: cm.goal ?? undefined,
+        sub: cm.goal
+          ? entityFilterActive
+            ? `Goal for ${fyLabel} (${selectedEntityIds.length} ${selectedEntityIds.length === 1 ? "entity" : "entities"})`
+            : `Total goal across all entities for ${fyLabel}`
+          : `No goal set for ${fyLabel}`,
+        testId: `tile-goal-${catSlug}-${fySlug}`,
       },
       {
         label: `Weighted projection ${fyLabel}`,
@@ -104,43 +117,69 @@ export default function Dashboard() {
         sub: multiEntityFilterActive
           ? `Received + committed + weighted open asks across ${selectedEntityIds.length} entities`
           : `Received + committed + weighted open asks for ${fyLabel}`,
-        testId: `tile-weighted-projection-${fySlug}`,
+        testId: `tile-weighted-projection-${catSlug}-${fySlug}`,
       },
       {
         label: `Received ${fyLabel}`,
-        value: m.received,
+        value: cm.received,
         sub: multiEntityFilterActive
           ? `Sum across ${selectedEntityIds.length} entities — narrow to one entity to drill in`
-          : `Gift allocations booked to ${fyLabel}`,
-        testId: `tile-received-${fySlug}`,
+          : `Allocations booked to ${fyLabel}`,
+        testId: `tile-received-${catSlug}-${fySlug}`,
         href: multiEntityFilterActive
           ? undefined
-          : `/fiscal-year/${fySlug}?metric=received${forwardedEntityParam}`,
+          : `/fiscal-year/${fySlug}?metric=received${catParam}${forwardedEntityParam}`,
       },
       {
         label: `Open asks ${fyLabel}`,
-        value: m.openPipelineAsk,
+        value: cm.openPipelineAsk,
         sub: multiEntityFilterActive
           ? `Sum across ${selectedEntityIds.length} entities — narrow to one entity to drill in`
           : `Open allocations booked to ${fyLabel}`,
-        testId: `tile-pipeline-ask-${fySlug}`,
+        testId: `tile-pipeline-ask-${catSlug}-${fySlug}`,
         href: multiEntityFilterActive
           ? undefined
-          : `/fiscal-year/${fySlug}?metric=open-asks${forwardedEntityParam}`,
+          : `/fiscal-year/${fySlug}?metric=open-asks${catParam}${forwardedEntityParam}`,
       },
       {
         label: `Weighted asks ${fyLabel}`,
-        value: m.openPipelineWeighted,
+        value: cm.openPipelineWeighted,
         sub: multiEntityFilterActive
           ? `Sum across ${selectedEntityIds.length} entities — narrow to one entity to drill in`
           : `${fyLabel} open allocations × win probability`,
-        testId: `tile-pipeline-weighted-${fySlug}`,
+        testId: `tile-pipeline-weighted-${catSlug}-${fySlug}`,
         href: multiEntityFilterActive
           ? undefined
-          : `/fiscal-year/${fySlug}?metric=weighted-asks${forwardedEntityParam}`,
+          : `/fiscal-year/${fySlug}?metric=weighted-asks${catParam}${forwardedEntityParam}`,
       },
     ];
-  });
+  };
+
+  const renderTile = (t: MoneyTile) => {
+    const card = (
+      <Card
+        data-testid={t.testId}
+        className={t.href ? "cursor-pointer hover:bg-muted/30 transition-colors h-full" : "h-full"}
+      >
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            {t.label}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-2xl font-serif font-bold text-foreground">
+            {isLoading || t.value === undefined ? "…" : formatCurrency(t.value)}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">{t.sub}</p>
+        </CardContent>
+      </Card>
+    );
+    return t.href ? (
+      <Link key={t.label} href={t.href}>{card}</Link>
+    ) : (
+      <div key={t.label}>{card}</div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -169,30 +208,27 @@ export default function Dashboard() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        {moneyTiles.map((t) => {
-          const card = (
-            <Card
-              data-testid={t.testId}
-              className={t.href ? "cursor-pointer hover:bg-muted/30 transition-colors h-full" : "h-full"}
-            >
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {t.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-serif font-bold text-foreground">
-                  {isLoading || t.value === undefined ? "…" : formatCurrency(t.value)}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">{t.sub}</p>
-              </CardContent>
-            </Card>
-          );
-          return t.href ? (
-            <Link key={t.label} href={t.href}>{card}</Link>
-          ) : (
-            <div key={t.label}>{card}</div>
+      <div className="space-y-6">
+        {byFy.map((m) => {
+          const fySlug = m.fiscalYear.id;
+          const fyLabel = m.fiscalYear.label;
+          return (
+            <div key={fySlug} className="space-y-3" data-testid={`fy-block-${fySlug}`}>
+              <h2 className="text-lg font-serif font-semibold text-foreground">{fyLabel}</h2>
+              {CATEGORY_TRACKS.map((track) => {
+                const cm = m[track.key];
+                return (
+                  <div key={track.key} className="space-y-2" data-testid={`fy-track-${track.slug}-${fySlug}`}>
+                    <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      {track.label}
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                      {buildTiles(fySlug, fyLabel, track.slug, cm).map(renderTile)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           );
         })}
       </div>

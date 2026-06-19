@@ -7,6 +7,7 @@ import {
   type CreateOpportunityOrPledgeBody,
   type OpportunityStage,
   type OpportunityType,
+  type FundraisingCategory,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -73,6 +74,7 @@ type FormState = {
   name: string;
   stage: OpportunityStage | "";
   type: OpportunityType | "";
+  fundraisingCategory: FundraisingCategory;
   askAmount: string;
   awardedAmount: string;
   projectedCloseDate: string;
@@ -82,6 +84,7 @@ const EMPTY_FORM: FormState = {
   name: "",
   stage: "",
   type: "",
+  fundraisingCategory: "revenue",
   askAmount: "",
   awardedAmount: "",
   projectedCloseDate: "",
@@ -182,6 +185,7 @@ export function CreateOpportunityDialog({
         ...(isPledge ? { wasPledge: true } : {}),
         ...(form.stage ? { stage: form.stage } : {}),
         ...(form.type ? { type: form.type } : {}),
+        fundraisingCategory: form.fundraisingCategory,
         ...(ask ? { askAmount: ask } : {}),
         ...(awarded ? { awardedAmount: awarded } : {}),
         ...(closeDate ? { projectedCloseDate: closeDate } : {}),
@@ -260,6 +264,24 @@ export function CreateOpportunityDialog({
                 for.
               </p>
             )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Fundraising category</Label>
+            <Select
+              value={form.fundraisingCategory}
+              onValueChange={(v) =>
+                setForm({ ...form, fundraisingCategory: v as FundraisingCategory })
+              }
+            >
+              <SelectTrigger data-testid="select-new-opportunity-category">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="revenue">Revenue / Gifts</SelectItem>
+                <SelectItem value="loan_capital">Loan Capital</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

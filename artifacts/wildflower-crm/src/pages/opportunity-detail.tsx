@@ -18,6 +18,7 @@ import {
   type OpportunityLossType,
   type OpportunityType,
   type OpportunityConditional,
+  type FundraisingCategory,
   type PeopleEntityRole,
 } from "@workspace/api-client-react";
 import { PledgeAllocationsEditor } from "@/components/allocation-editors";
@@ -85,6 +86,13 @@ const TYPE_OPTIONS = [
   { value: "renewal", label: "Renewal" },
   { value: "open_application", label: "Open application" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityType>>;
+
+// Loan-fund capital is a fundraising track parallel to revenue; the two are
+// never mixed in analytics. Defaults to revenue for all existing records.
+const CATEGORY_OPTIONS = [
+  { value: "revenue", label: "Revenue / Gifts" },
+  { value: "loan_capital", label: "Loan Capital" },
+] as const satisfies ReadonlyArray<InlineSelectOption<FundraisingCategory>>;
 
 const CONDITIONAL_OPTIONS = [
   { value: "unconditional", label: "Unconditional" },
@@ -483,6 +491,23 @@ function OppView({
           options={TYPE_OPTIONS}
           display={formatEnum(opp.type) || "—"}
           onSave={(next) => patch({ type: next })}
+        />
+      ),
+    },
+    {
+      label: "Fundraising category",
+      value: (
+        <InlineEditSelect
+          align="left"
+          label="Fundraising category"
+          testIdBase="opp-category"
+          value={opp.fundraisingCategory ?? "revenue"}
+          options={CATEGORY_OPTIONS}
+          display={formatEnum(opp.fundraisingCategory) || "Revenue / Gifts"}
+          allowNull={false}
+          onSave={(next) =>
+            patch({ fundraisingCategory: (next ?? "revenue") as FundraisingCategory })
+          }
         />
       ),
     },

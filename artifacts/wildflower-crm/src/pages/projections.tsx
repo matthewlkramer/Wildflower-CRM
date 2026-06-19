@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useGetProjectionsByFyEntity,
@@ -7,6 +7,7 @@ import {
   getGetProjectionsByFyEntityQueryKey,
   getListEntitiesQueryKey,
   getListFiscalYearsQueryKey,
+  type FundraisingCategory,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/format";
 import { useEntityFilter } from "@/lib/entity-filter-context";
@@ -42,6 +43,9 @@ export default function Projections() {
   const proj = useGetProjectionsByFyEntity(projParams, {
     query: { queryKey: getGetProjectionsByFyEntityQueryKey(projParams) },
   });
+  // Loan-fund capital projects as a track parallel to revenue. The toggle
+  // filters the grid to one category; the two are never mixed.
+  const [category, setCategory] = useState<FundraisingCategory>("revenue");
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey() },
   });
@@ -51,7 +55,7 @@ export default function Projections() {
 
   const { fyRows, entityCols, cell, fyTotals, entityTotals, grandAlloc, grandAsk, grandExpected } =
     useMemo(() => {
-      const rows = proj.data?.rows ?? [];
+      const rows = (proj.data?.rows ?? []).filter((r) => r.category === category);
 
       // Which fiscal years and which entities actually appear in the data?
       const fySeen = new Set<string>();
@@ -115,7 +119,7 @@ export default function Projections() {
         grandAlloc += n;
       }
       return { fyRows, entityCols, cell, fyTotals, entityTotals, grandAlloc, grandAsk, grandExpected };
-    }, [proj.data, entitiesQ.data]);
+    }, [proj.data, entitiesQ.data, category]);
 
   const entityName = (id: string) => {
     if (id === UNBUCKETED) return "Unassigned";
@@ -166,6 +170,27 @@ export default function Projections() {
           weights each allocation's sub-amount by the parent opportunity's win probability
           (defaulting to 1 when unset).
         </p>
+      </div>
+
+      <div className="flex items-center gap-1" data-testid="projections-category-toggle">
+        {([
+          { value: "revenue" as const, label: "Revenue / Gifts" },
+          { value: "loan_capital" as const, label: "Loan Capital" },
+        ]).map((c) => (
+          <button
+            key={c.value}
+            type="button"
+            data-testid={`projections-category-${c.value}`}
+            onClick={() => setCategory(c.value)}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              category === c.value
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:bg-muted/70"
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
