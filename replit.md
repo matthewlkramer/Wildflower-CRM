@@ -11,6 +11,39 @@ The database schema mirrors the Wildflower "crm files" Airtable base
 The `funders` and `organizations` tables have been **consolidated** into a single
 `organizations` table (an `issuesGrants` flag distinguishes grant-makers).
 
+The product goal: give the Wildflower fundraising team one trustworthy place to run
+the whole donor lifecycle — pipeline → commitments → cash in — with the money,
+communications (Gmail/Calendar), and accounting (QuickBooks/Stripe) all reconciled
+against the same donor records, so they can stop stitching Copper, spreadsheets, and
+inboxes together by hand.
+
+## Design principles (the invariants to protect)
+
+These recur across the whole app — keep them true whenever you change things:
+
+1. **Contract-first.** `lib/api-spec/openapi.yaml` is the source of truth; the React
+   Query hooks (`api-client-react`) and Zod validators (`api-zod`) are *generated*
+   from it. Change the spec, regenerate, then implement — never hand-edit generated
+   files.
+2. **Money model = header + allocations.** `opportunities_and_pledges` and
+   `gifts_and_payments` are header-only; ALL scope (entity, fiscal year, region,
+   intended usage, sub-amounts, revenue coding) lives on the child allocation rows.
+3. **Opportunity status is calculated, never written by hand** — derived from stage +
+   payments + the user-set `loss_type` override. The only user-settable lifecycle
+   input is `loss_type` (`dormant` / `lost`).
+4. **Donor XOR.** Every opportunity and gift has exactly one donor (organization,
+   individual, or household), enforced at the DB (CHECK), the API, and on merged
+   PATCH state. Staged payment/charge queue rows hold *at most one* candidate donor;
+   exactly-one is enforced only when they approve/reconcile into a gift
+   (`validateGiftInvariants`).
+5. **Revenue and loan capital are parallel tracks.** Never fold `loan_capital` into
+   revenue rollups; goals and analytics split by `fundraising_category`.
+6. **Archive, don't delete.** Soft-delete (`archived_at`) is the app-wide default;
+   only a few explicit paths still hard-delete.
+7. **Non-destructive, human-applied prod data changes.** The agent cannot write to
+   prod. Schema/code ship via Publish; every prod *data* change is a reviewed,
+   idempotent SQL file in `lib/db/migrations/`, applied by a human.
+
 ## User preferences
 
 - Prefers non-destructive, staged migrations and explicit confirmation before any
@@ -31,15 +64,19 @@ The `funders` and `organizations` tables have been **consolidated** into a singl
 
 ```
 lib/
-  db/               — Drizzle schema, importer script, DB connection
-  api-spec/         — OpenAPI spec (openapi.yaml) — contract source of truth
-  api-client-react/ — Generated React Query hooks + response types
-  api-zod/          — Generated Zod request/response validators
+  db/                        — Drizzle schema, importer script, DB connection
+  api-spec/                  — OpenAPI spec (openapi.yaml) — contract source of truth
+  api-client-react/          — Generated React Query hooks + response types
+  api-zod/                   — Generated Zod validators + Donor-XOR invariant guards
+  integrations-anthropic-ai/ — Anthropic SDK wrapper (batching, retries, rate-limit)
+  object-storage-web/        — React hooks + Uppy components for GCS uploads
 artifacts/
-  api-server/       — Express REST API (port 8080)
-  wildflower-crm/   — React frontend (Vite)
+  api-server/                — Express REST API (port 8080)
+  wildflower-crm/            — React frontend (Vite)
+  mockup-sandbox/            — design/prototyping preview server (not deployed)
+scripts/                     — maintenance scripts (@workspace/scripts)
 tools/
-  magio-extension/  — Gmail open-tracking browser extension (NOT in the workspace)
+  magio-extension/           — Gmail open-tracking browser extension (NOT in the workspace)
 ```
 
 ## Key Commands
@@ -62,8 +99,9 @@ typecheck — trust `pnpm run typecheck`, which builds libs first).
 ## Database
 
 Schema lives in `lib/db/src/schema/`. Every entity uses its Airtable record ID as
-the PK so re-imports stay idempotent (exception: `regions` uses human-readable slug
-PKs). Full per-table reference is in [`lib/db/SCHEMA.md`](lib/db/SCHEMA.md).
+the PK so re-imports stay idempotent (exceptions: `regions`, `entities`,
+`fundable_projects`, and `fiscal_years` use human-readable slug PKs). Full per-table
+reference is in [`lib/db/SCHEMA.md`](lib/db/SCHEMA.md).
 
 Key invariants:
 
@@ -90,12 +128,19 @@ mid-run as noise (retry), not a blocker.
 
 - **CRM core** — organizations (grant-makers flagged via `issuesGrants`), people,
   households, opportunities & pledges, gifts & payments, allocations, payment
-  intermediaries, regions, schools, fiscal years. Pledges are a status-filtered
-  slice of opportunities. Dashboard / projections / grants-calendar analytics are
+  intermediaries, regions, schools, fiscal years. Pledges are the slice of
+  opportunities that ever reached commitment (`was_pledge`, or stage
+  conditional/written). Dashboard / projections / grants-calendar analytics are
   derived server-side.
-- **Opportunity derivation** — pledge-stage / derived fields computed by a pure
-  `deriveOppFields` + a DB-touching `applyDerivedOppFields` wrapper (backfill
-  script available). Grant-letter upload via object storage (presigned GCS URL).
+- **Opportunity derivation** — `status` (`open` / `pledge` / `cash_in` / `dormant` /
+  `lost`) is **fully calculated** from stage + payments + the user-set `loss_type`
+  override — never written directly (`status='pledge'` comes only from stage
+  `written_commitment`; full payment ⇒ `cash_in`). Computed by a pure
+  `deriveOppFields` + a DB-touching `applyDerivedOppFields` wrapper (backfill script
+  available). A separate sticky `was_pledge` flag — latched once a row hits a
+  commitment stage or gets a grant letter, never auto-cleared — drives the
+  Pledges-page filter, not status. Grant-letter upload via object storage (presigned
+  GCS URL).
 - **Fundraising categories (revenue vs loan capital)** — loan-fund capital is a
   first-class track parallel to revenue across analytics, never mixed in.
   `fundraising_category` enum (`revenue` | `loan_capital`); opportunities carry
@@ -131,7 +176,8 @@ mid-run as noise (retry), not a blocker.
   auto-excluded). "sunlight" is intentionally not auto-attributed.
   A fundraiser fixes the donor match and approves/rejects; approve mints a
   `gifts_and_payments` row in a tx (Donor XOR via `validateGiftInvariants`).
-  Idempotent by `(realmId, qbEntityType, qbEntityId)`; staged rows retained after
+  Idempotent by `(realmId, qbEntityType, qbEntityId, qbLineId)` (deposits stage per
+  line; non-deposit rows use an empty `qbLineId`); staged rows retained after
   approve/reject for dedupe. Tokens + realmId encrypted at rest; OAuth/token
   endpoints are env-shared, the data host is env-derived (`QUICKBOOKS_API_BASE`,
   defaults to the production Intuit host). Pull-only — never writes back to QB.
@@ -147,6 +193,45 @@ mid-run as noise (retry), not a blocker.
   defaults to HTTP Basic, override via `FLODESK_AUTH_SCHEME`); the sync is a safe
   no-op until both are set. No campaign/open analytics (Flodesk's API has none).
   Manual trigger: `pnpm --filter @workspace/api-server run sync:flodesk`.
+- **Stripe sync + Stripe↔QuickBooks reconciliation** — a second pull-only money
+  source parallel to QuickBooks. A scheduled (30-min) + on-demand worker pulls Stripe
+  payouts (`stripe_payouts`) and the individual gross charges behind them
+  (`stripe_staged_charges`). The reconciliation queue (`/stripe-reconciliation`) ties
+  a coarse QuickBooks deposit/payout lump to its individual Stripe charges: the
+  per-charge Stripe gifts become the precise record, the coarse QB-derived gift is
+  archived, and the QB staged row is excluded with reason `processor_payout` (set
+  ONLY on human confirm) so the same money is never booked twice. Key files:
+  `stripeSync.ts`, `stripeReconcile.ts`, `stripeMatch.ts`, `stripeConfirm.ts`.
+- **Revenue-accounting coding (CFO "Revenue Extractor")** — gift/pledge allocations
+  capture accounting codes alongside scope, derived from donor kind + fundable
+  project + region by `revenueCoding.ts`, with per-fund-entity overrides
+  (fiscal-sponsee defaults, keyed on `entities.id`) in `entity_coding_rules` (GL
+  account list in `revenue_accounts`). `restriction_type`
+  (`unrestricted` / `purpose` / `time` / `both` / `unclear` / `na`) never silently
+  defaults `unclear` to unrestricted — it flags for human review. `deferred_revenue`
+  is captured, not computed (the CRM does not derive AR).
+- **Email & calendar sync + intelligence** — per-user Gmail/Calendar sync into
+  `email_messages` / `calendar_events` (Chicago-time-aware scheduler, advisory-locked,
+  matched to CRM entities with suppression controls). AI "email intelligence" (Claude
+  via `integrations-anthropic-ai`) extracts signals into `email_proposals` (job
+  changes, bounces, signature updates, grant opportunities, thank-you
+  acknowledgments) that a reviewer accepts/rejects; the prompt is versioned and
+  admin-tunable (`email_intel_prompts`). Grant opportunities also feed a team-shared,
+  cross-inbox `grant_leads` queue.
+- **Tasks + AI next-step suggestions** — manual + reporting-deadline tasks (`tasks`)
+  with AI-proposed next steps (`task_proposals`), auto-generated only on true first
+  view and refreshed explicitly thereafter.
+- **Entity merge** — transactional collapse of duplicate organizations/people into a
+  primary: re-points every FK reference, merges multi-value arrays, archives the
+  duplicate (SELECT … FOR UPDATE on the merged rows first). A FK-inventory test fails
+  on schema drift so a newly-added FK can't silently be missed.
+- **Meeting notes** — paste-a-transcript flow producing an editable AI summary +
+  action items, surfaced in the activity timeline.
+- **Archive (soft-delete)** — app-wide default; `archived_at` replaces hard delete in
+  both list and detail. Archived rows drop out of list views by default (admin-only
+  "show archived", LIST only) and archived gifts are excluded from financial /
+  pledge-paid totals. Few explicit hard-delete exceptions remain (gift merge,
+  QuickBooks revert).
 
 ## Known follow-ups (non-blocking)
 
@@ -156,9 +241,9 @@ mid-run as noise (retry), not a blocker.
   every prod **data** change must be delivered as a reviewed, idempotent SQL file
   (see `lib/db/migrations/` + its runbooks) and applied by a human with
   `psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f <file>.sql`.
-- **Stale importer/docs** — `lib/db/src/import-airtable.mjs` and `lib/db/SCHEMA.md`
-  still target the OLD split funders/organizations model; update them before any
-  re-import (a re-import will otherwise fail).
+- **Stale importer** — `lib/db/src/import-airtable.mjs` still targets the OLD split
+  funders/organizations model and must be updated before any re-import (it will
+  otherwise fail). (`lib/db/SCHEMA.md` has been refreshed to the consolidated model.)
 - **FY boundary uses UTC** — `currentFiscalYear` in `/dashboard-summary` is UTC-based;
   pin to America/Chicago before fiscal year-end to avoid an off-by-a-day flip.
 - **`gmail.send` scope** — new OAuth scope; each user must reconnect Google once.

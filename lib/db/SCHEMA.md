@@ -1,108 +1,335 @@
 # Database Schema Reference
 
-The schema in `lib/db/src/schema/` mirrors the Wildflower "crm files" Airtable base (`app8KUcmaHZ0AtcJZ`). Every entity table uses the Airtable record ID (`recXXXXXXXX`) directly as its `id` primary key so re-imports are idempotent and linked-record arrays from Airtable work as foreign keys without translation. The only exception is `regions`, whose PK is a human-readable slug (see below). Rows synthesized by the importer (`pi-email-<piId>`, `org-addr-<orgId>`, `synth-*`) are distinguishable from imported rows by the `id NOT LIKE 'rec%'` predicate.
+> **Canonical source:** the Drizzle definitions in `lib/db/src/schema/*.ts` and the
+> enum list in `lib/db/src/schema/_enums.ts` are the source of truth. This file is a
+> human-readable map of *what each table is for* and the cross-table invariants that
+> are easy to break — when in doubt, trust the code.
+
+The schema mirrors the Wildflower "crm files" Airtable base (`app8KUcmaHZ0AtcJZ`).
+Every entity table uses the Airtable record ID (`recXXXXXXXX`) directly as its `id`
+primary key so re-imports are idempotent and linked-record arrays from Airtable work
+as foreign keys without translation. Exceptions: `regions`, `entities`,
+`fundable_projects`, and `fiscal_years` use human-readable **slug** PKs. Rows
+synthesized by the importer (`synth-*`, `pi-email-<piId>`, `org-addr-<orgId>`) are
+distinguishable from imported rows by the `id NOT LIKE 'rec%'` predicate.
+
+## ⚠️ funders + organizations are now ONE table
+
+The historical split between a `funders` table (grant-makers) and an `organizations`
+table (everything else) has been **consolidated into a single `organizations`
+table**. A boolean `issues_grants` flag distinguishes grant-makers. Former
+funder-only fields (capacity rating, enthusiasm, strategic alignment,
+connection status, interests, historical names, self-referencing parent) now live on
+`organizations`. The donor-type discriminator that used to be `"funder"` is now
+`"organization"`. There is **no `funders.ts`** — any reference to a `funders` table
+in older notes is stale. (The Airtable importer has **not** yet been updated for this
+merge — see "Re-importing" below.)
 
 ## Core entities
 
-- `regions` — geographic regions, self-referencing `parent_region_id`. Enum `region_type`: state, metro_area, city, neighborhood, region_within_state, multi_state_region, country, continent. **PK is a human-readable slug** (e.g. `united_states__minnesota__saint_paul`), not the Airtable record ID. The slug is built from the region's own name plus the names of its ancestors of the "included" types (`continent` / `country` / `state` / `city` / `neighborhood`); intermediate aggregation layers (`multi_state_region`, `region_within_state`, `metro_area`, untyped) appear only as the last segment of their own slug and are skipped when building descendants' slugs, so inserting or removing e.g. a "Great Lakes Region" wrapper between `united_states` and `minnesota` never disturbs the state or its cities. `display_path` is a denormalized comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`), populated by the importer for cheap UI display.
+- `regions` — geographic regions, self-referencing `parent_region_id`. Enum
+  `region_type`: state, metro_area, city, neighborhood, region_within_state,
+  multi_state_region, country, continent. **PK is a human-readable slug** (e.g.
+  `united_states__minnesota__saint_paul`), built from the region's own name plus the
+  names of its ancestors of the "included" types (continent / country / state / city
+  / neighborhood); intermediate aggregation layers (multi_state_region,
+  region_within_state, metro_area, untyped) appear only as the last segment of their
+  own slug and are skipped when building descendants' slugs, so inserting/removing a
+  wrapper between `united_states` and `minnesota` never disturbs the state or its
+  cities. `display_path` is a denormalized comma-separated full path for cheap UI
+  display.
 
-- `schools` — mirrored one-way from the dedicated Wildflower **Schools** Airtable base (`appJBT9a4f3b7hWQ2`), specifically the "Data for CRM in Replit" view. Re-sync with `AIRTABLE_TOKEN=... node lib/db/src/sync-schools-from-airtable.mjs` (the script wipes and reloads the table; uses Airtable record IDs as PKs). Columns mirrored: `name`, `long_name`, `short_name`, `status` (enum `school_status`: `emerging` / `open` / `paused` / `closing` / `permanently_closed` / `disaffiliating` / `disaffiliated` / `placeholder` / `abandoned`), `governance_model` (enum: `independent` / `district` / `charter` / `exploring_charter` / `community_partnership`), `ages_planes` (text[] of Airtable record IDs from the linked Ages-Planes table — not imported as its own table yet), `logo_main_square_url`, `stage_status` (Airtable formula; denormalized for convenience), `current_mailing_address` and `current_physical_address` (denormalized lookups from the Locations table, joined with `\n\n` when multi-valued). The schools base lives in a different Airtable base than the "crm files" base used by the other importer, so the dedicated-base record IDs replace the old crm-files-base IDs — no other tables currently FK to schools.
+- `organizations` — **all external entities** (grant-makers AND non-grant-making
+  orgs: advisors, intermediaries, vendors, networks, etc.). `issues_grants`
+  distinguishes grant-makers. Self-referencing `parent_organization_id`. `type` is
+  the unified `entity_type` enum (~32 values — replaces the old
+  `funding_entity_subtype` + `organization_type` pair; the old enums are retained in
+  the DB only for migration safety). Array columns for `interests_thematic`,
+  `interests_ages`, `interests_gov_models`, and `historical_names text[]` (prior
+  names, for searchability after rebrands/merges). Grant-maker fields:
+  `number_of_employees` (size buckets), `capacity_rating`
+  (`tier_1k_10k` … `tier_1m_plus`), `connection_status`, `enthusiasm`
+  (now **prefixed/ordered** values: `7-advocate`, `6-supportive`, `5-warm`,
+  `4-neutral`, `3-cool`, `2-unsupportive`, `1-hostile`), `strategic_alignment`,
+  `active_status` (`active` / `defunct` / `spenddown`). `owner_user_id` → the team
+  member who owns the org. `anonymous` flag → UI-only name masking (see Anonymous
+  records below).
 
-- `households` — name + `active` boolean (defaults true; set false when a household is dissolved by death or divorce). Households can be the direct donor on opps/gifts (see `household_id` on those tables).
+- `schools` — mirrored one-way from the dedicated Wildflower **Schools** Airtable
+  base (`appJBT9a4f3b7hWQ2`), "Data for CRM in Replit" view. Re-sync with
+  `AIRTABLE_TOKEN=... node lib/db/src/sync-schools-from-airtable.mjs` (wipes and
+  reloads; uses the Schools-base record IDs as PKs). `status` enum `school_status`,
+  `governance_model` enum, `ages_planes text[]` (GIN-indexed for membership
+  filtering; the linked Ages-Planes table is not imported on its own). No other table
+  FKs to schools except `gift_allocations.school_recipient_id`.
 
-- `funders` — institutional + family funders. Self-referencing `parent_funder_id`. Array columns for `interests_thematic`, `interests_ages`, `interests_gov_models`. Includes optional `org_email` and `historical_names text[]` (prior names a funder went by, for searchability after rebrands/merges). Enum columns: `funding_entity_subtype` (18 values like `family_foundation`, `corporate_foundation`, `government`, etc.), `number_of_employees` (size buckets `e_1` / `e_2_10` / `e_11_50` / `e_51_250` / `e_251_1000` / `e_1001_10000` / `e_10000_plus`), `capacity_rating` (`tier_1k_10k` … `tier_1m_plus`), `connection_status` (`connected` / `have_a_connector` / `no_connection`), `enthusiasm` (`advocate` / `supportive` / `warm` / `neutral` / `unsupportive`), `strategic_alignment` (`high` / `medium` / `low`), `active_status` (`active` / `defunct` / `spenddown`).
+- `households` — name + `active` boolean. Households can be the direct donor on
+  opps/gifts (see `household_id`).
 
-- `organizations` — non-funder orgs (advisors, intermediaries, etc.). Also carries `historical_names text[]`. All address fields live in the `addresses` table (FK `organization_id`); the importer creates a synthetic `org-addr-<orgId>` address row per org with any address data. `owner_user_id` is the FK to the team member who owns the org (replaces a legacy Copper free-text `owner` column that has since been dropped). `type` is an enum with 20 values (`advocacy_membership_lobbyist`, `authorizer`, `cmo`, `capital_provider`, `government`, `corporation`, `education_vendor`, `elected_official`, `higher_ed`, `investor`, `law_firm`, `media`, `nonprofit`, `philanthropic_advisor`, `real_estate`, `school`, `school_district`, `school_network`, `small_business_consulting`, `tribal`).
+- `people` — individuals (donors, advisors, staff contacts). `anonymous` flag →
+  UI-only name masking. Joined to entities via `people_entity_roles`. `newsletter` /
+  `unsubscribed_to_newsletter` drive the Flodesk sync eligibility.
 
-- `payment_intermediaries` — DAFs, giving platforms, private wealth managers. Enum `payment_intermediary_type`: `daf` / `giving_platform` / `private_wealth_manager`.
+- `people_entity_roles` — polymorphic join: a person plays a role in exactly one of
+  organization / payment_intermediary / household (enum `entity_role_type` =
+  `organization` / `payment_intermediary` / `household` — note **no `funder`**).
+  `connection` enum (`employee` / `principal` / `board_member` / `partner` /
+  `professor` / `donor_advisor` / `elected_official`) and `people_role_current`
+  (`current` / `past`). `primary_contact` boolean (conventionally singular per org;
+  not DB-enforced — genuine dual-primary cases exist).
 
-- `people` — individuals (donors, advisors, staff contacts). Joined to entities via `people_entity_roles`.
+- `payment_intermediaries` — DAFs, giving platforms, private wealth managers. Enum
+  `payment_intermediary_type`: `daf` / `giving_platform` / `private_wealth_manager`.
 
-- `people_entity_roles` — polymorphic join: a person plays a role in exactly one of funder / organization / payment_intermediary / household (enum `entity_role_type`). `connection` enum (`employee` / `principal` / `board_member` / `partner` / `professor` / `donor_advisor` / `elected_official`) and `people_role_current` (`current` / `past`).
+- `donor_payment_intermediaries` — join linking a donor (org / individual / household
+  — donor-XOR at the join level too) to a payment intermediary it gives *through*.
 
-- `emails`, `phone_numbers`, `addresses` — contact info. Each row carries optional FKs `person_id`, `funder_id`, `organization_id`, `payment_intermediary_id`, `household_id` (exactly one is typically set). Each contact row has `validity` (`valid` / `invalid` / `unknown`) and `is_preferred` boolean. `emails.type` uses `email_type` enum (`work` / `personal` / `other`); `phone_numbers.type` uses `phone_type` (`work` / `mobile` / `home` / `other`). `addresses` also carries denormalized `city_name` and `state_code` populated by the importer from the linked region.
+- `emails`, `phone_numbers`, `addresses` — contact info. Each row is owned by
+  **exactly one** of `person_id` / `organization_id` / `payment_intermediary_id` /
+  `household_id` (CHECK `num_nonnulls(...) = 1`; CASCADE on owner delete).
+  `validity` (`valid` / `invalid` / `unknown`) and `is_preferred`. `emails.type` =
+  `email_type`; `phone_numbers.type` = `phone_type`. **`emails` is globally unique on
+  `lower(email)`** (one address per row anywhere; API returns 409 on collision).
+  `addresses` carries denormalized `city_name` / `state_code`.
 
-- `entities` — fund entities (Wildflower Foundation, Black Wildflowers Fund, Sunlight - debt, Sunlight - grants, Observation Support Technologies / Observant Education, Tierra Indigena, Embracing Equity, Rising Tide). Slug-style PK so new entities can be added through the UI without a migration. Referenced by `pledge_allocations.entity_id` and `gift_allocations.entity_id` (single FK each). "Sunlight - equity" was merged into "Sunlight - grants" — the equity entity was never funded in practice; the importer's alias map reroutes any stray Airtable references.
+- `entities` — internal **fund entities** money is booked against (Wildflower
+  Foundation, Black Wildflowers Fund, Sunlight - debt, Sunlight - grants, etc.).
+  Slug PK so new entities can be added through the UI without a migration. Referenced
+  by `pledge_allocations.entity_id` and `gift_allocations.entity_id`.
 
-- `fundable_projects` — specific projects a contribution can fund (seeded: `mdd`, `ssj`, `charter_growth`, `tsl`, `observation_support_tech`). Slug PK. Referenced by `pledge_allocations.fundable_project_id` and `gift_allocations.fundable_project_id` whenever the row's `intended_usage` is `'project'`. `fundable_project_id` is **optional** even when `intended_usage='project'` — the team often knows a gift is project-scoped before they've decided which project, so the FK is filled in later. The inverse is enforced by convention: `fundable_project_id` should be NULL whenever `intended_usage` is not `'project'`.
+- `fundable_projects` — specific projects a contribution can fund (e.g. `mdd`, `ssj`,
+  `charter_growth`, `tsl`). Slug PK. Referenced by the allocation tables when
+  `intended_usage = 'project'`. The FK is **optional** even for project usage (the
+  team often knows a gift is project-scoped before deciding which project). Managed at
+  `/fundable-projects`.
 
-- `fiscal_years` — reference table for Wildflower's July 1 – June 30 fiscal years. Slug PK (e.g. `fy2024`), seeded from `fy2014` through `fy2050`, plus a `future` sentinel. Used by `pledge_allocations.grant_year`, `gifts_and_payments.grant_year`, and `gift_allocations.grant_year` (single text FK each — one fiscal year per per-row money booking; multi-year commitments are split across multiple allocation rows). The `goal_amount` column on this table is legacy and no longer read — see `fiscal_year_entity_goals` below.
-- `fiscal_year_entity_goals` — per-(fiscal_year, entity) fundraising goals. Composite PK `(fiscal_year_id, entity_id)` with cascading FKs to both parents. Wildflower books goals against individual fund entities (Wildflower Foundation, Black Wildflowers Fund, etc.) rather than a single org-wide number; the analytics endpoints sum across this table and honor the same entity filter as the rest of the money rollups.
+- `fiscal_years` — Wildflower's July 1 – June 30 fiscal years. Slug PK (e.g.
+  `fy2024`), seeded `fy2014`–`fy2050` plus a `future` sentinel. Used by the
+  allocation tables' `grant_year` (one fiscal year per per-row booking; multi-year
+  commitments split across rows). The table's own `goal_amount` is legacy/unused —
+  goals live in `fiscal_year_entity_goals`.
 
-- `opportunities_and_pledges` — both opportunities and pledges live in one table (the same row carries an idea from "we should talk to this funder" all the way through to "they committed $X"), and the row is **header-only**. `status` is the lifecycle discriminator. Column validity by status (convention, not DB-enforced — see the header comment in `opportunitiesAndPledges.ts` for the full breakdown): `open` rows use the opportunity-phase fields (`ask_amount`, `stage`, `win_probability`, `projected_close_date`, `application_deadline`); `won` rows use the pledge-phase fields (`awarded_amount`, `conditions_met`, `actual_completion_date`, `payment_details`); `lost` uses `loss_reason` + `actual_completion_date`; `dormant` is treated as a frozen snapshot of whatever opportunity-phase fields were last captured. Two partial indexes back the hot read paths: `opportunities_and_pledges_open_pipeline_idx` on `(funder_id, projected_close_date) WHERE status='open'` and `opportunities_and_pledges_won_completed_idx` on `(actual_completion_date) WHERE status='won'`. All scope (which fund entities, which fiscal years, which regions, which intended usages / fundable projects, and per-line sub-amounts) lives one level down on `pledge_allocations`. Allocation-row coverage by status (see also the importer note in the "Re-importing from Airtable" section):
-- **`open`** opps always carry ≥1 `pledge_allocations` row (`status='working'` while the conversation is fuzzy; `committed` / `committed_with_conditions` once the funder firms up).
-- **`won`** opps may have explicit `pledge_allocations` rows that flip to `superseded_by_gift` (once the money lands and `gift_allocations` take over as the canonical record) or `superseded_by_pledge` (when re-scoped). However, current historical data **does not** carry these placeholders — for won opps imported from Airtable / Copper, the canonical "what was this grant for?" is rolled up from `gift_allocations` across the opp's `gifts_and_payments` (those rows are guaranteed to exist). Future writes are expected to populate the `superseded_by_*` placeholders as commitments and gifts arrive.
-- **`lost`** opps carry `pledge_allocations` rows with `status='abandoned'` reflecting the preliminary scope the team had worked up before the funder said no, when that information was captured upstream.
-- **`dormant`** opps carry `pledge_allocations` rows with `status='working'` — same shape as their last opportunity-phase snapshot.
+- `fiscal_year_entity_goals` — per-track fundraising goals. **PK is
+  `(fiscal_year_id, entity_id, category)`** where `category` is the
+  `fundraising_category` enum, so the revenue and loan-capital tracks each carry their
+  own goal. Cascading FKs to both parents. Analytics sum across this table honoring
+  the same entity/category filters as the money rollups.
 
-`status` (`open` / `won` / `dormant` / `lost`), `type` (`solicitation` / `renewal` / `open_application`), `stage` (9 values: `cold_lead` … `cash_in`), and `conditional` (`unconditional` / `reimbursable` / `conditional_on_funder_determination` / `conditional_on_target`) are all enums. `match_id` is a self-referential FK on the matching-gift row pointing to the original opportunity it matches. `owner_user_id` is the FK to the team member who owns the opp (replaces a legacy Copper free-text `owner` column that has since been dropped). `copper_pledge_id` preserves the Copper-era external pledge ID for cross-reference.
+- `users` — Clerk-provisioned app users (`role` includes `admin`; admin gates
+  show-archived, restore, and admin-only screens).
 
-- `pledge_allocations` — line items within a pledge / opportunity. All per-row scope (entity, fiscal year, region, intended usage, fundable project) lives here. `status` enum: `working` (draft an internal user is iterating on), `committed` / `committed_with_conditions` (firm commitments from the funder), `superseded_by_pledge` (replaced by a later allocation — re-scoped or split differently), `superseded_by_gift` (an actual `gift_allocations` row took its place), `abandoned` (dropped without being paid). The legacy plain `superseded` value is retained in the DB enum but unused — new writes pick one of the two specific variants.
+## Opportunities, pledges, gifts (the money model)
 
-- `gifts_and_payments` — gift records + payments against pledges, **header-only** like opportunities. All scope (entity, fiscal year, region, intended usage, fundable project, school recipient, spending window) lives one level down on `gift_allocations`. A simple one-line gift carries a single `gift_allocations` row whose `sub_amount` equals the gift's `amount`. `payment_on_pledge_id` → opportunities_and_pledges. Enums: `type` (`standard_gift` / `pledge_payment` / `directed_gift` / `loan_fund_investment` / `matching_gift`), `payment_method` (`ach` / `check` / `wire` / `stock` / `donor_box` / `daf_ach` / `daf_check` / `daf_bill_com`). `date_received` is the canonical "money arrived" date for every gift — gifts are by definition received money, so this column should always be populated (2 legacy rows currently lack any date and are deferred for human review before a future `NOT NULL` constraint). The importer falls back through the legacy Copper `completed_date` → `close_date` fields when Airtable doesn't ship `date_received`; the legacy columns themselves have been dropped from the schema.
+- `opportunities_and_pledges` — both opportunities and pledges in one **header-only**
+  row (an idea → a committed grant). All scope (entities, fiscal years, regions,
+  intended usage, sub-amounts) lives one level down on `pledge_allocations`.
+  - **`status` is FULLY CALCULATED server-side — never written directly.** Enum
+    `opportunity_status` = `open` / `pledge` / `cash_in` / `dormant` / `lost`.
+    Derivation (see `pledgeStage.ts` / `deriveOppFields`): if `loss_type` is set →
+    status = that; else fully paid (paid ≥ awarded) or stage = `cash_in` → `cash_in`;
+    else stage = `written_commitment` → `pledge`; else `open`.
+  - **`loss_type`** (enum `opportunity_loss_type` = `dormant` / `lost`, nullable) is
+    the **only** user-settable part of the old status overload — it pulls a row out of
+    the calculated funnel.
+  - Enums: `type` (`solicitation` / `renewal` / `open_application`), `stage` (9:
+    `cold_lead`, `warm_lead`, `in_conversation`, `convince`,
+    `conditional_commitment`, `probable_renewal`, `verbal_confirmation`,
+    `written_commitment`, `cash_in`), `conditional` (`unconditional` /
+    `conditional_unspecified` / `reimbursable` /
+    `conditional_on_funder_determination` / `conditional_on_target`),
+    **`fundraising_category`** (`revenue` / `loan_capital`, NOT NULL default
+    `revenue`).
+  - A sticky `was_pledge` flag latches true once a row reaches a commitment stage
+    (`conditional_commitment` / `written_commitment`) or gets a grant letter, and is
+    never auto-cleared; it drives the **Pledges-page filter, NOT** the calculated
+    `status`. `match_id` self-references the original opp a matching-gift row matches. `owner_user_id`,
+    `primary_contact_person_id` (frozen historical attribution), `copper_pledge_id`.
+  - The old `closed_requires_completion_date` CHECK has been **dropped** (it blocked
+    bulk historical cleanup).
 
-- `gift_allocations` — line items within a gift. `entity_id` FK → `entities` (formerly a free-text `recipient` column; now stored as the slug for the receiving fund entity). `fundable_project_id` FK → `fundable_projects` when intended_usage = 'project'. `formal_regional_restriction` and `formal_fund_use_restriction` booleans are orthogonal (where vs what the funder limited the money to). `display_usage` is a **trigger-maintained, read-only** human label (see `post-import-fixups.sql` — `compute_gift_allocation_display_usage` + `gift_allocations_display_usage_trg`). Resolution order: (1) `school_recipient_id` present → school's short_name; (2) `intended_usage` base label (`gen_ops`→"Gen Ops", `school_startup`→"School Startup", `growth`→"Growth", `teacher_training`→"Teacher Training", `project`→`fundable_projects.name` (fallback "Project"), null→""); (3) if `region_ids` non-empty and not case 1 and `intended_usage` is not `project`, append " - <region names>" (project usages show the project name alone, with no region appended). Renaming a school / region / fundable project cascades into matching rows via AFTER UPDATE triggers on those tables — never write `display_usage` directly.
+- `pledge_allocations` — line items within an opportunity/pledge. All per-row scope
+  (entity, fiscal year `grant_year`, `region_ids text[]`, `intended_usage`,
+  `fundable_project_id`) lives here, plus revenue-coding capture (below). `status`
+  enum `pledge_allocation_status`: `working` (internal draft), `committed` /
+  `committed_with_conditions` (firm), `superseded_by_pledge` (re-scoped),
+  `superseded_by_gift` (an actual gift took its place), `abandoned` (dropped unpaid).
+  Plain legacy `superseded` is retained in the enum but unused.
 
-- `users` — Clerk-provisioned app users (kept for auth middleware).
+- `gifts_and_payments` — gift records + payments against pledges, **header-only**.
+  Scope lives on `gift_allocations`. `payment_on_pledge_id` →
+  `opportunities_and_pledges`. Enums: `type` (`standard_gift` / `pledge_payment` /
+  `directed_gift` / `loan_fund_investment` / `matching_gift`), `payment_method`
+  (`ach` / `check` / `wire` / `stock` / `donor_box` / `daf_ach` / `daf_check` /
+  `daf_bill_com`). `date_received` is the canonical "money arrived" date.
+  `thank_you_sent_at` / `thank_you_email_message_id` stamped by the email-intel
+  thank-you flow.
 
-## Donor on opps + gifts — three mutually-exclusive options
+- `gift_allocations` — line items within a gift. `entity_id` → `entities`,
+  `fundable_project_id` → `fundable_projects` (when project usage),
+  `school_recipient_id` → `schools`, `grant_year`, `region_ids text[]`. Restriction
+  booleans `formal_regional_restriction` / `formal_fund_use_restriction` (where vs
+  what). `display_usage` is a **trigger-maintained, read-only** human label
+  (`compute_gift_allocation_display_usage` + triggers in `post-import-fixups.sql`);
+  renames of a school / region / fundable project cascade into it — **never write
+  `display_usage` directly**. Plus revenue-coding capture (below).
 
-Both `opportunities_and_pledges` and `gifts_and_payments` carry three nullable donor FKs. **Exactly one is set per row**, enforced by a `donor_xor` CHECK constraint (`num_nonnulls(...) = 1`).
-- `funder_id` → `funders` — organizational donor (foundation, corp, govt, etc.)
-- `individual_giver_person_id` → `people` — single-person donor (their own account)
-- `household_id` → `households` — joint-account donor (couples on joint checking / joint card / joint DAF). Lead person for the gift is captured via `primary_contact_person_id`.
+### Donor XOR — three mutually-exclusive donor options
 
-Manual data corrections that aren't recreated by the Airtable importer live in [`lib/db/src/post-import-fixups.sql`](src/post-import-fixups.sql) — idempotent SQL to run after a fresh reimport.
+`opportunities_and_pledges` and `gifts_and_payments` each carry three nullable donor
+FKs with a `CHECK (num_nonnulls(...) = 1)` ("donor_xor") so **exactly one** is set:
+- `organization_id` → `organizations` (institutional donor)
+- `individual_giver_person_id` → `people` (single-person donor)
+- `household_id` → `households` (joint-account donor; lead via
+  `primary_contact_person_id`)
 
-## Primary contact rules
+This is enforced at the DB (CHECK), at the API (`validateOppInvariants` /
+`validateGiftInvariants` in `@workspace/api-zod`, returning 400 not 500), and PATCH
+re-validates the *merged* post-update state. Per-type donor pickers must send all
+three FK fields (nulling the unused two).
 
-**Primary contact uniqueness**: `people_entity_roles.primary_contact = true` is *conventionally* singular per funder (one operational lead) but the schema does not enforce it, because real-world cases exist where a funder genuinely has two equally-primary contacts. Two such cases are currently in the data: **U.S. Bank / U.S. Bank Foundation** — Sean Birney and Reba Dominski lead different parts of the bank (this may warrant splitting the funder record into "U.S. Bank" + "U.S. Bank Foundation" later); and **George W. Brackenridge Foundation** — Victoria Rico and Randy Boatright (both board members; needs human review to identify the operational contact). All other previously-dual-primary funders have been demoted to single-primary.
+**Exception — staged queues.** `staged_payments` and `stripe_staged_charges` carry
+the same three donor FKs but **no donor_xor CHECK** (a pending row can be unmatched,
+so all three may be null). Exactly-one is enforced only when a row is
+approved/reconciled into a gift (via `validateGiftInvariants`), not by the table.
 
-**Primary contact — historical attribution rule**: `opportunities_and_pledges.primary_contact_person_id` and `gifts_and_payments.primary_contact_person_id` are the system of record for "who did we actually work with on this specific opp/gift." Funder-level primaries (`people_entity_roles.primary_contact = true`) change over time as funder staff turn over; the opp/gift's own column stays frozen so historical attribution survives. **Precedence when reading**: opp/gift's own `primary_contact_person_id` if set; otherwise fall back to the funder's `primary_contact=true` role only for present-tense "who do I email about funder X right now" questions, never for historical attribution. **When writing**: always populate the opp/gift column. The importer applies a cascade (individual_giver → funder unique primary → parent pledge for gifts) to backfill legacy rows; 91 rows from the initial import (59 opps + 32 gifts) couldn't be filled automatically and are deferred for human review before a future `NOT NULL` constraint is added.
+### Intended usage
 
-## Intended usage
+`pledge_allocations` and `gift_allocations` each carry an `intended_usage` enum
+(`gen_ops` / `growth` / `school_startup` / `teacher_training` / `project`) plus a
+nullable `fundable_project_id` (populated only when usage = `project`). Parent rows
+are header-only and do not carry these.
 
-`pledge_allocations` and `gift_allocations` each carry an `intended_usage` enum (`gen_ops` / `growth` / `school_startup` / `teacher_training` / `project`) plus a nullable `fundable_project_id` FK to `fundable_projects`. The FK is populated only when `intended_usage = 'project'`. The parent `opportunities_and_pledges` / `gifts_and_payments` rows are header-only and do not carry these fields. The importer's `INTENDED_USAGE_MAP` translates legacy Airtable strings (e.g. `project_ssj` → `intended_usage='project'`, `fundable_project_id='ssj'`; `General Operations` → `gen_ops`; `Seed Fund` → `school_startup`).
+## Revenue-accounting coding capture (CFO "Revenue Extractor")
+
+The allocation tables (`pledge_allocations` / `gift_allocations`) capture accounting
+codes alongside scope, derived from donor kind + fundable project + region by
+`revenueCoding.ts` (lib + route) with per-fund-entity overrides in
+`entity_coding_rules` (keyed on `entities.id` — fiscal-sponsee "SPO" defaults:
+`force_restricted` / `location` / `revenue_class`).
+- `restriction_type` enum: `unrestricted` / `purpose` / `time` / `both` /
+  `unclear` / `na`. **`unclear` is never silently defaulted to unrestricted — it
+  flags for human review.**
+- `deferred_revenue` enum: `yes` / `no` / `na` (CRM captures the answer; it does NOT
+  compute AR).
+- `revenue_accounts` — the GL account list the coder maps onto.
+- `entity_coding_rules` — per-fund-entity overrides (PK `entities.id`;
+  fiscal-sponsee defaults) applied during derivation.
+
+## Fundraising category (revenue vs loan capital)
+
+`fundraising_category` enum (`revenue` / `loan_capital`) splits loan-fund principal
+out of revenue so the two tracks report in parallel. Loan capital =
+`loan_fund_investment` gifts + loan-capital opportunities/pledges. Opportunities
+carry `fundraising_category` (NOT NULL default `revenue`); goals are per-category via
+`fiscal_year_entity_goals`'s composite PK. All pre-existing data is `revenue`
+(non-destructive).
 
 ## Many-to-many via slug arrays
 
-Many-to-many links (a funder having multiple regional priorities, an allocation tied to multiple regions, etc.) are stored as `text[]` columns of slug-PK references rather than in dedicated junction tables. The choice is deliberate: slug PKs (e.g. `united_states__minnesota`, `wildflower_foundation`, `fy2024`) make orphaned or rotted references visually identifiable on inspection, in exchange for giving up DB-level FK enforcement on the individual array elements. Each such array column carries a **GIN index** so membership queries stay fast — **but only when written with array operators (`@>` / `&&` / `<@`), not with `= ANY(...)`** (which forces a sequential scan). Use `WHERE region_ids @> ARRAY['minnesota']::text[]` ("contains all of"), `WHERE region_ids && ARRAY['minnesota','wisconsin']::text[]` ("overlaps with any of"), or `WHERE region_ids <@ ARRAY[...]` ("subset of"). Drizzle's `arrayContains`, `arrayContained`, and `arrayOverlaps` helpers emit these operators directly. Note: the parent `opportunities_and_pledges` and `gifts_and_payments` rows are header-only and no longer carry their own multi-value scope arrays — every entity / year / region tag lives on the child allocation rows.
+Multi-value links (an org's regional priorities, an allocation's regions, interests,
+historical names) are stored as `text[]` columns of slug-PK references, **not**
+junction tables. Slug PKs make rotted references visible on inspection, trading away
+per-element FK enforcement. Each array column carries a **GIN index** — query with
+array operators (`@>` "contains", `&&` "overlaps", `<@` "subset"), **never
+`= ANY(...)`** (forces a seq scan) and never `ANY(${jsArray}::text[])` in a Drizzle
+`sql` template (renders a row-constructor → runtime cast error — use `inArray()` or
+Drizzle's `arrayContains` / `arrayOverlaps` / `arrayContained`).
 
-## Imported record counts (current dev DB)
+## Integrations & operational tables
 
-| Table | Rows |
-|---|---|
-| regions | 569 |
-| schools | 131 (synced from dedicated Schools base) |
-| funders | 728 |
-| organizations | 792 |
-| payment_intermediaries | 35 |
-| households | 75 |
-| people | 3,199 |
-| people_entity_roles | 2,458 (2,331 imported + 125 synth-per-* recovered from dropped FKs + 2 synth-per-kelley-knox-* seated into the Kelley/Knox household) |
-| emails | 3,094 |
-| phone_numbers | 1,199 |
-| addresses | 1,676 |
-| opportunities_and_pledges | 601 (16 since reclassified to household-as-donor; 4 won opps had `actual_completion_date` backfilled from gift `MAX(date_received)` to satisfy the won-requires-completion-date CHECK) |
-| pledge_allocations | 611 (68 imported + 362 synthesized as `working` for open opps + 181 backfilled from the Copper opps export for lost/dormant opps via `post-import-fixups.sql`) |
-| gifts_and_payments | 691 (47 since reclassified to household-as-donor) |
-| gift_allocations | 793 (141 imported + 652 synthesized from header-only gifts) |
+Column-level detail lives in each schema file; this is the orientation map.
 
-## Re-importing from Airtable
+**QuickBooks payment sync** (pull-only QBO → CRM)
+- `quickbooks_connections` — per-realm OAuth tokens + realmId (encrypted at rest) +
+  per-connection sync watermark.
+- `staged_payments` — the review queue. Pulled "incoming money" units
+  (`quickbooks_entity_type` = `sales_receipt` / `payment` / `deposit`), idempotent on
+  `(realmId, qbEntityType, qbEntityId, qbLineId)` (deposits stage per line;
+  non-deposit rows use `qbLineId = ''`). `staged_payment_status` (`pending` /
+  `approved` / `rejected` / `excluded`); `staged_payment_exclusion_reason` (large
+  enum — keep the TS classifier and any SQL backfills in lockstep);
+  `staged_payment_match_status` / `_match_method`; classification + entity attribution
+  each carry an `auto` vs `manual` source enum (a `manual` pin survives every
+  re-classify/re-sync). Carries a *candidate* donor (all three FKs nullable;
+  exactly-one enforced only at approve/reconcile) + an `entity_id` attribution.
+- `staged_payment_splits` — splits one staged payment across multiple gifts /
+  donors (manual grouping & multi-allocation).
+- `quickbooks_handling_rules` — admin-editable ingest rules; action
+  `quickbooks_rule_action` (`exclude` / `auto_create_approve`). The engine's seed
+  rules must mirror the code classifier (a fidelity test guards drift).
 
-1. Use the Replit Airtable connector to fetch every record from the 15 tables of base `app8KUcmaHZ0AtcJZ` and write them as JSON to `/tmp/airtable-dump/<table>.json` (one file per table).
-2. Run `node lib/db/src/import-airtable.mjs`. The importer:
-   - Uses each Airtable record ID (`recXXXXXXXX`) as the Postgres primary key for every table except `regions`, so linked-record arrays in Airtable just work as foreign keys.
-   - For `regions`, computes the human-readable slug PK and `display_path` per the rules above, builds a rec→slug map at region-insert time, and translates every region reference in the rest of the import (addresses.city_region_id, addresses.state_region_id, people.current_home_region_id, and the six `region_ids text[]` columns) through that map.
-   - Inserts in dependency order; self-references (regions.parent, funders.parent) are filled in a second UPDATE pass.
-   - Validates every FK against an in-memory set of inserted IDs and drops orphans rather than failing.
-   - Uses `ON CONFLICT (id) DO NOTHING` so it's idempotent — running twice is safe.
-   - Populates the `region_ids text[]` columns on the allocation tables last.
-   - **Synthesizes allocation rows last**: the Airtable source treats per-opportunity and per-gift scope as parent-row fields (entity, year, intended usage, region) and ships explicit child allocations only for the firmed-up cases. To enforce the rule that **all scope lives on allocations**, the importer fans the parent's scope out into the child table:
-     - For every open opp that didn't ship its own `pledge_allocations`, one synth row per (entity × grant_year) combination is inserted with `status='working'` and `sub_amount = ask_amount / n_rows` (deterministic IDs `synth-pa-<opp>-<entity|nil>-<year|nil>` make re-runs idempotent).
-     - For every gift that didn't ship its own `gift_allocations`, one synth row is inserted with `sub_amount = amount` (deterministic ID `synth-ga-<gift_id>`).
-   Synthesized rows are distinguishable from imported ones by the `id LIKE 'synth-%'` predicate.
+**Stripe sync + Stripe↔QuickBooks reconciliation**
+- `stripe_payouts` — Stripe NET payout lumps.
+- `stripe_staged_charges` — per-charge gross records (the precise gift record).
+- `stripe_sync_state` — per-account watermark.
+- Reconciliation (`stripeReconcile.ts`) ties a QB deposit/payout lump to its
+  individual Stripe charges; the coarse QB-derived gift is then archived and the QB
+  staged row is `excluded` with reason `processor_payout` (set **only** on human
+  confirm) so the same money isn't booked twice.
 
-The legacy `pnpm --filter @workspace/db run seed` is a no-op stub; importing happens through the script above.
+**Email / Gmail + calendar sync**
+- `google_oauth_tokens` — per-user Google tokens.
+- `email_messages` — synced Gmail (enum `email_direction` `sent` / `received`); same
+  Gmail message is stored once per mailbox and de-duplicated in the list endpoint via
+  `DISTINCT ON (gmail_message_id)`.
+- `email_attachments`, `tracked_emails` (+ views) — open-tracking attribution merged
+  onto synced messages.
+- `email_sync_state` / `calendar_sync_state` — cursors; `no_progress_runs` counts
+  consecutive errored runs to flag a stuck mailbox. `email_sync_skip`,
+  `correspondent_ignore`, `person_suppression_windows`,
+  `calendar_meeting_filters` — sync suppression / matching controls.
+- `internal_email_domains` — staff-domain singleton (matcher loads it cached; was a
+  hardcoded set).
+- `calendar_events`, `interactions` (manual touches; enum `interaction_kind`),
+  `meeting_notes` (paste-a-transcript flow), `notes`.
 
-**Note**: Airtable is slated for archival once the new CRM is in steady use; ongoing import drift (e.g. household-as-donor reclassifications, manual funder merges, historical_names backfills) is not being written back to Airtable.
+**Email intelligence (AI proposals)**
+- `email_proposals` — one actionable signal per row (enum `email_proposal_kind`:
+  `linkedin_job_change`, `auto_responder_move`, `bounce_invalid`, `bounce_soft`,
+  `signature_update`, `grant_opportunity`, `thank_you_acknowledgment`). Status enum
+  `pending` / `applied` / `rejected` / `ignored`.
+- `email_intel_prompts` — versioned AI prompt (`active` / `draft` / `archived`;
+  origin `hand_edited` / `ai_generated` / `reverted`).
+- `grant_leads` — team-shared, cross-inbox grant-opportunity queue extracted from
+  email (status `new` / `claimed` / `converted` / `archived`).
+
+**Tasks**
+- `tasks` (kind `general` / `reporting_deadline` / `thank_you_followup`; status
+  `open` / `waiting` / `done` / `cancelled`), `task_proposals` (AI next-step
+  suggestions: `pending` / `accepted` / `dismissed`), `task_suggestion_state`.
+
+**Media mentions**
+- `media_mentions` (GDELT press coverage), `media_ingest_state`.
+
+**Other**
+- `saved_views` (per-page filter/column chooser persistence), `bulk_operations`
+  (multi-select edit toolbar), `connection_enthusiasm_history`, `flodesk_sync_state`.
+
+## Anonymous records
+
+`anonymous` flag on `organizations` + `people` masks the name to "Anonymous" in the
+UI for everyone except the record owner and admins. **UI-only** — names are still in
+API responses. Keep `canSeeIdentity` (display) separate from `canManageIdentity`
+(toggle). Join-projection name references aren't masked yet.
+
+## Manual fixups
+
+Data corrections not recreated by the importer live in idempotent
+[`lib/db/src/post-import-fixups.sql`](src/post-import-fixups.sql) — run after a fresh
+reimport.
+
+## Re-importing from Airtable (⚠️ importer is stale)
+
+`lib/db/src/import-airtable.mjs` still targets the **old split funders/organizations
+model** and must be updated before any re-import (it will otherwise fail). The general
+flow once fixed:
+1. Fetch every record from base `app8KUcmaHZ0AtcJZ` to `/tmp/airtable-dump/<table>.json`.
+2. `node lib/db/src/import-airtable.mjs` — uses Airtable record IDs as PKs (except the
+   slug tables), computes region slugs + `display_path`, inserts in dependency order
+   (self-refs in a second pass), validates FKs against in-memory ID sets (dropping
+   orphans), `ON CONFLICT (id) DO NOTHING` for idempotency, and **synthesizes
+   allocation rows last** (fanning header-only parent scope into child allocations
+   with deterministic `synth-*` IDs).
+
+Airtable is slated for archival once the CRM is in steady use; ongoing CRM-side drift
+is not written back to Airtable.
