@@ -65,6 +65,7 @@ let schema: {
   organizations: Db["organizations"];
   giftsAndPayments: Db["giftsAndPayments"];
   giftAllocations: Db["giftAllocations"];
+  opportunitiesAndPledges: Db["opportunitiesAndPledges"];
   stagedPayments: Db["stagedPayments"];
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
@@ -79,6 +80,7 @@ const giftIds: string[] = [];
 const allocIds: string[] = [];
 const payoutIds: string[] = [];
 const chargeIds: string[] = [];
+const oppIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 
@@ -200,6 +202,37 @@ async function readPayout(id: string) {
   return row;
 }
 
+async function seedOpp(opts: {
+  stage:
+    | "in_conversation"
+    | "conditional_commitment"
+    | "written_commitment"
+    | "cash_in";
+  awardedAmount?: string | null;
+  wasPledge?: boolean;
+  lossType?: "dormant" | "lost" | null;
+}): Promise<string> {
+  const id = nextId("opp");
+  await db.insert(schema.opportunitiesAndPledges).values({
+    id,
+    name: `Opp ${id}`,
+    organizationId: ORG_ID,
+    stage: opts.stage,
+    awardedAmount: opts.awardedAmount ?? null,
+    wasPledge: opts.wasPledge ?? false,
+    lossType: opts.lossType ?? null,
+  });
+  oppIds.push(id);
+  return id;
+}
+async function readOpp(id: string) {
+  const [row] = await db
+    .select()
+    .from(schema.opportunitiesAndPledges)
+    .where(eqFn(schema.opportunitiesAndPledges.id, id));
+  return row;
+}
+
 beforeAll(async () => {
   if (!HAS_DB) return;
   const dbMod = await import("@workspace/db");
@@ -210,6 +243,7 @@ beforeAll(async () => {
     organizations: dbMod.organizations,
     giftsAndPayments: dbMod.giftsAndPayments,
     giftAllocations: dbMod.giftAllocations,
+    opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
     stagedPayments: dbMod.stagedPayments,
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
@@ -271,6 +305,12 @@ afterAll(async () => {
     await db
       .delete(schema.giftsAndPayments)
       .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
+  // Opportunities are referenced by gifts (paymentOnPledgeId) and by the org;
+  // delete them after the gifts above and before the org below.
+  if (oppIds.length)
+    await db
+      .delete(schema.opportunitiesAndPledges)
+      .where(inArrayFn(schema.opportunitiesAndPledges.id, oppIds));
   await db
     .delete(schema.organizations)
     .where(eqFn(schema.organizations.id, ORG_ID));
@@ -497,5 +537,246 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
     // Still tied to the FIRST minted gift only.
     const staged = await readStaged(stagedId);
     expect(staged.createdGiftId).toBe(first.json.giftId);
+  }, 30_000);
+});
+
+describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integration)", () => {
+  it("create_gift_from_opportunity ties the minted gift to the opp (paymentOnPledgeId), derives the donor from the opp, and the opp derives cash_in when fully paid", async () => {
+    // A pledge awaiting its (full) payment.
+    const oppId = await seedOpp({
+      stage: "written_commitment",
+      wasPledge: true,
+      awardedAmount: "100.00",
+    });
+    const stagedId = await seedStaged("100.00");
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift_from_opportunity",
+      opportunityId: oppId,
+    });
+    expect(res.status).toBe(201);
+    expect(res.json.ok).toBe(true);
+    expect(res.json.outcome).toBe("create_gift_from_opportunity");
+    expect(res.json.createdGift).toBe(true);
+    expect(res.json.createdPledge).toBe(false);
+    expect(res.json.opportunityId).toBe(oppId);
+    const giftId = res.json.giftId as string;
+    expect(giftId).toBeTruthy();
+    giftIds.push(giftId);
+
+    // The gift is tied to the opp and inherits the opp's donor (NOT a body donor).
+    const gift = await readGift(giftId);
+    expect(gift.paymentOnPledgeId).toBe(oppId);
+    expect(gift.organizationId).toBe(ORG_ID);
+    expect(gift.amount).toBe("100.00");
+    expect(gift.finalAmountSource).toBe("quickbooks");
+    expect(gift.finalAmountQbStagedPaymentId).toBe(stagedId);
+
+    // The QB anchor owns the mint.
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("reconciled");
+    expect(staged.createdGiftId).toBe(giftId);
+
+    // Fully paid (100 >= awarded 100) ⇒ the opp derives to cash_in (stage advances).
+    const opp = await readOpp(oppId);
+    expect(opp.status).toBe("cash_in");
+    expect(opp.stage).toBe("cash_in");
+    expect(opp.wasPledge).toBe(true);
+  }, 30_000);
+
+  it("create_gift_from_opportunity against a partially-paid pledge leaves it a pledge (paid < awarded)", async () => {
+    const oppId = await seedOpp({
+      stage: "written_commitment",
+      wasPledge: true,
+      awardedAmount: "500.00",
+    });
+    const stagedId = await seedStaged("100.00");
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift_from_opportunity",
+      opportunityId: oppId,
+    });
+    expect(res.status).toBe(201);
+    giftIds.push(res.json.giftId as string);
+
+    const opp = await readOpp(oppId);
+    expect(opp.status).toBe("pledge");
+    expect(opp.stage).toBe("written_commitment");
+    expect(opp.awardedAmount).toBe("500.00");
+  }, 30_000);
+
+  it("convert_to_pledge_and_first_payment latches an OPEN opp into a pledge, sets awarded from the evidence, and books the first payment", async () => {
+    const oppId = await seedOpp({
+      stage: "in_conversation",
+      wasPledge: false,
+      awardedAmount: null,
+    });
+    const stagedId = await seedStaged("100.00");
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "convert_to_pledge_and_first_payment",
+      opportunityId: oppId,
+    });
+    expect(res.status).toBe(201);
+    expect(res.json.outcome).toBe("convert_to_pledge_and_first_payment");
+    expect(res.json.createdPledge).toBe(true);
+    const giftId = res.json.giftId as string;
+    giftIds.push(giftId);
+
+    const gift = await readGift(giftId);
+    expect(gift.paymentOnPledgeId).toBe(oppId);
+    expect(gift.organizationId).toBe(ORG_ID);
+
+    // Latched into a pledge: was_pledge derived true, awarded filled from the
+    // evidence (was null), and a single full payment derives it to cash_in.
+    const opp = await readOpp(oppId);
+    expect(opp.wasPledge).toBe(true);
+    expect(opp.awardedAmount).toBe("100.00");
+    expect(opp.status).toBe("cash_in");
+    expect(opp.stage).toBe("cash_in");
+  }, 30_000);
+
+  it("convert_to_pledge_and_first_payment preserves a real awarded amount (partial first payment stays a pledge)", async () => {
+    const oppId = await seedOpp({
+      stage: "in_conversation",
+      wasPledge: false,
+      awardedAmount: "500.00",
+    });
+    const stagedId = await seedStaged("100.00");
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "convert_to_pledge_and_first_payment",
+      opportunityId: oppId,
+    });
+    expect(res.status).toBe(201);
+    giftIds.push(res.json.giftId as string);
+
+    const opp = await readOpp(oppId);
+    expect(opp.awardedAmount).toBe("500.00");
+    expect(opp.stage).toBe("written_commitment");
+    expect(opp.status).toBe("pledge");
+    expect(opp.wasPledge).toBe(true);
+  }, 30_000);
+
+  it("convert_to_pledge_and_first_payment rejects an opp already latched as a pledge (already_pledge) and mutates nothing", async () => {
+    const oppId = await seedOpp({
+      stage: "written_commitment",
+      wasPledge: true,
+      awardedAmount: "100.00",
+    });
+    const stagedId = await seedStaged("100.00");
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "convert_to_pledge_and_first_payment",
+      opportunityId: oppId,
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("already_pledge");
+
+    // Nothing minted or mutated.
+    expect((await readStaged(stagedId)).status).toBe("pending");
+    const opp = await readOpp(oppId);
+    expect(opp.stage).toBe("written_commitment");
+    expect(opp.wasPledge).toBe(true);
+  }, 30_000);
+
+  it("convert_to_pledge_and_first_payment rejects an opp with a loss_type override (already_pledge)", async () => {
+    const oppId = await seedOpp({
+      stage: "in_conversation",
+      wasPledge: false,
+      lossType: "dormant",
+    });
+    const stagedId = await seedStaged("100.00");
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "convert_to_pledge_and_first_payment",
+      opportunityId: oppId,
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("already_pledge");
+    expect((await readStaged(stagedId)).status).toBe("pending");
+  }, 30_000);
+
+  it("create_gift_from_opportunity stamps the Stripe GROSS when a charge is selected (charge matchedGiftId, payout confirmed_reconciled)", async () => {
+    const oppId = await seedOpp({
+      stage: "written_commitment",
+      wasPledge: true,
+      awardedAmount: "100.00",
+    });
+    const stagedId = await seedStaged("100.00");
+    const payoutId = await seedPayout(stagedId);
+    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift_from_opportunity",
+      opportunityId: oppId,
+      stripeChargeId: chargeId,
+    });
+    expect(res.status).toBe(201);
+    const giftId = res.json.giftId as string;
+    giftIds.push(giftId);
+
+    const gift = await readGift(giftId);
+    expect(gift.paymentOnPledgeId).toBe(oppId);
+    expect(gift.finalAmountSource).toBe("stripe");
+    expect(gift.finalAmountStripeChargeId).toBe(chargeId);
+    expect(gift.finalAmountQbStagedPaymentId).toBeNull();
+    expect(gift.processorFee).toBe("3.00");
+
+    const charge = await readCharge(chargeId);
+    expect(charge.status).toBe("reconciled");
+    expect(charge.matchedGiftId).toBe(giftId);
+
+    const payout = await readPayout(payoutId);
+    expect(payout.qbReconciliationStatus).toBe("confirmed_reconciled");
+
+    const staged = await readStaged(stagedId);
+    expect(staged.createdGiftId).toBe(giftId);
+  }, 30_000);
+
+  it("create_gift IGNORES a stray opportunityId — mints for the body donor, does NOT attach to the opp or re-derive it", async () => {
+    // A plain create_gift carrying a leftover/stale opportunityId must keep
+    // create_gift semantics (donor from body; no opportunity), never hijack the
+    // donor from the opp or attach the payment to it.
+    const oppId = await seedOpp({
+      stage: "in_conversation",
+      wasPledge: false,
+      awardedAmount: null,
+    });
+    const stagedId = await seedStaged("100.00");
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+      opportunityId: oppId,
+    });
+    expect(res.status).toBe(201);
+    expect(res.json.outcome).toBe("create_gift");
+    expect(res.json.opportunityId).toBeNull();
+    const giftId = res.json.giftId as string;
+    giftIds.push(giftId);
+
+    // The gift is a plain donor gift — NOT tied to the opportunity.
+    const gift = await readGift(giftId);
+    expect(gift.organizationId).toBe(ORG_ID);
+    expect(gift.paymentOnPledgeId).toBeNull();
+
+    // The opportunity is completely untouched (no stage advance, no derivation).
+    const opp = await readOpp(oppId);
+    expect(opp.stage).toBe("in_conversation");
+    expect(opp.wasPledge).toBe(false);
+  }, 30_000);
+
+  it("create_gift_from_opportunity requires an opportunityId (validation_error)", async () => {
+    const stagedId = await seedStaged("100.00");
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift_from_opportunity",
+    });
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe("validation_error");
+
+    // Nothing minted or mutated.
+    expect((await readStaged(stagedId)).status).toBe("pending");
   }, 30_000);
 });

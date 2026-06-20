@@ -23,6 +23,7 @@
 - [opp lifecycle redesign](opp-lifecycle-redesign.md) — confirmed end-state: cash-in payment-driven only (no manual), was_pledge only by explicit choice at written confirmation, grant-letter & conditional no longer auto-pledge, flag underpaid cash-in rows; build after verbal-confirmation task merges.
 - [AI proposal call resilience](wildflower-ai-proposal-resilience.md) — per-proposal Anthropic call must use withRateLimitRetry + shared aiProposalLimit; SDK maxRetries:0; sweep retry phase drains error backlog w/o 24h cooldown.
 - [opportunity status is calculated](wildflower-opp-status-calculated.md) — status fully derived server-side; only user override is loss_type (dormant/lost); never write status directly; enum keeps dormant/lost.
+- [Shared multi-outcome handler gating](shared-outcome-flag-gating.md) — gate behavior on the explicit outcome flag, not a shared body field's presence; a stray field else silently hijacks another outcome.
 - [Fundable projects page](fundable-projects-page.md) — management moved off Admin to /fundable-projects; timeframes+goal columns nullable; progress = sum gift_allocations.sub_amount per project.
 - [clerk admin-gated e2e testing](clerk-admin-e2e-testing.md) — testClerkAuth provisions team_member; add a [DB] step to promote to admin or admin cards silently 403/hide.
 - [task intelligence](task-intelligence.md) — AI next-step suggestions in Tasks card; auto-generate ONLY on true first view (hasAnyProposal=false), never regenerate after accept/dismiss; refresh is explicit.
