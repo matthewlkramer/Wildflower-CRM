@@ -1,0 +1,264 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AddressInfo } from "node:net";
+import type { Server } from "node:http";
+
+/**
+ * DB-backed coverage for the unified reconciler's DEFAULT work-queue filter
+ * (GET /api/reconciliation/cards with no `queue` param).
+ *
+ * Rule under test: a LEGACY `approved` staged row (already linked/minted a gift
+ * via the old /staged-payments flow) should "stay approved" and drop OUT of the
+ * work queue — UNLESS it still has Stripe to tie in. Concretely an `approved`
+ * row is excluded from the default queue iff it has a gift link
+ * (matchedGiftId OR createdGiftId) AND no Stripe payout matched/proposed to it.
+ * `pending` rows, approved rows with NO gift, and approved rows that still carry
+ * Stripe evidence remain real work. `reconciled` rows only show under the
+ * explicit `reconciled` queue.
+ *
+ * Same seam as the other reconciliation suites: only `requireAuth` is mocked to
+ * inject a seeded admin; the queue SQL is the real production code. Skips
+ * automatically when no real DATABASE_URL is configured.
+ */
+
+const RAW_DB_URL = process.env.DATABASE_URL;
+const HAS_DB = !!RAW_DB_URL && !/test:test@localhost:5432\/test/.test(RAW_DB_URL);
+
+const { TEST_USER_ID } = vi.hoisted(() => ({
+  TEST_USER_ID: `recon_q_user_${Date.now()}`,
+}));
+
+vi.mock("../middlewares/requireAuth", () => ({
+  requireAuth: (
+    req: { appUser?: { id: string } },
+    _res: unknown,
+    next: () => void,
+  ) => {
+    req.appUser = { id: TEST_USER_ID };
+    next();
+  },
+}));
+
+const RUN = `reconq_${Date.now()}`;
+const MARKER = `${RUN}_payer`;
+const REALM_ID = `${RUN}_realm`;
+const ORG_ID = `${RUN}_org`;
+const ACCOUNT_ID = `${RUN}_acct`;
+
+type Db = typeof import("@workspace/db");
+let db: Db["db"];
+let schema: {
+  users: Db["users"];
+  organizations: Db["organizations"];
+  giftsAndPayments: Db["giftsAndPayments"];
+  stagedPayments: Db["stagedPayments"];
+  stripePayouts: Db["stripePayouts"];
+};
+let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
+let eqFn: (typeof import("drizzle-orm"))["eq"];
+let server: Server;
+let baseUrl = "";
+
+const stagedIds: string[] = [];
+const giftIds: string[] = [];
+const payoutIds: string[] = [];
+let seq = 0;
+const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
+
+async function apiGet(path: string): Promise<{ status: number; json: any }> {
+  const res = await fetch(`${baseUrl}${path}`, { method: "GET" });
+  let json: unknown = null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+  return { status: res.status, json };
+}
+
+async function seedGift(amount: string): Promise<string> {
+  const id = nextId("gift");
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    amount,
+    organizationId: ORG_ID,
+    details: "Queue-filter test gift",
+  });
+  giftIds.push(id);
+  return id;
+}
+
+async function seedStaged(opts: {
+  label: string;
+  status: "pending" | "approved" | "reconciled";
+  matchedGiftId?: string | null;
+  createdGiftId?: string | null;
+}): Promise<string> {
+  const id = nextId("sp");
+  await db.insert(schema.stagedPayments).values({
+    id,
+    realmId: REALM_ID,
+    qbEntityType: "deposit",
+    qbEntityId: id,
+    amount: "100.00",
+    dateReceived: "2026-03-15",
+    payerName: `${MARKER} ${opts.label}`,
+    status: opts.status,
+    organizationId: ORG_ID,
+    matchStatus: "matched",
+    matchedGiftId: opts.matchedGiftId ?? null,
+    createdGiftId: opts.createdGiftId ?? null,
+  });
+  stagedIds.push(id);
+  return id;
+}
+
+async function seedPayoutFor(
+  stagedPaymentId: string,
+  link: "proposed" | "matched" = "proposed",
+): Promise<string> {
+  const id = nextId("po");
+  await db.insert(schema.stripePayouts).values({
+    id,
+    stripeAccountId: ACCOUNT_ID,
+    amount: "100.00",
+    netTotal: "97.00",
+    arrivalDate: "2026-03-15",
+    qbReconciliationStatus: link === "matched" ? "confirmed_reconciled" : "proposed",
+    ...(link === "matched"
+      ? { matchedQbStagedPaymentId: stagedPaymentId }
+      : { proposedQbStagedPaymentId: stagedPaymentId }),
+  });
+  payoutIds.push(id);
+  return id;
+}
+
+// Collect the stagedPaymentIds the cards endpoint returns for our run's marker.
+async function cardIds(queue?: string): Promise<Set<string>> {
+  const q = `q=${encodeURIComponent(MARKER)}&limit=100`;
+  const path = `/api/reconciliation/cards?${q}${queue ? `&queue=${queue}` : ""}`;
+  const res = await apiGet(path);
+  expect(res.status).toBe(200);
+  return new Set<string>((res.json.data as Array<{ stagedPaymentId: string }>).map((c) => c.stagedPaymentId));
+}
+
+beforeAll(async () => {
+  if (!HAS_DB) return;
+  const dbMod = await import("@workspace/db");
+  const drizzle = await import("drizzle-orm");
+  db = dbMod.db;
+  schema = {
+    users: dbMod.users,
+    organizations: dbMod.organizations,
+    giftsAndPayments: dbMod.giftsAndPayments,
+    stagedPayments: dbMod.stagedPayments,
+    stripePayouts: dbMod.stripePayouts,
+  };
+  inArrayFn = drizzle.inArray;
+  eqFn = drizzle.eq;
+
+  await db.insert(schema.users).values({
+    id: TEST_USER_ID,
+    clerkId: `clerk_${TEST_USER_ID}`,
+    email: `${TEST_USER_ID}@wildflowerschools.org`,
+    role: "admin",
+  });
+  await db.insert(schema.organizations).values({
+    id: ORG_ID,
+    name: `Reconciliation Queue Test Org ${RUN}`,
+  });
+
+  const { default: app } = await import("../app");
+  server = await new Promise<Server>((resolve) => {
+    const s = app.listen(0, () => resolve(s));
+  });
+  const addr = server.address() as AddressInfo;
+  baseUrl = `http://127.0.0.1:${addr.port}`;
+}, 60_000);
+
+afterAll(async () => {
+  if (!HAS_DB) return;
+  if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (payoutIds.length)
+    await db
+      .delete(schema.stripePayouts)
+      .where(inArrayFn(schema.stripePayouts.id, payoutIds));
+  if (stagedIds.length)
+    await db
+      .delete(schema.stagedPayments)
+      .where(inArrayFn(schema.stagedPayments.id, stagedIds));
+  if (giftIds.length)
+    await db
+      .delete(schema.giftsAndPayments)
+      .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
+  await db.delete(schema.organizations).where(eqFn(schema.organizations.id, ORG_ID));
+  await db.delete(schema.users).where(eqFn(schema.users.id, TEST_USER_ID));
+}, 60_000);
+
+beforeEach(() => {
+  if (!HAS_DB) {
+    console.warn("[reconciliation-cards-queue] skipped: no live DATABASE_URL");
+  }
+});
+
+describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows (integration)", () => {
+  it("excludes approved+gift+no-stripe but keeps pending and approved-with-work", async () => {
+    const giftA = await seedGift("100.00");
+    const giftB = await seedGift("100.00");
+    const giftC = await seedGift("100.00");
+    const giftD = await seedGift("100.00");
+
+    const pendingId = await seedStaged({ label: "pending", status: "pending" });
+    // The reported bug: approved, linked to a pre-existing gift, no Stripe.
+    const approvedMatchedId = await seedStaged({
+      label: "approved-matched-nostripe",
+      status: "approved",
+      matchedGiftId: giftA,
+    });
+    // Legacy minted gift, no Stripe.
+    const approvedCreatedId = await seedStaged({
+      label: "approved-created-nostripe",
+      status: "approved",
+      createdGiftId: giftB,
+    });
+    // Approved with a gift but Stripe still to tie in → real work.
+    const approvedStripeId = await seedStaged({
+      label: "approved-matched-stripe",
+      status: "approved",
+      matchedGiftId: giftC,
+    });
+    await seedPayoutFor(approvedStripeId);
+    // Same as above but the payout is linked via the MATCHED column (not
+    // proposed) → still real work; locks both legs of "matched OR proposed".
+    const approvedStripeMatchedId = await seedStaged({
+      label: "approved-matched-stripe-matched",
+      status: "approved",
+      matchedGiftId: giftD,
+    });
+    await seedPayoutFor(approvedStripeMatchedId, "matched");
+    // Approved with NO gift link → anomaly, still review.
+    const approvedNoGiftId = await seedStaged({
+      label: "approved-nogift",
+      status: "approved",
+    });
+    const reconciledId = await seedStaged({
+      label: "reconciled",
+      status: "reconciled",
+    });
+
+    const def = await cardIds();
+    expect(def.has(pendingId)).toBe(true);
+    expect(def.has(approvedStripeId)).toBe(true);
+    expect(def.has(approvedStripeMatchedId)).toBe(true);
+    expect(def.has(approvedNoGiftId)).toBe(true);
+    // "Stay approved" — dropped from the work queue.
+    expect(def.has(approvedMatchedId)).toBe(false);
+    expect(def.has(approvedCreatedId)).toBe(false);
+    expect(def.has(reconciledId)).toBe(false);
+
+    // The reconciled bucket surfaces only the terminal row.
+    const done = await cardIds("reconciled");
+    expect(done.has(reconciledId)).toBe(true);
+    expect(done.has(pendingId)).toBe(false);
+    expect(done.has(approvedMatchedId)).toBe(false);
+  }, 30_000);
+});

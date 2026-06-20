@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { stagedPayments } from "@workspace/db/schema";
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { opportunitiesAndPledges } from "@workspace/db/schema";
 import { asyncHandler, notFound } from "../../lib/helpers";
@@ -89,12 +89,30 @@ const stripeEvidenceExpr = sql<{
   LIMIT 1
 )`;
 
-// Default reconciliation queue: the live work (pending + approved-but-not-yet-
-// reconciled). "reconciled" surfaces the terminal rows; any other named bucket
-// reuses the legacy queueWhere mapping.
+// Default reconciliation queue: the live work. `pending` rows are always work.
+// `approved` rows came from the LEGACY /staged-payments flow and already minted
+// (createdGiftId) or linked (matchedGiftId) a gift. Such an already-approved
+// QB↔gift link is DONE and should "stay approved" — it only re-enters this queue
+// when there is still Stripe to tie in (a payout matched/proposed to it). So an
+// approved row is excluded iff it has a gift link AND no Stripe to link;
+// otherwise (no gift, or Stripe pending) it stays as real work. "reconciled"
+// surfaces the terminal rows; any other named bucket reuses the legacy mapping.
 function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
   if (!queue || queue === "all")
-    return inArray(stagedPayments.status, ["pending", "approved"]);
+    return sql`(
+      ${stagedPayments.status} = 'pending'
+      OR (
+        ${stagedPayments.status} = 'approved'
+        AND NOT (
+          (${stagedPayments.matchedGiftId} IS NOT NULL OR ${stagedPayments.createdGiftId} IS NOT NULL)
+          AND NOT EXISTS (
+            SELECT 1 FROM stripe_payouts po
+            WHERE po.matched_qb_staged_payment_id = ${stagedPayments.id}
+               OR po.proposed_qb_staged_payment_id = ${stagedPayments.id}
+          )
+        )
+      )
+    )`;
   if (queue === "reconciled") return eq(stagedPayments.status, "reconciled");
   return queueWhere(queue as Queue);
 }
