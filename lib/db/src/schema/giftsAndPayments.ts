@@ -2,6 +2,7 @@ import {
   type AnyPgColumn,
   check,
   index,
+  uniqueIndex,
   pgTable,
   text,
   timestamp,
@@ -171,12 +172,15 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // index on staged_payments(date_received).
   index("gifts_and_payments_date_received_idx").on(t.dateReceived),
   index("gifts_and_payments_archived_at_idx").on(t.archivedAt),
-  index("gifts_and_payments_final_amount_stripe_charge_id_idx").on(
-    t.finalAmountStripeChargeId,
-  ),
-  index("gifts_and_payments_final_amount_qb_staged_payment_id_idx").on(
-    t.finalAmountQbStagedPaymentId,
-  ),
+  // Partial-UNIQUE: a Stripe charge / QB staged row is the FINAL-amount source
+  // pointer for AT MOST ONE gift (the one-evidence↔one-gift invariant). WHERE
+  // NOT NULL so the many unstamped `human` gifts (pointer NULL) are unconstrained.
+  uniqueIndex("gifts_and_payments_final_amount_stripe_charge_id_idx")
+    .on(t.finalAmountStripeChargeId)
+    .where(sql`${t.finalAmountStripeChargeId} IS NOT NULL`),
+  uniqueIndex("gifts_and_payments_final_amount_qb_staged_payment_id_idx")
+    .on(t.finalAmountQbStagedPaymentId)
+    .where(sql`${t.finalAmountQbStagedPaymentId} IS NOT NULL`),
   index("gifts_and_payments_thank_you_email_msg_idx").on(t.thankYouEmailMessageId),
   index("gifts_and_payments_thank_you_sent_at_idx").on(t.thankYouSentAt),
   // Donor exclusivity: exactly one of organization / individual-giver / household.

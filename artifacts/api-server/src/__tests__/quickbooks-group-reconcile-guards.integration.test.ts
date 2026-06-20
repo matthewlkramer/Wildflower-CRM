@@ -195,7 +195,21 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-  // Children first (staged rows reference gift/org/user), then gift, org, user.
+  // D4: a reconciled gift references its QB staged evidence via
+  // final_amount_qb_staged_payment_id (RESTRICT), so the gift→staged pointer
+  // must be cleared before the staged rows can be deleted. Reset the seeded
+  // gifts back to 'human' (both pointers null) first, then delete the staged
+  // rows, then the gifts (which cascade-clears any allocation-review rows).
+  if (seededGiftIds.length) {
+    await db
+      .update(schema.giftsAndPayments)
+      .set({
+        finalAmountSource: "human",
+        finalAmountStripeChargeId: null,
+        finalAmountQbStagedPaymentId: null,
+      })
+      .where(inArrayFn(schema.giftsAndPayments.id, seededGiftIds));
+  }
   await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.realmId, REALM_ID));
@@ -293,11 +307,11 @@ describe.skipIf(!HAS_DB)(
       expect(res.status).toBe(200);
 
       // Representative (smallest id — "a") carries matchedGiftId; both rows get
-      // groupReconciledGiftId and flip to approved.
+      // groupReconciledGiftId and flip to reconciled.
       const a = await readStaged(aId);
       const b = await readStaged(bId);
-      expect(a.status).toBe("approved");
-      expect(b.status).toBe("approved");
+      expect(a.status).toBe("reconciled");
+      expect(b.status).toBe("reconciled");
       expect(a.groupReconciledGiftId).toBe(giftId);
       expect(b.groupReconciledGiftId).toBe(giftId);
       expect(a.matchedGiftId).toBe(giftId);
@@ -340,8 +354,8 @@ describe.skipIf(!HAS_DB)(
       expect(ok.status).toBe(200);
       const a = await readStaged(aId);
       const b = await readStaged(bId);
-      expect(a.status).toBe("approved");
-      expect(b.status).toBe("approved");
+      expect(a.status).toBe("reconciled");
+      expect(b.status).toBe("reconciled");
       expect(a.groupReconciledGiftId).toBe(giftId);
       expect(b.groupReconciledGiftId).toBe(giftId);
       expect(a.matchedGiftId).toBe(giftId);
@@ -381,8 +395,8 @@ describe.skipIf(!HAS_DB)(
       expect(ok.status).toBe(200);
       const a = await readStaged(aId);
       const b = await readStaged(bId);
-      expect(a.status).toBe("approved");
-      expect(b.status).toBe("approved");
+      expect(a.status).toBe("reconciled");
+      expect(b.status).toBe("reconciled");
       expect(a.groupReconciledGiftId).toBe(giftId);
       expect(b.groupReconciledGiftId).toBe(giftId);
     }, 30_000);
@@ -434,8 +448,8 @@ describe.skipIf(!HAS_DB)(
       expect(both.status).toBe(200);
       const a = await readStaged(aId);
       const b = await readStaged(bId);
-      expect(a.status).toBe("approved");
-      expect(b.status).toBe("approved");
+      expect(a.status).toBe("reconciled");
+      expect(b.status).toBe("reconciled");
       expect(a.groupReconciledGiftId).toBe(giftId);
       expect(b.groupReconciledGiftId).toBe(giftId);
     }, 30_000);
@@ -491,8 +505,8 @@ describe.skipIf(!HAS_DB)(
 
       const a = await readStaged(aId);
       const b = await readStaged(bId);
-      expect(a.status).toBe("approved");
-      expect(b.status).toBe("approved");
+      expect(a.status).toBe("reconciled");
+      expect(b.status).toBe("reconciled");
       expect(a.groupReconciledGiftId).toBe(giftId);
       expect(b.groupReconciledGiftId).toBe(giftId);
       expect(a.matchedGiftId).toBe(giftId);
@@ -530,7 +544,7 @@ describe.skipIf(!HAS_DB)(
       });
       expect(ok.status).toBe(200);
       const a = await readStaged(aId);
-      expect(a.status).toBe("approved");
+      expect(a.status).toBe("reconciled");
       expect(a.groupReconciledGiftId).toBe(giftId);
     }, 30_000);
 

@@ -109,7 +109,13 @@ router.get(
         .then((r) => r[0]),
     ]);
 
-    const byStatus = { pending: 0, approved: 0, rejected: 0, excluded: 0 };
+    const byStatus = {
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      excluded: 0,
+      reconciled: 0,
+    };
     for (const r of statusRows) {
       if (r.status in byStatus) {
         byStatus[r.status as keyof typeof byStatus] = r.value;
@@ -144,7 +150,10 @@ router.get(
       needsReview: needsReviewRow?.value ?? 0,
       fiscallySponsored: fiscallySponsoredRow?.value ?? 0,
       autoMatched,
-      done: byStatus.approved - autoMatched,
+      // "done" = human-resolved `approved` (total minus the still-unconfirmed
+      // auto-matched) PLUS every `reconciled` row (the new model's terminal
+      // evidence-tied-to-an-independent-gift state). Mirrors queueWhere("done").
+      done: byStatus.approved - autoMatched + byStatus.reconciled,
       rejected: byStatus.rejected,
       excluded: byStatus.excluded,
       excludedByReason,

@@ -245,7 +245,10 @@ export async function runProposalPass(
         .where(
           and(
             eq(stagedPayments.qbEntityType, "deposit"),
-            inArray(stagedPayments.status, ["pending", "approved"]),
+            // `reconciled` is the new model's terminal tie (a deposit already
+            // bound to a gift as evidence); it remains a valid Stripe-payout
+            // candidate so the payout can be reconciled against that same gift.
+            inArray(stagedPayments.status, ["pending", "approved", "reconciled"]),
             gte(stagedPayments.dateReceived, fromStr),
             lte(stagedPayments.dateReceived, toStr),
             sql`abs(${stagedPayments.amount} - ${target}::numeric) <= 5.00`,
@@ -298,7 +301,12 @@ export async function runProposalPass(
 
     assigned.add(best.c.id);
     const giftId = candidateGiftId(best.c);
-    const isConflict = best.c.status === "approved" && giftId != null;
+    // A deposit already resolved to a gift (legacy `approved` or new-model
+    // `reconciled`) is a conflict: the payout's per-charge Stripe gifts are the
+    // precise record, so the human must confirm reconciling the coarse deposit.
+    const isConflict =
+      (best.c.status === "approved" || best.c.status === "reconciled") &&
+      giftId != null;
 
     const upd = await db
       .update(stripePayouts)

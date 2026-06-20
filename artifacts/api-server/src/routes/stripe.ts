@@ -41,6 +41,10 @@ import {
   ExcludeStagedPaymentBody,
 } from "@workspace/api-zod";
 import { buildGiftValuesFromStripeCharge } from "../lib/stripeGift";
+import {
+  unstampGiftFinalAmount,
+  adjustSingleAllocationOrFlag,
+} from "../lib/giftFinalAmount";
 import { logger } from "../lib/logger";
 import {
   syncStripe,
@@ -251,9 +255,15 @@ function queueWhere(queue: Queue) {
         sql`${stripeStagedCharges.matchConfirmedAt} IS NULL`,
       );
     case "done":
-      return and(
-        eq(stripeStagedCharges.status, "approved"),
-        sql`(${stripeStagedCharges.matchConfirmedAt} IS NOT NULL OR ${stripeStagedCharges.autoApplied} = false)`,
+      // A charge is "done" when it is settled work: an approved booking the
+      // human has confirmed (or that was never auto-matched), OR a `reconciled`
+      // evidence row (D4 — minted/reconciled a gift and is now permanent).
+      return or(
+        and(
+          eq(stripeStagedCharges.status, "approved"),
+          sql`(${stripeStagedCharges.matchConfirmedAt} IS NOT NULL OR ${stripeStagedCharges.autoApplied} = false)`,
+        ),
+        eq(stripeStagedCharges.status, "reconciled"),
       );
     case "excluded":
       return eq(stripeStagedCharges.status, "excluded");
@@ -330,7 +340,13 @@ router.get(
         .then((r) => r[0]),
     ]);
 
-    const byStatus = { pending: 0, approved: 0, rejected: 0, excluded: 0 };
+    const byStatus = {
+      pending: 0,
+      approved: 0,
+      reconciled: 0,
+      rejected: 0,
+      excluded: 0,
+    };
     for (const r of statusRows) {
       if (r.status in byStatus) {
         byStatus[r.status as keyof typeof byStatus] = r.value;
@@ -364,7 +380,9 @@ router.get(
     res.json({
       needsReview: byStatus.pending,
       autoMatched,
-      done: byStatus.approved - autoMatched,
+      // "done" = confirmed approved bookings (approved minus the auto-matched
+      // still awaiting confirmation) PLUS reconciled D4 evidence rows.
+      done: byStatus.approved - autoMatched + byStatus.reconciled,
       rejected: byStatus.rejected,
       excluded: byStatus.excluded,
       excludedByReason,
@@ -504,11 +522,25 @@ router.post(
         // pass; inert (unmatched) until a proposal lands on an approved lump.
         if (locked.stripePayoutId) {
           const payout = await tx
-            .select({ qb: stripePayouts.qbReconciliationStatus })
+            .select({
+              qb: stripePayouts.qbReconciliationStatus,
+              conflictGiftId: stripePayouts.qbConflictGiftId,
+            })
             .from(stripePayouts)
             .where(eq(stripePayouts.id, locked.stripePayoutId))
             .then((r) => r[0]);
-          if (payout?.qb === "conflict_approved") throw new Error(QB_CONFLICT);
+          // Block when the payout's money is ALREADY booked as a QB-derived gift:
+          // either an unresolved conflict (conflict_approved), or a confirmed
+          // "keep" that left that gift in place (confirmed_reconciled WITH a
+          // qbConflictGiftId pointer). A confirmed_reconciled payout whose
+          // qbConflictGiftId is null reconciled a bare deposit into no gift, so
+          // per-charge gifts are still the correct booking — allow it.
+          if (
+            payout?.qb === "conflict_approved" ||
+            (payout?.qb === "confirmed_reconciled" && payout.conflictGiftId)
+          ) {
+            throw new Error(QB_CONFLICT);
+          }
         }
 
         const donor = {
@@ -542,7 +574,10 @@ router.post(
         await tx
           .update(stripeStagedCharges)
           .set({
-            status: "approved",
+            // D4: this charge is now permanent EVIDENCE tied to the gift it
+            // minted — `reconciled`, never `approved` (which the queues treat as
+            // a still-actionable booking).
+            status: "reconciled",
             createdGiftId: giftId,
             matchedGiftId: null,
             autoApplied: false,
@@ -768,7 +803,11 @@ router.post(
           .for("update")
           .then((r) => r[0]);
         if (!locked) throw new Error(NOT_FOUND);
-        if (locked.status !== "approved") throw new Error(NOT_REVERTIBLE);
+        // D4: a row that minted/reconciled a gift is now `reconciled` evidence;
+        // legacy approved rows are still revertible too.
+        if (locked.status !== "approved" && locked.status !== "reconciled") {
+          throw new Error(NOT_REVERTIBLE);
+        }
 
         const hasDonor =
           !!locked.organizationId ||
@@ -779,15 +818,34 @@ router.post(
         if (locked.createdGiftId) {
           // This row minted the gift — remove it. Clear allocations first
           // (gift_allocations FK is RESTRICT; every gift has >= 1 only after a
-          // human allocates).
+          // human allocates). The gift is gone, so there's no stamp to unwind.
           await tx
             .delete(giftAllocations)
             .where(eq(giftAllocations.giftId, locked.createdGiftId));
           await tx
             .delete(giftsAndPayments)
             .where(eq(giftsAndPayments.id, locked.createdGiftId));
-        } else if (!locked.matchedGiftId) {
-          // Approved with no gift linkage of its own — nothing to revert.
+        } else if (locked.matchedGiftId) {
+          // This row reconciled to an EXISTING gift — leave the gift in place but
+          // undo any final-amount stamp THIS charge applied to it (strict no-op
+          // unless the gift is still sourced from this exact charge), then
+          // rebalance its allocations to the restored amount.
+          const giftId = locked.matchedGiftId;
+          const unstamped = await unstampGiftFinalAmount(tx, giftId, {
+            source: "stripe",
+            stripeChargeId: locked.id,
+          });
+          if (unstamped.restored) {
+            await adjustSingleAllocationOrFlag(
+              tx,
+              giftId,
+              unstamped.oldAmount,
+              unstamped.newAmount,
+              "stripe",
+            );
+          }
+        } else {
+          // Approved/reconciled with no gift linkage of its own — nothing to revert.
           throw new Error(NOT_REVERTIBLE);
         }
 
@@ -889,12 +947,16 @@ router.get(
 // ─── Stripe payout ↔ QuickBooks reconciliation queue ───────────────────────
 // The proposal pass (stripeReconcile.ts) classifies each payout against the QB
 // deposit lumps; humans confirm/revert here (stripeConfirm.ts). This queue lists
-// payouts that need or have had a reconciliation decision. Nothing is excluded,
-// archived, or relinked until a human confirms — propose-then-confirm.
+// payouts that need or have had a reconciliation decision. Under D4 a confirm
+// stamps the gift's final amount and marks its QB/Stripe evidence `reconciled`
+// (permanent — never archived or excluded); nothing changes until a human
+// confirms — propose-then-confirm. The legacy confirmed_excluded/keep/replace
+// statuses survive only to revert rows confirmed under the pre-D4 model.
 
 type ReconQueue = "proposed" | "conflict" | "confirmed" | "all";
 const RECON_QUEUES = ["proposed", "conflict", "confirmed", "all"] as const;
 const CONFIRMED_STATUSES = [
+  "confirmed_reconciled",
   "confirmed_excluded",
   "confirmed_keep",
   "confirmed_replace",
@@ -1009,8 +1071,10 @@ function respondReconResult(res: Response, result: ConfirmRevertResult): void {
 }
 
 // ─── POST /stripe-payouts/:id/confirm-exclude ──────────────────────────────
-// proposed → confirmed_excluded: keep the pending QB deposit lump but exclude it
-// (processor_payout) and link it to this payout.
+// proposed → confirmed_reconciled (D4): mark the pending QB deposit lump
+// `reconciled` — permanent evidence, no longer excluded (processor_payout) or
+// archived — and link it to this payout. (Route path is kept for client
+// compatibility; the deposit is reconciled, not excluded.)
 router.post(
   "/stripe-payouts/:id/confirm-exclude",
   asyncHandler(async (req, res) => {
@@ -1027,8 +1091,8 @@ router.post(
 );
 
 // ─── POST /stripe-payouts/:id/confirm-keep ─────────────────────────────────
-// conflict_approved → confirmed_keep: the existing approved QB gift stands; we
-// only record the payout linkage. Touches no gift or deposit.
+// conflict_approved → confirmed_reconciled (D4): the existing approved QB gift
+// stands; we only record the payout linkage. Touches no gift or deposit.
 router.post(
   "/stripe-payouts/:id/confirm-keep",
   asyncHandler(async (req, res) => {
@@ -1045,9 +1109,10 @@ router.post(
 );
 
 // ─── POST /stripe-payouts/:id/confirm-replace ──────────────────────────────
-// conflict_approved → confirmed_replace: archive the coarse QB-derived lump gift
-// (kept, never deleted; allocations preserved), exclude the deposit, and unblock
-// the per-charge Stripe gift queue. Explicit, default-off in the UI.
+// Retired under D4: the coarse QB-derived gift is never archived/replaced — a
+// genuine coarse-vs-granular conflict returns manual_review_required (409).
+// Route kept for client compatibility and to revert rows confirmed
+// (confirmed_replace) under the pre-D4 model.
 router.post(
   "/stripe-payouts/:id/confirm-replace",
   asyncHandler(async (req, res) => {

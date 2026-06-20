@@ -96,8 +96,11 @@ router.post(
 );
 
 // ─── POST /staged-payments/:id/create-gift ─────────────────────────────────
-// Mint a real gifts_and_payments row from the staged payment (donor XOR), then
-// mark the staged row approved + done (autoApplied=false, human-confirmed).
+// Mint a real gifts_and_payments row from the staged payment (donor XOR). The
+// minted gift's amount IS this QB evidence, so it is stamped at insert
+// (final_amount_source='quickbooks', pointer → this staged row, no original
+// human amount to snapshot). The staged row becomes permanent EVIDENCE tied to
+// the gift: `reconciled`, not `approved` (never archived, never a second gift).
 router.post(
   "/staged-payments/:id/create-gift",
   asyncHandler(async (req, res) => {
@@ -153,8 +156,8 @@ router.post(
           lockedIssues = issues;
           throw new Error(INVARIANT);
         }
-        await tx.insert(giftsAndPayments).values(
-          buildGiftValuesFromStaged(
+        await tx.insert(giftsAndPayments).values({
+          ...buildGiftValuesFromStaged(
             giftId,
             {
               qbEntityType: locked.qbEntityType,
@@ -170,11 +173,18 @@ router.post(
             },
             user.id,
           ),
-        );
+          // Stamp provenance at insert: the gift's amount IS this QB evidence
+          // (no prior human figure to snapshot). Pointer ties the gift to the
+          // staged row permanently (single XOR pointer, qb side).
+          finalAmountSource: "quickbooks",
+          finalAmountQbStagedPaymentId: id,
+          finalAmountStripeChargeId: null,
+          originalHumanCrmAmount: null,
+        });
         await tx
           .update(stagedPayments)
           .set({
-            status: "approved",
+            status: "reconciled",
             createdGiftId: giftId,
             matchedGiftId: null,
             autoApplied: false,

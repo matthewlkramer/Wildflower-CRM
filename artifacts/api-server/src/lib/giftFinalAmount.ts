@@ -143,6 +143,107 @@ export async function stampGiftFinalAmount(
   };
 }
 
+export interface UnstampArgs {
+  source: StampSource;
+  /** Required when source = 'stripe': the charge whose stamp is being reverted. */
+  stripeChargeId?: string | null;
+  /** Required when source = 'quickbooks': the staged row being reverted. */
+  qbStagedPaymentId?: string | null;
+}
+
+export interface UnstampResult {
+  /** True when the stamp was actually reverted (pointer matched, source matched). */
+  restored: boolean;
+  /** The stamped amount before revert (only meaningful when restored). */
+  oldAmount: string | null;
+  /** The restored original human amount (only meaningful when restored). */
+  newAmount: string | null;
+}
+
+/**
+ * Reverse stampGiftFinalAmount: restore a gift to its original human-entered
+ * amount and the `human` provenance default when the reconciliation evidence
+ * that stamped it is being undone (revert/unmatch).
+ *
+ * Pointer-safe — a STRICT no-op unless the gift's CURRENT final_amount_source
+ * still equals the reverting `source` AND its single XOR pointer still equals
+ * the reverting evidence id. This guarantees:
+ *   - a QB stamp later SUPERSEDED by a Stripe stamp (source flipped to 'stripe',
+ *     QB pointer cleared) is never clobbered when the QB evidence is reverted;
+ *   - reverting one Stripe charge can't disturb a gift now stamped from another.
+ *
+ * On restore: amount ← original_human_crm_amount (snapshot), source ← 'human',
+ * both pointers ← NULL, original_human_crm_amount ← NULL, and processor_fee is
+ * cleared for the Stripe path (QuickBooks never set it). Caller MUST hold an
+ * open transaction and is responsible for rebalancing allocations afterward
+ * (see adjustSingleAllocationOrFlag) exactly as the stamp path does.
+ */
+export async function unstampGiftFinalAmount(
+  tx: Tx,
+  giftId: string,
+  args: UnstampArgs,
+): Promise<UnstampResult> {
+  const noop: UnstampResult = {
+    restored: false,
+    oldAmount: null,
+    newAmount: null,
+  };
+
+  const gift = await tx
+    .select({
+      amount: giftsAndPayments.amount,
+      originalHumanCrmAmount: giftsAndPayments.originalHumanCrmAmount,
+      finalAmountSource: giftsAndPayments.finalAmountSource,
+      finalAmountStripeChargeId: giftsAndPayments.finalAmountStripeChargeId,
+      finalAmountQbStagedPaymentId:
+        giftsAndPayments.finalAmountQbStagedPaymentId,
+    })
+    .from(giftsAndPayments)
+    .where(eq(giftsAndPayments.id, giftId))
+    .for("update")
+    .then((r) => r[0]);
+  // Gift may legitimately be gone (e.g. an auto-minted gift deleted in the same
+  // revert) — treat as a no-op rather than throwing.
+  if (!gift) return noop;
+
+  // Source must still be the one we're reverting.
+  if (gift.finalAmountSource !== args.source) return noop;
+
+  // …and the single XOR pointer must still be THIS evidence.
+  if (args.source === "stripe") {
+    if (
+      !args.stripeChargeId ||
+      gift.finalAmountStripeChargeId !== args.stripeChargeId
+    ) {
+      return noop;
+    }
+  } else {
+    if (
+      !args.qbStagedPaymentId ||
+      gift.finalAmountQbStagedPaymentId !== args.qbStagedPaymentId
+    ) {
+      return noop;
+    }
+  }
+
+  const oldAmount = gift.amount;
+  const newAmount = gift.originalHumanCrmAmount ?? gift.amount;
+  await tx
+    .update(giftsAndPayments)
+    .set({
+      amount: newAmount,
+      ...(args.source === "stripe" ? { processorFee: null } : {}),
+      originalHumanCrmAmount: null,
+      finalAmountSource: "human",
+      finalAmountStripeChargeId: null,
+      finalAmountQbStagedPaymentId: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(giftsAndPayments.id, giftId));
+
+  return { restored: true, oldAmount, newAmount };
+}
+
 export interface AllocationAdjustResult {
   rescaled: boolean;
   flagged: boolean;

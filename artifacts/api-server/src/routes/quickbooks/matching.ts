@@ -15,6 +15,10 @@ import {
   SplitStagedPaymentBody,
 } from "@workspace/api-zod";
 import { donorOf, hasExactlyOneDonor } from "../../lib/quickbooksLink";
+import {
+  stampGiftFinalAmount,
+  adjustSingleAllocationOrFlag,
+} from "../../lib/giftFinalAmount";
 
 const router: IRouter = Router();
 
@@ -114,7 +118,10 @@ router.post(
           .update(stagedPayments)
           .set({
             ...finalDonor,
-            status: "approved",
+            // The new model: this staged row is permanent EVIDENCE tied to the
+            // gift, never archived and never a second gift. `reconciled` (not
+            // `approved`) marks that terminal tie.
+            status: "reconciled",
             matchedGiftId: giftId,
             createdGiftId: null,
             autoApplied: false,
@@ -143,6 +150,27 @@ router.post(
             ),
           )
           .returning({ id: stagedPayments.id });
+
+        // Tie succeeded → this QB evidence is now the gift's final-amount source
+        // (unless the gift is already Stripe-sourced, in which case the stamp is
+        // a no-op: Stripe GROSS wins). Rebalance the single allocation, or flag
+        // a multi-allocation gift whose splits no longer sum.
+        if (updated.length > 0) {
+          const stamp = await stampGiftFinalAmount(tx, giftId, {
+            source: "quickbooks",
+            qbStagedPaymentId: id,
+            amount: existing.amount,
+          });
+          if (!stamp.skipped) {
+            await adjustSingleAllocationOrFlag(
+              tx,
+              giftId,
+              stamp.oldAmount,
+              stamp.newAmount,
+              "quickbooks",
+            );
+          }
+        }
       });
     } catch (e) {
       if (
@@ -378,7 +406,9 @@ router.post(
 
         const stamp = {
           ...giftDonor,
-          status: "approved" as const,
+          // Permanent EVIDENCE tied to the gift (never archived, never a second
+          // gift): `reconciled`, not `approved`.
+          status: "reconciled" as const,
           createdGiftId: null,
           autoApplied: false,
           matchStatus: "matched" as const,
@@ -413,6 +443,26 @@ router.post(
             throw new Error(CONFLICT);
           }
           throw e;
+        }
+
+        // The group's combined QB net total is the gift's final amount, sourced
+        // from the representative member's evidence (pointer = representativeId).
+        // Skipped as a no-op if the gift is already Stripe-sourced (GROSS wins).
+        // A multi-allocation gift whose splits no longer sum is flagged for human
+        // re-apportionment rather than silently rescaled.
+        const groupStamp = await stampGiftFinalAmount(tx, giftId, {
+          source: "quickbooks",
+          qbStagedPaymentId: representativeId,
+          amount: sum.toFixed(2),
+        });
+        if (!groupStamp.skipped) {
+          await adjustSingleAllocationOrFlag(
+            tx,
+            giftId,
+            groupStamp.oldAmount,
+            groupStamp.newAmount,
+            "quickbooks",
+          );
         }
       });
     } catch (e) {

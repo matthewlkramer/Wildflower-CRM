@@ -67,6 +67,7 @@ let schema: {
   households: Db["households"];
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
+  stripeStagedCharges: Db["stripeStagedCharges"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -189,6 +190,9 @@ async function readStaged(id: string) {
 }
 
 const seededGiftIds: string[] = [];
+// Stripe charge ids seeded for the Stripe-precedence regression; their gift
+// pointers (RESTRICT) are cleared in afterAll before the charges are deleted.
+const seededChargeIds: string[] = [];
 
 beforeAll(async () => {
   if (!HAS_DB) return;
@@ -202,6 +206,7 @@ beforeAll(async () => {
     households: dbMod.households,
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
+    stripeStagedCharges: dbMod.stripeStagedCharges,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -240,7 +245,29 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-  // Children first (staged rows reference gift/org/user), then gift, org, user.
+  // D4: a reconciled gift references its QB staged evidence via
+  // final_amount_qb_staged_payment_id (RESTRICT), so the gift→staged pointer
+  // must be cleared before the staged rows can be deleted. Reset the seeded
+  // gifts back to 'human' (both pointers null) first, then delete the staged
+  // rows, then the gifts (which cascade-clears any allocation-review rows).
+  // Scope to reconciled gifts only (source <> 'human'): the no-donor seed leaves
+  // the donor-XOR constraint NOT VALID, and touching that zero-donor 'human' row
+  // would re-trigger the check — it has no pointer to clear anyway.
+  if (seededGiftIds.length) {
+    await db
+      .update(schema.giftsAndPayments)
+      .set({
+        finalAmountSource: "human",
+        finalAmountStripeChargeId: null,
+        finalAmountQbStagedPaymentId: null,
+      })
+      .where(
+        sqlFn`${inArrayFn(
+          schema.giftsAndPayments.id,
+          seededGiftIds,
+        )} AND ${schema.giftsAndPayments.finalAmountSource} <> 'human'`,
+      );
+  }
   await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.realmId, REALM_ID));
@@ -248,6 +275,13 @@ afterAll(async () => {
     await db
       .delete(schema.giftsAndPayments)
       .where(inArrayFn(schema.giftsAndPayments.id, seededGiftIds));
+  }
+  // Stripe charges are deleted last: the reset above nulled the gift's RESTRICT
+  // pointer and the gifts are now gone, so nothing references them anymore.
+  if (seededChargeIds.length) {
+    await db
+      .delete(schema.stripeStagedCharges)
+      .where(inArrayFn(schema.stripeStagedCharges.id, seededChargeIds));
   }
   // The no-donor case may have left the donor-XOR constraint NOT VALID. With the
   // malformed gift now deleted, fully re-validate it to restore the dev DB's
@@ -307,14 +341,14 @@ describe.skipIf(!HAS_DB)(
       // Representative carries matchedGiftId (gift shows linked) AND the group id.
       expect(rep.matchedGiftId).toBe(giftId);
       expect(rep.groupReconciledGiftId).toBe(giftId);
-      expect(rep.status).toBe("approved");
+      expect(rep.status).toBe("reconciled");
       // The donor was adopted from the gift.
       expect(rep.organizationId).toBe(ORG_ID);
 
       // Every member carries the group id but NOT matchedGiftId.
       expect(member.groupReconciledGiftId).toBe(giftId);
       expect(member.matchedGiftId).toBeNull();
-      expect(member.status).toBe("approved");
+      expect(member.status).toBe("reconciled");
     }, 30_000);
 
     it("adopts an individual-giver donor and nulls the other donor FKs", async () => {
@@ -343,7 +377,7 @@ describe.skipIf(!HAS_DB)(
         expect(row.individualGiverPersonId).toBe(PERSON_ID);
         expect(row.organizationId).toBeNull();
         expect(row.householdId).toBeNull();
-        expect(row.status).toBe("approved");
+        expect(row.status).toBe("reconciled");
         expect(row.groupReconciledGiftId).toBe(giftId);
       }
       expect(rep.matchedGiftId).toBe(giftId);
@@ -374,11 +408,64 @@ describe.skipIf(!HAS_DB)(
         expect(row.householdId).toBe(HOUSEHOLD_ID);
         expect(row.organizationId).toBeNull();
         expect(row.individualGiverPersonId).toBeNull();
-        expect(row.status).toBe("approved");
+        expect(row.status).toBe("reconciled");
         expect(row.groupReconciledGiftId).toBe(giftId);
       }
       expect(rep.matchedGiftId).toBe(giftId);
       expect(member.matchedGiftId).toBeNull();
+    }, 30_000);
+
+    it("leaves a Stripe-sourced gift's final amount untouched when QB reconciles", async () => {
+      // The gift's final amount is already sourced from a Stripe charge (GROSS
+      // is authoritative). QB reconciling the same money must record the QB rows
+      // as `reconciled` EVIDENCE but never overwrite the gift's Stripe amount.
+      const chargeId = `${RUN}_charge_a`;
+      await db.insert(schema.stripeStagedCharges).values({
+        id: chargeId,
+        stripeAccountId: `${RUN}_acct`,
+      });
+      seededChargeIds.push(chargeId);
+
+      const giftId = await seedGiftWithDonor("100.00", {
+        organizationId: ORG_ID,
+      });
+      seededGiftIds.push(giftId);
+      // Stamp the gift Stripe-sourced (source↔pointer XOR: stripe ptr set).
+      await db
+        .update(schema.giftsAndPayments)
+        .set({
+          finalAmountSource: "stripe",
+          finalAmountStripeChargeId: chargeId,
+          finalAmountQbStagedPaymentId: null,
+        })
+        .where(eqFn(schema.giftsAndPayments.id, giftId));
+
+      const repId = await seedStaged(giftId, "a", "50.00");
+      const memberId = await seedStaged(giftId, "b", "50.00");
+
+      const res = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [memberId, repId],
+      });
+      expect(res.status).toBe(200);
+
+      // The QB evidence is reconciled (linkage recorded) ...
+      const rep = await readStaged(repId);
+      const member = await readStaged(memberId);
+      expect(rep.status).toBe("reconciled");
+      expect(member.status).toBe("reconciled");
+      expect(rep.groupReconciledGiftId).toBe(giftId);
+      expect(member.groupReconciledGiftId).toBe(giftId);
+
+      // ... but the gift stays Stripe-sourced — QB never overrides GROSS.
+      const [gift] = await db
+        .select()
+        .from(schema.giftsAndPayments)
+        .where(eqFn(schema.giftsAndPayments.id, giftId));
+      expect(gift.finalAmountSource).toBe("stripe");
+      expect(gift.finalAmountStripeChargeId).toBe(chargeId);
+      expect(gift.finalAmountQbStagedPaymentId).toBeNull();
+      expect(gift.amount).toBe("100.00");
     }, 30_000);
 
     it("rejects reconciling to a gift with no donor and leaves rows untouched", async () => {
@@ -466,7 +553,7 @@ describe.skipIf(!HAS_DB)(
       const a = await readStaged(aId);
       const b = await readStaged(bId);
       for (const row of [a, b]) {
-        expect(row.status).toBe("approved");
+        expect(row.status).toBe("reconciled");
         expect(row.groupReconciledGiftId).toBe(giftId);
       }
     }, 30_000);

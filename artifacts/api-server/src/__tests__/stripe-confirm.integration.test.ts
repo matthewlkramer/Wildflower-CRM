@@ -1,15 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
- * DB-backed coverage for the R4 human-confirm/revert payout ↔ QuickBooks-deposit
- * transitions (stripeConfirm.ts). Exercises the real guarded UPDATEs + archive
- * against dev Postgres:
- *   - CONFIRM-EXCLUDE: proposed → confirmed_excluded; deposit excluded + linked,
- *   - CONFIRM-KEEP: conflict_approved → confirmed_keep; deposit/gift untouched,
- *   - CONFIRM-REPLACE: conflict_approved → confirmed_replace; gift archived
- *     (allocations preserved), deposit excluded + linked,
- *   - REVERT for each confirmed state restores the prior state,
- *   - REVERT of confirmed_replace is refused once a payout charge is booked,
+ * DB-backed coverage for the D4 human-confirm/revert payout ↔ QuickBooks-deposit
+ * transitions (stripeConfirm.ts), where the CRM gift is the single source of
+ * truth and QB staged rows are permanent EVIDENCE — never archived, never
+ * excluded as processor_payout. Exercises the real guarded UPDATEs against dev
+ * Postgres:
+ *   - CONFIRM (pending deposit): proposed → confirmed_reconciled; deposit
+ *     marked `reconciled` (not excluded), gift untouched,
+ *   - CONFIRM (already-booked gift): conflict_approved → confirmed_reconciled;
+ *     deposit + gift left untouched,
+ *   - REPLACE is RETIRED: returns manual_review_required, mutates nothing,
+ *   - REVERT of confirmed_reconciled restores the prior state via the
+ *     qbConflictGiftId discriminator (null ⇒ proposed + deposit pending;
+ *     set ⇒ conflict_approved + deposit untouched),
  *   - invalid transitions / unknown payout return typed errors.
  *
  * Skips automatically when no real DATABASE_URL is configured.
@@ -107,24 +111,6 @@ async function seedGift(): Promise<string> {
   return id;
 }
 
-async function seedCharge(
-  payoutId: string,
-  over: { status?: "pending" | "approved"; createdGiftId?: string | null },
-): Promise<string> {
-  const id = nextId("ch");
-  await db.insert(schema.stripeStagedCharges).values({
-    id,
-    stripeAccountId: ACCOUNT_ID,
-    stripePayoutId: payoutId,
-    grossAmount: "1000.00",
-    feeAmount: "30.00",
-    status: over.status ?? "pending",
-    createdGiftId: over.createdGiftId ?? null,
-  });
-  chargeIds.push(id);
-  return id;
-}
-
 async function readPayout(id: string) {
   const [row] = await db
     .select()
@@ -219,29 +205,30 @@ afterAll(async () => {
 });
 
 describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
-  it("CONFIRM-EXCLUDE: proposed → confirmed_excluded, deposit excluded + linked", async () => {
+  it("CONFIRM (pending deposit): proposed → confirmed_reconciled, deposit reconciled (not excluded)", async () => {
     const dep = await seedDeposit({ status: "pending" });
     const po = await seedPayout({ status: "proposed", proposedQbStagedPaymentId: dep });
 
     const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.kind).toBe("confirmed_excluded");
+    expect(r.kind).toBe("confirmed_reconciled");
 
     const payout = await readPayout(po);
-    expect(payout.qbReconciliationStatus).toBe("confirmed_excluded");
+    expect(payout.qbReconciliationStatus).toBe("confirmed_reconciled");
     expect(payout.matchedQbStagedPaymentId).toBe(dep);
     expect(payout.proposedQbStagedPaymentId).toBeNull();
     expect(payout.qbReconciliationConfirmedByUserId).toBe(USER_ID);
     expect(payout.qbReconciliationConfirmedAt).not.toBeNull();
 
+    // D4: the deposit becomes permanent EVIDENCE — `reconciled`, NOT excluded
+    // with a processor_payout reason.
     const deposit = await readDeposit(dep);
-    expect(deposit.status).toBe("excluded");
-    expect(deposit.exclusionReason).toBe("processor_payout");
-    expect(deposit.classificationSource).toBe("manual");
+    expect(deposit.status).toBe("reconciled");
+    expect(deposit.exclusionReason).toBeNull();
   });
 
-  it("CONFIRM-EXCLUDE: rejects a payout that is not proposed", async () => {
+  it("CONFIRM (pending deposit): rejects a payout that is not proposed", async () => {
     const po = await seedPayout({ status: "unmatched" });
     const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
     expect(r.ok).toBe(false);
@@ -259,51 +246,43 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect(r.code).toBe("not_found");
   });
 
-  it("CONFIRM-KEEP: conflict_approved → confirmed_keep, deposit + gift untouched", async () => {
+  it("CONFIRM (already-booked gift): conflict_approved → confirmed_reconciled, deposit + gift untouched", async () => {
     const { po, dep, gift } = await seedConflict();
 
     const r = await confirm.confirmKeepApprovedQbGift({ payoutId: po, userId: USER_ID });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.kind).toBe("confirmed_keep");
+    expect(r.kind).toBe("confirmed_reconciled");
 
     const payout = await readPayout(po);
-    expect(payout.qbReconciliationStatus).toBe("confirmed_keep");
+    expect(payout.qbReconciliationStatus).toBe("confirmed_reconciled");
     expect(payout.matchedQbStagedPaymentId).toBe(dep);
+    // The conflict gift pointer is retained as the revert discriminator.
+    expect(payout.qbConflictGiftId).toBe(gift);
 
-    // KEEP touches nothing else: deposit stays approved, gift stays active.
+    // Touches nothing else: deposit stays approved, gift stays active.
     expect((await readDeposit(dep)).status).toBe("approved");
     expect((await readGift(gift)).archivedAt).toBeNull();
   });
 
-  it("CONFIRM-REPLACE: conflict_approved → confirmed_replace, gift archived + allocations preserved", async () => {
+  it("REPLACE is retired: returns manual_review_required and mutates nothing", async () => {
     const { po, dep, gift } = await seedConflict();
 
     const r = await confirm.confirmReplaceApprovedQbGift({ payoutId: po, userId: USER_ID });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.kind).toBe("confirmed_replace");
-    expect(r.archivedGiftId).toBe(gift);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("manual_review_required");
 
+    // Nothing was changed — the payout, deposit, and gift are all intact.
     const payout = await readPayout(po);
-    expect(payout.qbReconciliationStatus).toBe("confirmed_replace");
-    expect(payout.matchedQbStagedPaymentId).toBe(dep);
-
+    expect(payout.qbReconciliationStatus).toBe("conflict_approved");
     const deposit = await readDeposit(dep);
-    expect(deposit.status).toBe("excluded");
-    expect(deposit.exclusionReason).toBe("processor_payout");
-
-    const archived = await readGift(gift);
-    expect(archived.archivedAt).not.toBeNull();
-    // Allocations are preserved (never deleted on archive).
-    const allocs = await db
-      .select()
-      .from(schema.giftAllocations)
-      .where(eqFn(schema.giftAllocations.giftId, gift));
-    expect(allocs.length).toBe(1);
+    expect(deposit.status).toBe("approved");
+    expect(deposit.exclusionReason).toBeNull();
+    expect((await readGift(gift)).archivedAt).toBeNull();
   });
 
-  it("REVERT confirmed_excluded → proposed, deposit pending again", async () => {
+  it("REVERT confirmed_reconciled (pending-deposit confirm) → proposed, deposit pending again", async () => {
     const dep = await seedDeposit({ status: "pending" });
     const po = await seedPayout({ status: "proposed", proposedQbStagedPaymentId: dep });
     await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
@@ -316,11 +295,12 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect(payout.proposedQbStagedPaymentId).toBe(dep);
     expect(payout.matchedQbStagedPaymentId).toBeNull();
     expect(payout.qbReconciliationConfirmedByUserId).toBeNull();
+    // The deposit reverts from `reconciled` evidence back to `pending`.
     expect((await readDeposit(dep)).status).toBe("pending");
   });
 
-  it("REVERT confirmed_keep → conflict_approved", async () => {
-    const { po, dep } = await seedConflict();
+  it("REVERT confirmed_reconciled (already-booked gift) → conflict_approved, deposit untouched", async () => {
+    const { po, dep, gift } = await seedConflict();
     await confirm.confirmKeepApprovedQbGift({ payoutId: po, userId: USER_ID });
 
     const r = await confirm.revertPayoutQbConfirmation({ payoutId: po, userId: USER_ID });
@@ -330,39 +310,9 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect(payout.qbReconciliationStatus).toBe("conflict_approved");
     expect(payout.proposedQbStagedPaymentId).toBe(dep);
     expect(payout.matchedQbStagedPaymentId).toBeNull();
-    expect((await readDeposit(dep)).status).toBe("approved");
-  });
-
-  it("REVERT confirmed_replace → conflict_approved, gift unarchived + deposit approved", async () => {
-    const { po, dep, gift } = await seedConflict();
-    await confirm.confirmReplaceApprovedQbGift({ payoutId: po, userId: USER_ID });
-
-    const r = await confirm.revertPayoutQbConfirmation({ payoutId: po, userId: USER_ID });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.restoredGiftId).toBe(gift);
-
-    const payout = await readPayout(po);
-    expect(payout.qbReconciliationStatus).toBe("conflict_approved");
+    // The qbConflictGiftId discriminator routed the revert; deposit + gift intact.
     expect((await readDeposit(dep)).status).toBe("approved");
     expect((await readGift(gift)).archivedAt).toBeNull();
-  });
-
-  it("REVERT confirmed_replace: refused once a payout charge is booked", async () => {
-    const { po, gift } = await seedConflict();
-    await confirm.confirmReplaceApprovedQbGift({ payoutId: po, userId: USER_ID });
-    // Operator books a granular Stripe charge into a gift.
-    const chargeGift = await seedGift();
-    await seedCharge(po, { status: "approved", createdGiftId: chargeGift });
-
-    const r = await confirm.revertPayoutQbConfirmation({ payoutId: po, userId: USER_ID });
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.code).toBe("charges_already_booked");
-
-    // The replace stays intact: old gift still archived, payout still replace.
-    expect((await readPayout(po)).qbReconciliationStatus).toBe("confirmed_replace");
-    expect((await readGift(gift)).archivedAt).not.toBeNull();
   });
 
   it("REVERT: rejects a payout with nothing to revert", async () => {

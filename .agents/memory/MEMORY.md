@@ -76,3 +76,4 @@
 - [Potential-duplicates queue](potential-duplicates-queue.md) — admin dup detection (name pg_trgm + shared phone); phone bonus must apply ONCE per pair (dedupe self-join), dismiss persists canonicalized ids.
 - [Audit log recording model](audit-log-recording-model.md) — atomic recordAudit(tx) for in-tx writes (archive/bulk/merge); non-throwing safeRecordAudit after standalone create/PATCH so audit never breaks a save; admin-gated.
 - [Stripe restricted live key vs connector](stripe-restricted-key.md) — STRIPE_RESTRICTED_KEY (rk_live) preferred over test-only connector; account id regexed from KYC-scope error; backfill never seeds sync_state.
+- [Reconciliation single-source-of-truth (D4)](reconciliation-single-source-of-truth.md) — CRM gifts are the only gifts; Stripe/QB rows are permanent `reconciled` evidence; Stripe GROSS wins; confirm stamps not archives; processor_payout/confirmed_excluded kept only for revert.

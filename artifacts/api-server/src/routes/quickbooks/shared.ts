@@ -27,6 +27,10 @@ import {
 import { alias, type PgSelect } from "drizzle-orm/pg-core";
 import { getAppUser } from "../../lib/appRequest";
 import { type InvariantIssue } from "@workspace/api-zod";
+import {
+  unstampGiftFinalAmount,
+  adjustSingleAllocationOrFlag,
+} from "../../lib/giftFinalAmount";
 
 export function requireAdmin(req: Request, res: Response): boolean {
   const me = getAppUser(req);
@@ -305,9 +309,16 @@ export function queueWhere(queue: Queue) {
         sql`${stagedPayments.matchConfirmedAt} IS NULL`,
       );
     case "done":
-      return and(
-        eq(stagedPayments.status, "approved"),
-        sql`(${stagedPayments.matchConfirmedAt} IS NOT NULL OR ${stagedPayments.autoApplied} = false)`,
+      // Human-resolved rows: a confirmed/manual `approved` reconcile-or-mint, OR
+      // any `reconciled` row (a row whose gift is now an INDEPENDENT source of
+      // truth tied to this evidence — the new reconciliation model). Both are
+      // terminal "done" work.
+      return or(
+        and(
+          eq(stagedPayments.status, "approved"),
+          sql`(${stagedPayments.matchConfirmedAt} IS NOT NULL OR ${stagedPayments.autoApplied} = false)`,
+        ),
+        eq(stagedPayments.status, "reconciled"),
       );
     case "excluded":
       return eq(stagedPayments.status, "excluded");
@@ -393,7 +404,14 @@ export async function revertOneStagedPayment(
         .for("update")
         .then((r) => r[0]);
       if (!locked) throw new Error(REVERT_NOT_FOUND);
-      if (locked.status !== "approved") throw new Error(REVERT_NOT_REVERTIBLE);
+      // Revertible terminal states: `approved` (legacy reconcile/mint) and
+      // `reconciled` (the new model's evidence-tied-to-an-independent-gift). A
+      // `reconciled` deposit lump tied to a Stripe PAYOUT (no matched/created/
+      // group gift of its own) falls through every branch below to
+      // not-revertible — it is undone via the payout revert, not here.
+      if (locked.status !== "approved" && locked.status !== "reconciled") {
+        throw new Error(REVERT_NOT_REVERTIBLE);
+      }
 
       // Split-aware: a row resolved by a split has no matched/created/group
       // gift of its own, so it would fall through to the single-row branch and
@@ -435,11 +453,35 @@ export async function revertOneStagedPayment(
       // the single-row branch (which would orphan the other members).
       if (locked.groupReconciledGiftId != null) {
         const gid = locked.groupReconciledGiftId;
-        await tx
-          .select({ id: stagedPayments.id })
+        const members = await tx
+          .select({
+            id: stagedPayments.id,
+            matchedGiftId: stagedPayments.matchedGiftId,
+          })
           .from(stagedPayments)
           .where(eq(stagedPayments.groupReconciledGiftId, gid))
           .for("update");
+        // The group gift was stamped (final-amount) from the REPRESENTATIVE
+        // member (the one that also carries matchedGiftId = gid). Reverse that
+        // stamp before unlinking, restoring the original human amount, then
+        // rebalance the gift's single allocation (or flag a multi-alloc gift).
+        const repId =
+          members.find((m) => m.matchedGiftId === gid)?.id ?? null;
+        if (repId) {
+          const un = await unstampGiftFinalAmount(tx, gid, {
+            source: "quickbooks",
+            qbStagedPaymentId: repId,
+          });
+          if (un.restored) {
+            await adjustSingleAllocationOrFlag(
+              tx,
+              gid,
+              un.oldAmount,
+              un.newAmount,
+              "quickbooks",
+            );
+          }
+        }
         await tx
           .update(stagedPayments)
           .set({
@@ -467,6 +509,25 @@ export async function revertOneStagedPayment(
       const isAutoMint =
         locked.createdGiftId != null && locked.autoApplied === true;
       if (!isReconcile && !isAutoMint) throw new Error(REVERT_NOT_REVERTIBLE);
+
+      // Reconcile (matched a pre-existing gift): reverse the final-amount stamp
+      // before unlinking so the gift falls back to its original human amount,
+      // then rebalance allocations. No-op if a later Stripe stamp superseded it.
+      if (isReconcile && locked.matchedGiftId) {
+        const un = await unstampGiftFinalAmount(tx, locked.matchedGiftId, {
+          source: "quickbooks",
+          qbStagedPaymentId: id,
+        });
+        if (un.restored) {
+          await adjustSingleAllocationOrFlag(
+            tx,
+            locked.matchedGiftId,
+            un.oldAmount,
+            un.newAmount,
+            "quickbooks",
+          );
+        }
+      }
 
       if (isAutoMint && locked.createdGiftId) {
         await tx
