@@ -32,17 +32,40 @@ documented in one place. Only the opportunities/gifts indexes are genuinely new.
   push` will silently **drop** them (it can't see them in the schema). Re-apply
   this file after any `push`.
 
-These indexes are **performance-only** — search is correct without them (it just
-falls back to a sequential scan), so applying this file is non-urgent but
-strongly recommended on any non-trivial dataset.
+## ⚠️ Required before Publish (not just performance)
+
+If these indexes exist in **dev** but are missing from **prod**, the Publish
+schema-diff will try to add them itself and auto-generate a **broken** statement —
+it emits `CREATE INDEX … USING gin ("name")` **without** the `gin_trgm_ops`
+operator class — which fails with:
+
+```
+data type text has no default operator class for access method "gin"
+```
+
+Publish surfaces this generically as *"Migrations failed validation … schema
+changes conflict with existing production data and could not be applied."* That
+wording is misleading — it is **not** a data conflict. **Do not** choose "Copy
+dev schema & data to production" (that overwrites live prod data).
+
+**Resolution:** apply this file to **prod by hand first** (below). Once prod has
+the five indexes, the dev↔prod diff no longer contains them, the broken statement
+is never generated, and Publish proceeds normally (creating the rest of the diff —
+new tables, FKs, plain indexes — correctly).
+
+For search *correctness* the indexes are optional (search falls back to a
+sequential scan), but for **Publish to succeed** they must be present in prod.
 
 ## Apply
 
 Idempotent and row-data-free; safe to run any number of times, in any
 environment.
 
+Run against the **production** database (use your prod connection string), from
+the `lib/db/migrations/` directory:
+
 ```bash
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f 0053_fulltext_search_trgm.sql
+psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f 0053_fulltext_search_trgm.sql
 ```
 
 ## Verify
