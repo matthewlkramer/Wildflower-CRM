@@ -8,14 +8,18 @@ import {
   stripePayouts,
 } from "@workspace/db/schema";
 import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
-import { asyncHandler, notFound } from "../../lib/helpers";
+import { asyncHandler, newId, notFound } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
-import { ApproveReconciliationCardBody } from "@workspace/api-zod";
+import {
+  ApproveReconciliationCardBody,
+  validateGiftInvariants,
+} from "@workspace/api-zod";
 import { donorOf } from "../../lib/quickbooksLink";
 import {
   stampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
 } from "../../lib/giftFinalAmount";
+import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { recordAudit } from "../../lib/audit";
 import { runConsistencyGate } from "../../lib/reconciliationGate";
@@ -44,12 +48,17 @@ class ApproveAbort extends Error {
 // locks, so the gate can't pass on a row that another request mutates before we
 // write. Commits in ONE transaction.
 //
-// E3 implements the `link_existing_gift` outcome: tie the QuickBooks staged row
-// (and, when supplied, a Stripe charge) to an EXISTING gift as permanent
-// reconciliation evidence — no new gift, never archived. The gift becomes the
-// single source of truth; its FINAL amount is stamped from the Stripe GROSS when
-// a charge is selected, else from the QB staged amount. The create_* outcomes
-// (human-only minting / opportunity generation) are added in E4/E5.
+// E3 implements `link_existing_gift`: tie the QuickBooks staged row (and, when
+// supplied, a Stripe charge) to an EXISTING gift as permanent reconciliation
+// evidence — no new gift, never archived. E4 adds `create_gift`: human-mint a NEW
+// gift from the QB evidence for a chosen donor — the QB anchor OWNS the mint
+// (createdGiftId, not auto-applied → protected from casual revert, exactly like
+// the manual create-gift route); a Stripe charge, when selected, supplies the
+// precise GROSS and stays matchedGiftId-linked (revert un-sources the amount,
+// never deletes the human mint). Either way the gift is the single source of
+// truth; its FINAL amount is the Stripe GROSS when a charge is selected, else the
+// QB staged amount. The opportunity outcomes (create_gift_from_opportunity /
+// convert_to_pledge_and_first_payment) are added in E5.
 router.post(
   "/reconciliation/cards/:stagedPaymentId/approve",
   asyncHandler(async (req, res) => {
@@ -71,11 +80,338 @@ router.post(
     }
     const body = parsed.data;
 
-    // E3 ships only link_existing_gift; the minting/opportunity outcomes follow.
-    if (body.outcome !== "link_existing_gift") {
+    // E3/E4 ship link_existing_gift + create_gift; the opportunity outcomes (E5)
+    // are still rejected until implemented.
+    if (
+      body.outcome !== "link_existing_gift" &&
+      body.outcome !== "create_gift"
+    ) {
       res.status(400).json({
         error: "unsupported_outcome",
         message: `Outcome '${body.outcome}' is not yet supported.`,
+      });
+      return;
+    }
+
+    // ── create_gift (E4): human-only mint ───────────────────────────────────
+    // Mint a NEW gift from the QB staged evidence for the human-chosen donor and
+    // tie the QB row (and, when supplied, a Stripe charge) to it as permanent
+    // reconciliation evidence. Minting is HUMAN-ONLY — there is no background
+    // auto-mint on this path. The gift is HEADER-only (no allocations; a fundraiser
+    // apportions afterward, exactly like the manual create-gift route).
+    if (body.outcome === "create_gift") {
+      const donor = {
+        organizationId: body.organizationId ?? null,
+        individualGiverPersonId: body.individualGiverPersonId ?? null,
+        householdId: body.householdId ?? null,
+      };
+      // The donor is human-CHOSEN (no gift to derive it from yet), so validate
+      // Donor XOR up front for a clean 400 before any locking.
+      const donorIssues = validateGiftInvariants(donor);
+      if (donorIssues.length) {
+        res.status(400).json({
+          error: "validation_error",
+          message: "A new gift needs exactly one donor (Donor XOR).",
+          details: { issues: donorIssues },
+        });
+        return;
+      }
+      const stripeChargeId = body.stripeChargeId ?? null;
+
+      // Fast non-locking guard: only a pending staged row can mint. (create_gift
+      // is intentionally NOT idempotent — re-approving an already-reconciled row
+      // must not mint a second gift.)
+      const pre = await db
+        .select({ status: stagedPayments.status })
+        .from(stagedPayments)
+        .where(eq(stagedPayments.id, stagedPaymentId))
+        .then((r) => r[0]);
+      if (!pre) return notFound(res, "staged payment");
+      if (pre.status !== "pending") {
+        res.status(409).json({
+          error: "not_approvable",
+          message:
+            "This staged payment is no longer pending. Refresh and try again.",
+        });
+        return;
+      }
+
+      // Payouts tied to this staged row — a selected charge must belong to one,
+      // and they're the lock targets that serialize us against stripeConfirm.
+      const stagedPayoutRows = await db
+        .select({ id: stripePayouts.id })
+        .from(stripePayouts)
+        .where(
+          or(
+            eq(stripePayouts.matchedQbStagedPaymentId, stagedPaymentId),
+            eq(stripePayouts.proposedQbStagedPaymentId, stagedPaymentId),
+          ),
+        );
+      const stagedPayoutIds = stagedPayoutRows.map((r) => r.id);
+
+      const newGiftId = newId();
+      try {
+        await db.transaction(async (tx) => {
+          // Lock order (mirrors the link path + stripeConfirm): payouts → staged
+          // → charge. No existing gift to lock — we mint a fresh row.
+          if (stagedPayoutIds.length > 0) {
+            await tx
+              .select({ id: stripePayouts.id })
+              .from(stripePayouts)
+              .where(inArray(stripePayouts.id, stagedPayoutIds))
+              .orderBy(stripePayouts.id)
+              .for("update");
+          }
+
+          const staged = await tx
+            .select()
+            .from(stagedPayments)
+            .where(eq(stagedPayments.id, stagedPaymentId))
+            .for("update")
+            .then((r) => r[0]);
+          if (!staged) {
+            throw new ApproveAbort(404, {
+              error: "not_found",
+              message: "staged payment not found",
+            });
+          }
+          if (staged.status !== "pending") {
+            throw new ApproveAbort(409, {
+              error: "not_approvable",
+              message:
+                "This staged payment is no longer pending. Refresh and try again.",
+            });
+          }
+
+          let charge: typeof stripeStagedCharges.$inferSelect | null = null;
+          if (stripeChargeId) {
+            charge =
+              (await tx
+                .select()
+                .from(stripeStagedCharges)
+                .where(eq(stripeStagedCharges.id, stripeChargeId))
+                .for("update")
+                .then((r) => r[0])) ?? null;
+            if (!charge) {
+              throw new ApproveAbort(404, {
+                error: "not_found",
+                message: "stripe charge not found",
+              });
+            }
+            // A fresh mint can only claim a still-free (pending) charge.
+            if (charge.status !== "pending") {
+              throw new ApproveAbort(409, {
+                error: "stripe_charge_not_available",
+                message:
+                  "The selected Stripe charge has already been resolved. Refresh and try again.",
+              });
+            }
+          }
+
+          // Stripe GROSS is the precise amount when a charge is selected; else the
+          // QB staged amount. This IS the minted gift's amount (no prior human
+          // figure), so the gate's amount-band check is trivially satisfied.
+          const evidenceAmount = charge ? charge.grossAmount : staged.amount;
+
+          // When no charge is selected but the tied payouts still carry
+          // unreconciled charges, Stripe precedence demands one be chosen up front
+          // (a QB-only mint could never adopt its charge later on this path).
+          let stripeChargesAvailable = 0;
+          if (!charge && stagedPayoutIds.length > 0) {
+            const [{ n } = { n: 0 }] = await tx
+              .select({ n: sql<number>`COUNT(*)::int` })
+              .from(stripeStagedCharges)
+              .where(
+                and(
+                  inArray(stripeStagedCharges.stripePayoutId, stagedPayoutIds),
+                  ne(stripeStagedCharges.status, "reconciled"),
+                ),
+              );
+            stripeChargesAvailable = n;
+          }
+
+          // Consistency gate over the SYNTHETIC new gift (Donor XOR, Stripe
+          // precedence + linkage, the QB anchor; amount band is trivially met).
+          const issues = runConsistencyGate({
+            staged: { id: staged.id, status: staged.status },
+            gift: {
+              id: newGiftId,
+              amount: evidenceAmount,
+              archivedAt: null,
+              organizationId: donor.organizationId,
+              individualGiverPersonId: donor.individualGiverPersonId,
+              householdId: donor.householdId,
+              finalAmountSource: null,
+              finalAmountStripeChargeId: null,
+            },
+            opportunity: null,
+            evidenceAmount,
+            stripeCharge: charge
+              ? { id: charge.id, stripePayoutId: charge.stripePayoutId }
+              : null,
+            stagedPayoutIds,
+            stripeChargesAvailable,
+            overrideAmountMismatchReason:
+              body.overrideAmountMismatchReason ?? null,
+          });
+          if (issues.length > 0) {
+            throw new ApproveAbort(409, {
+              error: "consistency_gate",
+              message: "The reconciliation graph isn't consistent.",
+              details: { issues },
+            });
+          }
+
+          // Mint the gift HEADER. The amount is the FINAL amount, stamped at
+          // insert from the chosen evidence (single XOR pointer); no prior human
+          // figure exists, so original_human_crm_amount stays null.
+          await tx.insert(giftsAndPayments).values({
+            ...buildGiftValuesFromStaged(
+              newGiftId,
+              {
+                qbEntityType: staged.qbEntityType,
+                qbEntityId: staged.qbEntityId,
+                amount: staged.amount,
+                dateReceived: staged.dateReceived,
+                payerName: staged.payerName,
+                rawReference: staged.rawReference,
+                organizationId: donor.organizationId,
+                individualGiverPersonId: donor.individualGiverPersonId,
+                householdId: donor.householdId,
+                matchedPaymentIntermediaryId:
+                  body.paymentIntermediaryId ??
+                  staged.matchedPaymentIntermediaryId,
+              },
+              user.id,
+            ),
+            amount: evidenceAmount,
+            ...(charge
+              ? {
+                  processorFee: charge.feeAmount,
+                  finalAmountSource: "stripe" as const,
+                  finalAmountStripeChargeId: charge.id,
+                  finalAmountQbStagedPaymentId: null,
+                }
+              : {
+                  finalAmountSource: "quickbooks" as const,
+                  finalAmountQbStagedPaymentId: stagedPaymentId,
+                  finalAmountStripeChargeId: null,
+                }),
+            originalHumanCrmAmount: null,
+          });
+
+          // The QB anchor OWNS the mint (createdGiftId, not auto-applied →
+          // protected from casual revert). Adopt the chosen donor onto the
+          // evidence row. Guarded on still-pending to catch a concurrent resolve.
+          const updated = await tx
+            .update(stagedPayments)
+            .set({
+              ...donor,
+              status: "reconciled",
+              createdGiftId: newGiftId,
+              matchedGiftId: null,
+              autoApplied: false,
+              matchStatus: "matched",
+              matchConfirmedByUserId: user.id,
+              matchConfirmedAt: new Date(),
+              approvedByUserId: user.id,
+              approvedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(stagedPayments.id, stagedPaymentId),
+                eq(stagedPayments.status, "pending"),
+              ),
+            )
+            .returning({ id: stagedPayments.id });
+          if (updated.length === 0) {
+            throw new ApproveAbort(409, {
+              error: "not_approvable",
+              message:
+                "This staged payment is no longer pending. Refresh and try again.",
+            });
+          }
+
+          // A selected Stripe charge is the precise GROSS source: tie it to the
+          // gift via matchedGiftId (mirrors E3 + the Stripe confirm paths) so it
+          // stays resolvable + revertible — revert un-sources the amount, never
+          // deletes the human mint the QB anchor owns. Mark its payout reconciled.
+          if (charge) {
+            await tx
+              .update(stripeStagedCharges)
+              .set({
+                ...donor,
+                status: "reconciled",
+                matchedGiftId: newGiftId,
+                createdGiftId: null,
+                autoApplied: false,
+                matchStatus: "matched",
+                matchConfirmedByUserId: user.id,
+                matchConfirmedAt: new Date(),
+                approvedByUserId: user.id,
+                approvedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(stripeStagedCharges.id, charge.id));
+            if (charge.stripePayoutId) {
+              await tx
+                .update(stripePayouts)
+                .set({
+                  qbReconciliationStatus: "confirmed_reconciled",
+                  matchedQbStagedPaymentId: stagedPaymentId,
+                  proposedQbStagedPaymentId: null,
+                  qbReconciliationConfirmedByUserId: user.id,
+                  qbReconciliationConfirmedAt: new Date(),
+                  updatedAt: new Date(),
+                })
+                .where(eq(stripePayouts.id, charge.stripePayoutId));
+            }
+          }
+
+          await recordAudit(tx, req, {
+            action: "create",
+            entityType: "gift",
+            entityId: newGiftId,
+            summary: "Created gift from reconciliation (complete match)",
+            metadata: {
+              stagedPaymentId,
+              stripeChargeId: charge?.id ?? null,
+              outcome: "create_gift",
+            },
+          });
+        });
+      } catch (e) {
+        if (e instanceof ApproveAbort) {
+          res.status(e.httpStatus).json(e.payload);
+          return;
+        }
+        // Unique violation: a Stripe charge just got claimed by another gift, or
+        // the gift's stripe-charge pointer collided. Surface as a conflict.
+        if (
+          typeof e === "object" &&
+          e !== null &&
+          "code" in e &&
+          (e as { code?: string }).code === "23505"
+        ) {
+          res.status(409).json({
+            error: "link_conflict",
+            message:
+              "That Stripe charge was just linked to another gift. Refresh and try again.",
+          });
+          return;
+        }
+        throw e;
+      }
+
+      res.status(201).json({
+        ok: true as const,
+        outcome: "create_gift" as const,
+        stagedPaymentId,
+        giftId: newGiftId,
+        opportunityId: null,
+        createdGift: true,
+        createdPledge: false,
       });
       return;
     }

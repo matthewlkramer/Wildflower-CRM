@@ -367,3 +367,135 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — link existing gift (integra
     expect((await readStaged(stagedId)).status).toBe("pending");
   }, 30_000);
 });
+
+describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)", () => {
+  it("mints a new gift for the chosen donor and stamps the Stripe GROSS (createdGiftId on the QB anchor, matchedGiftId on the charge)", async () => {
+    const stagedId = await seedStaged("100.00");
+    const payoutId = await seedPayout(stagedId);
+    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+      stripeChargeId: chargeId,
+    });
+    expect(res.status).toBe(201);
+    expect(res.json.ok).toBe(true);
+    expect(res.json.outcome).toBe("create_gift");
+    expect(res.json.createdGift).toBe(true);
+    expect(res.json.createdPledge).toBe(false);
+    expect(res.json.opportunityId).toBeNull();
+    const newGiftId = res.json.giftId as string;
+    expect(newGiftId).toBeTruthy();
+    giftIds.push(newGiftId);
+
+    // The minted gift carries the chosen donor and the Stripe-GROSS provenance;
+    // no prior human figure was snapshotted.
+    const gift = await readGift(newGiftId);
+    expect(gift.organizationId).toBe(ORG_ID);
+    expect(gift.amount).toBe("100.00");
+    expect(gift.finalAmountSource).toBe("stripe");
+    expect(gift.finalAmountStripeChargeId).toBe(chargeId);
+    expect(gift.finalAmountQbStagedPaymentId).toBeNull();
+    expect(gift.originalHumanCrmAmount).toBeNull();
+    expect(gift.processorFee).toBe("3.00");
+
+    // The QB anchor OWNS the mint (createdGiftId, not auto-applied); the charge
+    // is matchedGiftId-linked precise evidence; the payout is confirmed.
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("reconciled");
+    expect(staged.createdGiftId).toBe(newGiftId);
+    expect(staged.matchedGiftId).toBeNull();
+    expect(staged.autoApplied).toBe(false);
+    expect(staged.matchStatus).toBe("matched");
+    expect(staged.organizationId).toBe(ORG_ID);
+
+    const charge = await readCharge(chargeId);
+    expect(charge.status).toBe("reconciled");
+    expect(charge.matchedGiftId).toBe(newGiftId);
+    expect(charge.createdGiftId).toBeNull();
+
+    const payout = await readPayout(payoutId);
+    expect(payout.qbReconciliationStatus).toBe("confirmed_reconciled");
+    expect(payout.matchedQbStagedPaymentId).toBe(stagedId);
+  }, 30_000);
+
+  it("mints a QB-only gift (no Stripe) stamped from the QB staged amount", async () => {
+    const stagedId = await seedStaged("250.00");
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+    });
+    expect(res.status).toBe(201);
+    const newGiftId = res.json.giftId as string;
+    expect(newGiftId).toBeTruthy();
+    giftIds.push(newGiftId);
+
+    const gift = await readGift(newGiftId);
+    expect(gift.amount).toBe("250.00");
+    expect(gift.finalAmountSource).toBe("quickbooks");
+    expect(gift.finalAmountQbStagedPaymentId).toBe(stagedId);
+    expect(gift.finalAmountStripeChargeId).toBeNull();
+    expect(gift.originalHumanCrmAmount).toBeNull();
+
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("reconciled");
+    expect(staged.createdGiftId).toBe(newGiftId);
+    expect(staged.autoApplied).toBe(false);
+  }, 30_000);
+
+  it("rejects a mint with no donor (Donor XOR)", async () => {
+    const stagedId = await seedStaged("100.00");
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+    });
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe("validation_error");
+
+    // Nothing mutated.
+    expect((await readStaged(stagedId)).status).toBe("pending");
+  }, 30_000);
+
+  it("requires the Stripe charge when an unreconciled charge exists (stripe_charge_required)", async () => {
+    const stagedId = await seedStaged("100.00");
+    const payoutId = await seedPayout(stagedId);
+    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("consistency_gate");
+    const codes = (res.json.details?.issues ?? []).map((i: any) => i.code);
+    expect(codes).toContain("stripe_charge_required");
+
+    // Nothing minted or mutated.
+    expect((await readStaged(stagedId)).status).toBe("pending");
+    expect((await readCharge(chargeId)).status).toBe("pending");
+  }, 30_000);
+
+  it("is not idempotent — re-approving an already-reconciled row is rejected (not_approvable)", async () => {
+    const stagedId = await seedStaged("100.00");
+
+    const first = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+    });
+    expect(first.status).toBe(201);
+    giftIds.push(first.json.giftId as string);
+
+    const second = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+    });
+    expect(second.status).toBe(409);
+    expect(second.json.error).toBe("not_approvable");
+
+    // Still tied to the FIRST minted gift only.
+    const staged = await readStaged(stagedId);
+    expect(staged.createdGiftId).toBe(first.json.giftId);
+  }, 30_000);
+});
