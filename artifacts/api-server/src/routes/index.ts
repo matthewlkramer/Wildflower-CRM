@@ -51,6 +51,7 @@ import grantLeadsRouter from "./grantLeads";
 import auditLogRouter from "./auditLog";
 import searchRouter from "./search";
 import potentialDuplicatesRouter from "./potentialDuplicates";
+import adminReassignRouter from "./adminReassign";
 
 const router: IRouter = Router();
 
@@ -116,5 +117,6 @@ router.use(grantLeadsRouter);
 router.use(auditLogRouter);
 router.use(searchRouter);
 router.use(potentialDuplicatesRouter);
+router.use(adminReassignRouter);
 
 export default router;

@@ -15524,3 +15524,73 @@ export const ListAuditLogResponse = zod.object({
     total: zod.number(),
   }),
 });
+
+/**
+ * @summary Admin-only. Count the records owned by a single user across every owner-bearing table (people, organizations, opportunities, gifts, interactions, tasks, and grant leads). Used to preview an offboarding reassignment.
+ */
+export const GetOwnedRecordCountsQueryParams = zod.object({
+  userId: zod.coerce
+    .string()
+    .describe("The user whose owned records to count."),
+});
+
+export const GetOwnedRecordCountsResponse = zod.object({
+  people: zod.number(),
+  organizations: zod.number(),
+  opportunities: zod.number(),
+  gifts: zod.number(),
+  interactions: zod.number(),
+  tasks: zod
+    .number()
+    .describe(
+      "Tasks assigned to the user (assignee_user_id). Task authorship (created_by_user_id) is left untouched.",
+    ),
+  grantLeads: zod
+    .number()
+    .describe("Grant leads claimed by the user (assignee_user_id)."),
+  total: zod.number(),
+});
+
+/**
+ * @summary Admin-only. Reassign every record owned by `fromUserId` to `toUserId` across all owner-bearing tables (people, organizations, opportunities, gifts, interactions, tasks, and grant leads) in one transaction (offboarding). Task `created_by_user_id` provenance is left untouched. Optionally archives the source user afterward. Records an audit-log entry.
+ */
+export const reassignOwnerBodyArchiveSourceDefault = false;
+
+export const ReassignOwnerBody = zod.object({
+  fromUserId: zod
+    .string()
+    .describe("The departing\/source user whose records will be reassigned."),
+  toUserId: zod
+    .string()
+    .describe(
+      "The user who will own the records afterward. Must be active (not archived).",
+    ),
+  archiveSource: zod
+    .boolean()
+    .default(reassignOwnerBodyArchiveSourceDefault)
+    .describe(
+      "When true, archive the source user after a successful reassignment (offboarding).",
+    ),
+});
+
+export const ReassignOwnerResponse = zod.object({
+  reassigned: zod.object({
+    people: zod.number(),
+    organizations: zod.number(),
+    opportunities: zod.number(),
+    gifts: zod.number(),
+    interactions: zod.number(),
+    tasks: zod
+      .number()
+      .describe(
+        "Tasks assigned to the user (assignee_user_id). Task authorship (created_by_user_id) is left untouched.",
+      ),
+    grantLeads: zod
+      .number()
+      .describe("Grant leads claimed by the user (assignee_user_id)."),
+    total: zod.number(),
+  }),
+  archivedSource: zod
+    .boolean()
+    .describe("True if the source user was archived as part of this call."),
+});

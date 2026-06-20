@@ -32,6 +32,11 @@ import {
   useAdminUpdateEntityCodingRule,
   useAdminDeleteEntityCodingRule,
   useListFundableProjects,
+  useListUsers,
+  useGetOwnedRecordCounts,
+  useReassignOwner,
+  getListUsersQueryKey,
+  getGetOwnedRecordCountsQueryKey,
   getAdminListEntityCodingRulesQueryKey,
   getListEntitiesQueryKey,
   getListFiscalYearEntityGoalsQueryKey,
@@ -80,6 +85,7 @@ import {
   useOrganizationName,
 } from "@/components/entity-picker";
 import { useIsAdmin } from "@/hooks/use-is-admin";
+import { userDisplayName, hasUsableIdentity } from "@/components/user-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -167,6 +173,7 @@ export default function Admin() {
       <InternalEmailDomainsSection />
       <QuickbooksRulesSection />
       <EntityCodingRulesSection entities={entities} />
+      <ReassignOwnerSection />
       <EmailIntelligenceSection />
       <p className="text-xs text-muted-foreground">
         Looking to connect or disconnect your own Google account? That moved
@@ -340,6 +347,235 @@ function AdminSyncSection() {
           </Table>
         )}
       </CardContent>
+    </Card>
+  );
+}
+
+// ── Admin: reassign records / offboard a user ────────────────────────────────
+// Bulk-move every record owned by one team member to another in one
+// transaction (people, organizations, opportunities & pledges, gifts &
+// payments, interactions, assigned tasks). Owner FKs are ON DELETE RESTRICT,
+// so a departing user can't be removed until their book is reassigned; this
+// card does that and can archive the source user in the same step.
+
+function ReassignOwnerSection() {
+  const isAdmin = useIsAdmin();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [fromUserId, setFromUserId] = useState("");
+  const [toUserId, setToUserId] = useState("");
+  const [archiveSource, setArchiveSource] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const usersQ = useListUsers({
+    query: { queryKey: getListUsersQueryKey(), staleTime: 60_000 },
+  });
+  const users = useMemo(
+    () =>
+      (usersQ.data ?? [])
+        .filter(hasUsableIdentity)
+        .slice()
+        .sort((a, b) => userDisplayName(a).localeCompare(userDisplayName(b))),
+    [usersQ.data],
+  );
+
+  const countsQ = useGetOwnedRecordCounts(
+    { userId: fromUserId },
+    {
+      query: {
+        queryKey: getGetOwnedRecordCountsQueryKey({ userId: fromUserId }),
+        enabled: fromUserId !== "",
+      },
+    },
+  );
+  const counts = countsQ.data;
+
+  const reassign = useReassignOwner({
+    mutation: {
+      onSuccess: (res) => {
+        setConfirmOpen(false);
+        toast({
+          title: "Records reassigned",
+          description: `${res.reassigned.total} record(s) moved${
+            res.archivedSource ? " and the source user was archived" : ""
+          }.`,
+        });
+        // Ownership changed across many tables (and the users list when the
+        // source was archived); refetch everything so every list/detail view
+        // reflects the new owner.
+        void qc.invalidateQueries();
+        setFromUserId("");
+        setToUserId("");
+        setArchiveSource(false);
+      },
+      onError: (e: unknown) => {
+        toast({
+          title: "Reassignment failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  // Admin-only affordance; the server enforces the same rule independently.
+  if (!isAdmin) return null;
+
+  const fromUser = users.find((u) => u.id === fromUserId);
+  const toUser = users.find((u) => u.id === toUserId);
+  const sameUser = fromUserId !== "" && fromUserId === toUserId;
+  const canSubmit =
+    fromUserId !== "" && toUserId !== "" && !sameUser && !reassign.isPending;
+
+  return (
+    <Card data-testid="admin-reassign-section">
+      <CardHeader>
+        <CardTitle>Reassign records / offboard a user</CardTitle>
+        <CardDescription>
+          Move every record owned by one team member to another in a single
+          step — people, organizations, opportunities &amp; pledges, gifts &amp;
+          payments, interactions, assigned tasks, and grant leads. Use this when
+          someone leaves the team. Task authorship history is preserved.
+          Optionally archive the departing user afterward.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="reassign-from">From (departing user)</Label>
+            <Select value={fromUserId} onValueChange={setFromUserId}>
+              <SelectTrigger id="reassign-from" data-testid="reassign-from">
+                <SelectValue placeholder="Select a user" />
+              </SelectTrigger>
+              <SelectContent>
+                {users.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {userDisplayName(u)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="reassign-to">To (new owner)</Label>
+            <Select value={toUserId} onValueChange={setToUserId}>
+              <SelectTrigger id="reassign-to" data-testid="reassign-to">
+                <SelectValue placeholder="Select a user" />
+              </SelectTrigger>
+              <SelectContent>
+                {users
+                  .filter((u) => u.id !== fromUserId)
+                  .map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {userDisplayName(u)}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {sameUser ? (
+          <p className="text-sm text-destructive">
+            Source and destination must be different users.
+          </p>
+        ) : null}
+
+        {fromUserId !== "" ? (
+          <div
+            className="rounded-md border bg-muted/30 px-3 py-2 text-sm"
+            data-testid="reassign-counts"
+          >
+            {countsQ.isLoading ? (
+              <span className="text-muted-foreground">Counting records…</span>
+            ) : counts ? (
+              counts.total === 0 ? (
+                <span className="text-muted-foreground">
+                  This user owns no records.
+                </span>
+              ) : (
+                <div className="space-y-1">
+                  <div className="font-medium">
+                    {counts.total} record{counts.total === 1 ? "" : "s"} will be
+                    reassigned:
+                  </div>
+                  <ul className="text-muted-foreground grid grid-cols-2 gap-x-6 sm:grid-cols-3">
+                    <li>People: {counts.people}</li>
+                    <li>Organizations: {counts.organizations}</li>
+                    <li>Opportunities: {counts.opportunities}</li>
+                    <li>Gifts: {counts.gifts}</li>
+                    <li>Interactions: {counts.interactions}</li>
+                    <li>Tasks: {counts.tasks}</li>
+                    <li>Grant leads: {counts.grantLeads}</li>
+                  </ul>
+                </div>
+              )
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="flex items-center gap-2">
+          <Switch
+            id="reassign-archive"
+            checked={archiveSource}
+            onCheckedChange={setArchiveSource}
+            data-testid="reassign-archive"
+          />
+          <Label htmlFor="reassign-archive" className="cursor-pointer">
+            Archive the departing user after reassignment
+          </Label>
+        </div>
+
+        <Button
+          disabled={!canSubmit}
+          onClick={() => setConfirmOpen(true)}
+          data-testid="reassign-submit"
+        >
+          Reassign records
+        </Button>
+      </CardContent>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm reassignment</DialogTitle>
+            <DialogDescription>
+              {counts?.total ?? 0} record(s) owned by{" "}
+              <span className="font-medium">
+                {fromUser ? userDisplayName(fromUser) : "—"}
+              </span>{" "}
+              will be reassigned to{" "}
+              <span className="font-medium">
+                {toUser ? userDisplayName(toUser) : "—"}
+              </span>
+              {archiveSource
+                ? ", and the departing user will be archived."
+                : "."}{" "}
+              This cannot be undone automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmOpen(false)}
+              disabled={reassign.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() =>
+                reassign.mutate({
+                  data: { fromUserId, toUserId, archiveSource },
+                })
+              }
+              disabled={reassign.isPending}
+              data-testid="reassign-confirm"
+            >
+              {reassign.isPending ? "Reassigning…" : "Reassign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

@@ -4305,6 +4305,34 @@ export interface AuditLogList {
   pagination: Pagination;
 }
 
+export interface OwnedRecordCounts {
+  people: number;
+  organizations: number;
+  opportunities: number;
+  gifts: number;
+  interactions: number;
+  /** Tasks assigned to the user (assignee_user_id). Task authorship (created_by_user_id) is left untouched. */
+  tasks: number;
+  /** Grant leads claimed by the user (assignee_user_id). */
+  grantLeads: number;
+  total: number;
+}
+
+export interface ReassignOwnerBody {
+  /** The departing/source user whose records will be reassigned. */
+  fromUserId: string;
+  /** The user who will own the records afterward. Must be active (not archived). */
+  toUserId: string;
+  /** When true, archive the source user after a successful reassignment (offboarding). */
+  archiveSource?: boolean;
+}
+
+export interface ReassignOwnerResult {
+  reassigned: OwnedRecordCounts;
+  /** True if the source user was archived as part of this call. */
+  archivedSource: boolean;
+}
+
 /**
  * Not found
  */
@@ -5450,4 +5478,11 @@ export type ListAuditLogParams = {
    * @minimum 1
    */
   page?: PageParameter;
+};
+
+export type GetOwnedRecordCountsParams = {
+  /**
+   * The user whose owned records to count.
+   */
+  userId: string;
 };

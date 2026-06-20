@@ -3186,6 +3186,41 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AuditLogList" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  # ─── Admin: offboarding / owner reassignment ───────────────────────────────
+  /admin/owned-record-counts:
+    get:
+      operationId: getOwnedRecordCounts
+      tags: [admin]
+      summary: >-
+        Admin-only. Count the records owned by a single user across every
+        owner-bearing table (people, organizations, opportunities, gifts,
+        interactions, tasks, and grant leads). Used to preview an offboarding
+        reassignment.
+      parameters:
+        - { name: userId, in: query, required: true, description: "The user whose owned records to count.", schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OwnedRecordCounts" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/reassign-owner:
+    post:
+      operationId: reassignOwner
+      tags: [admin]
+      summary: >-
+        Admin-only. Reassign every record owned by `fromUserId` to `toUserId`
+        across all owner-bearing tables (people, organizations, opportunities,
+        gifts, interactions, tasks, and grant leads) in one transaction
+        (offboarding). Task `created_by_user_id` provenance is left untouched.
+        Optionally archives the source user afterward. Records an audit-log entry.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ReassignOwnerBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReassignOwnerResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   parameters:
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 50 } }
@@ -6792,3 +6827,30 @@ components:
           type: array
           items: { $ref: "#/components/schemas/AuditLogEntry" }
         pagination: { $ref: "#/components/schemas/Pagination" }
+
+    # ─── Admin: offboarding / owner reassignment ───────────────────────────────
+    OwnedRecordCounts:
+      type: object
+      required: [people, organizations, opportunities, gifts, interactions, tasks, grantLeads, total]
+      properties:
+        people:        { type: integer }
+        organizations: { type: integer }
+        opportunities: { type: integer }
+        gifts:         { type: integer }
+        interactions:  { type: integer }
+        tasks:         { type: integer, description: "Tasks assigned to the user (assignee_user_id). Task authorship (created_by_user_id) is left untouched." }
+        grantLeads:    { type: integer, description: "Grant leads claimed by the user (assignee_user_id)." }
+        total:         { type: integer }
+    ReassignOwnerBody:
+      type: object
+      required: [fromUserId, toUserId]
+      properties:
+        fromUserId:    { type: string, description: "The departing/source user whose records will be reassigned." }
+        toUserId:      { type: string, description: "The user who will own the records afterward. Must be active (not archived)." }
+        archiveSource: { type: boolean, default: false, description: "When true, archive the source user after a successful reassignment (offboarding)." }
+    ReassignOwnerResult:
+      type: object
+      required: [reassigned, archivedSource]
+      properties:
+        reassigned:     { $ref: "#/components/schemas/OwnedRecordCounts" }
+        archivedSource: { type: boolean, description: "True if the source user was archived as part of this call." }

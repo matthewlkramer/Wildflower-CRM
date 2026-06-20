@@ -111,6 +111,7 @@ import type {
   FundraisingCategory,
   GetDashboardSummaryParams,
   GetFiscalYearBreakdownParams,
+  GetOwnedRecordCountsParams,
   GetProjectionsByFyEntityParams,
   GetTaskProposalParams,
   GiftAllocation,
@@ -196,6 +197,7 @@ import type {
   Organization,
   OrganizationDetail,
   OrganizationList,
+  OwnedRecordCounts,
   PaymentIntermediary,
   PaymentIntermediaryDetail,
   PaymentIntermediaryList,
@@ -219,6 +221,8 @@ import type {
   QuickbooksResyncStatus,
   QuickbooksStagedPaymentSummary,
   QuickbooksSyncSummary,
+  ReassignOwnerBody,
+  ReassignOwnerResult,
   ReconcileStagedPaymentBody,
   RefreshTaskProposalBody,
   Region,
@@ -22937,3 +22941,196 @@ export function useListAuditLog<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Admin-only. Count the records owned by a single user across every owner-bearing table (people, organizations, opportunities, gifts, interactions, tasks, and grant leads). Used to preview an offboarding reassignment.
+ */
+export const getGetOwnedRecordCountsUrl = (
+  params: GetOwnedRecordCountsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/owned-record-counts?${stringifiedParams}`
+    : `/api/admin/owned-record-counts`;
+};
+
+export const getOwnedRecordCounts = async (
+  params: GetOwnedRecordCountsParams,
+  options?: RequestInit,
+): Promise<OwnedRecordCounts> => {
+  return customFetch<OwnedRecordCounts>(getGetOwnedRecordCountsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetOwnedRecordCountsQueryKey = (
+  params?: GetOwnedRecordCountsParams,
+) => {
+  return [
+    `/api/admin/owned-record-counts`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetOwnedRecordCountsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOwnedRecordCounts>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+>(
+  params: GetOwnedRecordCountsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOwnedRecordCounts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetOwnedRecordCountsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getOwnedRecordCounts>>
+  > = ({ signal }) =>
+    getOwnedRecordCounts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOwnedRecordCounts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOwnedRecordCountsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOwnedRecordCounts>>
+>;
+export type GetOwnedRecordCountsQueryError = ErrorType<
+  BadRequestResponse | ForbiddenResponse
+>;
+
+/**
+ * @summary Admin-only. Count the records owned by a single user across every owner-bearing table (people, organizations, opportunities, gifts, interactions, tasks, and grant leads). Used to preview an offboarding reassignment.
+ */
+
+export function useGetOwnedRecordCounts<
+  TData = Awaited<ReturnType<typeof getOwnedRecordCounts>>,
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+>(
+  params: GetOwnedRecordCountsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOwnedRecordCounts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOwnedRecordCountsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Admin-only. Reassign every record owned by `fromUserId` to `toUserId` across all owner-bearing tables (people, organizations, opportunities, gifts, interactions, tasks, and grant leads) in one transaction (offboarding). Task `created_by_user_id` provenance is left untouched. Optionally archives the source user afterward. Records an audit-log entry.
+ */
+export const getReassignOwnerUrl = () => {
+  return `/api/admin/reassign-owner`;
+};
+
+export const reassignOwner = async (
+  reassignOwnerBody: ReassignOwnerBody,
+  options?: RequestInit,
+): Promise<ReassignOwnerResult> => {
+  return customFetch<ReassignOwnerResult>(getReassignOwnerUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(reassignOwnerBody),
+  });
+};
+
+export const getReassignOwnerMutationOptions = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reassignOwner>>,
+    TError,
+    { data: BodyType<ReassignOwnerBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reassignOwner>>,
+  TError,
+  { data: BodyType<ReassignOwnerBody> },
+  TContext
+> => {
+  const mutationKey = ["reassignOwner"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reassignOwner>>,
+    { data: BodyType<ReassignOwnerBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return reassignOwner(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReassignOwnerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reassignOwner>>
+>;
+export type ReassignOwnerMutationBody = BodyType<ReassignOwnerBody>;
+export type ReassignOwnerMutationError = ErrorType<
+  BadRequestResponse | ForbiddenResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Admin-only. Reassign every record owned by `fromUserId` to `toUserId` across all owner-bearing tables (people, organizations, opportunities, gifts, interactions, tasks, and grant leads) in one transaction (offboarding). Task `created_by_user_id` provenance is left untouched. Optionally archives the source user afterward. Records an audit-log entry.
+ */
+export const useReassignOwner = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reassignOwner>>,
+    TError,
+    { data: BodyType<ReassignOwnerBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reassignOwner>>,
+  TError,
+  { data: BodyType<ReassignOwnerBody> },
+  TContext
+> => {
+  return useMutation(getReassignOwnerMutationOptions(options));
+};
