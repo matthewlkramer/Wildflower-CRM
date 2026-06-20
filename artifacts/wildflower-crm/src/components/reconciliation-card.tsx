@@ -20,6 +20,16 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { ReconciliationNodeTypeahead } from "@/components/reconciliation-node-typeahead";
 import {
@@ -231,6 +241,7 @@ function CardResolver({
     "create_gift_from_opportunity",
   );
   const [override, setOverride] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Initialise the selections from the server's auto-locked guesses whenever a
   // fresh graph arrives for this card.
@@ -241,6 +252,7 @@ function CardResolver({
     setOpportunity(findCandidate(graph, "opportunity"));
     setOutcomeChoice("create_gift_from_opportunity");
     setOverride("");
+    setConfirmOpen(false);
   }, [graph]);
 
   const derived = useMemo(() => {
@@ -433,13 +445,49 @@ function CardResolver({
           size="sm"
           disabled={busy || !derived?.ok}
           onClick={() => {
-            if (derived?.ok) void onApprove(derived.body);
+            if (!derived?.ok) return;
+            // A donor switch (or any other gated outcome) routes through an
+            // explicit confirmation before sending; everything else approves
+            // directly.
+            if (derived.confirm) {
+              setConfirmOpen(true);
+              return;
+            }
+            void onApprove(derived.body);
           }}
           data-testid={`approve-${stagedPaymentId}`}
         >
           {busy ? "Approving…" : "Approve"}
         </Button>
       </div>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent data-testid={`confirm-switch-${stagedPaymentId}`}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {derived?.ok && derived.confirm
+                ? derived.confirm.title
+                : "Confirm"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {derived?.ok && derived.confirm
+                ? derived.confirm.description
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (derived?.ok) void onApprove(derived.body);
+              }}
+              data-testid={`confirm-switch-action-${stagedPaymentId}`}
+            >
+              Switch &amp; approve
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

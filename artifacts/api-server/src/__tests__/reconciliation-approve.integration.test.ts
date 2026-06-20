@@ -56,6 +56,7 @@ vi.mock("../middlewares/requireAuth", () => ({
 const RUN = `reconapv_${Date.now()}`;
 const REALM_ID = `${RUN}_realm`;
 const ORG_ID = `${RUN}_org`;
+const ORG2_ID = `${RUN}_org2`;
 const ACCOUNT_ID = `${RUN}_acct`;
 
 type Db = typeof import("@workspace/db");
@@ -158,6 +159,29 @@ async function seedStaged(
     ...(opts.matchStatus !== undefined ? { matchStatus: opts.matchStatus } : {}),
   });
   stagedIds.push(id);
+  return id;
+}
+
+// A gift that is a payment on an existing pledge/opportunity (donor ORG_ID),
+// used to exercise the gift-donor-switch pledge-consistency block.
+async function seedGiftOnPledge(
+  amount: string,
+  pledgeId: string,
+): Promise<string> {
+  const id = nextId("gift");
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    amount,
+    organizationId: ORG_ID,
+    paymentOnPledgeId: pledgeId,
+    details: "Payment on pledge",
+  });
+  const allocId = nextId("alloc");
+  await db
+    .insert(schema.giftAllocations)
+    .values({ id: allocId, giftId: id, subAmount: amount });
+  giftIds.push(id);
+  allocIds.push(allocId);
   return id;
 }
 
@@ -349,6 +373,10 @@ beforeAll(async () => {
     id: ORG_ID,
     name: `Reconciliation Approve Test Org ${RUN}`,
   });
+  await db.insert(schema.organizations).values({
+    id: ORG2_ID,
+    name: `Reconciliation Approve Test Org2 ${RUN}`,
+  });
 
   const { default: app } = await import("../app");
   server = await new Promise<Server>((resolve) => {
@@ -401,7 +429,7 @@ afterAll(async () => {
       .where(inArrayFn(schema.opportunitiesAndPledges.id, oppIds));
   await db
     .delete(schema.organizations)
-    .where(eqFn(schema.organizations.id, ORG_ID));
+    .where(inArrayFn(schema.organizations.id, [ORG_ID, ORG2_ID]));
   await db.delete(schema.users).where(eqFn(schema.users.id, TEST_USER_ID));
 }, 60_000);
 
@@ -1121,3 +1149,80 @@ describe.skipIf(!HAS_DB)("Allocation rescale vs flag — adjustSingleAllocationO
     expect(open[0]?.newAmount).toBe("160.00");
   }, 30_000);
 });
+
+describe.skipIf(!HAS_DB)(
+  "Reconciliation approve — switch gift donor (integration)",
+  () => {
+    it("re-points the gift donor to the chosen donor when switchGiftDonor is set", async () => {
+      const giftId = await seedGift("100.00");
+      const stagedId = await seedStaged("100.00");
+
+      const res = await api(
+        `/api/reconciliation/cards/${stagedId}/approve`,
+        {
+          outcome: "link_existing_gift",
+          giftId,
+          organizationId: ORG2_ID,
+          switchGiftDonor: true,
+        },
+      );
+      expect(res.status).toBe(200);
+      expect(res.json.ok).toBe(true);
+
+      // The gift's donor is re-pointed to the chosen donor (Donor XOR preserved).
+      const gift = await readGift(giftId);
+      expect(gift.organizationId).toBe(ORG2_ID);
+      expect(gift.individualGiverPersonId).toBeNull();
+      expect(gift.householdId).toBeNull();
+
+      // The QB staged row becomes reconciled evidence tied to the gift, with the
+      // switched donor adopted.
+      const staged = await readStaged(stagedId);
+      expect(staged.status).toBe("reconciled");
+      expect(staged.matchedGiftId).toBe(giftId);
+      expect(staged.organizationId).toBe(ORG2_ID);
+    }, 30_000);
+
+    it("blocks the switch when the gift is a payment on a pledge owned by a different donor (gift_pledge_donor_conflict)", async () => {
+      const pledgeId = await seedOpp({ stage: "written_commitment" });
+      const giftId = await seedGiftOnPledge("100.00", pledgeId);
+      const stagedId = await seedStaged("100.00");
+
+      const res = await api(
+        `/api/reconciliation/cards/${stagedId}/approve`,
+        {
+          outcome: "link_existing_gift",
+          giftId,
+          organizationId: ORG2_ID,
+          switchGiftDonor: true,
+        },
+      );
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("gift_pledge_donor_conflict");
+
+      // Nothing mutated: gift donor unchanged, staged row still pending.
+      const gift = await readGift(giftId);
+      expect(gift.organizationId).toBe(ORG_ID);
+      const staged = await readStaged(stagedId);
+      expect(staged.status).toBe("pending");
+    }, 30_000);
+
+    it("rejects a switch with no donor selected (validation_error)", async () => {
+      const giftId = await seedGift("100.00");
+      const stagedId = await seedStaged("100.00");
+
+      const res = await api(
+        `/api/reconciliation/cards/${stagedId}/approve`,
+        { outcome: "link_existing_gift", giftId, switchGiftDonor: true },
+      );
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe("validation_error");
+
+      // Untouched.
+      const gift = await readGift(giftId);
+      expect(gift.organizationId).toBe(ORG_ID);
+      const staged = await readStaged(stagedId);
+      expect(staged.status).toBe("pending");
+    }, 30_000);
+  },
+);

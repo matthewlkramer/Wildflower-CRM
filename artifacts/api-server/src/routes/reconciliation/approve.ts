@@ -14,7 +14,12 @@ import {
   ApproveReconciliationCardBody,
   validateGiftInvariants,
 } from "@workspace/api-zod";
-import { donorOf } from "../../lib/quickbooksLink";
+import {
+  donorOf,
+  donorsMatch,
+  hasExactlyOneDonor,
+  type LinkDonor,
+} from "../../lib/quickbooksLink";
 import {
   stampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
@@ -723,6 +728,55 @@ router.post(
           }
         }
 
+        // ── Optional gift-donor switch (human-confirmed) ───────────────────────
+        // Normally an explicit Match ADOPTS the gift's existing donor. When the
+        // reviewer instead picks a DIFFERENT donor and the client sends
+        // `switchGiftDonor`, re-point the gift's donor to the supplied one — but
+        // only after re-validating Donor XOR here, and only when the gift is not a
+        // payment on a pledge/opportunity owned by another donor (that must be
+        // fixed on the pledge first). Never trust the UI's notion of a switch.
+        const bodyDonor: LinkDonor = {
+          organizationId: body.organizationId ?? null,
+          individualGiverPersonId: body.individualGiverPersonId ?? null,
+          householdId: body.householdId ?? null,
+        };
+        let donorSwitching = false;
+        if (body.switchGiftDonor === true) {
+          if (!hasExactlyOneDonor(bodyDonor)) {
+            throw new ApproveAbort(400, {
+              error: "validation_error",
+              message:
+                "Switching a gift's donor requires exactly one donor (Donor XOR).",
+            });
+          }
+          donorSwitching = !donorsMatch(donorOf(gift), bodyDonor);
+        }
+        // Block the switch when this gift is a payment on a pledge/opportunity
+        // owned by a different donor — re-pointing the payment alone would split
+        // the money off its commitment. Reuse the already-locked `opp` when it IS
+        // that pledge; otherwise lock the tied pledge too.
+        if (donorSwitching && gift.paymentOnPledgeId) {
+          const tiedPledge =
+            opp && opp.id === gift.paymentOnPledgeId
+              ? opp
+              : ((await tx
+                  .select()
+                  .from(opportunitiesAndPledges)
+                  .where(eq(opportunitiesAndPledges.id, gift.paymentOnPledgeId))
+                  .for("update")
+                  .then((r) => r[0])) ?? null);
+          if (tiedPledge && !donorsMatch(donorOf(tiedPledge), bodyDonor)) {
+            throw new ApproveAbort(409, {
+              error: "gift_pledge_donor_conflict",
+              message:
+                "This gift is a payment on a pledge owned by a different donor. Switch the pledge's donor first, then re-point the gift.",
+            });
+          }
+        }
+        const effectiveGiftDonor: LinkDonor = donorSwitching
+          ? bodyDonor
+          : donorOf(gift);
+
         let charge: typeof stripeStagedCharges.$inferSelect | null = null;
         if (stripeChargeId) {
           charge =
@@ -780,9 +834,9 @@ router.post(
             id: gift.id,
             amount: gift.amount,
             archivedAt: gift.archivedAt,
-            organizationId: gift.organizationId,
-            individualGiverPersonId: gift.individualGiverPersonId,
-            householdId: gift.householdId,
+            organizationId: effectiveGiftDonor.organizationId,
+            individualGiverPersonId: effectiveGiftDonor.individualGiverPersonId,
+            householdId: effectiveGiftDonor.householdId,
             finalAmountSource: gift.finalAmountSource,
             finalAmountStripeChargeId: gift.finalAmountStripeChargeId,
           },
@@ -813,8 +867,9 @@ router.post(
         }
 
         // An explicit human Match treats the selected gift as authoritative: the
-        // staged evidence ADOPTS the gift's donor (Donor XOR validated by the gate).
-        const finalDonor = donorOf(gift);
+        // staged evidence ADOPTS the gift's (possibly just-switched) donor — the
+        // gate validated Donor XOR on `effectiveGiftDonor` above.
+        const finalDonor = effectiveGiftDonor;
 
         // Tie the staged row to the gift. Only succeeds if still pending AND no
         // other staged row / split already claims this gift — the NOT EXISTS
@@ -862,6 +917,21 @@ router.post(
             message:
               "This staged payment is no longer pending, or that gift was just linked to another payment. Refresh and try again.",
           });
+        }
+
+        // Re-point the gift's donor when the reviewer confirmed a switch (the
+        // pledge-conflict + Donor XOR checks above already cleared it).
+        if (donorSwitching) {
+          await tx
+            .update(giftsAndPayments)
+            .set({
+              organizationId: effectiveGiftDonor.organizationId,
+              individualGiverPersonId:
+                effectiveGiftDonor.individualGiverPersonId,
+              householdId: effectiveGiftDonor.householdId,
+              updatedAt: new Date(),
+            })
+            .where(eq(giftsAndPayments.id, giftId));
         }
 
         // Stamp the gift's FINAL amount + rebalance its single allocation (or
@@ -946,12 +1016,21 @@ router.post(
           action: "update",
           entityType: "gift",
           entityId: giftId,
-          summary: `Reconciled QuickBooks payment to gift (complete match)`,
+          summary: donorSwitching
+            ? `Reconciled QuickBooks payment to gift and switched its donor (complete match)`
+            : `Reconciled QuickBooks payment to gift (complete match)`,
           metadata: {
             stagedPaymentId,
             stripeChargeId: charge?.id ?? null,
             opportunityId: opp?.id ?? null,
             outcome: "link_existing_gift",
+            ...(donorSwitching
+              ? {
+                  switchedGiftDonor: true,
+                  fromDonor: donorOf(gift),
+                  toDonor: effectiveGiftDonor,
+                }
+              : {}),
           },
         });
       });

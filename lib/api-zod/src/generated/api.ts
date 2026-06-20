@@ -16384,6 +16384,12 @@ export const GetReconciliationGraphResponse = zod
             donorKind: zod
               .enum(["organization", "person", "household"])
               .nullish(),
+            donorId: zod
+              .string()
+              .nullish()
+              .describe(
+                "For gift\/opportunity candidates: the record id of the candidate's CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift's existing donor.",
+              ),
             alreadyLinkedStagedPaymentId: zod
               .string()
               .nullish()
@@ -16531,6 +16537,12 @@ export const SearchReconciliationNodeResponse = zod.object({
         .nullish()
         .describe("How a candidate was derived (audit + UI badge)."),
       donorKind: zod.enum(["organization", "person", "household"]).nullish(),
+      donorId: zod
+        .string()
+        .nullish()
+        .describe(
+          "For gift\/opportunity candidates: the record id of the candidate's CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift's existing donor.",
+        ),
       alreadyLinkedStagedPaymentId: zod
         .string()
         .nullish()
@@ -16599,6 +16611,12 @@ export const ApproveReconciliationCardBody = zod
       .nullish()
       .describe(
         "Optional DAF \/ giving-platform conduit the donor gave through.",
+      ),
+    switchGiftDonor: zod
+      .boolean()
+      .nullish()
+      .describe(
+        "For link_existing_gift ONLY: when true, re-point the existing gift's donor to the single donor FK supplied in this body (after explicit human confirmation in the UI). Blocked (409 gift_pledge_donor_conflict) when the gift is a payment on a pledge\/opportunity owned by a different donor — fix the pledge first.",
       ),
     stripeChargeId: zod
       .string()

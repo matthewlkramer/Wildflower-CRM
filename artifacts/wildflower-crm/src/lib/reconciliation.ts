@@ -47,7 +47,14 @@ export type OutcomeChoice =
   | "convert_to_pledge_and_first_payment";
 
 export type DeriveResult =
-  | { ok: true; body: ApproveCompleteMatchBody; summary: string }
+  | {
+      ok: true;
+      body: ApproveCompleteMatchBody;
+      summary: string;
+      /** When set, the UI must confirm with the human before sending (e.g. a
+       *  gift-donor switch that overrides the gift's existing donor). */
+      confirm?: { title: string; description: string };
+    }
   | { ok: false; reason: string };
 
 /**
@@ -102,16 +109,50 @@ export function deriveApproveBody(args: {
   if (reason) base.overrideAmountMismatchReason = reason;
 
   if (gift) {
+    // If the reviewer ALSO picked a donor that differs from the gift's CURRENT
+    // donor, ask the server to re-point the gift's donor — but only after an
+    // explicit confirmation (this overrides the usual adopt-the-gift's-donor
+    // behavior). The server re-validates Donor XOR + blocks the switch when the
+    // gift is a payment on a pledge owned by another donor.
+    // Compare BOTH donor kind and id: a switch is any change to the
+    // (kind, id) pair, so an org and a person that happened to share an id
+    // string are still treated as different donors.
+    const switching =
+      donor != null &&
+      donor.donorKind != null &&
+      gift.donorId != null &&
+      (donor.id !== gift.donorId || donor.donorKind !== gift.donorKind);
+    const switchField =
+      switching && donor
+        ? donor.donorKind === "organization"
+          ? { organizationId: donor.id }
+          : donor.donorKind === "person"
+            ? { individualGiverPersonId: donor.id }
+            : { householdId: donor.id }
+        : {};
     return {
       ok: true,
       summary: `Link to existing gift “${gift.label}”${
         opportunity ? ` and tie it to ${opportunity.label}` : ""
-      }.`,
+      }${switching && donor ? ` and switch its donor to ${donor.label}` : ""}.`,
+      ...(switching && donor
+        ? {
+            confirm: {
+              title: "Switch this gift’s donor?",
+              description: `This gift is currently for ${
+                gift.sublabel ?? "another donor"
+              }. Approving will re-point it from ${
+                gift.sublabel ?? "its current donor"
+              } → to ${donor.label}.`,
+            },
+          }
+        : {}),
       body: {
         ...base,
         outcome: "link_existing_gift",
         giftId: gift.id,
         opportunityId: opportunity?.id ?? null,
+        ...(switching ? { switchGiftDonor: true, ...switchField } : {}),
       },
     };
   }

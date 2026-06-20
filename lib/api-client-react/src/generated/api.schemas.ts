@@ -2733,6 +2733,8 @@ export interface ReconciliationCandidate {
   confidence?: number | null;
   source?: ReconciliationCandidateSource | null;
   donorKind?: ReconciliationCandidateDonorKind;
+  /** For gift/opportunity candidates: the record id of the candidate's CURRENT donor (organization/person/household), so the client can detect when a picked donor differs from the gift's existing donor. */
+  donorId?: string | null;
   /** For gift candidates: set when the gift is already reconciled/created/group/split-linked by another staged payment (UI disables linking to avoid double-counting). */
   alreadyLinkedStagedPaymentId?: string | null;
   /** Why this candidate conflicts with a locked node (set only when state=conflict). */
@@ -2881,6 +2883,8 @@ export interface ApproveCompleteMatchBody {
   householdId?: string | null;
   /** Optional DAF / giving-platform conduit the donor gave through. */
   paymentIntermediaryId?: string | null;
+  /** For link_existing_gift ONLY: when true, re-point the existing gift's donor to the single donor FK supplied in this body (after explicit human confirmation in the UI). Blocked (409 gift_pledge_donor_conflict) when the gift is a payment on a pledge/opportunity owned by a different donor — fix the pledge first. */
+  switchGiftDonor?: boolean | null;
   /** The Stripe charge whose GROSS becomes the gift's final amount (Stripe precedence). Omit for QB-only money (brokerage/check). */
   stripeChargeId?: string | null;
   /** Required to approve when the evidence amount and the gift amount fall outside the fee-band tolerance. */

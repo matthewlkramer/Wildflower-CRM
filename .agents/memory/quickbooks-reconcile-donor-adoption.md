@@ -18,3 +18,14 @@ left is `hasExactlyOneDonor(giftDonor)` (keeps Donor XOR on the staged row).
 exported + unit-tested but NOT enforced by the reconcile route. Do not
 reintroduce a strict staged-vs-gift donor-equality check on the explicit Match
 path. The atomic `NOT EXISTS` update + 23505 → 409 race handling is unchanged.
+
+**EXCEPTION — explicit "switch this gift's donor" (E7 reconciler):** the default
+above adopts the gift's donor, but the E7 reconciliation card `link_existing_gift`
+path supports the *reverse*: when the reviewer picks a donor that differs from the
+gift's current donor and confirms, the body carries `switchGiftDonor: true` and the
+gift's donor is **re-pointed** to the chosen one (the gate, the gift UPDATE, and
+the staged-row donor adoption all use `effectiveGiftDonor`). Guards on this path:
+`hasExactlyOneDonor` on the body donor → 400; and if the gift is a payment on a
+pledge/opp owned by a *different* donor, the switch is **blocked** with 409
+`gift_pledge_donor_conflict` (fix the pledge first). So: silent Match → adopt the
+gift's donor; explicit confirmed switch → re-point it. Don't collapse the two.

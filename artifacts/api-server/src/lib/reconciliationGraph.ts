@@ -96,6 +96,9 @@ export interface RecCandidate {
   confidence: number | null;
   source: RecCandidateSource | null;
   donorKind: RecDonorKind | null;
+  /** For gift/opportunity candidates: the record id of the candidate's current
+   *  donor, so the client can detect a picked-donor-vs-gift-donor mismatch. */
+  donorId: string | null;
   alreadyLinkedStagedPaymentId: string | null;
   conflictReason: string | null;
 }
@@ -159,6 +162,7 @@ function candidate(init: CandidateInit): RecCandidate {
     confidence: null,
     source: null,
     donorKind: null,
+    donorId: null,
     alreadyLinkedStagedPaymentId: null,
     conflictReason: null,
     ...init,
@@ -439,6 +443,7 @@ function giftRowToCandidate(
   viewer: Viewer,
 ): RecCandidate {
   const hidden = giftDonorHidden(g, viewer);
+  const donor = donorPickFromStaged(g);
   return candidate({
     nodeType: "gift",
     id: g.id,
@@ -448,6 +453,8 @@ function giftRowToCandidate(
     date: g.dateReceived ?? null,
     confidence: amountConfidence(anchorAmount, g.amount ?? null),
     source: "amount_date",
+    donorKind: donor?.kind ?? null,
+    donorId: donor?.id ?? null,
     alreadyLinkedStagedPaymentId: g.alreadyLinkedStagedPaymentId ?? null,
   });
 }
@@ -495,6 +502,8 @@ function oppToCandidate(
     sublabel: masked.name,
     amount: o.awardedAmount ?? o.askAmount ?? null,
     source,
+    donorKind: pair?.kind ?? null,
+    donorId: pair?.id ?? null,
   });
 }
 
