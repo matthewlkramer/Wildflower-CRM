@@ -18,6 +18,9 @@ import {
   eq,
   getTableColumns,
   ilike,
+  inArray,
+  isNull,
+  not,
   or,
   sql,
 } from "drizzle-orm";
@@ -52,12 +55,33 @@ export const resolvedGift = alias(giftsAndPayments, "resolved_gift");
 // The handling rule that auto-classified this row (excluded / auto-approved), for display.
 export const matchedRule = alias(quickbooksHandlingRules, "matched_rule");
 
+// Fiscally sponsored Wildflower entities. Money attributed to one of these is
+// pass-through for a sponsored project, not a Foundation gift, so it is parked
+// in its own "Fiscally sponsored" queue and kept OUT of the default needs-review
+// queue to avoid cluttering day-to-day reconciliation. Entity ATTRIBUTION itself
+// lives in ENTITY_MARKERS / detectEntity (quickbooksExclusionRules.ts); this list
+// only decides which already-attributed entities get parked. Extend it to park
+// another sponsored entity. Code-only by design — no data migration is needed
+// because staged_payments.entity_id is already populated.
+export const FISCALLY_SPONSORED_ENTITY_IDS: readonly string[] = [
+  "embracing_equity",
+  "tierra_indigena",
+];
+
+// SQL predicate: this staged row is attributed to a fiscally sponsored entity.
+// inArray (never ANY(...::text[]) — that renders a record cast that fails at
+// runtime) so a NULL entity_id (the Foundation default) is correctly NOT matched.
+const isFiscallySponsoredRow = inArray(stagedPayments.entityId, [
+  ...FISCALLY_SPONSORED_ENTITY_IDS,
+]);
+
 // Derived queue bucket for a staged row (kept in sync with the where-clauses
 // in queueWhere below).
 export const queueExpr = sql<string>`
   CASE
     WHEN ${stagedPayments.status} = 'excluded' THEN 'excluded'
     WHEN ${stagedPayments.status} = 'rejected' THEN 'rejected'
+    WHEN ${stagedPayments.status} = 'pending' AND ${isFiscallySponsoredRow} THEN 'fiscally_sponsored'
     WHEN ${stagedPayments.status} = 'pending'  THEN 'needs_review'
     WHEN ${stagedPayments.status} = 'approved'
          AND ${stagedPayments.autoApplied} = true
@@ -212,6 +236,7 @@ export function entityWhere(entity: string) {
 
 export type Queue =
   | "needs_review"
+  | "fiscally_sponsored"
   | "auto_matched"
   | "excluded"
   | "done"
@@ -288,9 +313,19 @@ export function queueWhere(queue: Queue) {
       return eq(stagedPayments.status, "excluded");
     case "rejected":
       return eq(stagedPayments.status, "rejected");
+    case "fiscally_sponsored":
+      // Pending money attributed to a fiscally sponsored entity — parked here so
+      // it stays out of the default needs-review queue.
+      return and(eq(stagedPayments.status, "pending"), isFiscallySponsoredRow);
     case "needs_review":
     default:
-      return eq(stagedPayments.status, "pending");
+      // Pending money that is NOT fiscally sponsored. NULL entity_id (Foundation
+      // default) must stay IN — `entity_id NOT IN (...)` is NULL-unsafe, so guard
+      // it explicitly with an IS NULL branch.
+      return and(
+        eq(stagedPayments.status, "pending"),
+        or(isNull(stagedPayments.entityId), not(isFiscallySponsoredRow)),
+      );
   }
 }
 

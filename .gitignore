@@ -47,3 +47,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Stripe balance export contains donor PII — keep out of git
+attached_assets/balance_history_*.csv

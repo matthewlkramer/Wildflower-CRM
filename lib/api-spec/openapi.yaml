@@ -2230,7 +2230,7 @@ paths:
       operationId: listStagedPayments
       tags: [staged-payments]
       parameters:
-        - { name: queue, in: query, schema: { $ref: "#/components/schemas/StagedPaymentQueue" }, description: "Which queue to list (default needs_review)." }
+        - { name: queue, in: query, schema: { $ref: "#/components/schemas/QuickbooksStagedPaymentQueue" }, description: "Which queue to list (default needs_review)." }
         - { name: sort, in: query, schema: { $ref: "#/components/schemas/StagedPaymentSort" }, description: "Sort order (default date_desc)." }
         - { name: search, in: query, schema: { type: string }, description: "Free-text filter across payer, memo, and line item / account / class detail." }
         - { name: entity, in: query, schema: { type: string }, description: "Restrict to one Wildflower entity (entities.id). Empty or 'all' = no restriction; the Foundation id also includes unattributed (null-entity) rows." }
@@ -2243,7 +2243,7 @@ paths:
       operationId: getStagedPaymentsSummary
       tags: [staged-payments]
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPaymentSummary" } } } }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickbooksStagedPaymentSummary" } } } }
   /staged-payments-donor-search:
     get:
       operationId: searchStagedPaymentDonors
@@ -4687,6 +4687,7 @@ components:
     StagedPaymentClassificationSource: { type: string, enum: [auto, manual] }
     StagedPaymentEntitySource: { type: string, enum: [auto, manual], description: "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync / reclassify." }
     StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, rejected] }
+    QuickbooksStagedPaymentQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected], description: "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review)." }
     StagedPaymentSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc, payer_asc, payer_desc] }
     GiftSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc] }
     QuickbooksOauthStatus:
@@ -4932,7 +4933,7 @@ components:
         rejectedByUserId:          { type: string, nullable: true }
         rejectedAt:                { type: string, format: date-time, nullable: true }
         # Derived queue bucket + denormalized display fields, joined server-side.
-        queue:                     { $ref: "#/components/schemas/StagedPaymentQueue" }
+        queue:                     { $ref: "#/components/schemas/QuickbooksStagedPaymentQueue" }
         organizationName:          { type: string, nullable: true }
         householdName:             { type: string, nullable: true }
         individualGiverPersonName: { type: string, nullable: true }
@@ -4986,6 +4987,14 @@ components:
             expense_refund:          { type: integer }
             expensify:               { type: integer }
             returned_wire:           { type: integer }
+    QuickbooksStagedPaymentSummary:
+      description: "QuickBooks staged-payment summary. StagedPaymentSummary plus the fiscally_sponsored parking-queue count."
+      allOf:
+        - $ref: "#/components/schemas/StagedPaymentSummary"
+        - type: object
+          required: [fiscallySponsored]
+          properties:
+            fiscallySponsored: { type: integer }
     StripeSyncSummary:
       type: object
       required: [ran, payouts, staged, matched, autoApplied]

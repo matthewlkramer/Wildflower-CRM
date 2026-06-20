@@ -23,7 +23,14 @@ router.get(
   asyncHandler(async (req, res) => {
     const raw = typeof req.query["queue"] === "string" ? req.query["queue"] : "";
     const queue: Queue = (
-      ["needs_review", "auto_matched", "excluded", "done", "rejected"] as const
+      [
+        "needs_review",
+        "fiscally_sponsored",
+        "auto_matched",
+        "excluded",
+        "done",
+        "rejected",
+      ] as const
     ).includes(raw as Queue)
       ? (raw as Queue)
       : "needs_review";
@@ -67,7 +74,13 @@ router.get(
 router.get(
   "/staged-payments-summary",
   asyncHandler(async (_req, res) => {
-    const [statusRows, reasonRows, autoMatchedRow] = await Promise.all([
+    const [
+      statusRows,
+      reasonRows,
+      autoMatchedRow,
+      needsReviewRow,
+      fiscallySponsoredRow,
+    ] = await Promise.all([
       db
         .select({ status: stagedPayments.status, value: count() })
         .from(stagedPayments)
@@ -81,6 +94,18 @@ router.get(
         .select({ value: count() })
         .from(stagedPayments)
         .where(queueWhere("auto_matched"))
+        .then((r) => r[0]),
+      // needs_review excludes fiscally sponsored money; count it via the same
+      // where-clause the list uses so the badge matches the decluttered queue.
+      db
+        .select({ value: count() })
+        .from(stagedPayments)
+        .where(queueWhere("needs_review"))
+        .then((r) => r[0]),
+      db
+        .select({ value: count() })
+        .from(stagedPayments)
+        .where(queueWhere("fiscally_sponsored"))
         .then((r) => r[0]),
     ]);
 
@@ -116,7 +141,8 @@ router.get(
 
     const autoMatched = autoMatchedRow?.value ?? 0;
     res.json({
-      needsReview: byStatus.pending,
+      needsReview: needsReviewRow?.value ?? 0,
+      fiscallySponsored: fiscallySponsoredRow?.value ?? 0,
       autoMatched,
       done: byStatus.approved - autoMatched,
       rejected: byStatus.rejected,

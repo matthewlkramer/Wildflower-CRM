@@ -1924,6 +1924,21 @@ export const StagedPaymentQueue = {
   rejected: "rejected",
 } as const;
 
+/**
+ * QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).
+ */
+export type QuickbooksStagedPaymentQueue =
+  (typeof QuickbooksStagedPaymentQueue)[keyof typeof QuickbooksStagedPaymentQueue];
+
+export const QuickbooksStagedPaymentQueue = {
+  needs_review: "needs_review",
+  fiscally_sponsored: "fiscally_sponsored",
+  auto_matched: "auto_matched",
+  excluded: "excluded",
+  done: "done",
+  rejected: "rejected",
+} as const;
+
 export type StagedPaymentSort =
   (typeof StagedPaymentSort)[keyof typeof StagedPaymentSort];
 
@@ -2263,7 +2278,7 @@ export interface StagedPayment {
   approvedAt?: string | null;
   rejectedByUserId?: string | null;
   rejectedAt?: string | null;
-  queue?: StagedPaymentQueue;
+  queue?: QuickbooksStagedPaymentQueue;
   organizationName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
@@ -2324,6 +2339,13 @@ export interface StagedPaymentSummary {
   excluded: number;
   excludedByReason: StagedPaymentSummaryExcludedByReason;
 }
+
+/**
+ * QuickBooks staged-payment summary. StagedPaymentSummary plus the fiscally_sponsored parking-queue count.
+ */
+export type QuickbooksStagedPaymentSummary = StagedPaymentSummary & {
+  fiscallySponsored: number;
+};
 
 export interface StripeSyncSummary {
   /** False when the sync was skipped (lock contended, or the Stripe connector/account was unavailable). */
@@ -5276,7 +5298,7 @@ export type ListStagedPaymentsParams = {
   /**
    * Which queue to list (default needs_review).
    */
-  queue?: StagedPaymentQueue;
+  queue?: QuickbooksStagedPaymentQueue;
   /**
    * Sort order (default date_desc).
    */

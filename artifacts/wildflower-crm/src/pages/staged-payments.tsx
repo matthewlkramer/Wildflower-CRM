@@ -32,7 +32,7 @@ import {
   useCreateGiftOrPayment,
   getGetQuickbooksOauthStatusQueryKey,
   type StagedPayment,
-  type StagedPaymentQueue,
+  type QuickbooksStagedPaymentQueue,
   type Entity,
   type StagedPaymentSort,
   type StagedPaymentExclusionReason,
@@ -101,8 +101,9 @@ import {
  * left row is selected, reconciles the payment to the freshly-created gift.
  * ──────────────────────────────────────────────────────────────────────── */
 
-const QUEUES: { value: StagedPaymentQueue; label: string }[] = [
+const QUEUES: { value: QuickbooksStagedPaymentQueue; label: string }[] = [
   { value: "needs_review", label: "Needs review" },
+  { value: "fiscally_sponsored", label: "Fiscally sponsored" },
   { value: "auto_matched", label: "Auto-matched" },
   { value: "done", label: "Done" },
   { value: "excluded", label: "Excluded" },
@@ -359,7 +360,7 @@ export default function StagedPayments() {
   const isAdmin = me?.role === "admin";
 
   // Left pane (staged imports) state.
-  const [queue, setQueue] = useState<StagedPaymentQueue>("needs_review");
+  const [queue, setQueue] = useState<QuickbooksStagedPaymentQueue>("needs_review");
   const [sort, setSort] = useState<StagedPaymentSort>("date_desc");
   const [stagedSearch, setStagedSearch] = useState("");
   // "all" = no entity restriction; otherwise an entities.id.
@@ -929,11 +930,13 @@ export default function StagedPayments() {
     });
   }, [rows]);
 
-  const countFor = (q: StagedPaymentQueue): number | undefined => {
+  const countFor = (q: QuickbooksStagedPaymentQueue): number | undefined => {
     if (!summary) return undefined;
     switch (q) {
       case "needs_review":
         return summary.needsReview;
+      case "fiscally_sponsored":
+        return summary.fiscallySponsored;
       case "auto_matched":
         return summary.autoMatched;
       case "done":
@@ -970,8 +973,14 @@ export default function StagedPayments() {
     setGiftPage(1);
   };
 
+  // "Needs review" and "Fiscally sponsored" are both pending-money queues with
+  // the same reconcile actions — the latter is just needs-review scoped to
+  // fiscally sponsored entities. Gate all reconcile actions on either.
+  const isPendingQueue =
+    queue === "needs_review" || queue === "fiscally_sponsored";
+
   const canMatch =
-    queue === "needs_review" &&
+    isPendingQueue &&
     selectedStaged != null &&
     selectedStaged.status === "pending" &&
     selectedGiftId != null &&
@@ -990,7 +999,7 @@ export default function StagedPayments() {
   // exact gift (the button lives on that gift's own row), so it stays explicit —
   // no blind auto-guess.
   const canMatchAny =
-    queue === "needs_review" &&
+    isPendingQueue &&
     selectedStaged != null &&
     selectedStaged.status === "pending" &&
     !reconcile.isPending;
@@ -1019,7 +1028,7 @@ export default function StagedPayments() {
   };
   const groupWithinBand = groupWithinBandFor(selectedGiftAmount);
   const canGroupMatch =
-    queue === "needs_review" && groupActive && !groupReconcile.isPending;
+    isPendingQueue && groupActive && !groupReconcile.isPending;
 
   const groupMatchGift = (
     giftId: string,
@@ -1078,7 +1087,7 @@ export default function StagedPayments() {
   const splitActive =
     splitMode &&
     !groupActive &&
-    queue === "needs_review" &&
+    isPendingQueue &&
     selectedStaged != null &&
     selectedStaged.status === "pending";
   const canSplit =
@@ -1268,7 +1277,7 @@ export default function StagedPayments() {
             ) : null}
             {!splitActive &&
             !groupActive &&
-            queue === "needs_review" &&
+            isPendingQueue &&
             selectedStaged != null &&
             selectedStaged.status === "pending" ? (
               <Button
@@ -1312,7 +1321,7 @@ export default function StagedPayments() {
                 disabled={!canMatch}
                 data-testid="match-button"
                 title={
-                  queue !== "needs_review"
+                  !isPendingQueue
                     ? "Switch to the Needs review queue to match a payment."
                     : "Reconcile the selected payment to the selected gift."
                 }
@@ -1340,7 +1349,7 @@ export default function StagedPayments() {
             <Select
               value={queue}
               onValueChange={(v) => {
-                setQueue(v as StagedPaymentQueue);
+                setQueue(v as QuickbooksStagedPaymentQueue);
                 setPage(1);
                 setSelectedStaged(null);
                 clearBulk();
@@ -1649,7 +1658,7 @@ export default function StagedPayments() {
           if (
             selectedStaged &&
             selectedStaged.status === "pending" &&
-            queue === "needs_review"
+            isPendingQueue
           ) {
             reconcile.mutate(
               {
@@ -1770,7 +1779,7 @@ function StagedPaymentCard({
   onToggleBulk,
 }: {
   row: StagedPayment;
-  queue: StagedPaymentQueue;
+  queue: QuickbooksStagedPaymentQueue;
   entityOptions: Entity[];
   selected: boolean;
   onSelect: () => void;
@@ -1783,7 +1792,13 @@ function StagedPaymentCard({
 }) {
   const { toast } = useToast();
 
-  const editable = queue === "needs_review";
+  // Pending money is editable/actionable in both pending queues — "Needs review"
+  // and "Fiscally sponsored" (the latter is needs-review scoped to sponsored
+  // entities). Keeping the row fully actionable lets a reviewer re-attribute or
+  // reconcile parked money without leaving the queue.
+  const isPendingQueue =
+    queue === "needs_review" || queue === "fiscally_sponsored";
+  const editable = isPendingQueue;
   const isExcluded = queue === "excluded";
 
   // A staged "deposit" row is a single direct deposit line with NO linked
@@ -1921,7 +1936,7 @@ function StagedPaymentCard({
   const wasSplit = (row.splitCount ?? 0) > 0;
   const canRevert = wasReconciled || wasAutoMinted || wasSplit;
 
-  const selectable = queue === "needs_review";
+  const selectable = isPendingQueue;
 
   // Reviewer can pin/correct which Wildflower legal entity this money belongs to.
   // Pinning sets entitySource='manual' server-side so detectEntity never
@@ -1983,7 +1998,7 @@ function StagedPaymentCard({
   // surface that instead of a confident "% match" pointing at an already-linked
   // gift (a Match can't happen; the fundraiser should create a new gift).
   const looksLikeUncreatedGift =
-    queue === "needs_review" && row.giftAlreadyLinkedElsewhere === true;
+    isPendingQueue && row.giftAlreadyLinkedElsewhere === true;
 
   return (
     <Card
@@ -2328,7 +2343,7 @@ function ResolvedSummary({
   onRevert,
 }: {
   row: StagedPayment;
-  queue: StagedPaymentQueue;
+  queue: QuickbooksStagedPaymentQueue;
   donorLabel: string | null;
   busy: boolean;
   canRevert: boolean;

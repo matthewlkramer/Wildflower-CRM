@@ -217,6 +217,7 @@ import type {
   QuickbooksReclassifySummary,
   QuickbooksRematchSummary,
   QuickbooksResyncStatus,
+  QuickbooksStagedPaymentSummary,
   QuickbooksSyncSummary,
   ReconcileStagedPaymentBody,
   RefreshTaskProposalBody,
@@ -16313,11 +16314,14 @@ export const getGetStagedPaymentsSummaryUrl = () => {
 
 export const getStagedPaymentsSummary = async (
   options?: RequestInit,
-): Promise<StagedPaymentSummary> => {
-  return customFetch<StagedPaymentSummary>(getGetStagedPaymentsSummaryUrl(), {
-    ...options,
-    method: "GET",
-  });
+): Promise<QuickbooksStagedPaymentSummary> => {
+  return customFetch<QuickbooksStagedPaymentSummary>(
+    getGetStagedPaymentsSummaryUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
 export const getGetStagedPaymentsSummaryQueryKey = () => {

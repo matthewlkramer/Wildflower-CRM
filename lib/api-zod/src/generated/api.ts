@@ -9813,7 +9813,14 @@ export const listStagedPaymentsQueryPageDefault = 1;
 
 export const ListStagedPaymentsQueryParams = zod.object({
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+    ])
     .optional()
     .describe("Which queue to list (default needs_review)."),
   sort: zod
@@ -9959,8 +9966,18 @@ export const ListStagedPaymentsResponse = zod.object({
       rejectedByUserId: zod.string().nullish(),
       rejectedAt: zod.string().datetime({}).nullish(),
       queue: zod
-        .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-        .optional(),
+        .enum([
+          "needs_review",
+          "fiscally_sponsored",
+          "auto_matched",
+          "excluded",
+          "done",
+          "rejected",
+        ])
+        .optional()
+        .describe(
+          "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+        ),
       organizationName: zod.string().nullish(),
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
@@ -10033,30 +10050,39 @@ export const ListStagedPaymentsResponse = zod.object({
   }),
 });
 
-export const GetStagedPaymentsSummaryResponse = zod.object({
-  needsReview: zod.number(),
-  autoMatched: zod.number(),
-  done: zod.number(),
-  rejected: zod.number(),
-  excluded: zod.number(),
-  excludedByReason: zod.object({
-    zero_amount: zod.number(),
-    loan: zod.number(),
-    membership: zod.number(),
-    interest: zod.number(),
-    government_reimbursement: zod.number(),
-    tax_refund: zod.number(),
-    other_revenue: zod.number(),
-    earned_income: zod.number(),
-    fiscally_sponsored: zod.number(),
-    intercompany_transfer: zod.number(),
-    other: zod.number(),
-    insurance: zod.number(),
-    expense_refund: zod.number(),
-    expensify: zod.number(),
-    returned_wire: zod.number(),
-  }),
-});
+export const GetStagedPaymentsSummaryResponse = zod
+  .object({
+    needsReview: zod.number(),
+    autoMatched: zod.number(),
+    done: zod.number(),
+    rejected: zod.number(),
+    excluded: zod.number(),
+    excludedByReason: zod.object({
+      zero_amount: zod.number(),
+      loan: zod.number(),
+      membership: zod.number(),
+      interest: zod.number(),
+      government_reimbursement: zod.number(),
+      tax_refund: zod.number(),
+      other_revenue: zod.number(),
+      earned_income: zod.number(),
+      fiscally_sponsored: zod.number(),
+      intercompany_transfer: zod.number(),
+      other: zod.number(),
+      insurance: zod.number(),
+      expense_refund: zod.number(),
+      expensify: zod.number(),
+      returned_wire: zod.number(),
+    }),
+  })
+  .and(
+    zod.object({
+      fiscallySponsored: zod.number(),
+    }),
+  )
+  .describe(
+    "QuickBooks staged-payment summary. StagedPaymentSummary plus the fiscally_sponsored parking-queue count.",
+  );
 
 /**
  * @summary Trigram donor search (organizations / people / households) for the reconciler picker.
@@ -10203,8 +10229,18 @@ export const ResolveStagedPaymentResponse = zod.object({
   rejectedByUserId: zod.string().nullish(),
   rejectedAt: zod.string().datetime({}).nullish(),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+    ])
+    .optional()
+    .describe(
+      "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -10394,8 +10430,18 @@ export const RejectStagedPaymentResponse = zod.object({
   rejectedByUserId: zod.string().nullish(),
   rejectedAt: zod.string().datetime({}).nullish(),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+    ])
+    .optional()
+    .describe(
+      "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -10578,8 +10624,18 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   rejectedByUserId: zod.string().nullish(),
   rejectedAt: zod.string().datetime({}).nullish(),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+    ])
+    .optional()
+    .describe(
+      "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -10782,8 +10838,18 @@ export const SetStagedPaymentEntityResponse = zod.object({
   rejectedByUserId: zod.string().nullish(),
   rejectedAt: zod.string().datetime({}).nullish(),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+    ])
+    .optional()
+    .describe(
+      "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -10995,8 +11061,18 @@ export const ExcludeStagedPaymentResponse = zod.object({
   rejectedByUserId: zod.string().nullish(),
   rejectedAt: zod.string().datetime({}).nullish(),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+    ])
+    .optional()
+    .describe(
+      "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -11890,8 +11966,18 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   rejectedByUserId: zod.string().nullish(),
   rejectedAt: zod.string().datetime({}).nullish(),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+    ])
+    .optional()
+    .describe(
+      "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -12074,8 +12160,18 @@ export const UnmatchStagedPaymentResponse = zod.object({
   rejectedByUserId: zod.string().nullish(),
   rejectedAt: zod.string().datetime({}).nullish(),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+    ])
+    .optional()
+    .describe(
+      "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -12265,8 +12361,18 @@ export const RevertStagedPaymentResponse = zod.object({
   rejectedByUserId: zod.string().nullish(),
   rejectedAt: zod.string().datetime({}).nullish(),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+    ])
+    .optional()
+    .describe(
+      "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
