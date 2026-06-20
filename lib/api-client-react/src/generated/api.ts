@@ -30,6 +30,7 @@ import type {
   AdminResyncGoogleUser200,
   ApplyRuleToPendingBody,
   ApplyRuleToPendingResult,
+  ApproveCompleteMatchBody,
   AssignGrantLeadBody,
   AuditLogList,
   BadRequestResponse,
@@ -164,6 +165,7 @@ import type {
   ListPhoneNumbersParams,
   ListPledgeAllocationsParams,
   ListPotentialDuplicatesParams,
+  ListReconciliationCardsParams,
   ListRegionsParams,
   ListRevenueAccountsParams,
   ListSavedViewsParams,
@@ -224,6 +226,11 @@ import type {
   ReassignOwnerBody,
   ReassignOwnerResult,
   ReconcileStagedPaymentBody,
+  ReconciliationApproveResult,
+  ReconciliationCardList,
+  ReconciliationGraph,
+  ReconciliationMatchNodeType,
+  ReconciliationSearchList,
   RefreshTaskProposalBody,
   Region,
   RegionList,
@@ -242,6 +249,7 @@ import type {
   School,
   SchoolList,
   SearchParams,
+  SearchReconciliationNodeParams,
   SearchResults,
   SearchStagedPaymentDonorsParams,
   SearchTrackedEmailParams,
@@ -23221,4 +23229,448 @@ export const useReassignOwner = <
   TContext
 > => {
   return useMutation(getReassignOwnerMutationOptions(options));
+};
+
+/**
+ * The unified reconciler's work queue. Each card is anchored on a QB
+staged_payments row (a QB record is required for every complete match) and
+carries the QB facts plus a compact auto-proposed best guess for the donor /
+gift / opportunity nodes and whether Stripe per-charge evidence backs the
+same money. `reconciled` cards are excluded by default (filter with
+queue=reconciled). Use the graph endpoint for the full candidate detail.
+
+ * @summary List reconciliation cards — one per QuickBooks staged-payment anchor.
+ */
+export const getListReconciliationCardsUrl = (
+  params?: ListReconciliationCardsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reconciliation/cards?${stringifiedParams}`
+    : `/api/reconciliation/cards`;
+};
+
+export const listReconciliationCards = async (
+  params?: ListReconciliationCardsParams,
+  options?: RequestInit,
+): Promise<ReconciliationCardList> => {
+  return customFetch<ReconciliationCardList>(
+    getListReconciliationCardsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListReconciliationCardsQueryKey = (
+  params?: ListReconciliationCardsParams,
+) => {
+  return [`/api/reconciliation/cards`, ...(params ? [params] : [])] as const;
+};
+
+export const getListReconciliationCardsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listReconciliationCards>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListReconciliationCardsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listReconciliationCards>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListReconciliationCardsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listReconciliationCards>>
+  > = ({ signal }) =>
+    listReconciliationCards(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listReconciliationCards>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListReconciliationCardsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listReconciliationCards>>
+>;
+export type ListReconciliationCardsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List reconciliation cards — one per QuickBooks staged-payment anchor.
+ */
+
+export function useListReconciliationCards<
+  TData = Awaited<ReturnType<typeof listReconciliationCards>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListReconciliationCardsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listReconciliationCards>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListReconciliationCardsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns the QB anchor + optional Stripe evidence and, for each of the donor /
+gift / opportunity nodes, the scored candidates and the edge state
+(determined / ambiguous / filter_only / conflict / none / create). Read-only:
+nothing is mutated. `ready=true` when a confident, non-conflicting selection
+exists for the required nodes so the card can be approved without manual
+disambiguation.
+
+ * @summary Full auto-proposed 4-node match graph for one card.
+ */
+export const getGetReconciliationGraphUrl = (stagedPaymentId: string) => {
+  return `/api/reconciliation/cards/${stagedPaymentId}/graph`;
+};
+
+export const getReconciliationGraph = async (
+  stagedPaymentId: string,
+  options?: RequestInit,
+): Promise<ReconciliationGraph> => {
+  return customFetch<ReconciliationGraph>(
+    getGetReconciliationGraphUrl(stagedPaymentId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetReconciliationGraphQueryKey = (stagedPaymentId: string) => {
+  return [`/api/reconciliation/cards/${stagedPaymentId}/graph`] as const;
+};
+
+export const getGetReconciliationGraphQueryOptions = <
+  TData = Awaited<ReturnType<typeof getReconciliationGraph>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  stagedPaymentId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getReconciliationGraph>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetReconciliationGraphQueryKey(stagedPaymentId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getReconciliationGraph>>
+  > = ({ signal }) =>
+    getReconciliationGraph(stagedPaymentId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!stagedPaymentId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getReconciliationGraph>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetReconciliationGraphQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getReconciliationGraph>>
+>;
+export type GetReconciliationGraphQueryError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Full auto-proposed 4-node match graph for one card.
+ */
+
+export function useGetReconciliationGraph<
+  TData = Awaited<ReturnType<typeof getReconciliationGraph>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  stagedPaymentId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getReconciliationGraph>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetReconciliationGraphQueryOptions(
+    stagedPaymentId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Powers the four cross-filtering search boxes. Always scoped to a card
+(stagedPaymentId) so amount/date windows come from the QB anchor; pass
+donorId to cross-filter gift/opportunity candidates to a chosen donor
+(the FILTER edge). nodeType is donor / gift / opportunity / qb.
+
+ * @summary Scoped, cross-filtering search for one node of a card.
+ */
+export const getSearchReconciliationNodeUrl = (
+  nodeType: ReconciliationMatchNodeType,
+  params: SearchReconciliationNodeParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reconciliation/search/${nodeType}?${stringifiedParams}`
+    : `/api/reconciliation/search/${nodeType}`;
+};
+
+export const searchReconciliationNode = async (
+  nodeType: ReconciliationMatchNodeType,
+  params: SearchReconciliationNodeParams,
+  options?: RequestInit,
+): Promise<ReconciliationSearchList> => {
+  return customFetch<ReconciliationSearchList>(
+    getSearchReconciliationNodeUrl(nodeType, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getSearchReconciliationNodeQueryKey = (
+  nodeType: ReconciliationMatchNodeType,
+  params?: SearchReconciliationNodeParams,
+) => {
+  return [
+    `/api/reconciliation/search/${nodeType}`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getSearchReconciliationNodeQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchReconciliationNode>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  nodeType: ReconciliationMatchNodeType,
+  params: SearchReconciliationNodeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchReconciliationNode>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getSearchReconciliationNodeQueryKey(nodeType, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof searchReconciliationNode>>
+  > = ({ signal }) =>
+    searchReconciliationNode(nodeType, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!nodeType,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchReconciliationNode>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type SearchReconciliationNodeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchReconciliationNode>>
+>;
+export type SearchReconciliationNodeQueryError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Scoped, cross-filtering search for one node of a card.
+ */
+
+export function useSearchReconciliationNode<
+  TData = Awaited<ReturnType<typeof searchReconciliationNode>>,
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+>(
+  nodeType: ReconciliationMatchNodeType,
+  params: SearchReconciliationNodeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchReconciliationNode>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getSearchReconciliationNodeQueryOptions(
+    nodeType,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Human approval of a reconciliation card. The server RE-DERIVES and
+RE-VALIDATES the whole graph (it never trusts UI-supplied locks) and runs the
+consistency gate before committing in one transaction: QB present + not already
+reconciled; exactly one donor (Donor XOR); gift donor == opportunity donor;
+the gift is not already claimed by another evidence row; amount/date within the
+fee-band tolerance unless an override reason is given; Stripe GROSS takes
+precedence over the QB net when a charge is selected; nothing is archived.
+Minting a gift is human-only. Idempotent: re-approving a reconciled card
+returns its current state.
+
+ * @summary Approve a card — link or human-mint a gift, enforcing all invariants server-side.
+ */
+export const getApproveReconciliationCardUrl = (stagedPaymentId: string) => {
+  return `/api/reconciliation/cards/${stagedPaymentId}/approve`;
+};
+
+export const approveReconciliationCard = async (
+  stagedPaymentId: string,
+  approveCompleteMatchBody: ApproveCompleteMatchBody,
+  options?: RequestInit,
+): Promise<ReconciliationApproveResult> => {
+  return customFetch<ReconciliationApproveResult>(
+    getApproveReconciliationCardUrl(stagedPaymentId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(approveCompleteMatchBody),
+    },
+  );
+};
+
+export const getApproveReconciliationCardMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveReconciliationCard>>,
+    TError,
+    { stagedPaymentId: string; data: BodyType<ApproveCompleteMatchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveReconciliationCard>>,
+  TError,
+  { stagedPaymentId: string; data: BodyType<ApproveCompleteMatchBody> },
+  TContext
+> => {
+  const mutationKey = ["approveReconciliationCard"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveReconciliationCard>>,
+    { stagedPaymentId: string; data: BodyType<ApproveCompleteMatchBody> }
+  > = (props) => {
+    const { stagedPaymentId, data } = props ?? {};
+
+    return approveReconciliationCard(stagedPaymentId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApproveReconciliationCardMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveReconciliationCard>>
+>;
+export type ApproveReconciliationCardMutationBody =
+  BodyType<ApproveCompleteMatchBody>;
+export type ApproveReconciliationCardMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Approve a card — link or human-mint a gift, enforcing all invariants server-side.
+ */
+export const useApproveReconciliationCard = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveReconciliationCard>>,
+    TError,
+    { stagedPaymentId: string; data: BodyType<ApproveCompleteMatchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof approveReconciliationCard>>,
+  TError,
+  { stagedPaymentId: string; data: BodyType<ApproveCompleteMatchBody> },
+  TContext
+> => {
+  return useMutation(getApproveReconciliationCardMutationOptions(options));
 };

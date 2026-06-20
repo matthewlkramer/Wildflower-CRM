@@ -16124,3 +16124,520 @@ export const ReassignOwnerResponse = zod.object({
     .boolean()
     .describe("True if the source user was archived as part of this call."),
 });
+
+/**
+ * The unified reconciler's work queue. Each card is anchored on a QB
+staged_payments row (a QB record is required for every complete match) and
+carries the QB facts plus a compact auto-proposed best guess for the donor /
+gift / opportunity nodes and whether Stripe per-charge evidence backs the
+same money. `reconciled` cards are excluded by default (filter with
+queue=reconciled). Use the graph endpoint for the full candidate detail.
+
+ * @summary List reconciliation cards — one per QuickBooks staged-payment anchor.
+ */
+export const listReconciliationCardsQueryLimitDefault = 50;
+export const listReconciliationCardsQueryLimitMax = 200;
+
+export const listReconciliationCardsQueryOffsetDefault = 0;
+export const listReconciliationCardsQueryOffsetMin = 0;
+
+export const ListReconciliationCardsQueryParams = zod.object({
+  queue: zod
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+      "reconciled",
+    ])
+    .optional()
+    .describe(
+      "Queue bucket to list. Omit for the active work queue (excludes reconciled\/excluded\/rejected).",
+    ),
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe("Free-text over payer name \/ reference \/ memo."),
+  entityId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to one Wildflower legal entity attribution."),
+  ready: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Filter to cards whose auto-proposal passes (true) \/ fails (false) the consistency gate.",
+    ),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listReconciliationCardsQueryLimitMax)
+    .default(listReconciliationCardsQueryLimitDefault),
+  offset: zod.coerce
+    .number()
+    .min(listReconciliationCardsQueryOffsetMin)
+    .default(listReconciliationCardsQueryOffsetDefault),
+});
+
+export const ListReconciliationCardsResponse = zod.object({
+  data: zod.array(
+    zod
+      .object({
+        stagedPaymentId: zod.string(),
+        status: zod
+          .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+          .describe(
+            "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+          ),
+        queue: zod
+          .enum([
+            "needs_review",
+            "fiscally_sponsored",
+            "auto_matched",
+            "excluded",
+            "done",
+            "rejected",
+            "reconciled",
+          ])
+          .describe(
+            "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+          ),
+        amount: zod.string().nullish(),
+        dateReceived: zod.string().date().nullish(),
+        payerName: zod.string().nullish(),
+        payerEmail: zod.string().nullish(),
+        rawReference: zod.string().nullish(),
+        lineDescription: zod.string().nullish(),
+        qbPaymentMethod: zod.string().nullish(),
+        entityId: zod.string().nullish(),
+        entityName: zod.string().nullish(),
+        proposedDonorId: zod.string().nullish(),
+        proposedDonorName: zod.string().nullish(),
+        proposedDonorKind: zod
+          .enum(["organization", "person", "household"])
+          .nullish(),
+        proposedGiftId: zod.string().nullish(),
+        proposedGiftName: zod.string().nullish(),
+        proposedOpportunityId: zod.string().nullish(),
+        proposedOpportunityName: zod.string().nullish(),
+        donorState: zod
+          .enum([
+            "determined",
+            "ambiguous",
+            "filter_only",
+            "conflict",
+            "none",
+            "create",
+          ])
+          .optional()
+          .describe(
+            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
+          ),
+        giftState: zod
+          .enum([
+            "determined",
+            "ambiguous",
+            "filter_only",
+            "conflict",
+            "none",
+            "create",
+          ])
+          .optional()
+          .describe(
+            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
+          ),
+        opportunityState: zod
+          .enum([
+            "determined",
+            "ambiguous",
+            "filter_only",
+            "conflict",
+            "none",
+            "create",
+          ])
+          .optional()
+          .describe(
+            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
+          ),
+        hasStripeEvidence: zod.boolean(),
+        stripePayoutId: zod.string().nullish(),
+        stripeChargeCount: zod.number().nullish(),
+        resolvedGiftId: zod.string().nullish(),
+        resolvedGiftName: zod.string().nullish(),
+        resolvedGiftAmount: zod.string().nullish(),
+        finalAmountSource: zod
+          .enum(["human", "stripe", "quickbooks"])
+          .nullish()
+          .describe(
+            "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+          ),
+        ready: zod
+          .boolean()
+          .describe(
+            "Auto-proposal satisfies the consistency gate (one-click approve).",
+          ),
+        createdAt: zod.string().datetime({}).nullish(),
+        updatedAt: zod.string().datetime({}).nullish(),
+      })
+      .describe(
+        "List item for the unified reconciler — one per QB staged payment (the anchor). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card.",
+      ),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+/**
+ * Returns the QB anchor + optional Stripe evidence and, for each of the donor /
+gift / opportunity nodes, the scored candidates and the edge state
+(determined / ambiguous / filter_only / conflict / none / create). Read-only:
+nothing is mutated. `ready=true` when a confident, non-conflicting selection
+exists for the required nodes so the card can be approved without manual
+disambiguation.
+
+ * @summary Full auto-proposed 4-node match graph for one card.
+ */
+export const GetReconciliationGraphParams = zod.object({
+  stagedPaymentId: zod.coerce.string(),
+});
+
+export const GetReconciliationGraphResponse = zod
+  .object({
+    stagedPaymentId: zod.string(),
+    nodes: zod.array(
+      zod.object({
+        nodeType: zod
+          .enum(["qb", "donor", "gift", "opportunity"])
+          .describe(
+            "A node in a reconciliation card's match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.",
+          ),
+        state: zod
+          .enum([
+            "determined",
+            "ambiguous",
+            "filter_only",
+            "conflict",
+            "none",
+            "create",
+          ])
+          .describe(
+            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
+          ),
+        selectedId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Auto-selected candidate id (a confident lock when state=determined; the top guess when state=ambiguous).",
+          ),
+        locked: zod
+          .boolean()
+          .optional()
+          .describe(
+            "True when the selection is server-derived (DERIVE-AND-LOCK). The human may override.",
+          ),
+        candidates: zod.array(
+          zod.object({
+            nodeType: zod
+              .enum(["qb", "donor", "gift", "opportunity"])
+              .describe(
+                "A node in a reconciliation card's match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.",
+              ),
+            id: zod.string(),
+            label: zod
+              .string()
+              .describe(
+                "Display label (anonymous-masked when the viewer can't see the identity).",
+              ),
+            sublabel: zod
+              .string()
+              .nullish()
+              .describe(
+                "Secondary context (donor name for a gift\/opp, email\/phone for a donor).",
+              ),
+            amount: zod.string().nullish(),
+            date: zod.string().date().nullish(),
+            confidence: zod
+              .number()
+              .nullish()
+              .describe(
+                "0–100 match confidence; null for filter-only candidates.",
+              ),
+            source: zod
+              .enum([
+                "donor_xor",
+                "payment_on_pledge",
+                "name",
+                "email",
+                "amount_date",
+                "memo",
+                "intermediary",
+                "stripe",
+                "manual",
+              ])
+              .nullish()
+              .describe("How a candidate was derived (audit + UI badge)."),
+            donorKind: zod
+              .enum(["organization", "person", "household"])
+              .nullish(),
+            alreadyLinkedStagedPaymentId: zod
+              .string()
+              .nullish()
+              .describe(
+                "For gift candidates: set when the gift is already reconciled\/created\/group\/split-linked by another staged payment (UI disables linking to avoid double-counting).",
+              ),
+            conflictReason: zod
+              .string()
+              .nullish()
+              .describe(
+                "Why this candidate conflicts with a locked node (set only when state=conflict).",
+              ),
+          }),
+        ),
+      }),
+    ),
+    evidence: zod
+      .object({
+        qb: zod.object({
+          stagedPaymentId: zod.string(),
+          amount: zod.string().nullish(),
+          dateReceived: zod.string().date().nullish(),
+          payerName: zod.string().nullish(),
+          paymentMethod: zod.string().nullish(),
+          docNumber: zod.string().nullish(),
+          depositId: zod.string().nullish(),
+        }),
+        stripe: zod
+          .object({
+            payoutId: zod.string(),
+            chargeId: zod
+              .string()
+              .nullish()
+              .describe(
+                "The single Stripe charge backing this money, when resolved to one.",
+              ),
+            grossAmount: zod.string().nullish(),
+            feeAmount: zod.string().nullish(),
+            netAmount: zod.string().nullish(),
+            chargeCount: zod.number().nullish(),
+          })
+          .nullish(),
+      })
+      .describe(
+        "Cross-source evidence backing a card. QB is always present (the anchor). Stripe is present only when a Stripe charge\/payout backs the same money (brokerage\/check have none).",
+      ),
+    ready: zod
+      .boolean()
+      .describe(
+        "True when a confident, non-conflicting selection exists for the required nodes (donor + gift) so the card can be one-click approved.",
+      ),
+    blockers: zod
+      .array(zod.string())
+      .describe(
+        "Human-readable reasons the card is not ready (ambiguous donor, conflicting opportunity, gift already linked, amount mismatch, etc.).",
+      ),
+  })
+  .describe(
+    "The full 4-node match graph for one card. Read-only — nothing is mutated.",
+  );
+
+/**
+ * Powers the four cross-filtering search boxes. Always scoped to a card
+(stagedPaymentId) so amount/date windows come from the QB anchor; pass
+donorId to cross-filter gift/opportunity candidates to a chosen donor
+(the FILTER edge). nodeType is donor / gift / opportunity / qb.
+
+ * @summary Scoped, cross-filtering search for one node of a card.
+ */
+export const SearchReconciliationNodeParams = zod.object({
+  nodeType: zod.enum(["qb", "donor", "gift", "opportunity"]),
+});
+
+export const searchReconciliationNodeQueryDaysDefault = 30;
+export const searchReconciliationNodeQueryDaysMax = 365;
+
+export const searchReconciliationNodeQueryLimitDefault = 25;
+export const searchReconciliationNodeQueryLimitMax = 100;
+
+export const SearchReconciliationNodeQueryParams = zod.object({
+  stagedPaymentId: zod.coerce
+    .string()
+    .describe("Anchor card; scopes amount\/date windows and cross-filtering."),
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe("Free-text query (donor\/gift name, payer, reference)."),
+  donorId: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Cross-filter gift\/opportunity candidates to this donor (FILTER edge).",
+    ),
+  days: zod.coerce
+    .number()
+    .min(1)
+    .max(searchReconciliationNodeQueryDaysMax)
+    .default(searchReconciliationNodeQueryDaysDefault)
+    .describe("± days around the anchor date for amount\/date windows."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(searchReconciliationNodeQueryLimitMax)
+    .default(searchReconciliationNodeQueryLimitDefault),
+});
+
+export const SearchReconciliationNodeResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      nodeType: zod
+        .enum(["qb", "donor", "gift", "opportunity"])
+        .describe(
+          "A node in a reconciliation card's match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.",
+        ),
+      id: zod.string(),
+      label: zod
+        .string()
+        .describe(
+          "Display label (anonymous-masked when the viewer can't see the identity).",
+        ),
+      sublabel: zod
+        .string()
+        .nullish()
+        .describe(
+          "Secondary context (donor name for a gift\/opp, email\/phone for a donor).",
+        ),
+      amount: zod.string().nullish(),
+      date: zod.string().date().nullish(),
+      confidence: zod
+        .number()
+        .nullish()
+        .describe("0–100 match confidence; null for filter-only candidates."),
+      source: zod
+        .enum([
+          "donor_xor",
+          "payment_on_pledge",
+          "name",
+          "email",
+          "amount_date",
+          "memo",
+          "intermediary",
+          "stripe",
+          "manual",
+        ])
+        .nullish()
+        .describe("How a candidate was derived (audit + UI badge)."),
+      donorKind: zod.enum(["organization", "person", "household"]).nullish(),
+      alreadyLinkedStagedPaymentId: zod
+        .string()
+        .nullish()
+        .describe(
+          "For gift candidates: set when the gift is already reconciled\/created\/group\/split-linked by another staged payment (UI disables linking to avoid double-counting).",
+        ),
+      conflictReason: zod
+        .string()
+        .nullish()
+        .describe(
+          "Why this candidate conflicts with a locked node (set only when state=conflict).",
+        ),
+    }),
+  ),
+});
+
+/**
+ * Human approval of a reconciliation card. The server RE-DERIVES and
+RE-VALIDATES the whole graph (it never trusts UI-supplied locks) and runs the
+consistency gate before committing in one transaction: QB present + not already
+reconciled; exactly one donor (Donor XOR); gift donor == opportunity donor;
+the gift is not already claimed by another evidence row; amount/date within the
+fee-band tolerance unless an override reason is given; Stripe GROSS takes
+precedence over the QB net when a charge is selected; nothing is archived.
+Minting a gift is human-only. Idempotent: re-approving a reconciled card
+returns its current state.
+
+ * @summary Approve a card — link or human-mint a gift, enforcing all invariants server-side.
+ */
+export const ApproveReconciliationCardParams = zod.object({
+  stagedPaymentId: zod.coerce.string(),
+});
+
+export const ApproveReconciliationCardBody = zod
+  .object({
+    outcome: zod
+      .enum([
+        "link_existing_gift",
+        "create_gift",
+        "create_gift_from_opportunity",
+        "convert_to_pledge_and_first_payment",
+      ])
+      .describe(
+        "What approving the card does.\nlink_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.\ncreate_gift: human-mint a new gift from the QB evidence for the chosen donor.\ncreate_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (paymentOnPledgeId); the opp derives to cash_in when fully paid.\nconvert_to_pledge_and_first_payment: latch the opportunity as a pledge (commitment stage, wasPledge) and mint the first-payment gift linked to it.\n",
+      ),
+    giftId: zod
+      .string()
+      .nullish()
+      .describe("Existing gift to link (required for link_existing_gift)."),
+    opportunityId: zod
+      .string()
+      .nullish()
+      .describe(
+        "Opportunity\/pledge to generate from or link to (required for the \*_opportunity \/ convert_\* outcomes).",
+      ),
+    organizationId: zod
+      .string()
+      .nullish()
+      .describe(
+        "Donor XOR — set exactly one of the three donor FKs when creating a gift and the donor isn't derivable.",
+      ),
+    individualGiverPersonId: zod.string().nullish(),
+    householdId: zod.string().nullish(),
+    paymentIntermediaryId: zod
+      .string()
+      .nullish()
+      .describe(
+        "Optional DAF \/ giving-platform conduit the donor gave through.",
+      ),
+    stripeChargeId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The Stripe charge whose GROSS becomes the gift's final amount (Stripe precedence). Omit for QB-only money (brokerage\/check).",
+      ),
+    overrideAmountMismatchReason: zod
+      .string()
+      .nullish()
+      .describe(
+        "Required to approve when the evidence amount and the gift amount fall outside the fee-band tolerance.",
+      ),
+  })
+  .describe(
+    "Approve a reconciliation card. The server re-derives and re-validates the entire graph and runs the consistency gate before committing; it never trusts UI-supplied locks.",
+  );
+
+export const ApproveReconciliationCardResponse = zod.object({
+  ok: zod.literal(true),
+  outcome: zod
+    .enum([
+      "link_existing_gift",
+      "create_gift",
+      "create_gift_from_opportunity",
+      "convert_to_pledge_and_first_payment",
+    ])
+    .describe(
+      "What approving the card does.\nlink_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.\ncreate_gift: human-mint a new gift from the QB evidence for the chosen donor.\ncreate_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (paymentOnPledgeId); the opp derives to cash_in when fully paid.\nconvert_to_pledge_and_first_payment: latch the opportunity as a pledge (commitment stage, wasPledge) and mint the first-payment gift linked to it.\n",
+    ),
+  stagedPaymentId: zod.string(),
+  giftId: zod
+    .string()
+    .describe(
+      "The existing-or-newly-created gift the evidence is now tied to.",
+    ),
+  opportunityId: zod.string().nullish(),
+  createdGift: zod.boolean().describe("True when a new gift was minted."),
+  createdPledge: zod
+    .boolean()
+    .describe("True when an opportunity was latched into a pledge."),
+});

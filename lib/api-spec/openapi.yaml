@@ -51,6 +51,7 @@ tags:
   - { name: quickbooks-oauth }
   - { name: quickbooks-sync }
   - { name: staged-payments }
+  - { name: reconciliation }
   - { name: grant-leads }
   - { name: admin }
   - { name: search }
@@ -3230,6 +3231,92 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # ─── Unified reconciler (QB-anchored 4-node match graph) ─────────────────────
+  /reconciliation/cards:
+    get:
+      operationId: listReconciliationCards
+      tags: [reconciliation]
+      summary: List reconciliation cards — one per QuickBooks staged-payment anchor.
+      description: |
+        The unified reconciler's work queue. Each card is anchored on a QB
+        staged_payments row (a QB record is required for every complete match) and
+        carries the QB facts plus a compact auto-proposed best guess for the donor /
+        gift / opportunity nodes and whether Stripe per-charge evidence backs the
+        same money. `reconciled` cards are excluded by default (filter with
+        queue=reconciled). Use the graph endpoint for the full candidate detail.
+      parameters:
+        - { name: queue, in: query, schema: { $ref: "#/components/schemas/QuickbooksStagedPaymentQueue" }, description: "Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected)." }
+        - { name: q, in: query, schema: { type: string }, description: "Free-text over payer name / reference / memo." }
+        - { name: entityId, in: query, schema: { type: string }, description: "Filter to one Wildflower legal entity attribution." }
+        - { name: ready, in: query, schema: { type: boolean }, description: "Filter to cards whose auto-proposal passes (true) / fails (false) the consistency gate." }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationCardList" } } } }
+  /reconciliation/cards/{stagedPaymentId}/graph:
+    get:
+      operationId: getReconciliationGraph
+      tags: [reconciliation]
+      summary: Full auto-proposed 4-node match graph for one card.
+      description: |
+        Returns the QB anchor + optional Stripe evidence and, for each of the donor /
+        gift / opportunity nodes, the scored candidates and the edge state
+        (determined / ambiguous / filter_only / conflict / none / create). Read-only:
+        nothing is mutated. `ready=true` when a confident, non-conflicting selection
+        exists for the required nodes so the card can be approved without manual
+        disambiguation.
+      parameters:
+        - { name: stagedPaymentId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationGraph" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/search/{nodeType}:
+    get:
+      operationId: searchReconciliationNode
+      tags: [reconciliation]
+      summary: Scoped, cross-filtering search for one node of a card.
+      description: |
+        Powers the four cross-filtering search boxes. Always scoped to a card
+        (stagedPaymentId) so amount/date windows come from the QB anchor; pass
+        donorId to cross-filter gift/opportunity candidates to a chosen donor
+        (the FILTER edge). nodeType is donor / gift / opportunity / qb.
+      parameters:
+        - { name: nodeType, in: path, required: true, schema: { $ref: "#/components/schemas/ReconciliationMatchNodeType" } }
+        - { name: stagedPaymentId, in: query, required: true, schema: { type: string }, description: "Anchor card; scopes amount/date windows and cross-filtering." }
+        - { name: q, in: query, schema: { type: string }, description: "Free-text query (donor/gift name, payer, reference)." }
+        - { name: donorId, in: query, schema: { type: string }, description: "Cross-filter gift/opportunity candidates to this donor (FILTER edge)." }
+        - { name: days, in: query, schema: { type: integer, default: 30, minimum: 1, maximum: 365 }, description: "± days around the anchor date for amount/date windows." }
+        - { name: limit, in: query, schema: { type: integer, default: 25, minimum: 1, maximum: 100 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationSearchList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/cards/{stagedPaymentId}/approve:
+    post:
+      operationId: approveReconciliationCard
+      tags: [reconciliation]
+      summary: Approve a card — link or human-mint a gift, enforcing all invariants server-side.
+      description: |
+        Human approval of a reconciliation card. The server RE-DERIVES and
+        RE-VALIDATES the whole graph (it never trusts UI-supplied locks) and runs the
+        consistency gate before committing in one transaction: QB present + not already
+        reconciled; exactly one donor (Donor XOR); gift donor == opportunity donor;
+        the gift is not already claimed by another evidence row; amount/date within the
+        fee-band tolerance unless an override reason is given; Stripe GROSS takes
+        precedence over the QB net when a charge is selected; nothing is archived.
+        Minting a gift is human-only. Idempotent: re-approving a reconciled card
+        returns its current state.
+      parameters:
+        - { name: stagedPaymentId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ApproveCompleteMatchBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationApproveResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Card is not in an approvable state, or the chosen gift/opportunity is already claimed." }
+
 components:
   parameters:
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 50 } }
@@ -5261,6 +5348,168 @@ components:
             dateReceived: { type: string, format: date, nullable: true }
             payerName:    { type: string, nullable: true }
             status:       { type: string, nullable: true }
+    ReconciliationMatchNodeType:
+      type: string
+      enum: [qb, donor, gift, opportunity]
+      description: "A node in a reconciliation card's match graph. qb is the required anchor; donor/gift/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node."
+    ReconciliationEdgeState:
+      type: string
+      enum: [determined, ambiguous, filter_only, conflict, none, create]
+      description: |
+        Resolution state of a node within a card's graph.
+        determined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.
+        ambiguous: several plausible candidates; the human must choose.
+        filter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.
+        conflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).
+        none: no candidate found.
+        create: the human intends to create a new record for this node (new donor / new gift).
+    ReconciliationCandidateSource:
+      type: string
+      enum: [donor_xor, payment_on_pledge, name, email, amount_date, memo, intermediary, stripe, manual]
+      description: "How a candidate was derived (audit + UI badge)."
+    ReconciliationCandidate:
+      type: object
+      required: [nodeType, id, label]
+      properties:
+        nodeType:   { $ref: "#/components/schemas/ReconciliationMatchNodeType" }
+        id:         { type: string }
+        label:      { type: string, description: "Display label (anonymous-masked when the viewer can't see the identity)." }
+        sublabel:   { type: string, nullable: true, description: "Secondary context (donor name for a gift/opp, email/phone for a donor)." }
+        amount:     { type: string, nullable: true }
+        date:       { type: string, format: date, nullable: true }
+        confidence: { type: integer, nullable: true, description: "0–100 match confidence; null for filter-only candidates." }
+        source:     { $ref: "#/components/schemas/ReconciliationCandidateSource", nullable: true }
+        donorKind:  { type: string, enum: [organization, person, household], nullable: true }
+        alreadyLinkedStagedPaymentId: { type: string, nullable: true, description: "For gift candidates: set when the gift is already reconciled/created/group/split-linked by another staged payment (UI disables linking to avoid double-counting)." }
+        conflictReason: { type: string, nullable: true, description: "Why this candidate conflicts with a locked node (set only when state=conflict)." }
+    ReconciliationNode:
+      type: object
+      required: [nodeType, state, candidates]
+      properties:
+        nodeType:   { $ref: "#/components/schemas/ReconciliationMatchNodeType" }
+        state:      { $ref: "#/components/schemas/ReconciliationEdgeState" }
+        selectedId: { type: string, nullable: true, description: "Auto-selected candidate id (a confident lock when state=determined; the top guess when state=ambiguous)." }
+        locked:     { type: boolean, description: "True when the selection is server-derived (DERIVE-AND-LOCK). The human may override." }
+        candidates: { type: array, items: { $ref: "#/components/schemas/ReconciliationCandidate" } }
+    ReconciliationEvidence:
+      type: object
+      required: [qb]
+      description: "Cross-source evidence backing a card. QB is always present (the anchor). Stripe is present only when a Stripe charge/payout backs the same money (brokerage/check have none)."
+      properties:
+        qb:
+          type: object
+          required: [stagedPaymentId]
+          properties:
+            stagedPaymentId: { type: string }
+            amount:          { type: string, nullable: true }
+            dateReceived:    { type: string, format: date, nullable: true }
+            payerName:       { type: string, nullable: true }
+            paymentMethod:   { type: string, nullable: true }
+            docNumber:       { type: string, nullable: true }
+            depositId:       { type: string, nullable: true }
+        stripe:
+          type: object
+          nullable: true
+          required: [payoutId]
+          properties:
+            payoutId:    { type: string }
+            chargeId:    { type: string, nullable: true, description: "The single Stripe charge backing this money, when resolved to one." }
+            grossAmount: { type: string, nullable: true }
+            feeAmount:   { type: string, nullable: true }
+            netAmount:   { type: string, nullable: true }
+            chargeCount: { type: integer, nullable: true }
+    ReconciliationGraph:
+      type: object
+      required: [stagedPaymentId, nodes, evidence, ready, blockers]
+      description: "The full 4-node match graph for one card. Read-only — nothing is mutated."
+      properties:
+        stagedPaymentId: { type: string }
+        nodes:    { type: array, items: { $ref: "#/components/schemas/ReconciliationNode" } }
+        evidence: { $ref: "#/components/schemas/ReconciliationEvidence" }
+        ready:    { type: boolean, description: "True when a confident, non-conflicting selection exists for the required nodes (donor + gift) so the card can be one-click approved." }
+        blockers: { type: array, items: { type: string }, description: "Human-readable reasons the card is not ready (ambiguous donor, conflicting opportunity, gift already linked, amount mismatch, etc.)." }
+    ReconciliationCard:
+      type: object
+      required: [stagedPaymentId, status, queue, hasStripeEvidence, ready]
+      description: "List item for the unified reconciler — one per QB staged payment (the anchor). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card."
+      properties:
+        stagedPaymentId: { type: string }
+        status:          { $ref: "#/components/schemas/StagedPaymentStatus" }
+        queue:           { $ref: "#/components/schemas/QuickbooksStagedPaymentQueue" }
+        amount:          { type: string, nullable: true }
+        dateReceived:    { type: string, format: date, nullable: true }
+        payerName:       { type: string, nullable: true }
+        payerEmail:      { type: string, nullable: true }
+        rawReference:    { type: string, nullable: true }
+        lineDescription: { type: string, nullable: true }
+        qbPaymentMethod: { type: string, nullable: true }
+        entityId:        { type: string, nullable: true }
+        entityName:      { type: string, nullable: true }
+        proposedDonorId:         { type: string, nullable: true }
+        proposedDonorName:       { type: string, nullable: true }
+        proposedDonorKind:       { type: string, enum: [organization, person, household], nullable: true }
+        proposedGiftId:          { type: string, nullable: true }
+        proposedGiftName:        { type: string, nullable: true }
+        proposedOpportunityId:   { type: string, nullable: true }
+        proposedOpportunityName: { type: string, nullable: true }
+        donorState:       { $ref: "#/components/schemas/ReconciliationEdgeState" }
+        giftState:        { $ref: "#/components/schemas/ReconciliationEdgeState" }
+        opportunityState: { $ref: "#/components/schemas/ReconciliationEdgeState" }
+        hasStripeEvidence: { type: boolean }
+        stripePayoutId:    { type: string, nullable: true }
+        stripeChargeCount: { type: integer, nullable: true }
+        resolvedGiftId:     { type: string, nullable: true }
+        resolvedGiftName:   { type: string, nullable: true }
+        resolvedGiftAmount: { type: string, nullable: true }
+        finalAmountSource:  { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
+        ready:              { type: boolean, description: "Auto-proposal satisfies the consistency gate (one-click approve)." }
+        createdAt:          { type: string, format: date-time, nullable: true }
+        updatedAt:          { type: string, format: date-time, nullable: true }
+    ReconciliationCardList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/ReconciliationCard" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    ReconciliationSearchList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/ReconciliationCandidate" } }
+    ReconciliationOutcome:
+      type: string
+      enum: [link_existing_gift, create_gift, create_gift_from_opportunity, convert_to_pledge_and_first_payment]
+      description: |
+        What approving the card does.
+        link_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.
+        create_gift: human-mint a new gift from the QB evidence for the chosen donor.
+        create_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (paymentOnPledgeId); the opp derives to cash_in when fully paid.
+        convert_to_pledge_and_first_payment: latch the opportunity as a pledge (commitment stage, wasPledge) and mint the first-payment gift linked to it.
+    ApproveCompleteMatchBody:
+      type: object
+      required: [outcome]
+      description: "Approve a reconciliation card. The server re-derives and re-validates the entire graph and runs the consistency gate before committing; it never trusts UI-supplied locks."
+      properties:
+        outcome:       { $ref: "#/components/schemas/ReconciliationOutcome" }
+        giftId:        { type: string, nullable: true, description: "Existing gift to link (required for link_existing_gift)." }
+        opportunityId: { type: string, nullable: true, description: "Opportunity/pledge to generate from or link to (required for the *_opportunity / convert_* outcomes)." }
+        organizationId:          { type: string, nullable: true, description: "Donor XOR — set exactly one of the three donor FKs when creating a gift and the donor isn't derivable." }
+        individualGiverPersonId: { type: string, nullable: true }
+        householdId:             { type: string, nullable: true }
+        paymentIntermediaryId:   { type: string, nullable: true, description: "Optional DAF / giving-platform conduit the donor gave through." }
+        stripeChargeId: { type: string, nullable: true, description: "The Stripe charge whose GROSS becomes the gift's final amount (Stripe precedence). Omit for QB-only money (brokerage/check)." }
+        overrideAmountMismatchReason: { type: string, nullable: true, description: "Required to approve when the evidence amount and the gift amount fall outside the fee-band tolerance." }
+    ReconciliationApproveResult:
+      type: object
+      required: [ok, stagedPaymentId, outcome, giftId, createdGift, createdPledge]
+      properties:
+        ok:              { type: boolean, enum: [true] }
+        outcome:         { $ref: "#/components/schemas/ReconciliationOutcome" }
+        stagedPaymentId: { type: string }
+        giftId:          { type: string, description: "The existing-or-newly-created gift the evidence is now tied to." }
+        opportunityId:   { type: string, nullable: true }
+        createdGift:     { type: boolean, description: "True when a new gift was minted." }
+        createdPledge:   { type: boolean, description: "True when an opportunity was latched into a pledge." }
     DonorSearchResult:
       type: object
       required: [id, kind, name]

@@ -2657,6 +2657,249 @@ export interface GiftStripeChain {
   qbDeposit?: GiftStripeChainQbDeposit;
 }
 
+/**
+ * A node in a reconciliation card's match graph. qb is the required anchor; donor/gift/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.
+ */
+export type ReconciliationMatchNodeType =
+  (typeof ReconciliationMatchNodeType)[keyof typeof ReconciliationMatchNodeType];
+
+export const ReconciliationMatchNodeType = {
+  qb: "qb",
+  donor: "donor",
+  gift: "gift",
+  opportunity: "opportunity",
+} as const;
+
+/**
+ * Resolution state of a node within a card's graph.
+determined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.
+ambiguous: several plausible candidates; the human must choose.
+filter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.
+conflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).
+none: no candidate found.
+create: the human intends to create a new record for this node (new donor / new gift).
+
+ */
+export type ReconciliationEdgeState =
+  (typeof ReconciliationEdgeState)[keyof typeof ReconciliationEdgeState];
+
+export const ReconciliationEdgeState = {
+  determined: "determined",
+  ambiguous: "ambiguous",
+  filter_only: "filter_only",
+  conflict: "conflict",
+  none: "none",
+  create: "create",
+} as const;
+
+/**
+ * How a candidate was derived (audit + UI badge).
+ */
+export type ReconciliationCandidateSource =
+  (typeof ReconciliationCandidateSource)[keyof typeof ReconciliationCandidateSource];
+
+export const ReconciliationCandidateSource = {
+  donor_xor: "donor_xor",
+  payment_on_pledge: "payment_on_pledge",
+  name: "name",
+  email: "email",
+  amount_date: "amount_date",
+  memo: "memo",
+  intermediary: "intermediary",
+  stripe: "stripe",
+  manual: "manual",
+} as const;
+
+export type ReconciliationCandidateDonorKind =
+  | (typeof ReconciliationCandidateDonorKind)[keyof typeof ReconciliationCandidateDonorKind]
+  | null;
+
+export const ReconciliationCandidateDonorKind = {
+  organization: "organization",
+  person: "person",
+  household: "household",
+} as const;
+
+export interface ReconciliationCandidate {
+  nodeType: ReconciliationMatchNodeType;
+  id: string;
+  /** Display label (anonymous-masked when the viewer can't see the identity). */
+  label: string;
+  /** Secondary context (donor name for a gift/opp, email/phone for a donor). */
+  sublabel?: string | null;
+  amount?: string | null;
+  date?: string | null;
+  /** 0–100 match confidence; null for filter-only candidates. */
+  confidence?: number | null;
+  source?: ReconciliationCandidateSource | null;
+  donorKind?: ReconciliationCandidateDonorKind;
+  /** For gift candidates: set when the gift is already reconciled/created/group/split-linked by another staged payment (UI disables linking to avoid double-counting). */
+  alreadyLinkedStagedPaymentId?: string | null;
+  /** Why this candidate conflicts with a locked node (set only when state=conflict). */
+  conflictReason?: string | null;
+}
+
+export interface ReconciliationNode {
+  nodeType: ReconciliationMatchNodeType;
+  state: ReconciliationEdgeState;
+  /** Auto-selected candidate id (a confident lock when state=determined; the top guess when state=ambiguous). */
+  selectedId?: string | null;
+  /** True when the selection is server-derived (DERIVE-AND-LOCK). The human may override. */
+  locked?: boolean;
+  candidates: ReconciliationCandidate[];
+}
+
+export type ReconciliationEvidenceQb = {
+  stagedPaymentId: string;
+  amount?: string | null;
+  dateReceived?: string | null;
+  payerName?: string | null;
+  paymentMethod?: string | null;
+  docNumber?: string | null;
+  depositId?: string | null;
+};
+
+export type ReconciliationEvidenceStripe = {
+  payoutId: string;
+  /** The single Stripe charge backing this money, when resolved to one. */
+  chargeId?: string | null;
+  grossAmount?: string | null;
+  feeAmount?: string | null;
+  netAmount?: string | null;
+  chargeCount?: number | null;
+} | null;
+
+/**
+ * Cross-source evidence backing a card. QB is always present (the anchor). Stripe is present only when a Stripe charge/payout backs the same money (brokerage/check have none).
+ */
+export interface ReconciliationEvidence {
+  qb: ReconciliationEvidenceQb;
+  stripe?: ReconciliationEvidenceStripe;
+}
+
+/**
+ * The full 4-node match graph for one card. Read-only — nothing is mutated.
+ */
+export interface ReconciliationGraph {
+  stagedPaymentId: string;
+  nodes: ReconciliationNode[];
+  evidence: ReconciliationEvidence;
+  /** True when a confident, non-conflicting selection exists for the required nodes (donor + gift) so the card can be one-click approved. */
+  ready: boolean;
+  /** Human-readable reasons the card is not ready (ambiguous donor, conflicting opportunity, gift already linked, amount mismatch, etc.). */
+  blockers: string[];
+}
+
+export type ReconciliationCardProposedDonorKind =
+  | (typeof ReconciliationCardProposedDonorKind)[keyof typeof ReconciliationCardProposedDonorKind]
+  | null;
+
+export const ReconciliationCardProposedDonorKind = {
+  organization: "organization",
+  person: "person",
+  household: "household",
+} as const;
+
+/**
+ * List item for the unified reconciler — one per QB staged payment (the anchor). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card.
+ */
+export interface ReconciliationCard {
+  stagedPaymentId: string;
+  status: StagedPaymentStatus;
+  queue: QuickbooksStagedPaymentQueue;
+  amount?: string | null;
+  dateReceived?: string | null;
+  payerName?: string | null;
+  payerEmail?: string | null;
+  rawReference?: string | null;
+  lineDescription?: string | null;
+  qbPaymentMethod?: string | null;
+  entityId?: string | null;
+  entityName?: string | null;
+  proposedDonorId?: string | null;
+  proposedDonorName?: string | null;
+  proposedDonorKind?: ReconciliationCardProposedDonorKind;
+  proposedGiftId?: string | null;
+  proposedGiftName?: string | null;
+  proposedOpportunityId?: string | null;
+  proposedOpportunityName?: string | null;
+  donorState?: ReconciliationEdgeState;
+  giftState?: ReconciliationEdgeState;
+  opportunityState?: ReconciliationEdgeState;
+  hasStripeEvidence: boolean;
+  stripePayoutId?: string | null;
+  stripeChargeCount?: number | null;
+  resolvedGiftId?: string | null;
+  resolvedGiftName?: string | null;
+  resolvedGiftAmount?: string | null;
+  finalAmountSource?: GiftFinalAmountSource | null;
+  /** Auto-proposal satisfies the consistency gate (one-click approve). */
+  ready: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface ReconciliationCardList {
+  data: ReconciliationCard[];
+  pagination: Pagination;
+}
+
+export interface ReconciliationSearchList {
+  data: ReconciliationCandidate[];
+}
+
+/**
+ * What approving the card does.
+link_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.
+create_gift: human-mint a new gift from the QB evidence for the chosen donor.
+create_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (paymentOnPledgeId); the opp derives to cash_in when fully paid.
+convert_to_pledge_and_first_payment: latch the opportunity as a pledge (commitment stage, wasPledge) and mint the first-payment gift linked to it.
+
+ */
+export type ReconciliationOutcome =
+  (typeof ReconciliationOutcome)[keyof typeof ReconciliationOutcome];
+
+export const ReconciliationOutcome = {
+  link_existing_gift: "link_existing_gift",
+  create_gift: "create_gift",
+  create_gift_from_opportunity: "create_gift_from_opportunity",
+  convert_to_pledge_and_first_payment: "convert_to_pledge_and_first_payment",
+} as const;
+
+/**
+ * Approve a reconciliation card. The server re-derives and re-validates the entire graph and runs the consistency gate before committing; it never trusts UI-supplied locks.
+ */
+export interface ApproveCompleteMatchBody {
+  outcome: ReconciliationOutcome;
+  /** Existing gift to link (required for link_existing_gift). */
+  giftId?: string | null;
+  /** Opportunity/pledge to generate from or link to (required for the *_opportunity / convert_* outcomes). */
+  opportunityId?: string | null;
+  /** Donor XOR — set exactly one of the three donor FKs when creating a gift and the donor isn't derivable. */
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+  /** Optional DAF / giving-platform conduit the donor gave through. */
+  paymentIntermediaryId?: string | null;
+  /** The Stripe charge whose GROSS becomes the gift's final amount (Stripe precedence). Omit for QB-only money (brokerage/check). */
+  stripeChargeId?: string | null;
+  /** Required to approve when the evidence amount and the gift amount fall outside the fee-band tolerance. */
+  overrideAmountMismatchReason?: string | null;
+}
+
+export interface ReconciliationApproveResult {
+  ok: boolean;
+  outcome: ReconciliationOutcome;
+  stagedPaymentId: string;
+  /** The existing-or-newly-created gift the evidence is now tied to. */
+  giftId: string;
+  opportunityId?: string | null;
+  /** True when a new gift was minted. */
+  createdGift: boolean;
+  /** True when an opportunity was latched into a pledge. */
+  createdPledge: boolean;
+}
+
 export type DonorSearchResultKind =
   (typeof DonorSearchResultKind)[keyof typeof DonorSearchResultKind];
 
@@ -5538,4 +5781,58 @@ export type GetOwnedRecordCountsParams = {
    * The user whose owned records to count.
    */
   userId: string;
+};
+
+export type ListReconciliationCardsParams = {
+  /**
+   * Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected).
+   */
+  queue?: QuickbooksStagedPaymentQueue;
+  /**
+   * Free-text over payer name / reference / memo.
+   */
+  q?: string;
+  /**
+   * Filter to one Wildflower legal entity attribution.
+   */
+  entityId?: string;
+  /**
+   * Filter to cards whose auto-proposal passes (true) / fails (false) the consistency gate.
+   */
+  ready?: boolean;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+  /**
+   * @minimum 0
+   */
+  offset?: number;
+};
+
+export type SearchReconciliationNodeParams = {
+  /**
+   * Anchor card; scopes amount/date windows and cross-filtering.
+   */
+  stagedPaymentId: string;
+  /**
+   * Free-text query (donor/gift name, payer, reference).
+   */
+  q?: string;
+  /**
+   * Cross-filter gift/opportunity candidates to this donor (FILTER edge).
+   */
+  donorId?: string;
+  /**
+   * ± days around the anchor date for amount/date windows.
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
 };
