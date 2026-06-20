@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { Link, useLocation } from "wouter";
 import { useClerk, useUser } from "@clerk/react";
 import { 
@@ -39,7 +39,16 @@ import { SidebarCollapsedContext } from "@/components/sidebar-collapsed-context"
 import { CommandPaletteProvider, CommandPaletteTrigger } from "@/components/command-palette";
 import { AddMeetingNoteDialog } from "@/components/meeting-notes-panel";
 
-const navItems = [
+type NavLink = {
+  href: string;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  adminOnly?: boolean;
+};
+type NavSection = { section: string; adminOnly?: boolean };
+type NavEntry = NavLink | NavSection;
+
+const navItems: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/top-priorities", label: "Top Priorities", icon: Star },
   { href: "/individuals", label: "Individuals", icon: Users },
@@ -48,8 +57,9 @@ const navItems = [
   { href: "/opportunities", label: "Opportunities", icon: Target },
   { href: "/pledges", label: "Pledges", icon: HandCoins },
   { href: "/gifts", label: "Gifts", icon: Gift },
-  { href: "/staged-payments", label: "Finance Reconciliation", icon: ReceiptText },
   { href: "/stripe-staged-charges", label: "Stripe Review", icon: CreditCard },
+  { section: "Financial Review" },
+  { href: "/staged-payments", label: "Finance Reconciliation", icon: ReceiptText },
   { href: "/stripe-reconciliation", label: "Stripe ↔ QB", icon: Scale },
   { href: "/moves", label: "Moves", icon: Activity },
   { href: "/interactions", label: "Interactions", icon: MessageSquare },
@@ -89,6 +99,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {navItems
         .filter((item) => !("adminOnly" in item && item.adminOnly) || isAdmin)
         .map((item) => {
+        if ("section" in item) {
+          return collapsed ? (
+            <div
+              key={`section-${item.section}`}
+              role="separator"
+              className="mx-auto my-2 h-px w-6 bg-border"
+            />
+          ) : (
+            <div
+              key={`section-${item.section}`}
+              className="px-3 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+            >
+              {item.section}
+            </div>
+          );
+        }
         const isActive = location === item.href || location.startsWith(`${item.href}/`);
         const Icon = item.icon;
         return (
