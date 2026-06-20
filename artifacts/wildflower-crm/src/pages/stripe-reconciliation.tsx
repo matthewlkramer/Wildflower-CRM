@@ -54,6 +54,7 @@ const STATUS_BADGE: Record<
   unmatched: { label: "Unmatched", variant: "outline" },
   proposed: { label: "Proposed — awaiting confirm", variant: "secondary" },
   conflict_approved: { label: "Conflict — needs decision", variant: "destructive" },
+  confirmed_reconciled: { label: "Reconciled", variant: "default" },
   confirmed_excluded: { label: "Excluded (processor payout)", variant: "default" },
   confirmed_keep: { label: "Kept approved gift", variant: "default" },
   confirmed_replace: { label: "Replaced — old gift archived", variant: "default" },

@@ -478,11 +478,18 @@ export const quickbooksPayerTypeEnum = pgEnum("quickbooks_payer_type", [
 //   excluded — auto-filtered noise (zero/loan/membership); kept + auditable,
 //              hidden from the default queue, re-includable to pending. Cannot
 //              be approved/rejected/resolved while excluded.
+//   reconciled — terminal: this evidence row (a QB deposit/payment OR a Stripe
+//              charge) has been permanently tied to a CRM gift, which is the
+//              single source of truth. Kept + queryable + linked, dropped from
+//              the work queue. NOT noise (distinct from `excluded`); never
+//              auto-applied — set only on human confirm in the reconciliation
+//              flow. The evidence row never becomes a gift and is never archived.
 export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
   "pending",
   "approved",
   "rejected",
   "excluded",
+  "reconciled",
 ]);
 
 // Why a staged QuickBooks payment was auto-excluded from the review queue.
@@ -585,6 +592,22 @@ export const stagedPaymentEntitySourceEnum = pgEnum(
   "staged_payment_entity_source",
   ["auto", "manual"],
 );
+
+// Where a CRM gift's FINAL `amount` was last sourced from (provenance for the
+// reconciliation model in which the CRM gift is the single source of truth).
+//   human      — hand-entered by a fundraiser (default; the pre-reconciliation
+//                state of every existing gift).
+//   stripe     — stamped from a Stripe charge (gross, per-donor). Stripe WINS
+//                whenever a charge exists for the gift.
+//   quickbooks — stamped from a QuickBooks staged row. Used ONLY when there is
+//                no Stripe charge behind the gift.
+// The matching pointer column on gifts_and_payments is enforced XOR with this
+// value by a CHECK constraint (human ⇒ no pointer).
+export const giftFinalAmountSourceEnum = pgEnum("gift_final_amount_source", [
+  "human",
+  "stripe",
+  "quickbooks",
+]);
 
 // Action an admin-editable QuickBooks handling rule performs when it matches an
 // incoming staged payment (see quickbooks_handling_rules):

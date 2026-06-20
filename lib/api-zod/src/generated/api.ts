@@ -4776,6 +4776,38 @@ export const GetOpportunityOrPledgeResponse = zod
               ])
               .nullish(),
             amount: zod.string().nullish(),
+            processorFee: zod
+              .string()
+              .nullish()
+              .describe(
+                "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee.",
+              ),
+            originalHumanCrmAmount: zod
+              .string()
+              .nullish()
+              .describe(
+                "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment.",
+              ),
+            finalAmountSource: zod
+              .enum(["human", "stripe", "quickbooks"])
+              .describe(
+                "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+              )
+              .describe(
+                "Where `amount` was last sourced from. XOR with the two pointer fields below.",
+              ),
+            finalAmountStripeChargeId: zod
+              .string()
+              .nullish()
+              .describe(
+                "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe.",
+              ),
+            finalAmountQbStagedPaymentId: zod
+              .string()
+              .nullish()
+              .describe(
+                "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks.",
+              ),
             organizationId: zod.string().nullish(),
             individualGiverPersonId: zod.string().nullish(),
             householdId: zod.string().nullish(),
@@ -5402,6 +5434,38 @@ export const ListGiftsAndPaymentsResponse = zod.object({
         ])
         .nullish(),
       amount: zod.string().nullish(),
+      processorFee: zod
+        .string()
+        .nullish()
+        .describe(
+          "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee.",
+        ),
+      originalHumanCrmAmount: zod
+        .string()
+        .nullish()
+        .describe(
+          "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment.",
+        ),
+      finalAmountSource: zod
+        .enum(["human", "stripe", "quickbooks"])
+        .describe(
+          "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+        )
+        .describe(
+          "Where `amount` was last sourced from. XOR with the two pointer fields below.",
+        ),
+      finalAmountStripeChargeId: zod
+        .string()
+        .nullish()
+        .describe(
+          "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe.",
+        ),
+      finalAmountQbStagedPaymentId: zod
+        .string()
+        .nullish()
+        .describe(
+          "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks.",
+        ),
       organizationId: zod.string().nullish(),
       individualGiverPersonId: zod.string().nullish(),
       householdId: zod.string().nullish(),
@@ -5563,6 +5627,38 @@ export const GetGiftOrPaymentResponse = zod
       ])
       .nullish(),
     amount: zod.string().nullish(),
+    processorFee: zod
+      .string()
+      .nullish()
+      .describe(
+        "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee.",
+      ),
+    originalHumanCrmAmount: zod
+      .string()
+      .nullish()
+      .describe(
+        "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment.",
+      ),
+    finalAmountSource: zod
+      .enum(["human", "stripe", "quickbooks"])
+      .describe(
+        "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+      )
+      .describe(
+        "Where `amount` was last sourced from. XOR with the two pointer fields below.",
+      ),
+    finalAmountStripeChargeId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe.",
+      ),
+    finalAmountQbStagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks.",
+      ),
     organizationId: zod.string().nullish(),
     individualGiverPersonId: zod.string().nullish(),
     householdId: zod.string().nullish(),
@@ -5787,6 +5883,38 @@ export const UpdateGiftOrPaymentResponse = zod.object({
     ])
     .nullish(),
   amount: zod.string().nullish(),
+  processorFee: zod
+    .string()
+    .nullish()
+    .describe(
+      "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee.",
+    ),
+  originalHumanCrmAmount: zod
+    .string()
+    .nullish()
+    .describe(
+      "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment.",
+    ),
+  finalAmountSource: zod
+    .enum(["human", "stripe", "quickbooks"])
+    .describe(
+      "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+    )
+    .describe(
+      "Where `amount` was last sourced from. XOR with the two pointer fields below.",
+    ),
+  finalAmountStripeChargeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe.",
+    ),
+  finalAmountQbStagedPaymentId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks.",
+    ),
   organizationId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
@@ -5936,6 +6064,38 @@ export const LinkThankYouEmailResponse = zod
       ])
       .nullish(),
     amount: zod.string().nullish(),
+    processorFee: zod
+      .string()
+      .nullish()
+      .describe(
+        "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee.",
+      ),
+    originalHumanCrmAmount: zod
+      .string()
+      .nullish()
+      .describe(
+        "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment.",
+      ),
+    finalAmountSource: zod
+      .enum(["human", "stripe", "quickbooks"])
+      .describe(
+        "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+      )
+      .describe(
+        "Where `amount` was last sourced from. XOR with the two pointer fields below.",
+      ),
+    finalAmountStripeChargeId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe.",
+      ),
+    finalAmountQbStagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks.",
+      ),
     organizationId: zod.string().nullish(),
     individualGiverPersonId: zod.string().nullish(),
     householdId: zod.string().nullish(),
@@ -6140,12 +6300,13 @@ export const GetGiftStripeChainResponse = zod
             "unmatched",
             "proposed",
             "conflict_approved",
+            "confirmed_reconciled",
             "confirmed_excluded",
             "confirmed_keep",
             "confirmed_replace",
           ])
           .describe(
-            "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep\/replace. confirmed_excluded\/keep\/replace: a human decision has been applied.",
+            "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep\/replace. confirmed_reconciled: the current model — on confirm the per-charge Stripe gifts are stamped as the source of truth and the QB deposit lump is marked reconciled (kept, never archived). confirmed_excluded\/keep\/replace: legacy decisions retained for history.",
           ),
       })
       .nullish(),
@@ -8230,6 +8391,36 @@ export const GetStripeSyncStatusResponse = zod.object({
     .describe("Only payouts created at\/after this instant are pulled."),
 });
 
+/**
+ * @summary Re-run Stripe→QuickBooks payout-match proposals across ALL payouts, including prior-account rows never seen by incremental sync (admin only). Proposals only — every match stays in a proposed/conflict state for a human to confirm; never mints or archives anything.
+ */
+export const ProposeHistoricalStripeReconciliationResponse = zod
+  .object({
+    ran: zod
+      .boolean()
+      .describe(
+        "False when the pass was skipped (a sync\/rematch\/proposal run was already holding the lock, or the Stripe connector was unavailable).",
+      ),
+    payoutsScanned: zod.number().describe("Payouts examined this pass."),
+    proposalsCreated: zod
+      .number()
+      .describe("Payouts newly moved to a proposed QB-deposit match."),
+    conflictsFound: zod
+      .number()
+      .describe(
+        "Payouts whose candidate QB deposit was already approved into a gift (conflict_approved).",
+      ),
+    alreadyResolved: zod
+      .number()
+      .describe(
+        "Payouts already in a confirmed\/reconciled state, left untouched.",
+      ),
+    unmatched: zod.number().describe("Payouts with no QB deposit candidate."),
+  })
+  .describe(
+    "Result of the admin historical Stripe→QuickBooks reconciliation proposal pass over ALL payouts (including prior-account rows). Every match is a PROPOSAL — a human confirms each; nothing is minted or archived.",
+  );
+
 export const listStripeStagedChargesQueryLimitDefault = 50;
 export const listStripeStagedChargesQueryLimitMax = 10000;
 
@@ -8237,7 +8428,14 @@ export const listStripeStagedChargesQueryPageDefault = 1;
 
 export const ListStripeStagedChargesQueryParams = zod.object({
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
+    .enum([
+      "needs_review",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+      "reconciled",
+    ])
     .optional()
     .describe("Which queue to list (default needs_review)."),
   sort: zod
@@ -8297,7 +8495,11 @@ export const ListStripeStagedChargesResponse = zod.object({
       metadata: zod.record(zod.string(), zod.string()).nullish(),
       refunded: zod.boolean(),
       disputed: zod.boolean(),
-      status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+      status: zod
+        .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+        .describe(
+          "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+        ),
       exclusionReason: zod
         .enum([
           "zero_amount",
@@ -8347,8 +8549,18 @@ export const ListStripeStagedChargesResponse = zod.object({
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
       queue: zod
-        .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-        .optional(),
+        .enum([
+          "needs_review",
+          "auto_matched",
+          "excluded",
+          "done",
+          "rejected",
+          "reconciled",
+        ])
+        .optional()
+        .describe(
+          "Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand.",
+        ),
       organizationName: zod.string().nullish(),
       householdName: zod.string().nullish(),
       individualGiverPersonName: zod.string().nullish(),
@@ -8455,7 +8667,11 @@ export const ResolveStripeStagedChargeResponse = zod.object({
   metadata: zod.record(zod.string(), zod.string()).nullish(),
   refunded: zod.boolean(),
   disputed: zod.boolean(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -8505,8 +8721,18 @@ export const ResolveStripeStagedChargeResponse = zod.object({
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+      "reconciled",
+    ])
+    .optional()
+    .describe(
+      "Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand.",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -8577,7 +8803,11 @@ export const RejectStripeStagedChargeResponse = zod.object({
   metadata: zod.record(zod.string(), zod.string()).nullish(),
   refunded: zod.boolean(),
   disputed: zod.boolean(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -8627,8 +8857,18 @@ export const RejectStripeStagedChargeResponse = zod.object({
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+      "reconciled",
+    ])
+    .optional()
+    .describe(
+      "Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand.",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -8714,7 +8954,11 @@ export const ExcludeStripeStagedChargeResponse = zod.object({
   metadata: zod.record(zod.string(), zod.string()).nullish(),
   refunded: zod.boolean(),
   disputed: zod.boolean(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -8764,8 +9008,18 @@ export const ExcludeStripeStagedChargeResponse = zod.object({
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+      "reconciled",
+    ])
+    .optional()
+    .describe(
+      "Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand.",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -8829,7 +9083,11 @@ export const ReIncludeStripeStagedChargeResponse = zod.object({
   metadata: zod.record(zod.string(), zod.string()).nullish(),
   refunded: zod.boolean(),
   disputed: zod.boolean(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -8879,8 +9137,18 @@ export const ReIncludeStripeStagedChargeResponse = zod.object({
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+      "reconciled",
+    ])
+    .optional()
+    .describe(
+      "Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand.",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -8944,7 +9212,11 @@ export const RevertStripeStagedChargeResponse = zod.object({
   metadata: zod.record(zod.string(), zod.string()).nullish(),
   refunded: zod.boolean(),
   disputed: zod.boolean(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -8994,8 +9266,18 @@ export const RevertStripeStagedChargeResponse = zod.object({
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
   queue: zod
-    .enum(["needs_review", "auto_matched", "excluded", "done", "rejected"])
-    .optional(),
+    .enum([
+      "needs_review",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+      "reconciled",
+    ])
+    .optional()
+    .describe(
+      "Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand.",
+    ),
   organizationName: zod.string().nullish(),
   householdName: zod.string().nullish(),
   individualGiverPersonName: zod.string().nullish(),
@@ -9073,12 +9355,13 @@ export const ListStripePayoutReconciliationsResponse = zod.object({
           "unmatched",
           "proposed",
           "conflict_approved",
+          "confirmed_reconciled",
           "confirmed_excluded",
           "confirmed_keep",
           "confirmed_replace",
         ])
         .describe(
-          "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep\/replace. confirmed_excluded\/keep\/replace: a human decision has been applied.",
+          "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep\/replace. confirmed_reconciled: the current model — on confirm the per-charge Stripe gifts are stamped as the source of truth and the QB deposit lump is marked reconciled (kept, never archived). confirmed_excluded\/keep\/replace: legacy decisions retained for history.",
         ),
       proposedQbStagedPaymentId: zod
         .string()
@@ -9139,6 +9422,7 @@ export const ConfirmStripePayoutExcludeResponse = zod
   .object({
     ok: zod.literal(true),
     kind: zod.enum([
+      "confirmed_reconciled",
       "confirmed_excluded",
       "confirmed_keep",
       "confirmed_replace",
@@ -9175,6 +9459,7 @@ export const ConfirmStripePayoutKeepResponse = zod
   .object({
     ok: zod.literal(true),
     kind: zod.enum([
+      "confirmed_reconciled",
       "confirmed_excluded",
       "confirmed_keep",
       "confirmed_replace",
@@ -9211,6 +9496,7 @@ export const ConfirmStripePayoutReplaceResponse = zod
   .object({
     ok: zod.literal(true),
     kind: zod.enum([
+      "confirmed_reconciled",
       "confirmed_excluded",
       "confirmed_keep",
       "confirmed_replace",
@@ -9247,6 +9533,7 @@ export const RevertStripePayoutReconciliationResponse = zod
   .object({
     ok: zod.literal(true),
     kind: zod.enum([
+      "confirmed_reconciled",
       "confirmed_excluded",
       "confirmed_keep",
       "confirmed_replace",
@@ -9820,6 +10107,7 @@ export const ListStagedPaymentsQueryParams = zod.object({
       "excluded",
       "done",
       "rejected",
+      "reconciled",
     ])
     .optional()
     .describe("Which queue to list (default needs_review)."),
@@ -9874,7 +10162,11 @@ export const ListStagedPaymentsResponse = zod.object({
       payerEmail: zod.string().nullish(),
       rawReference: zod.string().nullish(),
       lineDescription: zod.string().nullish(),
-      status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+      status: zod
+        .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+        .describe(
+          "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+        ),
       exclusionReason: zod
         .enum([
           "zero_amount",
@@ -9973,6 +10265,7 @@ export const ListStagedPaymentsResponse = zod.object({
           "excluded",
           "done",
           "rejected",
+          "reconciled",
         ])
         .optional()
         .describe(
@@ -10137,7 +10430,11 @@ export const ResolveStagedPaymentResponse = zod.object({
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
   lineDescription: zod.string().nullish(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -10236,6 +10533,7 @@ export const ResolveStagedPaymentResponse = zod.object({
       "excluded",
       "done",
       "rejected",
+      "reconciled",
     ])
     .optional()
     .describe(
@@ -10338,7 +10636,11 @@ export const RejectStagedPaymentResponse = zod.object({
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
   lineDescription: zod.string().nullish(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -10437,6 +10739,7 @@ export const RejectStagedPaymentResponse = zod.object({
       "excluded",
       "done",
       "rejected",
+      "reconciled",
     ])
     .optional()
     .describe(
@@ -10532,7 +10835,11 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
   lineDescription: zod.string().nullish(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -10631,6 +10938,7 @@ export const ReIncludeStagedPaymentResponse = zod.object({
       "excluded",
       "done",
       "rejected",
+      "reconciled",
     ])
     .optional()
     .describe(
@@ -10746,7 +11054,11 @@ export const SetStagedPaymentEntityResponse = zod.object({
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
   lineDescription: zod.string().nullish(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -10845,6 +11157,7 @@ export const SetStagedPaymentEntityResponse = zod.object({
       "excluded",
       "done",
       "rejected",
+      "reconciled",
     ])
     .optional()
     .describe(
@@ -10969,7 +11282,11 @@ export const ExcludeStagedPaymentResponse = zod.object({
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
   lineDescription: zod.string().nullish(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -11068,6 +11385,7 @@ export const ExcludeStagedPaymentResponse = zod.object({
       "excluded",
       "done",
       "rejected",
+      "reconciled",
     ])
     .optional()
     .describe(
@@ -11175,6 +11493,38 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
           ])
           .nullish(),
         amount: zod.string().nullish(),
+        processorFee: zod
+          .string()
+          .nullish()
+          .describe(
+            "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee.",
+          ),
+        originalHumanCrmAmount: zod
+          .string()
+          .nullish()
+          .describe(
+            "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment.",
+          ),
+        finalAmountSource: zod
+          .enum(["human", "stripe", "quickbooks"])
+          .describe(
+            "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+          )
+          .describe(
+            "Where `amount` was last sourced from. XOR with the two pointer fields below.",
+          ),
+        finalAmountStripeChargeId: zod
+          .string()
+          .nullish()
+          .describe(
+            "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe.",
+          ),
+        finalAmountQbStagedPaymentId: zod
+          .string()
+          .nullish()
+          .describe(
+            "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks.",
+          ),
         organizationId: zod.string().nullish(),
         individualGiverPersonId: zod.string().nullish(),
         householdId: zod.string().nullish(),
@@ -11325,6 +11675,38 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
           ])
           .nullish(),
         amount: zod.string().nullish(),
+        processorFee: zod
+          .string()
+          .nullish()
+          .describe(
+            "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee.",
+          ),
+        originalHumanCrmAmount: zod
+          .string()
+          .nullish()
+          .describe(
+            "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment.",
+          ),
+        finalAmountSource: zod
+          .enum(["human", "stripe", "quickbooks"])
+          .describe(
+            "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+          )
+          .describe(
+            "Where `amount` was last sourced from. XOR with the two pointer fields below.",
+          ),
+        finalAmountStripeChargeId: zod
+          .string()
+          .nullish()
+          .describe(
+            "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe.",
+          ),
+        finalAmountQbStagedPaymentId: zod
+          .string()
+          .nullish()
+          .describe(
+            "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks.",
+          ),
         organizationId: zod.string().nullish(),
         individualGiverPersonId: zod.string().nullish(),
         householdId: zod.string().nullish(),
@@ -11470,6 +11852,38 @@ export const ReconcileStagedPaymentResponse = zod.object({
       ])
       .nullish(),
     amount: zod.string().nullish(),
+    processorFee: zod
+      .string()
+      .nullish()
+      .describe(
+        "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee.",
+      ),
+    originalHumanCrmAmount: zod
+      .string()
+      .nullish()
+      .describe(
+        "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment.",
+      ),
+    finalAmountSource: zod
+      .enum(["human", "stripe", "quickbooks"])
+      .describe(
+        "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+      )
+      .describe(
+        "Where `amount` was last sourced from. XOR with the two pointer fields below.",
+      ),
+    finalAmountStripeChargeId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe.",
+      ),
+    finalAmountQbStagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks.",
+      ),
     organizationId: zod.string().nullish(),
     individualGiverPersonId: zod.string().nullish(),
     householdId: zod.string().nullish(),
@@ -11675,6 +12089,38 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
       ])
       .nullish(),
     amount: zod.string().nullish(),
+    processorFee: zod
+      .string()
+      .nullish()
+      .describe(
+        "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee.",
+      ),
+    originalHumanCrmAmount: zod
+      .string()
+      .nullish()
+      .describe(
+        "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment.",
+      ),
+    finalAmountSource: zod
+      .enum(["human", "stripe", "quickbooks"])
+      .describe(
+        "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+      )
+      .describe(
+        "Where `amount` was last sourced from. XOR with the two pointer fields below.",
+      ),
+    finalAmountStripeChargeId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe.",
+      ),
+    finalAmountQbStagedPaymentId: zod
+      .string()
+      .nullish()
+      .describe(
+        "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks.",
+      ),
     organizationId: zod.string().nullish(),
     individualGiverPersonId: zod.string().nullish(),
     householdId: zod.string().nullish(),
@@ -11874,7 +12320,11 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
   lineDescription: zod.string().nullish(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -11973,6 +12423,7 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
       "excluded",
       "done",
       "rejected",
+      "reconciled",
     ])
     .optional()
     .describe(
@@ -12068,7 +12519,11 @@ export const UnmatchStagedPaymentResponse = zod.object({
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
   lineDescription: zod.string().nullish(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -12167,6 +12622,7 @@ export const UnmatchStagedPaymentResponse = zod.object({
       "excluded",
       "done",
       "rejected",
+      "reconciled",
     ])
     .optional()
     .describe(
@@ -12269,7 +12725,11 @@ export const RevertStagedPaymentResponse = zod.object({
   payerEmail: zod.string().nullish(),
   rawReference: zod.string().nullish(),
   lineDescription: zod.string().nullish(),
-  status: zod.enum(["pending", "approved", "rejected", "excluded"]),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
   exclusionReason: zod
     .enum([
       "zero_amount",
@@ -12368,6 +12828,7 @@ export const RevertStagedPaymentResponse = zod.object({
       "excluded",
       "done",
       "rejected",
+      "reconciled",
     ])
     .optional()
     .describe(
@@ -14649,6 +15110,38 @@ export const ArchiveGiftOrPaymentResponse = zod.object({
     ])
     .nullish(),
   amount: zod.string().nullish(),
+  processorFee: zod
+    .string()
+    .nullish()
+    .describe(
+      "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee.",
+    ),
+  originalHumanCrmAmount: zod
+    .string()
+    .nullish()
+    .describe(
+      "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment.",
+    ),
+  finalAmountSource: zod
+    .enum(["human", "stripe", "quickbooks"])
+    .describe(
+      "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+    )
+    .describe(
+      "Where `amount` was last sourced from. XOR with the two pointer fields below.",
+    ),
+  finalAmountStripeChargeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe.",
+    ),
+  finalAmountQbStagedPaymentId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks.",
+    ),
   organizationId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),
@@ -14759,6 +15252,38 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
     ])
     .nullish(),
   amount: zod.string().nullish(),
+  processorFee: zod
+    .string()
+    .nullish()
+    .describe(
+      "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee.",
+    ),
+  originalHumanCrmAmount: zod
+    .string()
+    .nullish()
+    .describe(
+      "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment.",
+    ),
+  finalAmountSource: zod
+    .enum(["human", "stripe", "quickbooks"])
+    .describe(
+      "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+    )
+    .describe(
+      "Where `amount` was last sourced from. XOR with the two pointer fields below.",
+    ),
+  finalAmountStripeChargeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe.",
+    ),
+  finalAmountQbStagedPaymentId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks.",
+    ),
   organizationId: zod.string().nullish(),
   individualGiverPersonId: zod.string().nullish(),
   householdId: zod.string().nullish(),

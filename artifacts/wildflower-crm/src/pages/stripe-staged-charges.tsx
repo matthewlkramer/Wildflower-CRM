@@ -272,6 +272,9 @@ export default function StripeStagedCharges() {
         return counts.excluded;
       case "rejected":
         return counts.rejected;
+      case "reconciled":
+        // Hidden, filterable-only bucket — no count badge.
+        return undefined;
     }
   };
 

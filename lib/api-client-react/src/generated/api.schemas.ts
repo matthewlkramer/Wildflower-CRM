@@ -432,6 +432,18 @@ export const GiftPaymentMethod = {
   daf_bill_com: "daf_bill_com",
 } as const;
 
+/**
+ * Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.
+ */
+export type GiftFinalAmountSource =
+  (typeof GiftFinalAmountSource)[keyof typeof GiftFinalAmountSource];
+
+export const GiftFinalAmountSource = {
+  human: "human",
+  stripe: "stripe",
+  quickbooks: "quickbooks",
+} as const;
+
 export type IntendedUsage = (typeof IntendedUsage)[keyof typeof IntendedUsage];
 
 export const IntendedUsage = {
@@ -1567,6 +1579,16 @@ export interface GiftOrPayment {
   dateReceived?: string | null;
   paymentMethod?: GiftPaymentMethod | null;
   amount?: string | null;
+  /** Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee. */
+  readonly processorFee?: string | null;
+  /** Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment. */
+  readonly originalHumanCrmAmount?: string | null;
+  /** Where `amount` was last sourced from. XOR with the two pointer fields below. */
+  readonly finalAmountSource: GiftFinalAmountSource;
+  /** The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe. */
+  readonly finalAmountStripeChargeId?: string | null;
+  /** The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks. */
+  readonly finalAmountQbStagedPaymentId?: string | null;
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
@@ -1841,6 +1863,9 @@ export const QuickbooksPayerType = {
   employee: "employee",
 } as const;
 
+/**
+ * Lifecycle of a staged payment / Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.
+ */
 export type StagedPaymentStatus =
   (typeof StagedPaymentStatus)[keyof typeof StagedPaymentStatus];
 
@@ -1849,6 +1874,7 @@ export const StagedPaymentStatus = {
   approved: "approved",
   rejected: "rejected",
   excluded: "excluded",
+  reconciled: "reconciled",
 } as const;
 
 export type StagedPaymentExclusionReason =
@@ -1913,6 +1939,9 @@ export const StagedPaymentEntitySource = {
   manual: "manual",
 } as const;
 
+/**
+ * Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand.
+ */
 export type StagedPaymentQueue =
   (typeof StagedPaymentQueue)[keyof typeof StagedPaymentQueue];
 
@@ -1922,6 +1951,7 @@ export const StagedPaymentQueue = {
   excluded: "excluded",
   done: "done",
   rejected: "rejected",
+  reconciled: "reconciled",
 } as const;
 
 /**
@@ -1937,6 +1967,7 @@ export const QuickbooksStagedPaymentQueue = {
   excluded: "excluded",
   done: "done",
   rejected: "rejected",
+  reconciled: "reconciled",
 } as const;
 
 export type StagedPaymentSort =
@@ -2369,6 +2400,24 @@ export interface StripeRematchSummary {
   matched: number;
 }
 
+/**
+ * Result of the admin historical Stripe→QuickBooks reconciliation proposal pass over ALL payouts (including prior-account rows). Every match is a PROPOSAL — a human confirms each; nothing is minted or archived.
+ */
+export interface StripeHistoricalProposalSummary {
+  /** False when the pass was skipped (a sync/rematch/proposal run was already holding the lock, or the Stripe connector was unavailable). */
+  ran: boolean;
+  /** Payouts examined this pass. */
+  payoutsScanned: number;
+  /** Payouts newly moved to a proposed QB-deposit match. */
+  proposalsCreated: number;
+  /** Payouts whose candidate QB deposit was already approved into a gift (conflict_approved). */
+  conflictsFound: number;
+  /** Payouts already in a confirmed/reconciled state, left untouched. */
+  alreadyResolved: number;
+  /** Payouts with no QB deposit candidate. */
+  unmatched: number;
+}
+
 export interface StripeSyncStatus {
   /** True once the sync has run at least once and seeded its per-account cursor. */
   configured: boolean;
@@ -2457,7 +2506,7 @@ export interface StripeStagedChargeList {
 }
 
 /**
- * Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep/replace. confirmed_excluded/keep/replace: a human decision has been applied.
+ * Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep/replace. confirmed_reconciled: the current model — on confirm the per-charge Stripe gifts are stamped as the source of truth and the QB deposit lump is marked reconciled (kept, never archived). confirmed_excluded/keep/replace: legacy decisions retained for history.
  */
 export type StripePayoutReconciliationStatus =
   (typeof StripePayoutReconciliationStatus)[keyof typeof StripePayoutReconciliationStatus];
@@ -2466,13 +2515,14 @@ export const StripePayoutReconciliationStatus = {
   unmatched: "unmatched",
   proposed: "proposed",
   conflict_approved: "conflict_approved",
+  confirmed_reconciled: "confirmed_reconciled",
   confirmed_excluded: "confirmed_excluded",
   confirmed_keep: "confirmed_keep",
   confirmed_replace: "confirmed_replace",
 } as const;
 
 /**
- * Which reconciliation bucket to list. proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state. all: every non-unmatched payout.
+ * Which reconciliation bucket to list. proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state (incl. confirmed_reconciled). all: every non-unmatched payout.
  */
 export type StripePayoutReconciliationQueue =
   (typeof StripePayoutReconciliationQueue)[keyof typeof StripePayoutReconciliationQueue];
@@ -2530,6 +2580,7 @@ export type StripePayoutReconciliationResultKind =
   (typeof StripePayoutReconciliationResultKind)[keyof typeof StripePayoutReconciliationResultKind];
 
 export const StripePayoutReconciliationResultKind = {
+  confirmed_reconciled: "confirmed_reconciled",
   confirmed_excluded: "confirmed_excluded",
   confirmed_keep: "confirmed_keep",
   confirmed_replace: "confirmed_replace",

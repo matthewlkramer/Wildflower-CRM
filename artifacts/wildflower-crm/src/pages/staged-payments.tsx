@@ -945,6 +945,9 @@ export default function StagedPayments() {
         return summary.excluded;
       case "rejected":
         return summary.rejected;
+      case "reconciled":
+        // Hidden, filterable-only bucket — no count badge.
+        return undefined;
     }
   };
 

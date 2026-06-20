@@ -93,6 +93,12 @@ export const stripePayouts = pgTable(
     //                        per-charge gross Stripe gifts are now the record)
     //   conflict_approved  — proposal landed on an already-approved QB gift and
     //                        is awaiting the human's KEEP/REPLACE decision
+    //   confirmed_reconciled — NEW model: confirmed payout↔deposit match. The QB
+    //                        deposit lump is marked `reconciled` (kept + linked,
+    //                        NEVER a gift, NEVER archived) and the per-charge
+    //                        Stripe gifts are stamped as the source of truth.
+    //                        Supersedes confirmed_excluded/_keep/_replace going
+    //                        forward; the old values are retained for history.
     qbReconciliationStatus: text("qb_reconciliation_status")
       .$type<
         | "unmatched"
@@ -101,6 +107,7 @@ export const stripePayouts = pgTable(
         | "confirmed_keep"
         | "confirmed_replace"
         | "conflict_approved"
+        | "confirmed_reconciled"
       >()
       .notNull()
       .default("unmatched"),

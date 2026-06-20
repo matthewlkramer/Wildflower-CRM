@@ -13,6 +13,7 @@ import { sql } from "drizzle-orm";
 import {
   giftTypeEnum,
   giftPaymentMethodEnum,
+  giftFinalAmountSourceEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
 import { people } from "./people";
@@ -21,6 +22,12 @@ import { paymentIntermediaries } from "./paymentIntermediaries";
 import { users } from "./users";
 import { fiscalYears } from "./fiscalYears";
 import { households } from "./households";
+// NOTE: circular table refs (these tables also reference giftsAndPayments). The
+// `(): AnyPgColumn =>` lazy callbacks below defer the access until after both
+// modules are fully evaluated, so the ESM cycle is safe (same pattern as the
+// self-reference on giftBeingMatchedId).
+import { stripeStagedCharges } from "./stripeStagedCharges";
+import { stagedPayments } from "./stagedPayments";
 
 // Header-only row for an actual gift / payment. Like opportunities, all
 // scope (which fund entity, which fiscal year, which regions, which
@@ -43,6 +50,38 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // for gifts with no processor fee (checks, wires, manual entries, and
   // QuickBooks-sourced gifts).
   processorFee: numeric("processor_fee", { precision: 14, scale: 2 }),
+  // ── Final-amount provenance ─────────────────────────────────────────
+  // `amount` above is the REAL, FINAL amount of this gift and remains the one
+  // field every downstream rollup reads. These columns record WHERE that final
+  // amount came from, so the CRM gift (the single source of truth) stays tied
+  // forever to its reconciliation evidence (a Stripe charge / a QuickBooks
+  // staged row) WITHOUT that evidence ever becoming a second gift.
+  //
+  // Snapshot of the human-entered amount BEFORE any processor reconciliation
+  // overwrote `amount`. Backfilled = `amount` for every pre-existing gift; NULL
+  // only for a future gift minted directly from a payment (no human amount ever
+  // existed). Lets the UI show "you entered $X, Stripe says $Y".
+  originalHumanCrmAmount: numeric("original_human_crm_amount", {
+    precision: 14,
+    scale: 2,
+  }),
+  // Where `amount` was last sourced from (see giftFinalAmountSourceEnum). XOR
+  // with the two pointer columns below, enforced by the CHECK constraint.
+  finalAmountSource: giftFinalAmountSourceEnum("final_amount_source")
+    .notNull()
+    .default("human"),
+  // Provenance pointer: the Stripe charge this gift's amount was stamped from
+  // (gross). RESTRICT — the evidence backing a gift's amount is permanent and
+  // can't be deleted out from under the gift.
+  finalAmountStripeChargeId: text("final_amount_stripe_charge_id").references(
+    (): AnyPgColumn => stripeStagedCharges.id,
+    { onDelete: "restrict" },
+  ),
+  // Provenance pointer: the QuickBooks staged row this gift's amount was stamped
+  // from (only when there is no Stripe charge). RESTRICT — see above.
+  finalAmountQbStagedPaymentId: text(
+    "final_amount_qb_staged_payment_id",
+  ).references((): AnyPgColumn => stagedPayments.id, { onDelete: "restrict" }),
   // RESTRICT: the organization is the giver of record.
   organizationId: text("organization_id").references(() => organizations.id, {
     onDelete: "restrict",
@@ -132,12 +171,28 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // index on staged_payments(date_received).
   index("gifts_and_payments_date_received_idx").on(t.dateReceived),
   index("gifts_and_payments_archived_at_idx").on(t.archivedAt),
+  index("gifts_and_payments_final_amount_stripe_charge_id_idx").on(
+    t.finalAmountStripeChargeId,
+  ),
+  index("gifts_and_payments_final_amount_qb_staged_payment_id_idx").on(
+    t.finalAmountQbStagedPaymentId,
+  ),
   index("gifts_and_payments_thank_you_email_msg_idx").on(t.thankYouEmailMessageId),
   index("gifts_and_payments_thank_you_sent_at_idx").on(t.thankYouSentAt),
   // Donor exclusivity: exactly one of organization / individual-giver / household.
   check(
     "gifts_and_payments_donor_xor",
     sql`num_nonnulls(${t.organizationId}, ${t.individualGiverPersonId}, ${t.householdId}) = 1`,
+  ),
+  // Final-amount provenance XOR: human ⇒ no pointer; stripe ⇒ stripe pointer
+  // only; quickbooks ⇒ qb pointer only.
+  check(
+    "gifts_and_payments_final_amount_source_ptr",
+    sql`(
+      (${t.finalAmountSource} = 'human' AND ${t.finalAmountStripeChargeId} IS NULL AND ${t.finalAmountQbStagedPaymentId} IS NULL)
+      OR (${t.finalAmountSource} = 'stripe' AND ${t.finalAmountStripeChargeId} IS NOT NULL AND ${t.finalAmountQbStagedPaymentId} IS NULL)
+      OR (${t.finalAmountSource} = 'quickbooks' AND ${t.finalAmountQbStagedPaymentId} IS NOT NULL AND ${t.finalAmountStripeChargeId} IS NULL)
+    )`,
   ),
 ]);
 

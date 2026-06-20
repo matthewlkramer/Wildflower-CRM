@@ -1971,6 +1971,15 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeSyncStatus" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /stripe/reconciliation/propose-historical:
+    post:
+      operationId: proposeHistoricalStripeReconciliation
+      tags: [stripe-sync]
+      summary: Re-run Stripe→QuickBooks payout-match proposals across ALL payouts, including prior-account rows never seen by incremental sync (admin only). Proposals only — every match stays in a proposed/conflict state for a human to confirm; never mints or archives anything.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeHistoricalProposalSummary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { description: "Historical reconciliation proposal pass failed" }
 
   # ─── Stripe staged-charge review queue ────────────────────────────────────
   /stripe-staged-charges:
@@ -3324,6 +3333,7 @@ components:
         gifts + opportunities/pledges flagged loan-capital); `revenue` = everything
         else. Defaults to `revenue` so existing data is treated as revenue.
     GiftPaymentMethod: { type: string, enum: [ach, check, wire, stock, donor_box, daf_ach, daf_check, daf_bill_com] }
+    GiftFinalAmountSource: { type: string, enum: [human, stripe, quickbooks], description: "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields." }
     IntendedUsage: { type: string, enum: [gen_ops, growth, school_startup, teacher_training, project] }
     RestrictionType: { type: string, enum: [unrestricted, purpose, time, both, unclear, na], description: "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted." }
     DeferredRevenue: { type: string, enum: [yes, no, na] }
@@ -4599,7 +4609,7 @@ components:
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
       type: object
-      required: [id, designatedToSchool, createdAt, updatedAt]
+      required: [id, designatedToSchool, finalAmountSource, createdAt, updatedAt]
       properties:
         id:                         { type: string }
         legacyGiftId:               { type: string, nullable: true }
@@ -4608,6 +4618,14 @@ components:
         dateReceived:               { type: string, format: date, nullable: true }
         paymentMethod:              { allOf: [ { $ref: "#/components/schemas/GiftPaymentMethod" } ], nullable: true }
         amount:                     { type: string, nullable: true }
+        # ── Final-amount provenance (set by reconciliation, never via create/update). ──
+        # `amount` is the REAL final amount every rollup reads; these record WHERE it
+        # came from so the CRM gift stays tied to its Stripe/QuickBooks evidence.
+        processorFee:               { type: string, nullable: true, readOnly: true, description: "Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee." }
+        originalHumanCrmAmount:     { type: string, nullable: true, readOnly: true, description: "Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment." }
+        finalAmountSource:          { allOf: [ { $ref: "#/components/schemas/GiftFinalAmountSource" } ], readOnly: true, description: "Where `amount` was last sourced from. XOR with the two pointer fields below." }
+        finalAmountStripeChargeId:  { type: string, nullable: true, readOnly: true, description: "The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe." }
+        finalAmountQbStagedPaymentId: { type: string, nullable: true, readOnly: true, description: "The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks." }
         organizationId:                   { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
@@ -4715,14 +4733,14 @@ components:
     # ─── QuickBooks payment sync ──────────────────────────────────────────────
     QuickbooksEntityType: { type: string, enum: [sales_receipt, payment, deposit] }
     QuickbooksPayerType: { type: string, enum: [vendor, customer, employee], description: "The QuickBooks payer/entity kind behind this incoming money (Customer for a SalesReceipt/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line)." }
-    StagedPaymentStatus: { type: string, enum: [pending, approved, rejected, excluded] }
+    StagedPaymentStatus: { type: string, enum: [pending, approved, rejected, excluded, reconciled], description: "Lifecycle of a staged payment / Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges." }
     StagedPaymentExclusionReason: { type: string, enum: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income, fiscally_sponsored, intercompany_transfer, other, insurance, expense_refund, expensify, returned_wire] }
     StagedPaymentMatchStatus: { type: string, enum: [matched, suggested, unmatched] }
     StagedPaymentMatchMethod: { type: string, enum: [email, name, name_amount_date, amount_date, memo, intermediary, manual] }
     StagedPaymentClassificationSource: { type: string, enum: [auto, manual] }
     StagedPaymentEntitySource: { type: string, enum: [auto, manual], description: "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync / reclassify." }
-    StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, rejected] }
-    QuickbooksStagedPaymentQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected], description: "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review)." }
+    StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, rejected, reconciled], description: "Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand." }
+    QuickbooksStagedPaymentQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected, reconciled], description: "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review)." }
     StagedPaymentSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc, payer_asc, payer_desc] }
     GiftSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc] }
     QuickbooksOauthStatus:
@@ -5046,6 +5064,17 @@ components:
         ran:     { type: boolean, description: "False when the rematch was skipped (a sync/rematch was already running, or the Stripe connector was unavailable)." }
         scanned: { type: integer, description: "Candidate rows examined (pending + unmatched + no donor)." }
         matched: { type: integer, description: "Rows newly given a donor hint by this run." }
+    StripeHistoricalProposalSummary:
+      type: object
+      required: [ran, payoutsScanned, proposalsCreated, conflictsFound, alreadyResolved, unmatched]
+      description: "Result of the admin historical Stripe→QuickBooks reconciliation proposal pass over ALL payouts (including prior-account rows). Every match is a PROPOSAL — a human confirms each; nothing is minted or archived."
+      properties:
+        ran:              { type: boolean, description: "False when the pass was skipped (a sync/rematch/proposal run was already holding the lock, or the Stripe connector was unavailable)." }
+        payoutsScanned:   { type: integer, description: "Payouts examined this pass." }
+        proposalsCreated: { type: integer, description: "Payouts newly moved to a proposed QB-deposit match." }
+        conflictsFound:   { type: integer, description: "Payouts whose candidate QB deposit was already approved into a gift (conflict_approved)." }
+        alreadyResolved:  { type: integer, description: "Payouts already in a confirmed/reconciled state, left untouched." }
+        unmatched:        { type: integer, description: "Payouts with no QB deposit candidate." }
     StripeSyncStatus:
       type: object
       required: [configured, lastRunAt, lastRunStatus, lastError, consecutiveErrors, payoutCreatedWatermark]
@@ -5132,11 +5161,11 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     StripePayoutReconciliationStatus:
       type: string
-      description: "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep/replace. confirmed_excluded/keep/replace: a human decision has been applied."
-      enum: [unmatched, proposed, conflict_approved, confirmed_excluded, confirmed_keep, confirmed_replace]
+      description: "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep/replace. confirmed_reconciled: the current model — on confirm the per-charge Stripe gifts are stamped as the source of truth and the QB deposit lump is marked reconciled (kept, never archived). confirmed_excluded/keep/replace: legacy decisions retained for history."
+      enum: [unmatched, proposed, conflict_approved, confirmed_reconciled, confirmed_excluded, confirmed_keep, confirmed_replace]
     StripePayoutReconciliationQueue:
       type: string
-      description: "Which reconciliation bucket to list. proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state. all: every non-unmatched payout."
+      description: "Which reconciliation bucket to list. proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state (incl. confirmed_reconciled). all: every non-unmatched payout."
       enum: [proposed, conflict, confirmed, all]
     StripePayoutReconciliation:
       type: object
@@ -5185,7 +5214,7 @@ components:
       description: "Outcome of a payout reconciliation confirm/revert transition."
       properties:
         ok:               { type: boolean, enum: [true] }
-        kind:             { type: string, enum: [confirmed_excluded, confirmed_keep, confirmed_replace, reverted] }
+        kind:             { type: string, enum: [confirmed_reconciled, confirmed_excluded, confirmed_keep, confirmed_replace, reverted] }
         payoutId:         { type: string }
         stagedPaymentId:  { type: string, nullable: true, description: "The QB deposit lump that was excluded/relinked, when applicable." }
         archivedGiftId:   { type: string, nullable: true, description: "The QB-derived gift archived by a confirm-replace (kept, never deleted)." }

@@ -717,6 +717,8 @@ const RECON_CHAIN_LABEL: Record<StripePayoutReconciliationStatus, string> = {
   unmatched: "Not yet matched to a QuickBooks deposit",
   proposed: "Proposed — awaiting confirm",
   conflict_approved: "Conflict — needs a keep/replace decision",
+  confirmed_reconciled:
+    "Reconciled — Stripe charges are the record; QuickBooks deposit kept",
   confirmed_excluded: "Deposit excluded as a processor payout",
   confirmed_keep: "Kept the existing QuickBooks gift",
   confirmed_replace: "Replaced — old QuickBooks gift archived",
