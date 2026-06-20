@@ -57,6 +57,7 @@ import {
   revertPayoutQbConfirmation,
   type ConfirmRevertResult,
 } from "../lib/stripeConfirm";
+import { proposePayoutMatches } from "../lib/stripeReconcile";
 
 /**
  * Review queue for incoming Stripe charges plus the manual sync / rematch
@@ -921,6 +922,60 @@ router.post(
       res.status(502).json({
         error: "rematch_failed",
         message: e instanceof Error ? e.message : "Stripe rematch failed",
+      });
+    }
+  }),
+);
+
+// ─── POST /stripe/reconciliation/propose-historical ────────────────────────
+// One-time admin "stitch": re-run Stripe→QuickBooks payout-match proposals over
+// ALL payouts, including prior-account rows the incremental sync never saw (it
+// only proposes for payouts pulled in its own run). Proposals only — every match
+// stays in a proposed/conflict state for a human to confirm; never mints or
+// archives anything. Idempotent: re-running simply re-evaluates.
+router.post(
+  "/stripe/reconciliation/propose-historical",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const result = await proposePayoutMatches();
+      if (!result.ran) {
+        res.json({
+          ran: false,
+          payoutsScanned: 0,
+          proposalsCreated: 0,
+          conflictsFound: 0,
+          alreadyResolved: 0,
+          unmatched: 0,
+        });
+        return;
+      }
+      const [counts] = await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(stripePayouts);
+      const total = counts?.total ?? 0;
+      const scanned = result.evaluated;
+      const summary = {
+        ran: true,
+        payoutsScanned: scanned,
+        proposalsCreated: result.proposed,
+        conflictsFound: result.conflicts,
+        // Payouts not scanned are already in a confirmed/reconciled terminal state.
+        alreadyResolved: Math.max(0, total - scanned),
+        // Scanned payouts that ended with no QB-deposit candidate.
+        unmatched: Math.max(0, scanned - result.proposed - result.conflicts),
+      };
+      req.log.info(summary, "Historical Stripe→QB reconciliation proposal pass");
+      res.json(summary);
+    } catch (e) {
+      logger.error(
+        { err: e },
+        "Historical Stripe reconciliation proposal failed",
+      );
+      res.status(502).json({
+        error: "proposal_failed",
+        message:
+          e instanceof Error ? e.message : "Historical reconciliation failed",
       });
     }
   }),

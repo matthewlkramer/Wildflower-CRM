@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListReconciliationCards,
   useApproveReconciliationCard,
+  useProposeHistoricalStripeReconciliation,
   type ListReconciliationCardsParams,
   type ApproveCompleteMatchBody,
 } from "@workspace/api-client-react";
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { ReconciliationCard } from "@/components/reconciliation-card";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 
 /* ────────────────────────────────────────────────────────────────────────
  * Unified "complete-match" reconciler.
@@ -54,6 +56,7 @@ function useDebounced<T>(value: T, ms = 250): T {
 export default function Reconciliation() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const isAdmin = useIsAdmin();
 
   const [tab, setTab] = useState<TabKey>("todo");
   const [search, setSearch] = useState("");
@@ -85,8 +88,14 @@ export default function Reconciliation() {
   const { data, isLoading, isError } = useListReconciliationCards(params);
 
   function refresh() {
+    // Covers both the card list (["/api/reconciliation/cards", params]) AND every
+    // already-expanded card's graph (["/api/reconciliation/cards/{id}/graph"]),
+    // whose distinct per-id key the plain list prefix would miss — so newly
+    // proposed Stripe evidence shows on an open card without a manual reload.
     void queryClient.invalidateQueries({
-      queryKey: ["/api/reconciliation/cards"],
+      predicate: (query) =>
+        typeof query.queryKey[0] === "string" &&
+        query.queryKey[0].startsWith("/api/reconciliation/cards"),
     });
     // Approving mints/links a gift and reconciles staged evidence.
     void queryClient.invalidateQueries({ queryKey: ["/api/gifts-and-payments"] });
@@ -107,6 +116,33 @@ export default function Reconciliation() {
             err instanceof Error
               ? err.message
               : "It may already have changed state — refresh and try again.",
+        });
+      },
+    },
+  });
+
+  // One-time admin "stitch": match every Stripe payout to its QuickBooks deposit
+  // so the Stripe evidence panel appears on each backed card. Proposals only —
+  // nothing is minted or archived; the human confirms each card afterward.
+  const proposeHistorical = useProposeHistoricalStripeReconciliation({
+    mutation: {
+      onSuccess: (res) => {
+        toast({
+          title: res.ran
+            ? "Stripe → QuickBooks matching complete"
+            : "Skipped — a sync is already running",
+          description: res.ran
+            ? `${res.proposalsCreated} proposed · ${res.conflictsFound} conflicts · ${res.unmatched} still unmatched · ${res.alreadyResolved} already done`
+            : "A Stripe sync/rematch is holding the lock — try again in a moment.",
+        });
+        refresh();
+      },
+      onError: (err: unknown) => {
+        toast({
+          variant: "destructive",
+          title: "Couldn't run the matching pass",
+          description:
+            err instanceof Error ? err.message : "Please try again.",
         });
       },
     },
@@ -171,6 +207,26 @@ export default function Reconciliation() {
               data-testid="reconciliation-search"
             />
           </div>
+          {isAdmin ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-2">
+              <p className="text-xs text-muted-foreground">
+                Stripe missing on a card? Run a one-time pass to match every Stripe
+                payout to its QuickBooks deposit. Proposals only — you confirm each
+                card afterward.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={proposeHistorical.isPending}
+                onClick={() => proposeHistorical.mutate()}
+                data-testid="propose-historical-stripe"
+              >
+                {proposeHistorical.isPending
+                  ? "Matching…"
+                  : "Match Stripe payouts to QuickBooks"}
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
