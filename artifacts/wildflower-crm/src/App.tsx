@@ -34,6 +34,7 @@ import Settings from "@/pages/settings";
 import StagedPayments from "@/pages/staged-payments";
 import StripeStagedCharges from "@/pages/stripe-staged-charges";
 import StripeReconciliation from "@/pages/stripe-reconciliation";
+import Reconciliation from "@/pages/reconciliation";
 import EmailIntelligence from "@/pages/email-intelligence";
 import GrantLeads from "@/pages/grant-leads";
 import EmailTracking from "@/pages/email-tracking";
@@ -215,6 +216,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/staged-payments"><ProtectedRoute component={StagedPayments} /></Route>
           <Route path="/stripe-staged-charges"><ProtectedRoute component={StripeStagedCharges} /></Route>
           <Route path="/stripe-reconciliation"><ProtectedRoute component={StripeReconciliation} /></Route>
+          <Route path="/reconciliation"><ProtectedRoute component={Reconciliation} /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>
           <Route path="/interactions"><ProtectedRoute component={Interactions} /></Route>
           <Route path="/projections"><ProtectedRoute component={Projections} /></Route>
