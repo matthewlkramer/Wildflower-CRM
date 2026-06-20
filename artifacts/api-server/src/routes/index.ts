@@ -52,6 +52,7 @@ import auditLogRouter from "./auditLog";
 import searchRouter from "./search";
 import potentialDuplicatesRouter from "./potentialDuplicates";
 import adminReassignRouter from "./adminReassign";
+import reconciliationRouter from "./reconciliation";
 
 const router: IRouter = Router();
 
@@ -118,5 +119,6 @@ router.use(auditLogRouter);
 router.use(searchRouter);
 router.use(potentialDuplicatesRouter);
 router.use(adminReassignRouter);
+router.use(reconciliationRouter);
 
 export default router;

@@ -130,7 +130,10 @@ router.get(
       const ew = entityWhere(entityId);
       if (ew) conds.push(ew);
     }
-    if (search.length >= 1) conds.push(stagedSearchWhere(search));
+    if (search.length >= 1) {
+      const sw = stagedSearchWhere(search);
+      if (sw) conds.push(sw);
+    }
     if (ready === true) conds.push(readyExpr);
     else if (ready === false) conds.push(sql`NOT ${readyExpr}`);
     const where = conds.length ? and(...conds) : undefined;
@@ -261,7 +264,8 @@ router.get(
 router.get(
   "/reconciliation/cards/:stagedPaymentId/graph",
   asyncHandler(async (req, res) => {
-    const id = req.params["stagedPaymentId"] ?? "";
+    const rawId = req.params["stagedPaymentId"];
+    const id = typeof rawId === "string" ? rawId : "";
     const graph = await buildReconciliationGraph(id, getViewer(req));
     if (!graph) return notFound(res, "reconciliation card");
     res.json(graph);

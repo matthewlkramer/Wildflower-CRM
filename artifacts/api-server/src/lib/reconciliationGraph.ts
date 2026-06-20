@@ -46,11 +46,11 @@ import {
 import {
   HIGH_THRESHOLD,
   scoreStagedPayment,
-  scoreStripeCharge,
   type DonorMatch,
   type MatchMethod,
   type ScoredMatch,
 } from "./quickbooksMatch";
+import { scoreStripeCharge } from "./stripeMatch";
 import {
   giftCandidateJoins,
   giftCandidateSelect,
