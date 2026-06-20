@@ -69,6 +69,7 @@ let schema: {
   stagedPayments: Db["stagedPayments"];
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
+  giftAmountAllocationReview: Db["giftAmountAllocationReview"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -102,6 +103,17 @@ async function api(
   return { status: res.status, json };
 }
 
+async function apiGet(path: string): Promise<{ status: number; json: any }> {
+  const res = await fetch(`${baseUrl}${path}`, { method: "GET" });
+  let json: unknown = null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+  return { status: res.status, json };
+}
+
 async function seedGift(amount: string): Promise<string> {
   const id = nextId("gift");
   await db.insert(schema.giftsAndPayments).values({
@@ -121,7 +133,15 @@ async function seedGift(amount: string): Promise<string> {
   return id;
 }
 
-async function seedStaged(amount: string): Promise<string> {
+async function seedStaged(
+  amount: string,
+  opts: {
+    payerName?: string;
+    status?: "pending" | "approved" | "reconciled";
+    organizationId?: string | null;
+    matchStatus?: "matched" | "suggested" | "unmatched";
+  } = {},
+): Promise<string> {
   const id = nextId("sp");
   await db.insert(schema.stagedPayments).values({
     id,
@@ -130,10 +150,58 @@ async function seedStaged(amount: string): Promise<string> {
     qbEntityId: id,
     amount,
     dateReceived: "2026-03-15",
-    payerName: "Stripe",
-    status: "pending",
+    payerName: opts.payerName ?? "Stripe",
+    status: opts.status ?? "pending",
+    ...(opts.organizationId !== undefined
+      ? { organizationId: opts.organizationId }
+      : {}),
+    ...(opts.matchStatus !== undefined ? { matchStatus: opts.matchStatus } : {}),
   });
   stagedIds.push(id);
+  return id;
+}
+
+// A gift with an explicit number of allocations (0, 1, or 2+) so the allocation
+// rescale-vs-flag primitive can be exercised across all branches.
+async function seedGiftWithAllocations(
+  amount: string,
+  subAmounts: string[],
+): Promise<string> {
+  const id = nextId("gift");
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    amount,
+    organizationId: ORG_ID,
+    details: "Allocation primitive gift",
+  });
+  giftIds.push(id);
+  for (const sub of subAmounts) {
+    const allocId = nextId("alloc");
+    await db
+      .insert(schema.giftAllocations)
+      .values({ id: allocId, giftId: id, subAmount: sub });
+    allocIds.push(allocId);
+  }
+  return id;
+}
+
+// Archived gift for the chosen org — used to prove the scoped gift search
+// excludes archived rows.
+async function seedArchivedGift(amount: string): Promise<string> {
+  const id = nextId("gift");
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    amount,
+    organizationId: ORG_ID,
+    details: "Archived CRM gift",
+    archivedAt: new Date(),
+  });
+  const allocId = nextId("alloc");
+  await db
+    .insert(schema.giftAllocations)
+    .values({ id: allocId, giftId: id, subAmount: amount });
+  giftIds.push(id);
+  allocIds.push(allocId);
   return id;
 }
 
@@ -233,6 +301,25 @@ async function readOpp(id: string) {
   return row;
 }
 
+// OPEN gift_amount_allocation_review rows for a gift (resolved_at IS NULL). The
+// partial-unique index guarantees at most one, so this proves the flag-vs-upsert
+// behavior of adjustSingleAllocationOrFlag.
+async function readOpenReviews(giftId: string) {
+  const rows = await db
+    .select()
+    .from(schema.giftAmountAllocationReview)
+    .where(eqFn(schema.giftAmountAllocationReview.giftId, giftId));
+  return rows.filter((r) => r.resolvedAt == null);
+}
+
+async function readAlloc(id: string) {
+  const [row] = await db
+    .select()
+    .from(schema.giftAllocations)
+    .where(eqFn(schema.giftAllocations.id, id));
+  return row;
+}
+
 beforeAll(async () => {
   if (!HAS_DB) return;
   const dbMod = await import("@workspace/db");
@@ -247,6 +334,7 @@ beforeAll(async () => {
     stagedPayments: dbMod.stagedPayments,
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
+    giftAmountAllocationReview: dbMod.giftAmountAllocationReview,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -778,5 +866,258 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
 
     // Nothing minted or mutated.
     expect((await readStaged(stagedId)).status).toBe("pending");
+  }, 30_000);
+});
+
+describe.skipIf(!HAS_DB)("Reconciliation graph — read-only proposer (integration)", () => {
+  it("returns the QB anchor as evidence.qb and the Stripe charge as attached evidence (gross), with exactly the donor/gift/opportunity nodes", async () => {
+    const stagedId = await seedStaged("100.00");
+    const payoutId = await seedPayout(stagedId);
+    await seedCharge({ payoutId, grossAmount: "100.00" });
+
+    const res = await apiGet(`/api/reconciliation/cards/${stagedId}/graph`);
+    expect(res.status).toBe(200);
+
+    // QB is the REQUIRED anchor (evidence.qb), never a node.
+    expect(res.json.stagedPaymentId).toBe(stagedId);
+    expect(res.json.evidence.qb.stagedPaymentId).toBe(stagedId);
+    expect(res.json.evidence.qb.amount).toBe("100.00");
+
+    // Stripe is attached EVIDENCE carrying the per-payout gross — the figure that
+    // takes precedence over the QB amount when a charge backs the same money.
+    expect(res.json.evidence.stripe).not.toBeNull();
+    expect(res.json.evidence.stripe.payoutId).toBe(payoutId);
+    expect(res.json.evidence.stripe.grossAmount).toBe("100.00");
+    expect(res.json.evidence.stripe.chargeCount).toBeGreaterThanOrEqual(1);
+
+    // The graph carries exactly the three resolvable nodes; QB is the anchor, not a node.
+    const nodeTypes = (res.json.nodes as Array<{ nodeType: string }>)
+      .map((n) => n.nodeType)
+      .sort();
+    expect(nodeTypes).toEqual(["donor", "gift", "opportunity"]);
+  }, 30_000);
+
+  it("derives a determined donor node from a single confirmed donor match, and none when the QB row has no donor", async () => {
+    // payerName is deliberately gibberish so the QB name-matcher finds no second
+    // donor — isolating the saved (confirmed) donor pick.
+    const matchedStaged = await seedStaged("100.00", {
+      payerName: `zzznomatch_${RUN}`,
+      organizationId: ORG_ID,
+      matchStatus: "matched",
+    });
+    const matchedRes = await apiGet(
+      `/api/reconciliation/cards/${matchedStaged}/graph`,
+    );
+    expect(matchedRes.status).toBe(200);
+    const donorNode = (matchedRes.json.nodes as Array<any>).find(
+      (n) => n.nodeType === "donor",
+    );
+    expect(donorNode.state).toBe("determined");
+    expect(donorNode.selectedId).toBe(ORG_ID);
+    expect(donorNode.locked).toBe(true);
+
+    const bareStaged = await seedStaged("100.00", {
+      payerName: `zzznomatch_${RUN}`,
+    });
+    const bareRes = await apiGet(`/api/reconciliation/cards/${bareStaged}/graph`);
+    const bareDonor = (bareRes.json.nodes as Array<any>).find(
+      (n) => n.nodeType === "donor",
+    );
+    expect(bareDonor.state).toBe("none");
+    expect(bareDonor.selectedId).toBeNull();
+  }, 30_000);
+
+  it("404s for an unknown staged payment id", async () => {
+    const res = await apiGet(
+      `/api/reconciliation/cards/sp_missing_${RUN}/graph`,
+    );
+    expect(res.status).toBe(404);
+  }, 30_000);
+});
+
+describe.skipIf(!HAS_DB)("Reconciliation search — scoped + cross-filtering (integration)", () => {
+  it("400s with no stagedPaymentId, and 400s for an unknown nodeType", async () => {
+    const stagedId = await seedStaged("100.00");
+
+    const noStaged = await apiGet(`/api/reconciliation/search/donor?q=x`);
+    expect(noStaged.status).toBe(400);
+    expect(noStaged.json.error).toBe("validation_error");
+
+    const badType = await apiGet(
+      `/api/reconciliation/search/nonsense?stagedPaymentId=${stagedId}`,
+    );
+    expect(badType.status).toBe(400);
+    expect(badType.json.error).toBe("validation_error");
+  }, 30_000);
+
+  it("donor search finds the org by name (trigram)", async () => {
+    const stagedId = await seedStaged("100.00");
+    const res = await apiGet(
+      `/api/reconciliation/search/donor?stagedPaymentId=${stagedId}` +
+        `&q=${encodeURIComponent("Reconciliation Approve Test Org")}`,
+    );
+    expect(res.status).toBe(200);
+    const ids = (res.json.data as Array<{ id: string }>).map((c) => c.id);
+    expect(ids).toContain(ORG_ID);
+  }, 30_000);
+
+  it("gift search (donor-scoped) includes an active org gift in the amount band and EXCLUDES an archived one", async () => {
+    const activeGiftId = await seedGift("100.00");
+    const archivedGiftId = await seedArchivedGift("100.00");
+    const stagedId = await seedStaged("100.00");
+
+    const res = await apiGet(
+      `/api/reconciliation/search/gift?stagedPaymentId=${stagedId}&donorId=${ORG_ID}`,
+    );
+    expect(res.status).toBe(200);
+    const ids = (res.json.data as Array<{ id: string }>).map((c) => c.id);
+    expect(ids).toContain(activeGiftId);
+    expect(ids).not.toContain(archivedGiftId);
+  }, 30_000);
+});
+
+describe.skipIf(!HAS_DB)("Reconciliation cards — queue visibility (integration)", () => {
+  it("default queue shows pending and hides reconciled; queue=reconciled is the inverse", async () => {
+    const marker = `QV_${RUN}_${Math.random().toString(36).slice(2, 8)}`;
+    const pendingId = await seedStaged("100.00", { payerName: marker });
+    const reconciledId = await seedStaged("100.00", {
+      payerName: marker,
+      status: "reconciled",
+    });
+
+    const live = await apiGet(
+      `/api/reconciliation/cards?q=${encodeURIComponent(marker)}&limit=50`,
+    );
+    expect(live.status).toBe(200);
+    const liveIds = (live.json.data as Array<{ stagedPaymentId: string }>).map(
+      (c) => c.stagedPaymentId,
+    );
+    expect(liveIds).toContain(pendingId);
+    expect(liveIds).not.toContain(reconciledId);
+
+    const done = await apiGet(
+      `/api/reconciliation/cards?queue=reconciled&q=${encodeURIComponent(marker)}&limit=50`,
+    );
+    expect(done.status).toBe(200);
+    const doneIds = (done.json.data as Array<{ stagedPaymentId: string }>).map(
+      (c) => c.stagedPaymentId,
+    );
+    expect(doneIds).toContain(reconciledId);
+    expect(doneIds).not.toContain(pendingId);
+  }, 30_000);
+});
+
+describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth invariants (integration)", () => {
+  it("reconciling an existing gift NEVER archives the gift and NEVER sets processor_payout on the staged row", async () => {
+    const giftId = await seedGift("100.00");
+    const stagedId = await seedStaged("100.00");
+    const payoutId = await seedPayout(stagedId);
+    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "link_existing_gift",
+      giftId,
+      stripeChargeId: chargeId,
+    });
+    expect(res.status).toBe(200);
+
+    // The CRM gift stays live (evidence-tied, never archived); the staged row is
+    // reconciled WITHOUT the retired processor_payout exclusion.
+    const gift = await readGift(giftId);
+    expect(gift.archivedAt).toBeNull();
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("reconciled");
+    expect(staged.exclusionReason).not.toBe("processor_payout");
+  }, 30_000);
+
+  it("stamps the Stripe GROSS as the gift's final amount, NOT the coarser QB staged amount (Stripe precedence)", async () => {
+    // The gift's prior (human) figure 105.00 sits within the fee-band of the
+    // Stripe gross 100.00; the QB deposit is a coarser net 90.00. Only Stripe
+    // precedence (gross wins when a charge exists) explains a final amount of
+    // 100.00 — neither the QB 90.00 nor the prior 105.00.
+    const giftId = await seedGiftWithAllocations("105.00", ["105.00"]);
+    const allocId = allocIds[allocIds.length - 1] as string;
+    const stagedId = await seedStaged("90.00");
+    const payoutId = await seedPayout(stagedId);
+    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "link_existing_gift",
+      giftId,
+      stripeChargeId: chargeId,
+    });
+    expect(res.status).toBe(200);
+
+    const gift = await readGift(giftId);
+    expect(gift.amount).toBe("100.00"); // Stripe GROSS, not QB 90.00 or prior 105.00
+    expect(gift.finalAmountSource).toBe("stripe");
+    expect(gift.finalAmountStripeChargeId).toBe(chargeId);
+    expect(gift.finalAmountQbStagedPaymentId).toBeNull();
+    // The pre-stamp human figure is snapshotted, never lost.
+    expect(gift.originalHumanCrmAmount).toBe("105.00");
+    // The lone allocation is rescaled to the new final amount (no review flag).
+    expect((await readAlloc(allocId)).subAmount).toBe("100.00");
+    expect(await readOpenReviews(giftId)).toHaveLength(0);
+    // The QB staged row stays as reconciled evidence at its own coarse figure.
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("reconciled");
+    expect(staged.amount).toBe("90.00");
+  }, 30_000);
+});
+
+describe.skipIf(!HAS_DB)("Allocation rescale vs flag — adjustSingleAllocationOrFlag (integration)", () => {
+  it("rescales the lone allocation to the new amount and raises NO review flag", async () => {
+    const giftId = await seedGiftWithAllocations("100.00", ["100.00"]);
+    const allocId = allocIds[allocIds.length - 1] as string;
+    const { adjustSingleAllocationOrFlag } = await import("../lib/giftFinalAmount");
+
+    const result = await db.transaction((tx) =>
+      adjustSingleAllocationOrFlag(tx, giftId, "100.00", "105.00", "stripe"),
+    );
+    expect(result.rescaled).toBe(true);
+    expect(result.flagged).toBe(false);
+    expect((await readAlloc(allocId)).subAmount).toBe("105.00");
+    expect(await readOpenReviews(giftId)).toHaveLength(0);
+  }, 30_000);
+
+  it("flags a zero-allocation gift (no_allocation) instead of guessing a split", async () => {
+    const giftId = await seedGiftWithAllocations("100.00", []);
+    const { adjustSingleAllocationOrFlag } = await import("../lib/giftFinalAmount");
+
+    const result = await db.transaction((tx) =>
+      adjustSingleAllocationOrFlag(tx, giftId, "100.00", "120.00", "quickbooks"),
+    );
+    expect(result.rescaled).toBe(false);
+    expect(result.flagged).toBe(true);
+    const open = await readOpenReviews(giftId);
+    expect(open).toHaveLength(1);
+    expect(open[0]?.reason).toBe("no_allocation");
+    expect(open[0]?.allocationCount).toBe(0);
+    expect(open[0]?.source).toBe("quickbooks");
+  }, 30_000);
+
+  it("flags a multi-allocation mismatch and keeps exactly ONE open review row across re-runs (upsert)", async () => {
+    const giftId = await seedGiftWithAllocations("100.00", ["60.00", "40.00"]);
+    const { adjustSingleAllocationOrFlag } = await import("../lib/giftFinalAmount");
+
+    const first = await db.transaction((tx) =>
+      adjustSingleAllocationOrFlag(tx, giftId, "100.00", "150.00", "stripe"),
+    );
+    expect(first.flagged).toBe(true);
+    expect(first.rescaled).toBe(false);
+    let open = await readOpenReviews(giftId);
+    expect(open).toHaveLength(1);
+    expect(open[0]?.reason).toBe("multi_allocation_mismatch");
+    expect(open[0]?.allocationCount).toBe(2);
+    expect(open[0]?.newAmount).toBe("150.00");
+
+    // Re-running reconciliation must UPSERT the same open row, never pile up duplicates.
+    const second = await db.transaction((tx) =>
+      adjustSingleAllocationOrFlag(tx, giftId, "100.00", "160.00", "stripe"),
+    );
+    expect(second.flagged).toBe(true);
+    open = await readOpenReviews(giftId);
+    expect(open).toHaveLength(1);
+    expect(open[0]?.newAmount).toBe("160.00");
   }, 30_000);
 });

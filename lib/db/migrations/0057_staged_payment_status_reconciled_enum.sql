@@ -1,0 +1,32 @@
+-- Migration 0057: Add the `reconciled` staged_payment_status value
+--
+-- Additive only — extends the staged_payment_status enum with one new value used
+-- by the unified "complete-match" reconciler (Phase E) and the Stripe/QuickBooks
+-- confirm paths (Phase D4):
+--   reconciled — a piece of reconciliation EVIDENCE (a QuickBooks staged_payments
+--                row, or a stripe_staged_charges row) has been tied permanently to
+--                the CRM gift it backs. Terminal state: such rows are hidden from
+--                the live work queues but are NEVER archived and NEVER deleted.
+--
+-- ⚠️ RUN THIS *WITHOUT* -1 (no single-transaction wrapper):
+--
+--     psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0057_staged_payment_status_reconciled_enum.sql
+--
+-- PostgreSQL forbids USING a newly added enum value in the SAME transaction that
+-- added it. In psql's default autocommit mode the ALTER TYPE ... ADD VALUE commits
+-- on its own. The companion schema/data file (0058) does NOT use this value, so
+-- there is no cross-file ordering constraint beyond "this must have committed
+-- before any row is written with status = 'reconciled'". Do NOT pass -1 here.
+--
+-- IDEMPOTENT: IF NOT EXISTS — re-running is a harmless no-op. The same value also
+-- ships via the normal Drizzle schema diff on Publish; whichever path runs first,
+-- the other is a no-op (Publish diffs live state; this file guards with IF NOT
+-- EXISTS).
+
+ALTER TYPE staged_payment_status ADD VALUE IF NOT EXISTS 'reconciled';
+
+-- Verification:
+--   SELECT enumlabel FROM pg_enum e
+--     JOIN pg_type t ON t.oid = e.enumtypid
+--    WHERE t.typname = 'staged_payment_status'
+--    ORDER BY e.enumsortorder;
