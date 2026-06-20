@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { shouldSuppressMeeting } from "../lib/calendarMeetingFilter";
 import type { MeetingFilterConfig } from "../lib/calendarMeetingFilter";
 import { isCalendarInviteMessage } from "../lib/calendarInviteDetector";
-import { normalizeForMatching } from "../lib/emailMatcher";
+import {
+  normalizeForMatching,
+  loadInternalDomains,
+  loadStaffDefaultSuppressedPersonIds,
+  personHasInternalEmail,
+  invalidateStaffDefaultSuppressionCache,
+} from "../lib/emailMatcher";
 import type { GCalEvent } from "../lib/gcal";
 import type { GmailMessage } from "../lib/gmail";
 
@@ -380,5 +386,171 @@ describe("backfill — isCalendarSender", () => {
 
   it("returns false for null", () => {
     expect(isCalendarSender(null)).toBe(false);
+  });
+});
+
+// ── staff-default permanent suppression (pure decision logic) ─────────────────
+//
+// Staff-default suppression is modeled as a synthetic open-ended (null/null)
+// suppression window so the same trim/skip path applies. These pure tests lock
+// in the two decisions that matter: (1) an open-ended window is permanent
+// (covers every date), and (2) the matcher excludes both explicit-window and
+// staff-default person ids, while non-staff ids are always kept.
+
+/** Pure mirror of the matchEmails person-filter loop. */
+function selectMatchedPersonIds(opts: {
+  rows: { personId: string | null }[];
+  suppressed: Set<string>;
+  staffDefault: Set<string>;
+}): Set<string> {
+  const out = new Set<string>();
+  for (const r of opts.rows) {
+    if (
+      r.personId &&
+      !opts.suppressed.has(r.personId) &&
+      !opts.staffDefault.has(r.personId)
+    ) {
+      out.add(r.personId);
+    }
+  }
+  return out;
+}
+
+/** Pure mirror of the staff-id array difference (SQL EXCEPT / JS filter). */
+function trimStaff(matched: string[], staff: Set<string>): string[] {
+  return matched.filter((id) => !staff.has(id));
+}
+
+describe("staff-default — synthetic window is permanent", () => {
+  const staffWindow: SuppressionWindowSpec = {
+    personId: "staff1",
+    startDate: null,
+    endDate: null,
+  };
+
+  it("covers a date in the distant past", () => {
+    expect(windowCoversDate(staffWindow, new Date("1999-01-01T00:00:00Z"))).toBe(true);
+  });
+
+  it("covers today", () => {
+    expect(windowCoversDate(staffWindow, new Date())).toBe(true);
+  });
+
+  it("covers a date in the far future", () => {
+    expect(windowCoversDate(staffWindow, new Date("2099-12-31T23:59:59Z"))).toBe(true);
+  });
+});
+
+describe("staff-default — matcher person filter", () => {
+  const rows = [
+    { personId: "donor1" },
+    { personId: "staff1" },
+    { personId: "donor2" },
+    { personId: null },
+  ];
+
+  it("excludes a staff-default person id", () => {
+    const got = selectMatchedPersonIds({
+      rows,
+      suppressed: new Set(),
+      staffDefault: new Set(["staff1"]),
+    });
+    expect([...got].sort()).toEqual(["donor1", "donor2"]);
+  });
+
+  it("excludes both explicit-window and staff-default ids", () => {
+    const got = selectMatchedPersonIds({
+      rows,
+      suppressed: new Set(["donor1"]),
+      staffDefault: new Set(["staff1"]),
+    });
+    expect([...got]).toEqual(["donor2"]);
+  });
+
+  it("window override: a staff person with a window is NOT in the staff-default set", () => {
+    // Once a window exists, the person leaves the staff-default set and is only
+    // suppressed when the window covers the message date (via `suppressed`).
+    const insideWindow = selectMatchedPersonIds({
+      rows,
+      suppressed: new Set(["staff1"]), // window covers this date
+      staffDefault: new Set(), // override removed them from the default set
+    });
+    expect(insideWindow.has("staff1")).toBe(false);
+
+    const outsideWindow = selectMatchedPersonIds({
+      rows,
+      suppressed: new Set(), // window does NOT cover this date
+      staffDefault: new Set(),
+    });
+    expect(outsideWindow.has("staff1")).toBe(true);
+  });
+
+  it("non-staff person is never excluded", () => {
+    const got = selectMatchedPersonIds({
+      rows,
+      suppressed: new Set(),
+      staffDefault: new Set(["staff1"]),
+    });
+    expect(got.has("donor1")).toBe(true);
+    expect(got.has("donor2")).toBe(true);
+  });
+});
+
+describe("staff-default — trim + orphan classification", () => {
+  const staff = new Set(["staff1", "staff2"]);
+
+  it("removes only staff ids, preserving non-staff matches", () => {
+    expect(trimStaff(["donor1", "staff1", "donor2"], staff)).toEqual([
+      "donor1",
+      "donor2",
+    ]);
+  });
+
+  it("staff-only email becomes orphaned (no remaining match)", () => {
+    const cleaned = trimStaff(["staff1", "staff2"], staff);
+    expect(cleaned).toEqual([]);
+    expect(
+      isFullyUnmatched({ cleanedPersonIds: cleaned, funderIds: [], householdIds: [] }),
+    ).toBe(true);
+  });
+
+  it("staff email that also matches an org is trimmed, NOT orphaned", () => {
+    const cleaned = trimStaff(["staff1"], staff);
+    expect(cleaned).toEqual([]);
+    expect(
+      isFullyUnmatched({ cleanedPersonIds: cleaned, funderIds: ["org-1"], householdIds: [] }),
+    ).toBe(false);
+  });
+});
+
+// ── staff-default DB helpers (read-only smoke test) ──────────────────────────
+//
+// Exercises the real DB-backed helpers against whatever data is present. Skips
+// cleanly when no database is configured. Read-only — seeds nothing.
+const hasDb = Boolean(process.env.DATABASE_URL);
+
+describe.skipIf(!hasDb)("staff-default — DB helpers (read-only)", () => {
+  it("caches the staff set and busts it on invalidation", async () => {
+    const internal = await loadInternalDomains();
+
+    invalidateStaffDefaultSuppressionCache();
+    const a = await loadStaffDefaultSuppressedPersonIds(internal);
+    const b = await loadStaffDefaultSuppressedPersonIds(internal);
+    // Same Set reference returned from cache within TTL.
+    expect(b).toBe(a);
+
+    invalidateStaffDefaultSuppressionCache();
+    const c = await loadStaffDefaultSuppressedPersonIds(internal);
+    // Fresh object after invalidation, identical membership.
+    expect(c).not.toBe(a);
+    expect([...c].sort()).toEqual([...a].sort());
+  });
+
+  it("every staff-default person actually owns an internal email", async () => {
+    const internal = await loadInternalDomains();
+    const ids = [...(await loadStaffDefaultSuppressedPersonIds(internal))].slice(0, 5);
+    for (const id of ids) {
+      expect(await personHasInternalEmail(id)).toBe(true);
+    }
   });
 });

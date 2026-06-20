@@ -5,7 +5,18 @@ import {
   personSuppressionWindows,
   internalEmailDomains,
 } from "@workspace/db/schema";
-import { and, eq, inArray, lte, or, sql, isNull, gte } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  lte,
+  or,
+  sql,
+  isNull,
+  isNotNull,
+  gte,
+  notExists,
+} from "drizzle-orm";
 import { isFreeMailDomain } from "./freeMailDomains";
 
 /**
@@ -84,6 +95,98 @@ export async function loadInternalDomains(): Promise<Set<string>> {
     : new Set(DEFAULT_INTERNAL_DOMAINS);
   internalDomainsCache = { value, expiresAt: now + INTERNAL_DOMAINS_TTL_MS };
   return value;
+}
+
+// ── Staff-default permanent suppression ──────────────────────────────────────
+//
+// A PERSON who owns an internal-domain email on their CRM record (a current OR
+// former Wildflower staff member) is treated as "not a donor" for email /
+// calendar sync BY DEFAULT — permanently. This is derived, never written:
+//
+//   suppressed(person, date) =
+//        (an explicit window covers `date`)            -- loadSuppressedPersonIds
+//      OR (person has an internal email AND has NO window rows at all)
+//
+// Adding ANY explicit window for that person OVERRIDES the permanent default —
+// from then on only the window dates govern, so an admin can switch a staff
+// member from "always suppressed" to a specific employment window. This set is
+// date-independent (it depends only on the emails + window tables), so it is
+// cached like the internal-domains list and busted whenever a window is
+// created / updated / deleted or the internal-domain list changes.
+//
+// INVARIANT: "former staff" stickiness relies on the internal-domain email
+// staying on the person record after they leave. Do NOT delete a staff member's
+// @wildflowerschools.org / @blackwildflowers.org email to "reactivate" their
+// sync — add an explicit window instead.
+const STAFF_DEFAULT_TTL_MS = 60_000;
+let staffDefaultCache: { value: Set<string>; expiresAt: number } | null = null;
+
+export function invalidateStaffDefaultSuppressionCache(): void {
+  staffDefaultCache = null;
+}
+
+/**
+ * Person IDs permanently suppressed by default: they own an internal-domain
+ * (staff) email AND have no explicit suppression window. Cached (TTL) because
+ * matchEmails would otherwise recompute it once per synced message/event.
+ */
+export async function loadStaffDefaultSuppressedPersonIds(
+  internalDomains: ReadonlySet<string>,
+): Promise<Set<string>> {
+  const now = Date.now();
+  if (staffDefaultCache && staffDefaultCache.expiresAt > now) {
+    return staffDefaultCache.value;
+  }
+  const domainsArr = [...internalDomains];
+  if (domainsArr.length === 0) {
+    const empty = new Set<string>();
+    staffDefaultCache = { value: empty, expiresAt: now + STAFF_DEFAULT_TTL_MS };
+    return empty;
+  }
+  // inArray (not ANY(::text[])) renders an IN list — the safe pattern for a JS
+  // string array; ANY of a bound array trips a "cannot cast record to text[]".
+  const rows = await db
+    .selectDistinct({ personId: emails.personId })
+    .from(emails)
+    .where(
+      and(
+        isNotNull(emails.personId),
+        inArray(sql`lower(split_part(${emails.email}, '@', 2))`, domainsArr),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(personSuppressionWindows)
+            .where(eq(personSuppressionWindows.personId, emails.personId)),
+        ),
+      ),
+    );
+  const value = new Set<string>();
+  for (const r of rows) if (r.personId) value.add(r.personId);
+  staffDefaultCache = { value, expiresAt: now + STAFF_DEFAULT_TTL_MS };
+  return value;
+}
+
+/**
+ * True when the person owns at least one internal-domain (staff) email. Used by
+ * the suppression-windows API to surface the permanent-default state in the UI.
+ */
+export async function personHasInternalEmail(
+  personId: string,
+): Promise<boolean> {
+  const internalDomains = await loadInternalDomains();
+  const domainsArr = [...internalDomains];
+  if (domainsArr.length === 0) return false;
+  const rows = await db
+    .select({ one: sql`1` })
+    .from(emails)
+    .where(
+      and(
+        eq(emails.personId, personId),
+        inArray(sql`lower(split_part(${emails.email}, '@', 2))`, domainsArr),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }
 
 export interface EmailMatchResult {
@@ -193,29 +296,36 @@ export async function matchEmails(
   // lower(email) yet — for the read volumes this is fine (the
   // `emails` table is in the low five-figures), but worth adding
   // an expression index later if email matching ever becomes hot.
-  const [addrRows, domainRows, suppressedIds] = await Promise.all([
-    db
-      .select({
-        personId: emails.personId,
-        organizationId: emails.organizationId,
-        householdId: emails.householdId,
-      })
-      .from(emails)
-      .where(inArray(sql`lower(${emails.email})`, cleaned)),
-    domains.length === 0
-      ? Promise.resolve([] as Array<{ organizationId: string }>)
-      : db
-          .select({ organizationId: organizations.id })
-          .from(organizations)
-          .where(inArray(sql`lower(${organizations.emailDomain})`, domains)),
-    loadSuppressedPersonIds(messageDate),
-  ]);
+  const [addrRows, domainRows, suppressedIds, staffDefaultIds] =
+    await Promise.all([
+      db
+        .select({
+          personId: emails.personId,
+          organizationId: emails.organizationId,
+          householdId: emails.householdId,
+        })
+        .from(emails)
+        .where(inArray(sql`lower(${emails.email})`, cleaned)),
+      domains.length === 0
+        ? Promise.resolve([] as Array<{ organizationId: string }>)
+        : db
+            .select({ organizationId: organizations.id })
+            .from(organizations)
+            .where(inArray(sql`lower(${organizations.emailDomain})`, domains)),
+      loadSuppressedPersonIds(messageDate),
+      loadStaffDefaultSuppressedPersonIds(internalDomains),
+    ]);
 
   const personIds = new Set<string>();
   const organizationIds = new Set<string>();
   const householdIds = new Set<string>();
   for (const r of addrRows) {
-    if (r.personId && !suppressedIds.has(r.personId)) personIds.add(r.personId);
+    if (
+      r.personId &&
+      !suppressedIds.has(r.personId) &&
+      !staffDefaultIds.has(r.personId)
+    )
+      personIds.add(r.personId);
     if (r.organizationId) organizationIds.add(r.organizationId);
     if (r.householdId) householdIds.add(r.householdId);
   }

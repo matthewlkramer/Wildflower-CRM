@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { invalidateStaffDefaultSuppressionCache } from "../lib/emailMatcher";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -56,6 +57,10 @@ router.post(
     if (typeof body.email === "string") body.email = body.email.trim();
     try {
       const [row] = await db.insert(emails).values({ id: newId(), ...body }).returning();
+      // Adding/changing a person's email can change the staff-default
+      // suppression set (an internal-domain address makes them staff). Bust
+      // the cache so the next sync match sees it within the TTL window.
+      invalidateStaffDefaultSuppressionCache();
       res.status(201).json(row);
     } catch (err) {
       if (isUniqueViolation(err)) {
@@ -83,6 +88,7 @@ router.patch(
         .where(eq(emails.id, paramId(req)))
         .returning();
       if (!row) return notFound(res, "email");
+      invalidateStaffDefaultSuppressionCache();
       res.json(row);
     } catch (err) {
       if (isUniqueViolation(err)) {
@@ -101,6 +107,7 @@ router.delete(
   "/emails/:id",
   asyncHandler(async (req, res) => {
     await db.delete(emails).where(eq(emails.id, paramId(req)));
+    invalidateStaffDefaultSuppressionCache();
     res.status(204).end();
   }),
 );

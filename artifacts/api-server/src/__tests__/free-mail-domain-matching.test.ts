@@ -10,6 +10,9 @@ const state = vi.hoisted(() => ({
   }>,
   orgRows: [] as Array<{ organizationId: string }>,
   suppressionRows: [] as Array<{ personId: string }>,
+  // Staff-default suppression query (db.selectDistinct over emails). Empty by
+  // default so these matching tests are unaffected by it.
+  staffEmailRows: [] as Array<{ personId: string | null }>,
   // Records whether the organizations.email_domain query actually ran.
   // The matcher short-circuits (never touches the DB) when no non-free
   // domains survive filtering, so this flag proves a free domain never
@@ -32,6 +35,15 @@ vi.mock("@workspace/db", () => ({
           }
           return Promise.resolve([]);
         },
+      }),
+    }),
+    // loadStaffDefaultSuppressedPersonIds() uses selectDistinct over `emails`.
+    selectDistinct: () => ({
+      from: (table: unknown) => ({
+        where: () =>
+          table === emails
+            ? Promise.resolve(state.staffEmailRows)
+            : Promise.resolve([]),
       }),
     }),
   },

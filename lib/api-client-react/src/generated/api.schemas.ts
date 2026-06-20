@@ -4232,6 +4232,8 @@ export interface PersonSuppressionWindow {
 
 export interface PersonSuppressionWindowList {
   data: PersonSuppressionWindow[];
+  /** True when this person is permanently suppressed from email/calendar sync BY DEFAULT because they own a Wildflower staff email (internal domain) and have no explicit suppression window. Adding any window overrides the default (then only the window dates govern). Only meaningful for a single-person listing; false for the admin all-windows listing. */
+  staffDefaultSuppressed: boolean;
 }
 
 export interface CreatePersonSuppressionWindowBody {

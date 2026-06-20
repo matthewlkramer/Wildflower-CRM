@@ -38,6 +38,10 @@ import {
   loadMeetingFilterConfig,
   shouldSuppressMeeting,
 } from "../lib/calendarMeetingFilter";
+import {
+  loadInternalDomains,
+  loadStaffDefaultSuppressedPersonIds,
+} from "../lib/emailMatcher";
 
 // ─── shared helpers ───────────────────────────────────────────────────────────
 
@@ -79,7 +83,12 @@ async function moveEmailToSkip(row: {
   subject: string | null;
   sentAt: Date;
   fromEmail: string | null;
+  toEmails?: string[] | null;
+  ccEmails?: string[] | null;
+  bccEmails?: string[] | null;
 }): Promise<void> {
+  const lc = (a: string[] | null | undefined) =>
+    (a ?? []).map((s) => s.toLowerCase()).filter(Boolean);
   await db
     .insert(emailSyncSkip)
     .values({
@@ -87,10 +96,10 @@ async function moveEmailToSkip(row: {
       gmailMessageId: row.gmailMessageId,
       subject: row.subject ?? null,
       sentAt: row.sentAt,
-      fromAddrs: row.fromEmail ? [row.fromEmail] : [],
-      toAddrs: [],
-      ccAddrs: [],
-      bccAddrs: [],
+      fromAddrs: row.fromEmail ? [row.fromEmail.toLowerCase()] : [],
+      toAddrs: lc(row.toEmails),
+      ccAddrs: lc(row.ccEmails),
+      bccAddrs: lc(row.bccEmails),
     })
     .onConflictDoNothing();
   await db.delete(emailMessages).where(eq(emailMessages.id, row.id));
@@ -99,7 +108,7 @@ async function moveEmailToSkip(row: {
 // ─── Step 1: person suppression windows ──────────────────────────────────────
 
 async function backfillPersonWindows(): Promise<void> {
-  const windows = await db
+  const explicitWindows = await db
     .select({
       personId: personSuppressionWindows.personId,
       startDate: personSuppressionWindows.startDate,
@@ -107,11 +116,32 @@ async function backfillPersonWindows(): Promise<void> {
     })
     .from(personSuppressionWindows);
 
+  // Staff-default permanent suppression: anyone who owns an internal-domain
+  // (staff) email and has NO explicit window is suppressed forever. Model each
+  // as a synthetic open-ended (null/null) window so the trim/skip logic below
+  // applies unchanged — mirrors the live matcher rule in emailMatcher.ts.
+  const internalDomains = await loadInternalDomains();
+  const staffDefaultIds =
+    await loadStaffDefaultSuppressedPersonIds(internalDomains);
+  const syntheticWindows: SuppressionWindow[] = [...staffDefaultIds].map(
+    (personId) => ({ personId, startDate: null, endDate: null }),
+  );
+
+  const windows: SuppressionWindow[] = [
+    ...explicitWindows,
+    ...syntheticWindows,
+  ];
+
   if (windows.length === 0) {
-    console.log("[Step 1] No suppression windows found — skipping.");
+    console.log(
+      "[Step 1] No suppression (explicit windows or staff-default) — skipping.",
+    );
     return;
   }
-  console.log(`[Step 1] Found ${windows.length} suppression window(s).`);
+  console.log(
+    `[Step 1] ${explicitWindows.length} explicit window(s) + ` +
+      `${syntheticWindows.length} staff-default permanent suppression(s).`,
+  );
 
   const suppressedPersonIds = [...new Set(windows.map((w) => w.personId))];
 
@@ -124,6 +154,9 @@ async function backfillPersonWindows(): Promise<void> {
       subject: emailMessages.subject,
       sentAt: emailMessages.sentAt,
       fromEmail: emailMessages.fromEmail,
+      toEmails: emailMessages.toEmails,
+      ccEmails: emailMessages.ccEmails,
+      bccEmails: emailMessages.bccEmails,
       matchedPersonIds: emailMessages.matchedPersonIds,
       matchedOrganizationIds: emailMessages.matchedOrganizationIds,
       matchedHouseholdIds: emailMessages.matchedHouseholdIds,

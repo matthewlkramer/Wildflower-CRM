@@ -21,6 +21,7 @@ import {
   parsePagination,
 } from "../lib/helpers";
 import { applyAction, validateAction, type ApplyActionResult } from "../lib/applyProposalActions";
+import { invalidateStaffDefaultSuppressionCache } from "../lib/emailMatcher";
 import { emailMessages, giftsAndPayments } from "@workspace/db/schema";
 import { proposeActionsForProposal } from "../lib/proposeActions";
 
@@ -375,6 +376,15 @@ router.post(
       });
       return;
     }
+    // add_email / create_person_with_per can attach a new person-owned
+    // (possibly internal-domain) email, which changes the staff-default
+    // suppression set. Bust its cache now that the transaction has committed.
+    const touchedPersonEmail = outcome.applyResults.some(
+      (r) =>
+        (r.type === "add_email" || r.type === "create_person_with_per") &&
+        r.status === "applied",
+    );
+    if (touchedPersonEmail) invalidateStaffDefaultSuppressionCache();
     res.json({ ...outcome.proposal, appliedActions: outcome.applyResults });
   }),
 );

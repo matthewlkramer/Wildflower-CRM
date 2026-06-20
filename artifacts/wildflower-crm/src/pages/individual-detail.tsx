@@ -1360,9 +1360,10 @@ function SuppressionWindowsCard({ personId }: { personId: string }) {
   });
 
   const windows = windowsQ.data?.data ?? [];
+  const staffDefaultSuppressed = windowsQ.data?.staffDefaultSuppressed ?? false;
 
-  // Don't render the card at all for non-admins when there are no windows
-  if (!isAdmin && windows.length === 0) return null;
+  // Don't render the card at all for non-admins when there is nothing to show.
+  if (!isAdmin && windows.length === 0 && !staffDefaultSuppressed) return null;
 
   const formatDateStr = (s: string | null | undefined) => {
     if (!s) return "—";
@@ -1375,15 +1376,27 @@ function SuppressionWindowsCard({ personId }: { personId: string }) {
   return (
     <RelatedCard
       title="Sync suppression"
-      defaultOpen={windows.length > 0}
+      defaultOpen={windows.length > 0 || staffDefaultSuppressed}
     >
       <p className="text-xs text-muted-foreground mb-2">
         Email/calendar sync skips this person&apos;s addresses during active windows.
       </p>
+      {staffDefaultSuppressed && (
+        <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+          Permanently suppressed by default — this person has a Wildflower staff
+          email, so their messages and calendar events are kept out of sync and
+          off donor timelines.{" "}
+          {isAdmin
+            ? "Add a window below to limit suppression to specific dates instead."
+            : "An admin can add a window to limit suppression to specific dates."}
+        </div>
+      )}
       {windowsQ.isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : windows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No suppression windows.</p>
+        staffDefaultSuppressed ? null : (
+          <p className="text-sm text-muted-foreground">No suppression windows.</p>
+        )
       ) : (
         <ul className="space-y-2">
           {windows.map((w: PersonSuppressionWindow) =>

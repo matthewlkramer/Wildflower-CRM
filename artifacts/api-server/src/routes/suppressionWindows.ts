@@ -11,6 +11,10 @@ import {
   UpdatePersonSuppressionWindowBody,
   ListPersonSuppressionWindowsQueryParams,
 } from "@workspace/api-zod";
+import {
+  personHasInternalEmail,
+  invalidateStaffDefaultSuppressionCache,
+} from "../lib/emailMatcher";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -58,7 +62,14 @@ router.get(
           .from(personSuppressionWindows)
           .where(eq(personSuppressionWindows.personId, q.personId))
       : await db.select().from(personSuppressionWindows);
-    res.json({ data: rows.map(formatWindow) });
+    // staffDefaultSuppressed is meaningful only for a single-person listing:
+    // true when the person is permanently suppressed by default (owns a staff
+    // email AND has no explicit window). Adding any window overrides it.
+    const staffDefaultSuppressed =
+      !!q.personId &&
+      rows.length === 0 &&
+      (await personHasInternalEmail(q.personId));
+    res.json({ data: rows.map(formatWindow), staffDefaultSuppressed });
   }),
 );
 
@@ -78,6 +89,8 @@ router.post(
         notes: body.notes ?? null,
       })
       .returning();
+    // A new window flips this person OUT of the staff-default permanent set.
+    invalidateStaffDefaultSuppressionCache();
     res.status(201).json(formatWindow(inserted[0]!));
   }),
 );
@@ -115,6 +128,7 @@ router.patch(
       .set(patch)
       .where(eq(personSuppressionWindows.id, id))
       .returning();
+    invalidateStaffDefaultSuppressionCache();
     res.json(formatWindow(updated[0]!));
   }),
 );
@@ -136,6 +150,9 @@ router.delete(
     await db
       .delete(personSuppressionWindows)
       .where(eq(personSuppressionWindows.id, id));
+    // Removing the last window may flip this person BACK into the staff-default
+    // permanent set, so bust the cache.
+    invalidateStaffDefaultSuppressionCache();
     res.status(204).end();
   }),
 );

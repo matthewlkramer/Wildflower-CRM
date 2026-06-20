@@ -5,6 +5,7 @@ import { inArray, sql, type SQL } from "drizzle-orm";
 import { newId } from "./helpers";
 import { getAppUser } from "./appRequest";
 import { recordAudit } from "./audit";
+import { invalidateStaffDefaultSuppressionCache } from "./emailMatcher";
 
 /**
  * Entity-merge engine. Collapses any number of duplicate records into a
@@ -492,6 +493,13 @@ export async function mergeEntity(
       metadata: { mergedIds: loserIds, primaryId },
     });
   });
+
+  // A person merge re-points emails.person_id and
+  // person_suppression_windows.person_id, which can move staff-default
+  // suppression status between records. Bust the cache after the commit.
+  if (cfg.kind === "people") {
+    invalidateStaffDefaultSuppressionCache();
+  }
 
   const result: MergeResult = { primaryId, mergedIds: loserIds };
   res.json(result);

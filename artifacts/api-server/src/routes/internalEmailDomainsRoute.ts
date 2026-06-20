@@ -8,6 +8,7 @@ import { UpdateInternalEmailDomainsBody } from "@workspace/api-zod";
 import {
   DEFAULT_INTERNAL_DOMAINS,
   invalidateInternalDomainsCache,
+  invalidateStaffDefaultSuppressionCache,
 } from "../lib/emailMatcher";
 
 const router: IRouter = Router();
@@ -95,8 +96,10 @@ router.put(
       .select()
       .from(internalEmailDomains)
       .then((r) => r[0]);
-    // Bust the matcher cache so sync picks up the change immediately.
+    // Bust the matcher cache so sync picks up the change immediately. The
+    // staff-default set is derived from these domains too, so bust it as well.
     invalidateInternalDomainsCache();
+    invalidateStaffDefaultSuppressionCache();
     res.json(formatConfig(row!));
   }),
 );
