@@ -49,6 +49,10 @@ These recur across the whole app — keep them true whenever you change things:
 - Prefers non-destructive, staged migrations and explicit confirmation before any
   destructive or production-facing change.
 - Precise and hands-on; wants to understand tradeoffs and consequences before acting.
+- When giving prod data-migration `psql` commands to run by hand, always use the
+  `$PROD_DATABASE_URL` variable (NOT `$DATABASE_URL`) and the full repo-root-relative
+  path to the `.sql` file (e.g. `lib/db/migrations/<file>.sql`), so they can be
+  copy-pasted and run from the project root.
 
 ## Stack
 
