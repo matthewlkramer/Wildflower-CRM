@@ -16264,6 +16264,12 @@ export const ListReconciliationCardsResponse = zod.object({
         hasStripeEvidence: zod.boolean(),
         stripePayoutId: zod.string().nullish(),
         stripeChargeCount: zod.number().nullish(),
+        stripeReconciliationStatus: zod
+          .string()
+          .nullish()
+          .describe(
+            "Reconciliation state of the Stripe payout backing this money (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when there is no Stripe evidence.",
+          ),
         resolvedGiftId: zod.string().nullish(),
         resolvedGiftName: zod.string().nullish(),
         resolvedGiftAmount: zod.string().nullish(),
@@ -16430,6 +16436,12 @@ export const GetReconciliationGraphResponse = zod
             feeAmount: zod.string().nullish(),
             netAmount: zod.string().nullish(),
             chargeCount: zod.number().nullish(),
+            reconciliationStatus: zod
+              .string()
+              .nullish()
+              .describe(
+                "The Stripe payout's QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when no payout\/charge backs this money.",
+              ),
           })
           .nullish(),
       })

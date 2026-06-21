@@ -42,6 +42,60 @@ export const FINAL_AMOUNT_SOURCE_LABEL: Record<GiftFinalAmountSource, string> = 
   quickbooks: "QuickBooks",
 };
 
+/** An explicit per-track status: which side is approved vs still awaiting. */
+export type TrackStatus = { label: string; variant: BadgeVariant };
+
+/**
+ * QuickBooks (the anchor) track, derived from the staged-payment status. Every
+ * card has a QB side, so this never returns null.
+ */
+export function qbTrackStatus(status: string): TrackStatus {
+  switch (status) {
+    case "approved":
+      return { label: "Approved", variant: "default" };
+    case "reconciled":
+      return { label: "Reconciled", variant: "default" };
+    case "rejected":
+      return { label: "Rejected", variant: "outline" };
+    case "excluded":
+      return { label: "Excluded", variant: "outline" };
+    case "pending":
+    default:
+      return { label: "Awaiting approval", variant: "secondary" };
+  }
+}
+
+/**
+ * Stripe payout track, derived from the payout's QB-reconciliation status.
+ * Returns null when no Stripe payout/charge backs this money (brokerage/check).
+ * `conflict_approved` is NOT a money discrepancy — it only means the QB side was
+ * already approved into a gift, so the Stripe evidence is waiting for a human to
+ * confirm tying it in.
+ */
+export function stripeTrackStatus(
+  status: string | null | undefined,
+): TrackStatus | null {
+  switch (status) {
+    case "proposed":
+      return { label: "Awaiting approval", variant: "secondary" };
+    case "conflict_approved":
+      return { label: "Awaiting confirmation", variant: "secondary" };
+    case "confirmed_reconciled":
+    case "confirmed_keep":
+    case "confirmed_replace":
+      return { label: "Reconciled", variant: "default" };
+    case "confirmed_excluded":
+      return { label: "Excluded", variant: "outline" };
+    case "unmatched":
+      return { label: "Awaiting match", variant: "outline" };
+    case null:
+    case undefined:
+      return null;
+    default:
+      return { label: status, variant: "outline" };
+  }
+}
+
 export type OutcomeChoice =
   | "create_gift_from_opportunity"
   | "convert_to_pledge_and_first_payment";

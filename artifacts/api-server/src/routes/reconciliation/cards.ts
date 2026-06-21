@@ -79,10 +79,15 @@ const readyExpr = sql<boolean>`(
 const stripeEvidenceExpr = sql<{
   payoutId: string;
   chargeCount: number;
+  reconciliationStatus: string | null;
 } | null>`(
-  SELECT jsonb_build_object('payoutId', p.id, 'chargeCount', (
-    SELECT COUNT(*)::int FROM stripe_staged_charges c WHERE c.stripe_payout_id = p.id
-  ))
+  SELECT jsonb_build_object(
+    'payoutId', p.id,
+    'chargeCount', (
+      SELECT COUNT(*)::int FROM stripe_staged_charges c WHERE c.stripe_payout_id = p.id
+    ),
+    'reconciliationStatus', p.qb_reconciliation_status
+  )
   FROM stripe_payouts p
   WHERE p.matched_qb_staged_payment_id = ${stagedPayments.id}
      OR p.proposed_qb_staged_payment_id = ${stagedPayments.id}
@@ -256,6 +261,8 @@ router.get(
         hasStripeEvidence: row.stripeEvidence != null,
         stripePayoutId: row.stripeEvidence?.payoutId ?? null,
         stripeChargeCount: row.stripeEvidence?.chargeCount ?? null,
+        stripeReconciliationStatus:
+          row.stripeEvidence?.reconciliationStatus ?? null,
         resolvedGiftId: row.resolvedGiftId ?? null,
         resolvedGiftName: row.resolvedGiftName ?? null,
         resolvedGiftAmount: row.resolvedGiftAmount ?? null,

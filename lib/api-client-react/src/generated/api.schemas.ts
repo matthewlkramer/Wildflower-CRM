@@ -2769,6 +2769,8 @@ export type ReconciliationEvidenceStripe = {
   feeAmount?: string | null;
   netAmount?: string | null;
   chargeCount?: number | null;
+  /** The Stripe payout's QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when no payout/charge backs this money. */
+  reconciliationStatus?: string | null;
 } | null;
 
 /**
@@ -2831,6 +2833,8 @@ export interface ReconciliationCard {
   hasStripeEvidence: boolean;
   stripePayoutId?: string | null;
   stripeChargeCount?: number | null;
+  /** Reconciliation state of the Stripe payout backing this money (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when there is no Stripe evidence. */
+  stripeReconciliationStatus?: string | null;
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;

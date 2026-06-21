@@ -5419,6 +5419,7 @@ components:
             feeAmount:   { type: string, nullable: true }
             netAmount:   { type: string, nullable: true }
             chargeCount: { type: integer, nullable: true }
+            reconciliationStatus: { type: string, nullable: true, description: "The Stripe payout's QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when no payout/charge backs this money." }
     ReconciliationGraph:
       type: object
       required: [stagedPaymentId, nodes, evidence, ready, blockers]
@@ -5459,6 +5460,7 @@ components:
         hasStripeEvidence: { type: boolean }
         stripePayoutId:    { type: string, nullable: true }
         stripeChargeCount: { type: integer, nullable: true }
+        stripeReconciliationStatus: { type: string, nullable: true, description: "Reconciliation state of the Stripe payout backing this money (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when there is no Stripe evidence." }
         resolvedGiftId:     { type: string, nullable: true }
         resolvedGiftName:   { type: string, nullable: true }
         resolvedGiftAmount: { type: string, nullable: true }

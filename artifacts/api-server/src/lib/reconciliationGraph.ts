@@ -129,6 +129,7 @@ export interface RecEvidence {
     feeAmount: string | null;
     netAmount: string | null;
     chargeCount: number | null;
+    reconciliationStatus: string | null;
   } | null;
 }
 
@@ -550,6 +551,7 @@ export async function buildReconciliationGraph(
       amount: stripePayouts.amount,
       feeTotal: stripePayouts.feeTotal,
       netTotal: stripePayouts.netTotal,
+      qbReconciliationStatus: stripePayouts.qbReconciliationStatus,
     })
     .from(stripePayouts)
     .where(
@@ -595,6 +597,7 @@ export async function buildReconciliationGraph(
       feeAmount: single?.feeAmount ?? stripePayout.feeTotal,
       netAmount: single?.netAmount ?? stripePayout.netTotal ?? stripePayout.amount,
       chargeCount: charges.length,
+      reconciliationStatus: stripePayout.qbReconciliationStatus,
     };
   }
 
@@ -791,11 +794,22 @@ export async function buildReconciliationGraph(
   // ── Ready + blockers ──
   const blockers: string[] = [];
   if (staged.status !== "pending") {
-    blockers.push(
-      staged.status === "reconciled"
-        ? "Already reconciled."
-        : `Already ${staged.status}.`,
-    );
+    const stripeAwaiting =
+      stripeEvidence != null &&
+      (stripeEvidence.reconciliationStatus === "proposed" ||
+        stripeEvidence.reconciliationStatus === "conflict_approved");
+    if (staged.status === "reconciled") {
+      blockers.push("Already reconciled.");
+    } else if (staged.status === "approved" && stripeAwaiting) {
+      // The QB→gift side is done; only the Stripe payout still needs a human to
+      // confirm tying it in. Say so explicitly instead of a flat "Already
+      // approved." so the reviewer knows which track is outstanding.
+      blockers.push(
+        "QuickBooks is already approved into a gift — only the Stripe payout is still awaiting confirmation.",
+      );
+    } else {
+      blockers.push(`Already ${staged.status}.`);
+    }
   }
   if (donorState === "none")
     blockers.push("No donor identified — choose a donor.");

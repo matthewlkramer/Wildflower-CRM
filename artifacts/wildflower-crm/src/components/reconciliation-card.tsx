@@ -37,6 +37,8 @@ import {
   FINAL_AMOUNT_SOURCE_LABEL,
   deriveApproveBody,
   hasAmountBlocker,
+  qbTrackStatus,
+  stripeTrackStatus,
   type OutcomeChoice,
 } from "@/lib/reconciliation";
 
@@ -86,6 +88,13 @@ export function ReconciliationCard({
   onApprove: (body: ApproveCompleteMatchBody) => Promise<unknown>;
 }) {
   const isReconciled = card.status === "reconciled";
+  // Explicit per-track status: QuickBooks (always) + Stripe (when a payout backs
+  // the money). This replaces the single sweeping badge with which side is
+  // approved vs still awaiting approval.
+  const qbTrack = qbTrackStatus(card.status);
+  const stripeTrack = card.hasStripeEvidence
+    ? stripeTrackStatus(card.stripeReconciliationStatus)
+    : null;
 
   return (
     <Card data-testid={`reconciliation-card-${card.stagedPaymentId}`}>
@@ -146,6 +155,31 @@ export function ReconciliationCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span
+            className="flex items-center gap-1.5"
+            data-testid={`track-qb-${card.stagedPaymentId}`}
+          >
+            <span className="text-xs text-muted-foreground">QuickBooks</span>
+            <Badge variant={qbTrack.variant} className="px-1.5 py-0 text-[10px]">
+              {qbTrack.label}
+            </Badge>
+          </span>
+          {stripeTrack ? (
+            <span
+              className="flex items-center gap-1.5"
+              data-testid={`track-stripe-${card.stagedPaymentId}`}
+            >
+              <span className="text-xs text-muted-foreground">Stripe</span>
+              <Badge
+                variant={stripeTrack.variant}
+                className="px-1.5 py-0 text-[10px]"
+              >
+                {stripeTrack.label}
+              </Badge>
+            </span>
+          ) : null}
+        </div>
         {isReconciled ? (
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="text-muted-foreground">Gift:</span>
@@ -322,6 +356,22 @@ function CardResolver({
                 value={String(stripe.chargeCount ?? (stripe.chargeId ? 1 : 0))}
               />
             </div>
+            {stripe.reconciliationStatus ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Stripe payout:{" "}
+                <span className="font-medium text-foreground">
+                  {stripeTrackStatus(stripe.reconciliationStatus)?.label ??
+                    stripe.reconciliationStatus}
+                </span>
+                {stripe.reconciliationStatus === "conflict_approved" ? (
+                  <>
+                    {" "}
+                    — QuickBooks is already approved into a gift; confirm to tie
+                    this Stripe payout in (not a money discrepancy).
+                  </>
+                ) : null}
+              </p>
+            ) : null}
           </div>
         ) : null}
       </div>
