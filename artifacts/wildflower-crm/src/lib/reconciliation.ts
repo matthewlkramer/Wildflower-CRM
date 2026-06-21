@@ -42,57 +42,109 @@ export const FINAL_AMOUNT_SOURCE_LABEL: Record<GiftFinalAmountSource, string> = 
   quickbooks: "QuickBooks",
 };
 
-/** An explicit per-track status: which side is approved vs still awaiting. */
-export type TrackStatus = { label: string; variant: BadgeVariant };
-
 /**
- * QuickBooks (the anchor) track, derived from the staged-payment status. Every
- * card has a QB side, so this never returns null.
+ * The status of one CONNECTION between two records (e.g. Stripe → QuickBooks),
+ * not the status of a single record. Reviewers think in connections: "is the
+ * Stripe charge tied to the QB deposit?", "is the QB deposit booked to a gift?".
  */
-export function qbTrackStatus(status: string): TrackStatus {
-  switch (status) {
-    case "approved":
-      return { label: "Approved", variant: "default" };
-    case "reconciled":
-      return { label: "Reconciled", variant: "default" };
-    case "rejected":
-      return { label: "Rejected", variant: "outline" };
-    case "excluded":
-      return { label: "Excluded", variant: "outline" };
-    case "pending":
-    default:
-      return { label: "Awaiting approval", variant: "secondary" };
-  }
-}
+export type ConnectionStatus = {
+  label: string;
+  variant: BadgeVariant;
+  /** Optional one-line explanation (shown in the expanded card, not collapsed). */
+  hint?: string;
+};
 
 /**
- * Stripe payout track, derived from the payout's QB-reconciliation status.
- * Returns null when no Stripe payout/charge backs this money (brokerage/check).
- * `conflict_approved` is NOT a money discrepancy — it only means the QB side was
- * already approved into a gift, so the Stripe evidence is waiting for a human to
+ * Stripe → QuickBooks: does the Stripe charge tie to the QB deposit?
+ * Derived from the Stripe payout's QB-reconciliation status. Returns null when
+ * no Stripe charge/payout backs this money (brokerage/check).
+ * `conflict_approved` is NOT a money discrepancy — it only means the QB deposit
+ * is already booked to a gift, so the Stripe charge is waiting for a human to
  * confirm tying it in.
  */
-export function stripeTrackStatus(
+export function stripeToQbStatus(
   status: string | null | undefined,
-): TrackStatus | null {
+): ConnectionStatus | null {
   switch (status) {
-    case "proposed":
-      return { label: "Awaiting approval", variant: "secondary" };
-    case "conflict_approved":
-      return { label: "Awaiting confirmation", variant: "secondary" };
     case "confirmed_reconciled":
     case "confirmed_keep":
     case "confirmed_replace":
-      return { label: "Reconciled", variant: "default" };
+      return { label: "Matched", variant: "default" };
+    case "proposed":
+      return {
+        label: "Match proposed",
+        variant: "secondary",
+        hint: "A Stripe charge looks like this QuickBooks deposit — confirm to tie them together.",
+      };
+    case "conflict_approved":
+      return {
+        label: "Awaiting confirmation",
+        variant: "secondary",
+        hint: "QuickBooks is already booked to a gift; confirm to tie this Stripe charge in (not a money discrepancy).",
+      };
     case "confirmed_excluded":
       return { label: "Excluded", variant: "outline" };
     case "unmatched":
-      return { label: "Awaiting match", variant: "outline" };
+      return { label: "Not matched yet", variant: "outline" };
     case null:
     case undefined:
       return null;
     default:
       return { label: status, variant: "outline" };
+  }
+}
+
+/**
+ * QuickBooks → Gift: is the QB deposit booked to a gift? Derived from the QB
+ * staged-payment status; while still pending, it falls back to the proposed
+ * gift-match edge state so the reviewer can see whether a match is waiting.
+ */
+export function qbToGiftStatus(args: {
+  stagedStatus: string;
+  giftState?: ReconciliationEdgeState | null;
+}): ConnectionStatus {
+  switch (args.stagedStatus) {
+    case "reconciled":
+    case "approved":
+      return { label: "Linked", variant: "default" };
+    case "rejected":
+      return { label: "Rejected", variant: "outline" };
+    case "excluded":
+      return { label: "Excluded", variant: "outline" };
+  }
+  // Still pending — describe the proposed gift match instead.
+  switch (args.giftState) {
+    case "determined":
+      return { label: "Match proposed", variant: "secondary" };
+    case "ambiguous":
+      return { label: "Choose a gift", variant: "secondary" };
+    case "conflict":
+      return { label: "Conflict", variant: "destructive" };
+    case "create":
+      return { label: "New gift", variant: "secondary" };
+    default:
+      return { label: "Not linked yet", variant: "outline" };
+  }
+}
+
+/**
+ * Gift → Pledge: is the gift a payment on a pledge/opportunity? Optional —
+ * returns null when no pledge is in play (so the connection row is omitted).
+ */
+export function giftToPledgeStatus(
+  opportunityState: ReconciliationEdgeState | null | undefined,
+): ConnectionStatus | null {
+  switch (opportunityState) {
+    case "determined":
+      return { label: "On pledge", variant: "default" };
+    case "ambiguous":
+      return { label: "Choose a pledge", variant: "secondary" };
+    case "conflict":
+      return { label: "Conflict", variant: "destructive" };
+    case "create":
+      return { label: "New pledge", variant: "secondary" };
+    default:
+      return null;
   }
 }
 

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "wouter";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowDown, ChevronDown, ChevronUp } from "lucide-react";
 import {
   useGetReconciliationGraph,
   getGetReconciliationGraphQueryKey,
@@ -33,12 +33,13 @@ import {
 import { formatCurrency, formatDate } from "@/lib/format";
 import { ReconciliationNodeTypeahead } from "@/components/reconciliation-node-typeahead";
 import {
-  EDGE_STATE_BADGE,
   FINAL_AMOUNT_SOURCE_LABEL,
   deriveApproveBody,
+  giftToPledgeStatus,
   hasAmountBlocker,
-  qbTrackStatus,
-  stripeTrackStatus,
+  qbToGiftStatus,
+  stripeToQbStatus,
+  type ConnectionStatus,
   type OutcomeChoice,
 } from "@/lib/reconciliation";
 
@@ -51,25 +52,90 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function NodeSummary({
-  label,
-  name,
-  state,
-}: {
-  label: string;
-  name?: string | null;
-  state?: ReconciliationCardType["donorState"];
-}) {
-  const badge = state ? EDGE_STATE_BADGE[state] : null;
+function ConnectionBadge({ status }: { status: ConnectionStatus }) {
   return (
-    <div className="flex items-center gap-1.5 text-sm">
-      <span className="text-muted-foreground">{label}:</span>
-      <span className="truncate font-medium">{name || "—"}</span>
-      {badge ? (
-        <Badge variant={badge.variant} className="px-1.5 py-0 text-[10px]">
-          {badge.label}
-        </Badge>
+    <Badge variant={status.variant} className="px-1.5 py-0 text-[10px]">
+      {status.label}
+    </Badge>
+  );
+}
+
+/**
+ * One connection between two records (e.g. "QuickBooks → Gift"), with the name
+ * of the connected record and the connection's status. This is the core mental
+ * model of a card: a chain of connections, not a bag of independent boxes.
+ */
+function ConnectionRow({
+  from,
+  to,
+  status,
+  name,
+  href,
+  context,
+  testId,
+}: {
+  from: string;
+  to: string;
+  status: ConnectionStatus;
+  name?: string | null;
+  href?: string;
+  context?: string | null;
+  testId?: string;
+}) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm"
+      data-testid={testId}
+    >
+      <span className="whitespace-nowrap text-muted-foreground">
+        {from} <span className="text-muted-foreground/50">→</span> {to}
+      </span>
+      {name ? (
+        href ? (
+          <Link
+            href={href}
+            className="truncate font-medium underline-offset-2 hover:underline"
+          >
+            {name}
+          </Link>
+        ) : (
+          <span className="truncate font-medium">{name}</span>
+        )
       ) : null}
+      {context ? (
+        <span className="truncate text-xs text-muted-foreground">{context}</span>
+      ) : null}
+      <ConnectionBadge status={status} />
+    </div>
+  );
+}
+
+/** A labelled "↓ A → B [status]" divider between two stacked record cards. */
+function ConnectionLink({
+  from,
+  to,
+  status,
+  testId,
+}: {
+  from: string;
+  to: string;
+  status?: ConnectionStatus | null;
+  testId?: string;
+}) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 pl-1 text-xs text-muted-foreground"
+      data-testid={testId}
+    >
+      <ArrowDown className="h-3 w-3 shrink-0" />
+      <span>
+        {from} <span className="text-muted-foreground/50">→</span> {to}
+      </span>
+      {status ? (
+        <ConnectionBadge status={status} />
+      ) : (
+        <span className="text-muted-foreground/70">optional</span>
+      )}
     </div>
   );
 }
@@ -88,12 +154,29 @@ export function ReconciliationCard({
   onApprove: (body: ApproveCompleteMatchBody) => Promise<unknown>;
 }) {
   const isReconciled = card.status === "reconciled";
-  // Explicit per-track status: QuickBooks (always) + Stripe (when a payout backs
-  // the money). This replaces the single sweeping badge with which side is
-  // approved vs still awaiting approval.
-  const qbTrack = qbTrackStatus(card.status);
-  const stripeTrack = card.hasStripeEvidence
-    ? stripeTrackStatus(card.stripeReconciliationStatus)
+
+  // Reframe the card around the CONNECTIONS the reviewer reasons about, not the
+  // individual records: Stripe → QuickBooks (does the charge tie to the
+  // deposit?), QuickBooks → Gift (is the deposit booked to a gift?), and
+  // optionally Gift → Pledge.
+  const stripeConn = card.hasStripeEvidence
+    ? stripeToQbStatus(card.stripeReconciliationStatus)
+    : null;
+  const qbGiftConn = qbToGiftStatus({
+    stagedStatus: card.status,
+    giftState: card.giftState,
+  });
+  const pledgeConn = giftToPledgeStatus(card.opportunityState);
+
+  const giftName = isReconciled
+    ? card.resolvedGiftName || card.resolvedGiftId
+    : card.proposedGiftName;
+  const giftHref =
+    isReconciled && card.resolvedGiftId
+      ? `/gifts/${card.resolvedGiftId}`
+      : undefined;
+  const donorContext = card.proposedDonorName
+    ? `for ${card.proposedDonorName}`
     : null;
 
   return (
@@ -155,78 +238,50 @@ export function ReconciliationCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span
-            className="flex items-center gap-1.5"
-            data-testid={`track-qb-${card.stagedPaymentId}`}
-          >
-            <span className="text-xs text-muted-foreground">QuickBooks</span>
-            <Badge variant={qbTrack.variant} className="px-1.5 py-0 text-[10px]">
-              {qbTrack.label}
-            </Badge>
-          </span>
-          {stripeTrack ? (
-            <span
-              className="flex items-center gap-1.5"
-              data-testid={`track-stripe-${card.stagedPaymentId}`}
-            >
-              <span className="text-xs text-muted-foreground">Stripe</span>
-              <Badge
-                variant={stripeTrack.variant}
-                className="px-1.5 py-0 text-[10px]"
-              >
-                {stripeTrack.label}
-              </Badge>
-            </span>
+        {/* The connections this card resolves, stated explicitly. */}
+        <div className="space-y-1">
+          {stripeConn ? (
+            <ConnectionRow
+              from="Stripe"
+              to="QuickBooks"
+              status={stripeConn}
+              testId={`conn-stripe-qb-${card.stagedPaymentId}`}
+            />
+          ) : null}
+          <ConnectionRow
+            from="QuickBooks"
+            to="Gift"
+            status={qbGiftConn}
+            name={giftName}
+            href={giftHref}
+            context={donorContext}
+            testId={`conn-qb-gift-${card.stagedPaymentId}`}
+          />
+          {pledgeConn ? (
+            <ConnectionRow
+              from="Gift"
+              to="Pledge"
+              status={pledgeConn}
+              name={card.proposedOpportunityName}
+              testId={`conn-gift-pledge-${card.stagedPaymentId}`}
+            />
           ) : null}
         </div>
-        {isReconciled ? (
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Gift:</span>
-            {card.resolvedGiftId ? (
-              <Link
-                href={`/gifts/${card.resolvedGiftId}`}
-                className="font-medium underline-offset-2 hover:underline"
-              >
-                {card.resolvedGiftName || card.resolvedGiftId}
-              </Link>
-            ) : (
-              <span className="font-medium">{card.resolvedGiftName || "—"}</span>
-            )}
-            {card.resolvedGiftAmount ? (
-              <span className="tabular-nums">
-                {formatCurrency(card.resolvedGiftAmount)}
-              </span>
-            ) : null}
-            {card.finalAmountSource ? (
-              <Badge variant="outline" className="text-[10px]">
-                {FINAL_AMOUNT_SOURCE_LABEL[card.finalAmountSource]}
-              </Badge>
-            ) : null}
+
+        {isReconciled && card.finalAmountSource ? (
+          <div className="text-xs text-muted-foreground">
+            Recorded{" "}
+            {card.resolvedGiftAmount
+              ? `${formatCurrency(card.resolvedGiftAmount)} `
+              : ""}
+            from {FINAL_AMOUNT_SOURCE_LABEL[card.finalAmountSource]}.
           </div>
-        ) : (
-          <div className="grid gap-1 sm:grid-cols-3">
-            <NodeSummary
-              label="Donor"
-              name={card.proposedDonorName}
-              state={card.donorState}
-            />
-            <NodeSummary
-              label="Gift"
-              name={card.proposedGiftName}
-              state={card.giftState}
-            />
-            <NodeSummary
-              label="Opportunity"
-              name={card.proposedOpportunityName}
-              state={card.opportunityState}
-            />
-          </div>
-        )}
+        ) : null}
 
         {expanded ? (
           <CardResolver
             stagedPaymentId={card.stagedPaymentId}
+            stagedStatus={card.status}
             reconciled={isReconciled}
             busy={busy}
             onApprove={onApprove}
@@ -246,13 +301,44 @@ function findCandidate(
   return node.candidates.find((c) => c.id === node.selectedId) ?? null;
 }
 
+function nodeState(graph: ReconciliationGraph, nodeType: ReconciliationMatchNodeType) {
+  return graph.nodes.find((n) => n.nodeType === nodeType)?.state ?? null;
+}
+
+/** A read-only record card (Stripe charge / QuickBooks deposit). */
+function RecordCard({
+  title,
+  amount,
+  children,
+}: {
+  title: string;
+  amount?: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-md border bg-muted/30 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-medium text-muted-foreground">{title}</div>
+        {amount ? (
+          <span className="text-sm font-semibold tabular-nums">
+            {formatCurrency(amount)}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">{children}</div>
+    </div>
+  );
+}
+
 function CardResolver({
   stagedPaymentId,
+  stagedStatus,
   reconciled,
   busy,
   onApprove,
 }: {
   stagedPaymentId: string;
+  stagedStatus: string;
   reconciled: boolean;
   busy: boolean;
   onApprove: (body: ApproveCompleteMatchBody) => Promise<unknown>;
@@ -315,7 +401,15 @@ function CardResolver({
     );
   }
 
+  const qb = graph.evidence.qb;
   const stripe = graph.evidence.stripe;
+  const stripeConn = stripe ? stripeToQbStatus(stripe.reconciliationStatus) : null;
+  const qbGiftConn = qbToGiftStatus({
+    stagedStatus,
+    giftState: nodeState(graph, "gift"),
+  });
+  const pledgeConn = giftToPledgeStatus(nodeState(graph, "opportunity"));
+
   const amountBlocked = hasAmountBlocker(graph.blockers);
   const showOpportunityChoice = !gift && Boolean(opportunity);
   const stripeChargeId = stripe?.chargeId ?? null;
@@ -324,57 +418,51 @@ function CardResolver({
   // server's stampGiftFinalAmount precedence).
   const evidenceAmount = stripeChargeId
     ? stripe?.grossAmount ?? null
-    : graph.evidence.qb.amount;
+    : qb.amount;
 
   return (
-    <div className="space-y-4 border-t pt-4">
-      {/* QB anchor + Stripe evidence (read-only). */}
-      <div className="rounded-md border bg-muted/30 p-3">
-        <div className="text-xs font-medium text-muted-foreground">
-          QuickBooks anchor
-        </div>
-        <div className="mt-1 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Amount" value={formatCurrency(graph.evidence.qb.amount)} />
-          <Stat
-            label="Received"
-            value={formatDate(graph.evidence.qb.dateReceived)}
-          />
-          <Stat label="Payer" value={graph.evidence.qb.payerName || "—"} />
-          <Stat label="Method" value={graph.evidence.qb.paymentMethod || "—"} />
-        </div>
-        {stripe ? (
-          <div className="mt-3 border-t pt-3">
-            <div className="text-xs font-medium text-muted-foreground">
-              Stripe evidence (gross takes precedence)
-            </div>
-            <div className="mt-1 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label="Gross" value={formatCurrency(stripe.grossAmount)} />
-              <Stat label="Fee" value={formatCurrency(stripe.feeAmount)} />
-              <Stat label="Net" value={formatCurrency(stripe.netAmount)} />
-              <Stat
-                label="Charges"
-                value={String(stripe.chargeCount ?? (stripe.chargeId ? 1 : 0))}
-              />
-            </div>
-            {stripe.reconciliationStatus ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Stripe payout:{" "}
-                <span className="font-medium text-foreground">
-                  {stripeTrackStatus(stripe.reconciliationStatus)?.label ??
-                    stripe.reconciliationStatus}
-                </span>
-                {stripe.reconciliationStatus === "conflict_approved" ? (
-                  <>
-                    {" "}
-                    — QuickBooks is already approved into a gift; confirm to tie
-                    this Stripe payout in (not a money discrepancy).
-                  </>
-                ) : null}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+    <div className="space-y-3 border-t pt-4">
+      {/* SECTION 1 — The money (sources). Stripe sits above QuickBooks so the QB
+          deposit ends up adjacent to the gift it reconciles to, for comparison. */}
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        The money
       </div>
+      {stripe ? (
+        <>
+          <RecordCard title="Stripe charge" amount={stripe.grossAmount}>
+            <Stat label="Gross" value={formatCurrency(stripe.grossAmount)} />
+            <Stat label="Fee" value={formatCurrency(stripe.feeAmount)} />
+            <Stat label="Net" value={formatCurrency(stripe.netAmount)} />
+            <Stat
+              label="Charges"
+              value={String(stripe.chargeCount ?? (stripe.chargeId ? 1 : 0))}
+            />
+          </RecordCard>
+          <ConnectionLink
+            from="Stripe"
+            to="QuickBooks"
+            status={stripeConn}
+            testId={`link-stripe-qb-${stagedPaymentId}`}
+          />
+          {stripeConn?.hint ? (
+            <p className="pl-6 text-xs text-muted-foreground">{stripeConn.hint}</p>
+          ) : null}
+        </>
+      ) : null}
+      <RecordCard title="QuickBooks deposit (anchor)" amount={qb.amount}>
+        <Stat label="Amount" value={formatCurrency(qb.amount)} />
+        <Stat label="Received" value={formatDate(qb.dateReceived)} />
+        <Stat label="Payer" value={qb.payerName || "—"} />
+        <Stat label="Method" value={qb.paymentMethod || "—"} />
+      </RecordCard>
+
+      {/* QuickBooks → Gift */}
+      <ConnectionLink
+        from="QuickBooks"
+        to="Gift"
+        status={qbGiftConn}
+        testId={`link-qb-gift-${stagedPaymentId}`}
+      />
 
       {graph.blockers.length > 0 ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
@@ -387,8 +475,12 @@ function CardResolver({
         </div>
       ) : null}
 
-      {/* The 3 resolvable nodes. */}
-      <div className="space-y-3">
+      {/* SECTION 2 — The gift this money reconciles to (donor + gift describe the
+          same gift; they connect to the QuickBooks deposit above, not Stripe). */}
+      <div className="space-y-3 rounded-md border p-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          The gift this money belongs to
+        </div>
         <div>
           <Label className="text-xs text-muted-foreground">Donor</Label>
           <ReconciliationNodeTypeahead
@@ -414,9 +506,22 @@ function CardResolver({
             testId={`gift-typeahead-${stagedPaymentId}`}
           />
         </div>
+      </div>
+
+      {/* Gift → Pledge (optional) */}
+      <ConnectionLink
+        from="Gift"
+        to="Pledge"
+        status={pledgeConn}
+        testId={`link-gift-pledge-${stagedPaymentId}`}
+      />
+      <div className="space-y-3 rounded-md border p-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Pledge / opportunity (optional)
+        </div>
         <div>
           <Label className="text-xs text-muted-foreground">
-            Opportunity / pledge (optional)
+            Opportunity / pledge
           </Label>
           <ReconciliationNodeTypeahead
             nodeType="opportunity"
@@ -428,52 +533,51 @@ function CardResolver({
             testId={`opportunity-typeahead-${stagedPaymentId}`}
           />
         </div>
+        {showOpportunityChoice ? (
+          <div className="rounded-md border p-3">
+            <Label className="text-xs text-muted-foreground">
+              How should this opportunity be handled?
+            </Label>
+            <RadioGroup
+              value={outcomeChoice}
+              onValueChange={(v) => setOutcomeChoice(v as OutcomeChoice)}
+              className="mt-2 space-y-2"
+            >
+              <div className="flex items-start gap-2">
+                <RadioGroupItem
+                  value="create_gift_from_opportunity"
+                  id={`oc-onetime-${stagedPaymentId}`}
+                  className="mt-1"
+                />
+                <Label
+                  htmlFor={`oc-onetime-${stagedPaymentId}`}
+                  className="font-normal"
+                >
+                  One-time gift linked to the opportunity (derives to cash-in when
+                  fully paid).
+                </Label>
+              </div>
+              <div className="flex items-start gap-2">
+                <RadioGroupItem
+                  value="convert_to_pledge_and_first_payment"
+                  id={`oc-pledge-${stagedPaymentId}`}
+                  className="mt-1"
+                />
+                <Label
+                  htmlFor={`oc-pledge-${stagedPaymentId}`}
+                  className="font-normal"
+                >
+                  Convert to a pledge and record this as the first payment{" "}
+                  <span className="text-muted-foreground">
+                    (open opportunities only)
+                  </span>
+                  .
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
+        ) : null}
       </div>
-
-      {showOpportunityChoice ? (
-        <div className="rounded-md border p-3">
-          <Label className="text-xs text-muted-foreground">
-            How should this opportunity be handled?
-          </Label>
-          <RadioGroup
-            value={outcomeChoice}
-            onValueChange={(v) => setOutcomeChoice(v as OutcomeChoice)}
-            className="mt-2 space-y-2"
-          >
-            <div className="flex items-start gap-2">
-              <RadioGroupItem
-                value="create_gift_from_opportunity"
-                id={`oc-onetime-${stagedPaymentId}`}
-                className="mt-1"
-              />
-              <Label
-                htmlFor={`oc-onetime-${stagedPaymentId}`}
-                className="font-normal"
-              >
-                One-time gift linked to the opportunity (derives to cash-in when
-                fully paid).
-              </Label>
-            </div>
-            <div className="flex items-start gap-2">
-              <RadioGroupItem
-                value="convert_to_pledge_and_first_payment"
-                id={`oc-pledge-${stagedPaymentId}`}
-                className="mt-1"
-              />
-              <Label
-                htmlFor={`oc-pledge-${stagedPaymentId}`}
-                className="font-normal"
-              >
-                Convert to a pledge and record this as the first payment{" "}
-                <span className="text-muted-foreground">
-                  (open opportunities only)
-                </span>
-                .
-              </Label>
-            </div>
-          </RadioGroup>
-        </div>
-      ) : null}
 
       {amountBlocked ? (
         <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3">
@@ -514,14 +618,23 @@ function CardResolver({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p
-          className={`text-sm ${
-            derived?.ok ? "text-muted-foreground" : "text-amber-700"
-          }`}
-        >
-          {derived?.ok ? derived.summary : derived?.reason}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+        <div className="min-w-0 space-y-0.5">
+          <p
+            className={`text-sm ${
+              derived?.ok ? "text-muted-foreground" : "text-amber-700"
+            }`}
+          >
+            {derived?.ok ? derived.summary : derived?.reason}
+          </p>
+          {derived?.ok ? (
+            <p className="text-xs text-muted-foreground">
+              Records{" "}
+              {evidenceAmount ? formatCurrency(evidenceAmount) : "the evidence amount"}{" "}
+              on the gift ({stripeChargeId ? "Stripe gross" : "QuickBooks amount"}).
+            </p>
+          ) : null}
+        </div>
         <Button
           size="sm"
           disabled={busy || !derived?.ok}
