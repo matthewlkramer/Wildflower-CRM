@@ -46,31 +46,45 @@ type NavLink = {
   label: string;
   icon: ComponentType<{ className?: string }>;
   adminOnly?: boolean;
+  indent?: boolean;
 };
-type NavSection = { section: string; adminOnly?: boolean };
+type NavSection = { section: string; adminOnly?: boolean; indent?: boolean };
 type NavEntry = NavLink | NavSection;
 
 const navItems: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/top-priorities", label: "Top Priorities", icon: Star },
+
+  { section: "Records" },
   { href: "/individuals", label: "Individuals", icon: Users },
   { href: "/organizations", label: "Organizations", icon: Building2 },
   { href: "/payment-intermediaries", label: "Payment Intermediaries", icon: Landmark },
+
+  { section: "Fundraising" },
   { href: "/opportunities", label: "Opportunities", icon: Target },
   { href: "/pledges", label: "Pledges", icon: HandCoins },
   { href: "/gifts", label: "Gifts", icon: Gift },
-  { section: "Financial Review" },
-  { href: "/reconciliation", label: "Reconciliation", icon: Workflow },
+  { href: "/grant-leads", label: "Grant Leads", icon: Lightbulb },
+
+  { section: "Engagement" },
   { href: "/moves", label: "Moves", icon: Activity },
   { href: "/interactions", label: "Interactions", icon: MessageSquare },
+  { href: "/email-tracking", label: "Email Tracking", icon: Eye },
+
+  { section: "Analysis" },
   { href: "/projections", label: "Projections", icon: LineChart },
   { href: "/grants-calendar", label: "Grants Calendar", icon: CalendarDays },
-  { href: "/fundable-projects", label: "Fundable Projects", icon: FolderKanban },
   { href: "/reporting-deadlines", label: "Reporting Deadlines", icon: FileClock },
-  { href: "/grant-leads", label: "Grant Leads", icon: Lightbulb },
   { href: "/email-intelligence", label: "Email Intelligence", icon: Inbox },
-  { href: "/email-tracking", label: "Email Tracking", icon: Eye },
+
+  { href: "/fundable-projects", label: "Fundable Projects", icon: FolderKanban },
+
+  { section: "Financial Review", indent: true },
+  { href: "/reconciliation", label: "Reconciliation", icon: Workflow, indent: true },
+
   { href: "/settings", label: "Settings", icon: Settings },
+
+  { section: "Admin" },
   { href: "/admin", label: "Admin", icon: Settings },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
   { href: "/potential-duplicates", label: "Potential Duplicates", icon: CopyCheck, adminOnly: true },
@@ -110,7 +124,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           ) : (
             <div
               key={`section-${item.section}`}
-              className="px-3 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+              className={`pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${item.indent ? "pl-6 pr-3" : "px-3"}`}
             >
               {item.section}
             </div>
@@ -118,13 +132,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         }
         const isActive = location === item.href || location.startsWith(`${item.href}/`);
         const Icon = item.icon;
+        const indented = !collapsed && "indent" in item && item.indent;
         return (
           <Link
             key={item.href}
             href={item.href}
             title={collapsed ? item.label : undefined}
             onClick={onNavigate}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${collapsed ? "justify-center" : ""} ${isActive ? 'bg-primary/10 text-primary' : 'text-sidebar-foreground hover:bg-muted'}`}
+            className={`flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition-colors ${collapsed ? "justify-center px-3" : indented ? "pl-7 pr-3" : "px-3"} ${isActive ? 'bg-primary/10 text-primary' : 'text-sidebar-foreground hover:bg-muted'}`}
           >
             <Icon className="h-4 w-4 shrink-0" />
             {collapsed ? null : item.label}
