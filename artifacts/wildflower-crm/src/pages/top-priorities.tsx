@@ -20,6 +20,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PriorityStar } from "@/components/priority-star";
+import { useUserNameMap } from "@/components/user-picker";
 import { ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
 import { personDisplayName } from "@/lib/person";
 import { formatCurrency, formatDateShort } from "@/lib/format";
@@ -118,16 +119,18 @@ function FundersTable({
   loading: boolean;
 }) {
   const ts = useTableState("top-priority-funders", { key: "name" });
+  const userNames = useUserNameMap();
 
   const sorted = useMemo(
     () =>
       sortRows(funders, {
         name: (f) => f.name,
+        owner: (f) => (f.ownerUserId ? (userNames.get(f.ownerUserId) ?? f.ownerUserId) : null),
         openTaskCount: (f) => f.openTaskCount,
         lastGiftDate: (f) => f.lastGiftDate,
         lastGiftAmount: (f) => (f.lastGiftAmount != null ? Number(f.lastGiftAmount) : null),
       }, ts.sort),
-    [funders, ts.sort],
+    [funders, ts.sort, userNames],
   );
 
   return (
@@ -146,19 +149,20 @@ function FundersTable({
           <TableHeader>
             <TableRow>
               <SortableTH colKey="name" {...ts} className="pl-6">Funder</SortableTH>
-              <TableHead>Open Asks</TableHead>
+              <SortableTH colKey="owner" {...ts} className="w-36">Owner</SortableTH>
+              <TableHead>Open opportunities</TableHead>
               <SortableTH colKey="openTaskCount" {...ts} align="right" className="w-28">Open Tasks</SortableTH>
-              <TableHead>Affiliated People</TableHead>
+              <TableHead className="w-40">Affiliated People</TableHead>
               <SortableTH colKey="lastGiftDate" {...ts} align="right" className="w-28">Last Gift</SortableTH>
               <SortableTH colKey="lastGiftAmount" {...ts} align="right" className="w-28 pr-6">Last Gift $</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonRows cols={6} />
+              <SkeletonRows cols={7} />
             ) : funders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="pl-6 py-8 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="pl-6 py-8 text-center text-muted-foreground">
                   No top-priority funders
                 </TableCell>
               </TableRow>
@@ -167,6 +171,11 @@ function FundersTable({
                 <TableRow key={f.id}>
                   <TableCell className="pl-6">
                     <FunderNameCell funder={f} />
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {f.ownerUserId
+                      ? (userNames.get(f.ownerUserId) ?? f.ownerUserId)
+                      : <span className="text-muted-foreground">—</span>}
                   </TableCell>
                   <TableCell>
                     <OpenAsksCell asks={f.openAsks ?? []} />
@@ -207,6 +216,7 @@ function IndividualsTable({
   loading: boolean;
 }) {
   const ts = useTableState("top-priority-individuals", { key: "name" });
+  const userNames = useUserNameMap();
 
   const sorted = useMemo(
     () =>
@@ -215,11 +225,12 @@ function IndividualsTable({
           p.fullName ||
           [p.firstName, p.lastName].filter(Boolean).join(" ") ||
           p.id,
+        owner: (p) => (p.ownerUserId ? (userNames.get(p.ownerUserId) ?? p.ownerUserId) : null),
         openTaskCount: (p) => p.openTaskCount,
         lastGiftDate: (p) => p.lastGiftDate,
         lastGiftAmount: (p) => (p.lastGiftAmount != null ? Number(p.lastGiftAmount) : null),
       }, ts.sort),
-    [individuals, ts.sort],
+    [individuals, ts.sort, userNames],
   );
 
   return (
@@ -238,7 +249,8 @@ function IndividualsTable({
           <TableHeader>
             <TableRow>
               <SortableTH colKey="name" {...ts} className="pl-6">Individual</SortableTH>
-              <TableHead>Open Asks</TableHead>
+              <SortableTH colKey="owner" {...ts} className="w-36">Owner</SortableTH>
+              <TableHead>Open opportunities</TableHead>
               <SortableTH colKey="openTaskCount" {...ts} align="right" className="w-28">Open Tasks</SortableTH>
               <SortableTH colKey="lastGiftDate" {...ts} align="right" className="w-28">Last Gift</SortableTH>
               <SortableTH colKey="lastGiftAmount" {...ts} align="right" className="w-28 pr-6">Last Gift $</SortableTH>
@@ -246,10 +258,10 @@ function IndividualsTable({
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonRows cols={5} />
+              <SkeletonRows cols={6} />
             ) : individuals.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="pl-6 py-8 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="pl-6 py-8 text-center text-muted-foreground">
                   No top-priority individuals
                 </TableCell>
               </TableRow>
@@ -258,6 +270,11 @@ function IndividualsTable({
                 <TableRow key={p.id}>
                   <TableCell className="pl-6">
                     <PersonNameCell person={p} viewer={viewer} />
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {p.ownerUserId
+                      ? (userNames.get(p.ownerUserId) ?? p.ownerUserId)
+                      : <span className="text-muted-foreground">—</span>}
                   </TableCell>
                   <TableCell>
                     <OpenAsksCell asks={p.openAsks ?? []} />
