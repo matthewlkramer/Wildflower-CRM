@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { AddIconButton } from "@/components/add-icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -193,26 +194,31 @@ export function CreateOpportunityDialog({
     });
   }
 
-  // Label for the trigger button differs by context: list-page headers use a
-  // full "New …" label; detail-page linked-record cards use compact "Add".
-  const triggerLabel = scope
-    ? "Add"
-    : isPledge
-      ? "New pledge"
-      : "New opportunity";
-
+  // Trigger differs by context: detail-page linked-record cards keep a compact
+  // inline "Add" button; list-page headers use a "+" icon next to the title.
   return (
     <Dialog open={open} onOpenChange={resetAndClose}>
       <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-2 text-xs"
-          data-testid={isPledge ? "button-new-pledge" : "button-new-opportunity"}
-        >
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          {triggerLabel}
-        </Button>
+        {scope ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs"
+            data-testid={
+              isPledge ? "button-new-pledge" : "button-new-opportunity"
+            }
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            Add
+          </Button>
+        ) : (
+          <AddIconButton
+            label={isPledge ? "New pledge" : "New opportunity"}
+            data-testid={
+              isPledge ? "button-new-pledge" : "button-new-opportunity"
+            }
+          />
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

@@ -43,6 +43,7 @@ import {
   InlineRowSaveActions,
 } from "@/components/row-action-icons";
 import { ShowArchivedToggle } from "@/components/show-archived-toggle";
+import { ListPageHeader } from "@/components/list-page-header";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useInlineRowEdit } from "@/hooks/use-inline-row-edit";
 import { useToast } from "@/hooks/use-toast";
@@ -772,15 +773,34 @@ export default function Gifts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-serif font-bold text-foreground">Gifts & payments</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
-          </p>
-        </div>
-        <GiftFormDialog />
-      </div>
+      <ListPageHeader
+        title="Gifts & payments"
+        subtitle={isLoading ? "Loading…" : `${total.toLocaleString()} total`}
+        addAction={<GiftFormDialog />}
+        controls={
+          <>
+            <ShowArchivedToggle
+              value={showArchived}
+              onChange={(v) => {
+                setShowArchived(v);
+                setPage(1);
+                selection.clear();
+              }}
+              testId="toggle-show-archived-gifts"
+            />
+            <FiltersMenu
+              registry={filterRegistry}
+              state={filtersState}
+              onChange={setFiltersState}
+            />
+            <ColumnsMenu
+              registry={registry}
+              state={columnsState}
+              onChange={setColumnsState}
+            />
+          </>
+        }
+      />
 
       <SavedViewsBar
         controller={viewsCtrl}
@@ -822,28 +842,6 @@ export default function Gifts() {
             Clear
           </Button>
         )}
-
-        <div className="ml-auto flex items-end gap-2">
-          <ShowArchivedToggle
-            value={showArchived}
-            onChange={(v) => {
-              setShowArchived(v);
-              setPage(1);
-              selection.clear();
-            }}
-            testId="toggle-show-archived-gifts"
-          />
-          <FiltersMenu
-            registry={filterRegistry}
-            state={filtersState}
-            onChange={setFiltersState}
-          />
-          <ColumnsMenu
-            registry={registry}
-            state={columnsState}
-            onChange={setColumnsState}
-          />
-        </div>
       </div>
 
       <div className="rounded-md border bg-card overflow-x-auto">

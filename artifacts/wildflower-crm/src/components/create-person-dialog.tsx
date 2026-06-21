@@ -16,6 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { AddIconButton } from "@/components/add-icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -54,7 +55,7 @@ export function CreatePersonDialog() {
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!create.isPending) setOpen(v); }}>
       <DialogTrigger asChild>
-        <Button data-testid="button-new-person">New person</Button>
+        <AddIconButton label="New person" data-testid="button-new-person" />
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

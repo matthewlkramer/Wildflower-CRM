@@ -37,6 +37,7 @@ import {
   InlineRowSaveActions,
 } from "@/components/row-action-icons";
 import { ShowArchivedToggle } from "@/components/show-archived-toggle";
+import { ListPageHeader } from "@/components/list-page-header";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useInlineRowEdit } from "@/hooks/use-inline-row-edit";
 import { useToast } from "@/hooks/use-toast";
@@ -809,15 +810,60 @@ export default function Opportunities({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-serif font-bold text-foreground">{title}</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
-          </p>
-        </div>
-        <CreateOpportunityDialog mode={isPledgeView ? "pledge" : "opportunity"} />
-      </div>
+      <ListPageHeader
+        title={title}
+        subtitle={isLoading ? "Loading…" : `${total.toLocaleString()} total`}
+        addAction={
+          <CreateOpportunityDialog mode={isPledgeView ? "pledge" : "opportunity"} />
+        }
+        controls={
+          <>
+            <ShowArchivedToggle
+              value={showArchived}
+              onChange={(v) => {
+                setShowArchived(v);
+                setPage(1);
+                selection.clear();
+              }}
+              testId="toggle-show-archived-opportunities"
+            />
+            <div className="flex rounded-md border overflow-hidden">
+              <Button
+                variant={viewMode === "list" ? "secondary" : "ghost"}
+                size="sm"
+                className="rounded-none border-0 px-2"
+                onClick={() => setViewMode("list")}
+                title="List view"
+                aria-label="Switch to list view"
+              >
+                <LayoutList className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === "kanban" ? "secondary" : "ghost"}
+                size="sm"
+                className="rounded-none border-0 px-2"
+                onClick={() => setViewMode("kanban")}
+                title="Kanban view"
+                aria-label="Switch to kanban view"
+              >
+                <Columns3 className="h-4 w-4" />
+              </Button>
+            </div>
+            <FiltersMenu
+              registry={filterRegistry}
+              state={filtersState}
+              onChange={setFiltersState}
+            />
+            {viewMode === "list" && (
+              <ColumnsMenu
+                registry={registry}
+                state={columnsState}
+                onChange={setColumnsState}
+              />
+            )}
+          </>
+        }
+      />
 
       <SavedViewsBar
         controller={viewsCtrl}
@@ -859,52 +905,6 @@ export default function Opportunities({
             Clear
           </Button>
         )}
-
-        <div className="ml-auto flex items-end gap-2">
-          <ShowArchivedToggle
-            value={showArchived}
-            onChange={(v) => {
-              setShowArchived(v);
-              setPage(1);
-              selection.clear();
-            }}
-            testId="toggle-show-archived-opportunities"
-          />
-          <div className="flex rounded-md border overflow-hidden">
-            <Button
-              variant={viewMode === "list" ? "secondary" : "ghost"}
-              size="sm"
-              className="rounded-none border-0 px-2"
-              onClick={() => setViewMode("list")}
-              title="List view"
-              aria-label="Switch to list view"
-            >
-              <LayoutList className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === "kanban" ? "secondary" : "ghost"}
-              size="sm"
-              className="rounded-none border-0 px-2"
-              onClick={() => setViewMode("kanban")}
-              title="Kanban view"
-              aria-label="Switch to kanban view"
-            >
-              <Columns3 className="h-4 w-4" />
-            </Button>
-          </div>
-          <FiltersMenu
-            registry={filterRegistry}
-            state={filtersState}
-            onChange={setFiltersState}
-          />
-          {viewMode === "list" && (
-            <ColumnsMenu
-              registry={registry}
-              state={columnsState}
-              onChange={setColumnsState}
-            />
-          )}
-        </div>
       </div>
 
       {viewMode === "kanban" ? (

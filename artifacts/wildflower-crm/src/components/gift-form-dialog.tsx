@@ -44,6 +44,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
+import { AddIconButton } from "@/components/add-icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -573,7 +574,6 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     }
   }
 
-  const triggerLabel = scope ? "Add" : "New gift / payment";
 
   return (
     <>
@@ -592,15 +592,22 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
 
       <Dialog open={open} onOpenChange={resetAndClose}>
         <DialogTrigger asChild>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-xs"
-            data-testid="button-new-gift"
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            {triggerLabel}
-          </Button>
+          {scope ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-xs"
+              data-testid="button-new-gift"
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Add
+            </Button>
+          ) : (
+            <AddIconButton
+              label="New gift / payment"
+              data-testid="button-new-gift"
+            />
+          )}
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>

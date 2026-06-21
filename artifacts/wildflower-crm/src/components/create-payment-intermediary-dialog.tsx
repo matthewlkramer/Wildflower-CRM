@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { AddIconButton } from "@/components/add-icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
@@ -83,7 +84,10 @@ export function CreatePaymentIntermediaryDialog() {
       }}
     >
       <DialogTrigger asChild>
-        <Button data-testid="button-new-payint">New payment intermediary</Button>
+        <AddIconButton
+          label="New payment intermediary"
+          data-testid="button-new-payint"
+        />
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

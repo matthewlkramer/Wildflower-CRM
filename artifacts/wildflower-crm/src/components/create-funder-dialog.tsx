@@ -16,6 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { AddIconButton } from "@/components/add-icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -49,7 +50,7 @@ export function CreateOrganizationDialog() {
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!create.isPending) setOpen(v); }}>
       <DialogTrigger asChild>
-        <Button data-testid="button-new-funder">New organization</Button>
+        <AddIconButton label="New organization" data-testid="button-new-funder" />
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

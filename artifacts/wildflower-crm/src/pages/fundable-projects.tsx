@@ -16,6 +16,8 @@ import type {
 } from "@workspace/api-client-react";
 import { RowActionIcons } from "@/components/row-action-icons";
 import { ShowArchivedToggle } from "@/components/show-archived-toggle";
+import { ListPageHeader } from "@/components/list-page-header";
+import { AddIconButton } from "@/components/add-icon-button";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { Button } from "@/components/ui/button";
@@ -194,27 +196,31 @@ export default function FundableProjects() {
 
   return (
     <div className="space-y-8 max-w-6xl">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-serif font-bold text-foreground">Fundable projects</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+      <ListPageHeader
+        title="Fundable projects"
+        subtitle={
+          <>
             Plan and track each fundable project (e.g. SSJ, MDD, Charter Growth):
             fundraising &amp; spending timeframes, a fundraising goal, and progress
             toward that goal. The id is a permanent slug saved on gift and pledge
             allocations — pick it carefully.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+          </>
+        }
+        addAction={
+          <AddIconButton
+            label="Add project"
+            onClick={openCreate}
+            data-testid="add-fundable-project"
+          />
+        }
+        controls={
           <ShowArchivedToggle
             value={showArchived}
             onChange={setShowArchived}
             testId="toggle-show-archived-fundable-projects"
           />
-          <Button onClick={openCreate} data-testid="add-fundable-project">
-            Add project
-          </Button>
-        </div>
-      </div>
+        }
+      />
 
       <Card data-testid="fundable-projects-card">
         <CardHeader>

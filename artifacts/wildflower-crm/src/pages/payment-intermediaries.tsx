@@ -52,6 +52,7 @@ import {
   InlineRowSaveActions,
 } from "@/components/row-action-icons";
 import { ShowArchivedToggle } from "@/components/show-archived-toggle";
+import { ListPageHeader } from "@/components/list-page-header";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { CreatePaymentIntermediaryDialog } from "@/components/create-payment-intermediary-dialog";
 import {
@@ -427,15 +428,26 @@ export default function PaymentIntermediaries() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-serif font-bold text-foreground">Payment Intermediaries</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {isLoading ? "Loading…" : `${total.toLocaleString()} total`}
-          </p>
-        </div>
-        <CreatePaymentIntermediaryDialog />
-      </div>
+      <ListPageHeader
+        title="Payment Intermediaries"
+        subtitle={isLoading ? "Loading…" : `${total.toLocaleString()} total`}
+        addAction={<CreatePaymentIntermediaryDialog />}
+        controls={
+          <>
+            <ShowArchivedToggle value={showArchived} onChange={setShowArchived} />
+            <FiltersMenu
+              registry={filterRegistry}
+              state={filtersState}
+              onChange={setFiltersState}
+            />
+            <ColumnsMenu
+              registry={registry}
+              state={columnsState}
+              onChange={setColumnsState}
+            />
+          </>
+        }
+      />
 
       <SavedViewsBar
         controller={viewsCtrl}
@@ -461,19 +473,6 @@ export default function PaymentIntermediaries() {
             Clear
           </Button>
         )}
-        <div className="ml-auto flex items-end gap-2">
-          <ShowArchivedToggle value={showArchived} onChange={setShowArchived} />
-          <FiltersMenu
-            registry={filterRegistry}
-            state={filtersState}
-            onChange={setFiltersState}
-          />
-          <ColumnsMenu
-            registry={registry}
-            state={columnsState}
-            onChange={setColumnsState}
-          />
-        </div>
       </div>
 
       <div className="rounded-md border bg-card overflow-x-auto">
