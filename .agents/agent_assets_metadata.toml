@@ -90,3 +90,9 @@ id = "RK5DHgypyXx3dQdeF-AUy"
 uri = "file://.local/exports/pending-qb-match-worklist.csv"
 type = "table"
 title = "Pending QuickBooks payments — match worklist (271 rows)"
+
+[[outputs]]
+id = "abdwNG5SUx20492hQYmOg"
+uri = "file://.local/tasks/financial-reconciliation-requirements.md"
+type = "text"
+title = "Financial Record Linking & Reconciliation — Requirements (v2)"
