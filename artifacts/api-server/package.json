@@ -14,6 +14,7 @@
     "resync:quickbooks": "tsx src/scripts/resync-quickbooks.ts",
     "backfill:flodesk": "tsx src/scripts/backfill-flodesk.ts",
     "backfill:derived-opps": "tsx src/scripts/backfill-derived-opp-fields.ts",
+    "backfill:gift-qb-tie": "tsx src/scripts/backfill-gift-qb-tie.ts",
     "reconcile:unknown-users": "tsx src/scripts/reconcile-unknown-users.ts",
     "backfill:user-identities": "tsx src/scripts/backfill-user-identities.ts",
     "backfill:sync-suppression": "tsx src/scripts/backfill-sync-suppression.ts",

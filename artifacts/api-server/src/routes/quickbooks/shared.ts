@@ -31,6 +31,7 @@ import {
   unstampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
 } from "../../lib/giftFinalAmount";
+import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 
 export function requireAdmin(req: Request, res: Response): boolean {
   const me = getAppUser(req);
@@ -395,6 +396,10 @@ export async function revertOneStagedPayment(
   id: string,
 ): Promise<RevertOutcome> {
   let result: typeof stagedPayments.$inferSelect | null = null;
+  // Gifts whose QB linkage changed and that still EXIST after the revert (an
+  // auto-minted gift is deleted, so it's intentionally not collected). Their
+  // persisted tie status is recomputed after the transaction commits.
+  const affectedGiftIds = new Set<string>();
   try {
     await db.transaction(async (tx) => {
       const locked = await tx
@@ -423,6 +428,12 @@ export async function revertOneStagedPayment(
         .from(stagedPaymentSplits)
         .where(eq(stagedPaymentSplits.stagedPaymentId, id));
       if (splitLinks.length > 0) {
+        // The pre-existing split-target gifts lose this evidence — recompute.
+        const splitGifts = await tx
+          .select({ giftId: stagedPaymentSplits.giftId })
+          .from(stagedPaymentSplits)
+          .where(eq(stagedPaymentSplits.stagedPaymentId, id));
+        for (const s of splitGifts) if (s.giftId) affectedGiftIds.add(s.giftId);
         await tx
           .delete(stagedPaymentSplits)
           .where(eq(stagedPaymentSplits.stagedPaymentId, id));
@@ -453,6 +464,8 @@ export async function revertOneStagedPayment(
       // the single-row branch (which would orphan the other members).
       if (locked.groupReconciledGiftId != null) {
         const gid = locked.groupReconciledGiftId;
+        // The group's pre-existing gift loses this evidence — recompute.
+        affectedGiftIds.add(gid);
         const members = await tx
           .select({
             id: stagedPayments.id,
@@ -514,6 +527,8 @@ export async function revertOneStagedPayment(
       // before unlinking so the gift falls back to its original human amount,
       // then rebalance allocations. No-op if a later Stripe stamp superseded it.
       if (isReconcile && locked.matchedGiftId) {
+        // The pre-existing matched gift loses this evidence — recompute.
+        affectedGiftIds.add(locked.matchedGiftId);
         const un = await unstampGiftFinalAmount(tx, locked.matchedGiftId, {
           source: "quickbooks",
           qbStagedPaymentId: id,
@@ -560,6 +575,10 @@ export async function revertOneStagedPayment(
       return { ok: false, reason: "not_revertible" };
     }
     throw e;
+  }
+  // Surviving gifts lost their QB linkage — recompute their persisted tie.
+  if (affectedGiftIds.size > 0) {
+    await applyGiftQbTieMany(...affectedGiftIds);
   }
   return { ok: true, row: result };
 }

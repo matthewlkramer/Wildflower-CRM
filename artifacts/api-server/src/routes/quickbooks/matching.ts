@@ -15,6 +15,7 @@ import {
   SplitStagedPaymentBody,
 } from "@workspace/api-zod";
 import { donorOf, hasExactlyOneDonor } from "../../lib/quickbooksLink";
+import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import {
   stampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
@@ -197,6 +198,9 @@ router.post(
       });
       return;
     }
+
+    // The gift now carries QB linkage — persist its tie status.
+    await applyGiftQbTieMany(giftId);
 
     res.json({ gift, stagedPaymentId: id });
   }),
@@ -513,6 +517,9 @@ router.post(
       throw e;
     }
 
+    // The grouped gift now carries QB linkage — persist its tie status.
+    await applyGiftQbTieMany(giftId);
+
     res.json({
       gift,
       stagedPaymentIds: ids,
@@ -738,6 +745,9 @@ router.post(
       }
       throw e;
     }
+
+    // The split now ties each gift to part of this QB record — persist ties.
+    await applyGiftQbTieMany(...giftIds);
 
     res.json({
       stagedPaymentId: id,

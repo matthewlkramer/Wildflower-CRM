@@ -619,6 +619,24 @@ export const giftFinalAmountSourceEnum = pgEnum("gift_final_amount_source", [
   "quickbooks",
 ]);
 
+// Derived (persisted) signal of whether an on-books gift reconciles to a
+// QuickBooks record. Computed from the off-books exemption flags + the gift's
+// QuickBooks linkage + the gross-vs-net fee tolerance — never hand-set.
+//   exempt          — off-books (fiscal-sponsor era OR designated-to-school);
+//                     not subject to the QB-tie requirement.
+//   tied            — reconciles to a QuickBooks record within fee tolerance
+//                     (or is Stripe-sourced, whose money lands in QB at the
+//                     payout level rather than per-gift).
+//   amount_mismatch — linked to a QuickBooks record but the amount falls
+//                     outside the gross-vs-net fee band.
+//   missing         — on-books with no QuickBooks evidence at all.
+export const giftQuickbooksTieEnum = pgEnum("gift_quickbooks_tie", [
+  "exempt",
+  "tied",
+  "amount_mismatch",
+  "missing",
+]);
+
 // Action an admin-editable QuickBooks handling rule performs when it matches an
 // incoming staged payment (see quickbooks_handling_rules):
 //   exclude             — mark the row excluded with one of the existing

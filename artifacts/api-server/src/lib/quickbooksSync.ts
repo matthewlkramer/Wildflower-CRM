@@ -24,6 +24,7 @@ import {
   type RuleEvalResult,
 } from "./quickbooksRules";
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
+import { applyGiftQbTieMany } from "./giftQbTie";
 import { validateGiftInvariants } from "@workspace/api-zod";
 
 /** Postgres unique_violation — a concurrent staged row grabbed this gift first. */
@@ -373,6 +374,10 @@ async function applyAutoCreateRule(
       .where(eq(stagedPayments.id, stagedId));
     applied = true;
   });
+  if (applied) {
+    // The minted gift now carries QB linkage — persist its tie status.
+    await applyGiftQbTieMany(giftId);
+  }
   return applied;
 }
 
@@ -556,6 +561,10 @@ async function applyAutoCreateRuleToRow(
       .where(eq(stagedPayments.id, stagedId));
     applied = true;
   });
+  if (applied) {
+    // The minted gift now carries QB linkage — persist its tie status.
+    await applyGiftQbTieMany(giftId);
+  }
   return applied;
 }
 
@@ -809,7 +818,12 @@ async function autoApply(
           ),
         )
         .returning({ id: stagedPayments.id });
-      return upd.length > 0;
+      if (upd.length > 0) {
+        // The reconciled gift now carries QB linkage — persist its tie status.
+        await applyGiftQbTieMany(giftId);
+        return true;
+      }
+      return false;
     } catch (e) {
       if (isUniqueViolation(e)) return false;
       throw e;

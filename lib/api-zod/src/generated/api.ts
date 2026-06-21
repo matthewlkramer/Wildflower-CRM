@@ -5066,6 +5066,19 @@ export const GetOpportunityOrPledgeResponse = zod
             paymentIntermediaryId: zod.string().nullish(),
             ownerUserId: zod.string().nullish(),
             designatedToSchool: zod.boolean(),
+            offBooksFiscalSponsor: zod
+              .boolean()
+              .describe(
+                "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+              ),
+            quickbooksTieStatus: zod
+              .enum(["exempt", "tied", "amount_mismatch", "missing"])
+              .describe(
+                "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+              )
+              .describe(
+                "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+              ),
             tags: zod.string().nullish(),
             thankYouSentAt: zod
               .string()
@@ -5645,6 +5658,12 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
     .describe(
       "Filter by whether a QuickBooks staged payment is reconciled to \/ created this gift (`linked`) or not (`unlinked`).",
     ),
+  quickbooksTie: zod
+    .array(zod.enum(["exempt", "tied", "amount_mismatch", "missing", "untied"]))
+    .optional()
+    .describe(
+      "Filter on the derived per-gift QuickBooks-tie status. Repeat or\ncomma-separate for multiple values. The special value `untied`\n(sugar for `missing` + `amount_mismatch`) lists on-books gifts that\nshould tie to a QuickBooks record but don't.\n",
+    ),
   sort: zod
     .enum(["date_desc", "date_asc", "amount_desc", "amount_asc"])
     .optional()
@@ -5733,6 +5752,19 @@ export const ListGiftsAndPaymentsResponse = zod.object({
       paymentIntermediaryId: zod.string().nullish(),
       ownerUserId: zod.string().nullish(),
       designatedToSchool: zod.boolean(),
+      offBooksFiscalSponsor: zod
+        .boolean()
+        .describe(
+          "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+        ),
+      quickbooksTieStatus: zod
+        .enum(["exempt", "tied", "amount_mismatch", "missing"])
+        .describe(
+          "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+        )
+        .describe(
+          "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+        ),
       tags: zod.string().nullish(),
       thankYouSentAt: zod
         .string()
@@ -5847,6 +5879,7 @@ export const CreateGiftOrPaymentBody = zod.object({
   paymentIntermediaryId: zod.string().optional(),
   ownerUserId: zod.string().optional(),
   designatedToSchool: zod.boolean().optional(),
+  offBooksFiscalSponsor: zod.boolean().optional(),
   tags: zod.string().optional(),
 });
 
@@ -5926,6 +5959,19 @@ export const GetGiftOrPaymentResponse = zod
     paymentIntermediaryId: zod.string().nullish(),
     ownerUserId: zod.string().nullish(),
     designatedToSchool: zod.boolean(),
+    offBooksFiscalSponsor: zod
+      .boolean()
+      .describe(
+        "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+      ),
+    quickbooksTieStatus: zod
+      .enum(["exempt", "tied", "amount_mismatch", "missing"])
+      .describe(
+        "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+      )
+      .describe(
+        "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
     tags: zod.string().nullish(),
     thankYouSentAt: zod
       .string()
@@ -6108,6 +6154,7 @@ export const UpdateGiftOrPaymentBody = zod.object({
   paymentIntermediaryId: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
   designatedToSchool: zod.boolean().optional(),
+  offBooksFiscalSponsor: zod.boolean().optional(),
   tags: zod.string().nullish(),
 });
 
@@ -6182,6 +6229,19 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   paymentIntermediaryId: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
   designatedToSchool: zod.boolean(),
+  offBooksFiscalSponsor: zod
+    .boolean()
+    .describe(
+      "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+    ),
+  quickbooksTieStatus: zod
+    .enum(["exempt", "tied", "amount_mismatch", "missing"])
+    .describe(
+      "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+    )
+    .describe(
+      "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+    ),
   tags: zod.string().nullish(),
   thankYouSentAt: zod
     .string()
@@ -6363,6 +6423,19 @@ export const LinkThankYouEmailResponse = zod
     paymentIntermediaryId: zod.string().nullish(),
     ownerUserId: zod.string().nullish(),
     designatedToSchool: zod.boolean(),
+    offBooksFiscalSponsor: zod
+      .boolean()
+      .describe(
+        "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+      ),
+    quickbooksTieStatus: zod
+      .enum(["exempt", "tied", "amount_mismatch", "missing"])
+      .describe(
+        "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+      )
+      .describe(
+        "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
     tags: zod.string().nullish(),
     thankYouSentAt: zod
       .string()
@@ -6571,6 +6644,91 @@ export const GetGiftStripeChainResponse = zod
   })
   .describe(
     "Read-only three-way audit chain for a gift: the Stripe charge it was minted from or linked to → the Stripe payout that charge settled in → the QuickBooks deposit lump that payout reconciles against. Any leg is null when it doesn't apply (non-Stripe gift, charge not yet paid out, payout with no QB deposit candidate).",
+  );
+
+/**
+ * @summary Per-gift audit-reconciliation read view answering when the money
+arrived, the QuickBooks record(s) it appears in, who gave it, and its
+restrictions. Off-books gifts (exempt) are flagged `auditExcluded` and
+carry no QuickBooks expectation.
+
+ */
+export const GetGiftAuditReconciliationParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetGiftAuditReconciliationResponse = zod
+  .object({
+    giftId: zod.string(),
+    name: zod.string().nullish(),
+    quickbooksTieStatus: zod
+      .enum(["exempt", "tied", "amount_mismatch", "missing"])
+      .describe(
+        "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+      ),
+    offBooks: zod
+      .boolean()
+      .describe(
+        "True when the gift is exempt (fiscal-sponsor off-books OR designated-to-school).",
+      ),
+    auditExcluded: zod
+      .boolean()
+      .describe(
+        "True when off-books — the gift is excluded from audit reconciliation.",
+      ),
+    amount: zod.string().nullish(),
+    dateReceived: zod.string().date().nullish(),
+    donor: zod
+      .object({
+        kind: zod.enum(["organization", "individual", "household"]),
+        id: zod.string(),
+        name: zod.string().nullish(),
+      })
+      .nullish(),
+    quickbooksRecords: zod.array(
+      zod
+        .object({
+          stagedPaymentId: zod.string(),
+          linkType: zod
+            .enum(["matched", "created", "group", "split"])
+            .describe("How the gift is tied to this QuickBooks staged row."),
+          realmId: zod.string().nullish(),
+          qbEntityType: zod.string().nullish(),
+          qbEntityId: zod.string().nullish(),
+          qbDocNumber: zod.string().nullish(),
+          qbDepositToAccountName: zod.string().nullish(),
+          qbPaymentMethod: zod.string().nullish(),
+          payerName: zod.string().nullish(),
+          amount: zod
+            .string()
+            .nullish()
+            .describe(
+              "QuickBooks amount for this record (the split sub-amount for split links).",
+            ),
+          dateReceived: zod.string().date().nullish(),
+        })
+        .describe(
+          'A QuickBooks record this gift appears in (\"where\"), derived read-only from the gift\'s QB linkage.',
+        ),
+    ),
+    restrictions: zod.array(
+      zod.object({
+        allocationId: zod.string(),
+        restrictionType: zod
+          .enum(["unrestricted", "purpose", "time", "both", "unclear", "na"])
+          .describe(
+            "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.",
+          )
+          .nullish(),
+        purposeVerbatim: zod.string().nullish(),
+        restrictionEvidence: zod.string().nullish(),
+        subAmount: zod.string().nullish(),
+        displayUsage: zod.string().nullish(),
+      }),
+    ),
+  })
+  .describe(
+    "Per-gift audit-reconciliation view: when the money arrived, the\nQuickBooks record(s) it appears in, who gave it, and its restrictions.\nOff-books gifts are flagged `auditExcluded` (excluded from audit\nreconciliation) and carry no QuickBooks expectation.\n",
   );
 
 export const listGiftAllocationsQueryLimitDefault = 50;
@@ -11820,6 +11978,19 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
         paymentIntermediaryId: zod.string().nullish(),
         ownerUserId: zod.string().nullish(),
         designatedToSchool: zod.boolean(),
+        offBooksFiscalSponsor: zod
+          .boolean()
+          .describe(
+            "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+          ),
+        quickbooksTieStatus: zod
+          .enum(["exempt", "tied", "amount_mismatch", "missing"])
+          .describe(
+            "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+          )
+          .describe(
+            "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+          ),
         tags: zod.string().nullish(),
         thankYouSentAt: zod
           .string()
@@ -12002,6 +12173,19 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
         paymentIntermediaryId: zod.string().nullish(),
         ownerUserId: zod.string().nullish(),
         designatedToSchool: zod.boolean(),
+        offBooksFiscalSponsor: zod
+          .boolean()
+          .describe(
+            "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+          ),
+        quickbooksTieStatus: zod
+          .enum(["exempt", "tied", "amount_mismatch", "missing"])
+          .describe(
+            "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+          )
+          .describe(
+            "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+          ),
         tags: zod.string().nullish(),
         thankYouSentAt: zod
           .string()
@@ -12179,6 +12363,19 @@ export const ReconcileStagedPaymentResponse = zod.object({
     paymentIntermediaryId: zod.string().nullish(),
     ownerUserId: zod.string().nullish(),
     designatedToSchool: zod.boolean(),
+    offBooksFiscalSponsor: zod
+      .boolean()
+      .describe(
+        "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+      ),
+    quickbooksTieStatus: zod
+      .enum(["exempt", "tied", "amount_mismatch", "missing"])
+      .describe(
+        "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+      )
+      .describe(
+        "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
     tags: zod.string().nullish(),
     thankYouSentAt: zod
       .string()
@@ -12416,6 +12613,19 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
     paymentIntermediaryId: zod.string().nullish(),
     ownerUserId: zod.string().nullish(),
     designatedToSchool: zod.boolean(),
+    offBooksFiscalSponsor: zod
+      .boolean()
+      .describe(
+        "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+      ),
+    quickbooksTieStatus: zod
+      .enum(["exempt", "tied", "amount_mismatch", "missing"])
+      .describe(
+        "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+      )
+      .describe(
+        "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
     tags: zod.string().nullish(),
     thankYouSentAt: zod
       .string()
@@ -15445,6 +15655,19 @@ export const ArchiveGiftOrPaymentResponse = zod.object({
   paymentIntermediaryId: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
   designatedToSchool: zod.boolean(),
+  offBooksFiscalSponsor: zod
+    .boolean()
+    .describe(
+      "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+    ),
+  quickbooksTieStatus: zod
+    .enum(["exempt", "tied", "amount_mismatch", "missing"])
+    .describe(
+      "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+    )
+    .describe(
+      "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+    ),
   tags: zod.string().nullish(),
   thankYouSentAt: zod
     .string()
@@ -15587,6 +15810,19 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
   paymentIntermediaryId: zod.string().nullish(),
   ownerUserId: zod.string().nullish(),
   designatedToSchool: zod.boolean(),
+  offBooksFiscalSponsor: zod
+    .boolean()
+    .describe(
+      "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+    ),
+  quickbooksTieStatus: zod
+    .enum(["exempt", "tied", "amount_mismatch", "missing"])
+    .describe(
+      "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+    )
+    .describe(
+      "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+    ),
   tags: zod.string().nullish(),
   thankYouSentAt: zod
     .string()

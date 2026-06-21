@@ -15,6 +15,7 @@ import {
   giftTypeEnum,
   giftPaymentMethodEnum,
   giftFinalAmountSourceEnum,
+  giftQuickbooksTieEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
 import { people } from "./people";
@@ -136,6 +137,22 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
     onDelete: "restrict",
   }),
   designatedToSchool: boolean("designated_to_school").default(false).notNull(),
+  // Fiscal-sponsor-era off-books flag. When a gift was handled off our books
+  // (e.g. during the fiscal-sponsor period), it never appears in QuickBooks.
+  // Together with `designatedToSchool` (direct-to-school) it forms the
+  // "exempt from QB tie" rule: such gifts still count toward revenue goals but
+  // are not expected to reconcile to a QuickBooks record (and are excluded from
+  // the audit-reconciliation view). User-settable.
+  offBooksFiscalSponsor: boolean("off_books_fiscal_sponsor")
+    .default(false)
+    .notNull(),
+  // Derived, persisted signal of whether this gift reconciles to a QuickBooks
+  // record (see giftQuickbooksTieEnum). Recomputed by applyGiftQbTieMany at
+  // every gift link/amount mutation; never hand-set. Defaults to 'missing'
+  // (an on-books gift with no QB evidence yet) and is corrected on first derive.
+  quickbooksTieStatus: giftQuickbooksTieEnum("quickbooks_tie_status")
+    .default("missing")
+    .notNull(),
   tags: text("tags"),
   // Set when an outbound staff email is linked as the thank-you note for
   // this gift — either via the email-intelligence proposal accept flow
@@ -172,6 +189,8 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // index on staged_payments(date_received).
   index("gifts_and_payments_date_received_idx").on(t.dateReceived),
   index("gifts_and_payments_archived_at_idx").on(t.archivedAt),
+  // Backs the missing-evidence list filter on the derived QB-tie signal.
+  index("gifts_and_payments_quickbooks_tie_status_idx").on(t.quickbooksTieStatus),
   // Partial-UNIQUE: a Stripe charge / QB staged row is the FINAL-amount source
   // pointer for AT MOST ONE gift (the one-evidence↔one-gift invariant). WHERE
   // NOT NULL so the many unstamped `human` gifts (pointer NULL) are unconstrained.

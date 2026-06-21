@@ -45,6 +45,7 @@ import {
   unstampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
 } from "../lib/giftFinalAmount";
+import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { logger } from "../lib/logger";
 import {
   syncStripe,
@@ -613,6 +614,10 @@ router.post(
       throw e;
     }
 
+    // Stripe-sourced gift (no direct QB link) ties at the payout level — persist
+    // its tie status (deriver returns 'tied' for finalAmountSource='stripe').
+    await applyGiftQbTieMany(giftId);
+
     const [gift] = await db
       .select()
       .from(giftsAndPayments)
@@ -795,6 +800,7 @@ router.post(
     const NOT_FOUND = "__not_found__";
     const NOT_REVERTIBLE = "__not_revertible__";
     let reverted: typeof stripeStagedCharges.$inferSelect | null = null;
+    let survivingGiftId: string | null = null;
     try {
       await db.transaction(async (tx) => {
         const locked = await tx
@@ -832,6 +838,8 @@ router.post(
           // unless the gift is still sourced from this exact charge), then
           // rebalance its allocations to the restored amount.
           const giftId = locked.matchedGiftId;
+          // The surviving matched gift loses this Stripe evidence — recompute.
+          survivingGiftId = giftId;
           const unstamped = await unstampGiftFinalAmount(tx, giftId, {
             source: "stripe",
             stripeChargeId: locked.id,
@@ -881,6 +889,10 @@ router.post(
         return;
       }
       throw e;
+    }
+    // A surviving (reconciled-to) gift lost its Stripe evidence — recompute tie.
+    if (survivingGiftId) {
+      await applyGiftQbTieMany(survivingGiftId);
     }
     void user;
     res.json(reverted);

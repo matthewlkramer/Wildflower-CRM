@@ -119,6 +119,7 @@ import type {
   GetTaskProposalParams,
   GiftAllocation,
   GiftAllocationList,
+  GiftAuditReconciliation,
   GiftCandidateList,
   GiftMissingQbList,
   GiftOrPayment,
@@ -8902,6 +8903,106 @@ export function useGetGiftStripeChain<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetGiftStripeChainQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Per-gift audit-reconciliation read view answering when the money
+arrived, the QuickBooks record(s) it appears in, who gave it, and its
+restrictions. Off-books gifts (exempt) are flagged `auditExcluded` and
+carry no QuickBooks expectation.
+
+ */
+export const getGetGiftAuditReconciliationUrl = (id: string) => {
+  return `/api/gifts-and-payments/${id}/audit-reconciliation`;
+};
+
+export const getGiftAuditReconciliation = async (
+  id: string,
+  options?: RequestInit,
+): Promise<GiftAuditReconciliation> => {
+  return customFetch<GiftAuditReconciliation>(
+    getGetGiftAuditReconciliationUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetGiftAuditReconciliationQueryKey = (id: string) => {
+  return [`/api/gifts-and-payments/${id}/audit-reconciliation`] as const;
+};
+
+export const getGetGiftAuditReconciliationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGiftAuditReconciliation>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGiftAuditReconciliation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetGiftAuditReconciliationQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGiftAuditReconciliation>>
+  > = ({ signal }) =>
+    getGiftAuditReconciliation(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGiftAuditReconciliation>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGiftAuditReconciliationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGiftAuditReconciliation>>
+>;
+export type GetGiftAuditReconciliationQueryError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Per-gift audit-reconciliation read view answering when the money
+arrived, the QuickBooks record(s) it appears in, who gave it, and its
+restrictions. Off-books gifts (exempt) are flagged `auditExcluded` and
+carry no QuickBooks expectation.
+
+ */
+
+export function useGetGiftAuditReconciliation<
+  TData = Awaited<ReturnType<typeof getGiftAuditReconciliation>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGiftAuditReconciliation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGiftAuditReconciliationQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

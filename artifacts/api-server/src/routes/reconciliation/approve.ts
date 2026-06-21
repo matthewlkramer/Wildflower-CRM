@@ -26,6 +26,7 @@ import {
 } from "../../lib/giftFinalAmount";
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
+import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import { recordAudit } from "../../lib/audit";
 import {
   runConsistencyGate,
@@ -554,6 +555,8 @@ async function mintGiftFromEvidence(
   if (opportunityId) {
     await applyDerivedOppFieldsMany(opportunityId);
   }
+  // The newly minted gift now carries QB linkage — persist its tie status.
+  await applyGiftQbTieMany(newGiftId);
 
   res.status(201).json({
     ok: true as const,
@@ -1110,6 +1113,8 @@ router.post(
     // Re-derive affected pledges from the committed gift amounts (mirrors the
     // gift create/PATCH paths; runs outside the tx on its own connection).
     await applyDerivedOppFieldsMany(...rederivePledgeIds);
+    // The linked gift now carries QB linkage — persist its tie status.
+    await applyGiftQbTieMany(giftId);
 
     res.json({
       ok: true as const,

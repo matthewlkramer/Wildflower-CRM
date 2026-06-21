@@ -1276,6 +1276,17 @@ paths:
         - { name: dateAfter, in: query, required: false, description: "Keep gifts with dateReceived on/after this date (inclusive).", schema: { type: string, format: date } }
         - { name: dateBefore, in: query, required: false, description: "Keep gifts with dateReceived on/before this date (inclusive).", schema: { type: string, format: date } }
         - { name: linkedToQuickbooks, in: query, required: false, description: "Filter by whether a QuickBooks staged payment is reconciled to / created this gift (`linked`) or not (`unlinked`).", schema: { type: string, enum: [linked, unlinked] } }
+        - name: quickbooksTie
+          in: query
+          required: false
+          description: |
+            Filter on the derived per-gift QuickBooks-tie status. Repeat or
+            comma-separate for multiple values. The special value `untied`
+            (sugar for `missing` + `amount_mismatch`) lists on-books gifts that
+            should tie to a QuickBooks record but don't.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string, enum: [exempt, tied, amount_mismatch, missing, untied] } }
         - { name: sort, in: query, required: false, schema: { $ref: "#/components/schemas/GiftSort" }, description: "Sort order (default date_desc)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
@@ -1342,6 +1353,19 @@ paths:
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftStripeChain" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /gifts-and-payments/{id}/audit-reconciliation:
+    get:
+      operationId: getGiftAuditReconciliation
+      tags: [gifts-and-payments]
+      summary: |
+        Per-gift audit-reconciliation read view answering when the money
+        arrived, the QuickBooks record(s) it appears in, who gave it, and its
+        restrictions. Off-books gifts (exempt) are flagged `auditExcluded` and
+        carry no QuickBooks expectation.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftAuditReconciliation" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Gift allocations ──────────────────────────────────────────────────────
@@ -3535,6 +3559,7 @@ components:
         else. Defaults to `revenue` so existing data is treated as revenue.
     GiftPaymentMethod: { type: string, enum: [ach, check, wire, stock, donor_box, daf_ach, daf_check, daf_bill_com] }
     GiftFinalAmountSource: { type: string, enum: [human, stripe, quickbooks], description: "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields." }
+    GiftQuickbooksTie: { type: string, enum: [exempt, tied, amount_mismatch, missing], description: "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence." }
     IntendedUsage: { type: string, enum: [gen_ops, growth, school_startup, teacher_training, project] }
     RestrictionType: { type: string, enum: [unrestricted, purpose, time, both, unclear, na], description: "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted." }
     DeferredRevenue: { type: string, enum: [yes, no, na] }
@@ -4813,7 +4838,7 @@ components:
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
       type: object
-      required: [id, designatedToSchool, finalAmountSource, createdAt, updatedAt]
+      required: [id, designatedToSchool, offBooksFiscalSponsor, quickbooksTieStatus, finalAmountSource, createdAt, updatedAt]
       properties:
         id:                         { type: string }
         legacyGiftId:               { type: string, nullable: true }
@@ -4842,6 +4867,8 @@ components:
         paymentIntermediaryId:      { type: string, nullable: true }
         ownerUserId:                      { type: string, nullable: true }
         designatedToSchool:         { type: boolean }
+        offBooksFiscalSponsor:      { type: boolean, description: "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation)." }
+        quickbooksTieStatus:        { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], readOnly: true, description: "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update." }
         tags:                       { type: string, nullable: true }
         thankYouSentAt:             { type: string, format: date, nullable: true, description: "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time." }
         thankYouEmailMessageId:     { type: string, nullable: true, description: "FK to the email_messages row that was identified as the thank-you. Read-only; set via /link-thank-you-email or the thank_you_acknowledgment proposal accept." }
@@ -4880,6 +4907,66 @@ components:
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/GiftOrPayment" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    GiftAuditReconciliationRecord:
+      type: object
+      required: [stagedPaymentId, linkType]
+      description: A QuickBooks record this gift appears in ("where"), derived read-only from the gift's QB linkage.
+      properties:
+        stagedPaymentId:      { type: string }
+        linkType:             { type: string, enum: [matched, created, group, split], description: "How the gift is tied to this QuickBooks staged row." }
+        realmId:              { type: string, nullable: true }
+        qbEntityType:         { type: string, nullable: true }
+        qbEntityId:           { type: string, nullable: true }
+        qbDocNumber:          { type: string, nullable: true }
+        qbDepositToAccountName: { type: string, nullable: true }
+        qbPaymentMethod:      { type: string, nullable: true }
+        payerName:            { type: string, nullable: true }
+        amount:               { type: string, nullable: true, description: "QuickBooks amount for this record (the split sub-amount for split links)." }
+        dateReceived:         { type: string, format: date, nullable: true }
+    GiftAuditReconciliationRestriction:
+      type: object
+      required: [allocationId]
+      properties:
+        allocationId:    { type: string }
+        restrictionType: { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }
+        purposeVerbatim: { type: string, nullable: true }
+        restrictionEvidence: { type: string, nullable: true }
+        subAmount:       { type: string, nullable: true }
+        displayUsage:    { type: string, nullable: true }
+    GiftAuditReconciliationDonor:
+      type: object
+      required: [kind, id]
+      properties:
+        kind: { type: string, enum: [organization, individual, household] }
+        id:   { type: string }
+        name: { type: string, nullable: true }
+    GiftAuditReconciliation:
+      type: object
+      required: [giftId, quickbooksTieStatus, offBooks, auditExcluded, quickbooksRecords, restrictions]
+      description: |
+        Per-gift audit-reconciliation view: when the money arrived, the
+        QuickBooks record(s) it appears in, who gave it, and its restrictions.
+        Off-books gifts are flagged `auditExcluded` (excluded from audit
+        reconciliation) and carry no QuickBooks expectation.
+      properties:
+        giftId:              { type: string }
+        name:                { type: string, nullable: true }
+        quickbooksTieStatus: { $ref: "#/components/schemas/GiftQuickbooksTie" }
+        offBooks:            { type: boolean, description: "True when the gift is exempt (fiscal-sponsor off-books OR designated-to-school)." }
+        auditExcluded:       { type: boolean, description: "True when off-books — the gift is excluded from audit reconciliation." }
+        amount:              { type: string, nullable: true }
+        # WHEN
+        dateReceived:        { type: string, format: date, nullable: true }
+        # WHO
+        donor:               { allOf: [ { $ref: "#/components/schemas/GiftAuditReconciliationDonor" } ], nullable: true }
+        # WHERE
+        quickbooksRecords:
+          type: array
+          items: { $ref: "#/components/schemas/GiftAuditReconciliationRecord" }
+        # RESTRICTIONS
+        restrictions:
+          type: array
+          items: { $ref: "#/components/schemas/GiftAuditReconciliationRestriction" }
     CreateGiftOrPaymentBody:
       type: object
       properties:
@@ -4901,6 +4988,7 @@ components:
         paymentIntermediaryId:      { type: string }
         ownerUserId:                      { type: string }
         designatedToSchool:         { type: boolean }
+        offBooksFiscalSponsor:      { type: boolean }
         tags:                       { type: string }
     UpdateGiftOrPaymentBody:
       type: object
@@ -4923,6 +5011,7 @@ components:
         paymentIntermediaryId:      { type: string, nullable: true }
         ownerUserId:                      { type: string, nullable: true }
         designatedToSchool:         { type: boolean }
+        offBooksFiscalSponsor:      { type: boolean }
         tags:                       { type: string, nullable: true }
     ThankYouAttachment:
       type: object

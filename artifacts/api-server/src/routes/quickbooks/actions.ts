@@ -20,6 +20,7 @@ import {
   SetStagedPaymentEntityBody,
 } from "@workspace/api-zod";
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
+import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import { respondInvariantFailure } from "./shared";
 
 const router: IRouter = Router();
@@ -210,6 +211,9 @@ router.post(
       }
       throw e;
     }
+
+    // The newly minted gift now carries QB linkage — persist its tie status.
+    await applyGiftQbTieMany(giftId);
 
     const [gift] = await db
       .select()

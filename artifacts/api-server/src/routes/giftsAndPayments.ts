@@ -97,10 +97,11 @@ import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
+import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { rederiveGiftAllocations } from "../lib/revenueCoding";
 import { inArray } from "drizzle-orm";
 
-const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear"] as const;
+const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "quickbooksTie"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -157,6 +158,28 @@ router.get(
       filters.push(sql`(EXISTS (SELECT 1 FROM staged_payments sp WHERE sp.matched_gift_id = ${giftsAndPayments.id} OR sp.created_gift_id = ${giftsAndPayments.id}) OR EXISTS (SELECT 1 FROM staged_payment_splits spl WHERE spl.gift_id = ${giftsAndPayments.id}))`);
     } else if (q.linkedToQuickbooks === "unlinked") {
       filters.push(sql`(NOT EXISTS (SELECT 1 FROM staged_payments sp WHERE sp.matched_gift_id = ${giftsAndPayments.id} OR sp.created_gift_id = ${giftsAndPayments.id}) AND NOT EXISTS (SELECT 1 FROM staged_payment_splits spl WHERE spl.gift_id = ${giftsAndPayments.id}))`);
+    }
+    // Persisted QuickBooks-tie status filter. The synthetic value `untied`
+    // expands to the on-books gifts that don't tie to QuickBooks
+    // (missing + amount_mismatch) — the audit "off-books / doesn't tie" list.
+    {
+      const tie = q.quickbooksTie as string[] | undefined;
+      if (tie && tie.length > 0) {
+        const wanted = new Set<string>();
+        for (const v of tie) {
+          if (v === "untied") {
+            wanted.add("missing");
+            wanted.add("amount_mismatch");
+          } else {
+            wanted.add(v);
+          }
+        }
+        if (wanted.size > 0) {
+          filters.push(
+            inArray(giftsAndPayments.quickbooksTieStatus, [...wanted] as never[]),
+          );
+        }
+      }
     }
     {
       const f = splitBlank(q.type as string[] | undefined);
@@ -452,6 +475,7 @@ router.post(
     if (!body) return;
     const [row] = await db.insert(giftsAndPayments).values({ id: newId(), ...body }).returning();
     await applyDerivedOppFieldsMany(row?.paymentOnPledgeId);
+    await applyGiftQbTieMany(row?.id);
     if (row) {
       // New gift is a fresh relationship signal — refresh the donor's
       // cached next-step suggestion (debounced + priority-gated downstream).
@@ -497,6 +521,8 @@ router.patch(
     // PATCH may re-point payment_on_pledge_id — recompute on both the
     // old and the new pledge so a newly-covered target advances.
     await applyDerivedOppFieldsMany(existing.paymentOnPledgeId, row.paymentOnPledgeId);
+    // Amount / off-books / designated-to-school edits change the QB-tie status.
+    await applyGiftQbTieMany(row.id);
     // A donor or gift-type change shifts the derived revenue coding (payer type /
     // loan exclusion) of every allocation under this gift — re-derive snapshots.
     if (
@@ -748,6 +774,8 @@ router.post(
     }
 
     await applyDerivedOppFieldsMany(...outcome.pledges);
+    // The surviving gift may absorb the losers' QB linkage — recompute its tie.
+    await applyGiftQbTieMany(primaryId);
     if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
     res.json({ primaryId, mergedIds: loserIds });
   }),
@@ -964,6 +992,9 @@ router.post(
     }
 
     await applyDerivedOppFieldsMany(...outcome.pledges);
+    // Attaching gifts as pledge payments doesn't change their own QB linkage,
+    // but recompute defensively in case allocation/amount shifted.
+    await applyGiftQbTieMany(...giftIds);
     res.json({ pledgeId: outcome.pledgeId, giftIds, created: outcome.created });
   }),
 );
@@ -1231,6 +1262,9 @@ router.post(
     }
 
     await applyDerivedOppFieldsMany(outcome.pledgeId);
+    // The split mints new payment-gifts and re-points the original — recompute
+    // the QB tie for every resulting gift (new ones default to 'missing').
+    await applyGiftQbTieMany(...outcome.giftIds);
     if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
     res.json({ pledgeId: outcome.pledgeId, giftIds: outcome.giftIds, created: true });
   }),
@@ -1530,6 +1564,185 @@ router.get(
             status: row.depositStatus,
           }
         : null,
+    });
+  }),
+);
+
+// ─── GET /gifts-and-payments/:id/audit-reconciliation ──────────────────────
+// Per-gift audit view (INV-10): when the money arrived, the QuickBooks
+// record(s) it appears in ("where"), who gave it, and its restrictions.
+// Off-books gifts (exempt) are flagged `auditExcluded` and carry no QB
+// expectation — they're outside the audit reconciliation by design.
+router.get(
+  "/gifts-and-payments/:id/audit-reconciliation",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const gift = await db
+      .select({
+        id: giftsAndPayments.id,
+        name: giftsAndPayments.name,
+        amount: giftsAndPayments.amount,
+        dateReceived: giftsAndPayments.dateReceived,
+        quickbooksTieStatus: giftsAndPayments.quickbooksTieStatus,
+        offBooks: sql<boolean>`(${giftsAndPayments.offBooksFiscalSponsor} OR ${giftsAndPayments.designatedToSchool})`,
+        organizationId: giftsAndPayments.organizationId,
+        individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
+        householdId: giftsAndPayments.householdId,
+      })
+      .from(giftsAndPayments)
+      .where(eq(giftsAndPayments.id, id))
+      .then((r) => r[0]);
+    if (!gift) return notFound(res, "gift");
+
+    // Off-books gifts (exempt) are excluded from audit reconciliation by
+    // design: they carry no QB expectation, so we return early with the
+    // exclusion flag and no audit trail (no donor / QB records / restrictions).
+    if (gift.offBooks) {
+      return res.json({
+        giftId: gift.id,
+        name: gift.name,
+        quickbooksTieStatus: gift.quickbooksTieStatus,
+        offBooks: true,
+        auditExcluded: true,
+        amount: gift.amount,
+        dateReceived: gift.dateReceived,
+        donor: null,
+        quickbooksRecords: [],
+        restrictions: [],
+      });
+    }
+
+    // WHO — resolve the single donor (Donor XOR) to a {kind,id,name}.
+    let donor: { kind: string; id: string; name: string | null } | null = null;
+    if (gift.organizationId) {
+      const name = await db
+        .select({ name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, gift.organizationId))
+        .then((r) => r[0]?.name ?? null);
+      donor = { kind: "organization", id: gift.organizationId, name };
+    } else if (gift.individualGiverPersonId) {
+      const name = await db
+        .select({
+          name: sql<string | null>`COALESCE(
+            NULLIF(TRIM(${people.fullName}), ''),
+            NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
+          )`,
+        })
+        .from(people)
+        .where(eq(people.id, gift.individualGiverPersonId))
+        .then((r) => r[0]?.name ?? null);
+      donor = { kind: "individual", id: gift.individualGiverPersonId, name };
+    } else if (gift.householdId) {
+      const name = await db
+        .select({ name: households.name })
+        .from(households)
+        .where(eq(households.id, gift.householdId))
+        .then((r) => r[0]?.name ?? null);
+      donor = { kind: "household", id: gift.householdId, name };
+    }
+
+    // WHERE — the QuickBooks staged record(s) this gift ties to. Direct
+    // (matched/created) + group-reconciled rows come from staged_payments;
+    // split allocations come from staged_payment_splits. Off-books gifts may
+    // still surface evidence if any exists, but it isn't required of them.
+    const directRows = await db
+      .select({
+        stagedPaymentId: stagedPayments.id,
+        realmId: stagedPayments.realmId,
+        qbEntityType: stagedPayments.qbEntityType,
+        qbEntityId: stagedPayments.qbEntityId,
+        qbDocNumber: stagedPayments.qbDocNumber,
+        qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
+        qbPaymentMethod: stagedPayments.qbPaymentMethod,
+        payerName: stagedPayments.payerName,
+        amount: stagedPayments.amount,
+        dateReceived: stagedPayments.dateReceived,
+        matched: stagedPayments.matchedGiftId,
+        group: stagedPayments.groupReconciledGiftId,
+      })
+      .from(stagedPayments)
+      .where(
+        or(
+          eq(stagedPayments.matchedGiftId, id),
+          eq(stagedPayments.createdGiftId, id),
+          eq(stagedPayments.groupReconciledGiftId, id),
+        ),
+      );
+
+    const splitRows = await db
+      .select({
+        stagedPaymentId: stagedPaymentSplits.stagedPaymentId,
+        subAmount: stagedPaymentSplits.subAmount,
+        realmId: stagedPayments.realmId,
+        qbEntityType: stagedPayments.qbEntityType,
+        qbEntityId: stagedPayments.qbEntityId,
+        qbDocNumber: stagedPayments.qbDocNumber,
+        qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
+        qbPaymentMethod: stagedPayments.qbPaymentMethod,
+        payerName: stagedPayments.payerName,
+        dateReceived: stagedPayments.dateReceived,
+      })
+      .from(stagedPaymentSplits)
+      .leftJoin(
+        stagedPayments,
+        eq(stagedPayments.id, stagedPaymentSplits.stagedPaymentId),
+      )
+      .where(eq(stagedPaymentSplits.giftId, id));
+
+    const quickbooksRecords = [
+      ...directRows.map((r) => ({
+        stagedPaymentId: r.stagedPaymentId,
+        linkType: r.group === id ? "group" : r.matched === id ? "matched" : "created",
+        realmId: r.realmId,
+        qbEntityType: r.qbEntityType,
+        qbEntityId: r.qbEntityId,
+        qbDocNumber: r.qbDocNumber,
+        qbDepositToAccountName: r.qbDepositToAccountName,
+        qbPaymentMethod: r.qbPaymentMethod,
+        payerName: r.payerName,
+        amount: r.amount,
+        dateReceived: r.dateReceived,
+      })),
+      ...splitRows.map((r) => ({
+        stagedPaymentId: r.stagedPaymentId,
+        linkType: "split" as const,
+        realmId: r.realmId,
+        qbEntityType: r.qbEntityType,
+        qbEntityId: r.qbEntityId,
+        qbDocNumber: r.qbDocNumber,
+        qbDepositToAccountName: r.qbDepositToAccountName,
+        qbPaymentMethod: r.qbPaymentMethod,
+        payerName: r.payerName,
+        amount: r.subAmount,
+        dateReceived: r.dateReceived,
+      })),
+    ];
+
+    // RESTRICTIONS — the per-allocation restriction coding under this gift.
+    const restrictions = await db
+      .select({
+        allocationId: giftAllocations.id,
+        restrictionType: giftAllocations.restrictionType,
+        purposeVerbatim: giftAllocations.purposeVerbatim,
+        restrictionEvidence: giftAllocations.restrictionEvidence,
+        subAmount: giftAllocations.subAmount,
+        displayUsage: giftAllocations.displayUsage,
+      })
+      .from(giftAllocations)
+      .where(eq(giftAllocations.giftId, id));
+
+    return res.json({
+      giftId: gift.id,
+      name: gift.name,
+      quickbooksTieStatus: gift.quickbooksTieStatus,
+      offBooks: gift.offBooks,
+      auditExcluded: gift.offBooks,
+      amount: gift.amount,
+      dateReceived: gift.dateReceived,
+      donor,
+      quickbooksRecords,
+      restrictions,
     });
   }),
 );

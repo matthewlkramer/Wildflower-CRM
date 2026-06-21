@@ -62,6 +62,7 @@ import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 
 const GIFT_TYPE_OPTIONS = [
   { value: "standard_gift", label: "Standard gift" },
@@ -464,6 +465,21 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                   onSave={(next) => patch({ designatedToSchool: next ?? false })}
                 />
               </Row>
+              <Row label="Off-books fiscal sponsor">
+                <InlineEditBoolean
+                  label="Off-books fiscal sponsor"
+                  testIdBase="gift-off-books-fiscal-sponsor"
+                  value={gift.offBooksFiscalSponsor}
+                  allowNull={false}
+                  display={gift.offBooksFiscalSponsor ? "Yes" : "No"}
+                  onSave={(next) =>
+                    patch({ offBooksFiscalSponsor: next ?? false })
+                  }
+                />
+              </Row>
+              <Row label="QuickBooks tie">
+                <GiftQbTieBadge status={gift.quickbooksTieStatus} />
+              </Row>
             </div>
           </FieldCard>
 
@@ -757,5 +773,29 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span className="text-right">{children}</span>
     </div>
+  );
+}
+
+// Read-only display of the persisted, server-derived QuickBooks tie status.
+// `exempt`/`tied` are healthy; `amount_mismatch`/`missing` flag on-books gifts
+// that don't reconcile to QuickBooks and need a human's attention.
+function GiftQbTieBadge({
+  status,
+}: {
+  status: "exempt" | "tied" | "amount_mismatch" | "missing" | null | undefined;
+}) {
+  if (!status) return <span className="text-muted-foreground">—</span>;
+  const variant =
+    status === "tied"
+      ? "default"
+      : status === "exempt"
+        ? "secondary"
+        : "destructive";
+  const label =
+    status === "amount_mismatch" ? "Amount mismatch" : formatEnum(status);
+  return (
+    <Badge variant={variant} data-testid="gift-qb-tie-status">
+      {label}
+    </Badge>
   );
 }

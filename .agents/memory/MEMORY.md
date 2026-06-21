@@ -86,3 +86,4 @@
 - [Raw ::date cast needs round-trip validation](raw-date-cast-validation.md) — query-param dates feeding a raw `::date` cast need a Date round-trip check (regex passes 2026-13-40 → Postgres 500); return 400.
 - [Reconciliation conflict_approved = awaiting](reconciliation-conflict-approved-per-track.md) — Stripe payout conflict_approved is NOT a discrepancy (QB already approved into a gift, Stripe just needs human confirm); show recon status per-track (QB vs Stripe), never one sweeping badge.
 - [Reporting-deadline donor filter](reporting-deadline-donor-filter.md) — reporting_deadline tasks carry only opportunityIds; donor filter must EXISTS through the linked opportunity, not the task entity arrays.
+- [Gift QB tie status](gift-qb-tie-status.md) — derived+persisted quickbooks_tie_status; recompute at every gift link/amount mutation or it silently goes stale; off-books exempts; audit view excludes off-books.

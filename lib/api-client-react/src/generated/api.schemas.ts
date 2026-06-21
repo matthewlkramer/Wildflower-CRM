@@ -459,6 +459,19 @@ export const GiftFinalAmountSource = {
   quickbooks: "quickbooks",
 } as const;
 
+/**
+ * Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.
+ */
+export type GiftQuickbooksTie =
+  (typeof GiftQuickbooksTie)[keyof typeof GiftQuickbooksTie];
+
+export const GiftQuickbooksTie = {
+  exempt: "exempt",
+  tied: "tied",
+  amount_mismatch: "amount_mismatch",
+  missing: "missing",
+} as const;
+
 export type IntendedUsage = (typeof IntendedUsage)[keyof typeof IntendedUsage];
 
 export const IntendedUsage = {
@@ -1621,6 +1634,10 @@ export interface GiftOrPayment {
   paymentIntermediaryId?: string | null;
   ownerUserId?: string | null;
   designatedToSchool: boolean;
+  /** Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation). */
+  offBooksFiscalSponsor: boolean;
+  /** Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update. */
+  readonly quickbooksTieStatus: GiftQuickbooksTie;
   tags?: string | null;
   /** Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time. */
   thankYouSentAt?: string | null;
@@ -1818,6 +1835,84 @@ export interface GiftOrPaymentList {
   pagination: Pagination;
 }
 
+/**
+ * How the gift is tied to this QuickBooks staged row.
+ */
+export type GiftAuditReconciliationRecordLinkType =
+  (typeof GiftAuditReconciliationRecordLinkType)[keyof typeof GiftAuditReconciliationRecordLinkType];
+
+export const GiftAuditReconciliationRecordLinkType = {
+  matched: "matched",
+  created: "created",
+  group: "group",
+  split: "split",
+} as const;
+
+/**
+ * A QuickBooks record this gift appears in ("where"), derived read-only from the gift's QB linkage.
+ */
+export interface GiftAuditReconciliationRecord {
+  stagedPaymentId: string;
+  /** How the gift is tied to this QuickBooks staged row. */
+  linkType: GiftAuditReconciliationRecordLinkType;
+  realmId?: string | null;
+  qbEntityType?: string | null;
+  qbEntityId?: string | null;
+  qbDocNumber?: string | null;
+  qbDepositToAccountName?: string | null;
+  qbPaymentMethod?: string | null;
+  payerName?: string | null;
+  /** QuickBooks amount for this record (the split sub-amount for split links). */
+  amount?: string | null;
+  dateReceived?: string | null;
+}
+
+export interface GiftAuditReconciliationRestriction {
+  allocationId: string;
+  restrictionType?: RestrictionType | null;
+  purposeVerbatim?: string | null;
+  restrictionEvidence?: string | null;
+  subAmount?: string | null;
+  displayUsage?: string | null;
+}
+
+export type GiftAuditReconciliationDonorKind =
+  (typeof GiftAuditReconciliationDonorKind)[keyof typeof GiftAuditReconciliationDonorKind];
+
+export const GiftAuditReconciliationDonorKind = {
+  organization: "organization",
+  individual: "individual",
+  household: "household",
+} as const;
+
+export interface GiftAuditReconciliationDonor {
+  kind: GiftAuditReconciliationDonorKind;
+  id: string;
+  name?: string | null;
+}
+
+/**
+ * Per-gift audit-reconciliation view: when the money arrived, the
+QuickBooks record(s) it appears in, who gave it, and its restrictions.
+Off-books gifts are flagged `auditExcluded` (excluded from audit
+reconciliation) and carry no QuickBooks expectation.
+
+ */
+export interface GiftAuditReconciliation {
+  giftId: string;
+  name?: string | null;
+  quickbooksTieStatus: GiftQuickbooksTie;
+  /** True when the gift is exempt (fiscal-sponsor off-books OR designated-to-school). */
+  offBooks: boolean;
+  /** True when off-books — the gift is excluded from audit reconciliation. */
+  auditExcluded: boolean;
+  amount?: string | null;
+  dateReceived?: string | null;
+  donor?: GiftAuditReconciliationDonor | null;
+  quickbooksRecords: GiftAuditReconciliationRecord[];
+  restrictions: GiftAuditReconciliationRestriction[];
+}
+
 export interface CreateGiftOrPaymentBody {
   legacyGiftId?: string;
   name?: string;
@@ -1837,6 +1932,7 @@ export interface CreateGiftOrPaymentBody {
   paymentIntermediaryId?: string;
   ownerUserId?: string;
   designatedToSchool?: boolean;
+  offBooksFiscalSponsor?: boolean;
   tags?: string;
 }
 
@@ -1859,6 +1955,7 @@ export interface UpdateGiftOrPaymentBody {
   paymentIntermediaryId?: string | null;
   ownerUserId?: string | null;
   designatedToSchool?: boolean;
+  offBooksFiscalSponsor?: boolean;
   tags?: string | null;
 }
 
@@ -5442,6 +5539,14 @@ fiscal years.
    */
   linkedToQuickbooks?: ListGiftsAndPaymentsLinkedToQuickbooks;
   /**
+ * Filter on the derived per-gift QuickBooks-tie status. Repeat or
+comma-separate for multiple values. The special value `untied`
+(sugar for `missing` + `amount_mismatch`) lists on-books gifts that
+should tie to a QuickBooks record but don't.
+
+ */
+  quickbooksTie?: ListGiftsAndPaymentsQuickbooksTieItem[];
+  /**
    * Sort order (default date_desc).
    */
   sort?: GiftSort;
@@ -5494,6 +5599,17 @@ export type ListGiftsAndPaymentsLinkedToQuickbooks =
 export const ListGiftsAndPaymentsLinkedToQuickbooks = {
   linked: "linked",
   unlinked: "unlinked",
+} as const;
+
+export type ListGiftsAndPaymentsQuickbooksTieItem =
+  (typeof ListGiftsAndPaymentsQuickbooksTieItem)[keyof typeof ListGiftsAndPaymentsQuickbooksTieItem];
+
+export const ListGiftsAndPaymentsQuickbooksTieItem = {
+  exempt: "exempt",
+  tied: "tied",
+  amount_mismatch: "amount_mismatch",
+  missing: "missing",
+  untied: "untied",
 } as const;
 
 export type ListGiftAllocationsParams = {

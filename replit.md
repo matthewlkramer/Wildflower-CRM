@@ -93,6 +93,7 @@ cd lib/db && pnpm exec tsc -p tsconfig.json             # Rebuild DB declaration
 pnpm --filter @workspace/api-server run test            # API server vitest
 node lib/db/src/import-airtable.mjs                      # Re-import Airtable data (see follow-ups — stale)
 pnpm --filter @workspace/scripts run cleanup:test-users # Archive test users after e2e runs
+pnpm --filter @workspace/api-server run backfill:gift-qb-tie # Recompute quickbooks_tie_status on all gifts
 ```
 
 **After a schema change**, run both `pnpm --filter @workspace/db run push` AND
@@ -185,6 +186,24 @@ mid-run as noise (retry), not a blocker.
   approve/reject for dedupe. Tokens + realmId encrypted at rest; OAuth/token
   endpoints are env-shared, the data host is env-derived (`QUICKBOOKS_API_BASE`,
   defaults to the production Intuit host). Pull-only — never writes back to QB.
+- **Gift ↔ QuickBooks anchoring (off-books flag + tie status)** — every gift
+  carries a DERIVED-but-PERSISTED `quickbooks_tie_status`
+  (`exempt` | `tied` | `amount_mismatch` | `missing`), recomputed by the
+  `applyGiftQbTieMany` applier (pure `deriveGiftQbTie` + DB wrapper, mirrors the
+  opportunity-status applier pattern) at every gift link/amount mutation
+  (create/PATCH/merge/split, QB & Stripe reconcile/revert, the sync worker's
+  auto-apply + auto-create) and a backfill script
+  (`pnpm --filter @workspace/api-server run backfill:gift-qb-tie`). Exempt =
+  off-books (`off_books_fiscal_sponsor OR designated_to_school`). QB amount per
+  gift uses split.sub_amount > SUM(group staged.amount) > direct matched/created
+  staged.amount, compared with the reconciler's `amountWithinFeeBand`.
+  Stripe-sourced gifts (`final_amount_source='stripe'`) with no direct QB link
+  are `tied` (money lands in QB at the payout level). The gifts list takes a
+  `quickbooksTie` filter (`untied` = `missing` + `amount_mismatch`) to surface
+  on-books gifts that don't reconcile; a per-gift
+  `/gifts-and-payments/{id}/audit-reconciliation` read view returns the
+  when/where/who/restrictions audit trail (excludes off-books). Gift detail has
+  an off-books toggle + a read-only tie-status badge.
 - **Flodesk subscriber sync** — replaces the cancelled Mailchimp plan. Syncs
   PEOPLE only into ONE Flodesk segment. Outbound (CRM → Flodesk) fires
   fire-and-forget on person create/update: eligible people (`newsletter` true,
