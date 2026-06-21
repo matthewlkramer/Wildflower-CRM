@@ -2417,6 +2417,26 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /staged-payments/{id}/set-funding-source:
+    post:
+      operationId: setStagedPaymentFundingSource
+      tags: [staged-payments]
+      summary: Pin or clear the funding source by hand (manual override that survives re-sync).
+      description: |
+        Reviewer sets or corrects WHERE a staged payment's money came from / how
+        it rendered (Stripe, brokerage, DAF, …). Funding source is an origin
+        label orthogonal to reconcile status, so this works on a row in any
+        state. Pins funding_source_provenance='manual' so the detectFundingSource
+        helper never overwrites it on the next sync / reclassify. fundingSource
+        null clears the value (keeping the manual pin so it is not re-derived).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SetStagedPaymentFundingSourceBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /staged-payments/{id}/exclude:
     post:
       operationId: excludeStagedPayment
@@ -2536,7 +2556,11 @@ paths:
         representative member also carries matchedGiftId so the gift shows linked.
         The group adopts the gift's donor (Donor XOR). Guards: at least two rows,
         all pending and unresolved, all sharing one grouping key (deposit or
-        payer), the gift exists with a single valid donor and is not already
+        payer) — OR all already belonging to one "same physical gift" source
+        group (sharing a single non-null sourceGroupId), which bypasses the
+        deposit/payer coherence check since the human already asserted the rows
+        are one gift (the multi-date / amount-mismatch confirmations below still
+        apply); the gift exists with a single valid donor and is not already
         linked elsewhere, and the members' combined total matches the gift amount
         within the processor fee-band tolerance. When the grouped payments do not
         all fall on the same date_received, or carry more than one distinct
@@ -2555,6 +2579,49 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "A member is no longer pending, or the gift is already linked" }
+  /staged-payments/group:
+    post:
+      operationId: groupStagedPayments
+      tags: [staged-payments]
+      summary: Group separately-entered QuickBooks records that are really ONE physical gift.
+      description: |
+        Marks two or more staged payments as a single "same physical gift"
+        source group by stamping a shared sourceGroupId. UNLIKE group-reconcile
+        (which ties a deposit's members to ONE existing gift at reconcile time),
+        this groups FREELY across different bank deposits AND dates and BEFORE
+        any gift exists — for a gift a donor entered as several QuickBooks
+        records. It only records the grouping: it does NOT change any donor or
+        gift link and never reconciles by itself. Guards: at least two distinct,
+        existing, non-archived, still-unreconciled rows; rows already in another
+        group are rejected unless they are all already in the same group
+        (idempotent). When the members resolve to more than one distinct donor,
+        confirmDonorConflict must be true (else 400 donor_conflict). The group is
+        exactly the rows carrying the id; reconcile it as a unit on the card.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/GroupStagedPaymentsBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GroupStagedPaymentsResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "A row is already in a different group, or is no longer groupable." }
+  /staged-payments/ungroup:
+    post:
+      operationId: ungroupStagedPayments
+      tags: [staged-payments]
+      summary: Remove staged payments from their "same physical gift" source group.
+      description: |
+        Clears sourceGroupId on the given rows, removing them from their source
+        group. If this leaves a group with fewer than two members, the remaining
+        orphan is cleared too (a group requires >= 2). Does not change donor or
+        gift links. A no-op for rows that aren't grouped.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UngroupStagedPaymentsBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/UngroupStagedPaymentsResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /staged-payments/confirm-matches:
     post:
       operationId: confirmStagedPaymentMatches
@@ -3395,6 +3462,17 @@ paths:
         precedence over the QB net when a charge is selected; nothing is archived.
         Minting a gift is human-only. Idempotent: re-approving a reconciled card
         returns its current state.
+
+        Source groups (a card whose stagedPaymentId carries a sourceGroupId)
+        approve as a WHOLE: the create-* outcomes mint ONE gift whose amount sums
+        every non-archived member, with a deterministic representative carrying
+        createdGiftId and the other members groupReconciledGiftId (so no slice can
+        be reconciled twice); link_existing_gift is rejected (409
+        source_group_use_reconcile) — link the whole group via group-reconcile
+        instead; and a group whose members carry a tied Stripe payout, or an
+        explicit Stripe charge selection, is rejected (409
+        source_group_stripe_unsupported) since per-charge GROSS can't yet be
+        summed across a group (ungroup to reconcile those individually).
       parameters:
         - { name: stagedPaymentId, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -5056,6 +5134,8 @@ components:
     StagedPaymentMatchMethod: { type: string, enum: [email, name, name_amount_date, amount_date, memo, intermediary, manual] }
     StagedPaymentClassificationSource: { type: string, enum: [auto, manual] }
     StagedPaymentEntitySource: { type: string, enum: [auto, manual], description: "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync / reclassify." }
+    StagedPaymentFundingSource: { type: string, enum: [stripe, brokerage, daf, donorbox, paypal, wire_ach, check, cash, employer_match, other], description: "WHERE the incoming money came from / how it rendered. A first-class origin dimension, DISTINCT from qbPaymentMethod (the QB instrument like Visa/Check) and from the derived reconciliation funding lane (reconcile progress, not origin). Auto-seeded at ingest by detectFundingSource and human-correctable. other = a known origin outside this list." }
+    StagedPaymentFundingSourceProvenance: { type: string, enum: [auto, manual], description: "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync / reclassify." }
     StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, rejected, reconciled], description: "Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand." }
     QuickbooksStagedPaymentQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected, reconciled], description: "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review)." }
     StagedPaymentSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc, payer_asc, payer_desc] }
@@ -5231,7 +5311,7 @@ components:
         notes:           { type: string, nullable: true }
     StagedPayment:
       type: object
-      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, classificationSource, entitySource, createdAt, updatedAt]
+      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, classificationSource, entitySource, fundingSourceProvenance, createdAt, updatedAt]
       properties:
         id:                        { type: string }
         realmId:                   { type: string }
@@ -5297,6 +5377,7 @@ components:
         matchedGiftId:             { type: string, nullable: true }
         createdGiftId:             { type: string, nullable: true }
         groupReconciledGiftId:     { type: string, nullable: true, description: "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert." }
+        sourceGroupId:             { type: string, nullable: true, description: "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift)." }
         autoApplied:               { type: boolean }
         approvedByUserId:          { type: string, nullable: true }
         approvedAt:                { type: string, format: date-time, nullable: true }
@@ -5311,6 +5392,8 @@ components:
         entityId:                  { type: string, nullable: true, description: "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter)." }
         entityName:                { type: string, nullable: true, description: "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted." }
         entitySource:              { $ref: "#/components/schemas/StagedPaymentEntitySource" }
+        fundingSource:             { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true, description: "WHERE this money came from / how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown / not yet determined. Auto-seeded at ingest, human-correctable." }
+        fundingSourceProvenance:   { $ref: "#/components/schemas/StagedPaymentFundingSourceProvenance" }
         resolvedGiftId:            { type: string, nullable: true }
         resolvedGiftName:          { type: string, nullable: true }
         resolvedGiftAmount:        { type: string, nullable: true }
@@ -5665,8 +5748,8 @@ components:
         blockers: { type: array, items: { type: string }, description: "Human-readable reasons the card is not ready (ambiguous donor, conflicting opportunity, gift already linked, amount mismatch, etc.)." }
     ReconciliationCard:
       type: object
-      required: [stagedPaymentId, status, queue, hasStripeEvidence, ready]
-      description: "List item for the unified reconciler — one per QB staged payment (the anchor). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card."
+      required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup]
+      description: "List item for the unified reconciler — one per QB staged payment (the anchor), OR one per manual 'same physical gift' source group (collapsed; stagedPaymentId is the representative member). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card."
       properties:
         stagedPaymentId: { type: string }
         status:          { $ref: "#/components/schemas/StagedPaymentStatus" }
@@ -5700,6 +5783,17 @@ components:
         finalAmountSource:  { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
         ready:              { type: boolean, description: "Auto-proposal satisfies the consistency gate (one-click approve)." }
         reconciliationLanes: { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor/gift state: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge." }
+        fundingSource:      { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true, description: "Origin of this money (Stripe, brokerage, DAF, …). For a group card this is the members' common source, or null when they differ. Distinct from qbPaymentMethod (the instrument) and the funding lane." }
+        fundingSourceProvenance: { $ref: "#/components/schemas/StagedPaymentFundingSourceProvenance", nullable: true, description: "Whether fundingSource was derived (auto) or human-pinned (manual). Null on a group card whose members disagree." }
+        sourceGroupId:      { type: string, nullable: true, description: "Set when this card represents a manual 'same physical gift' group; null for a single staged payment." }
+        isSourceGroup:      { type: boolean, description: "True when this card collapses several staged payments a human grouped as one physical gift (rows sharing sourceGroupId). The card's stagedPaymentId is the representative member; approve acts on the whole group." }
+        sourceGroupCount:   { type: integer, nullable: true, description: "Number of staged payments in the group (>= 2). Null when not a group." }
+        sourceGroupTotalAmount: { type: string, nullable: true, description: "Summed amount of all group members (the amount the group reconciles for). Null when not a group." }
+        sourceGroupMembers:
+          type: array
+          nullable: true
+          description: "Compact per-member rows of the group, for display. Null when not a group. The representative is the card's stagedPaymentId."
+          items: { $ref: "#/components/schemas/ReconciliationCardGroupMember" }
         createdAt:          { type: string, format: date-time, nullable: true }
         updatedAt:          { type: string, format: date-time, nullable: true }
     ReconciliationCardList:
@@ -5708,6 +5802,18 @@ components:
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/ReconciliationCard" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    ReconciliationCardGroupMember:
+      type: object
+      required: [stagedPaymentId, isRepresentative]
+      description: "One member of a manual 'same physical gift' source group, summarized for the group card."
+      properties:
+        stagedPaymentId:  { type: string }
+        amount:           { type: string, nullable: true }
+        dateReceived:     { type: string, format: date, nullable: true }
+        payerName:        { type: string, nullable: true }
+        qbDocNumber:      { type: string, nullable: true }
+        fundingSource:    { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true }
+        isRepresentative: { type: boolean, description: "True for the single member that anchors the group card / carries the group's gift link on approve (the card's stagedPaymentId)." }
     ReconciliationSearchList:
       type: object
       required: [data]
@@ -5996,6 +6102,49 @@ components:
       description: "Pin (or clear) the Wildflower-entity attribution by hand. Sets entitySource='manual' so detectEntity never overwrites it on re-sync. entityId null clears the attribution back to the default Foundation bucket while keeping the manual pin."
       properties:
         entityId: { type: string, nullable: true, description: "The entities.id to attribute this incoming money to, or null to clear the attribution (keeping the manual pin)." }
+    SetStagedPaymentFundingSourceBody:
+      type: object
+      required: [fundingSource]
+      description: "Pin (or clear) the funding source by hand. Sets fundingSourceProvenance='manual' so detectFundingSource never overwrites it on re-sync / reclassify. fundingSource null clears the value back to unknown while keeping the manual pin (so it is not re-derived)."
+      properties:
+        fundingSource: { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true, description: "The origin to attribute this money to, or null to clear it (keeping the manual pin)." }
+    GroupStagedPaymentsBody:
+      type: object
+      required: [stagedPaymentIds]
+      description: "Mark two or more staged payments as ONE physical gift entered separately in QuickBooks (a 'same physical gift' source group). Stamps a shared sourceGroupId. Does not change donor or gift links and never reconciles by itself."
+      properties:
+        stagedPaymentIds:
+          type: array
+          minItems: 2
+          items: { type: string }
+          description: "Ids of the staged payments to group. Must be at least two distinct, existing, non-archived, still-unreconciled rows. Rows already in another group are rejected unless they are all already in the same group (idempotent re-group)."
+        confirmDonorConflict:
+          type: boolean
+          description: "Must be true when the members already resolve to more than one distinct donor. Guards against grouping unrelated gifts. Without it such a group is rejected 400 donor_conflict. The client prompts the operator to confirm before sending this."
+    GroupStagedPaymentsResponse:
+      type: object
+      required: [sourceGroupId, stagedPaymentIds, representativeStagedPaymentId]
+      properties:
+        sourceGroupId: { type: string, description: "The shared id stamped on every member." }
+        stagedPaymentIds: { type: array, items: { type: string }, description: "All member ids now carrying the sourceGroupId." }
+        representativeStagedPaymentId: { type: string, description: "The deterministic representative member (the one the group card is anchored on and that carries the gift link on group approve)." }
+        totalAmount: { type: string, nullable: true, description: "Summed amount of all members." }
+    UngroupStagedPaymentsBody:
+      type: object
+      required: [stagedPaymentIds]
+      description: "Remove staged payments from their 'same physical gift' source group by clearing sourceGroupId. If removing rows leaves a group with fewer than two members, the remaining orphan is cleared too (a group requires >= 2)."
+      properties:
+        stagedPaymentIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+          description: "Ids of the staged payments to remove from their group. A no-op for rows that aren't grouped."
+    UngroupStagedPaymentsResponse:
+      type: object
+      required: [ungroupedIds]
+      properties:
+        ungroupedIds: { type: array, items: { type: string }, description: "Ids whose sourceGroupId was cleared (includes any auto-dissolved orphans)." }
+        dissolvedGroupIds: { type: array, items: { type: string }, description: "Source-group ids that no longer exist after this call (fully dissolved)." }
     CandidateThankYouEmail:
       type: object
       required: [emailMessageId, sentAt, hasDocumentAttachment]

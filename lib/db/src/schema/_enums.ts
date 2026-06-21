@@ -603,6 +603,42 @@ export const stagedPaymentEntitySourceEnum = pgEnum(
   ["auto", "manual"],
 );
 
+// WHERE a staged payment's incoming money actually came from / how it was
+// rendered, as a first-class queryable + human-correctable origin dimension —
+// DISTINCT from qbPaymentMethod (the QB PaymentMethodRef instrument like
+// "Visa"/"Check") and from the DERIVED reconciliation "funding lane" (which
+// tracks reconcile PROGRESS, not origin). Auto-seeded at ingest from existing
+// signals (Stripe payout evidence, matched payment-intermediary type, payment
+// method, memo) by the pure `detectFundingSource` helper, and correctable by a
+// human. NULL on the column = not yet determined / unknown; `other` = a known
+// origin outside this list.
+export const stagedPaymentFundingSourceEnum = pgEnum(
+  "staged_payment_funding_source",
+  [
+    "stripe",
+    "brokerage",
+    "daf",
+    "donorbox",
+    "paypal",
+    "wire_ach",
+    "check",
+    "cash",
+    "employer_match",
+    "other",
+  ],
+);
+
+// Whether a staged payment's funding-source value was derived by the
+// re-runnable `detectFundingSource` helper (`auto`, default) or pinned by a
+// human (`manual`). Mirrors entitySource / classificationSource: a `manual`
+// value is review state — the QB upsert and the re-runnable reclassifier never
+// overwrite the funding source of a `manual` row, so a hand-set / corrected
+// origin survives every re-pull.
+export const stagedPaymentFundingSourceProvenanceEnum = pgEnum(
+  "staged_payment_funding_source_provenance",
+  ["auto", "manual"],
+);
+
 // Where a CRM gift's FINAL `amount` was last sourced from (provenance for the
 // reconciliation model in which the CRM gift is the single source of truth).
 //   human      — hand-entered by a fundraiser (default; the pre-reconciliation

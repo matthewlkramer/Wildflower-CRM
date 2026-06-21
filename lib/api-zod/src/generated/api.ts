@@ -10957,6 +10957,12 @@ export const ListStagedPaymentsResponse = zod.object({
         .describe(
           "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
         ),
+      sourceGroupId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).",
+        ),
       autoApplied: zod.boolean(),
       approvedByUserId: zod.string().nullish(),
       approvedAt: zod.string().datetime({}).nullish(),
@@ -10996,6 +11002,28 @@ export const ListStagedPaymentsResponse = zod.object({
         .enum(["auto", "manual"])
         .describe(
           "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+        ),
+      fundingSource: zod
+        .enum([
+          "stripe",
+          "brokerage",
+          "daf",
+          "donorbox",
+          "paypal",
+          "wire_ach",
+          "check",
+          "cash",
+          "employer_match",
+          "other",
+        ])
+        .nullish()
+        .describe(
+          "WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.",
+        ),
+      fundingSourceProvenance: zod
+        .enum(["auto", "manual"])
+        .describe(
+          "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
         ),
       resolvedGiftId: zod.string().nullish(),
       resolvedGiftName: zod.string().nullish(),
@@ -11246,6 +11274,12 @@ export const ResolveStagedPaymentResponse = zod.object({
     .describe(
       "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
     ),
+  sourceGroupId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -11285,6 +11319,28 @@ export const ResolveStagedPaymentResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
+  fundingSource: zod
+    .enum([
+      "stripe",
+      "brokerage",
+      "daf",
+      "donorbox",
+      "paypal",
+      "wire_ach",
+      "check",
+      "cash",
+      "employer_match",
+      "other",
+    ])
+    .nullish()
+    .describe(
+      "WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.",
+    ),
+  fundingSourceProvenance: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -11473,6 +11529,12 @@ export const RejectStagedPaymentResponse = zod.object({
     .describe(
       "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
     ),
+  sourceGroupId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -11512,6 +11574,28 @@ export const RejectStagedPaymentResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
+  fundingSource: zod
+    .enum([
+      "stripe",
+      "brokerage",
+      "daf",
+      "donorbox",
+      "paypal",
+      "wire_ach",
+      "check",
+      "cash",
+      "employer_match",
+      "other",
+    ])
+    .nullish()
+    .describe(
+      "WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.",
+    ),
+  fundingSourceProvenance: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -11693,6 +11777,12 @@ export const ReIncludeStagedPaymentResponse = zod.object({
     .describe(
       "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
     ),
+  sourceGroupId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -11732,6 +11822,28 @@ export const ReIncludeStagedPaymentResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
+  fundingSource: zod
+    .enum([
+      "stripe",
+      "brokerage",
+      "daf",
+      "donorbox",
+      "paypal",
+      "wire_ach",
+      "check",
+      "cash",
+      "employer_match",
+      "other",
+    ])
+    .nullish()
+    .describe(
+      "WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.",
+    ),
+  fundingSourceProvenance: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -11933,6 +12045,12 @@ export const SetStagedPaymentEntityResponse = zod.object({
     .describe(
       "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
     ),
+  sourceGroupId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -11972,6 +12090,307 @@ export const SetStagedPaymentEntityResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
+  fundingSource: zod
+    .enum([
+      "stripe",
+      "brokerage",
+      "daf",
+      "donorbox",
+      "paypal",
+      "wire_ach",
+      "check",
+      "cash",
+      "employer_match",
+      "other",
+    ])
+    .nullish()
+    .describe(
+      "WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.",
+    ),
+  fundingSourceProvenance: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
+    ),
+  resolvedGiftId: zod.string().nullish(),
+  resolvedGiftName: zod.string().nullish(),
+  resolvedGiftAmount: zod.string().nullish(),
+  resolvedGiftDate: zod.string().date().nullish(),
+  splitCount: zod
+    .number()
+    .optional()
+    .describe(
+      "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.",
+    ),
+  splitTotal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.",
+    ),
+  splitGiftNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of the gifts this staged payment is split across, for display. Null when not split.",
+    ),
+  giftAlreadyLinkedElsewhere: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate).",
+    ),
+  matchedRuleId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.",
+    ),
+  matchedRuleName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
+    ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * Reviewer sets or corrects WHERE a staged payment's money came from / how
+it rendered (Stripe, brokerage, DAF, …). Funding source is an origin
+label orthogonal to reconcile status, so this works on a row in any
+state. Pins funding_source_provenance='manual' so the detectFundingSource
+helper never overwrites it on the next sync / reclassify. fundingSource
+null clears the value (keeping the manual pin so it is not re-derived).
+
+ * @summary Pin or clear the funding source by hand (manual override that survives re-sync).
+ */
+export const SetStagedPaymentFundingSourceParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const SetStagedPaymentFundingSourceBody = zod
+  .object({
+    fundingSource: zod
+      .enum([
+        "stripe",
+        "brokerage",
+        "daf",
+        "donorbox",
+        "paypal",
+        "wire_ach",
+        "check",
+        "cash",
+        "employer_match",
+        "other",
+      ])
+      .nullable()
+      .describe(
+        "The origin to attribute this money to, or null to clear it (keeping the manual pin).",
+      ),
+  })
+  .describe(
+    "Pin (or clear) the funding source by hand. Sets fundingSourceProvenance='manual' so detectFundingSource never overwrites it on re-sync \/ reclassify. fundingSource null clears the value back to unknown while keeping the manual pin (so it is not re-derived).",
+  );
+
+export const SetStagedPaymentFundingSourceResponse = zod.object({
+  id: zod.string(),
+  realmId: zod.string(),
+  qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
+  qbEntityId: zod.string(),
+  qbLineId: zod.string().nullish(),
+  qbDepositId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).",
+    ),
+  amount: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  rawReference: zod.string().nullish(),
+  lineDescription: zod.string().nullish(),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish(),
+  classificationSource: zod.enum(["auto", "manual"]),
+  lineItemNames: zod.array(zod.string()).nullish(),
+  lineAccountNames: zod.array(zod.string()).nullish(),
+  lineClasses: zod.array(zod.string()).nullish(),
+  qbPayerType: zod
+    .enum(["vendor", "customer", "employee"])
+    .nullish()
+    .describe(
+      "The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).",
+    ),
+  qbPayerId: zod.string().nullish(),
+  qbPaymentMethod: zod.string().nullish(),
+  qbCheckNumber: zod.string().nullish(),
+  qbDepositToAccountName: zod.string().nullish(),
+  qbDocNumber: zod.string().nullish(),
+  qbBillingAddress: zod.string().nullish(),
+  qbTransactionMemo: zod.string().nullish(),
+  qbCurrency: zod.string().nullish(),
+  qbExchangeRate: zod.string().nullish(),
+  qbCreateTime: zod.string().datetime({}).nullish(),
+  qbLinkedTxn: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish(),
+  qbDepositLinks: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)",
+    ),
+  matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
+  matchScore: zod.number().nullish(),
+  matchMethod: zod
+    .enum([
+      "email",
+      "name",
+      "name_amount_date",
+      "amount_date",
+      "memo",
+      "intermediary",
+      "manual",
+    ])
+    .nullish(),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  matchedPaymentIntermediaryId: zod.string().nullish(),
+  matchedGiftId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  groupReconciledGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
+    ),
+  sourceGroupId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).",
+    ),
+  autoApplied: zod.boolean(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  queue: zod
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+      "reconciled",
+    ])
+    .optional()
+    .describe(
+      "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+    ),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  intermediaryName: zod.string().nullish(),
+  entityId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).",
+    ),
+  entityName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
+  entitySource: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
+  fundingSource: zod
+    .enum([
+      "stripe",
+      "brokerage",
+      "daf",
+      "donorbox",
+      "paypal",
+      "wire_ach",
+      "check",
+      "cash",
+      "employer_match",
+      "other",
+    ])
+    .nullish()
+    .describe(
+      "WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.",
+    ),
+  fundingSourceProvenance: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -12182,6 +12601,12 @@ export const ExcludeStagedPaymentResponse = zod.object({
     .describe(
       "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
     ),
+  sourceGroupId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -12221,6 +12646,28 @@ export const ExcludeStagedPaymentResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
+  fundingSource: zod
+    .enum([
+      "stripe",
+      "brokerage",
+      "daf",
+      "donorbox",
+      "paypal",
+      "wire_ach",
+      "check",
+      "cash",
+      "employer_match",
+      "other",
+    ])
+    .nullish()
+    .describe(
+      "WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.",
+    ),
+  fundingSourceProvenance: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -12960,7 +13407,11 @@ to approved with groupReconciledGiftId = the gift; one deterministic
 representative member also carries matchedGiftId so the gift shows linked.
 The group adopts the gift's donor (Donor XOR). Guards: at least two rows,
 all pending and unresolved, all sharing one grouping key (deposit or
-payer), the gift exists with a single valid donor and is not already
+payer) — OR all already belonging to one "same physical gift" source
+group (sharing a single non-null sourceGroupId), which bypasses the
+deposit/payer coherence check since the human already asserted the rows
+are one gift (the multi-date / amount-mismatch confirmations below still
+apply); the gift exists with a single valid donor and is not already
 linked elsewhere, and the members' combined total matches the gift amount
 within the processor fee-band tolerance. When the grouped payments do not
 all fall on the same date_received, or carry more than one distinct
@@ -13183,6 +13634,94 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
 });
 
 /**
+ * Marks two or more staged payments as a single "same physical gift"
+source group by stamping a shared sourceGroupId. UNLIKE group-reconcile
+(which ties a deposit's members to ONE existing gift at reconcile time),
+this groups FREELY across different bank deposits AND dates and BEFORE
+any gift exists — for a gift a donor entered as several QuickBooks
+records. It only records the grouping: it does NOT change any donor or
+gift link and never reconciles by itself. Guards: at least two distinct,
+existing, non-archived, still-unreconciled rows; rows already in another
+group are rejected unless they are all already in the same group
+(idempotent). When the members resolve to more than one distinct donor,
+confirmDonorConflict must be true (else 400 donor_conflict). The group is
+exactly the rows carrying the id; reconcile it as a unit on the card.
+
+ * @summary Group separately-entered QuickBooks records that are really ONE physical gift.
+ */
+export const groupStagedPaymentsBodyStagedPaymentIdsMin = 2;
+
+export const GroupStagedPaymentsBody = zod
+  .object({
+    stagedPaymentIds: zod
+      .array(zod.string())
+      .min(groupStagedPaymentsBodyStagedPaymentIdsMin)
+      .describe(
+        "Ids of the staged payments to group. Must be at least two distinct, existing, non-archived, still-unreconciled rows. Rows already in another group are rejected unless they are all already in the same group (idempotent re-group).",
+      ),
+    confirmDonorConflict: zod
+      .boolean()
+      .optional()
+      .describe(
+        "Must be true when the members already resolve to more than one distinct donor. Guards against grouping unrelated gifts. Without it such a group is rejected 400 donor_conflict. The client prompts the operator to confirm before sending this.",
+      ),
+  })
+  .describe(
+    "Mark two or more staged payments as ONE physical gift entered separately in QuickBooks (a 'same physical gift' source group). Stamps a shared sourceGroupId. Does not change donor or gift links and never reconciles by itself.",
+  );
+
+export const GroupStagedPaymentsResponse = zod.object({
+  sourceGroupId: zod
+    .string()
+    .describe("The shared id stamped on every member."),
+  stagedPaymentIds: zod
+    .array(zod.string())
+    .describe("All member ids now carrying the sourceGroupId."),
+  representativeStagedPaymentId: zod
+    .string()
+    .describe(
+      "The deterministic representative member (the one the group card is anchored on and that carries the gift link on group approve).",
+    ),
+  totalAmount: zod.string().nullish().describe("Summed amount of all members."),
+});
+
+/**
+ * Clears sourceGroupId on the given rows, removing them from their source
+group. If this leaves a group with fewer than two members, the remaining
+orphan is cleared too (a group requires >= 2). Does not change donor or
+gift links. A no-op for rows that aren't grouped.
+
+ * @summary Remove staged payments from their "same physical gift" source group.
+ */
+
+export const UngroupStagedPaymentsBody = zod
+  .object({
+    stagedPaymentIds: zod
+      .array(zod.string())
+      .min(1)
+      .describe(
+        "Ids of the staged payments to remove from their group. A no-op for rows that aren't grouped.",
+      ),
+  })
+  .describe(
+    "Remove staged payments from their 'same physical gift' source group by clearing sourceGroupId. If removing rows leaves a group with fewer than two members, the remaining orphan is cleared too (a group requires >= 2).",
+  );
+
+export const UngroupStagedPaymentsResponse = zod.object({
+  ungroupedIds: zod
+    .array(zod.string())
+    .describe(
+      "Ids whose sourceGroupId was cleared (includes any auto-dissolved orphans).",
+    ),
+  dissolvedGroupIds: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Source-group ids that no longer exist after this call (fully dissolved).",
+    ),
+});
+
+/**
  * Confirms many staged-payment matches at once — the bulk equivalent of
 POST /staged-payments/{id}/confirm-match, used to clear the Auto-matched
 queue in a single action. Each id is confirmed only if it is in a
@@ -13377,6 +13916,12 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
     .describe(
       "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
     ),
+  sourceGroupId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -13416,6 +13961,28 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
+  fundingSource: zod
+    .enum([
+      "stripe",
+      "brokerage",
+      "daf",
+      "donorbox",
+      "paypal",
+      "wire_ach",
+      "check",
+      "cash",
+      "employer_match",
+      "other",
+    ])
+    .nullish()
+    .describe(
+      "WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.",
+    ),
+  fundingSourceProvenance: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -13597,6 +14164,12 @@ export const UnmatchStagedPaymentResponse = zod.object({
     .describe(
       "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
     ),
+  sourceGroupId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -13636,6 +14209,28 @@ export const UnmatchStagedPaymentResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
+  fundingSource: zod
+    .enum([
+      "stripe",
+      "brokerage",
+      "daf",
+      "donorbox",
+      "paypal",
+      "wire_ach",
+      "check",
+      "cash",
+      "employer_match",
+      "other",
+    ])
+    .nullish()
+    .describe(
+      "WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.",
+    ),
+  fundingSourceProvenance: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -13824,6 +14419,12 @@ export const RevertStagedPaymentResponse = zod.object({
     .describe(
       "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
     ),
+  sourceGroupId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).",
+    ),
   autoApplied: zod.boolean(),
   approvedByUserId: zod.string().nullish(),
   approvedAt: zod.string().datetime({}).nullish(),
@@ -13863,6 +14464,28 @@ export const RevertStagedPaymentResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
+  fundingSource: zod
+    .enum([
+      "stripe",
+      "brokerage",
+      "daf",
+      "donorbox",
+      "paypal",
+      "wire_ach",
+      "check",
+      "cash",
+      "employer_match",
+      "other",
+    ])
+    .nullish()
+    .describe(
+      "WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.",
+    ),
+  fundingSourceProvenance: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -17411,11 +18034,97 @@ export const ListReconciliationCardsResponse = zod.object({
           .describe(
             "Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor\/gift state: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge.",
           ),
+        fundingSource: zod
+          .enum([
+            "stripe",
+            "brokerage",
+            "daf",
+            "donorbox",
+            "paypal",
+            "wire_ach",
+            "check",
+            "cash",
+            "employer_match",
+            "other",
+          ])
+          .nullish()
+          .describe(
+            "Origin of this money (Stripe, brokerage, DAF, …). For a group card this is the members' common source, or null when they differ. Distinct from qbPaymentMethod (the instrument) and the funding lane.",
+          ),
+        fundingSourceProvenance: zod
+          .enum(["auto", "manual"])
+          .nullish()
+          .describe(
+            "Whether fundingSource was derived (auto) or human-pinned (manual). Null on a group card whose members disagree.",
+          ),
+        sourceGroupId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Set when this card represents a manual 'same physical gift' group; null for a single staged payment.",
+          ),
+        isSourceGroup: zod
+          .boolean()
+          .describe(
+            "True when this card collapses several staged payments a human grouped as one physical gift (rows sharing sourceGroupId). The card's stagedPaymentId is the representative member; approve acts on the whole group.",
+          ),
+        sourceGroupCount: zod
+          .number()
+          .nullish()
+          .describe(
+            "Number of staged payments in the group (>= 2). Null when not a group.",
+          ),
+        sourceGroupTotalAmount: zod
+          .string()
+          .nullish()
+          .describe(
+            "Summed amount of all group members (the amount the group reconciles for). Null when not a group.",
+          ),
+        sourceGroupMembers: zod
+          .array(
+            zod
+              .object({
+                stagedPaymentId: zod.string(),
+                amount: zod.string().nullish(),
+                dateReceived: zod.string().date().nullish(),
+                payerName: zod.string().nullish(),
+                qbDocNumber: zod.string().nullish(),
+                fundingSource: zod
+                  .enum([
+                    "stripe",
+                    "brokerage",
+                    "daf",
+                    "donorbox",
+                    "paypal",
+                    "wire_ach",
+                    "check",
+                    "cash",
+                    "employer_match",
+                    "other",
+                  ])
+                  .nullish()
+                  .describe(
+                    "WHERE the incoming money came from \/ how it rendered. A first-class origin dimension, DISTINCT from qbPaymentMethod (the QB instrument like Visa\/Check) and from the derived reconciliation funding lane (reconcile progress, not origin). Auto-seeded at ingest by detectFundingSource and human-correctable. other = a known origin outside this list.",
+                  ),
+                isRepresentative: zod
+                  .boolean()
+                  .describe(
+                    "True for the single member that anchors the group card \/ carries the group's gift link on approve (the card's stagedPaymentId).",
+                  ),
+              })
+              .describe(
+                "One member of a manual 'same physical gift' source group, summarized for the group card.",
+              ),
+          )
+          .nullish()
+          .describe(
+            "Compact per-member rows of the group, for display. Null when not a group. The representative is the card's stagedPaymentId.",
+          ),
         createdAt: zod.string().datetime({}).nullish(),
         updatedAt: zod.string().datetime({}).nullish(),
       })
       .describe(
-        "List item for the unified reconciler — one per QB staged payment (the anchor). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card.",
+        "List item for the unified reconciler — one per QB staged payment (the anchor), OR one per manual 'same physical gift' source group (collapsed; stagedPaymentId is the representative member). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card.",
       ),
   ),
   pagination: zod.object({
@@ -17708,6 +18417,17 @@ fee-band tolerance unless an override reason is given; Stripe GROSS takes
 precedence over the QB net when a charge is selected; nothing is archived.
 Minting a gift is human-only. Idempotent: re-approving a reconciled card
 returns its current state.
+
+Source groups (a card whose stagedPaymentId carries a sourceGroupId)
+approve as a WHOLE: the create-* outcomes mint ONE gift whose amount sums
+every non-archived member, with a deterministic representative carrying
+createdGiftId and the other members groupReconciledGiftId (so no slice can
+be reconciled twice); link_existing_gift is rejected (409
+source_group_use_reconcile) — link the whole group via group-reconcile
+instead; and a group whose members carry a tied Stripe payout, or an
+explicit Stripe charge selection, is rejected (409
+source_group_stripe_unsupported) since per-charge GROSS can't yet be
+summed across a group (ungroup to reconcile those individually).
 
  * @summary Approve a card — link or human-mint a gift, enforcing all invariants server-side.
  */

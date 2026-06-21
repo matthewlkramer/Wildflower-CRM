@@ -3,12 +3,23 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListReconciliationCards,
   useApproveReconciliationCard,
+  useGroupStagedPayments,
   type ListReconciliationCardsParams,
   type ApproveCompleteMatchBody,
 } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/use-debounce";
 import { ReconciliationCard } from "@/components/reconciliation-card";
@@ -43,13 +54,17 @@ export function QbMoneyWorklist() {
   // Track in-flight approvals per card so concurrent actions each disable only
   // their own card.
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  // Multi-select for "group as one physical gift".
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [groupConflictOpen, setGroupConflictOpen] = useState(false);
 
   const debouncedSearch = useDebounce(search.trim());
 
-  // Reset paging whenever the sub-filter or the search changes.
+  // Reset paging + selection whenever the sub-filter or the search changes.
   useEffect(() => {
     setPage(0);
     setExpandedId(null);
+    setSelected(new Set());
   }, [sub, debouncedSearch]);
 
   const params = useMemo<ListReconciliationCardsParams>(() => {
@@ -119,6 +134,51 @@ export function QbMoneyWorklist() {
     }
   }
 
+  const group = useGroupStagedPayments({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Grouped as one physical gift." });
+        setSelected(new Set());
+        setGroupConflictOpen(false);
+        refresh();
+      },
+      onError: (err: unknown) => {
+        const msg =
+          err instanceof Error ? err.message : "Please try again.";
+        // The server rejects a cross-donor group unless explicitly confirmed;
+        // surface a confirm dialog instead of a dead-end error.
+        if (/donor_conflict/i.test(msg)) {
+          setGroupConflictOpen(true);
+          return;
+        }
+        toast({
+          variant: "destructive",
+          title: "Couldn't group these payments",
+          description: msg,
+        });
+      },
+    },
+  });
+
+  function doGroup(confirmDonorConflict: boolean) {
+    if (selected.size < 2) return;
+    group.mutate({
+      data: {
+        stagedPaymentIds: Array.from(selected),
+        ...(confirmDonorConflict ? { confirmDonorConflict: true } : {}),
+      },
+    });
+  }
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   const cards = data?.data ?? [];
   const total = data?.pagination.total ?? 0;
   const showingFrom = total === 0 ? 0 : page * PAGE_SIZE + 1;
@@ -149,6 +209,36 @@ export function QbMoneyWorklist() {
         />
       </div>
 
+      {selected.size > 0 ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2"
+          data-testid="group-action-bar"
+        >
+          <span className="text-sm">
+            {selected.size} selected
+            {selected.size < 2 ? " · pick at least 2 to group" : ""}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelected(new Set())}
+              data-testid="group-clear"
+            >
+              Clear
+            </Button>
+            <Button
+              size="sm"
+              disabled={selected.size < 2 || group.isPending}
+              onClick={() => doGroup(false)}
+              data-testid="group-selected"
+            >
+              Group as one gift
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading cards…</p>
       ) : isError ? (
@@ -177,6 +267,10 @@ export function QbMoneyWorklist() {
               }
               busy={pendingIds.has(card.stagedPaymentId)}
               onApprove={(body) => handleApprove(card.stagedPaymentId, body)}
+              onChanged={refresh}
+              selectable={sub !== "reconciled" && !card.isSourceGroup}
+              selected={selected.has(card.stagedPaymentId)}
+              onSelectToggle={() => toggleSelected(card.stagedPaymentId)}
             />
           ))}
         </div>
@@ -209,6 +303,34 @@ export function QbMoneyWorklist() {
           </div>
         </div>
       ) : null}
+
+      <AlertDialog
+        open={groupConflictOpen}
+        onOpenChange={setGroupConflictOpen}
+      >
+        <AlertDialogContent data-testid="group-donor-conflict">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Group payments with different donors?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The selected payments aren't all matched to the same donor.
+              Grouping them tells the CRM they are one physical gift and they'll
+              reconcile together. Only do this if you're sure they belong to the
+              same gift.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="group-conflict-cancel">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => doGroup(true)}
+              data-testid="group-conflict-confirm"
+            >
+              Group anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

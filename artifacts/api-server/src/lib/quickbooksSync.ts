@@ -16,6 +16,7 @@ import { getValidQuickbooksAccessToken } from "./quickbooksTokenStore";
 import { pullIncomingPayments } from "./quickbooksClient";
 import { scoreStagedPayment, type ScoredMatch } from "./quickbooksMatch";
 import { classifyStagedPayment, detectEntity } from "./quickbooksExclusionRules";
+import { detectFundingSource } from "./quickbooksFundingSource";
 import {
   evaluateRules,
   type EngineRule,
@@ -98,6 +99,12 @@ export function buildStagedLineUpsert(
     // 'manual'): that is review state, so the upsert preserves both the stored
     // entity AND its source instead of letting detectEntity clobber it.
     entityId: sql`CASE WHEN ${stagedPayments.entitySource} = 'manual' THEN ${stagedPayments.entityId} ELSE coalesce(excluded.entity_id, ${stagedPayments.entityId}) END`,
+    // Funding source mirrors entity attribution: a derived QB-fact origin that an
+    // incoming non-null value refreshes and an absent one preserves — EXCEPT a
+    // human-pinned origin (funding_source_provenance = 'manual'), which is review
+    // state and survives every re-pull untouched. The provenance column itself is
+    // never in this set, so a manual row keeps both its value AND its pin.
+    fundingSource: sql`CASE WHEN ${stagedPayments.fundingSourceProvenance} = 'manual' THEN ${stagedPayments.fundingSource} ELSE coalesce(excluded.funding_source, ${stagedPayments.fundingSource}) END`,
     updatedAt: new Date(),
   };
 
@@ -650,6 +657,18 @@ export async function syncQuickbooks(
         lineDescription: p.lineDescription,
       });
 
+      // Seed the money's origin (provenance defaults to 'auto'). Text + the QB
+      // instrument only — Stripe evidence and the intermediary's type aren't
+      // resolved at first ingest; they refine the origin later via the backfill.
+      const fundingSource = detectFundingSource({
+        payerName: p.payerName,
+        qbPaymentMethod: p.qbPaymentMethod,
+        rawReference: p.rawReference,
+        lineDescription: p.lineDescription,
+        qbTransactionMemo: p.qbTransactionMemo,
+        qbDepositToAccountName: p.qbDepositToAccountName,
+      });
+
       const scored: ScoredMatch | null = excluded
         ? null
         : await scoreStagedPayment({
@@ -693,6 +712,7 @@ export async function syncQuickbooks(
         classificationSource: "auto",
         matchedRuleId: ruleHit?.ruleId ?? null,
         entityId,
+        fundingSource,
         matchStatus,
         matchScore: scored && scored.method ? scored.score : null,
         matchMethod: scored ? scored.method : null,
@@ -952,6 +972,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
         id: stagedPayments.id,
         status: stagedPayments.status,
         entitySource: stagedPayments.entitySource,
+        fundingSourceProvenance: stagedPayments.fundingSourceProvenance,
         amount: stagedPayments.amount,
         payerName: stagedPayments.payerName,
         rawReference: stagedPayments.rawReference,
@@ -959,6 +980,9 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
         lineItemNames: stagedPayments.lineItemNames,
         lineAccountNames: stagedPayments.lineAccountNames,
         lineClasses: stagedPayments.lineClasses,
+        qbPaymentMethod: stagedPayments.qbPaymentMethod,
+        qbTransactionMemo: stagedPayments.qbTransactionMemo,
+        qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
       })
       .from(stagedPayments)
       .where(
@@ -994,6 +1018,21 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
       // attribution is review state and must never be clobbered by detectEntity.
       const entitySet =
         row.entitySource === "manual" ? {} : { entityId: detectEntity(input) };
+      // Funding source is refreshed on every auto row alongside entity, and is
+      // never touched on a human-pinned (provenance 'manual') row.
+      const fundingSet =
+        row.fundingSourceProvenance === "manual"
+          ? {}
+          : {
+              fundingSource: detectFundingSource({
+                payerName: row.payerName,
+                qbPaymentMethod: row.qbPaymentMethod,
+                rawReference: row.rawReference,
+                lineDescription: row.lineDescription,
+                qbTransactionMemo: row.qbTransactionMemo,
+                qbDepositToAccountName: row.qbDepositToAccountName,
+              }),
+            };
       if (cls.excluded && row.status !== "excluded") {
         const upd = await db
           .update(stagedPayments)
@@ -1001,6 +1040,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
             status: "excluded",
             exclusionReason: cls.reason,
             ...entitySet,
+            ...fundingSet,
             updatedAt: new Date(),
           })
           .where(guard(row.id))
@@ -1010,7 +1050,12 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
         // Already excluded — keep status, just refresh the reason if it drifted.
         await db
           .update(stagedPayments)
-          .set({ exclusionReason: cls.reason, ...entitySet, updatedAt: new Date() })
+          .set({
+            exclusionReason: cls.reason,
+            ...entitySet,
+            ...fundingSet,
+            updatedAt: new Date(),
+          })
           .where(guard(row.id));
       } else if (!cls.excluded && row.status === "excluded") {
         const upd = await db
@@ -1019,16 +1064,17 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
             status: "pending",
             exclusionReason: null,
             ...entitySet,
+            ...fundingSet,
             updatedAt: new Date(),
           })
           .where(guard(row.id))
           .returning({ id: stagedPayments.id });
         if (upd.length) included += 1;
       } else {
-        // Pending and staying pending — still refresh entity attribution.
+        // Pending and staying pending — still refresh entity + funding source.
         await db
           .update(stagedPayments)
-          .set({ ...entitySet, updatedAt: new Date() })
+          .set({ ...entitySet, ...fundingSet, updatedAt: new Date() })
           .where(guard(row.id));
       }
     }

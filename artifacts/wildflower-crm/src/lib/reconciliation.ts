@@ -1,4 +1,5 @@
 import {
+  StagedPaymentFundingSource,
   type ReconciliationEdgeState,
   type ReconciliationCandidateSource,
   type ReconciliationCandidate,
@@ -89,6 +90,29 @@ export const FINAL_AMOUNT_SOURCE_LABEL: Record<GiftFinalAmountSource, string> = 
   stripe: "Stripe gross",
   quickbooks: "QuickBooks",
 };
+
+/**
+ * Human label for a unit of money's ORIGIN (its funding source), distinct from
+ * the QuickBooks payment instrument and from the funding-lane reconcile status.
+ */
+export const FUNDING_SOURCE_LABEL: Record<StagedPaymentFundingSource, string> = {
+  stripe: "Stripe",
+  brokerage: "Brokerage / stock",
+  daf: "Donor-advised fund",
+  donorbox: "Donorbox",
+  paypal: "PayPal",
+  wire_ach: "Wire / ACH",
+  check: "Check",
+  cash: "Cash",
+  employer_match: "Employer match",
+  other: "Other",
+};
+
+/** Funding sources in display order for the manual-override picker. Derived from
+ *  the generated enum so it can never drift from the contract. */
+export const FUNDING_SOURCE_OPTIONS = Object.values(
+  StagedPaymentFundingSource,
+) as StagedPaymentFundingSource[];
 
 /**
  * The status of one CONNECTION between two records (e.g. Stripe → QuickBooks),

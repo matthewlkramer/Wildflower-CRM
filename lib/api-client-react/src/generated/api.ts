@@ -134,6 +134,8 @@ import type {
   GrantLeadList,
   GroupReconcileStagedPaymentsBody,
   GroupReconcileStagedPaymentsResponse,
+  GroupStagedPaymentsBody,
+  GroupStagedPaymentsResponse,
   HealthStatus,
   Household,
   HouseholdDetail,
@@ -264,6 +266,7 @@ import type {
   SendTrackedEmailBody,
   SendTrackedEmailResult,
   SetStagedPaymentEntityBody,
+  SetStagedPaymentFundingSourceBody,
   SplitGiftIntoPledgeBody,
   SplitGrantLeadBody,
   SplitGrantLeadResponse,
@@ -290,6 +293,8 @@ import type {
   TrackedEmailList,
   TrackedEmailStatus,
   TrackedEmailWithViews,
+  UngroupStagedPaymentsBody,
+  UngroupStagedPaymentsResponse,
   UnrecognizedCorrespondentList,
   UpdateAddressBody,
   UpdateCalendarEventPrivacyBody,
@@ -17497,6 +17502,103 @@ export const useSetStagedPaymentEntity = <
 };
 
 /**
+ * Reviewer sets or corrects WHERE a staged payment's money came from / how
+it rendered (Stripe, brokerage, DAF, …). Funding source is an origin
+label orthogonal to reconcile status, so this works on a row in any
+state. Pins funding_source_provenance='manual' so the detectFundingSource
+helper never overwrites it on the next sync / reclassify. fundingSource
+null clears the value (keeping the manual pin so it is not re-derived).
+
+ * @summary Pin or clear the funding source by hand (manual override that survives re-sync).
+ */
+export const getSetStagedPaymentFundingSourceUrl = (id: string) => {
+  return `/api/staged-payments/${id}/set-funding-source`;
+};
+
+export const setStagedPaymentFundingSource = async (
+  id: string,
+  setStagedPaymentFundingSourceBody: SetStagedPaymentFundingSourceBody,
+  options?: RequestInit,
+): Promise<StagedPayment> => {
+  return customFetch<StagedPayment>(getSetStagedPaymentFundingSourceUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(setStagedPaymentFundingSourceBody),
+  });
+};
+
+export const getSetStagedPaymentFundingSourceMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setStagedPaymentFundingSource>>,
+    TError,
+    { id: string; data: BodyType<SetStagedPaymentFundingSourceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setStagedPaymentFundingSource>>,
+  TError,
+  { id: string; data: BodyType<SetStagedPaymentFundingSourceBody> },
+  TContext
+> => {
+  const mutationKey = ["setStagedPaymentFundingSource"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setStagedPaymentFundingSource>>,
+    { id: string; data: BodyType<SetStagedPaymentFundingSourceBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return setStagedPaymentFundingSource(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetStagedPaymentFundingSourceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setStagedPaymentFundingSource>>
+>;
+export type SetStagedPaymentFundingSourceMutationBody =
+  BodyType<SetStagedPaymentFundingSourceBody>;
+export type SetStagedPaymentFundingSourceMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Pin or clear the funding source by hand (manual override that survives re-sync).
+ */
+export const useSetStagedPaymentFundingSource = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setStagedPaymentFundingSource>>,
+    TError,
+    { id: string; data: BodyType<SetStagedPaymentFundingSourceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setStagedPaymentFundingSource>>,
+  TError,
+  { id: string; data: BodyType<SetStagedPaymentFundingSourceBody> },
+  TContext
+> => {
+  return useMutation(getSetStagedPaymentFundingSourceMutationOptions(options));
+};
+
+/**
  * Human-driven counterpart to the insert-time auto-exclude: files a staged
 payment under a non-gift category (membership, loan, etc.) and moves it to
 the excluded bucket, pinning classification_source='manual' so the
@@ -18034,7 +18136,11 @@ to approved with groupReconciledGiftId = the gift; one deterministic
 representative member also carries matchedGiftId so the gift shows linked.
 The group adopts the gift's donor (Donor XOR). Guards: at least two rows,
 all pending and unresolved, all sharing one grouping key (deposit or
-payer), the gift exists with a single valid donor and is not already
+payer) — OR all already belonging to one "same physical gift" source
+group (sharing a single non-null sourceGroupId), which bypasses the
+deposit/payer coherence check since the human already asserted the rows
+are one gift (the multi-date / amount-mismatch confirmations below still
+apply); the gift exists with a single valid donor and is not already
 linked elsewhere, and the members' combined total matches the gift amount
 within the processor fee-band tolerance. When the grouped payments do not
 all fall on the same date_received, or carry more than one distinct
@@ -18135,6 +18241,204 @@ export const useGroupReconcileStagedPayments = <
   TContext
 > => {
   return useMutation(getGroupReconcileStagedPaymentsMutationOptions(options));
+};
+
+/**
+ * Marks two or more staged payments as a single "same physical gift"
+source group by stamping a shared sourceGroupId. UNLIKE group-reconcile
+(which ties a deposit's members to ONE existing gift at reconcile time),
+this groups FREELY across different bank deposits AND dates and BEFORE
+any gift exists — for a gift a donor entered as several QuickBooks
+records. It only records the grouping: it does NOT change any donor or
+gift link and never reconciles by itself. Guards: at least two distinct,
+existing, non-archived, still-unreconciled rows; rows already in another
+group are rejected unless they are all already in the same group
+(idempotent). When the members resolve to more than one distinct donor,
+confirmDonorConflict must be true (else 400 donor_conflict). The group is
+exactly the rows carrying the id; reconcile it as a unit on the card.
+
+ * @summary Group separately-entered QuickBooks records that are really ONE physical gift.
+ */
+export const getGroupStagedPaymentsUrl = () => {
+  return `/api/staged-payments/group`;
+};
+
+export const groupStagedPayments = async (
+  groupStagedPaymentsBody: GroupStagedPaymentsBody,
+  options?: RequestInit,
+): Promise<GroupStagedPaymentsResponse> => {
+  return customFetch<GroupStagedPaymentsResponse>(getGroupStagedPaymentsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(groupStagedPaymentsBody),
+  });
+};
+
+export const getGroupStagedPaymentsMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof groupStagedPayments>>,
+    TError,
+    { data: BodyType<GroupStagedPaymentsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof groupStagedPayments>>,
+  TError,
+  { data: BodyType<GroupStagedPaymentsBody> },
+  TContext
+> => {
+  const mutationKey = ["groupStagedPayments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof groupStagedPayments>>,
+    { data: BodyType<GroupStagedPaymentsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return groupStagedPayments(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GroupStagedPaymentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof groupStagedPayments>>
+>;
+export type GroupStagedPaymentsMutationBody = BodyType<GroupStagedPaymentsBody>;
+export type GroupStagedPaymentsMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Group separately-entered QuickBooks records that are really ONE physical gift.
+ */
+export const useGroupStagedPayments = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof groupStagedPayments>>,
+    TError,
+    { data: BodyType<GroupStagedPaymentsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof groupStagedPayments>>,
+  TError,
+  { data: BodyType<GroupStagedPaymentsBody> },
+  TContext
+> => {
+  return useMutation(getGroupStagedPaymentsMutationOptions(options));
+};
+
+/**
+ * Clears sourceGroupId on the given rows, removing them from their source
+group. If this leaves a group with fewer than two members, the remaining
+orphan is cleared too (a group requires >= 2). Does not change donor or
+gift links. A no-op for rows that aren't grouped.
+
+ * @summary Remove staged payments from their "same physical gift" source group.
+ */
+export const getUngroupStagedPaymentsUrl = () => {
+  return `/api/staged-payments/ungroup`;
+};
+
+export const ungroupStagedPayments = async (
+  ungroupStagedPaymentsBody: UngroupStagedPaymentsBody,
+  options?: RequestInit,
+): Promise<UngroupStagedPaymentsResponse> => {
+  return customFetch<UngroupStagedPaymentsResponse>(
+    getUngroupStagedPaymentsUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(ungroupStagedPaymentsBody),
+    },
+  );
+};
+
+export const getUngroupStagedPaymentsMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof ungroupStagedPayments>>,
+    TError,
+    { data: BodyType<UngroupStagedPaymentsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof ungroupStagedPayments>>,
+  TError,
+  { data: BodyType<UngroupStagedPaymentsBody> },
+  TContext
+> => {
+  const mutationKey = ["ungroupStagedPayments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof ungroupStagedPayments>>,
+    { data: BodyType<UngroupStagedPaymentsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return ungroupStagedPayments(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UngroupStagedPaymentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof ungroupStagedPayments>>
+>;
+export type UngroupStagedPaymentsMutationBody =
+  BodyType<UngroupStagedPaymentsBody>;
+export type UngroupStagedPaymentsMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Remove staged payments from their "same physical gift" source group.
+ */
+export const useUngroupStagedPayments = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof ungroupStagedPayments>>,
+    TError,
+    { data: BodyType<UngroupStagedPaymentsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof ungroupStagedPayments>>,
+  TError,
+  { data: BodyType<UngroupStagedPaymentsBody> },
+  TContext
+> => {
+  return useMutation(getUngroupStagedPaymentsMutationOptions(options));
 };
 
 /**
@@ -24046,6 +24350,17 @@ fee-band tolerance unless an override reason is given; Stripe GROSS takes
 precedence over the QB net when a charge is selected; nothing is archived.
 Minting a gift is human-only. Idempotent: re-approving a reconciled card
 returns its current state.
+
+Source groups (a card whose stagedPaymentId carries a sourceGroupId)
+approve as a WHOLE: the create-* outcomes mint ONE gift whose amount sums
+every non-archived member, with a deterministic representative carrying
+createdGiftId and the other members groupReconciledGiftId (so no slice can
+be reconciled twice); link_existing_gift is rejected (409
+source_group_use_reconcile) — link the whole group via group-reconcile
+instead; and a group whose members carry a tied Stripe payout, or an
+explicit Stripe charge selection, is rejected (409
+source_group_stripe_unsupported) since per-charge GROSS can't yet be
+summed across a group (ungroup to reconcile those individually).
 
  * @summary Approve a card — link or human-mint a gift, enforcing all invariants server-side.
  */

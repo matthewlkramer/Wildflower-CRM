@@ -20,6 +20,8 @@ import {
   stagedPaymentMatchMethodEnum,
   stagedPaymentClassificationSourceEnum,
   stagedPaymentEntitySourceEnum,
+  stagedPaymentFundingSourceEnum,
+  stagedPaymentFundingSourceProvenanceEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
 import { people } from "./people";
@@ -246,6 +248,18 @@ export const stagedPayments = pgTable(
       { onDelete: "set null" },
     ),
 
+    // "Same physical gift" grouping (manual, human review state). A shared
+    // opaque group id stamped on every staged row that a fundraiser asserts is
+    // really ONE physical gift entered separately in QuickBooks. UNLIKE
+    // qbDepositId (auto, one bank deposit, never spans deposits) and
+    // groupReconciledGiftId (members tied to one EXISTING gift at reconcile
+    // time), this groups FREELY across deposits AND dates and BEFORE any gift
+    // exists. Pure review state: the QB sync upsert NEVER writes it, so it
+    // survives every re-pull. Members share this id; the group is exactly the
+    // rows carrying it. Cleared per-row on ungroup. Reconciling a group
+    // mints/links ONE gift for the summed amount via a single representative.
+    sourceGroupId: text("source_group_id"),
+
     // The admin-editable handling rule (quickbooks_handling_rules) that caused
     // this row to be auto-excluded or auto-created+approved at ingest / apply
     // time. NULL for rows classified by the legacy code-only classifier, rows
@@ -275,6 +289,26 @@ export const stagedPayments = pgTable(
     // so a hand-filed attribution (e.g. "Sunlight" money that can't be
     // auto-attributed) or a corrected misattribution survives every re-pull.
     entitySource: stagedPaymentEntitySourceEnum("entity_source")
+      .notNull()
+      .default("auto"),
+
+    // WHERE this incoming money actually came from / how it was rendered
+    // (Stripe, brokerage/stock, DAF, Donorbox, PayPal, wire/ACH, check, cash,
+    // employer-match, other). A first-class, queryable + human-correctable
+    // origin dimension — DISTINCT from qbPaymentMethod (the QB instrument like
+    // "Visa") and from the DERIVED reconciliation funding lane (reconcile
+    // progress, not origin). NULL = not yet determined / unknown. Auto-seeded
+    // at ingest by the pure `detectFundingSource` helper from existing signals,
+    // and correctable by a human.
+    fundingSource: stagedPaymentFundingSourceEnum("funding_source"),
+    // Whether fundingSource was derived automatically (`auto`, default) or
+    // pinned by a human (`manual`). A `manual` value is review state: the QB
+    // upsert and the re-runnable reclassifier never overwrite the funding
+    // source of a `manual` row (CASE-guarded, exactly like entitySource), so a
+    // hand-set / corrected origin survives every re-pull.
+    fundingSourceProvenance: stagedPaymentFundingSourceProvenanceEnum(
+      "funding_source_provenance",
+    )
       .notNull()
       .default("auto"),
 
@@ -313,6 +347,9 @@ export const stagedPayments = pgTable(
     ),
     index("staged_payments_household_id_idx").on(t.householdId),
     index("staged_payments_entity_id_idx").on(t.entityId),
+    index("staged_payments_funding_source_idx").on(t.fundingSource),
+    // Look up the members of a "same physical gift" group (cross-deposit).
+    index("staged_payments_source_group_id_idx").on(t.sourceGroupId),
     // One-to-one staged↔gift linkage: at most one staged row may reconcile to
     // (matchedGiftId) or mint (createdGiftId) any given gift. Partial-unique so
     // the many NULLs (unresolved rows) don't collide, and so this also serves

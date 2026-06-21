@@ -55,6 +55,14 @@ router.post(
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "staged payment");
+    if (existing.sourceGroupId != null) {
+      res.status(409).json({
+        error: "source_group_member",
+        message:
+          "This payment is part of a group. Reconcile the whole group from its card.",
+      });
+      return;
+    }
     if (existing.status !== "pending") {
       res.status(409).json({
         error: "not_pending",
@@ -335,15 +343,24 @@ router.post(
         // accept groups (e.g. one deposit batching DIFFERENT payers) that the UI
         // can never assemble, and — worse — would let a direct API call collapse
         // two different donors who happen to share a deposit into one gift.
-        const keyOf = (r: (typeof locked)[number]): string | null => {
-          const payer = (r.payerName ?? "").trim().toLowerCase();
-          if (payer) return `payer:${payer}`;
-          if (r.qbDepositId) return `dep:${r.qbDepositId}`;
-          return null;
-        };
-        const groupKeys = new Set(locked.map(keyOf));
-        if (groupKeys.size !== 1 || groupKeys.has(null)) {
-          throw new Error(NOT_GROUPABLE);
+        // A human-stamped source group (every member shares one non-null
+        // sourceGroupId) is an explicit "these are one physical gift" assertion,
+        // so it bypasses the deposit/payer coherence key that ad hoc selections
+        // must satisfy. The multi-date + amount-tolerance confirmations below
+        // still apply.
+        const sourceGroups = new Set(locked.map((r) => r.sourceGroupId));
+        const isSourceGroup = sourceGroups.size === 1 && !sourceGroups.has(null);
+        if (!isSourceGroup) {
+          const keyOf = (r: (typeof locked)[number]): string | null => {
+            const payer = (r.payerName ?? "").trim().toLowerCase();
+            if (payer) return `payer:${payer}`;
+            if (r.qbDepositId) return `dep:${r.qbDepositId}`;
+            return null;
+          };
+          const groupKeys = new Set(locked.map(keyOf));
+          if (groupKeys.size !== 1 || groupKeys.has(null)) {
+            throw new Error(NOT_GROUPABLE);
+          }
         }
 
         // Grouping payments that cross a date OR deposit boundary risks
@@ -564,6 +581,22 @@ router.post(
       res.status(400).json({
         error: "split_too_small",
         message: "Split across at least two distinct gifts.",
+      });
+      return;
+    }
+
+    // A grouped row is reconciled only as part of its whole group (the tx below
+    // re-checks pending under the row lock; this is the cheap up-front guard).
+    const grouped = await db
+      .select({ sourceGroupId: stagedPayments.sourceGroupId })
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (grouped && grouped.sourceGroupId != null) {
+      res.status(409).json({
+        error: "source_group_member",
+        message:
+          "This payment is part of a group. Reconcile the whole group from its card.",
       });
       return;
     }

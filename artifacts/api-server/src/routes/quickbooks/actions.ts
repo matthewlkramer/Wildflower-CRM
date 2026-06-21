@@ -5,7 +5,7 @@ import {
   giftsAndPayments,
   entities,
 } from "@workspace/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   asyncHandler,
   newId,
@@ -18,6 +18,9 @@ import {
   ResolveStagedPaymentBody,
   ExcludeStagedPaymentBody,
   SetStagedPaymentEntityBody,
+  SetStagedPaymentFundingSourceBody,
+  GroupStagedPaymentsBody,
+  UngroupStagedPaymentsBody,
 } from "@workspace/api-zod";
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
@@ -117,6 +120,14 @@ router.post(
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "staged payment");
+    if (existing.sourceGroupId != null) {
+      res.status(409).json({
+        error: "source_group_member",
+        message:
+          "This payment is part of a group. Reconcile the whole group from its card.",
+      });
+      return;
+    }
     if (existing.status !== "pending") {
       res.status(409).json({
         error: "not_pending",
@@ -426,6 +437,291 @@ router.post(
       .where(eq(stagedPayments.id, id))
       .returning();
     res.json(row);
+  }),
+);
+
+// ─── POST /staged-payments/:id/set-funding-source ──────────────────────────
+// Reviewer pins (or clears) the FUNDING SOURCE origin by hand. Orthogonal to
+// reconcile status, so allowed on a row in any state. Setting
+// fundingSourceProvenance='manual' makes the choice survive every re-sync /
+// reclassify (detectFundingSource never overwrites a manual pin). Body:
+// { fundingSource: enum | null }. null clears the value but KEEPS the manual
+// pin, so detection won't re-seed it on the next pull.
+router.post(
+  "/staged-payments/:id/set-funding-source",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const parsed = SetStagedPaymentFundingSourceBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    const fundingSource = parsed.data.fundingSource ?? null;
+
+    const existing = await db
+      .select({ id: stagedPayments.id })
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (!existing) return notFound(res, "staged payment");
+
+    const [row] = await db
+      .update(stagedPayments)
+      .set({
+        fundingSource,
+        fundingSourceProvenance: "manual",
+        updatedAt: new Date(),
+      })
+      .where(eq(stagedPayments.id, id))
+      .returning();
+    res.json(row);
+  }),
+);
+
+// ─── POST /staged-payments/group ───────────────────────────────────────────
+// Mark two or more staged payments as ONE physical gift entered separately in
+// QuickBooks (a "same physical gift" source group). Stamps a shared opaque
+// sourceGroupId. Pure review state — it never changes donor or gift links and
+// never reconciles by itself; the reconciliation card collapses the members
+// into one group card and approval acts on the whole group.
+router.post(
+  "/staged-payments/group",
+  asyncHandler(async (req, res) => {
+    const parsed = GroupStagedPaymentsBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    const confirmDonorConflict = parsed.data.confirmDonorConflict === true;
+    const ids = Array.from(new Set(parsed.data.stagedPaymentIds)).sort();
+    if (ids.length < 2) {
+      res.status(400).json({
+        error: "group_too_small",
+        message: "Group at least two distinct staged payments together.",
+      });
+      return;
+    }
+
+    const NOT_FOUND = "__not_found__";
+    const NOT_GROUPABLE = "__not_groupable__";
+    const DIFF_GROUP = "__diff_group__";
+    const DONOR_CONFLICT = "__donor_conflict__";
+
+    let result: {
+      sourceGroupId: string;
+      stagedPaymentIds: string[];
+      representativeStagedPaymentId: string;
+      totalAmount: string | null;
+    } | null = null;
+    try {
+      await db.transaction(async (tx) => {
+        const locked = await tx
+          .select()
+          .from(stagedPayments)
+          .where(inArray(stagedPayments.id, ids))
+          .for("update");
+        if (locked.length !== ids.length) throw new Error(NOT_FOUND);
+
+        // Only still-unreconciled rows can be grouped (a group is reconciled as
+        // a unit; grouping resolved money is meaningless).
+        for (const row of locked) {
+          if (
+            row.status === "reconciled" ||
+            row.matchedGiftId != null ||
+            row.createdGiftId != null ||
+            row.groupReconciledGiftId != null
+          ) {
+            throw new Error(NOT_GROUPABLE);
+          }
+        }
+
+        // Existing-group rule: forming a fresh group requires every member to be
+        // currently ungrouped. If all members already share ONE group it is an
+        // idempotent re-group (return that id). Any other mix (some grouped, or
+        // two different groups) is rejected — ungroup first.
+        const memberGroups = locked.map((r) => r.sourceGroupId);
+        const distinctGroups = Array.from(
+          new Set(memberGroups.filter((g): g is string => g != null)),
+        );
+        const anyUngrouped = memberGroups.some((g) => g == null);
+        let sourceGroupId: string;
+        if (distinctGroups.length === 0) {
+          sourceGroupId = newId();
+        } else if (distinctGroups.length === 1 && !anyUngrouped) {
+          sourceGroupId = distinctGroups[0];
+        } else {
+          throw new Error(DIFF_GROUP);
+        }
+
+        // Donor-conflict guard: more than one distinct (non-null) donor key
+        // across the members means they may be unrelated gifts.
+        const donorKeys = new Set(
+          locked
+            .map(
+              (r) =>
+                r.organizationId ??
+                r.individualGiverPersonId ??
+                r.householdId ??
+                null,
+            )
+            .filter((k): k is string => k != null),
+        );
+        if (donorKeys.size > 1 && !confirmDonorConflict) {
+          throw new Error(DONOR_CONFLICT);
+        }
+
+        await tx
+          .update(stagedPayments)
+          .set({ sourceGroupId, updatedAt: new Date() })
+          .where(inArray(stagedPayments.id, ids));
+
+        // Recompute full membership (an idempotent re-group may already include
+        // rows beyond the passed ids), the deterministic representative (min id
+        // among members) and the combined total.
+        const members = await tx
+          .select({
+            id: stagedPayments.id,
+            amount: stagedPayments.amount,
+          })
+          .from(stagedPayments)
+          .where(eq(stagedPayments.sourceGroupId, sourceGroupId));
+        const memberIds = members.map((m) => m.id).sort();
+        const total = members.reduce((acc, m) => acc + Number(m.amount ?? 0), 0);
+        result = {
+          sourceGroupId,
+          stagedPaymentIds: memberIds,
+          representativeStagedPaymentId: memberIds[0] ?? ids[0],
+          totalAmount: members.length ? total.toFixed(2) : null,
+        };
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message === NOT_FOUND) {
+        return notFound(res, "staged payment");
+      }
+      if (e instanceof Error && e.message === NOT_GROUPABLE) {
+        res.status(409).json({
+          error: "not_groupable",
+          message:
+            "Only non-archived, unreconciled staged payments can be grouped.",
+        });
+        return;
+      }
+      if (e instanceof Error && e.message === DIFF_GROUP) {
+        res.status(409).json({
+          error: "different_group",
+          message:
+            "One or more of these payments is already in a different group. Ungroup them first.",
+        });
+        return;
+      }
+      if (e instanceof Error && e.message === DONOR_CONFLICT) {
+        res.status(400).json({
+          error: "donor_conflict",
+          message:
+            "These payments resolve to more than one donor. Confirm you want to group them anyway.",
+        });
+        return;
+      }
+      throw e;
+    }
+    res.json(result);
+  }),
+);
+
+// ─── POST /staged-payments/ungroup ─────────────────────────────────────────
+// Clear sourceGroupId on the given rows, removing them from their source group.
+// If this leaves a group with fewer than two non-archived members, the
+// remaining orphan is cleared too (a group requires >= 2). Pure review state;
+// a no-op for rows that aren't grouped.
+router.post(
+  "/staged-payments/ungroup",
+  asyncHandler(async (req, res) => {
+    const parsed = UngroupStagedPaymentsBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    const ids = Array.from(new Set(parsed.data.stagedPaymentIds));
+
+    const NOT_FOUND = "__not_found__";
+    let result: {
+      ungroupedIds: string[];
+      dissolvedGroupIds: string[];
+    } | null = null;
+    try {
+      await db.transaction(async (tx) => {
+        const targets = await tx
+          .select({
+            id: stagedPayments.id,
+            sourceGroupId: stagedPayments.sourceGroupId,
+          })
+          .from(stagedPayments)
+          .where(inArray(stagedPayments.id, ids))
+          .for("update");
+        if (targets.length !== ids.length) throw new Error(NOT_FOUND);
+
+        const affectedGroups = Array.from(
+          new Set(
+            targets
+              .map((t) => t.sourceGroupId)
+              .filter((g): g is string => g != null),
+          ),
+        );
+        const toClear = targets
+          .filter((t) => t.sourceGroupId != null)
+          .map((t) => t.id);
+        const ungroupedIds: string[] = [...toClear];
+        if (toClear.length) {
+          await tx
+            .update(stagedPayments)
+            .set({ sourceGroupId: null, updatedAt: new Date() })
+            .where(inArray(stagedPayments.id, toClear));
+        }
+
+        // Auto-dissolve any affected group now left with < 2 members (a group
+        // requires >= 2): clear the lone orphan too.
+        const dissolvedGroupIds: string[] = [];
+        for (const g of affectedGroups) {
+          const remaining = await tx
+            .select({ id: stagedPayments.id })
+            .from(stagedPayments)
+            .where(eq(stagedPayments.sourceGroupId, g))
+            .for("update");
+          if (remaining.length < 2) {
+            if (remaining.length === 1) {
+              await tx
+                .update(stagedPayments)
+                .set({ sourceGroupId: null, updatedAt: new Date() })
+                .where(eq(stagedPayments.id, remaining[0].id));
+              ungroupedIds.push(remaining[0].id);
+            }
+            dissolvedGroupIds.push(g);
+          }
+        }
+        result = {
+          ungroupedIds: Array.from(new Set(ungroupedIds)),
+          dissolvedGroupIds,
+        };
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message === NOT_FOUND) {
+        return notFound(res, "staged payment");
+      }
+      throw e;
+    }
+    res.json(result);
   }),
 );
 

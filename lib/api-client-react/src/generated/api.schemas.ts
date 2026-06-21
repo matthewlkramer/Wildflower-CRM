@@ -2082,6 +2082,36 @@ export const StagedPaymentEntitySource = {
 } as const;
 
 /**
+ * WHERE the incoming money came from / how it rendered. A first-class origin dimension, DISTINCT from qbPaymentMethod (the QB instrument like Visa/Check) and from the derived reconciliation funding lane (reconcile progress, not origin). Auto-seeded at ingest by detectFundingSource and human-correctable. other = a known origin outside this list.
+ */
+export type StagedPaymentFundingSource =
+  (typeof StagedPaymentFundingSource)[keyof typeof StagedPaymentFundingSource];
+
+export const StagedPaymentFundingSource = {
+  stripe: "stripe",
+  brokerage: "brokerage",
+  daf: "daf",
+  donorbox: "donorbox",
+  paypal: "paypal",
+  wire_ach: "wire_ach",
+  check: "check",
+  cash: "cash",
+  employer_match: "employer_match",
+  other: "other",
+} as const;
+
+/**
+ * Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync / reclassify.
+ */
+export type StagedPaymentFundingSourceProvenance =
+  (typeof StagedPaymentFundingSourceProvenance)[keyof typeof StagedPaymentFundingSourceProvenance];
+
+export const StagedPaymentFundingSourceProvenance = {
+  auto: "auto",
+  manual: "manual",
+} as const;
+
+/**
  * Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand.
  */
 export type StagedPaymentQueue =
@@ -2446,6 +2476,8 @@ export interface StagedPayment {
   createdGiftId?: string | null;
   /** Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert. */
   groupReconciledGiftId?: string | null;
+  /** Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift). */
+  sourceGroupId?: string | null;
   autoApplied: boolean;
   approvedByUserId?: string | null;
   approvedAt?: string | null;
@@ -2461,6 +2493,9 @@ export interface StagedPayment {
   /** Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted. */
   entityName?: string | null;
   entitySource: StagedPaymentEntitySource;
+  /** WHERE this money came from / how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown / not yet determined. Auto-seeded at ingest, human-correctable. */
+  fundingSource?: StagedPaymentFundingSource | null;
+  fundingSourceProvenance: StagedPaymentFundingSourceProvenance;
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
@@ -2954,7 +2989,21 @@ export const ReconciliationCardProposedDonorKind = {
 } as const;
 
 /**
- * List item for the unified reconciler — one per QB staged payment (the anchor). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card.
+ * One member of a manual 'same physical gift' source group, summarized for the group card.
+ */
+export interface ReconciliationCardGroupMember {
+  stagedPaymentId: string;
+  amount?: string | null;
+  dateReceived?: string | null;
+  payerName?: string | null;
+  qbDocNumber?: string | null;
+  fundingSource?: StagedPaymentFundingSource | null;
+  /** True for the single member that anchors the group card / carries the group's gift link on approve (the card's stagedPaymentId). */
+  isRepresentative: boolean;
+}
+
+/**
+ * List item for the unified reconciler — one per QB staged payment (the anchor), OR one per manual 'same physical gift' source group (collapsed; stagedPaymentId is the representative member). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card.
  */
 export interface ReconciliationCard {
   stagedPaymentId: string;
@@ -2992,6 +3041,20 @@ export interface ReconciliationCard {
   ready: boolean;
   /** Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor/gift state: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge. */
   readonly reconciliationLanes?: ReconciliationLanes;
+  /** Origin of this money (Stripe, brokerage, DAF, …). For a group card this is the members' common source, or null when they differ. Distinct from qbPaymentMethod (the instrument) and the funding lane. */
+  fundingSource?: StagedPaymentFundingSource | null;
+  /** Whether fundingSource was derived (auto) or human-pinned (manual). Null on a group card whose members disagree. */
+  fundingSourceProvenance?: StagedPaymentFundingSourceProvenance | null;
+  /** Set when this card represents a manual 'same physical gift' group; null for a single staged payment. */
+  sourceGroupId?: string | null;
+  /** True when this card collapses several staged payments a human grouped as one physical gift (rows sharing sourceGroupId). The card's stagedPaymentId is the representative member; approve acts on the whole group. */
+  isSourceGroup: boolean;
+  /** Number of staged payments in the group (>= 2). Null when not a group. */
+  sourceGroupCount?: number | null;
+  /** Summed amount of all group members (the amount the group reconciles for). Null when not a group. */
+  sourceGroupTotalAmount?: string | null;
+  /** Compact per-member rows of the group, for display. Null when not a group. The representative is the card's stagedPaymentId. */
+  sourceGroupMembers?: ReconciliationCardGroupMember[] | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -3388,6 +3451,56 @@ export interface ExcludeStagedPaymentBody {
 export interface SetStagedPaymentEntityBody {
   /** The entities.id to attribute this incoming money to, or null to clear the attribution (keeping the manual pin). */
   entityId: string | null;
+}
+
+/**
+ * Pin (or clear) the funding source by hand. Sets fundingSourceProvenance='manual' so detectFundingSource never overwrites it on re-sync / reclassify. fundingSource null clears the value back to unknown while keeping the manual pin (so it is not re-derived).
+ */
+export interface SetStagedPaymentFundingSourceBody {
+  /** The origin to attribute this money to, or null to clear it (keeping the manual pin). */
+  fundingSource: StagedPaymentFundingSource | null;
+}
+
+/**
+ * Mark two or more staged payments as ONE physical gift entered separately in QuickBooks (a 'same physical gift' source group). Stamps a shared sourceGroupId. Does not change donor or gift links and never reconciles by itself.
+ */
+export interface GroupStagedPaymentsBody {
+  /**
+   * Ids of the staged payments to group. Must be at least two distinct, existing, non-archived, still-unreconciled rows. Rows already in another group are rejected unless they are all already in the same group (idempotent re-group).
+   * @minItems 2
+   */
+  stagedPaymentIds: string[];
+  /** Must be true when the members already resolve to more than one distinct donor. Guards against grouping unrelated gifts. Without it such a group is rejected 400 donor_conflict. The client prompts the operator to confirm before sending this. */
+  confirmDonorConflict?: boolean;
+}
+
+export interface GroupStagedPaymentsResponse {
+  /** The shared id stamped on every member. */
+  sourceGroupId: string;
+  /** All member ids now carrying the sourceGroupId. */
+  stagedPaymentIds: string[];
+  /** The deterministic representative member (the one the group card is anchored on and that carries the gift link on group approve). */
+  representativeStagedPaymentId: string;
+  /** Summed amount of all members. */
+  totalAmount?: string | null;
+}
+
+/**
+ * Remove staged payments from their 'same physical gift' source group by clearing sourceGroupId. If removing rows leaves a group with fewer than two members, the remaining orphan is cleared too (a group requires >= 2).
+ */
+export interface UngroupStagedPaymentsBody {
+  /**
+   * Ids of the staged payments to remove from their group. A no-op for rows that aren't grouped.
+   * @minItems 1
+   */
+  stagedPaymentIds: string[];
+}
+
+export interface UngroupStagedPaymentsResponse {
+  /** Ids whose sourceGroupId was cleared (includes any auto-dissolved orphans). */
+  ungroupedIds: string[];
+  /** Source-group ids that no longer exist after this call (fully dissolved). */
+  dissolvedGroupIds?: string[];
 }
 
 export interface CandidateThankYouEmail {

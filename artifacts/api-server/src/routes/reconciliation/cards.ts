@@ -95,6 +95,72 @@ const stripeEvidenceExpr = sql<{
   LIMIT 1
 )`;
 
+// Collapse a manual "same physical gift" source group into ONE card: only the
+// group's representative row (the min id among members, compared byte-wise via
+// COLLATE "C" so it matches the approve route's JS code-unit sort) is returned;
+// ungrouped rows (sourceGroupId IS NULL) always pass. Applied to BOTH the page
+// query and the count so the pagination total is per-group.
+const groupRepresentativeWhere: SQL = sql`(
+  ${stagedPayments.sourceGroupId} IS NULL
+  OR ${stagedPayments.id} = (
+    SELECT MIN(grp.id COLLATE "C")
+    FROM staged_payments grp
+    WHERE grp.source_group_id = ${stagedPayments.sourceGroupId}
+  )
+)`;
+
+// Group rollup for a representative card: member count, summed amount, the
+// members' COMMON funding source/provenance (null when they disagree), and a
+// compact per-member list (ordered by the same COLLATE "C" key so the first is
+// the representative). Null for an ungrouped row. The outer staged_payments row
+// is correlated into the subquery as the group key.
+const sourceGroupAggExpr = sql<{
+  count: number;
+  totalAmount: string;
+  commonFundingSource: string | null;
+  commonProvenance: string | null;
+  members: Array<{
+    stagedPaymentId: string;
+    amount: string | null;
+    dateReceived: string | null;
+    payerName: string | null;
+    qbDocNumber: string | null;
+    fundingSource: string | null;
+  }>;
+} | null>`(
+  CASE
+    WHEN ${stagedPayments.sourceGroupId} IS NULL THEN NULL
+    ELSE (
+      SELECT jsonb_build_object(
+        'count', COUNT(*)::int,
+        'totalAmount', COALESCE(SUM(m.amount), 0)::text,
+        'commonFundingSource',
+          CASE WHEN COUNT(*) = COUNT(m.funding_source)
+                AND COUNT(DISTINCT m.funding_source) = 1
+               THEN MIN(m.funding_source) ELSE NULL END,
+        'commonProvenance',
+          CASE WHEN COUNT(DISTINCT m.funding_source_provenance) = 1
+               THEN MIN(m.funding_source_provenance) ELSE NULL END,
+        'members', COALESCE(
+          jsonb_agg(
+            jsonb_build_object(
+              'stagedPaymentId', m.id,
+              'amount', m.amount::text,
+              'dateReceived', m.date_received::text,
+              'payerName', m.payer_name,
+              'qbDocNumber', m.qb_doc_number,
+              'fundingSource', m.funding_source
+            ) ORDER BY m.id COLLATE "C"
+          ),
+          '[]'::jsonb
+        )
+      )
+      FROM staged_payments m
+      WHERE m.source_group_id = ${stagedPayments.sourceGroupId}
+    )
+  END
+)`;
+
 // Default reconciliation queue: the live work. `pending` rows are always work.
 // `approved` rows came from the LEGACY /staged-payments flow and already minted
 // (createdGiftId) or linked (matchedGiftId) a gift. Such an already-approved
@@ -160,6 +226,9 @@ router.get(
     }
     if (ready === true) conds.push(readyExpr);
     else if (ready === false) conds.push(sql`NOT ${readyExpr}`);
+    // Always collapse source groups to their representative row (one card per
+    // group), in both the page and the count.
+    conds.push(groupRepresentativeWhere);
     const where = conds.length ? and(...conds) : undefined;
 
     const rows = await withJoins(
@@ -171,6 +240,7 @@ router.get(
           autoGiftPick: autoGiftPickExpr,
           cardReady: readyExpr,
           stripeEvidence: stripeEvidenceExpr,
+          sourceGroupAgg: sourceGroupAggExpr,
           recOppId: recCardOpp.id,
           recOppName: recCardOpp.name,
         })
@@ -193,6 +263,10 @@ router.get(
     const total = totalRow[0]?.count ?? 0;
 
     const data = rows.map((row) => {
+      // A returned row carrying a sourceGroupId is, by the representative filter,
+      // the group's anchor — this card stands in for the whole group.
+      const isSourceGroup = row.sourceGroupId != null;
+      const groupAgg = isSourceGroup ? row.sourceGroupAgg : null;
       const donorId =
         row.organizationId ??
         row.individualGiverPersonId ??
@@ -224,11 +298,14 @@ router.get(
         giftState = "determined";
         proposedGiftId = row.resolvedGiftId;
         proposedGiftName = row.resolvedGiftName ?? null;
-      } else if (row.autoGiftCount === 1 && row.autoGiftPick) {
+      } else if (!isSourceGroup && row.autoGiftCount === 1 && row.autoGiftPick) {
+        // Auto gift proposals are matched on a SINGLE row's amount, so they are
+        // meaningless for a group (whose gift must net the combined total) —
+        // suppress them; the human mints/links the group's gift explicitly.
         giftState = "determined";
         proposedGiftId = row.autoGiftPick.id;
         proposedGiftName = row.autoGiftPick.name ?? null;
-      } else if ((row.autoGiftCount ?? 0) > 1) {
+      } else if (!isSourceGroup && (row.autoGiftCount ?? 0) > 1) {
         giftState = "ambiguous";
       } else {
         giftState = "none";
@@ -268,7 +345,29 @@ router.get(
         resolvedGiftName: row.resolvedGiftName ?? null,
         resolvedGiftAmount: row.resolvedGiftAmount ?? null,
         finalAmountSource: row.finalAmountSource ?? null,
-        ready: row.cardReady === true,
+        fundingSource: isSourceGroup
+          ? (groupAgg?.commonFundingSource ?? null)
+          : (row.fundingSource ?? null),
+        fundingSourceProvenance: isSourceGroup
+          ? (groupAgg?.commonProvenance ?? null)
+          : (row.fundingSourceProvenance ?? null),
+        sourceGroupId: row.sourceGroupId ?? null,
+        isSourceGroup,
+        sourceGroupCount: groupAgg?.count ?? null,
+        sourceGroupTotalAmount: groupAgg?.totalAmount ?? null,
+        sourceGroupMembers: groupAgg
+          ? groupAgg.members.map((m) => ({
+              stagedPaymentId: m.stagedPaymentId,
+              amount: m.amount ?? null,
+              dateReceived: m.dateReceived ?? null,
+              payerName: m.payerName ?? null,
+              qbDocNumber: m.qbDocNumber ?? null,
+              fundingSource: m.fundingSource ?? null,
+              isRepresentative: m.stagedPaymentId === row.id,
+            }))
+          : null,
+        // A group card's readiness can't come from the single-row auto hint.
+        ready: !isSourceGroup && row.cardReady === true,
         reconciliationLanes: deriveEvidenceLanes({
           status: row.status,
           donorPresent: donorId != null,

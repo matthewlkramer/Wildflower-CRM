@@ -80,6 +80,18 @@ interface MintOpts {
 }
 
 /**
+ * Context for minting ONE gift from a source GROUP of staged payments (several
+ * QuickBooks records that are one physical gift). `representativeId` owns the
+ * mint (createdGiftId); every other member ties to it via groupReconciledGiftId;
+ * the gift's final amount is `total` (the sum of every member's amount).
+ */
+type GroupMintContext = {
+  representativeId: string;
+  memberIds: string[];
+  total: string;
+};
+
+/**
  * Shared in-tx mint path for the three create-* approve outcomes (create_gift,
  * create_gift_from_opportunity, convert_to_pledge_and_first_payment). Minting is
  * HUMAN-ONLY; the QB staged row OWNS the mint (createdGiftId, not auto-applied →
@@ -106,6 +118,7 @@ async function mintGiftFromEvidence(
   stagedPaymentId: string,
   body: MintBody,
   opts: MintOpts,
+  group: GroupMintContext | null = null,
 ): Promise<void> {
   // Opportunity behavior is gated on the OUTCOME (opts.requireOpportunity), never
   // on the mere presence of body.opportunityId: the shared approve body allows
@@ -146,10 +159,12 @@ async function mintGiftFromEvidence(
 
   const stripeChargeId = body.stripeChargeId ?? null;
 
-  // Fast non-locking guard: only an OPEN (pending, or a legacy approved) staged
-  // row with NO existing gift can mint. (Minting is intentionally NOT idempotent
-  // — re-approving an already-reconciled row must not mint a second gift.)
-  const pre = await db
+  // Fast non-locking guard: every row to be minted must be an OPEN (pending, or a
+  // legacy approved) staged row with NO existing gift. For a source group this
+  // covers ALL members. (Minting is intentionally NOT idempotent — re-approving an
+  // already-reconciled row must not mint a second gift.)
+  const preIds = group ? group.memberIds : [stagedPaymentId];
+  const preRows = await db
     .select({
       status: stagedPayments.status,
       matchedGiftId: stagedPayments.matchedGiftId,
@@ -157,32 +172,33 @@ async function mintGiftFromEvidence(
       groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
     })
     .from(stagedPayments)
-    .where(eq(stagedPayments.id, stagedPaymentId))
-    .then((r) => r[0]);
-  if (!pre) return notFound(res, "staged payment");
-  if (!isStagedApprovable(pre.status)) {
-    res.status(409).json({
-      error: "not_approvable",
-      message:
-        "This staged payment is no longer open for reconciliation. Refresh and try again.",
-    });
-    return;
-  }
-  // A row that already has a gift (matched, minted, OR grouped) must NOT mint a
-  // second one — that would double-count the money. Legacy `approved` rows
-  // carrying any gift link belong on the link path (tie evidence to the existing
-  // gift), never here.
-  if (
-    pre.matchedGiftId != null ||
-    pre.createdGiftId != null ||
-    pre.groupReconciledGiftId != null
-  ) {
-    res.status(409).json({
-      error: "gift_already_linked",
-      message:
-        "This payment already has a gift. Link that existing gift instead of creating a new one.",
-    });
-    return;
+    .where(inArray(stagedPayments.id, preIds));
+  if (preRows.length !== preIds.length) return notFound(res, "staged payment");
+  for (const pre of preRows) {
+    if (!isStagedApprovable(pre.status)) {
+      res.status(409).json({
+        error: "not_approvable",
+        message:
+          "This staged payment is no longer open for reconciliation. Refresh and try again.",
+      });
+      return;
+    }
+    // A row that already has a gift (matched, minted, OR grouped) must NOT mint a
+    // second one — that would double-count the money. Legacy `approved` rows
+    // carrying any gift link belong on the link path (tie evidence to the existing
+    // gift), never here.
+    if (
+      pre.matchedGiftId != null ||
+      pre.createdGiftId != null ||
+      pre.groupReconciledGiftId != null
+    ) {
+      res.status(409).json({
+        error: "gift_already_linked",
+        message:
+          "This payment already has a gift. Link that existing gift instead of creating a new one.",
+      });
+      return;
+    }
   }
 
   // Payouts tied to this staged row — a selected charge must belong to one, and
@@ -212,39 +228,47 @@ async function mintGiftFromEvidence(
           .for("update");
       }
 
-      const staged = await tx
+      // Lock every member row (the single-row path locks just one; a source group
+      // locks ALL members, ordered by id to avoid deadlocks) and re-check each
+      // under the lock. `staged` is the representative — the evidence the gift
+      // HEADER is built from.
+      const lockIds = group ? group.memberIds : [stagedPaymentId];
+      const lockedRows = await tx
         .select()
         .from(stagedPayments)
-        .where(eq(stagedPayments.id, stagedPaymentId))
-        .for("update")
-        .then((r) => r[0]);
-      if (!staged) {
+        .where(inArray(stagedPayments.id, lockIds))
+        .orderBy(stagedPayments.id)
+        .for("update");
+      if (lockedRows.length !== lockIds.length) {
         throw new ApproveAbort(404, {
           error: "not_found",
           message: "staged payment not found",
         });
       }
-      if (!isStagedApprovable(staged.status)) {
-        throw new ApproveAbort(409, {
-          error: "not_approvable",
-          message:
-            "This staged payment is no longer open for reconciliation. Refresh and try again.",
-        });
+      for (const row of lockedRows) {
+        if (!isStagedApprovable(row.status)) {
+          throw new ApproveAbort(409, {
+            error: "not_approvable",
+            message:
+              "This staged payment is no longer open for reconciliation. Refresh and try again.",
+          });
+        }
+        // Re-check under the row lock: never mint a second gift for a row that
+        // already has one (matched, minted, OR grouped) — it belongs on the link
+        // path.
+        if (
+          row.matchedGiftId != null ||
+          row.createdGiftId != null ||
+          row.groupReconciledGiftId != null
+        ) {
+          throw new ApproveAbort(409, {
+            error: "gift_already_linked",
+            message:
+              "This payment already has a gift. Link that existing gift instead of creating a new one.",
+          });
+        }
       }
-      // Re-check under the row lock: never mint a second gift for a row that
-      // already has one (matched, minted, OR grouped) — it belongs on the link
-      // path.
-      if (
-        staged.matchedGiftId != null ||
-        staged.createdGiftId != null ||
-        staged.groupReconciledGiftId != null
-      ) {
-        throw new ApproveAbort(409, {
-          error: "gift_already_linked",
-          message:
-            "This payment already has a gift. Link that existing gift instead of creating a new one.",
-        });
-      }
+      const staged = lockedRows.find((r) => r.id === stagedPaymentId)!;
 
       // Lock the chosen opportunity (opp outcomes). The donor is derived from it.
       let opp: typeof opportunitiesAndPledges.$inferSelect | null = null;
@@ -317,7 +341,11 @@ async function mintGiftFromEvidence(
       // Stripe GROSS is the precise amount when a charge is selected; else the QB
       // staged amount. This IS the minted gift's amount (no prior human figure),
       // so the gate's amount-band check is trivially satisfied.
-      const evidenceAmount = charge ? charge.grossAmount : staged.amount;
+      const evidenceAmount = charge
+        ? charge.grossAmount
+        : group
+          ? group.total
+          : staged.amount;
 
       // Donor: derived from the locked opportunity for the opp outcomes; else the
       // validated body donor (create_gift; bodyDonor is set on that branch).
@@ -477,6 +505,51 @@ async function mintGiftFromEvidence(
         });
       }
 
+      // Source group: the representative carries createdGiftId (owns the mint);
+      // every OTHER member ties to the same gift via groupReconciledGiftId so the
+      // whole physical gift resolves as one unit and no slice can be re-reconciled
+      // into a second gift. Members were locked + re-checked approvable above.
+      if (group) {
+        const otherIds = group.memberIds.filter((id) => id !== stagedPaymentId);
+        if (otherIds.length > 0) {
+          const otherUpdated = await tx
+            .update(stagedPayments)
+            .set({
+              ...donor,
+              status: "reconciled",
+              groupReconciledGiftId: newGiftId,
+              createdGiftId: null,
+              matchedGiftId: null,
+              autoApplied: false,
+              matchStatus: "matched",
+              matchConfirmedByUserId: user.id,
+              matchConfirmedAt: new Date(),
+              approvedByUserId: user.id,
+              approvedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                inArray(stagedPayments.id, otherIds),
+                inArray(stagedPayments.status, [...APPROVABLE_STAGED_STATUSES]),
+              ),
+            )
+            .returning({ id: stagedPayments.id });
+          // A source group reconciles atomically: every member must tie to the
+          // minted gift. The members were locked + re-checked approvable above,
+          // so a short count means one slipped state under us — abort the whole
+          // mint (rolls back the gift + the representative) rather than leave a
+          // group half-reconciled.
+          if (otherUpdated.length !== otherIds.length) {
+            throw new ApproveAbort(409, {
+              error: "group_member_not_approvable",
+              message:
+                "One of the grouped payments changed state. Refresh and try again.",
+            });
+          }
+        }
+      }
+
       // A selected Stripe charge is the precise GROSS source: tie it to the gift
       // via matchedGiftId (mirrors the link path + the Stripe confirm paths) so it
       // stays resolvable + revertible — revert un-sources the amount, never
@@ -523,6 +596,7 @@ async function mintGiftFromEvidence(
           stripeChargeId: charge?.id ?? null,
           opportunityId: opp?.id ?? null,
           outcome: opts.outcome,
+          sourceGroupMemberIds: group ? group.memberIds : null,
         },
       });
     });
@@ -607,6 +681,116 @@ router.post(
       return;
     }
     const body = parsed.data;
+
+    // ── Source group: approval acts on the WHOLE group ────────────────────────
+    // A staged row stamped with sourceGroupId is one slice of a single physical
+    // gift entered as several QuickBooks records. Resolve the whole group as a
+    // unit: the create-* outcomes mint ONE gift summing every member; linking an
+    // EXISTING gift ties all members at once via the group-reconcile endpoint, so
+    // it's rejected here with a redirect (this card endpoint mints only).
+    const groupRow = await db
+      .select({ sourceGroupId: stagedPayments.sourceGroupId })
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, stagedPaymentId))
+      .then((r) => r[0]);
+    if (!groupRow) return notFound(res, "staged payment");
+    if (groupRow.sourceGroupId != null) {
+      if (body.outcome === "link_existing_gift") {
+        res.status(409).json({
+          error: "source_group_use_reconcile",
+          message:
+            "This payment is part of a group. Link the whole group to an existing gift from its card.",
+        });
+        return;
+      }
+      // Build the group context: all members, a deterministic representative
+      // (min id) that owns the mint, and the combined total.
+      const members = await db
+        .select({ id: stagedPayments.id, amount: stagedPayments.amount })
+        .from(stagedPayments)
+        .where(eq(stagedPayments.sourceGroupId, groupRow.sourceGroupId));
+      const memberIds = members.map((m) => m.id).sort();
+      if (memberIds.length === 0) return notFound(res, "staged payment");
+      const representativeId = memberIds[0];
+      const total = members
+        .reduce((acc, m) => acc + Number(m.amount ?? 0), 0)
+        .toFixed(2);
+
+      // Per-charge Stripe GROSS reconciliation can't be summed across a group yet:
+      // reject groups whose members carry a tied Stripe payout, or an explicit
+      // charge selection. Ungroup to reconcile those individually.
+      const stripeTied = await db
+        .select({ id: stripePayouts.id })
+        .from(stripePayouts)
+        .where(
+          or(
+            inArray(stripePayouts.matchedQbStagedPaymentId, memberIds),
+            inArray(stripePayouts.proposedQbStagedPaymentId, memberIds),
+          ),
+        )
+        .then((r) => r[0]);
+      if (stripeTied || body.stripeChargeId) {
+        res.status(409).json({
+          error: "source_group_stripe_unsupported",
+          message:
+            "Stripe-backed payments can't be minted as a group yet. Ungroup them to reconcile individually.",
+        });
+        return;
+      }
+
+      const group: GroupMintContext = { representativeId, memberIds, total };
+      if (body.outcome === "create_gift") {
+        await mintGiftFromEvidence(
+          req,
+          res,
+          user,
+          representativeId,
+          body,
+          {
+            outcome: "create_gift",
+            requireOpportunity: false,
+            convert: false,
+            createdPledge: false,
+          },
+          group,
+        );
+        return;
+      }
+      if (body.outcome === "create_gift_from_opportunity") {
+        await mintGiftFromEvidence(
+          req,
+          res,
+          user,
+          representativeId,
+          body,
+          {
+            outcome: "create_gift_from_opportunity",
+            requireOpportunity: true,
+            convert: false,
+            createdPledge: false,
+          },
+          group,
+        );
+        return;
+      }
+      if (body.outcome === "convert_to_pledge_and_first_payment") {
+        await mintGiftFromEvidence(
+          req,
+          res,
+          user,
+          representativeId,
+          body,
+          {
+            outcome: "convert_to_pledge_and_first_payment",
+            requireOpportunity: true,
+            convert: true,
+            createdPledge: true,
+          },
+          group,
+        );
+        return;
+      }
+    }
 
     // The three create-* outcomes all MINT a new gift from the QB evidence
     // (human-only); they share one in-tx helper. link_existing_gift falls through

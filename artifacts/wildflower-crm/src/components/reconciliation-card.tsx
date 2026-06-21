@@ -1,14 +1,29 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "wouter";
-import { ArrowDown, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  ArrowDown,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  AlertCircle,
+  Circle,
+  MinusCircle,
+  Users,
+  Unlink,
+  type LucideIcon,
+} from "lucide-react";
 import {
   useGetReconciliationGraph,
   getGetReconciliationGraphQueryKey,
+  useSetStagedPaymentFundingSource,
+  useUngroupStagedPayments,
   type ReconciliationCard as ReconciliationCardType,
   type ReconciliationCandidate,
   type ReconciliationGraph,
   type ReconciliationMatchNodeType,
+  type ReconciliationLaneStatus,
   type ApproveCompleteMatchBody,
+  type StagedPaymentFundingSource,
 } from "@workspace/api-client-react";
 import {
   Card,
@@ -17,9 +32,15 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,16 +51,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { ReconciliationNodeTypeahead } from "@/components/reconciliation-node-typeahead";
 import {
   FINAL_AMOUNT_SOURCE_LABEL,
+  FUNDING_SOURCE_LABEL,
+  FUNDING_SOURCE_OPTIONS,
   deriveApproveBody,
   giftToPledgeStatus,
   hasAmountBlocker,
   qbToGiftStatus,
   stripeToQbStatus,
-  laneBadges,
   type ConnectionStatus,
   type OutcomeChoice,
 } from "@/lib/reconciliation";
@@ -58,56 +82,6 @@ function ConnectionBadge({ status }: { status: ConnectionStatus }) {
     <Badge variant={status.variant} className="px-1.5 py-0 text-[10px]">
       {status.label}
     </Badge>
-  );
-}
-
-/**
- * One connection between two records (e.g. "QuickBooks → Gift"), with the name
- * of the connected record and the connection's status. This is the core mental
- * model of a card: a chain of connections, not a bag of independent boxes.
- */
-function ConnectionRow({
-  from,
-  to,
-  status,
-  name,
-  href,
-  context,
-  testId,
-}: {
-  from: string;
-  to: string;
-  status: ConnectionStatus;
-  name?: string | null;
-  href?: string;
-  context?: string | null;
-  testId?: string;
-}) {
-  return (
-    <div
-      className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm"
-      data-testid={testId}
-    >
-      <span className="whitespace-nowrap text-muted-foreground">
-        {from} <span className="text-muted-foreground/50">→</span> {to}
-      </span>
-      {name ? (
-        href ? (
-          <Link
-            href={href}
-            className="truncate font-medium underline-offset-2 hover:underline"
-          >
-            {name}
-          </Link>
-        ) : (
-          <span className="truncate font-medium">{name}</span>
-        )
-      ) : null}
-      {context ? (
-        <span className="truncate text-xs text-muted-foreground">{context}</span>
-      ) : null}
-      <ConnectionBadge status={status} />
-    </div>
   );
 }
 
@@ -141,89 +115,403 @@ function ConnectionLink({
   );
 }
 
+/** Icon + soft color for each funding/CRM lane status. */
+const LANE_CHIP: Record<
+  ReconciliationLaneStatus,
+  { label: string; Icon: LucideIcon; className: string }
+> = {
+  confirmed: {
+    label: "Confirmed",
+    Icon: CheckCircle2,
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  proposed: {
+    label: "Proposed",
+    Icon: AlertCircle,
+    className: "border-amber-200 bg-amber-50 text-amber-700",
+  },
+  unlinked: {
+    label: "Not linked",
+    Icon: Circle,
+    className: "border-slate-200 bg-slate-50 text-slate-600",
+  },
+  exempt: {
+    label: "Exempt",
+    Icon: MinusCircle,
+    className: "border-slate-200 bg-slate-50 text-slate-500",
+  },
+};
+
+function LaneStatusChip({
+  status,
+  testId,
+}: {
+  status: ReconciliationLaneStatus;
+  testId?: string;
+}) {
+  const cfg = LANE_CHIP[status];
+  const Icon = cfg.Icon;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
+        cfg.className,
+      )}
+      data-testid={testId}
+    >
+      <Icon className="h-3 w-3" />
+      {cfg.label}
+    </span>
+  );
+}
+
+/**
+ * One labelled "Status Row": a lane name (Funding / CRM record), its lane status
+ * chip, a one-line human summary, and an optional trailing control.
+ */
+function LaneRow({
+  label,
+  status,
+  summary,
+  trailing,
+  testId,
+}: {
+  label: string;
+  status: ReconciliationLaneStatus;
+  summary: ReactNode;
+  trailing?: ReactNode;
+  testId?: string;
+}) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-3 gap-y-1"
+      data-testid={testId}
+    >
+      <span className="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <LaneStatusChip status={status} />
+      <span className="min-w-0 flex-1 truncate text-sm">{summary}</span>
+      {trailing}
+    </div>
+  );
+}
+
+function errMessage(e: unknown): string {
+  return e instanceof Error ? e.message : "Please try again.";
+}
+
+/**
+ * Manual funding-source override. Setting it pins funding_source_provenance to
+ * 'manual', so the server's auto-inference never overwrites it on the next pull.
+ */
+function FundingSourceEditor({
+  card,
+  onChanged,
+}: {
+  card: ReconciliationCardType;
+  onChanged?: () => void;
+}) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const setFunding = useSetStagedPaymentFundingSource({
+    mutation: {
+      onSuccess: () => {
+        setOpen(false);
+        onChanged?.();
+      },
+      onError: (e) =>
+        toast({
+          variant: "destructive",
+          title: "Couldn't set funding source",
+          description: errMessage(e),
+        }),
+    },
+  });
+  const current = card.fundingSource ?? null;
+  const isManual = card.fundingSourceProvenance === "manual";
+
+  function choose(value: StagedPaymentFundingSource | null) {
+    setFunding.mutate({
+      id: card.stagedPaymentId,
+      data: { fundingSource: value },
+    });
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 gap-1 px-2 text-xs"
+          data-testid={`funding-source-${card.stagedPaymentId}`}
+        >
+          {current ? FUNDING_SOURCE_LABEL[current] : "Set source"}
+          {isManual ? (
+            <Badge variant="outline" className="px-1 py-0 text-[9px]">
+              manual
+            </Badge>
+          ) : null}
+          <ChevronDown className="h-3 w-3" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-56 p-1">
+        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+          Funding source (origin)
+        </div>
+        <div className="max-h-64 overflow-auto">
+          {FUNDING_SOURCE_OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              disabled={setFunding.isPending}
+              onClick={() => choose(opt)}
+              className={cn(
+                "flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm hover:bg-muted",
+                opt === current && "font-medium",
+              )}
+              data-testid={`funding-source-opt-${opt}-${card.stagedPaymentId}`}
+            >
+              {FUNDING_SOURCE_LABEL[opt]}
+              {opt === current ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+              ) : null}
+            </button>
+          ))}
+        </div>
+        {current ? (
+          <>
+            <div className="my-1 border-t" />
+            <button
+              type="button"
+              disabled={setFunding.isPending}
+              onClick={() => choose(null)}
+              className="w-full rounded px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted"
+            >
+              Clear source
+            </button>
+          </>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * A "same physical gift" source group: the members a human grouped, the group
+ * total, and an Ungroup action. The card's stagedPaymentId is the group
+ * representative; approving the card reconciles the whole group.
+ */
+function GroupPanel({
+  card,
+  onChanged,
+}: {
+  card: ReconciliationCardType;
+  onChanged?: () => void;
+}) {
+  const { toast } = useToast();
+  const members = card.sourceGroupMembers ?? [];
+  const ungroup = useUngroupStagedPayments({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Group dissolved." });
+        onChanged?.();
+      },
+      onError: (e) =>
+        toast({
+          variant: "destructive",
+          title: "Couldn't ungroup",
+          description: errMessage(e),
+        }),
+    },
+  });
+
+  return (
+    <div
+      className="space-y-2 rounded-md border bg-muted/30 p-3"
+      data-testid={`group-panel-${card.stagedPaymentId}`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Users className="h-3.5 w-3.5" />
+          {card.sourceGroupCount ?? members.length} payments grouped as one
+          physical gift
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 gap-1 px-2 text-xs"
+          disabled={ungroup.isPending}
+          onClick={() =>
+            ungroup.mutate({
+              data: { stagedPaymentIds: members.map((m) => m.stagedPaymentId) },
+            })
+          }
+          data-testid={`ungroup-${card.stagedPaymentId}`}
+        >
+          <Unlink className="h-3 w-3" />
+          Ungroup
+        </Button>
+      </div>
+      <div className="divide-y">
+        {members.map((m) => (
+          <div
+            key={m.stagedPaymentId}
+            className="flex items-center justify-between gap-2 py-1 text-xs"
+          >
+            <div className="min-w-0 truncate">
+              <span className="font-medium">{m.payerName || "—"}</span>
+              {m.qbDocNumber ? (
+                <span className="text-muted-foreground"> · #{m.qbDocNumber}</span>
+              ) : null}
+              {m.fundingSource ? (
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {FUNDING_SOURCE_LABEL[m.fundingSource]}
+                </span>
+              ) : null}
+              {m.isRepresentative ? (
+                <Badge variant="outline" className="ml-1 px-1 py-0 text-[9px]">
+                  primary
+                </Badge>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-3 tabular-nums">
+              <span className="text-muted-foreground">
+                {m.dateReceived ? formatDate(m.dateReceived) : "—"}
+              </span>
+              <span>{m.amount ? formatCurrency(m.amount) : "—"}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ReconciliationCard({
   card,
   expanded,
   onToggle,
   busy,
   onApprove,
+  onChanged,
+  selectable,
+  selected,
+  onSelectToggle,
 }: {
   card: ReconciliationCardType;
   expanded: boolean;
   onToggle: () => void;
   busy: boolean;
   onApprove: (body: ApproveCompleteMatchBody) => Promise<unknown>;
+  /** Invalidate the cards list after a funding-source/group mutation. */
+  onChanged?: () => void;
+  /** Show the multi-select grouping checkbox. */
+  selectable?: boolean;
+  selected?: boolean;
+  onSelectToggle?: () => void;
 }) {
   const isReconciled = card.status === "reconciled";
+  const lanes = card.reconciliationLanes ?? {
+    funding: "unlinked" as ReconciliationLaneStatus,
+    crmRecord: null,
+  };
 
-  // Reframe the card around the CONNECTIONS the reviewer reasons about, not the
-  // individual records: Stripe → QuickBooks (does the charge tie to the
-  // deposit?), QuickBooks → Gift (is the deposit booked to a gift?), and
-  // optionally Gift → Pledge.
-  const stripeConn = card.hasStripeEvidence
-    ? stripeToQbStatus(card.stripeReconciliationStatus)
-    : null;
-  const qbGiftConn = qbToGiftStatus({
-    stagedStatus: card.status,
-    giftState: card.giftState,
-  });
-  const pledgeConn = giftToPledgeStatus(card.opportunityState);
+  // A source group reconciles for the SUM of its members.
+  const headerAmount =
+    card.isSourceGroup && card.sourceGroupTotalAmount != null
+      ? card.sourceGroupTotalAmount
+      : card.amount;
 
-  const giftName = isReconciled
-    ? card.resolvedGiftName || card.resolvedGiftId
-    : card.proposedGiftName;
-  const giftHref =
-    isReconciled && card.resolvedGiftId
-      ? `/gifts/${card.resolvedGiftId}`
-      : undefined;
-  const donorContext = card.proposedDonorName
-    ? `for ${card.proposedDonorName}`
-    : null;
+  // Funding lane summary — what the money is / where it came from.
+  const fundingSummary = card.hasStripeEvidence
+    ? `Stripe · ${
+        card.stripeChargeCount === 1
+          ? "1 charge"
+          : `${card.stripeChargeCount ?? 0} charges`
+      }`
+    : card.fundingSource
+      ? `${FUNDING_SOURCE_LABEL[card.fundingSource]} · QuickBooks deposit`
+      : "QuickBooks deposit";
+
+  // CRM-record lane summary — the gift/donor this money books to.
+  const crmText = isReconciled
+    ? card.resolvedGiftName || card.resolvedGiftId || "Reconciled gift"
+    : card.proposedGiftName
+      ? `${card.proposedGiftName}${
+          card.proposedDonorName ? ` · ${card.proposedDonorName}` : ""
+        }`
+      : card.proposedDonorName
+        ? `Donor: ${card.proposedDonorName}`
+        : "No gift linked yet";
+  const crmSummary =
+    isReconciled && card.resolvedGiftId ? (
+      <Link
+        href={`/gifts/${card.resolvedGiftId}`}
+        className="truncate font-medium underline-offset-2 hover:underline"
+      >
+        {crmText}
+      </Link>
+    ) : (
+      crmText
+    );
 
   return (
     <Card data-testid={`reconciliation-card-${card.stagedPaymentId}`}>
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 space-y-0.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-base font-semibold tabular-nums">
-                {formatCurrency(card.amount)}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {formatDate(card.dateReceived)}
-              </span>
-              {card.payerName ? (
-                <span className="truncate text-sm">{card.payerName}</span>
-              ) : null}
-              {card.entityName ? (
-                <Badge variant="outline" className="text-[10px]">
-                  {card.entityName}
-                </Badge>
-              ) : null}
-              {card.hasStripeEvidence ? (
-                <Badge variant="secondary" className="text-[10px]">
-                  Stripe ·{" "}
-                  {card.stripeChargeCount === 1
-                    ? "1 charge"
-                    : `${card.stripeChargeCount ?? 0} charges`}
-                </Badge>
-              ) : null}
-              {laneBadges(card.reconciliationLanes).map((b) => (
-                <Badge
-                  key={b.key}
-                  variant={b.variant}
-                  className="text-[10px]"
-                  data-testid={`card-reconciliation-lane-${b.key}-${card.stagedPaymentId}`}
-                >
-                  {b.label}
-                </Badge>
-              ))}
-            </div>
-            {card.rawReference || card.lineDescription ? (
-              <div className="truncate text-xs text-muted-foreground">
-                {card.lineDescription || card.rawReference}
-              </div>
+          <div className="flex min-w-0 items-start gap-2">
+            {selectable ? (
+              <Checkbox
+                checked={selected ?? false}
+                onCheckedChange={() => onSelectToggle?.()}
+                className="mt-1"
+                aria-label="Select for grouping"
+                data-testid={`select-card-${card.stagedPaymentId}`}
+              />
             ) : null}
+            <div className="min-w-0 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-base font-semibold tabular-nums">
+                  {formatCurrency(headerAmount)}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {formatDate(card.dateReceived)}
+                </span>
+                {card.payerName ? (
+                  <span className="truncate text-sm">{card.payerName}</span>
+                ) : null}
+                {card.entityName ? (
+                  <Badge variant="outline" className="text-[10px]">
+                    {card.entityName}
+                  </Badge>
+                ) : null}
+                {card.isSourceGroup ? (
+                  <Badge variant="secondary" className="gap-1 text-[10px]">
+                    <Users className="h-3 w-3" />
+                    {card.sourceGroupCount ??
+                      card.sourceGroupMembers?.length ??
+                      0}{" "}
+                    grouped
+                  </Badge>
+                ) : null}
+                {card.hasStripeEvidence ? (
+                  <Badge variant="secondary" className="text-[10px]">
+                    Stripe ·{" "}
+                    {card.stripeChargeCount === 1
+                      ? "1 charge"
+                      : `${card.stripeChargeCount ?? 0} charges`}
+                  </Badge>
+                ) : null}
+              </div>
+              {card.rawReference || card.lineDescription ? (
+                <div className="truncate text-xs text-muted-foreground">
+                  {card.lineDescription || card.rawReference}
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {isReconciled ? (
@@ -249,32 +537,33 @@ export function ReconciliationCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        {/* The connections this card resolves, stated explicitly. */}
-        <div className="space-y-1">
-          {stripeConn ? (
-            <ConnectionRow
-              from="Stripe"
-              to="QuickBooks"
-              status={stripeConn}
-              testId={`conn-stripe-qb-${card.stagedPaymentId}`}
-            />
-          ) : null}
-          <ConnectionRow
-            from="QuickBooks"
-            to="Gift"
-            status={qbGiftConn}
-            name={giftName}
-            href={giftHref}
-            context={donorContext}
-            testId={`conn-qb-gift-${card.stagedPaymentId}`}
+        {card.isSourceGroup ? (
+          <GroupPanel card={card} onChanged={onChanged} />
+        ) : null}
+
+        {/* Status Rows — the two reconciliation lanes (funding + CRM record),
+            each a labelled status row with a human summary. */}
+        <div
+          className="space-y-2"
+          data-testid={`status-rows-${card.stagedPaymentId}`}
+        >
+          <LaneRow
+            label="Funding"
+            status={lanes.funding}
+            summary={fundingSummary}
+            trailing={
+              card.isSourceGroup ? undefined : (
+                <FundingSourceEditor card={card} onChanged={onChanged} />
+              )
+            }
+            testId={`lane-funding-${card.stagedPaymentId}`}
           />
-          {pledgeConn ? (
-            <ConnectionRow
-              from="Gift"
-              to="Pledge"
-              status={pledgeConn}
-              name={card.proposedOpportunityName}
-              testId={`conn-gift-pledge-${card.stagedPaymentId}`}
+          {lanes.crmRecord != null ? (
+            <LaneRow
+              label="CRM record"
+              status={lanes.crmRecord}
+              summary={crmSummary}
+              testId={`lane-crm-${card.stagedPaymentId}`}
             />
           ) : null}
         </div>
