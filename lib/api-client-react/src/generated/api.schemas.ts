@@ -380,6 +380,21 @@ export const OpportunityConditional = {
   conditional_on_target: "conditional_on_target",
 } as const;
 
+/**
+ * Tri-state record of whether a grant's conditions have been met:
+'no' (none met), 'partial' (some met), or 'yes' (fully met).
+Replaces the prior boolean flag (false→'no', true→'yes').
+
+ */
+export type OpportunityConditionsMet =
+  (typeof OpportunityConditionsMet)[keyof typeof OpportunityConditionsMet];
+
+export const OpportunityConditionsMet = {
+  no: "no",
+  partial: "partial",
+  yes: "yes",
+} as const;
+
 export type PledgeAllocationStatus =
   (typeof PledgeAllocationStatus)[keyof typeof PledgeAllocationStatus];
 
@@ -1491,7 +1506,7 @@ export interface OpportunityOrPledge {
   type?: OpportunityType | null;
   conditional?: OpportunityConditional | null;
   conditions?: string | null;
-  conditionsMet: boolean;
+  conditionsMet: OpportunityConditionsMet;
   individualGiverPersonId?: string | null;
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;
@@ -1648,7 +1663,7 @@ export interface CreateOpportunityOrPledgeBody {
   type?: OpportunityType;
   conditional?: OpportunityConditional;
   conditions?: string;
-  conditionsMet?: boolean;
+  conditionsMet?: OpportunityConditionsMet;
   individualGiverPersonId?: string;
   individualAdvisorPersonId?: string;
   matchId?: string;
@@ -1680,7 +1695,7 @@ export interface UpdateOpportunityOrPledgeBody {
   type?: OpportunityType | null;
   conditional?: OpportunityConditional | null;
   conditions?: string | null;
-  conditionsMet?: boolean;
+  conditionsMet?: OpportunityConditionsMet;
   individualGiverPersonId?: string | null;
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;

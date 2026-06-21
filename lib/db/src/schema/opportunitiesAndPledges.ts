@@ -16,6 +16,7 @@ import {
   opportunityTypeEnum,
   opportunityStageEnum,
   opportunityConditionalEnum,
+  opportunityConditionsMetEnum,
   fundraisingCategoryEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
@@ -106,7 +107,10 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   type: opportunityTypeEnum("type"),
   conditional: opportunityConditionalEnum("conditional"),
   conditions: text("conditions"),
-  conditionsMet: boolean("conditions_met").default(false).notNull(),
+  // Tri-state: 'no' | 'partial' | 'yes'. Was a boolean (true→'yes', false→'no').
+  conditionsMet: opportunityConditionsMetEnum("conditions_met")
+    .default("no")
+    .notNull(),
   // RESTRICT: the individual giver is part of the money-trail record.
   individualGiverPersonId: text("individual_giver_person_id").references(
     () => people.id,

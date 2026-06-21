@@ -18,6 +18,7 @@ import {
   type OpportunityLossType,
   type OpportunityType,
   type OpportunityConditional,
+  type OpportunityConditionsMet,
   type FundraisingCategory,
   type PeopleEntityRole,
 } from "@workspace/api-client-react";
@@ -101,6 +102,18 @@ const CONDITIONAL_OPTIONS = [
   { value: "conditional_on_funder_determination", label: "Conditional — funder determination" },
   { value: "conditional_on_target", label: "Conditional — on target" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityConditional>>;
+
+const CONDITIONS_MET_OPTIONS = [
+  { value: "no", label: "No" },
+  { value: "partial", label: "Partial" },
+  { value: "yes", label: "Yes" },
+] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityConditionsMet>>;
+
+const CONDITIONS_MET_LABELS: Record<OpportunityConditionsMet, string> = {
+  no: "No",
+  partial: "Partial",
+  yes: "Yes",
+};
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -664,13 +677,14 @@ function OppView({
                   />
                 </Row>
                 <Row label="Conditions met">
-                  <InlineEditBoolean
+                  <InlineEditSelect
                     label="Conditions met"
                     testIdBase="opp-conditions-met"
                     value={opp.conditionsMet}
+                    options={CONDITIONS_MET_OPTIONS}
                     allowNull={false}
-                    display={opp.conditionsMet ? "Yes" : "No"}
-                    onSave={(next) => patch({ conditionsMet: next ?? false })}
+                    display={CONDITIONS_MET_LABELS[opp.conditionsMet]}
+                    onSave={(next) => patch({ conditionsMet: next ?? "no" })}
                   />
                 </Row>
                 <div className="pt-2">

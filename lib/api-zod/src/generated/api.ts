@@ -4644,7 +4644,11 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
         ])
         .nullish(),
       conditions: zod.string().nullish(),
-      conditionsMet: zod.boolean(),
+      conditionsMet: zod
+        .enum(["no", "partial", "yes"])
+        .describe(
+          "Tri-state record of whether a grant's conditions have been met:\n'no' (none met), 'partial' (some met), or 'yes' (fully met).\nReplaces the prior boolean flag (false→'no', true→'yes').\n",
+        ),
       individualGiverPersonId: zod.string().nullish(),
       individualAdvisorPersonId: zod.string().nullish(),
       matchId: zod.string().nullish(),
@@ -4742,7 +4746,12 @@ export const CreateOpportunityOrPledgeBody = zod.object({
     ])
     .optional(),
   conditions: zod.string().optional(),
-  conditionsMet: zod.boolean().optional(),
+  conditionsMet: zod
+    .enum(["no", "partial", "yes"])
+    .optional()
+    .describe(
+      "Tri-state record of whether a grant's conditions have been met:\n'no' (none met), 'partial' (some met), or 'yes' (fully met).\nReplaces the prior boolean flag (false→'no', true→'yes').\n",
+    ),
   individualGiverPersonId: zod.string().optional(),
   individualAdvisorPersonId: zod.string().optional(),
   matchId: zod.string().optional(),
@@ -4810,7 +4819,11 @@ export const GetOpportunityOrPledgeResponse = zod
       ])
       .nullish(),
     conditions: zod.string().nullish(),
-    conditionsMet: zod.boolean(),
+    conditionsMet: zod
+      .enum(["no", "partial", "yes"])
+      .describe(
+        "Tri-state record of whether a grant's conditions have been met:\n'no' (none met), 'partial' (some met), or 'yes' (fully met).\nReplaces the prior boolean flag (false→'no', true→'yes').\n",
+      ),
     individualGiverPersonId: zod.string().nullish(),
     individualAdvisorPersonId: zod.string().nullish(),
     matchId: zod.string().nullish(),
@@ -5133,7 +5146,12 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
     ])
     .nullish(),
   conditions: zod.string().nullish(),
-  conditionsMet: zod.boolean().optional(),
+  conditionsMet: zod
+    .enum(["no", "partial", "yes"])
+    .optional()
+    .describe(
+      "Tri-state record of whether a grant's conditions have been met:\n'no' (none met), 'partial' (some met), or 'yes' (fully met).\nReplaces the prior boolean flag (false→'no', true→'yes').\n",
+    ),
   individualGiverPersonId: zod.string().nullish(),
   individualAdvisorPersonId: zod.string().nullish(),
   matchId: zod.string().nullish(),
@@ -5196,7 +5214,11 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
     ])
     .nullish(),
   conditions: zod.string().nullish(),
-  conditionsMet: zod.boolean(),
+  conditionsMet: zod
+    .enum(["no", "partial", "yes"])
+    .describe(
+      "Tri-state record of whether a grant's conditions have been met:\n'no' (none met), 'partial' (some met), or 'yes' (fully met).\nReplaces the prior boolean flag (false→'no', true→'yes').\n",
+    ),
   individualGiverPersonId: zod.string().nullish(),
   individualAdvisorPersonId: zod.string().nullish(),
   matchId: zod.string().nullish(),
@@ -15142,7 +15164,11 @@ export const ArchiveOpportunityOrPledgeResponse = zod.object({
     ])
     .nullish(),
   conditions: zod.string().nullish(),
-  conditionsMet: zod.boolean(),
+  conditionsMet: zod
+    .enum(["no", "partial", "yes"])
+    .describe(
+      "Tri-state record of whether a grant's conditions have been met:\n'no' (none met), 'partial' (some met), or 'yes' (fully met).\nReplaces the prior boolean flag (false→'no', true→'yes').\n",
+    ),
   individualGiverPersonId: zod.string().nullish(),
   individualAdvisorPersonId: zod.string().nullish(),
   matchId: zod.string().nullish(),
@@ -15236,7 +15262,11 @@ export const UnarchiveOpportunityOrPledgeResponse = zod.object({
     ])
     .nullish(),
   conditions: zod.string().nullish(),
-  conditionsMet: zod.boolean(),
+  conditionsMet: zod
+    .enum(["no", "partial", "yes"])
+    .describe(
+      "Tri-state record of whether a grant's conditions have been met:\n'no' (none met), 'partial' (some met), or 'yes' (fully met).\nReplaces the prior boolean flag (false→'no', true→'yes').\n",
+    ),
   individualGiverPersonId: zod.string().nullish(),
   individualAdvisorPersonId: zod.string().nullish(),
   matchId: zod.string().nullish(),

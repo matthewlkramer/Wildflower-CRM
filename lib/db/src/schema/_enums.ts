@@ -242,6 +242,16 @@ export const opportunityConditionalEnum = pgEnum("opportunity_conditional", [
   "conditional_on_target",
 ]);
 
+// Tri-state "conditions met" on opportunities/pledges. Replaces the old
+// boolean flag so grants that are only partially satisfied can be tracked.
+// Default 'no' so legacy false/unset rows are non-destructively classified as
+// 'no'; legacy true rows migrate to 'yes' (see migration 0059).
+export const opportunityConditionsMetEnum = pgEnum("opportunity_conditions_met", [
+  "no",
+  "partial",
+  "yes",
+]);
+
 // Fundraising category — splits loan-fund capital out of revenue so the two
 // tracks can be reported in parallel (dashboard, projections, goals). Loan
 // capital = principal investments (loan_fund_investment gifts + loan-capital
