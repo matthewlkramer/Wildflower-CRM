@@ -6101,12 +6101,13 @@ components:
     # ─── Admin sync status ────────────────────────────────────────────────────
     AdminGoogleSyncSourceStatus:
       type: object
-      required: [bootstrapInProgress, noProgressRuns, stuck]
+      required: [bootstrapInProgress, bootstrapStuck, noProgressRuns, stuck]
       properties:
         lastSyncedAt:           { type: string, format: date-time, nullable: true }
         lastError:              { type: string, nullable: true }
         bootstrapCompletedAt:   { type: string, format: date-time, nullable: true }
         bootstrapInProgress:    { type: boolean }
+        bootstrapStuck:         { type: boolean, description: "True when the initial sync (bootstrap) hasn't completed and has stopped making progress — either errored past the stall threshold or no run has advanced it in over a day. Recoverable from the panel via Sync now." }
         noProgressRuns:         { type: integer, description: "Consecutive sync runs that made no forward progress (cursor pinned by errors). Resets to 0 on any clean run." }
         stuck:                  { type: boolean, description: "True once noProgressRuns crosses the stall threshold — the mailbox appears wedged and should be investigated." }
     AdminGoogleSyncUserRow:

@@ -231,7 +231,12 @@ function AdminSyncSection() {
   if (errStatus === 403) return null;
 
   const rows = q.data?.data ?? [];
-  const stuckRows = rows.filter((r) => r.gmail.stuck);
+  const stuckRows = rows.filter(
+    (r) =>
+      r.gmail.stuck ||
+      r.gmail.bootstrapStuck ||
+      r.calendar.bootstrapStuck,
+  );
 
   return (
     <Card data-testid="admin-sync-section">
@@ -240,7 +245,8 @@ function AdminSyncSection() {
         <CardDescription>
           Per-user Gmail + Calendar sync status. The scheduler runs every
           15 minutes per connected user, jittered to spread load. Use
-          "Resync now" to kick a specific user immediately.
+          "Sync now" to run an incremental sync immediately — or to resume
+          an initial sync that hasn't finished.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -250,12 +256,13 @@ function AdminSyncSection() {
             data-testid="sync-stuck-banner"
           >
             <span className="font-medium">
-              ⚠ {stuckRows.length} mailbox{stuckRows.length === 1 ? "" : "es"} appear
-              stuck
+              ⚠ {stuckRows.length} user{stuckRows.length === 1 ? "" : "s"} need
+              {stuckRows.length === 1 ? "s" : ""} attention
             </span>{" "}
-            — Gmail sync has made no forward progress for several consecutive
-            runs ({stuckRows.map((r) => r.userEmail).join(", ")}). Try "Resync
-            now"; if it persists, check the server logs.
+            — sync has stalled (an initial sync that never finished, or no
+            forward progress for several consecutive runs) for{" "}
+            {stuckRows.map((r) => r.userEmail).join(", ")}. Try "Sync now" to
+            recover; if it persists, check the server logs.
           </div>
         ) : null}
         {q.isLoading ? (
@@ -297,7 +304,15 @@ function AdminSyncSection() {
                   </TableCell>
                   <TableCell className="text-sm">
                     <div>{fmtTime(r.gmail.lastSyncedAt)}</div>
-                    {r.gmail.bootstrapInProgress ? (
+                    {r.gmail.bootstrapStuck ? (
+                      <div
+                        className="mt-1 inline-flex items-center gap-1 rounded bg-destructive px-1.5 py-0.5 text-xs font-medium text-destructive-foreground"
+                        title="The initial sync never finished and has stopped progressing. Click Sync now to resume it."
+                        data-testid={`gmail-bootstrap-stuck-${r.userId}`}
+                      >
+                        ⚠ Initial sync stuck
+                      </div>
+                    ) : r.gmail.bootstrapInProgress ? (
                       <div className="text-xs text-amber-700">
                         Initial sync in progress
                       </div>
@@ -319,7 +334,15 @@ function AdminSyncSection() {
                   </TableCell>
                   <TableCell className="text-sm">
                     <div>{fmtTime(r.calendar.lastSyncedAt)}</div>
-                    {r.calendar.bootstrapInProgress ? (
+                    {r.calendar.bootstrapStuck ? (
+                      <div
+                        className="mt-1 inline-flex items-center gap-1 rounded bg-destructive px-1.5 py-0.5 text-xs font-medium text-destructive-foreground"
+                        title="The initial sync never finished and has stopped progressing. Click Sync now to resume it."
+                        data-testid={`calendar-bootstrap-stuck-${r.userId}`}
+                      >
+                        ⚠ Initial sync stuck
+                      </div>
+                    ) : r.calendar.bootstrapInProgress ? (
                       <div className="text-xs text-amber-700">
                         Initial sync in progress
                       </div>
@@ -337,8 +360,9 @@ function AdminSyncSection() {
                       disabled={!r.connected || resync.isPending}
                       onClick={() => resync.mutate({ id: r.userId })}
                       data-testid={`resync-${r.userId}`}
+                      title="Runs an incremental sync now (or resumes the initial sync if it hasn't finished)."
                     >
-                      Resync now
+                      Sync now
                     </Button>
                   </TableCell>
                 </TableRow>

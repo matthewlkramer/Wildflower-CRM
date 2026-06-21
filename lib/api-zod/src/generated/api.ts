@@ -8215,6 +8215,11 @@ export const AdminListGoogleSyncResponse = zod.object({
         lastError: zod.string().nullish(),
         bootstrapCompletedAt: zod.string().datetime({}).nullish(),
         bootstrapInProgress: zod.boolean(),
+        bootstrapStuck: zod
+          .boolean()
+          .describe(
+            "True when the initial sync (bootstrap) hasn't completed and has stopped making progress — either errored past the stall threshold or no run has advanced it in over a day. Recoverable from the panel via Sync now.",
+          ),
         noProgressRuns: zod
           .number()
           .describe(
@@ -8231,6 +8236,11 @@ export const AdminListGoogleSyncResponse = zod.object({
         lastError: zod.string().nullish(),
         bootstrapCompletedAt: zod.string().datetime({}).nullish(),
         bootstrapInProgress: zod.boolean(),
+        bootstrapStuck: zod
+          .boolean()
+          .describe(
+            "True when the initial sync (bootstrap) hasn't completed and has stopped making progress — either errored past the stall threshold or no run has advanced it in over a day. Recoverable from the panel via Sync now.",
+          ),
         noProgressRuns: zod
           .number()
           .describe(

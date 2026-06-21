@@ -38,6 +38,12 @@ function requireAdmin(
   return true;
 }
 
+// An initial sync (bootstrap) that hasn't completed and whose last run is
+// older than this is treated as stuck: the scheduler advances a healthy
+// bootstrap on every tick (every ~15 min) and even an erroring run stamps
+// lastSyncedAt, so a full day of silence means nothing is moving it.
+const BOOTSTRAP_STUCK_STALE_MS = 24 * 60 * 60 * 1000;
+
 router.get(
   "/admin/google-sync",
   asyncHandler(async (req, res) => {
@@ -57,10 +63,12 @@ router.get(
         gmailBootstrapCompletedAt: emailSyncState.bootstrapCompletedAt,
         gmailBootstrapPageToken: emailSyncState.bootstrapPageToken,
         gmailNoProgressRuns: emailSyncState.noProgressRuns,
+        gmailUpdatedAt: emailSyncState.updatedAt,
         calendarLastSyncedAt: calendarSyncState.lastSyncedAt,
         calendarLastError: calendarSyncState.lastError,
         calendarBootstrapCompletedAt: calendarSyncState.bootstrapCompletedAt,
         calendarBootstrapPageToken: calendarSyncState.bootstrapPageToken,
+        calendarUpdatedAt: calendarSyncState.updatedAt,
       })
       .from(googleOauthTokens)
       .innerJoin(users, eq(users.id, googleOauthTokens.userId))
@@ -75,42 +83,88 @@ router.get(
       .where(isNull(users.archivedAt))
       .orderBy(asc(users.email));
 
+    const now = Date.now();
+    // Is an unfinished bootstrap stalled? Stale = no run has touched the
+    // state row in over a day (the scheduler stamps updatedAt every tick,
+    // even on errors, so silence this long means nothing is advancing it).
+    // We fall back to grantedAt for a grant that has never produced a run.
+    const isStale = (
+      bootstrapCompletedAt: Date | null,
+      lastRun: Date | null,
+      grantedAt: Date | null,
+    ): boolean => {
+      if (bootstrapCompletedAt) return false;
+      const marker = lastRun ?? grantedAt;
+      if (!marker) return false;
+      return now - marker.getTime() > BOOTSTRAP_STUCK_STALE_MS;
+    };
+
     res.json({
-      data: rows.map((r) => ({
-        userId: r.userId,
-        userEmail: r.userEmail,
-        googleEmail: r.googleEmail,
-        connected: !r.revokedAt,
-        grantedAt: r.grantedAt?.toISOString() ?? null,
-        revokedAt: r.revokedAt?.toISOString() ?? null,
-        tokenLastError: r.tokenLastError,
-        gmail: {
-          lastSyncedAt: r.gmailLastSyncedAt?.toISOString() ?? null,
-          lastError: r.gmailLastError,
-          bootstrapCompletedAt:
-            r.gmailBootstrapCompletedAt?.toISOString() ?? null,
-          bootstrapInProgress:
-            !r.gmailBootstrapCompletedAt && !!r.gmailBootstrapPageToken,
-          noProgressRuns: r.gmailNoProgressRuns ?? 0,
-          // "Stuck" = the mailbox's cursor has been pinned by errors for
-          // STUCK_NO_PROGRESS_THRESHOLD consecutive runs. Quiet idle
-          // mailboxes reset the counter every clean run, so this never
-          // false-positives on an inbox that simply has no new mail.
-          stuck: (r.gmailNoProgressRuns ?? 0) >= STUCK_NO_PROGRESS_THRESHOLD,
-        },
-        calendar: {
-          lastSyncedAt: r.calendarLastSyncedAt?.toISOString() ?? null,
-          lastError: r.calendarLastError,
-          bootstrapCompletedAt:
-            r.calendarBootstrapCompletedAt?.toISOString() ?? null,
-          bootstrapInProgress:
-            !r.calendarBootstrapCompletedAt && !!r.calendarBootstrapPageToken,
-          // Calendar sync doesn't track no-progress runs yet; report the
-          // shared shape as healthy so the admin panel stays consistent.
-          noProgressRuns: 0,
-          stuck: false,
-        },
-      })),
+      data: rows.map((r) => {
+        const connected = !r.revokedAt;
+        const gmailBootstrapDone = !!r.gmailBootstrapCompletedAt;
+        const gmailNoProgress = r.gmailNoProgressRuns ?? 0;
+        // A bootstrap is "stuck" when the initial sync hasn't completed and
+        // it has stopped advancing — either it has errored past the stall
+        // threshold, or no run has moved it in over a day. Distinct from the
+        // healthy "in progress" state, and recoverable via Sync now (which
+        // resumes the bootstrap from where it left off).
+        const gmailBootstrapStuck =
+          connected &&
+          !gmailBootstrapDone &&
+          (gmailNoProgress >= STUCK_NO_PROGRESS_THRESHOLD ||
+            isStale(
+              r.gmailBootstrapCompletedAt ?? null,
+              r.gmailUpdatedAt ?? r.gmailLastSyncedAt ?? null,
+              r.grantedAt ?? null,
+            ));
+        const calendarBootstrapDone = !!r.calendarBootstrapCompletedAt;
+        const calendarBootstrapStuck =
+          connected &&
+          !calendarBootstrapDone &&
+          isStale(
+            r.calendarBootstrapCompletedAt ?? null,
+            r.calendarUpdatedAt ?? r.calendarLastSyncedAt ?? null,
+            r.grantedAt ?? null,
+          );
+        return {
+          userId: r.userId,
+          userEmail: r.userEmail,
+          googleEmail: r.googleEmail,
+          connected,
+          grantedAt: r.grantedAt?.toISOString() ?? null,
+          revokedAt: r.revokedAt?.toISOString() ?? null,
+          tokenLastError: r.tokenLastError,
+          gmail: {
+            lastSyncedAt: r.gmailLastSyncedAt?.toISOString() ?? null,
+            lastError: r.gmailLastError,
+            bootstrapCompletedAt:
+              r.gmailBootstrapCompletedAt?.toISOString() ?? null,
+            bootstrapInProgress:
+              !r.gmailBootstrapCompletedAt && !!r.gmailBootstrapPageToken,
+            bootstrapStuck: gmailBootstrapStuck,
+            noProgressRuns: gmailNoProgress,
+            // "Stuck" = the mailbox's cursor has been pinned by errors for
+            // STUCK_NO_PROGRESS_THRESHOLD consecutive runs. Quiet idle
+            // mailboxes reset the counter every clean run, so this never
+            // false-positives on an inbox that simply has no new mail.
+            stuck: gmailNoProgress >= STUCK_NO_PROGRESS_THRESHOLD,
+          },
+          calendar: {
+            lastSyncedAt: r.calendarLastSyncedAt?.toISOString() ?? null,
+            lastError: r.calendarLastError,
+            bootstrapCompletedAt:
+              r.calendarBootstrapCompletedAt?.toISOString() ?? null,
+            bootstrapInProgress:
+              !r.calendarBootstrapCompletedAt && !!r.calendarBootstrapPageToken,
+            bootstrapStuck: calendarBootstrapStuck,
+            // Calendar sync doesn't track no-progress runs yet; report the
+            // shared shape as healthy so the admin panel stays consistent.
+            noProgressRuns: 0,
+            stuck: false,
+          },
+        };
+      }),
     });
   }),
 );

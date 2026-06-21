@@ -23,3 +23,21 @@ single shared threshold constant, not duplicated per call site. The shared
 admin sync-status shape carries the counter + stuck flag for both Gmail and
 Calendar, but Calendar isn't tracked yet (reports healthy) — extend it
 symmetrically rather than forking the contract.
+
+**Two independent "stuck" axes in the admin panel — don't conflate them:**
+1. `stuck` (incremental stall) = `noProgressRuns >= STUCK_NO_PROGRESS_THRESHOLD`,
+   Gmail-only. Catches a wedged cursor on an already-bootstrapped mailbox.
+2. `bootstrapStuck` (initial-sync stall) = bootstrap NOT completed AND
+   (noProgressRuns past threshold OR the state row's `updated_at`/`last_synced_at`
+   is stale > ~24h, falling back to `granted_at` for a grant that never ran).
+   Computed in the GET `/admin/google-sync` route (display-only, not persisted),
+   for BOTH Gmail and Calendar. This is the "initial sync in progress stuck for
+   weeks" case — the healthy `bootstrapInProgress` flag alone never says whether
+   it's advancing. Recovery is just "Sync now" (the resync route), which resumes
+   bootstrap from its page token.
+
+**Panel layout invariant:** ONE row per user. `google_oauth_tokens`,
+`email_sync_state`, `calendar_sync_state` are all PK'd on `user_id`, so the
+admin route's join yields exactly one row; Gmail/Calendar are columns, never
+separate rows. (Earlier two-rows-per-person reports were the old split layout.)
+"Resync now" was renamed to "Sync now".
