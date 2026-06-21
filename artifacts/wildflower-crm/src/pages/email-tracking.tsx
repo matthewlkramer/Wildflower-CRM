@@ -266,7 +266,6 @@ export default function EmailTrackingPage() {
                 <TableRow>
                   <TableHead>Subject</TableHead>
                   <TableHead>To</TableHead>
-                  <TableHead>From</TableHead>
                   <TableHead>Sent</TableHead>
                   <TableHead className="text-right">Opens</TableHead>
                   <TableHead>Last open</TableHead>
@@ -284,9 +283,6 @@ export default function EmailTrackingPage() {
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
                       {r.recipient}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {r.sender}
                     </TableCell>
                     <TableCell className="text-sm whitespace-nowrap">
                       {formatDistanceToNow(new Date(r.createdAt), {

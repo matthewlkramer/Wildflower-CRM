@@ -17,6 +17,7 @@ import {
   SendTrackedEmailBody as SendTrackedEmailBodyZ,
 } from "@workspace/api-zod";
 import { getAppUser } from "../lib/appRequest";
+import { loadInternalDomains } from "../lib/emailMatcher";
 import { getValidGoogleAccessTokenForUser } from "../lib/googleTokenStore";
 import { GMAIL_SEND_SCOPE } from "../lib/googleOauth";
 import { buildRawMessage } from "../lib/mime";
@@ -570,6 +571,36 @@ router.get(
       Math.max(Number(req.query.limit ?? 100) || 100, 1),
       1000,
     );
+    const me = getAppUser(req);
+    if (!me) {
+      res.status(401).json({ error: "unauthorized", message: "No user" });
+      return;
+    }
+    // Scope the page to the signed-in user's own tracked sends. tracked_emails
+    // has no owner column — the only link to a user is the `sender` address,
+    // which is the lowercased Gmail/Google address the copy was sent from.
+    const myEmail = me.email.trim().toLowerCase();
+
+    // Exclude staff-only sends (every recipient on an internal-staff domain):
+    // those are not donor outreach. We keep a row when AT LEAST ONE recipient
+    // address has a non-internal domain (conservative — anything we can't parse
+    // as clearly internal keeps the row visible). Uses the same configurable
+    // internal-domain list as the sync matcher.
+    const internalDomains = await loadInternalDomains();
+    const internalList = [...internalDomains];
+    const hasExternalRecipient =
+      internalList.length === 0
+        ? sql`TRUE`
+        : sql`EXISTS (
+            SELECT 1
+            FROM regexp_split_to_table(lower(${trackedEmails.recipient}), '[,;]') AS addr
+            WHERE position('@' in addr) > 0
+              AND btrim(split_part(addr, '@', 2)) NOT IN (${sql.join(
+                internalList.map((d) => sql`${d}`),
+                sql`, `,
+              )})
+          )`;
+
     const rows = await db
       .select({
         id: trackedEmails.id,
@@ -589,6 +620,7 @@ router.get(
         trackedEmailViews,
         eq(trackedEmailViews.emailId, trackedEmails.id),
       )
+      .where(and(eq(trackedEmails.sender, myEmail), hasExternalRecipient))
       .groupBy(trackedEmails.id)
       .orderBy(desc(trackedEmails.createdAt))
       .limit(limit);
