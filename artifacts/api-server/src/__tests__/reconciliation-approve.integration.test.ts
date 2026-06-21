@@ -141,6 +141,9 @@ async function seedStaged(
     status?: "pending" | "approved" | "reconciled";
     organizationId?: string | null;
     matchStatus?: "matched" | "suggested" | "unmatched";
+    matchedGiftId?: string | null;
+    createdGiftId?: string | null;
+    groupReconciledGiftId?: string | null;
   } = {},
 ): Promise<string> {
   const id = nextId("sp");
@@ -157,6 +160,15 @@ async function seedStaged(
       ? { organizationId: opts.organizationId }
       : {}),
     ...(opts.matchStatus !== undefined ? { matchStatus: opts.matchStatus } : {}),
+    ...(opts.matchedGiftId !== undefined
+      ? { matchedGiftId: opts.matchedGiftId }
+      : {}),
+    ...(opts.createdGiftId !== undefined
+      ? { createdGiftId: opts.createdGiftId }
+      : {}),
+    ...(opts.groupReconciledGiftId !== undefined
+      ? { groupReconciledGiftId: opts.groupReconciledGiftId }
+      : {}),
   });
   stagedIds.push(id);
   return id;
@@ -653,6 +665,123 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
     // Still tied to the FIRST minted gift only.
     const staged = await readStaged(stagedId);
     expect(staged.createdGiftId).toBe(first.json.giftId);
+  }, 30_000);
+});
+
+// A row that the OLD /staged-payments flow already moved to `approved` (but never
+// reconciled) is still legitimately OPEN for reconciliation in the unified
+// reconciler. The bug was that the approve route hard-blocked any status other
+// than `pending`, so these rows threw "already approved / no longer pending".
+describe.skipIf(!HAS_DB)("Reconciliation approve — legacy `approved` rows stay reconcilable (integration)", () => {
+  it("links an already-`approved` row to its matched gift (the prod regression)", async () => {
+    const giftId = await seedGift("100.00");
+    const stagedId = await seedStaged("100.00", {
+      status: "approved",
+      matchStatus: "matched",
+      matchedGiftId: giftId,
+    });
+    const payoutId = await seedPayout(stagedId);
+    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "link_existing_gift",
+      giftId,
+      stripeChargeId: chargeId,
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.ok).toBe(true);
+
+    // The approved row reconciles cleanly — no 409 not_approvable.
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("reconciled");
+    expect(staged.matchedGiftId).toBe(giftId);
+
+    const charge = await readCharge(chargeId);
+    expect(charge.status).toBe("reconciled");
+    expect(charge.matchedGiftId).toBe(giftId);
+  }, 30_000);
+
+  it("mints a gift for an already-`approved` row with no gift link (create_gift)", async () => {
+    const stagedId = await seedStaged("175.00", { status: "approved" });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+    });
+    expect(res.status).toBe(201);
+    const newGiftId = res.json.giftId as string;
+    expect(newGiftId).toBeTruthy();
+    giftIds.push(newGiftId);
+
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("reconciled");
+    expect(staged.createdGiftId).toBe(newGiftId);
+  }, 30_000);
+
+  it("rejects minting a NEW gift on an `approved` row that already points at a gift (gift_already_linked, no double-count)", async () => {
+    const giftId = await seedGift("100.00");
+    const stagedId = await seedStaged("100.00", {
+      status: "approved",
+      matchStatus: "matched",
+      matchedGiftId: giftId,
+    });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("gift_already_linked");
+
+    // Nothing minted; the row keeps its existing gift link and status.
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("approved");
+    expect(staged.matchedGiftId).toBe(giftId);
+    expect(staged.createdGiftId).toBeNull();
+  }, 30_000);
+
+  it("rejects minting a NEW gift on an `approved` row already tied to a GROUPED gift (groupReconciledGiftId, no double-count)", async () => {
+    const giftId = await seedGift("100.00");
+    const stagedId = await seedStaged("100.00", {
+      status: "approved",
+      matchStatus: "matched",
+      groupReconciledGiftId: giftId,
+    });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("gift_already_linked");
+
+    // Nothing minted; the row keeps its grouped gift link and status.
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("approved");
+    expect(staged.groupReconciledGiftId).toBe(giftId);
+    expect(staged.createdGiftId).toBeNull();
+  }, 30_000);
+
+  it("still blocks a terminal `reconciled` row (not_approvable)", async () => {
+    const giftId = await seedGift("100.00");
+    const otherGiftId = await seedGift("100.00");
+    const stagedId = await seedStaged("100.00", {
+      status: "reconciled",
+      matchStatus: "matched",
+      matchedGiftId: giftId,
+    });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "link_existing_gift",
+      giftId: otherGiftId,
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("not_approvable");
+
+    // Untouched.
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("reconciled");
+    expect(staged.matchedGiftId).toBe(giftId);
   }, 30_000);
 });
 

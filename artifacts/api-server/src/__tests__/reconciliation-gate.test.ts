@@ -69,10 +69,24 @@ describe("runConsistencyGate", () => {
     expect(codes(baseInput({ staged: null }))).toContain("qb_missing");
   });
 
-  it("non-pending QB anchor → qb_not_pending", () => {
+  it("reconciled QB anchor → qb_not_pending", () => {
     expect(
       codes(baseInput({ staged: { id: "sp1", status: "reconciled" } })),
     ).toContain("qb_not_pending");
+  });
+
+  it("excluded QB anchor → qb_not_pending", () => {
+    expect(
+      codes(baseInput({ staged: { id: "sp1", status: "excluded" } })),
+    ).toContain("qb_not_pending");
+  });
+
+  // A legacy `approved` row (from the old /staged-payments flow) is still OPEN for
+  // reconciliation — it must NOT be blocked by the gate.
+  it("approved QB anchor → no qb_not_pending (still open for reconciliation)", () => {
+    expect(
+      codes(baseInput({ staged: { id: "sp1", status: "approved" } })),
+    ).not.toContain("qb_not_pending");
   });
 
   it("gift with no donor → donor_missing", () => {

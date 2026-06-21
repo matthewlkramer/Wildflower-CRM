@@ -14,7 +14,8 @@ import {
  * the route re-derives the graph from the DB and feeds it here.
  *
  * It enforces the cross-node invariants:
- *   - the QuickBooks staged row is the REQUIRED anchor and is still pending;
+ *   - the QuickBooks staged row is the REQUIRED anchor and is still OPEN for
+ *     reconciliation (pending, or a legacy `approved` row), not reconciled/excluded;
  *   - the gift carries exactly one donor (Donor XOR);
  *   - when an opportunity is in play, its donor matches the gift's donor;
  *   - neither the gift nor the opportunity is archived;
@@ -127,6 +128,20 @@ function donorCount(d: LinkDonor): number {
 }
 
 /**
+ * A staged payment (QB anchor) is "open for reconciliation" while it is `pending`
+ * (fresh work) or a legacy `approved` row — those came from the old
+ * /staged-payments flow and were left in the work queue because they still need
+ * Stripe tied in or a gift created/linked. The TERMINAL states (`reconciled`,
+ * `excluded`) can never be (re-)approved through this reconciler. The approve
+ * route and this gate share this set so they can never disagree.
+ */
+export const APPROVABLE_STAGED_STATUSES = ["pending", "approved"] as const;
+
+export function isStagedApprovable(status: string): boolean {
+  return (APPROVABLE_STAGED_STATUSES as readonly string[]).includes(status);
+}
+
+/**
  * Run the consistency gate. Returns an empty array when the graph is consistent
  * and the approve may proceed, otherwise one or more issues for the caller to
  * surface (typically as a 409).
@@ -151,10 +166,10 @@ export function runConsistencyGate(input: ConsistencyGateInput): GateIssue[] {
       message:
         "A QuickBooks staged payment is required to anchor a complete match.",
     });
-  } else if (staged.status !== "pending") {
+  } else if (!isStagedApprovable(staged.status)) {
     issues.push({
       code: "qb_not_pending",
-      message: "This staged payment is no longer pending.",
+      message: "This staged payment is no longer open for reconciliation.",
     });
   }
 

@@ -27,7 +27,11 @@ import {
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { recordAudit } from "../../lib/audit";
-import { runConsistencyGate } from "../../lib/reconciliationGate";
+import {
+  runConsistencyGate,
+  isStagedApprovable,
+  APPROVABLE_STAGED_STATUSES,
+} from "../../lib/reconciliationGate";
 
 const router: IRouter = Router();
 
@@ -141,20 +145,41 @@ async function mintGiftFromEvidence(
 
   const stripeChargeId = body.stripeChargeId ?? null;
 
-  // Fast non-locking guard: only a pending staged row can mint. (Minting is
-  // intentionally NOT idempotent — re-approving an already-reconciled row must
-  // not mint a second gift.)
+  // Fast non-locking guard: only an OPEN (pending, or a legacy approved) staged
+  // row with NO existing gift can mint. (Minting is intentionally NOT idempotent
+  // — re-approving an already-reconciled row must not mint a second gift.)
   const pre = await db
-    .select({ status: stagedPayments.status })
+    .select({
+      status: stagedPayments.status,
+      matchedGiftId: stagedPayments.matchedGiftId,
+      createdGiftId: stagedPayments.createdGiftId,
+      groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+    })
     .from(stagedPayments)
     .where(eq(stagedPayments.id, stagedPaymentId))
     .then((r) => r[0]);
   if (!pre) return notFound(res, "staged payment");
-  if (pre.status !== "pending") {
+  if (!isStagedApprovable(pre.status)) {
     res.status(409).json({
       error: "not_approvable",
       message:
-        "This staged payment is no longer pending. Refresh and try again.",
+        "This staged payment is no longer open for reconciliation. Refresh and try again.",
+    });
+    return;
+  }
+  // A row that already has a gift (matched, minted, OR grouped) must NOT mint a
+  // second one — that would double-count the money. Legacy `approved` rows
+  // carrying any gift link belong on the link path (tie evidence to the existing
+  // gift), never here.
+  if (
+    pre.matchedGiftId != null ||
+    pre.createdGiftId != null ||
+    pre.groupReconciledGiftId != null
+  ) {
+    res.status(409).json({
+      error: "gift_already_linked",
+      message:
+        "This payment already has a gift. Link that existing gift instead of creating a new one.",
     });
     return;
   }
@@ -198,11 +223,25 @@ async function mintGiftFromEvidence(
           message: "staged payment not found",
         });
       }
-      if (staged.status !== "pending") {
+      if (!isStagedApprovable(staged.status)) {
         throw new ApproveAbort(409, {
           error: "not_approvable",
           message:
-            "This staged payment is no longer pending. Refresh and try again.",
+            "This staged payment is no longer open for reconciliation. Refresh and try again.",
+        });
+      }
+      // Re-check under the row lock: never mint a second gift for a row that
+      // already has one (matched, minted, OR grouped) — it belongs on the link
+      // path.
+      if (
+        staged.matchedGiftId != null ||
+        staged.createdGiftId != null ||
+        staged.groupReconciledGiftId != null
+      ) {
+        throw new ApproveAbort(409, {
+          error: "gift_already_linked",
+          message:
+            "This payment already has a gift. Link that existing gift instead of creating a new one.",
         });
       }
 
@@ -424,7 +463,7 @@ async function mintGiftFromEvidence(
         .where(
           and(
             eq(stagedPayments.id, stagedPaymentId),
-            eq(stagedPayments.status, "pending"),
+            inArray(stagedPayments.status, [...APPROVABLE_STAGED_STATUSES]),
           ),
         )
         .returning({ id: stagedPayments.id });
@@ -432,7 +471,7 @@ async function mintGiftFromEvidence(
         throw new ApproveAbort(409, {
           error: "not_approvable",
           message:
-            "This staged payment is no longer pending. Refresh and try again.",
+            "This staged payment is no longer open for reconciliation. Refresh and try again.",
         });
       }
 
@@ -690,11 +729,22 @@ router.post(
             message: "staged payment not found",
           });
         }
-        if (staged.status !== "pending") {
+        if (!isStagedApprovable(staged.status)) {
           throw new ApproveAbort(409, {
             error: "not_approvable",
             message:
-              "This staged payment is no longer pending. Refresh and try again.",
+              "This staged payment is no longer open for reconciliation. Refresh and try again.",
+          });
+        }
+        // A row that OWNS a minted gift (createdGiftId) must not be re-pointed to
+        // some other gift here — that would demote its provenance and orphan the
+        // mint. No such row reaches the work queue today (minting sets the row
+        // `reconciled`); this is a forward guard against future approved+created rows.
+        if (staged.createdGiftId != null) {
+          throw new ApproveAbort(409, {
+            error: "gift_already_linked",
+            message:
+              "This payment already owns a created gift. Revert that gift before linking it elsewhere.",
           });
         }
 
@@ -895,7 +945,7 @@ router.post(
           .where(
             and(
               eq(stagedPayments.id, stagedPaymentId),
-              eq(stagedPayments.status, "pending"),
+              inArray(stagedPayments.status, [...APPROVABLE_STAGED_STATUSES]),
               sql`NOT EXISTS (
                 SELECT 1 FROM staged_payments sp2
                 WHERE (sp2.matched_gift_id = ${giftId}
@@ -915,7 +965,7 @@ router.post(
           throw new ApproveAbort(409, {
             error: "link_conflict",
             message:
-              "This staged payment is no longer pending, or that gift was just linked to another payment. Refresh and try again.",
+              "This staged payment is no longer open for reconciliation, or that gift was just linked to another payment. Refresh and try again.",
           });
         }
 
