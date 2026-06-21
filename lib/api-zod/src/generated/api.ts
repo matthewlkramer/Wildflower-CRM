@@ -240,6 +240,35 @@ export const ListPotentialDuplicatesResponse = zod.object({
           .number()
           .describe("Number of gifts\/payments attributed to this record."),
       }),
+      safeMerge: zod
+        .boolean()
+        .describe(
+          "True when the two records are identical, or their only differences are a filled value vs null\/empty, so the merge has no real conflicts and can be applied in one click.",
+        ),
+      mergeSuggestion: zod
+        .object({
+          primaryId: zod
+            .string()
+            .describe("The record chosen to survive the merge."),
+          mergeIds: zod
+            .array(zod.string())
+            .min(1)
+            .describe(
+              "Records to fold into the survivor (always the other side of the pair).",
+            ),
+          overrides: zod
+            .record(zod.string(), zod.unknown())
+            .describe(
+              "Whitelisted scalar winners to apply to the survivor (filled value where the survivor was null\/empty).",
+            ),
+        })
+        .describe(
+          "A ready-to-apply merge for a safe duplicate pair: keep `primaryId`, fold `mergeIds` into it, and apply `overrides` (filled values pulled from the loser where the survivor was empty).",
+        )
+        .nullable()
+        .describe(
+          "The auto-resolved merge to apply for a safe pair (survivor + the filled-in winning values). Null when the pair has conflicting values and needs manual review.",
+        ),
     }),
   ),
 });

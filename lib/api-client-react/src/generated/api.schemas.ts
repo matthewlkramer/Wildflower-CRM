@@ -3020,6 +3020,26 @@ export const DuplicatePairSignalsItem = {
   phone: "phone",
 } as const;
 
+/**
+ * Whitelisted scalar winners to apply to the survivor (filled value where the survivor was null/empty).
+ */
+export type DuplicateMergeSuggestionOverrides = { [key: string]: unknown };
+
+/**
+ * A ready-to-apply merge for a safe duplicate pair: keep `primaryId`, fold `mergeIds` into it, and apply `overrides` (filled values pulled from the loser where the survivor was empty).
+ */
+export interface DuplicateMergeSuggestion {
+  /** The record chosen to survive the merge. */
+  primaryId: string;
+  /**
+   * Records to fold into the survivor (always the other side of the pair).
+   * @minItems 1
+   */
+  mergeIds: string[];
+  /** Whitelisted scalar winners to apply to the survivor (filled value where the survivor was null/empty). */
+  overrides: DuplicateMergeSuggestionOverrides;
+}
+
 export interface DuplicatePair {
   type: DuplicatePairType;
   /** Match confidence; higher is a stronger duplicate signal. */
@@ -3028,6 +3048,10 @@ export interface DuplicatePair {
   signals: DuplicatePairSignalsItem[];
   a: DuplicatePairSide;
   b: DuplicatePairSide;
+  /** True when the two records are identical, or their only differences are a filled value vs null/empty, so the merge has no real conflicts and can be applied in one click. */
+  safeMerge: boolean;
+  /** The auto-resolved merge to apply for a safe pair (survivor + the filled-in winning values). Null when the pair has conflicting values and needs manual review. */
+  mergeSuggestion: DuplicateMergeSuggestion | null;
 }
 
 export interface DuplicatePairList {

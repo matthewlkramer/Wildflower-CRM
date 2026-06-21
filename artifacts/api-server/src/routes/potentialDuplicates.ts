@@ -16,6 +16,10 @@ import { requireAuth } from "../middlewares/requireAuth";
 import { requireAdmin } from "../lib/archive";
 import { getAppUser } from "../lib/appRequest";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
+import {
+  ORGANIZATION_MERGE_CONFIG,
+  PERSON_MERGE_CONFIG,
+} from "../lib/mergeEntities";
 import { DismissPotentialDuplicateBody } from "@workspace/api-zod";
 
 // Potential-duplicates review queue (admin-only).
@@ -275,6 +279,115 @@ async function loadDismissed(
   return new Set(rows.map((r) => keyOf(r.idA, r.idB)));
 }
 
+// Scalar override fields used to decide whether a pair is "safe" to auto-merge.
+// These mirror the entity-merge engine's whitelist exactly (imported, never
+// re-listed) so safe detection and the merge that follows stay in lockstep.
+const SCALAR_FIELDS: Record<EntityType, ReadonlyArray<string>> = {
+  organization: ORGANIZATION_MERGE_CONFIG.overrideFields,
+  person: PERSON_MERGE_CONFIG.overrideFields,
+};
+
+// Load the whitelisted scalar fields for each id so a pair can be compared
+// field-by-field. One query; the select set is built from the table columns.
+async function loadScalars(
+  type: EntityType,
+  ids: string[],
+): Promise<Map<string, Record<string, unknown>>> {
+  if (!ids.length) return new Map();
+  const table = type === "organization" ? organizations : people;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cols = table as any;
+  const sel: Record<string, unknown> = { id: cols.id };
+  for (const f of SCALAR_FIELDS[type]) sel[f] = cols[f];
+  const rows = (await db
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .select(sel as any)
+    .from(table)
+    .where(inArray(table.id, ids))) as Array<Record<string, unknown>>;
+  return new Map(rows.map((r) => [r.id as string, r]));
+}
+
+// Treat null/undefined/empty-string as "no value". Arrays are handled
+// separately (they're losslessly unioned by the merge engine).
+const normScalar = (v: unknown): unknown =>
+  v == null || v === "" ? null : v;
+
+function scalarEq(a: unknown, b: unknown): boolean {
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+  return a === b;
+}
+
+export interface MergeSuggestion {
+  primaryId: string;
+  mergeIds: string[];
+  overrides: Record<string, unknown>;
+}
+
+/**
+ * A pair is "safe" to auto-merge when the two records are identical, or their
+ * only differences are a filled value vs null/empty — i.e. NO scalar field
+ * holds two distinct non-empty values. (Array columns are skipped: the merge
+ * engine unions them, so a difference there is never a conflict.)
+ *
+ * For a safe pair we also build the exact merge to apply: pick a survivor
+ * (more gifts, then older, then id) and, for every field the survivor left
+ * empty, take the loser's filled value as an override. Pure / DB-free.
+ */
+export function computeSafeMerge(
+  fields: ReadonlyArray<string>,
+  rowA: Record<string, unknown> | undefined,
+  rowB: Record<string, unknown> | undefined,
+  aId: string,
+  bId: string,
+  aGifts: number,
+  bGifts: number,
+  aCreated: Date | null,
+  bCreated: Date | null,
+): { safe: boolean; suggestion: MergeSuggestion | null } {
+  if (!rowA || !rowB) return { safe: false, suggestion: null };
+
+  for (const f of fields) {
+    const va = rowA[f];
+    const vb = rowB[f];
+    if (Array.isArray(va) || Array.isArray(vb)) continue;
+    const na = normScalar(va);
+    const nb = normScalar(vb);
+    if (na !== null && nb !== null && !scalarEq(na, nb)) {
+      return { safe: false, suggestion: null };
+    }
+  }
+
+  // Choose the survivor: most gifts, then earliest createdAt (the original),
+  // then the lexicographically smaller id as a deterministic tiebreak.
+  let primaryIsA: boolean;
+  if (aGifts !== bGifts) {
+    primaryIsA = aGifts > bGifts;
+  } else if (aCreated && bCreated && aCreated.getTime() !== bCreated.getTime()) {
+    primaryIsA = aCreated.getTime() < bCreated.getTime();
+  } else if (!!aCreated !== !!bCreated) {
+    primaryIsA = !!aCreated;
+  } else {
+    primaryIsA = aId < bId;
+  }
+
+  const primaryId = primaryIsA ? aId : bId;
+  const loserId = primaryIsA ? bId : aId;
+  const primaryRow = primaryIsA ? rowA : rowB;
+  const loserRow = primaryIsA ? rowB : rowA;
+
+  const overrides: Record<string, unknown> = {};
+  for (const f of fields) {
+    const pv = primaryRow[f];
+    const lv = loserRow[f];
+    if (Array.isArray(pv) || Array.isArray(lv)) continue;
+    if (normScalar(pv) === null && normScalar(lv) !== null) {
+      overrides[f] = lv;
+    }
+  }
+
+  return { safe: true, suggestion: { primaryId, mergeIds: [loserId], overrides } };
+}
+
 function parseType(raw: unknown): EntityType | null {
   return raw === "organization" || raw === "person" ? raw : null;
 }
@@ -356,10 +469,11 @@ router.get(
     pairs = pairs.slice(0, limit);
 
     const finalIds = [...new Set(pairs.flatMap((p) => [p.aId, p.bId]))];
-    const [emailMap, phoneMap, giftMap] = await Promise.all([
+    const [emailMap, phoneMap, giftMap, scalarMap] = await Promise.all([
       loadPrimaryContact("email", type, finalIds),
       loadPrimaryContact("phone", type, finalIds),
       loadGiftCounts(type, finalIds),
+      loadScalars(type, finalIds),
     ]);
 
     const viewer: Viewer = getViewer(req);
@@ -382,13 +496,28 @@ router.get(
     };
 
     res.json({
-      pairs: pairs.map((p) => ({
-        type,
-        score: Number(p.score.toFixed(4)),
-        signals: [...p.signals],
-        a: side(p.aId),
-        b: side(p.bId),
-      })),
+      pairs: pairs.map((p) => {
+        const { safe, suggestion } = computeSafeMerge(
+          SCALAR_FIELDS[type],
+          scalarMap.get(p.aId),
+          scalarMap.get(p.bId),
+          p.aId,
+          p.bId,
+          giftMap.get(p.aId) ?? 0,
+          giftMap.get(p.bId) ?? 0,
+          base.get(p.aId)?.createdAt ?? null,
+          base.get(p.bId)?.createdAt ?? null,
+        );
+        return {
+          type,
+          score: Number(p.score.toFixed(4)),
+          signals: [...p.signals],
+          a: side(p.aId),
+          b: side(p.bId),
+          safeMerge: safe,
+          mergeSuggestion: suggestion,
+        };
+      }),
     });
   }),
 );

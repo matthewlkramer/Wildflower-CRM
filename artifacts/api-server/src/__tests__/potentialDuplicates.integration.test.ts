@@ -40,6 +40,15 @@ const ORG_P2 = `${RUN}_orgp2`;
 const ORG_P3_ARCHIVED = `${RUN}_orgp3`;
 const ORG_D1 = `${RUN}_orgd1`;
 const ORG_D2 = `${RUN}_orgd2`;
+// Safe-merge pair: identical name + shared phone, differing ONLY where one is
+// blank (S1 has a website, S2 doesn't). S2 has the only gift, so it wins the
+// survivor pick and S1's website becomes the override.
+const ORG_S1 = `${RUN}_orgs1`;
+const ORG_S2 = `${RUN}_orgs2`;
+// Unsafe pair: identical name + shared phone, but two distinct websites — a real
+// conflict, so it must NOT be flagged safe.
+const ORG_U1 = `${RUN}_orgu1`;
+const ORG_U2 = `${RUN}_orgu2`;
 const PERSON_1 = `${RUN}_person1`;
 const PERSON_2 = `${RUN}_person2`;
 
@@ -51,14 +60,24 @@ const PH_D1 = `${RUN}_phd1`;
 const PH_D2 = `${RUN}_phd2`;
 const PH_PE1 = `${RUN}_phpe1`;
 const PH_PE2 = `${RUN}_phpe2`;
+const PH_S1 = `${RUN}_phs1`;
+const PH_S2 = `${RUN}_phs2`;
+const PH_U1 = `${RUN}_phu1`;
+const PH_U2 = `${RUN}_phu2`;
+const GIFT_S2 = `${RUN}_gifts2`;
 
 const DUP_ORG_NAME = `Dup Org ${RUN}`;
 const DISMISS_ORG_NAME = `Dismiss Org ${RUN}`;
+const SAFE_ORG_NAME = `Safe Org ${RUN}`;
+const UNSAFE_ORG_NAME = `Unsafe Org ${RUN}`;
 const DUP_PERSON_NAME = `Dup Person ${RUN}`;
 
+const SAFE_WEBSITE = "https://safe-merge.example.org";
 const PHONE_P = "+1 (555) 010-1111";
 const PHONE_D = "+1 (555) 010-2222";
 const PHONE_PE = "+1 (555) 010-3333";
+const PHONE_S = "+1 (555) 010-4444";
+const PHONE_U = "+1 (555) 010-5555";
 const PRIMARY_EMAIL = `${RUN}@example.org`;
 
 type Side = {
@@ -70,12 +89,19 @@ type Side = {
   createdAt: string | null;
   giftCount: number;
 };
+type MergeSuggestion = {
+  primaryId: string;
+  mergeIds: string[];
+  overrides: Record<string, unknown>;
+};
 type Pair = {
   type: string;
   score: number;
   signals: string[];
   a: Side;
   b: Side;
+  safeMerge: boolean;
+  mergeSuggestion: MergeSuggestion | null;
 };
 type PairList = { pairs: Pair[] };
 
@@ -217,6 +243,13 @@ beforeAll(async () => {
     { id: ORG_P3_ARCHIVED, name: DUP_ORG_NAME, archivedAt: new Date() },
     { id: ORG_D1, name: DISMISS_ORG_NAME },
     { id: ORG_D2, name: DISMISS_ORG_NAME },
+    // Safe pair: S1 has a website, S2 leaves it blank — only a null-vs-filled
+    // difference, so it's safe to auto-merge.
+    { id: ORG_S1, name: SAFE_ORG_NAME, website: SAFE_WEBSITE },
+    { id: ORG_S2, name: SAFE_ORG_NAME },
+    // Unsafe pair: two distinct websites is a real conflict.
+    { id: ORG_U1, name: UNSAFE_ORG_NAME, website: "https://u1.example.org" },
+    { id: ORG_U2, name: UNSAFE_ORG_NAME, website: "https://u2.example.org" },
   ]);
 
   await db.insert(schema.people).values([
@@ -231,6 +264,10 @@ beforeAll(async () => {
     { id: PH_D2, phoneNumber: PHONE_D, organizationId: ORG_D2 },
     { id: PH_PE1, phoneNumber: PHONE_PE, personId: PERSON_1 },
     { id: PH_PE2, phoneNumber: PHONE_PE, personId: PERSON_2 },
+    { id: PH_S1, phoneNumber: PHONE_S, organizationId: ORG_S1 },
+    { id: PH_S2, phoneNumber: PHONE_S, organizationId: ORG_S2 },
+    { id: PH_U1, phoneNumber: PHONE_U, organizationId: ORG_U1 },
+    { id: PH_U2, phoneNumber: PHONE_U, organizationId: ORG_U2 },
   ]);
 
   await db.insert(schema.emails).values({
@@ -240,9 +277,11 @@ beforeAll(async () => {
     isPreferred: true,
   });
 
-  await db
-    .insert(schema.giftsAndPayments)
-    .values({ id: GIFT_ENR, name: `Gift ${RUN}`, organizationId: ORG_P1 });
+  await db.insert(schema.giftsAndPayments).values([
+    { id: GIFT_ENR, name: `Gift ${RUN}`, organizationId: ORG_P1 },
+    // S2 gets the only gift so it wins the survivor pick (most gifts).
+    { id: GIFT_S2, name: `Gift S2 ${RUN}`, organizationId: ORG_S2 },
+  ]);
 
   const { default: app } = await import("../app");
   server = await new Promise<Server>((resolve) => {
@@ -268,7 +307,7 @@ afterAll(async () => {
     );
   await db
     .delete(schema.giftsAndPayments)
-    .where(eqFn(schema.giftsAndPayments.id, GIFT_ENR));
+    .where(inArrayFn(schema.giftsAndPayments.id, [GIFT_ENR, GIFT_S2]));
   await db
     .delete(schema.phoneNumbers)
     .where(
@@ -279,6 +318,10 @@ afterAll(async () => {
         PH_D2,
         PH_PE1,
         PH_PE2,
+        PH_S1,
+        PH_S2,
+        PH_U1,
+        PH_U2,
       ]),
     );
   await db.delete(schema.emails).where(eqFn(schema.emails.id, EMAIL_P1));
@@ -294,6 +337,10 @@ afterAll(async () => {
         ORG_P3_ARCHIVED,
         ORG_D1,
         ORG_D2,
+        ORG_S1,
+        ORG_S2,
+        ORG_U1,
+        ORG_U2,
       ]),
     );
   await db
@@ -416,5 +463,29 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
       idB: ORG_P1,
     });
     expect(status).toBe(400);
+  }, 30_000);
+
+  it("flags a null-vs-filled pair safe with a survivor + override suggestion", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const { json } = await listDup("organization");
+    const pair = findPair(json.pairs, ORG_S1, ORG_S2);
+    expect(pair, "seeded safe pair present").toBeDefined();
+    expect(pair!.safeMerge).toBe(true);
+    expect(pair!.mergeSuggestion).not.toBeNull();
+    // S2 has the only gift ⇒ it survives; S1's website is carried over.
+    expect(pair!.mergeSuggestion!.primaryId).toBe(ORG_S2);
+    expect(pair!.mergeSuggestion!.mergeIds).toEqual([ORG_S1]);
+    expect(pair!.mergeSuggestion!.overrides).toMatchObject({
+      website: SAFE_WEBSITE,
+    });
+  }, 30_000);
+
+  it("does NOT flag a pair with two distinct values as safe", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const { json } = await listDup("organization");
+    const pair = findPair(json.pairs, ORG_U1, ORG_U2);
+    expect(pair, "seeded unsafe pair present").toBeDefined();
+    expect(pair!.safeMerge).toBe(false);
+    expect(pair!.mergeSuggestion).toBeNull();
   }, 30_000);
 });

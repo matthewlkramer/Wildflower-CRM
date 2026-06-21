@@ -27,3 +27,26 @@ eye on this any time the detection query is touched.
 - Frontend reuses the shared `MergeDialog`; per-type "merge launcher" child components
   load the two full records on demand (separate org/person hook paths). Merge + dismiss
   invalidate with the full `"/api/potential-duplicates"` query-key prefix.
+
+## Safe-merge / one-click + bulk
+- A pair is **safe** when the two records have NO scalar field holding two distinct
+  non-empty values — identical or null-vs-filled only. The comparison set is the merge
+  engine's `overrideFields` whitelist (imported, never re-listed) so detection and the
+  merge it triggers stay in lockstep. **Array columns are skipped** (the engine unions
+  them losslessly, so a difference there is never a conflict).
+  **Why:** auto-merging a pair where both sides hold a real, different value would
+  silently destroy data — only blank-vs-filled is reconcilable without a human.
+- The API returns `safeMerge` + `mergeSuggestion {primaryId, mergeIds, overrides}` per
+  pair. Survivor pick: most gifts → earliest `createdAt` → smaller id. Overrides take the
+  loser's filled value for every field the survivor left blank. Logic is the pure,
+  exported `computeSafeMerge` in `routes/potentialDuplicates.ts` (unit-testable, DB-free).
+- UI: per-pair **Quick merge** is truly one-click (no confirm); batch ops (merge-all,
+  bulk-merge-selected, bulk-dismiss) go through one `AlertDialog`. Bulk merge only ever
+  touches the **safe** subset of the selection; unsafe selected pairs are skipped.
+- **Load-gate** (mirrors `bulk-action-load-gate`): bulk submit is disabled until every
+  selected key resolves to a loaded pair (`selectedPairs.length === selection.count`).
+  This page has no pagination, so an effect prunes selection keys that no longer resolve
+  (pair vanished post-merge) — but never mid-batch (failed rows stay selected to retry).
+- Deviation from the list pages: this page does NOT reuse `BulkActionBar` (its
+  Edit/Merge/Archive + count≥2 record semantics don't fit pair-selection); it has a
+  dedicated inline selection bar instead.

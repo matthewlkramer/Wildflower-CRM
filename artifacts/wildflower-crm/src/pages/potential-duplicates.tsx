@@ -14,6 +14,7 @@ import {
   getGetPersonQueryOptions,
   getGetPersonQueryKey,
   type DuplicatePair,
+  type DuplicateMergeSuggestion,
   type DuplicatePairSide,
   type Organization,
   type Person,
@@ -35,6 +36,17 @@ import {
 } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -42,6 +54,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRowSelection } from "@/hooks/use-row-selection";
+import { X } from "lucide-react";
 
 type DupType = "organization" | "person";
 
@@ -286,6 +300,13 @@ function PersonMergeLauncher({
   );
 }
 
+type PendingAction =
+  | { kind: "merge-all" }
+  | { kind: "merge-selected" }
+  | { kind: "dismiss-selected" };
+
+const pairKey = (pair: DuplicatePair) => `${pair.a.id}__${pair.b.id}`;
+
 export default function PotentialDuplicatesPage() {
   const isAdmin = useIsAdmin();
   const { toast } = useToast();
@@ -302,15 +323,165 @@ export default function PotentialDuplicatesPage() {
   });
 
   const dismissMut = useDismissPotentialDuplicate();
+  const mergeOrgMut = useMergeOrganizations();
+  const mergePersonMut = useMergePeople();
+
+  const selection = useRowSelection();
+  const [quickBusyKey, setQuickBusyKey] = useState<string | null>(null);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [pending, setPending] = useState<PendingAction | null>(null);
 
   const invalidateDuplicates = () =>
     queryClient.invalidateQueries({ queryKey: [DUP_KEY_PREFIX] });
+
+  const pairs = useMemo<DuplicatePair[]>(() => data?.pairs ?? [], [data]);
+
+  // Derived selection state. Because this page has no pagination, the
+  // selection should only ever reference pairs in the current result set;
+  // prune any keys that no longer resolve (e.g. a pair vanished after a
+  // merge removed one of its records) so the load-gate below can't get
+  // stuck. Don't prune mid-batch — keys are removed explicitly after each
+  // operation so failed rows stay selected.
+  const visibleKeys = useMemo(() => pairs.map(pairKey), [pairs]);
+  const visibleKeySet = useMemo(() => new Set(visibleKeys), [visibleKeys]);
+
+  useEffect(() => {
+    if (batchBusy) return;
+    const stale = selection.selectedIds.filter((k) => !visibleKeySet.has(k));
+    if (stale.length) selection.removeMany(stale);
+  }, [visibleKeySet, batchBusy, selection]);
+
+  // Clear the selection whenever the entity type changes — a selection over
+  // a different result set is never what the user wants.
+  useEffect(() => {
+    selection.clear();
+  }, [type, selection]);
+
+  const safePairs = useMemo(
+    () => pairs.filter((p) => p.safeMerge && p.mergeSuggestion),
+    [pairs],
+  );
+  const selectedPairs = useMemo(
+    () => pairs.filter((p) => selection.isSelected(pairKey(p))),
+    [pairs, selection],
+  );
+  const selectedSafePairs = useMemo(
+    () => selectedPairs.filter((p) => p.safeMerge && p.mergeSuggestion),
+    [selectedPairs],
+  );
+
+  // Load-gate: don't act on a partial selection. Every selected key must
+  // resolve to a loaded pair before bulk submit is allowed.
+  const selectionLoaded = selectedPairs.length === selection.count;
+  const allVisibleSelected =
+    pairs.length > 0 && pairs.every((p) => selection.isSelected(pairKey(p)));
+
+  const runMerge = async (s: DuplicateMergeSuggestion) => {
+    const body = {
+      primaryId: s.primaryId,
+      mergeIds: s.mergeIds,
+      overrides: s.overrides,
+    };
+    if (type === "organization") await mergeOrgMut.mutateAsync({ data: body });
+    else await mergePersonMut.mutateAsync({ data: body });
+  };
+
+  const handleQuickMerge = async (pair: DuplicatePair) => {
+    if (!pair.mergeSuggestion) return;
+    const key = pairKey(pair);
+    setQuickBusyKey(key);
+    try {
+      await runMerge(pair.mergeSuggestion);
+      selection.removeMany([key]);
+      void invalidateDuplicates();
+      toast({
+        title: "Merged",
+        description: "The duplicate was merged into one record.",
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't merge",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    } finally {
+      setQuickBusyKey(null);
+    }
+  };
+
+  const handleBatchMerge = async (targets: DuplicatePair[]) => {
+    setBatchBusy(true);
+    let ok = 0;
+    let fail = 0;
+    const done: string[] = [];
+    for (const pair of targets) {
+      if (!pair.mergeSuggestion) continue;
+      try {
+        await runMerge(pair.mergeSuggestion);
+        ok += 1;
+        done.push(pairKey(pair));
+      } catch {
+        fail += 1;
+      }
+    }
+    selection.removeMany(done);
+    void invalidateDuplicates();
+    setBatchBusy(false);
+    setPending(null);
+    toast({
+      title: fail ? "Merged with errors" : "Merged",
+      description: fail
+        ? `${ok} merged, ${fail} failed.`
+        : `${ok} ${ok === 1 ? "pair" : "pairs"} merged.`,
+      variant: fail ? "destructive" : undefined,
+    });
+  };
+
+  const handleBatchDismiss = async (targets: DuplicatePair[]) => {
+    setBatchBusy(true);
+    let ok = 0;
+    let fail = 0;
+    const done: string[] = [];
+    for (const pair of targets) {
+      try {
+        await dismissMut.mutateAsync({
+          data: { type, idA: pair.a.id, idB: pair.b.id },
+        });
+        ok += 1;
+        done.push(pairKey(pair));
+      } catch {
+        fail += 1;
+      }
+    }
+    selection.removeMany(done);
+    void invalidateDuplicates();
+    setBatchBusy(false);
+    setPending(null);
+    toast({
+      title: fail ? "Dismissed with errors" : "Dismissed",
+      description: fail
+        ? `${ok} dismissed, ${fail} failed.`
+        : `${ok} ${ok === 1 ? "pair" : "pairs"} dismissed.`,
+      variant: fail ? "destructive" : undefined,
+    });
+  };
+
+  const runPending = async () => {
+    if (!pending) return;
+    if (pending.kind === "dismiss-selected") await handleBatchDismiss(selectedPairs);
+    else if (pending.kind === "merge-all") await handleBatchMerge(safePairs);
+    else await handleBatchMerge(selectedSafePairs);
+  };
+
+  const noun = type === "organization" ? "organization" : "person";
+  const nounPlural = type === "organization" ? "organizations" : "people";
 
   const handleDismiss = (pair: DuplicatePair) => {
     dismissMut.mutate(
       { data: { type, idA: pair.a.id, idB: pair.b.id } },
       {
         onSuccess: () => {
+          selection.removeMany([pairKey(pair)]);
           void invalidateDuplicates();
           toast({
             title: "Dismissed",
@@ -340,7 +511,7 @@ export default function PotentialDuplicatesPage() {
     );
   }
 
-  const pairs = data?.pairs ?? [];
+  const anyBusy = batchBusy || quickBusyKey !== null;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -351,7 +522,9 @@ export default function PotentialDuplicatesPage() {
         <p className="text-sm text-muted-foreground mt-1">
           Likely-duplicate records detected by similar names and shared phone
           numbers. Review each pair, then merge the duplicates into one record or
-          dismiss the pair if they're genuinely different.
+          dismiss the pair if they're genuinely different. Pairs marked{" "}
+          <span className="font-medium text-foreground">Safe to merge</span> only
+          differ where one record is blank, so they can be merged in one click.
         </p>
       </div>
 
@@ -365,6 +538,17 @@ export default function PotentialDuplicatesPage() {
             <SelectItem value="person">People</SelectItem>
           </SelectContent>
         </Select>
+        {safePairs.length > 0 ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={anyBusy}
+            onClick={() => setPending({ kind: "merge-all" })}
+            data-testid="button-merge-all-safe"
+          >
+            Merge all safe pairs ({safePairs.length})
+          </Button>
+        ) : null}
         {!isLoading && !isError ? (
           <span className="ml-auto text-sm text-muted-foreground">
             {pairs.length.toLocaleString()}{" "}
@@ -387,8 +571,18 @@ export default function PotentialDuplicatesPage() {
         </p>
       ) : (
         <div className="space-y-4">
+          <div className="flex items-center gap-2 px-1">
+            <Checkbox
+              checked={allVisibleSelected}
+              onCheckedChange={() => selection.toggleVisible(visibleKeys)}
+              aria-label="Select all pairs"
+              data-testid="checkbox-select-all-duplicates"
+            />
+            <span className="text-sm text-muted-foreground">Select all</span>
+          </div>
+
           {pairs.map((pair) => {
-            const key = `${pair.a.id}__${pair.b.id}`;
+            const key = pairKey(pair);
             return (
               <div
                 key={key}
@@ -396,6 +590,20 @@ export default function PotentialDuplicatesPage() {
                 data-testid={`duplicate-pair-${key}`}
               >
                 <div className="flex flex-wrap items-center gap-2">
+                  <Checkbox
+                    checked={selection.isSelected(key)}
+                    onCheckedChange={() => selection.toggle(key)}
+                    aria-label="Select pair"
+                    data-testid={`checkbox-duplicate-${key}`}
+                  />
+                  {pair.safeMerge ? (
+                    <Badge
+                      variant="default"
+                      data-testid={`badge-safe-merge-${key}`}
+                    >
+                      Safe to merge
+                    </Badge>
+                  ) : null}
                   {pair.signals.map((s) => (
                     <Badge key={s} variant="secondary">
                       {SIGNAL_LABEL[s] ?? s}
@@ -415,14 +623,26 @@ export default function PotentialDuplicatesPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={dismissMut.isPending}
+                    disabled={dismissMut.isPending || anyBusy}
                     onClick={() => handleDismiss(pair)}
                     data-testid={`button-dismiss-${key}`}
                   >
                     Not a duplicate
                   </Button>
+                  {pair.safeMerge && pair.mergeSuggestion ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={anyBusy}
+                      onClick={() => handleQuickMerge(pair)}
+                      data-testid={`button-quick-merge-${key}`}
+                    >
+                      {quickBusyKey === key ? "Merging…" : "Quick merge"}
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
+                    disabled={anyBusy}
                     onClick={() => setMergePair([pair.a.id, pair.b.id])}
                     data-testid={`button-merge-${key}`}
                   >
@@ -434,6 +654,92 @@ export default function PotentialDuplicatesPage() {
           })}
         </div>
       )}
+
+      {selection.count > 0 ? (
+        <div
+          className="sticky bottom-4 z-10 mx-auto flex w-fit flex-wrap items-center gap-3 rounded-full border bg-background/95 px-4 py-2 shadow-lg backdrop-blur"
+          data-testid="duplicates-selection-bar"
+        >
+          <span className="text-sm font-medium">
+            {selection.count.toLocaleString()} selected
+          </span>
+          {!selectionLoaded ? (
+            <span className="text-xs text-muted-foreground">Loading…</span>
+          ) : null}
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={
+              batchBusy || !selectionLoaded || selectedSafePairs.length === 0
+            }
+            onClick={() => setPending({ kind: "merge-selected" })}
+            data-testid="button-bulk-merge-safe"
+          >
+            Merge safe ({selectedSafePairs.length})
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={batchBusy || !selectionLoaded}
+            onClick={() => setPending({ kind: "dismiss-selected" })}
+            data-testid="button-bulk-dismiss"
+          >
+            Dismiss ({selection.count})
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            disabled={batchBusy}
+            onClick={() => selection.clear()}
+            aria-label="Clear selection"
+            data-testid="button-clear-selection"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : null}
+
+      <AlertDialog
+        open={pending !== null}
+        onOpenChange={(o) => {
+          if (!o && !batchBusy) setPending(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pending?.kind === "dismiss-selected"
+                ? `Dismiss ${selectedPairs.length} ${selectedPairs.length === 1 ? "pair" : "pairs"}?`
+                : pending?.kind === "merge-all"
+                  ? `Merge all ${safePairs.length} safe ${safePairs.length === 1 ? "pair" : "pairs"}?`
+                  : `Merge ${selectedSafePairs.length} safe ${selectedSafePairs.length === 1 ? "pair" : "pairs"}?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pending?.kind === "dismiss-selected"
+                ? "These pairs won't be flagged as duplicates again. This can't be undone from here."
+                : `Each pair will be combined into a single ${noun}, keeping every filled-in value. This can't be undone. Unsafe pairs in your selection are skipped — only safe pairs are merged. Pairs that differ on a real value are never auto-merged.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={batchBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={batchBusy}
+              onClick={(e) => {
+                e.preventDefault();
+                void runPending();
+              }}
+              data-testid="button-confirm-batch"
+            >
+              {batchBusy
+                ? "Working…"
+                : pending?.kind === "dismiss-selected"
+                  ? "Dismiss"
+                  : "Merge"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {mergePair && type === "organization" && (
         <OrgMergeLauncher ids={mergePair} onClose={() => setMergePair(null)} />
