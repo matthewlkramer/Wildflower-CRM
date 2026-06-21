@@ -39,13 +39,13 @@ import {
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import {
   InlineEditPersonPicker,
-  InlineEditOrganizationPicker,
-  InlineEditHouseholdPicker,
+  InlineEditDonor,
   InlineEditIntermediaryPicker,
   usePersonName,
   useOrganizationName,
   useHouseholdName,
   useIntermediaryName,
+  type DonorSaveBody,
 } from "@/components/entity-picker";
 import {
   RecordLayout,
@@ -202,36 +202,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
     );
   }
 
-  const funderLinkDisplay: ReactNode = gift.organizationId ? (
-    <Link
-      href={`/organizations/${gift.organizationId}`}
-      className="text-primary hover:underline"
-    >
-      {organizationName ?? gift.organizationId}
-    </Link>
-  ) : (
-    "—"
-  );
-  const householdLinkDisplay: ReactNode = gift.householdId ? (
-    <Link
-      href={`/households/${gift.householdId}`}
-      className="text-primary hover:underline"
-    >
-      {householdName ?? gift.householdId}
-    </Link>
-  ) : (
-    "—"
-  );
-  const individualLinkDisplay: ReactNode = gift.individualGiverPersonId ? (
-    <Link
-      href={`/individuals/${gift.individualGiverPersonId}`}
-      className="text-primary hover:underline"
-    >
-      {giverName ?? gift.individualGiverPersonId}
-    </Link>
-  ) : (
-    "—"
-  );
   const advisorDisplay: ReactNode = gift.advisorPersonId ? (
     <Link
       href={`/individuals/${gift.advisorPersonId}`}
@@ -297,16 +267,13 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   }
 
   // The donor is one of (funder, individual giver, household), DB-enforced XOR.
-  // Each setter sends all three FK fields so exactly one stays populated.
+  // The two-step InlineEditDonor control emits all three FK fields with the
+  // non-selected ones nulled, so exactly one stays populated on save.
   // Changing the donor also clears any linked pledge: the pledge picker is
   // donor-scoped, so a payment must stay on a pledge belonging to its donor —
   // keeping a stale link would point the gift at a different donor's pledge.
-  const setFunderDonor = (next: string | null) =>
-    patch({ organizationId: next, individualGiverPersonId: null, householdId: null, paymentOnPledgeId: null });
-  const setHouseholdDonor = (next: string | null) =>
-    patch({ householdId: next, organizationId: null, individualGiverPersonId: null, paymentOnPledgeId: null });
-  const setIndividualDonor = (next: string | null) =>
-    patch({ individualGiverPersonId: next, organizationId: null, householdId: null, paymentOnPledgeId: null });
+  const saveDonor = (body: DonorSaveBody) =>
+    patch({ ...body, paymentOnPledgeId: null });
 
   async function saveName() {
     const trimmed = nameValue.trim();
@@ -584,15 +551,19 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       }
       right={
         <>
-          <RelatedCard title="Organizations">
+          <RelatedCard title="Donor">
             <div className="space-y-1 px-2 py-1">
-              <Row label="Funder">
-                <InlineEditOrganizationPicker
-                  testIdBase="gift-organization"
-                  value={gift.organizationId ?? null}
-                  display={funderLinkDisplay}
-                  onSave={setFunderDonor}
-                  allowNull={false}
+              <Row label="Donor">
+                <InlineEditDonor
+                  testIdBase="gift-donor"
+                  value={{
+                    organizationId: gift.organizationId ?? null,
+                    individualGiverPersonId:
+                      gift.individualGiverPersonId ?? null,
+                    householdId: gift.householdId ?? null,
+                  }}
+                  display={donorDisplay}
+                  onSave={saveDonor}
                 />
               </Row>
               <Row label="Payment intermediary">
@@ -601,15 +572,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                   value={gift.paymentIntermediaryId ?? null}
                   display={intermediaryDisplay}
                   onSave={(next) => patch({ paymentIntermediaryId: next })}
-                />
-              </Row>
-              <Row label="Household">
-                <InlineEditHouseholdPicker
-                  testIdBase="gift-household"
-                  value={gift.householdId ?? null}
-                  display={householdLinkDisplay}
-                  onSave={setHouseholdDonor}
-                  allowNull={false}
                 />
               </Row>
             </div>
@@ -628,15 +590,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
             }
           >
             <div className="space-y-1 px-2 py-1">
-              <Row label="Individual donor">
-                <InlineEditPersonPicker
-                  testIdBase="gift-individual-giver"
-                  value={gift.individualGiverPersonId ?? null}
-                  display={individualLinkDisplay}
-                  onSave={setIndividualDonor}
-                  allowNull={false}
-                />
-              </Row>
               <Row label="Advisor">
                 <InlineEditPersonPicker
                   testIdBase="gift-advisor"
