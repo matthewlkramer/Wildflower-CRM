@@ -44,11 +44,11 @@ import {
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import {
   InlineEditPersonPicker,
-  InlineEditOrganizationPicker,
-  InlineEditHouseholdPicker,
+  InlineEditDonor,
   usePersonName,
   useOrganizationName,
   useHouseholdName,
+  type DonorSaveBody,
 } from "@/components/entity-picker";
 import {
   RecordLayout,
@@ -334,45 +334,10 @@ function OppView({
     "—"
   );
 
-  const funderLinkDisplay: ReactNode = opp.organizationId ? (
-    <Link
-      href={`/organizations/${opp.organizationId}`}
-      className="text-primary hover:underline"
-    >
-      {funderName ?? opp.organizationId}
-    </Link>
-  ) : (
-    "—"
-  );
-  const householdLinkDisplay: ReactNode = opp.householdId ? (
-    <Link
-      href={`/households/${opp.householdId}`}
-      className="text-primary hover:underline"
-    >
-      {householdName ?? opp.householdId}
-    </Link>
-  ) : (
-    "—"
-  );
-  const individualLinkDisplay: ReactNode = opp.individualGiverPersonId ? (
-    <Link
-      href={`/individuals/${opp.individualGiverPersonId}`}
-      className="text-primary hover:underline"
-    >
-      {giverName ?? opp.individualGiverPersonId}
-    </Link>
-  ) : (
-    "—"
-  );
-
   // The donor is one of (funder, individual giver, household), DB-enforced XOR.
-  // Each setter sends all three FK fields so exactly one stays populated.
-  const setFunderDonor = (next: string | null) =>
-    patch({ organizationId: next, individualGiverPersonId: null, householdId: null });
-  const setHouseholdDonor = (next: string | null) =>
-    patch({ householdId: next, organizationId: null, individualGiverPersonId: null });
-  const setIndividualDonor = (next: string | null) =>
-    patch({ individualGiverPersonId: next, organizationId: null, householdId: null });
+  // The two-step InlineEditDonor control emits all three FK fields with the
+  // non-selected ones nulled, so exactly one stays populated on save.
+  const saveDonor = (body: DonorSaveBody) => patch(body);
 
   const title = editingName ? (
     <Input
@@ -822,24 +787,19 @@ function OppView({
         }
         right={
           <>
-            <RelatedCard title="Organizations">
+            <RelatedCard title="Donor">
               <div className="space-y-1 px-2 py-1">
-                <Row label="Funder">
-                  <InlineEditOrganizationPicker
-                    testIdBase="opp-funder"
-                    value={opp.organizationId ?? null}
-                    display={funderLinkDisplay}
-                    onSave={setFunderDonor}
-                    allowNull={false}
-                  />
-                </Row>
-                <Row label="Household">
-                  <InlineEditHouseholdPicker
-                    testIdBase="opp-household"
-                    value={opp.householdId ?? null}
-                    display={householdLinkDisplay}
-                    onSave={setHouseholdDonor}
-                    allowNull={false}
+                <Row label="Donor">
+                  <InlineEditDonor
+                    testIdBase="opp-donor"
+                    value={{
+                      organizationId: opp.organizationId ?? null,
+                      individualGiverPersonId:
+                        opp.individualGiverPersonId ?? null,
+                      householdId: opp.householdId ?? null,
+                    }}
+                    display={donorDisplay}
+                    onSave={saveDonor}
                   />
                 </Row>
               </div>
@@ -858,15 +818,6 @@ function OppView({
               }
             >
               <div className="space-y-1 px-2 py-1">
-                <Row label="Individual donor">
-                  <InlineEditPersonPicker
-                    testIdBase="opp-individual-giver"
-                    value={opp.individualGiverPersonId ?? null}
-                    display={individualLinkDisplay}
-                    onSave={setIndividualDonor}
-                    allowNull={false}
-                  />
-                </Row>
                 <Row label="Primary contact">
                   <InlineEditPersonPicker
                     testIdBase="opp-primary-contact"
