@@ -5575,6 +5575,18 @@ export type ListTasksParams = {
   organizationId?: string;
   householdId?: string;
   opportunityId?: string;
+  /**
+   * Filter to tasks linked to an opportunity/pledge whose donor is this organization (e.g. reporting deadlines by donor).
+   */
+  opportunityOrganizationId?: string;
+  /**
+   * Filter to tasks linked to an opportunity/pledge whose donor is this household.
+   */
+  opportunityHouseholdId?: string;
+  /**
+   * Filter to tasks linked to an opportunity/pledge whose donor is this individual.
+   */
+  opportunityIndividualGiverPersonId?: string;
   giftId?: string;
   grantLeadId?: string;
   mentionUserId?: string;

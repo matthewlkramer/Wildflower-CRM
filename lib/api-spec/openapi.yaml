@@ -1535,6 +1535,9 @@ paths:
         - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: opportunityId, in: query, schema: { type: string } }
+        - { name: opportunityOrganizationId, in: query, schema: { type: string }, description: "Filter to tasks linked to an opportunity/pledge whose donor is this organization (e.g. reporting deadlines by donor)." }
+        - { name: opportunityHouseholdId, in: query, schema: { type: string }, description: "Filter to tasks linked to an opportunity/pledge whose donor is this household." }
+        - { name: opportunityIndividualGiverPersonId, in: query, schema: { type: string }, description: "Filter to tasks linked to an opportunity/pledge whose donor is this individual." }
         - { name: giftId, in: query, schema: { type: string } }
         - { name: grantLeadId, in: query, schema: { type: string } }
         - { name: mentionUserId, in: query, schema: { type: string } }

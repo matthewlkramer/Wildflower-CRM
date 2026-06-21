@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { tasks } from "@workspace/db/schema";
+import { tasks, opportunitiesAndPledges } from "@workspace/db/schema";
 import {
   and,
   desc,
   count,
   eq,
+  exists,
   gte,
   ilike,
   inArray,
@@ -62,6 +63,40 @@ router.get(
     if (q.organizationId) filters.push(sql`${tasks.organizationIds} @> ARRAY[${q.organizationId}]::text[]`);
     if (q.householdId) filters.push(sql`${tasks.householdIds} @> ARRAY[${q.householdId}]::text[]`);
     if (q.opportunityId) filters.push(sql`${tasks.opportunityIds} @> ARRAY[${q.opportunityId}]::text[]`);
+    // Donor filter — matches tasks (e.g. reporting deadlines) linked to an
+    // opportunity/pledge whose donor is the requested org / individual /
+    // household. Donors live on the opportunity, not the task, so we EXISTS
+    // through the linked opportunity_ids array. `${opp.id} = ANY(column)` is
+    // safe here because tasks.opportunityIds is a real column reference.
+    const oppDonorFilter = (
+      col:
+        | typeof opportunitiesAndPledges.organizationId
+        | typeof opportunitiesAndPledges.householdId
+        | typeof opportunitiesAndPledges.individualGiverPersonId,
+      id: string,
+    ) =>
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(opportunitiesAndPledges)
+          .where(
+            and(
+              sql`${opportunitiesAndPledges.id} = ANY(${tasks.opportunityIds})`,
+              eq(col, id),
+            ),
+          ),
+      );
+    if (q.opportunityOrganizationId)
+      filters.push(oppDonorFilter(opportunitiesAndPledges.organizationId, q.opportunityOrganizationId));
+    if (q.opportunityHouseholdId)
+      filters.push(oppDonorFilter(opportunitiesAndPledges.householdId, q.opportunityHouseholdId));
+    if (q.opportunityIndividualGiverPersonId)
+      filters.push(
+        oppDonorFilter(
+          opportunitiesAndPledges.individualGiverPersonId,
+          q.opportunityIndividualGiverPersonId,
+        ),
+      );
     if (q.giftId) filters.push(sql`${tasks.giftIds} @> ARRAY[${q.giftId}]::text[]`);
     if (q.grantLeadId) filters.push(sql`${tasks.grantLeadIds} @> ARRAY[${q.grantLeadId}]::text[]`);
     if (q.mentionUserId) filters.push(sql`${tasks.mentionUserIds} @> ARRAY[${q.mentionUserId}]::text[]`);

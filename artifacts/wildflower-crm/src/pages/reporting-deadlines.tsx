@@ -17,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useUserNameMap } from "@/components/user-picker";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
+import { DonorFieldPicker, type DonorType } from "@/components/entity-picker";
 import { formatDate } from "@/lib/format";
 import { CheckCircle2, Clock, FileClock } from "lucide-react";
 
@@ -41,10 +42,31 @@ export default function ReportingDeadlinesPage() {
     "wf.list.reporting-deadlines.owners",
     [],
   );
+  // Donor filter — narrows to reporting deadlines whose linked
+  // opportunity/pledge has this donor. Donor lives on the opportunity, so the
+  // /tasks endpoint resolves it through opportunity_ids (donor-XOR: at most one
+  // of the three opportunity* params is sent). donorId === null = no filter.
+  const [donorType, setDonorType] = usePersistedState<DonorType>(
+    "wf.list.reporting-deadlines.donorType",
+    "organization",
+  );
+  const [donorId, setDonorId] = usePersistedState<string | null>(
+    "wf.list.reporting-deadlines.donorId",
+    null,
+  );
   const params = {
     kind: ["reporting_deadline"] as TaskKind[],
     status: showCompleted ? ALL_STATUSES : INCOMPLETE_STATUSES,
     limit: 500,
+    ...(donorId && donorType === "organization"
+      ? { opportunityOrganizationId: donorId }
+      : {}),
+    ...(donorId && donorType === "individual"
+      ? { opportunityIndividualGiverPersonId: donorId }
+      : {}),
+    ...(donorId && donorType === "household"
+      ? { opportunityHouseholdId: donorId }
+      : {}),
   };
   const { data, isLoading, isError, error } = useListTasks(params);
   const userNames = useUserNameMap();
@@ -101,13 +123,26 @@ export default function ReportingDeadlinesPage() {
           testId="filter-reporting-deadlines-owner"
           label="Assignee"
         />
-        {(owners.length > 0 || showCompleted) && (
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-muted-foreground">Donor</span>
+          <DonorFieldPicker
+            type={donorType}
+            id={donorId}
+            onChange={(t, id) => {
+              setDonorType(t);
+              setDonorId(id);
+            }}
+            testIdBase="filter-reporting-deadlines-donor"
+          />
+        </div>
+        {(owners.length > 0 || showCompleted || donorId) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setOwners([]);
               setShowCompleted(false);
+              setDonorId(null);
             }}
           >
             Clear

@@ -7178,6 +7178,24 @@ export const ListTasksQueryParams = zod.object({
   organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   opportunityId: zod.coerce.string().optional(),
+  opportunityOrganizationId: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter to tasks linked to an opportunity\/pledge whose donor is this organization (e.g. reporting deadlines by donor).",
+    ),
+  opportunityHouseholdId: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter to tasks linked to an opportunity\/pledge whose donor is this household.",
+    ),
+  opportunityIndividualGiverPersonId: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter to tasks linked to an opportunity\/pledge whose donor is this individual.",
+    ),
   giftId: zod.coerce.string().optional(),
   grantLeadId: zod.coerce.string().optional(),
   mentionUserId: zod.coerce.string().optional(),
