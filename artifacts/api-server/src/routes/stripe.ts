@@ -1008,8 +1008,14 @@ router.get(
 // confirms — propose-then-confirm. The legacy confirmed_excluded/keep/replace
 // statuses survive only to revert rows confirmed under the pre-D4 model.
 
-type ReconQueue = "proposed" | "conflict" | "confirmed" | "all";
-const RECON_QUEUES = ["proposed", "conflict", "confirmed", "all"] as const;
+type ReconQueue = "unmatched" | "proposed" | "conflict" | "confirmed" | "all";
+const RECON_QUEUES = [
+  "unmatched",
+  "proposed",
+  "conflict",
+  "confirmed",
+  "all",
+] as const;
 const CONFIRMED_STATUSES = [
   "confirmed_reconciled",
   "confirmed_excluded",
@@ -1019,6 +1025,10 @@ const CONFIRMED_STATUSES = [
 
 function reconQueueWhere(queue: ReconQueue) {
   switch (queue) {
+    case "unmatched":
+      // Stray Stripe: a payout that found no QuickBooks deposit candidate (the
+      // stray-Stripe worklist). These never appear in the active queues above.
+      return eq(stripePayouts.qbReconciliationStatus, "unmatched");
     case "proposed":
       return eq(stripePayouts.qbReconciliationStatus, "proposed");
     case "conflict":

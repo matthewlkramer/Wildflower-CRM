@@ -3,6 +3,7 @@ import { asyncHandler, notFound } from "../../lib/helpers";
 import { getViewer } from "../../lib/identityVisibility";
 import {
   searchReconciliationNode,
+  searchQbStaged,
   type RecNodeType,
 } from "../../lib/reconciliationGraph";
 
@@ -19,6 +20,15 @@ function clampInt(v: unknown, def: number, min: number, max: number): number {
   const n = typeof v === "string" ? Number(v) : NaN;
   if (!Number.isFinite(n)) return def;
   return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+
+// A real ISO calendar date (YYYY-MM-DD). Format-only checks let "2026-13-40"
+// through to the `::date` cast and raise a Postgres 500, so verify the value
+// round-trips through Date before we build the query.
+function isValidIsoDate(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 }
 
 // ─── GET /reconciliation/search/:nodeType ─────────────────────────────────
@@ -65,6 +75,34 @@ router.get(
       viewer: getViewer(req),
     });
     if (data === null) return notFound(res, "reconciliation card");
+    res.json({ data });
+  }),
+);
+
+// ─── GET /reconciliation/qb-search ────────────────────────────────────────
+// Criteria-based QuickBooks staged-payment search with NO card anchor — the
+// stray-Stripe worklist uses this to hunt the QB deposit a yet-unmatched Stripe
+// payout should belong to. Read-only; returns qb candidates (same shape as the
+// card search). No donor names here, so no viewer masking is needed.
+router.get(
+  "/reconciliation/qb-search",
+  asyncHandler(async (req, res) => {
+    const q = typeof req.query["q"] === "string" ? req.query["q"] : null;
+    const amount =
+      typeof req.query["amount"] === "string" ? req.query["amount"] : null;
+    const date =
+      typeof req.query["date"] === "string" ? req.query["date"] : null;
+    if (date && !isValidIsoDate(date)) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "date must be a valid YYYY-MM-DD date",
+      });
+      return;
+    }
+    const days = clampInt(req.query["days"], 30, 1, 365);
+    const limit = clampInt(req.query["limit"], 25, 1, 100);
+
+    const data = await searchQbStaged({ q, amount, date, days, limit });
     res.json({ data });
   }),
 );

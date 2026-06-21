@@ -118,6 +118,7 @@ import type {
   GiftAllocation,
   GiftAllocationList,
   GiftCandidateList,
+  GiftMissingQbList,
   GiftOrPayment,
   GiftOrPaymentDetail,
   GiftOrPaymentList,
@@ -150,6 +151,7 @@ import type {
   ListFundableProjectsParams,
   ListGiftAllocationsParams,
   ListGiftsAndPaymentsParams,
+  ListGiftsMissingQbParams,
   ListGrantLeadsParams,
   ListHouseholdsParams,
   ListInteractionsParams,
@@ -250,6 +252,7 @@ import type {
   SchoolList,
   SearchParams,
   SearchReconciliationNodeParams,
+  SearchReconciliationQbStagedParams,
   SearchResults,
   SearchStagedPaymentDonorsParams,
   SearchTrackedEmailParams,
@@ -23674,3 +23677,224 @@ export const useApproveReconciliationCard = <
 > => {
   return useMutation(getApproveReconciliationCardMutationOptions(options));
 };
+
+/**
+ * Free search over QuickBooks staged-payment rows by text / amount / date window,
+with NO card anchor — used by the stray-Stripe worklist to hunt down the QB
+deposit that a yet-unmatched Stripe payout should belong to. Returns qb
+candidates (same shape as the card search). Read-only.
+
+ * @summary Criteria-based QuickBooks staged-payment search (not anchored to a card).
+ */
+export const getSearchReconciliationQbStagedUrl = (
+  params?: SearchReconciliationQbStagedParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reconciliation/qb-search?${stringifiedParams}`
+    : `/api/reconciliation/qb-search`;
+};
+
+export const searchReconciliationQbStaged = async (
+  params?: SearchReconciliationQbStagedParams,
+  options?: RequestInit,
+): Promise<ReconciliationSearchList> => {
+  return customFetch<ReconciliationSearchList>(
+    getSearchReconciliationQbStagedUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getSearchReconciliationQbStagedQueryKey = (
+  params?: SearchReconciliationQbStagedParams,
+) => {
+  return [
+    `/api/reconciliation/qb-search`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getSearchReconciliationQbStagedQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchReconciliationQbStaged>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  params?: SearchReconciliationQbStagedParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchReconciliationQbStaged>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getSearchReconciliationQbStagedQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof searchReconciliationQbStaged>>
+  > = ({ signal }) =>
+    searchReconciliationQbStaged(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchReconciliationQbStaged>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type SearchReconciliationQbStagedQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchReconciliationQbStaged>>
+>;
+export type SearchReconciliationQbStagedQueryError =
+  ErrorType<BadRequestResponse>;
+
+/**
+ * @summary Criteria-based QuickBooks staged-payment search (not anchored to a card).
+ */
+
+export function useSearchReconciliationQbStaged<
+  TData = Awaited<ReturnType<typeof searchReconciliationQbStaged>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  params?: SearchReconciliationQbStagedParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchReconciliationQbStaged>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getSearchReconciliationQbStagedQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Every gift is expected to carry a QuickBooks record; this lists the gifts that
+do not — i.e. no staged-payment row links the gift (matched / created /
+group-reconciled) and the gift has no final-amount QB pointer. Broad by design
+(cash / check / brokerage / imports all surface) with filters to slice. Donor
+names are anonymous-masked for the viewer. Read-only.
+
+ * @summary Gifts with no QuickBooks record (data-quality worklist).
+ */
+export const getListGiftsMissingQbUrl = (params?: ListGiftsMissingQbParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reconciliation/gifts-missing-qb?${stringifiedParams}`
+    : `/api/reconciliation/gifts-missing-qb`;
+};
+
+export const listGiftsMissingQb = async (
+  params?: ListGiftsMissingQbParams,
+  options?: RequestInit,
+): Promise<GiftMissingQbList> => {
+  return customFetch<GiftMissingQbList>(getListGiftsMissingQbUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListGiftsMissingQbQueryKey = (
+  params?: ListGiftsMissingQbParams,
+) => {
+  return [
+    `/api/reconciliation/gifts-missing-qb`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListGiftsMissingQbQueryOptions = <
+  TData = Awaited<ReturnType<typeof listGiftsMissingQb>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  params?: ListGiftsMissingQbParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listGiftsMissingQb>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListGiftsMissingQbQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listGiftsMissingQb>>
+  > = ({ signal }) => listGiftsMissingQb(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listGiftsMissingQb>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListGiftsMissingQbQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listGiftsMissingQb>>
+>;
+export type ListGiftsMissingQbQueryError = ErrorType<BadRequestResponse>;
+
+/**
+ * @summary Gifts with no QuickBooks record (data-quality worklist).
+ */
+
+export function useListGiftsMissingQb<
+  TData = Awaited<ReturnType<typeof listGiftsMissingQb>>,
+  TError = ErrorType<BadRequestResponse>,
+>(
+  params?: ListGiftsMissingQbParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listGiftsMissingQb>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListGiftsMissingQbQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

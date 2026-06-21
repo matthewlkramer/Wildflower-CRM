@@ -3316,6 +3316,48 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Card is not in an approvable state, or the chosen gift/opportunity is already claimed." }
+  /reconciliation/qb-search:
+    get:
+      operationId: searchReconciliationQbStaged
+      tags: [reconciliation]
+      summary: Criteria-based QuickBooks staged-payment search (not anchored to a card).
+      description: |
+        Free search over QuickBooks staged-payment rows by text / amount / date window,
+        with NO card anchor — used by the stray-Stripe worklist to hunt down the QB
+        deposit that a yet-unmatched Stripe payout should belong to. Returns qb
+        candidates (same shape as the card search). Read-only.
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: "Free-text over payer name / reference / memo / doc number." }
+        - { name: amount, in: query, schema: { type: string }, description: "Target amount (major units); when set, results are scored/filtered around it." }
+        - { name: date, in: query, schema: { type: string, format: date }, description: "Anchor date; pair with days for a ± window." }
+        - { name: days, in: query, schema: { type: integer, default: 30, minimum: 1, maximum: 365 }, description: "± days around date for the amount/date window." }
+        - { name: limit, in: query, schema: { type: integer, default: 25, minimum: 1, maximum: 100 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationSearchList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /reconciliation/gifts-missing-qb:
+    get:
+      operationId: listGiftsMissingQb
+      tags: [reconciliation]
+      summary: Gifts with no QuickBooks record (data-quality worklist).
+      description: |
+        Every gift is expected to carry a QuickBooks record; this lists the gifts that
+        do not — i.e. no staged-payment row links the gift (matched / created /
+        group-reconciled) and the gift has no final-amount QB pointer. Broad by design
+        (cash / check / brokerage / imports all surface) with filters to slice. Donor
+        names are anonymous-masked for the viewer. Read-only.
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: "Free-text over donor name (organization / person / household)." }
+        - { name: entityId, in: query, schema: { type: string }, description: "Filter to one Wildflower legal entity." }
+        - { name: paymentMethod, in: query, schema: { $ref: "#/components/schemas/GiftPaymentMethod" }, description: "Filter to one payment method." }
+        - { name: hasStripe, in: query, schema: { type: boolean }, description: "true: only QB-missing gifts that DO carry a Stripe charge (high-priority anomaly); false: only gifts with neither QB nor Stripe." }
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftMissingQbList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
 components:
   parameters:
@@ -5252,8 +5294,8 @@ components:
       enum: [unmatched, proposed, conflict_approved, confirmed_reconciled, confirmed_excluded, confirmed_keep, confirmed_replace]
     StripePayoutReconciliationQueue:
       type: string
-      description: "Which reconciliation bucket to list. proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state (incl. confirmed_reconciled). all: every non-unmatched payout."
-      enum: [proposed, conflict, confirmed, all]
+      description: "Which reconciliation bucket to list. unmatched: no QB deposit candidate yet (stray Stripe). proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state (incl. confirmed_reconciled). all: every non-unmatched payout."
+      enum: [unmatched, proposed, conflict, confirmed, all]
     StripePayoutReconciliation:
       type: object
       required: [id, stripeAccountId, qbReconciliationStatus]
@@ -5479,6 +5521,27 @@ components:
       required: [data]
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/ReconciliationCandidate" } }
+    GiftMissingQb:
+      type: object
+      required: [id, hasStripeEvidence]
+      description: "A gift with no QuickBooks record — list item for the gifts-missing-QB worklist."
+      properties:
+        id:            { type: string }
+        donorName:     { type: string, nullable: true, description: "Donor display name (anonymous-masked for the viewer)." }
+        donorKind:     { type: string, enum: [organization, person, household], nullable: true }
+        amount:        { type: string, nullable: true }
+        dateReceived:  { type: string, format: date, nullable: true }
+        paymentMethod: { $ref: "#/components/schemas/GiftPaymentMethod", nullable: true }
+        entityId:      { type: string, nullable: true }
+        entityName:    { type: string, nullable: true }
+        finalAmountSource: { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
+        hasStripeEvidence: { type: boolean, description: "True when a Stripe charge backs this gift even though no QB record does (a high-priority anomaly)." }
+    GiftMissingQbList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/GiftMissingQb" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
     ReconciliationOutcome:
       type: string
       enum: [link_existing_gift, create_gift, create_gift_from_opportunity, convert_to_pledge_and_first_payment]

@@ -3,6 +3,7 @@ import { requireAuth } from "../../middlewares/requireAuth";
 import cardsRouter from "./cards";
 import searchRouter from "./search";
 import approveRouter from "./approve";
+import giftsMissingQbRouter from "./gifts-missing-qb";
 
 /**
  * Unified "complete-match" reconciler. One card per money event, anchored on a
@@ -21,5 +22,6 @@ router.use(requireAuth);
 router.use(cardsRouter);
 router.use(searchRouter);
 router.use(approveRouter);
+router.use(giftsMissingQbRouter);
 
 export default router;

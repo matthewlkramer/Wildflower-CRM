@@ -1030,3 +1030,72 @@ async function searchQb(p: RecSearchParams): Promise<RecCandidate[]> {
     }),
   );
 }
+
+// ─── Criteria-based QB staged search (NO card anchor) ────────────────────────
+// Powers the stray-Stripe worklist's "find the matching QuickBooks deposit" box.
+// Unlike searchReconciliationNode's qb branch, this is NOT tied to a staged
+// payment: callers pass free text and/or a target amount (+ optional date
+// window) and get qb candidates back. Requires at least one positive criterion
+// so it never dumps the whole table.
+export interface RecQbSearchParams {
+  q: string | null;
+  amount: string | null;
+  date: string | null;
+  days: number;
+  limit: number;
+}
+
+export async function searchQbStaged(
+  p: RecQbSearchParams,
+): Promise<RecCandidate[]> {
+  const q = (p.q ?? "").trim();
+  const hasText = q.length >= 2;
+  const amt = p.amount != null && p.amount !== "" ? Number(p.amount) : NaN;
+  const hasAmount = Number.isFinite(amt) && amt > 0;
+  if (!hasText && !hasAmount) return [];
+
+  const conds: SQL[] = [];
+  if (hasText) {
+    const w = stagedSearchWhere(q);
+    if (w) conds.push(w);
+  }
+  if (hasAmount) {
+    // A QB deposit matching a Stripe payout sits near the payout amount (gross
+    // vs net differ by processor fees) — band generously: ±20% or ±$50.
+    const lo = Math.min(amt * 0.8, amt - 50);
+    const hi = Math.max(amt * 1.2, amt + 50);
+    conds.push(
+      sql`${stagedPayments.amount} IS NOT NULL AND (${stagedPayments.amount})::numeric BETWEEN ${lo} AND ${hi}`,
+    );
+  }
+  if (p.date) {
+    conds.push(
+      sql`${stagedPayments.dateReceived} IS NOT NULL AND ${stagedPayments.dateReceived} BETWEEN (${p.date}::date - make_interval(days => ${p.days})) AND (${p.date}::date + make_interval(days => ${p.days}))`,
+    );
+  }
+
+  const rows = await db
+    .select({
+      id: stagedPayments.id,
+      payerName: stagedPayments.payerName,
+      rawReference: stagedPayments.rawReference,
+      amount: stagedPayments.amount,
+      dateReceived: stagedPayments.dateReceived,
+    })
+    .from(stagedPayments)
+    .where(and(...conds))
+    .orderBy(desc(stagedPayments.dateReceived))
+    .limit(p.limit);
+
+  return rows.map((r) =>
+    candidate({
+      nodeType: "qb",
+      id: r.id,
+      label: r.payerName ?? "(no payer)",
+      sublabel: r.rawReference,
+      amount: r.amount,
+      date: r.dateReceived,
+      source: "manual",
+    }),
+  );
+}

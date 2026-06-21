@@ -9317,7 +9317,7 @@ export const listStripePayoutReconciliationsQueryPageDefault = 1;
 
 export const ListStripePayoutReconciliationsQueryParams = zod.object({
   queue: zod
-    .enum(["proposed", "conflict", "confirmed", "all"])
+    .enum(["unmatched", "proposed", "conflict", "confirmed", "all"])
     .optional()
     .describe("Which queue to list (default proposed)."),
   limit: zod.coerce
@@ -16670,4 +16670,217 @@ export const ApproveReconciliationCardResponse = zod.object({
   createdPledge: zod
     .boolean()
     .describe("True when an opportunity was latched into a pledge."),
+});
+
+/**
+ * Free search over QuickBooks staged-payment rows by text / amount / date window,
+with NO card anchor — used by the stray-Stripe worklist to hunt down the QB
+deposit that a yet-unmatched Stripe payout should belong to. Returns qb
+candidates (same shape as the card search). Read-only.
+
+ * @summary Criteria-based QuickBooks staged-payment search (not anchored to a card).
+ */
+export const searchReconciliationQbStagedQueryDaysDefault = 30;
+export const searchReconciliationQbStagedQueryDaysMax = 365;
+
+export const searchReconciliationQbStagedQueryLimitDefault = 25;
+export const searchReconciliationQbStagedQueryLimitMax = 100;
+
+export const SearchReconciliationQbStagedQueryParams = zod.object({
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe("Free-text over payer name \/ reference \/ memo \/ doc number."),
+  amount: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Target amount (major units); when set, results are scored\/filtered around it.",
+    ),
+  date: zod.coerce
+    .string()
+    .date()
+    .optional()
+    .describe("Anchor date; pair with days for a ± window."),
+  days: zod.coerce
+    .number()
+    .min(1)
+    .max(searchReconciliationQbStagedQueryDaysMax)
+    .default(searchReconciliationQbStagedQueryDaysDefault)
+    .describe("± days around date for the amount\/date window."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(searchReconciliationQbStagedQueryLimitMax)
+    .default(searchReconciliationQbStagedQueryLimitDefault),
+});
+
+export const SearchReconciliationQbStagedResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      nodeType: zod
+        .enum(["qb", "donor", "gift", "opportunity"])
+        .describe(
+          "A node in a reconciliation card's match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.",
+        ),
+      id: zod.string(),
+      label: zod
+        .string()
+        .describe(
+          "Display label (anonymous-masked when the viewer can't see the identity).",
+        ),
+      sublabel: zod
+        .string()
+        .nullish()
+        .describe(
+          "Secondary context (donor name for a gift\/opp, email\/phone for a donor).",
+        ),
+      amount: zod.string().nullish(),
+      date: zod.string().date().nullish(),
+      confidence: zod
+        .number()
+        .nullish()
+        .describe("0–100 match confidence; null for filter-only candidates."),
+      source: zod
+        .enum([
+          "donor_xor",
+          "payment_on_pledge",
+          "name",
+          "email",
+          "amount_date",
+          "memo",
+          "intermediary",
+          "stripe",
+          "manual",
+        ])
+        .nullish()
+        .describe("How a candidate was derived (audit + UI badge)."),
+      donorKind: zod.enum(["organization", "person", "household"]).nullish(),
+      donorId: zod
+        .string()
+        .nullish()
+        .describe(
+          "For gift\/opportunity candidates: the record id of the candidate's CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift's existing donor.",
+        ),
+      alreadyLinkedStagedPaymentId: zod
+        .string()
+        .nullish()
+        .describe(
+          "For gift candidates: set when the gift is already reconciled\/created\/group\/split-linked by another staged payment (UI disables linking to avoid double-counting).",
+        ),
+      conflictReason: zod
+        .string()
+        .nullish()
+        .describe(
+          "Why this candidate conflicts with a locked node (set only when state=conflict).",
+        ),
+    }),
+  ),
+});
+
+/**
+ * Every gift is expected to carry a QuickBooks record; this lists the gifts that
+do not — i.e. no staged-payment row links the gift (matched / created /
+group-reconciled) and the gift has no final-amount QB pointer. Broad by design
+(cash / check / brokerage / imports all surface) with filters to slice. Donor
+names are anonymous-masked for the viewer. Read-only.
+
+ * @summary Gifts with no QuickBooks record (data-quality worklist).
+ */
+export const listGiftsMissingQbQueryLimitDefault = 50;
+export const listGiftsMissingQbQueryLimitMax = 200;
+
+export const listGiftsMissingQbQueryOffsetDefault = 0;
+export const listGiftsMissingQbQueryOffsetMin = 0;
+
+export const ListGiftsMissingQbQueryParams = zod.object({
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Free-text over donor name (organization \/ person \/ household).",
+    ),
+  entityId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to one Wildflower legal entity."),
+  paymentMethod: zod
+    .enum([
+      "ach",
+      "check",
+      "wire",
+      "stock",
+      "donor_box",
+      "daf_ach",
+      "daf_check",
+      "daf_bill_com",
+    ])
+    .optional()
+    .describe("Filter to one payment method."),
+  hasStripe: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "true: only QB-missing gifts that DO carry a Stripe charge (high-priority anomaly); false: only gifts with neither QB nor Stripe.",
+    ),
+  dateFrom: zod.coerce.string().date().optional(),
+  dateTo: zod.coerce.string().date().optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listGiftsMissingQbQueryLimitMax)
+    .default(listGiftsMissingQbQueryLimitDefault),
+  offset: zod.coerce
+    .number()
+    .min(listGiftsMissingQbQueryOffsetMin)
+    .default(listGiftsMissingQbQueryOffsetDefault),
+});
+
+export const ListGiftsMissingQbResponse = zod.object({
+  data: zod.array(
+    zod
+      .object({
+        id: zod.string(),
+        donorName: zod
+          .string()
+          .nullish()
+          .describe("Donor display name (anonymous-masked for the viewer)."),
+        donorKind: zod.enum(["organization", "person", "household"]).nullish(),
+        amount: zod.string().nullish(),
+        dateReceived: zod.string().date().nullish(),
+        paymentMethod: zod
+          .enum([
+            "ach",
+            "check",
+            "wire",
+            "stock",
+            "donor_box",
+            "daf_ach",
+            "daf_check",
+            "daf_bill_com",
+          ])
+          .nullish(),
+        entityId: zod.string().nullish(),
+        entityName: zod.string().nullish(),
+        finalAmountSource: zod
+          .enum(["human", "stripe", "quickbooks"])
+          .nullish()
+          .describe(
+            "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.",
+          ),
+        hasStripeEvidence: zod
+          .boolean()
+          .describe(
+            "True when a Stripe charge backs this gift even though no QB record does (a high-priority anomaly).",
+          ),
+      })
+      .describe(
+        "A gift with no QuickBooks record — list item for the gifts-missing-QB worklist.",
+      ),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
 });

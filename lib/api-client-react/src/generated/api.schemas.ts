@@ -2522,12 +2522,13 @@ export const StripePayoutReconciliationStatus = {
 } as const;
 
 /**
- * Which reconciliation bucket to list. proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state (incl. confirmed_reconciled). all: every non-unmatched payout.
+ * Which reconciliation bucket to list. unmatched: no QB deposit candidate yet (stray Stripe). proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state (incl. confirmed_reconciled). all: every non-unmatched payout.
  */
 export type StripePayoutReconciliationQueue =
   (typeof StripePayoutReconciliationQueue)[keyof typeof StripePayoutReconciliationQueue];
 
 export const StripePayoutReconciliationQueue = {
+  unmatched: "unmatched",
   proposed: "proposed",
   conflict: "conflict",
   confirmed: "confirmed",
@@ -2852,6 +2853,39 @@ export interface ReconciliationCardList {
 
 export interface ReconciliationSearchList {
   data: ReconciliationCandidate[];
+}
+
+export type GiftMissingQbDonorKind =
+  | (typeof GiftMissingQbDonorKind)[keyof typeof GiftMissingQbDonorKind]
+  | null;
+
+export const GiftMissingQbDonorKind = {
+  organization: "organization",
+  person: "person",
+  household: "household",
+} as const;
+
+/**
+ * A gift with no QuickBooks record — list item for the gifts-missing-QB worklist.
+ */
+export interface GiftMissingQb {
+  id: string;
+  /** Donor display name (anonymous-masked for the viewer). */
+  donorName?: string | null;
+  donorKind?: GiftMissingQbDonorKind;
+  amount?: string | null;
+  dateReceived?: string | null;
+  paymentMethod?: GiftPaymentMethod | null;
+  entityId?: string | null;
+  entityName?: string | null;
+  finalAmountSource?: GiftFinalAmountSource | null;
+  /** True when a Stripe charge backs this gift even though no QB record does (a high-priority anomaly). */
+  hasStripeEvidence: boolean;
+}
+
+export interface GiftMissingQbList {
+  data: GiftMissingQb[];
+  pagination: Pagination;
 }
 
 /**
@@ -5843,4 +5877,60 @@ export type SearchReconciliationNodeParams = {
    * @maximum 100
    */
   limit?: number;
+};
+
+export type SearchReconciliationQbStagedParams = {
+  /**
+   * Free-text over payer name / reference / memo / doc number.
+   */
+  q?: string;
+  /**
+   * Target amount (major units); when set, results are scored/filtered around it.
+   */
+  amount?: string;
+  /**
+   * Anchor date; pair with days for a ± window.
+   */
+  date?: string;
+  /**
+   * ± days around date for the amount/date window.
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListGiftsMissingQbParams = {
+  /**
+   * Free-text over donor name (organization / person / household).
+   */
+  q?: string;
+  /**
+   * Filter to one Wildflower legal entity.
+   */
+  entityId?: string;
+  /**
+   * Filter to one payment method.
+   */
+  paymentMethod?: GiftPaymentMethod;
+  /**
+   * true: only QB-missing gifts that DO carry a Stripe charge (high-priority anomaly); false: only gifts with neither QB nor Stripe.
+   */
+  hasStripe?: boolean;
+  dateFrom?: string;
+  dateTo?: string;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+  /**
+   * @minimum 0
+   */
+  offset?: number;
 };
