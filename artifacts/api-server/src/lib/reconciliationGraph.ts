@@ -820,7 +820,7 @@ export async function buildReconciliationGraph(
     selectedGiftRow &&
     !withinFeeBand(anchorAmount, selectedGiftRow.amount ?? null)
   ) {
-    blockers.push("Gift amount differs from the evidence — confirm or override.");
+    blockers.push("Gift amount differs from the evidence — enter an override reason to approve.");
   }
   const ready = blockers.length === 0;
 

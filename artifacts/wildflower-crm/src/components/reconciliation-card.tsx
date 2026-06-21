@@ -284,6 +284,13 @@ function CardResolver({
   const stripe = graph.evidence.stripe;
   const amountBlocked = hasAmountBlocker(graph.blockers);
   const showOpportunityChoice = !gift && Boolean(opportunity);
+  const stripeChargeId = stripe?.chargeId ?? null;
+  // The amount approving will record on the gift: Stripe GROSS wins when a single
+  // charge backs the money, otherwise the QuickBooks anchor amount (mirrors the
+  // server's stampGiftFinalAmount precedence).
+  const evidenceAmount = stripeChargeId
+    ? stripe?.grossAmount ?? null
+    : graph.evidence.qb.amount;
 
   return (
     <div className="space-y-4 border-t pt-4">
@@ -419,26 +426,50 @@ function CardResolver({
       ) : null}
 
       {amountBlocked ? (
-        <div>
-          <Label
-            htmlFor={`override-${stagedPaymentId}`}
-            className="text-xs text-muted-foreground"
-          >
-            Amount-mismatch override reason (required)
+        <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3">
+          <div className="text-sm font-medium text-amber-900">
+            Amounts don&apos;t match — confirm the override to approve
+          </div>
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-amber-900">
+            <span>
+              Auto-matched gift:{" "}
+              <span className="font-medium tabular-nums">
+                {gift?.amount ? formatCurrency(gift.amount) : "—"}
+              </span>
+            </span>
+            <span>
+              Evidence ({stripeChargeId ? "Stripe gross" : "QuickBooks"}):{" "}
+              <span className="font-medium tabular-nums">
+                {evidenceAmount ? formatCurrency(evidenceAmount) : "—"}
+              </span>
+            </span>
+          </div>
+          <p className="text-xs text-amber-800">
+            Approving records the evidence amount on the gift and rescales its
+            single allocation (or flags it for review if it has several). Enter a
+            reason to override the mismatch — this is required to enable Approve.
+          </p>
+          <Label htmlFor={`override-${stagedPaymentId}`} className="sr-only">
+            Amount-mismatch override reason
           </Label>
           <Textarea
             id={`override-${stagedPaymentId}`}
             value={override}
             onChange={(e) => setOverride(e.target.value)}
-            placeholder="Explain why the evidence and gift amounts differ beyond the fee band…"
+            placeholder="Why is it OK that the amounts differ? (e.g. partial payment, processor fee, corrected amount)"
             rows={2}
+            className="bg-white"
             data-testid={`override-${stagedPaymentId}`}
           />
         </div>
       ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
+        <p
+          className={`text-sm ${
+            derived?.ok ? "text-muted-foreground" : "text-amber-700"
+          }`}
+        >
           {derived?.ok ? derived.summary : derived?.reason}
         </p>
         <Button
