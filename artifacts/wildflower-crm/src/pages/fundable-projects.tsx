@@ -103,6 +103,12 @@ export default function FundableProjects() {
     "wf.list.fundable-projects.showArchived",
     false,
   );
+  // Retired (active === false) projects are hidden by default for everyone;
+  // this toggle reveals them. Distinct from the admin-only "show archived".
+  const [showRetired, setShowRetired] = usePersistedState<boolean>(
+    "wf.list.fundable-projects.showRetired",
+    false,
+  );
 
   const listParams: ListFundableProjectsParams | undefined =
     isAdmin && showArchived ? { includeArchived: true } : undefined;
@@ -169,9 +175,16 @@ export default function FundableProjects() {
     return m;
   }, [progress]);
 
+  // Hide retired (active === false) projects unless the toggle is on. Archived
+  // rows stay governed solely by the admin "show archived" control.
+  const visible = useMemo(
+    () => (showRetired ? projects : projects.filter((p) => p.active || p.archivedAt)),
+    [projects, showRetired],
+  );
+
   // Active first, then retired, then archived, alphabetical within each group.
   const sorted = useMemo(() => {
-    const copy = [...projects];
+    const copy = [...visible];
     copy.sort((a, b) => {
       const aArch = a.archivedAt ? 1 : 0;
       const bArch = b.archivedAt ? 1 : 0;
@@ -180,7 +193,7 @@ export default function FundableProjects() {
       return a.name.localeCompare(b.name);
     });
     return copy;
-  }, [projects]);
+  }, [visible]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<FundableProject | null>(null);
@@ -214,11 +227,27 @@ export default function FundableProjects() {
           />
         }
         controls={
-          <ShowArchivedToggle
-            value={showArchived}
-            onChange={setShowArchived}
-            testId="toggle-show-archived-fundable-projects"
-          />
+          <>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="toggle-show-retired-fundable-projects"
+                checked={showRetired}
+                onCheckedChange={setShowRetired}
+                data-testid="toggle-show-retired-fundable-projects"
+              />
+              <Label
+                htmlFor="toggle-show-retired-fundable-projects"
+                className="cursor-pointer text-sm text-muted-foreground"
+              >
+                Show retired
+              </Label>
+            </div>
+            <ShowArchivedToggle
+              value={showArchived}
+              onChange={setShowArchived}
+              testId="toggle-show-archived-fundable-projects"
+            />
+          </>
         }
       />
 
