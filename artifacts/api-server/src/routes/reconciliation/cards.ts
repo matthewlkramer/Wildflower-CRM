@@ -7,6 +7,7 @@ import { opportunitiesAndPledges } from "@workspace/db/schema";
 import { asyncHandler, notFound } from "../../lib/helpers";
 import { getViewer } from "../../lib/identityVisibility";
 import { buildReconciliationGraph } from "../../lib/reconciliationGraph";
+import { deriveEvidenceLanes } from "../../lib/reconciliationLanes";
 import {
   entityWhere,
   queueWhere,
@@ -268,6 +269,13 @@ router.get(
         resolvedGiftAmount: row.resolvedGiftAmount ?? null,
         finalAmountSource: row.finalAmountSource ?? null,
         ready: row.cardReady === true,
+        reconciliationLanes: deriveEvidenceLanes({
+          status: row.status,
+          donorPresent: donorId != null,
+          donorConfirmed: row.matchConfirmedAt != null,
+          giftLinked: row.resolvedGiftId != null,
+          giftProposed: giftState !== "none",
+        }),
         createdAt:
           row.createdAt instanceof Date
             ? row.createdAt.toISOString()

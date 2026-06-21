@@ -3560,6 +3560,28 @@ components:
     GiftPaymentMethod: { type: string, enum: [ach, check, wire, stock, donor_box, daf_ach, daf_check, daf_bill_com] }
     GiftFinalAmountSource: { type: string, enum: [human, stripe, quickbooks], description: "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields." }
     GiftQuickbooksTie: { type: string, enum: [exempt, tied, amount_mismatch, missing], description: "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence." }
+    ReconciliationLaneStatus:
+      type: string
+      enum: [unlinked, proposed, confirmed, exempt]
+      description: >-
+        Progress of ONE reconciliation lane for a unit of money (INV-4).
+        unlinked: no connection yet. proposed: a system/auto match exists but no
+        human has confirmed it. confirmed: a human (or a real, already-booked
+        gift link) anchors the connection. exempt: no connection is expected —
+        an off-books gift, or evidence dispositioned as not-a-gift
+        (excluded/rejected). The CRM-record lane never emits exempt.
+    ReconciliationLanes:
+      type: object
+      required: [funding, crmRecord]
+      description: >-
+        The two independently-tracked reconciliation lanes for a unit of money
+        (INV-4). funding = the accounting/evidence side (QuickBooks/Stripe);
+        crmRecord = the donor-record side. Derived, never a stored source of
+        truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe
+        payout, which is a batch with no single donor).
+      properties:
+        funding:   { $ref: "#/components/schemas/ReconciliationLaneStatus" }
+        crmRecord: { allOf: [ { $ref: "#/components/schemas/ReconciliationLaneStatus" } ], nullable: true }
     IntendedUsage: { type: string, enum: [gen_ops, growth, school_startup, teacher_training, project] }
     RestrictionType: { type: string, enum: [unrestricted, purpose, time, both, unclear, na], description: "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted." }
     DeferredRevenue: { type: string, enum: [yes, no, na] }
@@ -4869,6 +4891,7 @@ components:
         designatedToSchool:         { type: boolean }
         offBooksFiscalSponsor:      { type: boolean, description: "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation)." }
         quickbooksTieStatus:        { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], readOnly: true, description: "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update." }
+        reconciliationLanes:        { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses." }
         tags:                       { type: string, nullable: true }
         thankYouSentAt:             { type: string, format: date, nullable: true, description: "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time." }
         thankYouEmailMessageId:     { type: string, nullable: true, description: "FK to the email_messages row that was identified as the thank-you. Read-only; set via /link-thank-you-email or the thank_you_acknowledgment proposal accept." }
@@ -4942,7 +4965,7 @@ components:
         name: { type: string, nullable: true }
     GiftAuditReconciliation:
       type: object
-      required: [giftId, quickbooksTieStatus, offBooks, auditExcluded, quickbooksRecords, restrictions]
+      required: [giftId, quickbooksTieStatus, reconciliationLanes, offBooks, auditExcluded, quickbooksRecords, restrictions]
       description: |
         Per-gift audit-reconciliation view: when the money arrived, the
         QuickBooks record(s) it appears in, who gave it, and its restrictions.
@@ -4952,6 +4975,7 @@ components:
         giftId:              { type: string }
         name:                { type: string, nullable: true }
         quickbooksTieStatus: { $ref: "#/components/schemas/GiftQuickbooksTie" }
+        reconciliationLanes: { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], description: "Two-lane reconciliation status (INV-4): funding mirrors quickbooksTieStatus; crmRecord is confirmed (the gift is the CRM record)." }
         offBooks:            { type: boolean, description: "True when the gift is exempt (fiscal-sponsor off-books OR designated-to-school)." }
         auditExcluded:       { type: boolean, description: "True when off-books — the gift is excluded from audit reconciliation." }
         amount:              { type: string, nullable: true }
@@ -5297,6 +5321,7 @@ components:
         giftAlreadyLinkedElsewhere: { type: boolean, description: "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate)." }
         matchedRuleId:             { type: string, nullable: true, description: "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule." }
         matchedRuleName:           { type: string, nullable: true, description: "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted." }
+        reconciliationLanes:       { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt)." }
         createdAt:                 { type: string, format: date-time }
         updatedAt:                 { type: string, format: date-time }
     StagedPaymentList:
@@ -5446,6 +5471,7 @@ components:
         payoutStatus:              { type: string, nullable: true }
         payoutQbSupersedeStatus:   { type: string, nullable: true, description: "Non-destructive QuickBooks supersede audit for this charge's payout: none | excluded_pending | conflict_approved. 'conflict_approved' blocks minting a per-charge gift here." }
         payoutQbConflictGiftId:    { type: string, nullable: true, description: "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved." }
+        reconciliationLanes:       { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt)." }
     StripeStagedChargeList:
       type: object
       required: [data, pagination]
@@ -5495,6 +5521,7 @@ components:
         conflictGiftDate:                { type: string, format: date, nullable: true }
         conflictGiftArchivedAt:          { type: string, format: date-time, nullable: true, description: "Set once a confirm-replace archives this gift (kept, never deleted)." }
         conflictGiftDonorName:           { type: string, nullable: true }
+        reconciliationLanes:             { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4) for this payout, derived read-only from qbReconciliationStatus: funding = unlinked (unmatched)→proposed (proposed/conflict_approved)→confirmed (any confirmed_*, exempt when confirmed_excluded). crmRecord is null — a payout is a batch with no single donor." }
     StripePayoutReconciliationList:
       type: object
       required: [data, pagination]
@@ -5672,6 +5699,7 @@ components:
         resolvedGiftAmount: { type: string, nullable: true }
         finalAmountSource:  { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
         ready:              { type: boolean, description: "Auto-proposal satisfies the consistency gate (one-click approve)." }
+        reconciliationLanes: { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor/gift state: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge." }
         createdAt:          { type: string, format: date-time, nullable: true }
         updatedAt:          { type: string, format: date-time, nullable: true }
     ReconciliationCardList:

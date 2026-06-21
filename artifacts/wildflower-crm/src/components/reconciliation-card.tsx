@@ -39,6 +39,7 @@ import {
   hasAmountBlocker,
   qbToGiftStatus,
   stripeToQbStatus,
+  laneBadges,
   type ConnectionStatus,
   type OutcomeChoice,
 } from "@/lib/reconciliation";
@@ -207,6 +208,16 @@ export function ReconciliationCard({
                     : `${card.stripeChargeCount ?? 0} charges`}
                 </Badge>
               ) : null}
+              {laneBadges(card.reconciliationLanes).map((b) => (
+                <Badge
+                  key={b.key}
+                  variant={b.variant}
+                  className="text-[10px]"
+                  data-testid={`card-reconciliation-lane-${b.key}-${card.stagedPaymentId}`}
+                >
+                  {b.label}
+                </Badge>
+              ))}
             </div>
             {card.rawReference || card.lineDescription ? (
               <div className="truncate text-xs text-muted-foreground">

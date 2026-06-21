@@ -5079,6 +5079,27 @@ export const GetOpportunityOrPledgeResponse = zod
               .describe(
                 "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
               ),
+            reconciliationLanes: zod
+              .object({
+                funding: zod
+                  .enum(["unlinked", "proposed", "confirmed", "exempt"])
+                  .describe(
+                    "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+                  ),
+                crmRecord: zod
+                  .enum(["unlinked", "proposed", "confirmed", "exempt"])
+                  .describe(
+                    "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+                  )
+                  .nullable(),
+              })
+              .describe(
+                "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+              )
+              .optional()
+              .describe(
+                "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.",
+              ),
             tags: zod.string().nullish(),
             thankYouSentAt: zod
               .string()
@@ -5765,6 +5786,27 @@ export const ListGiftsAndPaymentsResponse = zod.object({
         .describe(
           "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
         ),
+      reconciliationLanes: zod
+        .object({
+          funding: zod
+            .enum(["unlinked", "proposed", "confirmed", "exempt"])
+            .describe(
+              "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+            ),
+          crmRecord: zod
+            .enum(["unlinked", "proposed", "confirmed", "exempt"])
+            .describe(
+              "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+            )
+            .nullable(),
+        })
+        .describe(
+          "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+        )
+        .optional()
+        .describe(
+          "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.",
+        ),
       tags: zod.string().nullish(),
       thankYouSentAt: zod
         .string()
@@ -5971,6 +6013,27 @@ export const GetGiftOrPaymentResponse = zod
       )
       .describe(
         "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
+    reconciliationLanes: zod
+      .object({
+        funding: zod
+          .enum(["unlinked", "proposed", "confirmed", "exempt"])
+          .describe(
+            "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+          ),
+        crmRecord: zod
+          .enum(["unlinked", "proposed", "confirmed", "exempt"])
+          .describe(
+            "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+          )
+          .nullable(),
+      })
+      .describe(
+        "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+      )
+      .optional()
+      .describe(
+        "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.",
       ),
     tags: zod.string().nullish(),
     thankYouSentAt: zod
@@ -6242,6 +6305,27 @@ export const UpdateGiftOrPaymentResponse = zod.object({
     .describe(
       "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
     ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.",
+    ),
   tags: zod.string().nullish(),
   thankYouSentAt: zod
     .string()
@@ -6435,6 +6519,27 @@ export const LinkThankYouEmailResponse = zod
       )
       .describe(
         "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
+    reconciliationLanes: zod
+      .object({
+        funding: zod
+          .enum(["unlinked", "proposed", "confirmed", "exempt"])
+          .describe(
+            "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+          ),
+        crmRecord: zod
+          .enum(["unlinked", "proposed", "confirmed", "exempt"])
+          .describe(
+            "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+          )
+          .nullable(),
+      })
+      .describe(
+        "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+      )
+      .optional()
+      .describe(
+        "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.",
       ),
     tags: zod.string().nullish(),
     thankYouSentAt: zod
@@ -6665,6 +6770,26 @@ export const GetGiftAuditReconciliationResponse = zod
       .enum(["exempt", "tied", "amount_mismatch", "missing"])
       .describe(
         "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.",
+      ),
+    reconciliationLanes: zod
+      .object({
+        funding: zod
+          .enum(["unlinked", "proposed", "confirmed", "exempt"])
+          .describe(
+            "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+          ),
+        crmRecord: zod
+          .enum(["unlinked", "proposed", "confirmed", "exempt"])
+          .describe(
+            "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+          )
+          .nullable(),
+      })
+      .describe(
+        "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+      )
+      .describe(
+        "Two-lane reconciliation status (INV-4): funding mirrors quickbooksTieStatus; crmRecord is confirmed (the gift is the CRM record).",
       ),
     offBooks: zod
       .boolean()
@@ -9021,6 +9146,27 @@ export const ListStripeStagedChargesResponse = zod.object({
         .describe(
           "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
         ),
+      reconciliationLanes: zod
+        .object({
+          funding: zod
+            .enum(["unlinked", "proposed", "confirmed", "exempt"])
+            .describe(
+              "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+            ),
+          crmRecord: zod
+            .enum(["unlinked", "proposed", "confirmed", "exempt"])
+            .describe(
+              "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+            )
+            .nullable(),
+        })
+        .describe(
+          "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+        )
+        .optional()
+        .describe(
+          "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
+        ),
     }),
   ),
   pagination: zod.object({
@@ -9193,6 +9339,27 @@ export const ResolveStripeStagedChargeResponse = zod.object({
     .describe(
       "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
     ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
+    ),
 });
 
 /**
@@ -9328,6 +9495,27 @@ export const RejectStripeStagedChargeResponse = zod.object({
     .nullish()
     .describe(
       "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
+    ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
     ),
 });
 
@@ -9480,6 +9668,27 @@ export const ExcludeStripeStagedChargeResponse = zod.object({
     .describe(
       "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
     ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
+    ),
 });
 
 /**
@@ -9608,6 +9817,27 @@ export const ReIncludeStripeStagedChargeResponse = zod.object({
     .nullish()
     .describe(
       "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
+    ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
     ),
 });
 
@@ -9738,6 +9968,27 @@ export const RevertStripeStagedChargeResponse = zod.object({
     .describe(
       "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.",
     ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
+    ),
 });
 
 /**
@@ -9835,6 +10086,27 @@ export const ListStripePayoutReconciliationsResponse = zod.object({
           "Set once a confirm-replace archives this gift (kept, never deleted).",
         ),
       conflictGiftDonorName: zod.string().nullish(),
+      reconciliationLanes: zod
+        .object({
+          funding: zod
+            .enum(["unlinked", "proposed", "confirmed", "exempt"])
+            .describe(
+              "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+            ),
+          crmRecord: zod
+            .enum(["unlinked", "proposed", "confirmed", "exempt"])
+            .describe(
+              "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+            )
+            .nullable(),
+        })
+        .describe(
+          "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+        )
+        .optional()
+        .describe(
+          "Two-lane reconciliation status (INV-4) for this payout, derived read-only from qbReconciliationStatus: funding = unlinked (unmatched)→proposed (proposed\/conflict_approved)→confirmed (any confirmed_\*, exempt when confirmed_excluded). crmRecord is null — a payout is a batch with no single donor.",
+        ),
     }),
   ),
   pagination: zod.object({
@@ -10765,6 +11037,27 @@ export const ListStagedPaymentsResponse = zod.object({
         .describe(
           "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
         ),
+      reconciliationLanes: zod
+        .object({
+          funding: zod
+            .enum(["unlinked", "proposed", "confirmed", "exempt"])
+            .describe(
+              "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+            ),
+          crmRecord: zod
+            .enum(["unlinked", "proposed", "confirmed", "exempt"])
+            .describe(
+              "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+            )
+            .nullable(),
+        })
+        .describe(
+          "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+        )
+        .optional()
+        .describe(
+          "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
+        ),
       createdAt: zod.string().datetime({}),
       updatedAt: zod.string().datetime({}),
     }),
@@ -11033,6 +11326,27 @@ export const ResolveStagedPaymentResponse = zod.object({
     .describe(
       "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
     ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -11239,6 +11553,27 @@ export const RejectStagedPaymentResponse = zod.object({
     .describe(
       "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
     ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -11437,6 +11772,27 @@ export const ReIncludeStagedPaymentResponse = zod.object({
     .nullish()
     .describe(
       "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
+    ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -11656,6 +12012,27 @@ export const SetStagedPaymentEntityResponse = zod.object({
     .nullish()
     .describe(
       "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
+    ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -11885,6 +12262,27 @@ export const ExcludeStagedPaymentResponse = zod.object({
     .describe(
       "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
     ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -11990,6 +12388,27 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
           )
           .describe(
             "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+          ),
+        reconciliationLanes: zod
+          .object({
+            funding: zod
+              .enum(["unlinked", "proposed", "confirmed", "exempt"])
+              .describe(
+                "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+              ),
+            crmRecord: zod
+              .enum(["unlinked", "proposed", "confirmed", "exempt"])
+              .describe(
+                "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+              )
+              .nullable(),
+          })
+          .describe(
+            "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+          )
+          .optional()
+          .describe(
+            "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.",
           ),
         tags: zod.string().nullish(),
         thankYouSentAt: zod
@@ -12186,6 +12605,27 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
           .describe(
             "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
           ),
+        reconciliationLanes: zod
+          .object({
+            funding: zod
+              .enum(["unlinked", "proposed", "confirmed", "exempt"])
+              .describe(
+                "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+              ),
+            crmRecord: zod
+              .enum(["unlinked", "proposed", "confirmed", "exempt"])
+              .describe(
+                "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+              )
+              .nullable(),
+          })
+          .describe(
+            "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+          )
+          .optional()
+          .describe(
+            "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.",
+          ),
         tags: zod.string().nullish(),
         thankYouSentAt: zod
           .string()
@@ -12375,6 +12815,27 @@ export const ReconcileStagedPaymentResponse = zod.object({
       )
       .describe(
         "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
+    reconciliationLanes: zod
+      .object({
+        funding: zod
+          .enum(["unlinked", "proposed", "confirmed", "exempt"])
+          .describe(
+            "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+          ),
+        crmRecord: zod
+          .enum(["unlinked", "proposed", "confirmed", "exempt"])
+          .describe(
+            "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+          )
+          .nullable(),
+      })
+      .describe(
+        "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+      )
+      .optional()
+      .describe(
+        "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.",
       ),
     tags: zod.string().nullish(),
     thankYouSentAt: zod
@@ -12625,6 +13086,27 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
       )
       .describe(
         "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
+    reconciliationLanes: zod
+      .object({
+        funding: zod
+          .enum(["unlinked", "proposed", "confirmed", "exempt"])
+          .describe(
+            "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+          ),
+        crmRecord: zod
+          .enum(["unlinked", "proposed", "confirmed", "exempt"])
+          .describe(
+            "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+          )
+          .nullable(),
+      })
+      .describe(
+        "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+      )
+      .optional()
+      .describe(
+        "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.",
       ),
     tags: zod.string().nullish(),
     thankYouSentAt: zod
@@ -12975,6 +13457,27 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
     .describe(
       "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
     ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -13173,6 +13676,27 @@ export const UnmatchStagedPaymentResponse = zod.object({
     .nullish()
     .describe(
       "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
+    ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -13379,6 +13903,27 @@ export const RevertStagedPaymentResponse = zod.object({
     .nullish()
     .describe(
       "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
+    ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
     ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -15668,6 +16213,27 @@ export const ArchiveGiftOrPaymentResponse = zod.object({
     .describe(
       "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
     ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.",
+    ),
   tags: zod.string().nullish(),
   thankYouSentAt: zod
     .string()
@@ -15822,6 +16388,27 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
     )
     .describe(
       "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+    ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.",
     ),
   tags: zod.string().nullish(),
   thankYouSentAt: zod
@@ -16802,6 +17389,27 @@ export const ListReconciliationCardsResponse = zod.object({
           .boolean()
           .describe(
             "Auto-proposal satisfies the consistency gate (one-click approve).",
+          ),
+        reconciliationLanes: zod
+          .object({
+            funding: zod
+              .enum(["unlinked", "proposed", "confirmed", "exempt"])
+              .describe(
+                "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+              ),
+            crmRecord: zod
+              .enum(["unlinked", "proposed", "confirmed", "exempt"])
+              .describe(
+                "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+              )
+              .nullable(),
+          })
+          .describe(
+            "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+          )
+          .optional()
+          .describe(
+            "Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor\/gift state: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge.",
           ),
         createdAt: zod.string().datetime({}).nullish(),
         updatedAt: zod.string().datetime({}).nullish(),

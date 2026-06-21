@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { stagedPayments } from "@workspace/db/schema";
 import { and, count, eq } from "drizzle-orm";
 import { asyncHandler, parsePagination } from "../../lib/helpers";
+import { deriveEvidenceLanes } from "../../lib/reconciliationLanes";
 import {
   entityWhere,
   queueWhere,
@@ -64,7 +65,22 @@ router.get(
     ]);
 
     res.json({
-      data: rows,
+      data: rows.map((row) => ({
+        ...row,
+        // Two-lane reconciliation status (INV-4), derived from existing fields.
+        // The queue list does not compute candidate-gift suggestions (those live
+        // on the consolidated reconciliation-card surface), so the optional
+        // `giftProposed` signal is left unset here.
+        reconciliationLanes: deriveEvidenceLanes({
+          status: row.status,
+          donorPresent:
+            row.organizationId != null ||
+            row.individualGiverPersonId != null ||
+            row.householdId != null,
+          donorConfirmed: row.matchConfirmedAt != null,
+          giftLinked: row.resolvedGiftId != null,
+        }),
+      })),
       pagination: { page, limit, total: totalRow?.value ?? 0 },
     });
   }),

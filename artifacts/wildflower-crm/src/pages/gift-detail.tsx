@@ -57,6 +57,8 @@ import {
   type Highlight,
 } from "@/components/record-layout";
 import { GiftPledgeLink, type PledgeDonorScope } from "@/components/pledge-picker";
+import { laneBadges } from "@/lib/reconciliation";
+import { type ReconciliationLanes } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -480,6 +482,9 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
               <Row label="QuickBooks tie">
                 <GiftQbTieBadge status={gift.quickbooksTieStatus} />
               </Row>
+              <Row label="Reconciliation">
+                <ReconciliationLaneBadges lanes={gift.reconciliationLanes} />
+              </Row>
             </div>
           </FieldCard>
 
@@ -797,5 +802,31 @@ function GiftQbTieBadge({
     <Badge variant={variant} data-testid="gift-qb-tie-status">
       {label}
     </Badge>
+  );
+}
+
+// Two-lane reconciliation status (INV-4): the funding (accounting/evidence) lane
+// and the CRM-record (donor) lane, shown as separate badges instead of one
+// blended status. Both are server-derived and read-only.
+function ReconciliationLaneBadges({
+  lanes,
+}: {
+  lanes: ReconciliationLanes | null | undefined;
+}) {
+  const badges = laneBadges(lanes);
+  if (badges.length === 0)
+    return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1.5" data-testid="gift-reconciliation-lanes">
+      {badges.map((b) => (
+        <Badge
+          key={b.key}
+          variant={b.variant}
+          data-testid={`gift-reconciliation-lane-${b.key}`}
+        >
+          {b.label}
+        </Badge>
+      ))}
+    </div>
   );
 }

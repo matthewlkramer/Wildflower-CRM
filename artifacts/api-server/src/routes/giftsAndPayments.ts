@@ -98,6 +98,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
+import { deriveGiftLanes } from "../lib/reconciliationLanes";
 import { rederiveGiftAllocations } from "../lib/revenueCoding";
 import { inArray } from "drizzle-orm";
 
@@ -285,7 +286,13 @@ router.get(
         .where(where),
     ]);
     const viewer = getViewer(req);
-    const data = rows.map((r) => maskGiftDonorRow(r, viewer));
+    const data = rows.map((r) => {
+      const masked = maskGiftDonorRow(r, viewer);
+      return {
+        ...masked,
+        reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus),
+      };
+    });
     res.json({ data, pagination: { page, limit, total: Number(total) } });
   }),
 );
@@ -323,7 +330,13 @@ async function buildGiftDetail(id: string, viewer: Viewer) {
       downloadUrl: `/api/email-attachments/${a.id}/download`,
     }));
   }
-  return { ...maskGiftDonorRow(row, viewer), allocations, thankYouAttachments };
+  const masked = maskGiftDonorRow(row, viewer);
+  return {
+    ...masked,
+    reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus),
+    allocations,
+    thankYouAttachments,
+  };
 }
 
 router.get(
@@ -1602,6 +1615,7 @@ router.get(
         giftId: gift.id,
         name: gift.name,
         quickbooksTieStatus: gift.quickbooksTieStatus,
+        reconciliationLanes: deriveGiftLanes(gift.quickbooksTieStatus),
         offBooks: true,
         auditExcluded: true,
         amount: gift.amount,
@@ -1736,6 +1750,7 @@ router.get(
       giftId: gift.id,
       name: gift.name,
       quickbooksTieStatus: gift.quickbooksTieStatus,
+      reconciliationLanes: deriveGiftLanes(gift.quickbooksTieStatus),
       offBooks: gift.offBooks,
       auditExcluded: gift.offBooks,
       amount: gift.amount,

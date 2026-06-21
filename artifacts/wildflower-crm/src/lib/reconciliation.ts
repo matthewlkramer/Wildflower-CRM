@@ -5,9 +5,57 @@ import {
   type ReconciliationGraph,
   type ApproveCompleteMatchBody,
   type GiftFinalAmountSource,
+  type ReconciliationLaneStatus,
+  type ReconciliationLanes,
 } from "@workspace/api-client-react";
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
+
+/**
+ * Two-lane reconciliation model (INV-4). Every unit of money tracks TWO
+ * independent lanes — `funding` (the accounting/evidence side) and `crmRecord`
+ * (the donor-record side) — each progressing unlinked → proposed → confirmed
+ * (with an `exempt` terminal where no connection is expected). These replace the
+ * old single "blended" reconciliation badge: a reviewer sees the money lane and
+ * the donor lane separately instead of one merged status.
+ */
+export const LANE_STATUS_BADGE: Record<
+  ReconciliationLaneStatus,
+  { label: string; variant: BadgeVariant }
+> = {
+  confirmed: { label: "Confirmed", variant: "default" },
+  proposed: { label: "Proposed", variant: "secondary" },
+  unlinked: { label: "Unlinked", variant: "outline" },
+  exempt: { label: "Exempt", variant: "outline" },
+};
+
+/** Prefixed label for a single lane, e.g. "Funding: Confirmed". */
+export function laneBadge(
+  lane: "funding" | "crmRecord",
+  status: ReconciliationLaneStatus,
+): { label: string; variant: BadgeVariant } {
+  const prefix = lane === "funding" ? "Funding" : "CRM record";
+  const base = LANE_STATUS_BADGE[status];
+  return { label: `${prefix}: ${base.label}`, variant: base.variant };
+}
+
+/**
+ * Both lane badges for a unit of money, in display order (funding first, then
+ * CRM record). The CRM-record lane is omitted when null (e.g. a Stripe payout —
+ * a batch with no single donor).
+ */
+export function laneBadges(
+  lanes: ReconciliationLanes | null | undefined,
+): Array<{ key: string; label: string; variant: BadgeVariant }> {
+  if (!lanes) return [];
+  const out: Array<{ key: string; label: string; variant: BadgeVariant }> = [
+    { key: "funding", ...laneBadge("funding", lanes.funding) },
+  ];
+  if (lanes.crmRecord != null) {
+    out.push({ key: "crmRecord", ...laneBadge("crmRecord", lanes.crmRecord) });
+  }
+  return out;
+}
 
 /** Edge-state → badge label + variant for the node summaries. */
 export const EDGE_STATE_BADGE: Record<

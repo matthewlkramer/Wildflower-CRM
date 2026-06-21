@@ -472,6 +472,27 @@ export const GiftQuickbooksTie = {
   missing: "missing",
 } as const;
 
+/**
+ * Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded/rejected). The CRM-record lane never emits exempt.
+ */
+export type ReconciliationLaneStatus =
+  (typeof ReconciliationLaneStatus)[keyof typeof ReconciliationLaneStatus];
+
+export const ReconciliationLaneStatus = {
+  unlinked: "unlinked",
+  proposed: "proposed",
+  confirmed: "confirmed",
+  exempt: "exempt",
+} as const;
+
+/**
+ * The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting/evidence side (QuickBooks/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).
+ */
+export interface ReconciliationLanes {
+  funding: ReconciliationLaneStatus;
+  crmRecord: ReconciliationLaneStatus | null;
+}
+
 export type IntendedUsage = (typeof IntendedUsage)[keyof typeof IntendedUsage];
 
 export const IntendedUsage = {
@@ -1638,6 +1659,8 @@ export interface GiftOrPayment {
   offBooksFiscalSponsor: boolean;
   /** Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update. */
   readonly quickbooksTieStatus: GiftQuickbooksTie;
+  /** Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses. */
+  readonly reconciliationLanes?: ReconciliationLanes;
   tags?: string | null;
   /** Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time. */
   thankYouSentAt?: string | null;
@@ -1902,6 +1925,8 @@ export interface GiftAuditReconciliation {
   giftId: string;
   name?: string | null;
   quickbooksTieStatus: GiftQuickbooksTie;
+  /** Two-lane reconciliation status (INV-4): funding mirrors quickbooksTieStatus; crmRecord is confirmed (the gift is the CRM record). */
+  reconciliationLanes: ReconciliationLanes;
   /** True when the gift is exempt (fiscal-sponsor off-books OR designated-to-school). */
   offBooks: boolean;
   /** True when off-books — the gift is excluded from audit reconciliation. */
@@ -2452,6 +2477,8 @@ export interface StagedPayment {
   matchedRuleId?: string | null;
   /** Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted. */
   matchedRuleName?: string | null;
+  /** Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt). */
+  readonly reconciliationLanes?: ReconciliationLanes;
   createdAt: string;
   updatedAt: string;
 }
@@ -2615,6 +2642,8 @@ export interface StripeStagedCharge {
   payoutQbSupersedeStatus?: string | null;
   /** The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved. */
   payoutQbConflictGiftId?: string | null;
+  /** Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt). */
+  readonly reconciliationLanes?: ReconciliationLanes;
 }
 
 export interface StripeStagedChargeList {
@@ -2687,6 +2716,8 @@ export interface StripePayoutReconciliation {
   /** Set once a confirm-replace archives this gift (kept, never deleted). */
   conflictGiftArchivedAt?: string | null;
   conflictGiftDonorName?: string | null;
+  /** Two-lane reconciliation status (INV-4) for this payout, derived read-only from qbReconciliationStatus: funding = unlinked (unmatched)→proposed (proposed/conflict_approved)→confirmed (any confirmed_*, exempt when confirmed_excluded). crmRecord is null — a payout is a batch with no single donor. */
+  readonly reconciliationLanes?: ReconciliationLanes;
 }
 
 export interface StripePayoutReconciliationList {
@@ -2959,6 +2990,8 @@ export interface ReconciliationCard {
   finalAmountSource?: GiftFinalAmountSource | null;
   /** Auto-proposal satisfies the consistency gate (one-click approve). */
   ready: boolean;
+  /** Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor/gift state: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge. */
+  readonly reconciliationLanes?: ReconciliationLanes;
   createdAt?: string | null;
   updatedAt?: string | null;
 }

@@ -59,6 +59,10 @@ import {
   type ConfirmRevertResult,
 } from "../lib/stripeConfirm";
 import { proposePayoutMatches } from "../lib/stripeReconcile";
+import {
+  deriveEvidenceLanes,
+  derivePayoutLanes,
+} from "../lib/reconciliationLanes";
 
 /**
  * Review queue for incoming Stripe charges plus the manual sync / rematch
@@ -315,7 +319,19 @@ router.get(
     ]);
 
     res.json({
-      data: rows,
+      data: rows.map((row) => ({
+        ...row,
+        reconciliationLanes: deriveEvidenceLanes({
+          status: row.status,
+          donorPresent:
+            row.organizationId != null ||
+            row.individualGiverPersonId != null ||
+            row.householdId != null,
+          donorConfirmed: row.matchConfirmedAt != null,
+          giftLinked: row.resolvedGiftId != null,
+          giftProposed: false,
+        }),
+      })),
       pagination: { page, limit, total: totalRow?.value ?? 0 },
     });
   }),
@@ -1129,7 +1145,10 @@ router.get(
     ]);
 
     res.json({
-      data: rows,
+      data: rows.map((row) => ({
+        ...row,
+        reconciliationLanes: derivePayoutLanes(row.qbReconciliationStatus),
+      })),
       pagination: { page, limit, total: totalRow?.value ?? 0 },
     });
   }),
