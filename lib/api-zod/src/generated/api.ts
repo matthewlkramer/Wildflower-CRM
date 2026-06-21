@@ -1751,6 +1751,11 @@ export const ListEntitiesResponseItem = zod.object({
   id: zod.string(),
   name: zod.string(),
   active: zod.boolean(),
+  fiscallySponsored: zod
+    .boolean()
+    .describe(
+      "Whether this fund entity is fiscally sponsored. Informational flag only.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -1765,6 +1770,10 @@ export const CreateEntityBody = zod.object({
     .boolean()
     .optional()
     .describe("Defaults to true. Set false to mark retired."),
+  fiscallySponsored: zod
+    .boolean()
+    .optional()
+    .describe("Defaults to false. Set true to mark fiscally sponsored."),
 });
 
 export const GetEntityParams = zod.object({
@@ -1775,6 +1784,11 @@ export const GetEntityResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
   active: zod.boolean(),
+  fiscallySponsored: zod
+    .boolean()
+    .describe(
+      "Whether this fund entity is fiscally sponsored. Informational flag only.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });
@@ -1786,12 +1800,18 @@ export const UpdateEntityParams = zod.object({
 export const UpdateEntityBody = zod.object({
   name: zod.string().optional(),
   active: zod.boolean().optional(),
+  fiscallySponsored: zod.boolean().optional(),
 });
 
 export const UpdateEntityResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
   active: zod.boolean(),
+  fiscallySponsored: zod
+    .boolean()
+    .describe(
+      "Whether this fund entity is fiscally sponsored. Informational flag only.",
+    ),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
 });

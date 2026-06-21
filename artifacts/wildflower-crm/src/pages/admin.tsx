@@ -736,6 +736,7 @@ function EntitiesTable({ entities, loading }: { entities: Entity[]; loading: boo
         <TableRow>
           <TableHead className="w-[28%]">Id</TableHead>
           <TableHead>Name</TableHead>
+          <TableHead className="w-[180px] text-right">Fiscally sponsored</TableHead>
           <TableHead className="w-[140px] text-right">Active</TableHead>
         </TableRow>
       </TableHeader>
@@ -789,6 +790,10 @@ function EntityRow({ entity }: { entity: Entity }) {
     update.mutate({ id: entity.id, data: { active: next } });
   };
 
+  const toggleFiscallySponsored = (next: boolean) => {
+    update.mutate({ id: entity.id, data: { fiscallySponsored: next } });
+  };
+
   return (
     <TableRow data-testid={`entity-row-${entity.id}`}>
       <TableCell className="font-mono text-xs text-muted-foreground">{entity.id}</TableCell>
@@ -822,6 +827,20 @@ function EntityRow({ entity }: { entity: Entity }) {
             {entity.name}
           </button>
         )}
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex items-center justify-end gap-2">
+          <span className={`text-xs ${entity.fiscallySponsored ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+            {entity.fiscallySponsored ? "Yes" : "No"}
+          </span>
+          <Switch
+            checked={entity.fiscallySponsored}
+            onCheckedChange={toggleFiscallySponsored}
+            disabled={update.isPending}
+            data-testid={`entity-fiscally-sponsored-${entity.id}`}
+            aria-label={entity.fiscallySponsored ? "Mark not fiscally sponsored" : "Mark fiscally sponsored"}
+          />
+        </div>
       </TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-2">

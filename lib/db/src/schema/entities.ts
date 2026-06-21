@@ -12,6 +12,10 @@ export const entities = pgTable("entities", {
   id: text("id").primaryKey(), // slug-style key, e.g. "wildflower_foundation"
   name: text("name").notNull(),
   active: boolean("active").default(true).notNull(),
+  // Visible flag indicating this fund entity is fiscally sponsored. Purely
+  // informational on the entity record — it does NOT drive coding rules,
+  // analytics, or reconciliation behavior.
+  fiscallySponsored: boolean("fiscally_sponsored").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

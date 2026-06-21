@@ -616,6 +616,8 @@ export interface Entity {
   id: string;
   name: string;
   active: boolean;
+  /** Whether this fund entity is fiscally sponsored. Informational flag only. */
+  fiscallySponsored: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -626,11 +628,14 @@ export interface CreateEntityBody {
   name: string;
   /** Defaults to true. Set false to mark retired. */
   active?: boolean;
+  /** Defaults to false. Set true to mark fiscally sponsored. */
+  fiscallySponsored?: boolean;
 }
 
 export interface UpdateEntityBody {
   name?: string;
   active?: boolean;
+  fiscallySponsored?: boolean;
 }
 
 export interface FiscalYearEntityGoal {

@@ -3645,11 +3645,12 @@ components:
     # ─── Entities / fundable projects / fiscal years ──────────────────────────
     Entity:
       type: object
-      required: [id, name, active, createdAt, updatedAt]
+      required: [id, name, active, fiscallySponsored, createdAt, updatedAt]
       properties:
         id:        { type: string }
         name:      { type: string }
         active:    { type: boolean }
+        fiscallySponsored: { type: boolean, description: "Whether this fund entity is fiscally sponsored. Informational flag only." }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     CreateEntityBody:
@@ -3659,11 +3660,13 @@ components:
         id:     { type: string, description: "Slug-style key, e.g. wildflower_foundation. Must be unique." }
         name:   { type: string }
         active: { type: boolean, description: "Defaults to true. Set false to mark retired." }
+        fiscallySponsored: { type: boolean, description: "Defaults to false. Set true to mark fiscally sponsored." }
     UpdateEntityBody:
       type: object
       properties:
         name:   { type: string }
         active: { type: boolean }
+        fiscallySponsored: { type: boolean }
     FiscalYearEntityGoal:
       type: object
       required: [fiscalYearId, entityId, category, goalAmount, createdAt, updatedAt]
