@@ -51,6 +51,7 @@ import {
   type ScoredMatch,
 } from "./quickbooksMatch";
 import { scoreStripeCharge } from "./stripeMatch";
+import { amountWithinFeeBand } from "./reconciliationGate";
 import {
   giftCandidateJoins,
   giftCandidateSelect,
@@ -211,16 +212,6 @@ function donorEqGift(d: { kind: RecDonorKind; id: string }): SQL {
     : d.kind === "person"
       ? eq(giftsAndPayments.individualGiverPersonId, d.id)
       : eq(giftsAndPayments.householdId, d.id);
-}
-
-// CRM gross gift is at or just above the QB net (a processor fee makes it
-// slightly larger). Used both as a candidate filter and a mismatch check.
-function withinFeeBand(anchor: string | null, gift: string | null): boolean {
-  if (anchor == null || gift == null) return true;
-  const a = Number(anchor);
-  const g = Number(gift);
-  if (!Number.isFinite(a) || !Number.isFinite(g)) return true;
-  return g >= a - 0.01 && g <= a * 1.1 + 1;
 }
 
 function amountConfidence(anchor: string | null, gift: string | null): number {
@@ -818,9 +809,17 @@ export async function buildReconciliationGraph(
     donorState === "determined" &&
     giftState === "determined" &&
     selectedGiftRow &&
-    !withinFeeBand(anchorAmount, selectedGiftRow.amount ?? null)
+    anchorAmount != null &&
+    selectedGiftRow.amount != null &&
+    !amountWithinFeeBand(
+      anchorAmount,
+      selectedGiftRow.amount,
+      stripeEvidence?.netAmount ?? null,
+    )
   ) {
-    blockers.push("Gift amount differs from the evidence — enter an override reason to approve.");
+    blockers.push(
+      "Gift amount differs from the evidence beyond the processor fee — enter an override reason to approve.",
+    );
   }
   const ready = blockers.length === 0;
 

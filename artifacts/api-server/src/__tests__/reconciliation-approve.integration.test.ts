@@ -1188,11 +1188,12 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
   }, 30_000);
 
   it("stamps the Stripe GROSS as the gift's final amount, NOT the coarser QB staged amount (Stripe precedence)", async () => {
-    // The gift's prior (human) figure 105.00 sits within the fee-band of the
-    // Stripe gross 100.00; the QB deposit is a coarser net 90.00. Only Stripe
-    // precedence (gross wins when a charge exists) explains a final amount of
-    // 100.00 — neither the QB 90.00 nor the prior 105.00.
-    const giftId = await seedGiftWithAllocations("105.00", ["105.00"]);
+    // The gift's prior (human) figure 98.50 sits inside the Stripe [net 97.00,
+    // gross 100.00] window — a pure gross-vs-net gap, so it auto-resolves with no
+    // override. The QB deposit is a coarser net 90.00. Only Stripe precedence
+    // (gross wins when a charge exists) explains a final amount of 100.00 —
+    // neither the QB 90.00 nor the prior 98.50.
+    const giftId = await seedGiftWithAllocations("98.50", ["98.50"]);
     const allocId = allocIds[allocIds.length - 1] as string;
     const stagedId = await seedStaged("90.00");
     const payoutId = await seedPayout(stagedId);
@@ -1206,12 +1207,12 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     expect(res.status).toBe(200);
 
     const gift = await readGift(giftId);
-    expect(gift.amount).toBe("100.00"); // Stripe GROSS, not QB 90.00 or prior 105.00
+    expect(gift.amount).toBe("100.00"); // Stripe GROSS, not QB 90.00 or prior 98.50
     expect(gift.finalAmountSource).toBe("stripe");
     expect(gift.finalAmountStripeChargeId).toBe(chargeId);
     expect(gift.finalAmountQbStagedPaymentId).toBeNull();
     // The pre-stamp human figure is snapshotted, never lost.
-    expect(gift.originalHumanCrmAmount).toBe("105.00");
+    expect(gift.originalHumanCrmAmount).toBe("98.50");
     // The lone allocation is rescaled to the new final amount (no review flag).
     expect((await readAlloc(allocId)).subAmount).toBe("100.00");
     expect(await readOpenReviews(giftId)).toHaveLength(0);
@@ -1219,6 +1220,44 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("reconciled");
     expect(staged.amount).toBe("90.00");
+  }, 30_000);
+
+  it("a gift ABOVE the Stripe gross is a REAL discrepancy → 409 without an override, 200 (stamped to gross) with one", async () => {
+    // gross 100.00, net 97.00; a human-recorded 105.00 sits ABOVE gross. A
+    // processor fee can only LOWER the recorded amount, so this is not a pure
+    // gross-vs-net gap and must not silently auto-resolve.
+    const giftId = await seedGiftWithAllocations("105.00", ["105.00"]);
+    const allocId = allocIds[allocIds.length - 1] as string;
+    const stagedId = await seedStaged("90.00");
+    const payoutId = await seedPayout(stagedId);
+    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
+
+    // No override → blocked by the consistency gate, gift untouched.
+    const blocked = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "link_existing_gift",
+      giftId,
+      stripeChargeId: chargeId,
+    });
+    expect(blocked.status).toBe(409);
+    expect(blocked.json.error).toBe("consistency_gate");
+    const codes = (blocked.json.details?.issues ?? []).map((i: any) => i.code);
+    expect(codes).toContain("amount_out_of_band");
+    expect((await readGift(giftId)).amount).toBe("105.00");
+
+    // Explicit override reason → approved, and Stripe gross still wins.
+    const ok = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "link_existing_gift",
+      giftId,
+      stripeChargeId: chargeId,
+      overrideAmountMismatchReason: "Donor added a tip on top of the charge",
+    });
+    expect(ok.status).toBe(200);
+    const gift = await readGift(giftId);
+    expect(gift.amount).toBe("100.00"); // Stripe GROSS once the human confirms.
+    expect(gift.finalAmountSource).toBe("stripe");
+    expect(gift.originalHumanCrmAmount).toBe("105.00");
+    expect((await readAlloc(allocId)).subAmount).toBe("100.00");
+    expect(await readOpenReviews(giftId)).toHaveLength(0);
   }, 30_000);
 });
 

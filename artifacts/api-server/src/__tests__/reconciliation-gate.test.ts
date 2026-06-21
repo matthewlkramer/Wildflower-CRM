@@ -58,6 +58,33 @@ describe("amountWithinFeeBand", () => {
   it("non-numeric → out of band", () => {
     expect(amountWithinFeeBand("abc", "100.00")).toBe(false);
   });
+
+  // ── Net-aware window: a Stripe charge gives an EXACT gross + net, so the gift
+  // is the same money ONLY inside [net, gross]. Once the net is known the legacy
+  // heuristic band no longer applies. ─────────────────────────────────────────
+  it("net known, gift == net (pure gross-vs-net gap) → within band", () => {
+    // gross 100.00, net 96.80; a gift recorded at the bank net auto-resolves.
+    expect(amountWithinFeeBand("100.00", "96.80", "96.80")).toBe(true);
+  });
+  it("net known, gift == gross → within band", () => {
+    expect(amountWithinFeeBand("100.00", "100.00", "96.80")).toBe(true);
+  });
+  it("net known, gift between net and gross → within band", () => {
+    expect(amountWithinFeeBand("100.00", "98.00", "96.80")).toBe(true);
+  });
+  it("net known, gift below the net → out of band (real discrepancy)", () => {
+    expect(amountWithinFeeBand("100.00", "90.00", "96.80")).toBe(false);
+  });
+  it("net known, gift ABOVE the gross → out of band (a fee can never raise the amount)", () => {
+    // 105 sits inside the legacy gross*1.1+$1 band but ABOVE gross 100 — no
+    // longer auto-accepted now that the net pins the window; needs an override.
+    expect(amountWithinFeeBand("100.00", "105.00", "96.80")).toBe(false);
+  });
+  it("net absent/invalid → falls back to the legacy heuristic band", () => {
+    // Without a usable net, gross 105 still sits within net*1.1+$1 of 100.
+    expect(amountWithinFeeBand("100.00", "105.00", null)).toBe(true);
+    expect(amountWithinFeeBand("100.00", "105.00", "abc")).toBe(true);
+  });
 });
 
 describe("runConsistencyGate", () => {
@@ -240,6 +267,43 @@ describe("runConsistencyGate", () => {
         }),
       ),
     ).toContain("amount_out_of_band");
+  });
+
+  it("net known, pure gross-vs-net gap (gift at net) → no amount_out_of_band", () => {
+    expect(
+      codes(
+        baseInput({
+          evidenceAmount: "100.00",
+          evidenceNetAmount: "96.80",
+          gift: { ...baseInput().gift, amount: "96.80" },
+        }),
+      ),
+    ).not.toContain("amount_out_of_band");
+  });
+
+  it("net known, gift ABOVE gross → amount_out_of_band (real discrepancy needs override)", () => {
+    expect(
+      codes(
+        baseInput({
+          evidenceAmount: "100.00",
+          evidenceNetAmount: "96.80",
+          gift: { ...baseInput().gift, amount: "105.00" },
+        }),
+      ),
+    ).toContain("amount_out_of_band");
+  });
+
+  it("net known, gift above gross WITH override reason → waived", () => {
+    expect(
+      codes(
+        baseInput({
+          evidenceAmount: "100.00",
+          evidenceNetAmount: "96.80",
+          gift: { ...baseInput().gift, amount: "105.00" },
+          overrideAmountMismatchReason: "Donor added a tip on top of the charge",
+        }),
+      ),
+    ).not.toContain("amount_out_of_band");
   });
 
   // ── Stripe precedence: a charge must be selected when one is available ──────

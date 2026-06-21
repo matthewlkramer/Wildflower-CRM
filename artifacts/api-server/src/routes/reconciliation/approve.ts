@@ -364,6 +364,7 @@ async function mintGiftFromEvidence(
             }
           : null,
         evidenceAmount,
+        evidenceNetAmount: charge ? charge.netAmount : null,
         stripeCharge: charge
           ? { id: charge.id, stripePayoutId: charge.stripePayoutId }
           : null,
@@ -900,6 +901,7 @@ router.post(
               }
             : null,
           evidenceAmount,
+          evidenceNetAmount: charge ? charge.netAmount : null,
           stripeCharge: charge
             ? { id: charge.id, stripePayoutId: charge.stripePayoutId }
             : null,

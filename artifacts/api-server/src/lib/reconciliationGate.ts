@@ -85,6 +85,10 @@ export interface ConsistencyGateInput {
   /** The amount that will be stamped onto the gift (Stripe GROSS when a charge is
    *  selected, else the QB staged amount). */
   evidenceAmount: string | null;
+  /** The processor NET (bank-deposited) amount when a Stripe charge backs the
+   *  money. Lets the amount band auto-accept a gift recorded at net vs gross (the
+   *  same money, a fee apart) with no override. Null/undefined for QB-only. */
+  evidenceNetAmount?: string | null;
   /** A Stripe charge selected as the precise (GROSS) amount source. */
   stripeCharge?: GateStripeCharge | null;
   /** Ids of the Stripe payouts tied to the staged row; a selected charge must
@@ -105,19 +109,39 @@ const FEE_BAND_ADDEND = 1;
 const HALF_CENT = 0.01;
 
 /**
- * True when an evidence amount and a gift amount are plausibly the same money:
- * either equal to the cent, or the gift (gross) sits within a processor fee-band
- * above the evidence (net). Mirrors the auto-pool fee-band used elsewhere.
+ * True when an evidence amount and a gift amount are plausibly the same money.
+ * When the processor NET is known (a Stripe charge backs the money), that is an
+ * exact constraint: the gift is the same money only inside the [net, gross]
+ * window (the sole legitimate gap is gross vs net, a fee apart). Without a known
+ * net (QB-only), it falls back to the heuristic band — equal to the cent, or the
+ * gift (gross) within a processor fee-band above the evidence (net).
  */
 export function amountWithinFeeBand(
   evidence: string | null,
   gift: string | null,
+  evidenceNet?: string | null,
 ): boolean {
   if (evidence == null || gift == null) return evidence == null && gift == null;
   const e = Number(evidence);
   const g = Number(gift);
   if (!Number.isFinite(e) || !Number.isFinite(g)) return false;
   if (Math.abs(g - e) < HALF_CENT) return true;
+  // When the processor net is known (a Stripe charge backs this money), the gift
+  // legitimately sits ANYWHERE between the bank net and the donor-paid gross — the
+  // sole difference is gross vs net, the same money a processor fee apart. Accept
+  // the whole [net, gross] window so a pure gross/net gap needs no override.
+  const net = evidenceNet == null ? NaN : Number(evidenceNet);
+  if (Number.isFinite(net)) {
+    // Net known ⇒ the [net, gross] window is AUTHORITATIVE (no QB fallback). A
+    // gift outside it — including ABOVE the gross, which a processor fee can
+    // never explain — is a real discrepancy that still needs an explicit
+    // override; only a pure gross-vs-net gap auto-resolves.
+    const lo = Math.min(net, e) - HALF_CENT;
+    const hi = Math.max(net, e) + HALF_CENT;
+    return g >= lo && g <= hi;
+  }
+  // QB-only fallback (no known fee): the gift (gross) sits at or just above the
+  // QB net, within a generous processor fee band.
   return g >= e - HALF_CENT && g <= e * FEE_BAND_MULTIPLIER + FEE_BAND_ADDEND;
 }
 
@@ -153,6 +177,7 @@ export function runConsistencyGate(input: ConsistencyGateInput): GateIssue[] {
     gift,
     opportunity,
     evidenceAmount,
+    evidenceNetAmount,
     stripeCharge,
     stagedPayoutIds = [],
     stripeChargesAvailable = 0,
@@ -252,7 +277,10 @@ export function runConsistencyGate(input: ConsistencyGateInput): GateIssue[] {
 
   // ── Amount band (waivable by an explicit override reason) ───────────────────
   const overridden = (overrideAmountMismatchReason ?? "").trim().length > 0;
-  if (!overridden && !amountWithinFeeBand(evidenceAmount, gift.amount)) {
+  if (
+    !overridden &&
+    !amountWithinFeeBand(evidenceAmount, gift.amount, evidenceNetAmount)
+  ) {
     issues.push({
       code: "amount_out_of_band",
       message:
