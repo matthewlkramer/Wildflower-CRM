@@ -637,3 +637,18 @@ export const grantLeadStatusEnum = pgEnum("grant_lead_status", [
   "converted",
   "archived",
 ]);
+
+// ──────────────────────────────────────────────────────────────────
+// Cleanup queue (records flagged for manual data cleanup)
+// ──────────────────────────────────────────────────────────────────
+
+// Lifecycle of a cleanup-queue item.
+//   open      — needs attention; shows in the default queue view
+//   resolved  — the underlying record was cleaned up by hand
+//   dismissed — judged not worth fixing / a false flag
+// Both resolved and dismissed drop out of the default view.
+export const cleanupQueueStatusEnum = pgEnum("cleanup_queue_status", [
+  "open",
+  "resolved",
+  "dismissed",
+]);

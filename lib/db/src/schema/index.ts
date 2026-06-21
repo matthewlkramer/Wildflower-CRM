@@ -57,4 +57,5 @@ export * from "./connectionEnthusiasmHistory";
 export * from "./grantLeads";
 export * from "./auditLog";
 export * from "./duplicateDismissals";
+export * from "./cleanupQueue";
 export * from "./giftAmountAllocationReview";

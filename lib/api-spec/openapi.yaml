@@ -53,6 +53,7 @@ tags:
   - { name: staged-payments }
   - { name: reconciliation }
   - { name: grant-leads }
+  - { name: cleanup-queue }
   - { name: admin }
   - { name: search }
 
@@ -104,6 +105,42 @@ paths:
         "204": { description: Dismissed (idempotent) }
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  # ─── Cleanup queue (records flagged for manual data cleanup) ─────────────────
+  /cleanup-queue:
+    get:
+      operationId: listCleanupQueue
+      tags: [cleanup-queue]
+      summary: >-
+        Records flagged as needing manual data cleanup. Each item links a target
+        record to a human-readable note describing what to fix. Defaults to
+        open items only; pass status to view resolved/dismissed items.
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/CleanupQueueStatus" }, description: "Filter by status. Omit to get open items only." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItemList" } } } }
+  /cleanup-queue/{id}/resolve:
+    post:
+      operationId: resolveCleanupItem
+      tags: [cleanup-queue]
+      summary: Mark a cleanup item as resolved (the record was cleaned up by hand).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItem" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Item is no longer open (already resolved or dismissed)." }
+  /cleanup-queue/{id}/dismiss:
+    post:
+      operationId: dismissCleanupItem
+      tags: [cleanup-queue]
+      summary: Dismiss a cleanup item (a false flag / not worth fixing).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItem" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Item is no longer open (already resolved or dismissed)." }
+
   # ─── Email intelligence proposals ──────────────────────────────────────────
   /email-proposals:
     get:
@@ -5656,6 +5693,32 @@ components:
         type: { type: string, enum: [organization, person] }
         idA:  { type: string }
         idB:  { type: string }
+    CleanupQueueStatus:
+      type: string
+      enum: [open, resolved, dismissed]
+    CleanupItem:
+      type: object
+      required: [id, targetType, targetId, reasonCode, note, status, flaggedAt, createdAt, updatedAt]
+      properties:
+        id:               { type: string }
+        targetType:       { type: string, description: "Kind of record this item targets (e.g. 'pledge', 'opportunity', 'organization', 'person', 'gift')." }
+        targetId:         { type: string, description: "Id of the targeted record." }
+        targetName:       { type: string, nullable: true, description: "Resolved display name of the target record (when known)." }
+        reasonCode:       { type: string, description: "Machine-readable category of the flag." }
+        note:             { type: string, description: "Human-readable description of what to fix." }
+        status:           { $ref: "#/components/schemas/CleanupQueueStatus" }
+        flaggedAt:        { type: string, description: "ISO timestamp the record was flagged for cleanup." }
+        resolvedAt:       { type: string, nullable: true, description: "ISO timestamp the item was resolved or dismissed." }
+        resolvedByUserId: { type: string, nullable: true }
+        resolvedByUserName: { type: string, nullable: true, description: "Display name of the user who resolved/dismissed the item." }
+        createdAt:        { type: string }
+        updatedAt:        { type: string }
+    CleanupItemList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/CleanupItem" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
     ResolveStagedPaymentBody:
       type: object
       description: "Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary."

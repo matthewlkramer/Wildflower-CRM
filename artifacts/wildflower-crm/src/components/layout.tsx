@@ -30,6 +30,7 @@ import {
   Lightbulb,
   ScrollText,
   CopyCheck,
+  ListChecks,
 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,7 @@ const navItems: NavEntry[] = [
   { href: "/admin", label: "Admin", icon: Settings },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
   { href: "/potential-duplicates", label: "Potential Duplicates", icon: CopyCheck, adminOnly: true },
+  { href: "/cleanup-queue", label: "Cleanup Queue", icon: ListChecks },
 ];
 
 const SIDEBAR_COLLAPSED_KEY = "wf-sidebar-collapsed";

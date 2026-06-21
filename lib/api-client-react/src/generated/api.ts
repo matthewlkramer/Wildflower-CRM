@@ -46,6 +46,8 @@ import type {
   CalendarMeetingFiltersConfig,
   CalendarSyncRunResponse,
   CandidateThankYouEmailList,
+  CleanupItem,
+  CleanupItemList,
   ConfirmStagedPaymentMatchesBody,
   ConfirmStagedPaymentMatchesResponse,
   ConvertGrantLeadBody,
@@ -142,6 +144,7 @@ import type {
   ListAddressesParams,
   ListAuditLogParams,
   ListCalendarEventsParams,
+  ListCleanupQueueParams,
   ListDonorPaymentIntermediariesParams,
   ListEmailMessagesParams,
   ListEmailProposalsParams,
@@ -600,6 +603,273 @@ export const useDismissPotentialDuplicate = <
   TContext
 > => {
   return useMutation(getDismissPotentialDuplicateMutationOptions(options));
+};
+
+/**
+ * @summary Records flagged as needing manual data cleanup. Each item links a target record to a human-readable note describing what to fix. Defaults to open items only; pass status to view resolved/dismissed items.
+ */
+export const getListCleanupQueueUrl = (params?: ListCleanupQueueParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/cleanup-queue?${stringifiedParams}`
+    : `/api/cleanup-queue`;
+};
+
+export const listCleanupQueue = async (
+  params?: ListCleanupQueueParams,
+  options?: RequestInit,
+): Promise<CleanupItemList> => {
+  return customFetch<CleanupItemList>(getListCleanupQueueUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCleanupQueueQueryKey = (
+  params?: ListCleanupQueueParams,
+) => {
+  return [`/api/cleanup-queue`, ...(params ? [params] : [])] as const;
+};
+
+export const getListCleanupQueueQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCleanupQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListCleanupQueueParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCleanupQueue>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListCleanupQueueQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCleanupQueue>>
+  > = ({ signal }) => listCleanupQueue(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCleanupQueue>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCleanupQueueQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCleanupQueue>>
+>;
+export type ListCleanupQueueQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Records flagged as needing manual data cleanup. Each item links a target record to a human-readable note describing what to fix. Defaults to open items only; pass status to view resolved/dismissed items.
+ */
+
+export function useListCleanupQueue<
+  TData = Awaited<ReturnType<typeof listCleanupQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListCleanupQueueParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCleanupQueue>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCleanupQueueQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Mark a cleanup item as resolved (the record was cleaned up by hand).
+ */
+export const getResolveCleanupItemUrl = (id: string) => {
+  return `/api/cleanup-queue/${id}/resolve`;
+};
+
+export const resolveCleanupItem = async (
+  id: string,
+  options?: RequestInit,
+): Promise<CleanupItem> => {
+  return customFetch<CleanupItem>(getResolveCleanupItemUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getResolveCleanupItemMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveCleanupItem>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resolveCleanupItem>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["resolveCleanupItem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resolveCleanupItem>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return resolveCleanupItem(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResolveCleanupItemMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resolveCleanupItem>>
+>;
+
+export type ResolveCleanupItemMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Mark a cleanup item as resolved (the record was cleaned up by hand).
+ */
+export const useResolveCleanupItem = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveCleanupItem>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resolveCleanupItem>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getResolveCleanupItemMutationOptions(options));
+};
+
+/**
+ * @summary Dismiss a cleanup item (a false flag / not worth fixing).
+ */
+export const getDismissCleanupItemUrl = (id: string) => {
+  return `/api/cleanup-queue/${id}/dismiss`;
+};
+
+export const dismissCleanupItem = async (
+  id: string,
+  options?: RequestInit,
+): Promise<CleanupItem> => {
+  return customFetch<CleanupItem>(getDismissCleanupItemUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDismissCleanupItemMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissCleanupItem>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dismissCleanupItem>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["dismissCleanupItem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dismissCleanupItem>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return dismissCleanupItem(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DismissCleanupItemMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dismissCleanupItem>>
+>;
+
+export type DismissCleanupItemMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Dismiss a cleanup item (a false flag / not worth fixing).
+ */
+export const useDismissCleanupItem = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissCleanupItem>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dismissCleanupItem>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDismissCleanupItemMutationOptions(options));
 };
 
 export const getListEmailProposalsUrl = (params?: ListEmailProposalsParams) => {

@@ -3075,6 +3075,44 @@ export interface DismissDuplicateBody {
   idB: string;
 }
 
+export type CleanupQueueStatus =
+  (typeof CleanupQueueStatus)[keyof typeof CleanupQueueStatus];
+
+export const CleanupQueueStatus = {
+  open: "open",
+  resolved: "resolved",
+  dismissed: "dismissed",
+} as const;
+
+export interface CleanupItem {
+  id: string;
+  /** Kind of record this item targets (e.g. 'pledge', 'opportunity', 'organization', 'person', 'gift'). */
+  targetType: string;
+  /** Id of the targeted record. */
+  targetId: string;
+  /** Resolved display name of the target record (when known). */
+  targetName?: string | null;
+  /** Machine-readable category of the flag. */
+  reasonCode: string;
+  /** Human-readable description of what to fix. */
+  note: string;
+  status: CleanupQueueStatus;
+  /** ISO timestamp the record was flagged for cleanup. */
+  flaggedAt: string;
+  /** ISO timestamp the item was resolved or dismissed. */
+  resolvedAt?: string | null;
+  resolvedByUserId?: string | null;
+  /** Display name of the user who resolved/dismissed the item. */
+  resolvedByUserName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CleanupItemList {
+  data: CleanupItem[];
+  pagination: Pagination;
+}
+
 /**
  * Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary.
  */
@@ -4756,6 +4794,22 @@ export const ListPotentialDuplicatesType = {
   organization: "organization",
   person: "person",
 } as const;
+
+export type ListCleanupQueueParams = {
+  /**
+   * Filter by status. Omit to get open items only.
+   */
+  status?: CleanupQueueStatus;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
 
 export type ListEmailProposalsParams = {
   kind?: EmailProposalKind;

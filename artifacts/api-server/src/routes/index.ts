@@ -51,6 +51,7 @@ import grantLeadsRouter from "./grantLeads";
 import auditLogRouter from "./auditLog";
 import searchRouter from "./search";
 import potentialDuplicatesRouter from "./potentialDuplicates";
+import cleanupQueueRouter from "./cleanupQueue";
 import adminReassignRouter from "./adminReassign";
 import reconciliationRouter from "./reconciliation";
 
@@ -118,6 +119,7 @@ router.use(grantLeadsRouter);
 router.use(auditLogRouter);
 router.use(searchRouter);
 router.use(potentialDuplicatesRouter);
+router.use(cleanupQueueRouter);
 router.use(adminReassignRouter);
 router.use(reconciliationRouter);
 
