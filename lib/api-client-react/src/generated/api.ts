@@ -275,13 +275,13 @@ import type {
   StagedGiftResponse,
   StagedPayment,
   StagedPaymentList,
-  StagedPaymentSummary,
   StripeHistoricalProposalSummary,
   StripePayoutReconciliationList,
   StripePayoutReconciliationResult,
   StripeRematchSummary,
   StripeStagedCharge,
   StripeStagedChargeList,
+  StripeStagedChargeSummary,
   StripeSyncStatus,
   StripeSyncSummary,
   Task,
@@ -14748,8 +14748,8 @@ export const getGetStripeStagedChargesSummaryUrl = () => {
 
 export const getStripeStagedChargesSummary = async (
   options?: RequestInit,
-): Promise<StagedPaymentSummary> => {
-  return customFetch<StagedPaymentSummary>(
+): Promise<StripeStagedChargeSummary> => {
+  return customFetch<StripeStagedChargeSummary>(
     getGetStripeStagedChargesSummaryUrl(),
     {
       ...options,
@@ -15342,6 +15342,182 @@ export const useRevertStripeStagedCharge = <
   TContext
 > => {
   return useMutation(getRevertStripeStagedChargeMutationOptions(options));
+};
+
+/**
+ * @summary Confirm a proposed Stripe refund/chargeback (INV-13) — reverse (archive) the linked gift for a full refund / chargeback, or reduce its amount for a partial refund; re-derive the linked pledge and recompute the gift's QuickBooks tie.
+ */
+export const getConfirmStripeRefundPropagationUrl = (id: string) => {
+  return `/api/stripe-staged-charges/${id}/confirm-refund`;
+};
+
+export const confirmStripeRefundPropagation = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StripeStagedCharge> => {
+  return customFetch<StripeStagedCharge>(
+    getConfirmStripeRefundPropagationUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getConfirmStripeRefundPropagationMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStripeRefundPropagation>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmStripeRefundPropagation>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["confirmStripeRefundPropagation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmStripeRefundPropagation>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return confirmStripeRefundPropagation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConfirmStripeRefundPropagationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmStripeRefundPropagation>>
+>;
+
+export type ConfirmStripeRefundPropagationMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Confirm a proposed Stripe refund/chargeback (INV-13) — reverse (archive) the linked gift for a full refund / chargeback, or reduce its amount for a partial refund; re-derive the linked pledge and recompute the gift's QuickBooks tie.
+ */
+export const useConfirmStripeRefundPropagation = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmStripeRefundPropagation>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof confirmStripeRefundPropagation>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getConfirmStripeRefundPropagationMutationOptions(options));
+};
+
+/**
+ * @summary Dismiss a proposed Stripe refund/chargeback (INV-13) — leave the gift untouched and mark the proposal dismissed; re-sync won't re-raise the same refund (an escalation to a larger refund still re-raises).
+ */
+export const getDismissStripeRefundPropagationUrl = (id: string) => {
+  return `/api/stripe-staged-charges/${id}/dismiss-refund`;
+};
+
+export const dismissStripeRefundPropagation = async (
+  id: string,
+  options?: RequestInit,
+): Promise<StripeStagedCharge> => {
+  return customFetch<StripeStagedCharge>(
+    getDismissStripeRefundPropagationUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getDismissStripeRefundPropagationMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissStripeRefundPropagation>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dismissStripeRefundPropagation>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["dismissStripeRefundPropagation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dismissStripeRefundPropagation>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return dismissStripeRefundPropagation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DismissStripeRefundPropagationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dismissStripeRefundPropagation>>
+>;
+
+export type DismissStripeRefundPropagationMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Dismiss a proposed Stripe refund/chargeback (INV-13) — leave the gift untouched and mark the proposal dismissed; re-sync won't re-raise the same refund (an escalation to a larger refund still re-raises).
+ */
+export const useDismissStripeRefundPropagation = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissStripeRefundPropagation>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dismissStripeRefundPropagation>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDismissStripeRefundPropagationMutationOptions(options));
 };
 
 /**

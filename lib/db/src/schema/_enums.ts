@@ -639,6 +639,29 @@ export const stagedPaymentFundingSourceProvenanceEnum = pgEnum(
   ["auto", "manual"],
 );
 
+// Lifecycle of a Stripe refund/chargeback proposal raised against a Stripe
+// staged charge whose money is already booked into a CRM gift (INV-13). The
+// propagation is propose-then-confirm: the sync worker only ever RAISES a
+// `proposed`; a human confirms (`applied`) or dismisses (`dismissed`) it.
+//   none      — no refund/dispute, or no linked gift to propagate to.
+//   proposed  — a refund/chargeback was detected; awaiting human confirm.
+//   applied   — the human confirmed; the gift was reversed/reduced.
+//   dismissed — the human chose not to propagate this refund to the gift.
+export const stripeRefundPropagationStatusEnum = pgEnum(
+  "stripe_refund_propagation_status",
+  ["none", "proposed", "applied", "dismissed"],
+);
+
+// What kind of Stripe reversal a refund proposal represents.
+//   full_refund    — the charge was refunded in full ⇒ reverse (archive) gift.
+//   partial_refund — the charge was partially refunded ⇒ reduce gift amount.
+//   chargeback     — the charge was disputed ⇒ reverse (archive) gift.
+export const stripeRefundKindEnum = pgEnum("stripe_refund_kind", [
+  "full_refund",
+  "partial_refund",
+  "chargeback",
+]);
+
 // Where a CRM gift's FINAL `amount` was last sourced from (provenance for the
 // reconciliation model in which the CRM gift is the single source of truth).
 //   human      — hand-entered by a fundraiser (default; the pre-reconciliation

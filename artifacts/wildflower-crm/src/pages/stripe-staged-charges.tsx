@@ -10,6 +10,8 @@ import {
   useExcludeStripeStagedCharge,
   useReIncludeStripeStagedCharge,
   useRevertStripeStagedCharge,
+  useConfirmStripeRefundPropagation,
+  useDismissStripeRefundPropagation,
   useRunStripeSync,
   useRematchStripeCharges,
   useGetStripeSyncStatus,
@@ -47,6 +49,7 @@ import { useToast } from "@/hooks/use-toast";
 import { essentialSearchToken, looksLikeOrgName } from "@/lib/donor-seed";
 import {
   AlertTriangle,
+  Check,
   ChevronLeft,
   ChevronRight,
   CreditCard,
@@ -54,6 +57,7 @@ import {
   RotateCcw,
   Search,
   Wand2,
+  X,
 } from "lucide-react";
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -77,6 +81,7 @@ const QUEUES: { value: StagedPaymentQueue; label: string }[] = [
   { value: "needs_review", label: "Needs review" },
   { value: "auto_matched", label: "Auto-matched" },
   { value: "done", label: "Done" },
+  { value: "refund_review", label: "Refunds" },
   { value: "excluded", label: "Excluded" },
   { value: "rejected", label: "Rejected" },
 ];
@@ -160,6 +165,21 @@ function donorSearchSeed(row: StripeStagedCharge): string {
   if (!base) return "";
   const kind: "person" | "org" = looksLikeOrgName(base) ? "org" : "person";
   return essentialSearchToken(base, kind);
+}
+
+function refundKindLabel(
+  k: StripeStagedCharge["refundPropagationKind"],
+): string {
+  switch (k) {
+    case "full_refund":
+      return "Full refund";
+    case "partial_refund":
+      return "Partial refund";
+    case "chargeback":
+      return "Chargeback";
+    default:
+      return "Refund";
+  }
 }
 
 function errMessage(e: unknown): string {
@@ -272,6 +292,8 @@ export default function StripeStagedCharges() {
         return counts.excluded;
       case "rejected":
         return counts.rejected;
+      case "refund_review":
+        return counts.refundReview;
       case "reconciled":
         // Hidden, filterable-only bucket — no count badge.
         return undefined;
@@ -510,6 +532,8 @@ function ChargeRow({
   const exclude = useExcludeStripeStagedCharge();
   const reInclude = useReIncludeStripeStagedCharge();
   const revert = useRevertStripeStagedCharge();
+  const confirmRefund = useConfirmStripeRefundPropagation();
+  const dismissRefund = useDismissStripeRefundPropagation();
 
   const busy =
     resolve.isPending ||
@@ -517,7 +541,9 @@ function ChargeRow({
     reject.isPending ||
     exclude.isPending ||
     reInclude.isPending ||
-    revert.isPending;
+    revert.isPending ||
+    confirmRefund.isPending ||
+    dismissRefund.isPending;
 
   const qbConflict = row.payoutQbSupersedeStatus === "conflict_approved";
   const qbSuperseded = row.payoutQbSupersedeStatus === "excluded_pending";
@@ -626,6 +652,35 @@ function ChargeRow({
     }
   };
 
+  const onConfirmRefund = async () => {
+    try {
+      await confirmRefund.mutateAsync({ id: row.id });
+      onChanged();
+      onGiftChanged();
+      toast({ title: "Refund applied to gift" });
+    } catch (e) {
+      toast({
+        title: "Apply refund failed",
+        description: errMessage(e),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const onDismissRefund = async () => {
+    try {
+      await dismissRefund.mutateAsync({ id: row.id });
+      onChanged();
+      toast({ title: "Refund proposal dismissed" });
+    } catch (e) {
+      toast({
+        title: "Dismiss failed",
+        description: errMessage(e),
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div
       className="rounded-lg border p-4"
@@ -711,6 +766,46 @@ function ChargeRow({
         <p className="mt-2 text-xs text-muted-foreground">
           Excluded as: {REASON_LABEL[row.exclusionReason] ?? row.exclusionReason}
         </p>
+      )}
+
+      {/* Refund / chargeback proposal (INV-13) — propose-then-confirm. */}
+      {row.refundPropagationStatus === "proposed" && (
+        <div className="mt-3 space-y-2 rounded border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/30">
+          <p className="flex items-start gap-1.5 text-xs text-amber-800 dark:text-amber-200">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              {refundKindLabel(row.refundPropagationKind)} detected
+              {row.refundProposedAmount != null
+                ? ` (${fmtMoney(row.refundProposedAmount)})`
+                : ""}
+              {" on a charge already booked into a CRM gift. "}
+              {row.refundPropagationKind === "partial_refund"
+                ? "Confirming reduces the linked gift's amount."
+                : "Confirming reverses (archives) the linked gift."}
+            </span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={onConfirmRefund}
+              data-testid={`button-stripe-confirm-refund-${row.id}`}
+            >
+              <Check className="mr-2 h-4 w-4" />
+              Apply to gift
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={onDismissRefund}
+              data-testid={`button-stripe-dismiss-refund-${row.id}`}
+            >
+              <X className="mr-2 h-4 w-4" />
+              Dismiss
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Actions by queue. */}

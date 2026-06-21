@@ -11,6 +11,7 @@ import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
 import { scoreStripeCharge } from "./stripeMatch";
 import { runProposalPass } from "./stripeReconcile";
+import { deriveRefundProposal } from "./stripeRefund";
 
 function isUniqueViolation(e: unknown): boolean {
   return (
@@ -27,6 +28,7 @@ export interface StripeSyncSummary {
   staged: number;
   matched: number;
   autoApplied: number;
+  refundProposals: number;
 }
 
 // ── Pure helpers (unit-testable without Stripe) ───────────────────────────
@@ -169,6 +171,127 @@ function chargeFromSource(
   return null;
 }
 
+/**
+ * Resolve the charge id behind a refund- or dispute-type balance transaction
+ * (the original charge is not re-listed when a refund/dispute settles later, so
+ * we key off the refund/dispute source's `charge` pointer). Returns null for
+ * any other balance-transaction type.
+ */
+function refundOrDisputeChargeId(
+  bt: Stripe.BalanceTransaction,
+): string | null {
+  const src = bt.source;
+  if (!src || typeof src === "string") return null;
+  if (src.object === "refund" || src.object === "dispute") {
+    const ch = (src as Stripe.Refund | Stripe.Dispute).charge;
+    return typeof ch === "string" ? ch : (ch?.id ?? null);
+  }
+  return null;
+}
+
+/**
+ * Detect Stripe refunds / chargebacks that landed on charges already booked
+ * into CRM gifts and RAISE a propose-then-confirm proposal on the staged row
+ * (INV-13). Never mutates the gift — a human confirms/dismisses in the queue.
+ *
+ * The original charge is not in this payout's balance transactions, so we
+ * resolve the charge id from each refund/dispute source, re-retrieve the charge
+ * for authoritative `refunded` / `disputed` / `amount_refunded` facts, refresh
+ * those live facts on the staged row (bypassing the upsert status guard that
+ * skips reconciled rows), and raise/escalate a proposal when one is warranted.
+ * Idempotent: `deriveRefundProposal` won't re-raise an already-handled refund.
+ */
+async function propagateRefundsForPayout(
+  stripe: Stripe,
+  bts: Stripe.BalanceTransaction[],
+): Promise<number> {
+  const chargeIds = new Set<string>();
+  for (const bt of bts) {
+    const cid = refundOrDisputeChargeId(bt);
+    if (cid) chargeIds.add(cid);
+  }
+  if (chargeIds.size === 0) return 0;
+
+  let proposed = 0;
+  for (const chargeId of chargeIds) {
+    // Only charges we've already staged are relevant; an unstaged charge has no
+    // gift to propagate to and will be handled when it is first staged.
+    const row = await db
+      .select({
+        id: stripeStagedCharges.id,
+        matchedGiftId: stripeStagedCharges.matchedGiftId,
+        createdGiftId: stripeStagedCharges.createdGiftId,
+        refundPropagationGiftId: stripeStagedCharges.refundPropagationGiftId,
+        refundPropagationStatus: stripeStagedCharges.refundPropagationStatus,
+        refundPropagationKind: stripeStagedCharges.refundPropagationKind,
+        refundProposedAmount: stripeStagedCharges.refundProposedAmount,
+      })
+      .from(stripeStagedCharges)
+      .where(eq(stripeStagedCharges.id, chargeId))
+      .then((r) => r[0]);
+    if (!row) continue;
+
+    let charge: Stripe.Charge;
+    try {
+      charge = await stripe.charges.retrieve(chargeId);
+    } catch (e) {
+      logger.warn(
+        { err: e, chargeId },
+        "Stripe refund sync: charge retrieve failed; skipping",
+      );
+      continue;
+    }
+    const facts = extractChargeFacts(charge);
+
+    const giftId =
+      row.matchedGiftId ??
+      row.createdGiftId ??
+      row.refundPropagationGiftId ??
+      null;
+
+    const proposal = deriveRefundProposal(
+      {
+        refunded: facts.refunded,
+        disputed: facts.disputed,
+        amountRefunded: facts.amountRefunded,
+        grossAmount: facts.grossAmount,
+      },
+      {
+        refundPropagationStatus: row.refundPropagationStatus,
+        refundPropagationKind: row.refundPropagationKind,
+        refundProposedAmount: row.refundProposedAmount,
+      },
+      giftId != null,
+    );
+
+    await db
+      .update(stripeStagedCharges)
+      .set({
+        // Always refresh the live refund facts (the upsert guard skips
+        // reconciled rows, so reconciled-then-refunded would otherwise stay
+        // stale).
+        refunded: facts.refunded,
+        disputed: facts.disputed,
+        amountRefunded: facts.amountRefunded,
+        ...(facts.grossAmount != null ? { grossAmount: facts.grossAmount } : {}),
+        rawCharge: charge as unknown as Record<string, unknown>,
+        ...(proposal
+          ? {
+              refundPropagationStatus: "proposed" as const,
+              refundPropagationKind: proposal.kind,
+              refundPropagationGiftId: giftId,
+              refundProposedAmount: proposal.reversedAmount,
+            }
+          : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(stripeStagedCharges.id, chargeId));
+
+    if (proposal) proposed += 1;
+  }
+  return proposed;
+}
+
 // ── Idempotent staged-charge upsert (preserve review state) ───────────────
 
 /**
@@ -276,7 +399,12 @@ async function stagePayoutAndCharges(
   accountId: string,
   payout: Stripe.Payout,
   opts: { enrichAllStatuses?: boolean } = {},
-): Promise<{ staged: number; matched: number; autoApplied: number }> {
+): Promise<{
+  staged: number;
+  matched: number;
+  autoApplied: number;
+  refundProposals: number;
+}> {
   let staged = 0;
   let matched = 0;
   let autoApplied = 0;
@@ -416,7 +544,11 @@ async function stagePayoutAndCharges(
     }
   }
 
-  return { staged, matched, autoApplied };
+  // Propose any refunds/chargebacks that landed on this payout against the
+  // already-booked gifts behind the original charges (propose-then-confirm).
+  const refundProposals = await propagateRefundsForPayout(stripe, bts);
+
+  return { staged, matched, autoApplied, refundProposals };
 }
 
 // ── Sync worker ───────────────────────────────────────────────────────────
@@ -446,12 +578,12 @@ export async function syncStripe(
     client = await getUncachableStripeClient();
   } catch (e) {
     logger.debug({ err: e }, "Stripe sync: connector unavailable, skipping");
-    return { ran: false, payouts: 0, staged: 0, matched: 0, autoApplied: 0 };
+    return { ran: false, payouts: 0, staged: 0, matched: 0, autoApplied: 0, refundProposals: 0 };
   }
   const { stripe, accountId } = client;
   if (!accountId) {
     logger.warn("Stripe sync: no account id from connector, skipping");
-    return { ran: false, payouts: 0, staged: 0, matched: 0, autoApplied: 0 };
+    return { ran: false, payouts: 0, staged: 0, matched: 0, autoApplied: 0, refundProposals: 0 };
   }
 
   const outcome = await withSyncLock(accountId, "stripe", async () => {
@@ -477,7 +609,7 @@ export async function syncStripe(
         { accountId },
         "Stripe sync: seeded watermark to now (ongoing-only); first run stages nothing",
       );
-      return { payouts: 0, staged: 0, matched: 0, autoApplied: 0 };
+      return { payouts: 0, staged: 0, matched: 0, autoApplied: 0, refundProposals: 0 };
     }
 
     const watermark = fullResync ? null : (state.payoutCreatedWatermark ?? null);
@@ -489,6 +621,7 @@ export async function syncStripe(
     let staged = 0;
     let matched = 0;
     let autoApplied = 0;
+    let refundProposals = 0;
 
     try {
       const params: Stripe.PayoutListParams = { limit: 100 };
@@ -513,6 +646,7 @@ export async function syncStripe(
         staged += r.staged;
         matched += r.matched;
         autoApplied += r.autoApplied;
+        refundProposals += r.refundProposals;
       }
 
       const newWatermark =
@@ -529,7 +663,7 @@ export async function syncStripe(
         })
         .where(eq(stripeSyncState.stripeAccountId, accountId));
 
-      return { payouts: payoutsSeen, staged, matched, autoApplied };
+      return { payouts: payoutsSeen, staged, matched, autoApplied, refundProposals };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await db
@@ -547,7 +681,14 @@ export async function syncStripe(
   });
 
   if (!outcome.ran) {
-    return { ran: false, payouts: 0, staged: 0, matched: 0, autoApplied: 0 };
+    return {
+      ran: false,
+      payouts: 0,
+      staged: 0,
+      matched: 0,
+      autoApplied: 0,
+      refundProposals: 0,
+    };
   }
   return { ran: true, ...outcome.result! };
 }

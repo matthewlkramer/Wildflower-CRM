@@ -2089,7 +2089,7 @@ paths:
       operationId: getStripeStagedChargesSummary
       tags: [stripe-staged-charges]
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPaymentSummary" } } } }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeStagedChargeSummary" } } } }
   /stripe-staged-charges/{id}/resolve:
     post:
       operationId: resolveStripeStagedCharge
@@ -2159,6 +2159,26 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeStagedCharge" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged charge cannot be reverted from its current state" }
+  /stripe-staged-charges/{id}/confirm-refund:
+    post:
+      operationId: confirmStripeRefundPropagation
+      tags: [stripe-staged-charges]
+      summary: Confirm a proposed Stripe refund/chargeback (INV-13) — reverse (archive) the linked gift for a full refund / chargeback, or reduce its amount for a partial refund; re-derive the linked pledge and recompute the gift's QuickBooks tie.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeStagedCharge" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "No open refund proposal to confirm, or the targeted gift is no longer available" }
+  /stripe-staged-charges/{id}/dismiss-refund:
+    post:
+      operationId: dismissStripeRefundPropagation
+      tags: [stripe-staged-charges]
+      summary: Dismiss a proposed Stripe refund/chargeback (INV-13) — leave the gift untouched and mark the proposal dismissed; re-sync won't re-raise the same refund (an escalation to a larger refund still re-raises).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeStagedCharge" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "No open refund proposal to dismiss on this charge" }
 
   /stripe-payouts/reconciliation:
     get:
@@ -5136,7 +5156,9 @@ components:
     StagedPaymentEntitySource: { type: string, enum: [auto, manual], description: "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync / reclassify." }
     StagedPaymentFundingSource: { type: string, enum: [stripe, brokerage, daf, donorbox, paypal, wire_ach, check, cash, employer_match, other], description: "WHERE the incoming money came from / how it rendered. A first-class origin dimension, DISTINCT from qbPaymentMethod (the QB instrument like Visa/Check) and from the derived reconciliation funding lane (reconcile progress, not origin). Auto-seeded at ingest by detectFundingSource and human-correctable. other = a known origin outside this list." }
     StagedPaymentFundingSourceProvenance: { type: string, enum: [auto, manual], description: "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync / reclassify." }
-    StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, rejected, reconciled], description: "Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand." }
+    StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, rejected, reconciled, refund_review], description: "Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand. refund_review: a Stripe-only cross-cutting filter (independent of status) for charges with an open refund/chargeback proposal awaiting confirm/dismiss — never emitted as a row's derived bucket." }
+    StripeRefundPropagationStatus: { type: string, enum: [none, proposed, applied, dismissed], description: "Lifecycle of a Stripe refund/chargeback proposal against a charge already booked into a CRM gift (INV-13). none: no refund/dispute or no linked gift. proposed: detected, awaiting human confirm. applied: human confirmed (gift reversed/reduced). dismissed: human declined to propagate." }
+    StripeRefundKind: { type: string, enum: [full_refund, partial_refund, chargeback], description: "Kind of Stripe reversal. full_refund/chargeback reverse (archive) the gift; partial_refund reduces the gift amount." }
     QuickbooksStagedPaymentQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected, reconciled], description: "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review)." }
     StagedPaymentSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc, payer_asc, payer_desc] }
     GiftSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc] }
@@ -5449,6 +5471,14 @@ components:
           required: [fiscallySponsored]
           properties:
             fiscallySponsored: { type: integer }
+    StripeStagedChargeSummary:
+      description: "Stripe staged-charge summary. StagedPaymentSummary plus the open refund/chargeback proposal count (INV-13)."
+      allOf:
+        - $ref: "#/components/schemas/StagedPaymentSummary"
+        - type: object
+          required: [refundReview]
+          properties:
+            refundReview: { type: integer, description: "Charges with an open refund/chargeback proposal awaiting confirm/dismiss." }
     StripeSyncSummary:
       type: object
       required: [ran, payouts, staged, matched, autoApplied]
@@ -5488,7 +5518,7 @@ components:
         payoutCreatedWatermark: { type: string, format: date-time, nullable: true, description: "Only payouts created at/after this instant are pulled." }
     StripeStagedCharge:
       type: object
-      required: [id, stripeAccountId, status, classificationSource, matchStatus, autoApplied, refunded, disputed, createdAt, updatedAt]
+      required: [id, stripeAccountId, status, classificationSource, matchStatus, autoApplied, refunded, disputed, refundPropagationStatus, createdAt, updatedAt]
       properties:
         id:                        { type: string, description: "The Stripe charge id (ch_...) — also the primary key." }
         stripeAccountId:           { type: string }
@@ -5531,6 +5561,13 @@ components:
         approvedAt:                { type: string, format: date-time, nullable: true }
         rejectedByUserId:          { type: string, nullable: true }
         rejectedAt:                { type: string, format: date-time, nullable: true }
+        # Refund / chargeback propagation (INV-13, propose-then-confirm).
+        refundPropagationStatus:   { $ref: "#/components/schemas/StripeRefundPropagationStatus" }
+        refundPropagationKind:     { $ref: "#/components/schemas/StripeRefundKind", nullable: true }
+        refundPropagationGiftId:   { type: string, nullable: true, description: "The CRM gift the refund proposal targets (snapshot of the gift link at propose time)." }
+        refundProposedAmount:      { type: string, nullable: true, description: "Absolute amount being reversed: gross for a full refund / chargeback, cumulative amount_refunded for a partial refund." }
+        refundConfirmedByUserId:   { type: string, nullable: true }
+        refundConfirmedAt:         { type: string, format: date-time, nullable: true }
         createdAt:                 { type: string, format: date-time }
         updatedAt:                 { type: string, format: date-time }
         # Derived queue bucket + denormalized display fields, joined server-side

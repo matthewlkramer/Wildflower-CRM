@@ -17,6 +17,8 @@ import {
   stagedPaymentMatchStatusEnum,
   stagedPaymentMatchMethodEnum,
   stagedPaymentClassificationSourceEnum,
+  stripeRefundPropagationStatusEnum,
+  stripeRefundKindEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
 import { people } from "./people";
@@ -138,6 +140,39 @@ export const stripeStagedCharges = pgTable(
       { onDelete: "set null" },
     ),
 
+    // ── Refund / chargeback propagation (INV-13, propose-then-confirm) ───
+    // When a refund or dispute lands on a charge whose money is already booked
+    // into a CRM gift, the sync worker RAISES a proposal here; a human confirms
+    // (reverse/reduce the gift) or dismisses it. Detected via refund/dispute
+    // balance transactions on later payouts (the original charge is not
+    // re-pulled), so the live `refunded`/`disputed`/`amountRefunded` facts above
+    // are refreshed in lockstep when a proposal is raised.
+    refundPropagationStatus: stripeRefundPropagationStatusEnum(
+      "refund_propagation_status",
+    )
+      .notNull()
+      .default("none"),
+    refundPropagationKind: stripeRefundKindEnum("refund_propagation_kind"),
+    // The CRM gift the proposal targets (snapshot of the gift link at propose
+    // time); set null if that gift is later removed.
+    refundPropagationGiftId: text("refund_propagation_gift_id").references(
+      () => giftsAndPayments.id,
+      { onDelete: "set null" },
+    ),
+    // The absolute amount being reversed by this proposal (gross for a full
+    // refund / chargeback, the cumulative Stripe amount_refunded for a partial).
+    // Doubles as the idempotency signature so a re-sync of the same refund state
+    // never re-raises an already-handled proposal.
+    refundProposedAmount: numeric("refund_proposed_amount", {
+      precision: 14,
+      scale: 2,
+    }),
+    refundConfirmedByUserId: text("refund_confirmed_by_user_id").references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    refundConfirmedAt: timestamp("refund_confirmed_at", { withTimezone: true }),
+
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -161,6 +196,11 @@ export const stripeStagedCharges = pgTable(
       t.individualGiverPersonId,
     ),
     index("stripe_staged_charges_household_id_idx").on(t.householdId),
+    // Partial index for the small refund-review queue (proposals awaiting a
+    // human confirm/dismiss) — most rows are 'none', so keep the index tiny.
+    index("stripe_staged_charges_refund_propagation_idx")
+      .on(t.refundPropagationStatus)
+      .where(sql`${t.refundPropagationStatus} = 'proposed'`),
     // One-to-one staged↔gift linkage (same guard as staged_payments).
     uniqueIndex("stripe_staged_charges_matched_gift_id_uq")
       .on(t.matchedGiftId)

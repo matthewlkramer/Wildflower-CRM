@@ -2112,7 +2112,7 @@ export const StagedPaymentFundingSourceProvenance = {
 } as const;
 
 /**
- * Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand.
+ * Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand. refund_review: a Stripe-only cross-cutting filter (independent of status) for charges with an open refund/chargeback proposal awaiting confirm/dismiss — never emitted as a row's derived bucket.
  */
 export type StagedPaymentQueue =
   (typeof StagedPaymentQueue)[keyof typeof StagedPaymentQueue];
@@ -2124,6 +2124,32 @@ export const StagedPaymentQueue = {
   done: "done",
   rejected: "rejected",
   reconciled: "reconciled",
+  refund_review: "refund_review",
+} as const;
+
+/**
+ * Lifecycle of a Stripe refund/chargeback proposal against a charge already booked into a CRM gift (INV-13). none: no refund/dispute or no linked gift. proposed: detected, awaiting human confirm. applied: human confirmed (gift reversed/reduced). dismissed: human declined to propagate.
+ */
+export type StripeRefundPropagationStatus =
+  (typeof StripeRefundPropagationStatus)[keyof typeof StripeRefundPropagationStatus];
+
+export const StripeRefundPropagationStatus = {
+  none: "none",
+  proposed: "proposed",
+  applied: "applied",
+  dismissed: "dismissed",
+} as const;
+
+/**
+ * Kind of Stripe reversal. full_refund/chargeback reverse (archive) the gift; partial_refund reduces the gift amount.
+ */
+export type StripeRefundKind =
+  (typeof StripeRefundKind)[keyof typeof StripeRefundKind];
+
+export const StripeRefundKind = {
+  full_refund: "full_refund",
+  partial_refund: "partial_refund",
+  chargeback: "chargeback",
 } as const;
 
 /**
@@ -2557,6 +2583,14 @@ export type QuickbooksStagedPaymentSummary = StagedPaymentSummary & {
   fiscallySponsored: number;
 };
 
+/**
+ * Stripe staged-charge summary. StagedPaymentSummary plus the open refund/chargeback proposal count (INV-13).
+ */
+export type StripeStagedChargeSummary = StagedPaymentSummary & {
+  /** Charges with an open refund/chargeback proposal awaiting confirm/dismiss. */
+  refundReview: number;
+};
+
 export interface StripeSyncSummary {
   /** False when the sync was skipped (lock contended, or the Stripe connector/account was unavailable). */
   ran: boolean;
@@ -2655,6 +2689,14 @@ export interface StripeStagedCharge {
   approvedAt?: string | null;
   rejectedByUserId?: string | null;
   rejectedAt?: string | null;
+  refundPropagationStatus: StripeRefundPropagationStatus;
+  refundPropagationKind?: StripeRefundKind | null;
+  /** The CRM gift the refund proposal targets (snapshot of the gift link at propose time). */
+  refundPropagationGiftId?: string | null;
+  /** Absolute amount being reversed: gross for a full refund / chargeback, cumulative amount_refunded for a partial refund. */
+  refundProposedAmount?: string | null;
+  refundConfirmedByUserId?: string | null;
+  refundConfirmedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   queue?: StagedPaymentQueue;

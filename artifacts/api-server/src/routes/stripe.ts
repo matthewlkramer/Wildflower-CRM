@@ -52,6 +52,10 @@ import {
   rematchStripeCharges,
 } from "../lib/stripeSync";
 import {
+  confirmRefundPropagation,
+  dismissRefundPropagation,
+} from "../lib/stripeRefund";
+import {
   confirmPendingQbDeposit,
   confirmKeepApprovedQbGift,
   confirmReplaceApprovedQbGift,
@@ -189,7 +193,13 @@ function withJoins<T extends PgSelect>(q: T) {
     );
 }
 
-type Queue = "needs_review" | "auto_matched" | "excluded" | "done" | "rejected";
+type Queue =
+  | "needs_review"
+  | "auto_matched"
+  | "excluded"
+  | "done"
+  | "rejected"
+  | "refund_review";
 
 const STAGED_SORTS = [
   "date_desc",
@@ -275,6 +285,10 @@ function queueWhere(queue: Queue) {
       return eq(stripeStagedCharges.status, "excluded");
     case "rejected":
       return eq(stripeStagedCharges.status, "rejected");
+    case "refund_review":
+      // Cross-cutting filter (independent of status): charges with a refund /
+      // chargeback proposal awaiting a human confirm/dismiss (INV-13).
+      return eq(stripeStagedCharges.refundPropagationStatus, "proposed");
     case "needs_review":
     default:
       return eq(stripeStagedCharges.status, "pending");
@@ -287,7 +301,14 @@ router.get(
   asyncHandler(async (req, res) => {
     const raw = typeof req.query["queue"] === "string" ? req.query["queue"] : "";
     const queue: Queue = (
-      ["needs_review", "auto_matched", "excluded", "done", "rejected"] as const
+      [
+        "needs_review",
+        "auto_matched",
+        "excluded",
+        "done",
+        "rejected",
+        "refund_review",
+      ] as const
     ).includes(raw as Queue)
       ? (raw as Queue)
       : "needs_review";
@@ -341,22 +362,31 @@ router.get(
 router.get(
   "/stripe-staged-charges-summary",
   asyncHandler(async (_req, res) => {
-    const [statusRows, reasonRows, autoMatchedRow] = await Promise.all([
-      db
-        .select({ status: stripeStagedCharges.status, value: count() })
-        .from(stripeStagedCharges)
-        .groupBy(stripeStagedCharges.status),
-      db
-        .select({ reason: stripeStagedCharges.exclusionReason, value: count() })
-        .from(stripeStagedCharges)
-        .where(eq(stripeStagedCharges.status, "excluded"))
-        .groupBy(stripeStagedCharges.exclusionReason),
-      db
-        .select({ value: count() })
-        .from(stripeStagedCharges)
-        .where(queueWhere("auto_matched"))
-        .then((r) => r[0]),
-    ]);
+    const [statusRows, reasonRows, autoMatchedRow, refundReviewRow] =
+      await Promise.all([
+        db
+          .select({ status: stripeStagedCharges.status, value: count() })
+          .from(stripeStagedCharges)
+          .groupBy(stripeStagedCharges.status),
+        db
+          .select({
+            reason: stripeStagedCharges.exclusionReason,
+            value: count(),
+          })
+          .from(stripeStagedCharges)
+          .where(eq(stripeStagedCharges.status, "excluded"))
+          .groupBy(stripeStagedCharges.exclusionReason),
+        db
+          .select({ value: count() })
+          .from(stripeStagedCharges)
+          .where(queueWhere("auto_matched"))
+          .then((r) => r[0]),
+        db
+          .select({ value: count() })
+          .from(stripeStagedCharges)
+          .where(queueWhere("refund_review"))
+          .then((r) => r[0]),
+      ]);
 
     const byStatus = {
       pending: 0,
@@ -403,6 +433,8 @@ router.get(
       done: byStatus.approved - autoMatched + byStatus.reconciled,
       rejected: byStatus.rejected,
       excluded: byStatus.excluded,
+      // Open refund/chargeback proposals awaiting a human confirm/dismiss.
+      refundReview: refundReviewRow?.value ?? 0,
       excludedByReason,
     });
   }),
@@ -886,6 +918,18 @@ router.post(
             matchConfirmedByUserId: null,
             approvedAt: null,
             approvedByUserId: null,
+            // An open refund proposal pointed at the now-unlinked gift is moot —
+            // clear it (the next sync re-raises it if the refund still applies to
+            // a re-linked gift). An already-applied/dismissed refund is left as a
+            // historical record.
+            ...(locked.refundPropagationStatus === "proposed"
+              ? {
+                  refundPropagationStatus: "none" as const,
+                  refundPropagationKind: null,
+                  refundPropagationGiftId: null,
+                  refundProposedAmount: null,
+                }
+              : {}),
             updatedAt: new Date(),
           })
           .where(eq(stripeStagedCharges.id, id))
@@ -912,6 +956,85 @@ router.post(
     }
     void user;
     res.json(reverted);
+  }),
+);
+
+// ─── POST /stripe-staged-charges/:id/confirm-refund ────────────────────────
+// Human-confirm a proposed Stripe refund/chargeback (INV-13): reverse (archive)
+// or reduce the linked gift, then re-derive the linked pledge + the gift's QB
+// tie status. Guarded so only a `proposed` row applies (409 otherwise).
+router.post(
+  "/stripe-staged-charges/:id/confirm-refund",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const id = paramId(req);
+
+    const result = await confirmRefundPropagation(id, user.id);
+    switch (result.code) {
+      case "not_found":
+        return notFound(res, "stripe staged charge");
+      case "not_proposed":
+        res.status(409).json({
+          error: "not_proposed",
+          message: "No open refund proposal to confirm on this charge.",
+        });
+        return;
+      case "no_linked_gift":
+      case "gift_missing":
+        res.status(409).json({
+          error: "no_linked_gift",
+          message: "The gift this refund targeted is no longer available.",
+        });
+        return;
+      default:
+        break;
+    }
+
+    const row = await withJoins(
+      db.select(stagedSelect).from(stripeStagedCharges).$dynamic(),
+    )
+      .where(eq(stripeStagedCharges.id, id))
+      .then((r) => r[0]);
+    res.json(row ?? { id });
+  }),
+);
+
+// ─── POST /stripe-staged-charges/:id/dismiss-refund ────────────────────────
+// Human-dismiss a proposed refund/chargeback: leave the gift untouched, mark
+// the proposal dismissed. The signature is retained so a re-sync won't re-raise
+// the same refund (an escalation to a larger refund still re-raises).
+router.post(
+  "/stripe-staged-charges/:id/dismiss-refund",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const id = paramId(req);
+
+    const result = await dismissRefundPropagation(id, user.id);
+    if (result.code === "not_found") {
+      return notFound(res, "stripe staged charge");
+    }
+    if (result.code === "not_proposed") {
+      res.status(409).json({
+        error: "not_proposed",
+        message: "No open refund proposal to dismiss on this charge.",
+      });
+      return;
+    }
+
+    const row = await withJoins(
+      db.select(stagedSelect).from(stripeStagedCharges).$dynamic(),
+    )
+      .where(eq(stripeStagedCharges.id, id))
+      .then((r) => r[0]);
+    res.json(row ?? { id });
   }),
 );
 
