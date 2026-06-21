@@ -96,3 +96,9 @@ id = "abdwNG5SUx20492hQYmOg"
 uri = "file://.local/tasks/financial-reconciliation-requirements.md"
 type = "text"
 title = "Financial Record Linking & Reconciliation — Requirements (v2)"
+
+[[outputs]]
+id = "rB6IDLDvGAhpfOqpEHoYY"
+uri = "file://.local/tasks/financial-reconciliation-gap-analysis.md"
+type = "text"
+title = "Reconciliation — Gap Analysis (current app vs requirements)"
