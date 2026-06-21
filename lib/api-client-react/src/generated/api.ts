@@ -248,6 +248,7 @@ import type {
   RevertStagedPaymentMatchesBody,
   RevertStagedPaymentMatchesResponse,
   ReviseEmailProposalBody,
+  ReviseTaskProposalBody,
   SaveEmailIntelPromptBody,
   SavedView,
   SavedViewList,
@@ -1644,7 +1645,7 @@ export const useAcceptTaskProposal = <
 };
 
 /**
- * @summary Dismiss a suggestion — marks it dismissed with an optional note (audit trail).
+ * @summary Dismiss a suggestion — marks it dismissed with an optional note (appended to prior notes for the audit trail).
  */
 export const getDismissTaskProposalUrl = (id: string) => {
   return `/api/task-proposals/${id}/dismiss`;
@@ -1708,7 +1709,7 @@ export type DismissTaskProposalMutationBody = BodyType<DismissTaskProposalBody>;
 export type DismissTaskProposalMutationError = ErrorType<NotFoundResponse>;
 
 /**
- * @summary Dismiss a suggestion — marks it dismissed with an optional note (audit trail).
+ * @summary Dismiss a suggestion — marks it dismissed with an optional note (appended to prior notes for the audit trail).
  */
 export const useDismissTaskProposal = <
   TError = ErrorType<NotFoundResponse>,
@@ -1728,6 +1729,95 @@ export const useDismissTaskProposal = <
   TContext
 > => {
   return useMutation(getDismissTaskProposalMutationOptions(options));
+};
+
+/**
+ * @summary Re-run the AI suggestion for one pending task proposal with a human reviewer's plain-English guidance folded into the prompt. Appends the reviewer's comment to the reviewer-note field (preserving prior comments and any later verdict note), resets the error + analyzed-at fields, re-analyzes through the shared AI concurrency limiter + rate-limit-retry wrapper, leaves the proposal pending, and returns the refreshed proposal (new suggestion, or a fresh error).
+ */
+export const getReviseTaskProposalUrl = (id: string) => {
+  return `/api/task-proposals/${id}/revise`;
+};
+
+export const reviseTaskProposal = async (
+  id: string,
+  reviseTaskProposalBody: ReviseTaskProposalBody,
+  options?: RequestInit,
+): Promise<TaskProposalResponse> => {
+  return customFetch<TaskProposalResponse>(getReviseTaskProposalUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(reviseTaskProposalBody),
+  });
+};
+
+export const getReviseTaskProposalMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reviseTaskProposal>>,
+    TError,
+    { id: string; data: BodyType<ReviseTaskProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reviseTaskProposal>>,
+  TError,
+  { id: string; data: BodyType<ReviseTaskProposalBody> },
+  TContext
+> => {
+  const mutationKey = ["reviseTaskProposal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reviseTaskProposal>>,
+    { id: string; data: BodyType<ReviseTaskProposalBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return reviseTaskProposal(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReviseTaskProposalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reviseTaskProposal>>
+>;
+export type ReviseTaskProposalMutationBody = BodyType<ReviseTaskProposalBody>;
+export type ReviseTaskProposalMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | ErrorResponse
+>;
+
+/**
+ * @summary Re-run the AI suggestion for one pending task proposal with a human reviewer's plain-English guidance folded into the prompt. Appends the reviewer's comment to the reviewer-note field (preserving prior comments and any later verdict note), resets the error + analyzed-at fields, re-analyzes through the shared AI concurrency limiter + rate-limit-retry wrapper, leaves the proposal pending, and returns the refreshed proposal (new suggestion, or a fresh error).
+ */
+export const useReviseTaskProposal = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reviseTaskProposal>>,
+    TError,
+    { id: string; data: BodyType<ReviseTaskProposalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reviseTaskProposal>>,
+  TError,
+  { id: string; data: BodyType<ReviseTaskProposalBody> },
+  TContext
+> => {
+  return useMutation(getReviseTaskProposalMutationOptions(options));
 };
 
 /**

@@ -1,12 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { taskProposals, tasks } from "@workspace/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import {
   GetTaskProposalQueryParams,
   RefreshTaskProposalBody,
   AcceptTaskProposalBody,
   DismissTaskProposalBody,
+  ReviseTaskProposalBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
@@ -51,6 +52,20 @@ router.use(requireAuth);
  * return 409 instead of producing duplicate/ambiguous resolutions.
  */
 class ProposalRaceLost extends Error {}
+
+/**
+ * Append a new reviewer note to the existing one rather than overwriting it,
+ * so successive corrections (a "propose alternative" comment, then a later
+ * accept/dismiss verdict note) all survive for prompt tuning. Mirrors the
+ * email-proposal append-note semantics.
+ */
+function appendReviewerNoteSql(addition: string): SQL {
+  return sql`case
+    when ${taskProposals.reviewerNote} is null or ${taskProposals.reviewerNote} = ''
+      then ${addition}
+    else ${taskProposals.reviewerNote} || ${"\n\n---\n\n"} || ${addition}
+  end`;
+}
 
 /**
  * Resolve exactly one of personId / organizationId into a normalized
@@ -228,12 +243,15 @@ router.post(
         // Atomically claim the proposal: only succeeds if it is still pending.
         // A concurrent accept that already flipped it loses this race and the
         // task insert above is rolled back, so we never create duplicate tasks.
+        const note = body.reviewerNote?.trim();
         const [updated] = await tx
           .update(taskProposals)
           .set({
             status: "accepted",
             acceptedTaskId: task.id,
-            reviewerNote: body.reviewerNote ?? proposal.reviewerNote ?? null,
+            // Append the verdict note so any earlier "propose alternative"
+            // comments survive; leave the column untouched when no note.
+            ...(note ? { reviewerNote: appendReviewerNoteSql(note) } : {}),
             resolvedAt: new Date(),
             resolvedByUserId: user.id,
             updatedAt: new Date(),
@@ -280,11 +298,14 @@ router.post(
 
     // Atomically claim: only dismiss if still pending, so a competing
     // accept/dismiss can't produce an ambiguous resolution.
+    const note = body.reviewerNote?.trim();
     const [updated] = await db
       .update(taskProposals)
       .set({
         status: "dismissed",
-        reviewerNote: body.reviewerNote ?? null,
+        // Append the verdict note so any earlier "propose alternative"
+        // comments survive; leave the column untouched when no note.
+        ...(note ? { reviewerNote: appendReviewerNoteSql(note) } : {}),
         resolvedAt: new Date(),
         resolvedByUserId: user.id,
         updatedAt: new Date(),
@@ -298,6 +319,67 @@ router.post(
     }
 
     res.json(updated);
+  }),
+);
+
+/**
+ * POST /task-proposals/:id/revise
+ *
+ * Re-run the AI suggestion for one PENDING proposal, folding in a human
+ * reviewer's plain-English correction (e.g. "this prospect already gave
+ * this year — suggest a stewardship thank-you instead of an ask"). The
+ * reviewer's comment is appended to `reviewer_note` (not overwritten) so
+ * successive corrections — and any later accept/dismiss verdict note — all
+ * survive for prompt tuning. We reset `error` + `analyzed_at` so the row
+ * reads as "generating" while the synchronous re-run executes, then return
+ * the refreshed row (new suggestion, or a fresh error). The proposal stays
+ * pending. Mirrors the email-proposal /revise handler, including the
+ * 404-vs-409 distinction.
+ */
+router.post(
+  "/task-proposals/:id/revise",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) return notFound(res, "user");
+    const body = parseOrBadRequest(ReviseTaskProposalBody, req.body ?? {}, res);
+    if (!body) return;
+    const guidance = body.reviewerGuidance.trim();
+    if (!guidance) {
+      res.status(400).json({
+        error: "reviewerGuidance must not be empty.",
+      });
+      return;
+    }
+
+    const id = paramId(req);
+    // Claim the row for re-analysis: append the reviewer's comment, clear
+    // the stored error, and reset analyzed_at to NULL — scoped to a pending
+    // proposal. The conditional UPDATE doubles as the state guard (a
+    // non-pending row matches zero rows).
+    const [reset] = await db
+      .update(taskProposals)
+      .set({
+        reviewerNote: appendReviewerNoteSql(`Proposed alternative: ${guidance}`),
+        error: null,
+        analyzedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(taskProposals.id, id), eq(taskProposals.status, "pending")))
+      .returning({ id: taskProposals.id });
+
+    if (!reset) {
+      // Distinguish "doesn't exist" (404) from "already resolved" (409).
+      const existing = await loadProposalById(id);
+      if (!existing) return notFound(res, "task proposal");
+      res.status(409).json({ error: "proposal already resolved" });
+      return;
+    }
+
+    // Re-run generation WITH the reviewer's guidance. Errors are recorded on
+    // the row (never thrown), so we just re-read the refreshed state.
+    await generateTaskProposal(id, { reviewerGuidance: guidance });
+    const row = await loadProposalById(id);
+    res.json({ data: row ?? null });
   }),
 );
 

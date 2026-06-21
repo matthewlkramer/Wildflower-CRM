@@ -948,7 +948,7 @@ export const AcceptTaskProposalResponse = zod.object({
 });
 
 /**
- * @summary Dismiss a suggestion — marks it dismissed with an optional note (audit trail).
+ * @summary Dismiss a suggestion — marks it dismissed with an optional note (appended to prior notes for the audit trail).
  */
 export const DismissTaskProposalParams = zod.object({
   id: zod.coerce.string(),
@@ -978,6 +978,43 @@ export const DismissTaskProposalResponse = zod.object({
   resolvedByUserId: zod.string().nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * @summary Re-run the AI suggestion for one pending task proposal with a human reviewer's plain-English guidance folded into the prompt. Appends the reviewer's comment to the reviewer-note field (preserving prior comments and any later verdict note), resets the error + analyzed-at fields, re-analyzes through the shared AI concurrency limiter + rate-limit-retry wrapper, leaves the proposal pending, and returns the refreshed proposal (new suggestion, or a fresh error).
+ */
+export const ReviseTaskProposalParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ReviseTaskProposalBody = zod.object({
+  reviewerGuidance: zod.string().min(1),
+});
+
+export const ReviseTaskProposalResponse = zod.object({
+  data: zod
+    .object({
+      id: zod.string(),
+      status: zod.enum(["pending", "accepted", "dismissed"]),
+      targetPersonId: zod.string().nullish(),
+      targetOrganizationId: zod.string().nullish(),
+      payload: zod.record(zod.string(), zod.unknown()),
+      title: zod.string().nullish(),
+      description: zod.string().nullish(),
+      suggestedDueDate: zod.string().date().nullish(),
+      rationale: zod.string().nullish(),
+      analyzedAt: zod.string().datetime({}).nullish(),
+      model: zod.string().nullish(),
+      error: zod.string().nullish(),
+      dedupeKey: zod.string(),
+      acceptedTaskId: zod.string().nullish(),
+      reviewerNote: zod.string().nullish(),
+      resolvedAt: zod.string().datetime({}).nullish(),
+      resolvedByUserId: zod.string().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+    })
+    .nullable(),
 });
 
 /**

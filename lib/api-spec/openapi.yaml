@@ -278,7 +278,7 @@ paths:
     post:
       operationId: dismissTaskProposal
       tags: [task-proposals]
-      summary: Dismiss a suggestion — marks it dismissed with an optional note (audit trail).
+      summary: Dismiss a suggestion — marks it dismissed with an optional note (appended to prior notes for the audit trail).
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       requestBody:
         required: false
@@ -286,6 +286,31 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TaskProposal" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
+  /task-proposals/{id}/revise:
+    post:
+      operationId: reviseTaskProposal
+      tags: [task-proposals]
+      summary: >-
+        Re-run the AI suggestion for one pending task proposal with a human
+        reviewer's plain-English guidance folded into the prompt. Appends the
+        reviewer's comment to the reviewer-note field (preserving prior comments
+        and any later verdict note), resets the error + analyzed-at fields,
+        re-analyzes through the shared AI concurrency limiter + rate-limit-retry
+        wrapper, leaves the proposal pending, and returns the refreshed proposal
+        (new suggestion, or a fresh error).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ReviseTaskProposalBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TaskProposalResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The proposal is no longer pending (already resolved), so it cannot be revised.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   # ─── Email-intelligence admin console ──────────────────────────────────────
   /admin/email-intel/prompts:
@@ -6416,6 +6441,15 @@ components:
       type: object
       properties:
         reviewerNote: { type: string, nullable: true }
+    ReviseTaskProposalBody:
+      # The reviewer's plain-English correction (e.g. "this prospect already
+      # gave this year — suggest a stewardship thank-you instead of an ask").
+      # Required and non-empty: the whole point of this endpoint is to re-run
+      # the suggestion with the reviewer's guidance folded in.
+      type: object
+      required: [reviewerGuidance]
+      properties:
+        reviewerGuidance: { type: string, minLength: 1 }
 
     # ─── Email-intelligence admin console ──────────────────────────────────────
     EmailIntelPromptStatus:

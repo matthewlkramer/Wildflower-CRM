@@ -9,6 +9,7 @@ import {
   useRefreshTaskProposal,
   useAcceptTaskProposal,
   useDismissTaskProposal,
+  useReviseTaskProposal,
   getGetTaskProposalQueryKey,
   type Task,
   type TaskStatus,
@@ -63,6 +64,8 @@ import {
   Sparkles,
   RefreshCw,
   X,
+  MessageSquarePlus,
+  Lightbulb,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -259,8 +262,12 @@ function TaskSuggestion({
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [dismissNote, setDismissNote] = useState("");
-  const [dismissOpen, setDismissOpen] = useState(false);
+  // Accept-with-note / dismiss-with-note share one dialog, keyed by mode.
+  const [noteMode, setNoteMode] = useState<"accept" | "dismiss" | null>(null);
+  const [reviewerNote, setReviewerNote] = useState("");
+  // "Propose alternative" dialog state.
+  const [proposeOpen, setProposeOpen] = useState(false);
+  const [proposeText, setProposeText] = useState("");
 
   const proposalParams = { personId, organizationId };
   const { data, isLoading } = useGetTaskProposal(proposalParams);
@@ -292,6 +299,8 @@ function TaskSuggestion({
     mutation: {
       onSuccess: async () => {
         await invalidate();
+        setNoteMode(null);
+        setReviewerNote("");
         toast({ title: "Task created from suggestion" });
       },
       onError: (err: unknown) =>
@@ -306,8 +315,8 @@ function TaskSuggestion({
     mutation: {
       onSuccess: async () => {
         await invalidate();
-        setDismissOpen(false);
-        setDismissNote("");
+        setNoteMode(null);
+        setReviewerNote("");
         toast({ title: "Suggestion dismissed" });
       },
       onError: (err: unknown) =>
@@ -318,8 +327,39 @@ function TaskSuggestion({
         }),
     },
   });
+  // "Propose alternative": re-runs the AI with the reviewer's plain-English
+  // guidance folded in; the suggestion stays pending and refreshes in place.
+  const revise = useReviseTaskProposal({
+    mutation: {
+      onSuccess: async (res) => {
+        await invalidate();
+        setProposeOpen(false);
+        setProposeText("");
+        if (res?.data?.error && !res.data.title) {
+          toast({
+            title: "Re-analysis failed",
+            description:
+              "Your note was saved, but the AI couldn't refresh the suggestion. Try again shortly.",
+            variant: "destructive",
+          });
+        } else {
+          toast({ title: "Suggestion updated" });
+        }
+      },
+      onError: (err: unknown) =>
+        toast({
+          title: "Couldn't update suggestion",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    },
+  });
 
-  const busy = refresh.isPending || accept.isPending || dismiss.isPending;
+  const busy =
+    refresh.isPending ||
+    accept.isPending ||
+    dismiss.isPending ||
+    revise.isPending;
 
   // Nothing cached yet, still generating the very first one.
   if (isLoading) {
@@ -407,7 +447,7 @@ function TaskSuggestion({
               Why: {proposal.rationale}
             </p>
           ) : null}
-          <div className="flex items-center gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             <Button
               type="button"
               size="sm"
@@ -418,61 +458,184 @@ function TaskSuggestion({
               <Check className="mr-1 h-3.5 w-3.5" />
               {accept.isPending ? "Adding…" : "Accept"}
             </Button>
-            <Popover open={dismissOpen} onOpenChange={setDismissOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  data-testid="button-dismiss-suggestion"
-                >
-                  <X className="mr-1 h-3.5 w-3.5" />
-                  Dismiss
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-72 space-y-2">
-                <Label htmlFor="dismiss-note" className="text-xs">
-                  Optional note (helps tune future suggestions)
-                </Label>
-                <Textarea
-                  id="dismiss-note"
-                  value={dismissNote}
-                  onChange={(e) => setDismissNote(e.target.value)}
-                  rows={2}
-                  placeholder="e.g. already handled, not a priority…"
-                  data-testid="input-dismiss-note"
-                />
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setDismissOpen(false)}
-                    disabled={dismiss.isPending}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() =>
-                      dismiss.mutate({
-                        id: proposal.id,
-                        data: { reviewerNote: dismissNote.trim() || undefined },
-                      })
-                    }
-                    disabled={dismiss.isPending}
-                    data-testid="button-confirm-dismiss"
-                  >
-                    {dismiss.isPending ? "Dismissing…" : "Dismiss"}
-                  </Button>
-                </div>
-              </PopoverContent>
-            </Popover>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setReviewerNote("");
+                setNoteMode("accept");
+              }}
+              data-testid="button-accept-note-suggestion"
+            >
+              <MessageSquarePlus className="mr-1 h-3.5 w-3.5" />
+              Accept + note
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setProposeText("");
+                setProposeOpen(true);
+              }}
+              data-testid="button-propose-alt-suggestion"
+            >
+              <Lightbulb
+                className={cn("mr-1 h-3.5 w-3.5", revise.isPending && "animate-pulse")}
+              />
+              {revise.isPending ? "Re-analyzing…" : "Propose alternative"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setReviewerNote("");
+                setNoteMode("dismiss");
+              }}
+              data-testid="button-dismiss-suggestion"
+            >
+              <X className="mr-1 h-3.5 w-3.5" />
+              Dismiss
+            </Button>
           </div>
         </>
       )}
+
+      {/* Accept-with-note / dismiss-with-note share one dialog. */}
+      <Dialog
+        open={noteMode !== null}
+        onOpenChange={(open) => {
+          if (!open && !accept.isPending && !dismiss.isPending) setNoteMode(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {noteMode === "accept" ? "Accept suggestion" : "Dismiss suggestion"}
+            </DialogTitle>
+            <DialogDescription>
+              {noteMode === "accept"
+                ? "Optional — anything notable about why this next step was right? It's saved for tuning future suggestions. Leave blank to accept without a note."
+                : "Optional — tell us why this suggestion wasn't right. It's saved for tuning future suggestions. Leave blank to dismiss without a note."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="task-reviewer-note">Reviewer note</Label>
+            <Textarea
+              id="task-reviewer-note"
+              value={reviewerNote}
+              onChange={(e) => setReviewerNote(e.target.value)}
+              rows={4}
+              placeholder={
+                noteMode === "accept"
+                  ? "e.g. Good timing — they just closed a related gift"
+                  : "e.g. Already handled, or not a priority right now"
+              }
+              data-testid="input-task-reviewer-note"
+              className="w-full resize-y"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setNoteMode(null)}
+              disabled={accept.isPending || dismiss.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={accept.isPending || dismiss.isPending}
+              onClick={() => {
+                if (!noteMode) return;
+                const note = reviewerNote.trim() || undefined;
+                if (noteMode === "accept") {
+                  accept.mutate({ id: proposal.id, data: { reviewerNote: note } });
+                } else {
+                  dismiss.mutate({ id: proposal.id, data: { reviewerNote: note } });
+                }
+              }}
+              data-testid="button-confirm-note"
+            >
+              {noteMode === "accept"
+                ? accept.isPending
+                  ? "Adding…"
+                  : "Accept"
+                : dismiss.isPending
+                  ? "Dismissing…"
+                  : "Dismiss"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Propose alternative — re-run the AI with reviewer guidance in place. */}
+      <Dialog
+        open={proposeOpen}
+        onOpenChange={(open) => {
+          if (!open && !revise.isPending) setProposeOpen(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Propose alternative</DialogTitle>
+            <DialogDescription>
+              Tell the AI how to improve its suggestion in plain English — e.g.
+              "they already gave this year, suggest a stewardship thank-you
+              instead of an ask." It re-runs with your guidance and refreshes the
+              suggestion in place. Your comment is saved with the other reviewer
+              notes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="task-propose-alt">Your instruction</Label>
+            <Textarea
+              id="task-propose-alt"
+              value={proposeText}
+              onChange={(e) => setProposeText(e.target.value)}
+              rows={4}
+              placeholder="e.g. Focus on re-engaging after the long gap, not a new ask"
+              data-testid="input-task-propose-alt"
+              className="w-full resize-y"
+              disabled={revise.isPending}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setProposeOpen(false)}
+              disabled={revise.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!proposeText.trim() || revise.isPending}
+              onClick={() => {
+                const text = proposeText.trim();
+                if (!text) return;
+                revise.mutate({
+                  id: proposal.id,
+                  data: { reviewerGuidance: text },
+                });
+              }}
+              data-testid="button-confirm-propose-alt"
+            >
+              {revise.isPending ? (
+                <>
+                  <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
+                  Re-analyzing…
+                </>
+              ) : (
+                "Re-analyze"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

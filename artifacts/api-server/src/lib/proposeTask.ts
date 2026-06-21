@@ -88,11 +88,21 @@ function buildSystemPrompt(): string {
   ].join("\n");
 }
 
-function buildUserPrompt(signals: TaskSignals): string {
+function buildUserPrompt(
+  signals: TaskSignals,
+  reviewerGuidance?: string | null,
+): string {
   const e = signals.entity;
   const lines: string[] = [];
   lines.push(`TODAY'S DATE: ${new Date().toISOString().slice(0, 10)}`);
   lines.push("");
+  if (reviewerGuidance && reviewerGuidance.trim()) {
+    lines.push(
+      "REVIEWER GUIDANCE (a human reviewer corrected the previous suggestion — treat this as authoritative and honor it when proposing the next step; where it conflicts with your own interpretation, follow the reviewer):",
+    );
+    lines.push(reviewerGuidance.trim().slice(0, 2000));
+    lines.push("");
+  }
   lines.push(`ENTITY: ${e.kind} — ${e.name ?? "(unnamed)"} (id=${e.id})`);
   if (e.kind === "organization") {
     lines.push(`  Grant-maker: ${e.issuesGrants ? "yes" : "no"}`);
@@ -189,7 +199,10 @@ function parseSuggestion(
  * the row never stays stuck "generating". Never throws — failures are
  * recorded in `error`.
  */
-export async function generateTaskProposal(proposalId: string): Promise<{
+export async function generateTaskProposal(
+  proposalId: string,
+  opts?: { reviewerGuidance?: string | null },
+): Promise<{
   ok: boolean;
   error?: string;
 }> {
@@ -219,7 +232,7 @@ export async function generateTaskProposal(proposalId: string): Promise<{
     }
 
     const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildUserPrompt(signals);
+    const userPrompt = buildUserPrompt(signals, opts?.reviewerGuidance);
 
     const response = await aiProposalLimit(() =>
       withRateLimitRetry(

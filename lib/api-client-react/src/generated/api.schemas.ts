@@ -3826,6 +3826,11 @@ export interface DismissTaskProposalBody {
   reviewerNote?: string | null;
 }
 
+export interface ReviseTaskProposalBody {
+  /** @minLength 1 */
+  reviewerGuidance: string;
+}
+
 export type EmailIntelPromptStatus =
   (typeof EmailIntelPromptStatus)[keyof typeof EmailIntelPromptStatus];
 
