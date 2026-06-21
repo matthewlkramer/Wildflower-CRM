@@ -13,6 +13,8 @@ const KIND_LABEL: Record<string, string> = {
   bounce_invalid: "Hard bounces",
   bounce_soft: "Soft bounces",
   signature_update: "Signature updates",
+  grant_opportunity: "Grant opportunities",
+  thank_you_acknowledgment: "Thank-you acknowledgments",
 };
 
 const ALL_KINDS = [
@@ -21,7 +23,11 @@ const ALL_KINDS = [
   "bounce_invalid",
   "bounce_soft",
   "signature_update",
+  "grant_opportunity",
+  "thank_you_acknowledgment",
 ] as const;
+
+const OTHER_LABEL = "Other";
 
 /**
  * Dashboard card: per-kind pending counts from the email-intelligence
@@ -48,6 +54,17 @@ export default function EmailProposalsCard() {
     byKind.set(entry.kind, entry.pending);
   }
   const totalPending = data?.totalPending ?? 0;
+
+  // Roll any pending kinds the card doesn't render explicitly into a single
+  // "Other" bucket so the per-kind boxes always sum to the top total —
+  // otherwise unlisted kinds inflate the total without a matching box.
+  const knownKinds = new Set<string>(ALL_KINDS);
+  let otherPending = 0;
+  for (const entry of data?.byKind ?? []) {
+    if (!knownKinds.has(entry.kind)) {
+      otherPending += entry.pending;
+    }
+  }
 
   return (
     <Card data-testid="card-email-proposals">
@@ -97,6 +114,20 @@ export default function EmailProposalsCard() {
                 </Link>
               );
             })}
+            {otherPending > 0 && (
+              <Link
+                href="/email-intelligence"
+                data-testid="chip-proposal-other"
+              >
+                <Badge
+                  variant="default"
+                  className="gap-1.5 cursor-pointer"
+                >
+                  <span>{OTHER_LABEL}</span>
+                  <span className="font-mono text-xs">{otherPending}</span>
+                </Badge>
+              </Link>
+            )}
           </div>
         )}
       </CardContent>
