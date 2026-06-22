@@ -91,6 +91,13 @@ import type {
   DonorPaymentIntermediary,
   DonorPaymentIntermediaryList,
   DonorSearchList,
+  DonorboxCreateGiftBody,
+  DonorboxCreateGiftResponse,
+  DonorboxDuplicateResponse,
+  DonorboxExcludeBody,
+  DonorboxLinkGiftBody,
+  DonorboxReviewList,
+  DonorboxReviewRow,
   DuplicatePairList,
   Email,
   EmailIntelFeedbackList,
@@ -154,6 +161,7 @@ import type {
   ListCalendarEventsParams,
   ListCleanupQueueParams,
   ListDonorPaymentIntermediariesParams,
+  ListDonorboxReviewParams,
   ListEmailMessagesParams,
   ListEmailProposalsParams,
   ListEmailsParams,
@@ -15812,6 +15820,464 @@ export const useDismissStripeRefundPropagation = <
   TContext
 > => {
   return useMutation(getDismissStripeRefundPropagationMutationOptions(options));
+};
+
+/**
+ * @summary List non-Stripe (PayPal/ACH) Donorbox donations as human-reviewed new-money candidates.
+ */
+export const getListDonorboxReviewUrl = (params?: ListDonorboxReviewParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/donorbox/review?${stringifiedParams}`
+    : `/api/donorbox/review`;
+};
+
+export const listDonorboxReview = async (
+  params?: ListDonorboxReviewParams,
+  options?: RequestInit,
+): Promise<DonorboxReviewList> => {
+  return customFetch<DonorboxReviewList>(getListDonorboxReviewUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDonorboxReviewQueryKey = (
+  params?: ListDonorboxReviewParams,
+) => {
+  return [`/api/donorbox/review`, ...(params ? [params] : [])] as const;
+};
+
+export const getListDonorboxReviewQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDonorboxReview>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListDonorboxReviewParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDonorboxReview>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListDonorboxReviewQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listDonorboxReview>>
+  > = ({ signal }) => listDonorboxReview(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDonorboxReview>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDonorboxReviewQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDonorboxReview>>
+>;
+export type ListDonorboxReviewQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List non-Stripe (PayPal/ACH) Donorbox donations as human-reviewed new-money candidates.
+ */
+
+export function useListDonorboxReview<
+  TData = Awaited<ReturnType<typeof listDonorboxReview>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListDonorboxReviewParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDonorboxReview>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDonorboxReviewQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Link a non-Stripe Donorbox donation to an existing gift as evidence (adopts the gift's donor; no new gift minted).
+ */
+export const getLinkDonorboxDonationToGiftUrl = (id: string) => {
+  return `/api/donorbox/donations/${id}/link-gift`;
+};
+
+export const linkDonorboxDonationToGift = async (
+  id: string,
+  donorboxLinkGiftBody: DonorboxLinkGiftBody,
+  options?: RequestInit,
+): Promise<DonorboxReviewRow> => {
+  return customFetch<DonorboxReviewRow>(getLinkDonorboxDonationToGiftUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(donorboxLinkGiftBody),
+  });
+};
+
+export const getLinkDonorboxDonationToGiftMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof linkDonorboxDonationToGift>>,
+    TError,
+    { id: string; data: BodyType<DonorboxLinkGiftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof linkDonorboxDonationToGift>>,
+  TError,
+  { id: string; data: BodyType<DonorboxLinkGiftBody> },
+  TContext
+> => {
+  const mutationKey = ["linkDonorboxDonationToGift"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof linkDonorboxDonationToGift>>,
+    { id: string; data: BodyType<DonorboxLinkGiftBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return linkDonorboxDonationToGift(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LinkDonorboxDonationToGiftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof linkDonorboxDonationToGift>>
+>;
+export type LinkDonorboxDonationToGiftMutationBody =
+  BodyType<DonorboxLinkGiftBody>;
+export type LinkDonorboxDonationToGiftMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary Link a non-Stripe Donorbox donation to an existing gift as evidence (adopts the gift's donor; no new gift minted).
+ */
+export const useLinkDonorboxDonationToGift = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof linkDonorboxDonationToGift>>,
+    TError,
+    { id: string; data: BodyType<DonorboxLinkGiftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof linkDonorboxDonationToGift>>,
+  TError,
+  { id: string; data: BodyType<DonorboxLinkGiftBody> },
+  TContext
+> => {
+  return useMutation(getLinkDonorboxDonationToGiftMutationOptions(options));
+};
+
+/**
+ * @summary Mint a new gift from a non-Stripe Donorbox donation (Donor XOR), with a dedupe guard.
+ */
+export const getCreateGiftFromDonorboxDonationUrl = (id: string) => {
+  return `/api/donorbox/donations/${id}/create-gift`;
+};
+
+export const createGiftFromDonorboxDonation = async (
+  id: string,
+  donorboxCreateGiftBody: DonorboxCreateGiftBody,
+  options?: RequestInit,
+): Promise<DonorboxCreateGiftResponse> => {
+  return customFetch<DonorboxCreateGiftResponse>(
+    getCreateGiftFromDonorboxDonationUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(donorboxCreateGiftBody),
+    },
+  );
+};
+
+export const getCreateGiftFromDonorboxDonationMutationOptions = <
+  TError = ErrorType<
+    BadRequestResponse | NotFoundResponse | DonorboxDuplicateResponse
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createGiftFromDonorboxDonation>>,
+    TError,
+    { id: string; data: BodyType<DonorboxCreateGiftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createGiftFromDonorboxDonation>>,
+  TError,
+  { id: string; data: BodyType<DonorboxCreateGiftBody> },
+  TContext
+> => {
+  const mutationKey = ["createGiftFromDonorboxDonation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createGiftFromDonorboxDonation>>,
+    { id: string; data: BodyType<DonorboxCreateGiftBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createGiftFromDonorboxDonation(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateGiftFromDonorboxDonationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createGiftFromDonorboxDonation>>
+>;
+export type CreateGiftFromDonorboxDonationMutationBody =
+  BodyType<DonorboxCreateGiftBody>;
+export type CreateGiftFromDonorboxDonationMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | DonorboxDuplicateResponse
+>;
+
+/**
+ * @summary Mint a new gift from a non-Stripe Donorbox donation (Donor XOR), with a dedupe guard.
+ */
+export const useCreateGiftFromDonorboxDonation = <
+  TError = ErrorType<
+    BadRequestResponse | NotFoundResponse | DonorboxDuplicateResponse
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createGiftFromDonorboxDonation>>,
+    TError,
+    { id: string; data: BodyType<DonorboxCreateGiftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createGiftFromDonorboxDonation>>,
+  TError,
+  { id: string; data: BodyType<DonorboxCreateGiftBody> },
+  TContext
+> => {
+  return useMutation(getCreateGiftFromDonorboxDonationMutationOptions(options));
+};
+
+/**
+ * @summary File a non-Stripe Donorbox candidate out of the new-money worklist.
+ */
+export const getExcludeDonorboxDonationUrl = (id: string) => {
+  return `/api/donorbox/donations/${id}/exclude`;
+};
+
+export const excludeDonorboxDonation = async (
+  id: string,
+  donorboxExcludeBody: DonorboxExcludeBody,
+  options?: RequestInit,
+): Promise<DonorboxReviewRow> => {
+  return customFetch<DonorboxReviewRow>(getExcludeDonorboxDonationUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(donorboxExcludeBody),
+  });
+};
+
+export const getExcludeDonorboxDonationMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof excludeDonorboxDonation>>,
+    TError,
+    { id: string; data: BodyType<DonorboxExcludeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof excludeDonorboxDonation>>,
+  TError,
+  { id: string; data: BodyType<DonorboxExcludeBody> },
+  TContext
+> => {
+  const mutationKey = ["excludeDonorboxDonation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof excludeDonorboxDonation>>,
+    { id: string; data: BodyType<DonorboxExcludeBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return excludeDonorboxDonation(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExcludeDonorboxDonationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof excludeDonorboxDonation>>
+>;
+export type ExcludeDonorboxDonationMutationBody = BodyType<DonorboxExcludeBody>;
+export type ExcludeDonorboxDonationMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse | void
+>;
+
+/**
+ * @summary File a non-Stripe Donorbox candidate out of the new-money worklist.
+ */
+export const useExcludeDonorboxDonation = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof excludeDonorboxDonation>>,
+    TError,
+    { id: string; data: BodyType<DonorboxExcludeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof excludeDonorboxDonation>>,
+  TError,
+  { id: string; data: BodyType<DonorboxExcludeBody> },
+  TContext
+> => {
+  return useMutation(getExcludeDonorboxDonationMutationOptions(options));
+};
+
+/**
+ * @summary Move an excluded Donorbox candidate back to pending.
+ */
+export const getReIncludeDonorboxDonationUrl = (id: string) => {
+  return `/api/donorbox/donations/${id}/re-include`;
+};
+
+export const reIncludeDonorboxDonation = async (
+  id: string,
+  options?: RequestInit,
+): Promise<DonorboxReviewRow> => {
+  return customFetch<DonorboxReviewRow>(getReIncludeDonorboxDonationUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getReIncludeDonorboxDonationMutationOptions = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reIncludeDonorboxDonation>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reIncludeDonorboxDonation>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["reIncludeDonorboxDonation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reIncludeDonorboxDonation>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return reIncludeDonorboxDonation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReIncludeDonorboxDonationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reIncludeDonorboxDonation>>
+>;
+
+export type ReIncludeDonorboxDonationMutationError =
+  ErrorType<NotFoundResponse | void>;
+
+/**
+ * @summary Move an excluded Donorbox candidate back to pending.
+ */
+export const useReIncludeDonorboxDonation = <
+  TError = ErrorType<NotFoundResponse | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reIncludeDonorboxDonation>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reIncludeDonorboxDonation>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getReIncludeDonorboxDonationMutationOptions(options));
 };
 
 /**

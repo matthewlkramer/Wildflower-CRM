@@ -18,6 +18,7 @@ import {
   peopleEntityRoles,
   stripeStagedCharges,
   stripePayouts,
+  donorboxDonations,
   type NewGiftAllocation,
 } from "@workspace/db/schema";
 import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
@@ -27,6 +28,10 @@ import {
   donorDisplayColumns,
   maskDonorDisplayFields,
 } from "../lib/donorJoinSelect";
+import {
+  donorboxEnrichmentSelect,
+  donorboxEnrichmentOrNull,
+} from "../lib/donorboxEnrichment";
 
 // Gifts have no primary-contact denormalization, so the shared donor masking
 // helper (see lib/donorJoinSelect.ts) covers the full set: it masks the
@@ -341,12 +346,34 @@ async function buildGiftDetail(id: string, viewer: Viewer) {
       downloadUrl: `/api/email-attachments/${a.id}/download`,
     }));
   }
+  // Donorbox enrichment: a gift minted/matched from a Stripe-type Donorbox
+  // donation is reachable via its linked Stripe charge
+  // (donorbox_donations.stripe_charge_id = the gift's matched/created
+  // stripe_staged_charges.id). 1:1 by the partial-unique stripe_charge_id index.
+  // Enrichment only — never affects the gift's money.
+  const donorboxRow = await db
+    .select(donorboxEnrichmentSelect)
+    .from(donorboxDonations)
+    .innerJoin(
+      stripeStagedCharges,
+      eq(stripeStagedCharges.id, donorboxDonations.stripeChargeId),
+    )
+    .where(
+      or(
+        eq(stripeStagedCharges.matchedGiftId, id),
+        eq(stripeStagedCharges.createdGiftId, id),
+      ),
+    )
+    .limit(1)
+    .then((r) => r[0] ?? null);
+
   const masked = maskGiftDonorRow(row, viewer);
   return {
     ...masked,
     reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus),
     allocations,
     thankYouAttachments,
+    donorbox: donorboxEnrichmentOrNull(donorboxRow),
   };
 }
 

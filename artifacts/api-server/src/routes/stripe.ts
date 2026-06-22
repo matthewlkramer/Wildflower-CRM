@@ -7,6 +7,7 @@ import {
   stagedPayments,
   giftAllocations,
   giftsAndPayments,
+  donorboxDonations,
   organizations,
   households,
   people,
@@ -67,6 +68,10 @@ import {
   deriveEvidenceLanes,
   derivePayoutLanes,
 } from "../lib/reconciliationLanes";
+import {
+  donorboxEnrichmentSelect,
+  donorboxEnrichmentOrNull,
+} from "../lib/donorboxEnrichment";
 
 /**
  * Review queue for incoming Stripe charges plus the manual sync / rematch
@@ -327,7 +332,16 @@ router.get(
       : queueWhere(queue);
 
     const [rows, totalRow] = await Promise.all([
-      withJoins(db.select(stagedSelect).from(stripeStagedCharges).$dynamic())
+      withJoins(
+        db
+          .select({ ...stagedSelect, donorbox: donorboxEnrichmentSelect })
+          .from(stripeStagedCharges)
+          .$dynamic(),
+      )
+        .leftJoin(
+          donorboxDonations,
+          eq(donorboxDonations.stripeChargeId, stripeStagedCharges.id),
+        )
         .where(where)
         .orderBy(...stagedOrderBy(sort))
         .limit(limit)
@@ -342,6 +356,7 @@ router.get(
     res.json({
       data: rows.map((row) => ({
         ...row,
+        donorbox: donorboxEnrichmentOrNull(row.donorbox),
         reconciliationLanes: deriveEvidenceLanes({
           status: row.status,
           donorPresent:

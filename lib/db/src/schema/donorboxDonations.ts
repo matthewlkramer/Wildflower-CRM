@@ -1,0 +1,202 @@
+import {
+  pgTable,
+  text,
+  integer,
+  timestamp,
+  numeric,
+  date,
+  boolean,
+  jsonb,
+  uniqueIndex,
+  index,
+} from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import {
+  stagedPaymentStatusEnum,
+  stagedPaymentMatchStatusEnum,
+  stagedPaymentMatchMethodEnum,
+  donorboxExclusionReasonEnum,
+} from "./_enums";
+import { organizations } from "./organizations";
+import { people } from "./people";
+import { households } from "./households";
+import { paymentIntermediaries } from "./paymentIntermediaries";
+import { giftsAndPayments } from "./giftsAndPayments";
+import { users } from "./users";
+
+/**
+ * Canonical store of Donorbox donations pulled (read-only) from the Donorbox
+ * API. One row per Donorbox donation, keyed by the Donorbox donation id so
+ * re-pulls upsert in place (idempotent) and never duplicate a donation.
+ *
+ * Two purposes, split by `donationType`:
+ *
+ *   1. ENRICHMENT (donationType === "stripe") — the donation's
+ *      `stripeChargeId` (ch_…) equals `stripe_staged_charges.id`, giving a
+ *      clean 1:1 join. These rows ENRICH the existing Stripe-sourced record
+ *      (campaign, designation, comment, recurring flag, donor profile). They
+ *      NEVER mint a CRM gift — the Stripe sync already pulls those charges, so
+ *      minting here would double-count. The review columns below stay at their
+ *      defaults and these rows never appear in the new-money worklist.
+ *
+ *   2. NEW MONEY (donationType !== "stripe", e.g. "paypal"/ACH) — money that
+ *      does NOT flow through our Stripe sync. These rows are human-reviewed
+ *      "new-money candidates": a fundraiser links the row to an existing gift,
+ *      mints a new gift (with a dedupe guard), or excludes it. We NEVER
+ *      auto-mint and NEVER synthesize a staged_payments row (that table is
+ *      QuickBooks-semantic with mandatory QB identity).
+ *
+ * Idempotency: the upsert refreshes only read-only Donorbox facts (amounts,
+ * status, refund, campaign/designation/comment, donor profile, raw payload) and
+ * preserves all review state (status / donor match / gift linkage), mirroring
+ * the Stripe staged-charge upsert.
+ *
+ * Reconciliation link (mutually exclusive, same rule as staged_payments):
+ *   matchedGiftId — linked to a PRE-EXISTING gift (no new ledger row).
+ *   createdGiftId — a NEW gift minted from this donation.
+ */
+export const donorboxDonations = pgTable(
+  "donorbox_donations",
+  {
+    // The Donorbox donation id (stringified) — primary key for idempotent
+    // re-pulls.
+    id: text("id").primaryKey(),
+
+    // "stripe" | "paypal" | … — kept as free text because Donorbox may add
+    // processors; the enrichment-vs-new-money split keys off `=== "stripe"`.
+    donationType: text("donation_type"),
+
+    // ── Processor identifiers ───────────────────────────────────────────
+    // For Stripe-type donations this equals stripe_staged_charges.id (ch_…) —
+    // the enrichment join key (partial-unique so the join stays 1:1).
+    stripeChargeId: text("stripe_charge_id"),
+    // For PayPal-type donations — used by the new-money dedupe guard.
+    paypalTransactionId: text("paypal_transaction_id"),
+
+    // ── Money (major units, 2dp) ────────────────────────────────────────
+    amount: numeric("amount", { precision: 14, scale: 2 }),
+    amountRefunded: numeric("amount_refunded", { precision: 14, scale: 2 }),
+    processingFee: numeric("processing_fee", { precision: 14, scale: 2 }),
+    currency: text("currency"),
+
+    // Donorbox donation status ("paid" | "refunded" | …). Distinct from the
+    // review `status` column below.
+    donationStatus: text("donation_status"),
+    // True when fully/partially refunded in Donorbox — surfaced as a badge so a
+    // reviewer can reverse/reduce a gift minted from this donation by hand
+    // (Donorbox refunds are NOT auto-applied to gifts).
+    refunded: boolean("refunded").notNull().default(false),
+    recurring: boolean("recurring").notNull().default(false),
+
+    // When the donation was made (Donorbox donation_date) — the sync cursor.
+    donatedAt: timestamp("donated_at", { withTimezone: true }),
+    // Calendar date the gift is credited to (donatedAt in America/Chicago).
+    dateReceived: date("date_received"),
+
+    // ── Donorbox context (read-only; refreshed on re-pull) ──────────────
+    campaignId: text("campaign_id"),
+    campaignName: text("campaign_name"),
+    designation: text("designation"),
+    comment: text("comment"),
+    anonymous: boolean("anonymous").notNull().default(false),
+    giftAid: boolean("gift_aid").notNull().default(false),
+
+    // ── Donor profile (read-only; refreshed on re-pull) ─────────────────
+    donorName: text("donor_name"),
+    donorEmail: text("donor_email"),
+    donorFirstName: text("donor_first_name"),
+    donorLastName: text("donor_last_name"),
+    donorPhone: text("donor_phone"),
+    donorEmployer: text("donor_employer"),
+
+    // UTM attribution + custom questions, stored verbatim as JSON.
+    utm: jsonb("utm").$type<Record<string, string>>(),
+    questions: jsonb("questions"),
+    // The complete raw Donorbox donation payload (storage only; excluded from
+    // the list API responses).
+    raw: jsonb("raw"),
+
+    // ── Review state (non-Stripe new-money worklist; mirrors staged rows) ─
+    //   pending    — awaiting review (default; only meaningful for non-Stripe).
+    //   approved   — minted a NEW gift (createdGiftId set).
+    //   reconciled — linked to a PRE-EXISTING gift (matchedGiftId set).
+    //   excluded   — dismissed as not-new-money (exclusionReason set).
+    status: stagedPaymentStatusEnum("status").notNull().default("pending"),
+    exclusionReason: donorboxExclusionReasonEnum("exclusion_reason"),
+
+    // Suggested donor match (a hint for the reviewer; never auto-applied).
+    matchStatus: stagedPaymentMatchStatusEnum("match_status")
+      .notNull()
+      .default("unmatched"),
+    matchScore: integer("match_score"),
+    matchMethod: stagedPaymentMatchMethodEnum("match_method"),
+    matchConfirmedByUserId: text("match_confirmed_by_user_id").references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    matchConfirmedAt: timestamp("match_confirmed_at", { withTimezone: true }),
+
+    // Donor match (XOR — at most one set until reconcile/mint enforces it).
+    organizationId: text("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
+    individualGiverPersonId: text("individual_giver_person_id").references(
+      () => people.id,
+      { onDelete: "set null" },
+    ),
+    householdId: text("household_id").references(() => households.id, {
+      onDelete: "set null",
+    }),
+    // The payment intermediary the donor gave through (Donorbox/PayPal), when
+    // applicable.
+    matchedPaymentIntermediaryId: text(
+      "matched_payment_intermediary_id",
+    ).references(() => paymentIntermediaries.id, { onDelete: "set null" }),
+
+    matchedGiftId: text("matched_gift_id").references(
+      () => giftsAndPayments.id,
+      { onDelete: "set null" },
+    ),
+    createdGiftId: text("created_gift_id").references(
+      () => giftsAndPayments.id,
+      { onDelete: "set null" },
+    ),
+
+    approvedByUserId: text("approved_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    // Enrichment join key — 1:1 with stripe_staged_charges.id when present.
+    uniqueIndex("donorbox_donations_stripe_charge_id_uq")
+      .on(t.stripeChargeId)
+      .where(sql`${t.stripeChargeId} IS NOT NULL`),
+    index("donorbox_donations_paypal_txn_id_idx").on(t.paypalTransactionId),
+    index("donorbox_donations_donation_type_idx").on(t.donationType),
+    index("donorbox_donations_status_idx").on(t.status),
+    index("donorbox_donations_match_status_idx").on(t.matchStatus),
+    index("donorbox_donations_donated_at_idx").on(t.donatedAt),
+    index("donorbox_donations_date_received_idx").on(t.dateReceived),
+    index("donorbox_donations_amount_idx").on(t.amount),
+    index("donorbox_donations_donor_email_idx").on(t.donorEmail),
+    index("donorbox_donations_organization_id_idx").on(t.organizationId),
+    index("donorbox_donations_individual_giver_person_id_idx").on(
+      t.individualGiverPersonId,
+    ),
+    index("donorbox_donations_household_id_idx").on(t.householdId),
+    // One-to-one donation↔gift linkage (same guard as staged rows).
+    uniqueIndex("donorbox_donations_matched_gift_id_uq")
+      .on(t.matchedGiftId)
+      .where(sql`${t.matchedGiftId} IS NOT NULL`),
+    uniqueIndex("donorbox_donations_created_gift_id_uq")
+      .on(t.createdGiftId)
+      .where(sql`${t.createdGiftId} IS NOT NULL`),
+  ],
+);
+
+export type DonorboxDonation = typeof donorboxDonations.$inferSelect;
+export type NewDonorboxDonation = typeof donorboxDonations.$inferInsert;

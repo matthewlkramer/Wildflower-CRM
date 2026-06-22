@@ -22,13 +22,19 @@ import { logger } from "./logger";
  * of stacking up callers waiting on each other.
  */
 
-type SyncSource = "gmail" | "calendar" | "quickbooks" | "stripe";
+type SyncSource =
+  | "gmail"
+  | "calendar"
+  | "quickbooks"
+  | "stripe"
+  | "donorbox";
 
 const SOURCE_TAG: Record<SyncSource, number> = {
   gmail: 1,
   calendar: 2,
   quickbooks: 3,
   stripe: 4,
+  donorbox: 5,
 };
 
 // Stable signed-int32 hash of a userId for pg_try_advisory_lock's

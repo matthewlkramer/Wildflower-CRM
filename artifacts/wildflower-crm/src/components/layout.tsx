@@ -79,6 +79,7 @@ const navItems: NavEntry[] = [
   { section: "Finance" },
   { href: "/projections", label: "Projections", icon: LineChart },
   { href: "/reconciliation", label: "Reconciliation", icon: Workflow },
+  { href: "/donorbox-review", label: "Donorbox Review", icon: ReceiptText },
   { href: "/financial-corrections", label: "Financial Corrections", icon: GitMerge, adminOnly: true },
 
   { href: "/settings", label: "Settings", icon: Settings },

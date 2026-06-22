@@ -1625,6 +1625,37 @@ export interface ThankYouAttachment {
   downloadUrl: string;
 }
 
+/**
+ * Read-only Donorbox donation facts joined onto a Stripe-sourced record
+(a Stripe staged charge or a gift minted/matched from one) by
+donorbox_donations.stripe_charge_id = stripe_staged_charges.id — a 1:1
+join present only for Stripe-type Donorbox donations. Enrichment only:
+it NEVER mints a gift (the Stripe sync already pulls those charges). The
+verbatim Donorbox payload, custom questions, and review/donor-match
+state are deliberately omitted.
+
+ */
+export interface DonorboxEnrichment {
+  /** Donorbox donation id. */
+  id: string;
+  /** Donorbox payment instrument (e.g. stripe). */
+  donationType?: string | null;
+  amount?: string | null;
+  processingFee?: string | null;
+  currency?: string | null;
+  donatedAt?: string | null;
+  campaignName?: string | null;
+  designation?: string | null;
+  comment?: string | null;
+  recurring: boolean;
+  /** True when refunded (fully/partially) in Donorbox. Surfaced as a badge — Donorbox refunds are NOT auto-applied to gifts. */
+  refunded: boolean;
+  anonymous: boolean;
+  donorName?: string | null;
+  donorEmail?: string | null;
+  donorEmployer?: string | null;
+}
+
 export interface GiftOrPayment {
   id: string;
   legacyGiftId?: string | null;
@@ -1684,6 +1715,8 @@ export interface GiftOrPayment {
   readonly grantYears?: readonly string[] | null;
   /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
   archivedAt?: string | null;
+  /** Donorbox donation facts for this gift, joined via its linked Stripe charge (donorbox_donations.stripe_charge_id = the gift's matched/created stripe_staged_charges.id). Populated only on the detail endpoint. Enrichment only — never mints a gift. */
+  readonly donorbox?: DonorboxEnrichment | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2644,6 +2677,173 @@ export interface StripeSyncStatus {
   payoutCreatedWatermark: string | null;
 }
 
+/**
+ * Why a non-Stripe Donorbox candidate was filed out of the new-money
+worklist. already_booked = the money is already a CRM gift via another
+path; duplicate = a duplicate donation; not_a_gift = not donation
+revenue; other = anything else.
+
+ */
+export type DonorboxExclusionReason =
+  (typeof DonorboxExclusionReason)[keyof typeof DonorboxExclusionReason];
+
+export const DonorboxExclusionReason = {
+  already_booked: "already_booked",
+  duplicate: "duplicate",
+  not_a_gift: "not_a_gift",
+  other: "other",
+} as const;
+
+/**
+ * Which new-money worklist bucket to list. needs_review = pending
+candidates; done = linked to an existing gift or minted a new one;
+excluded = filed out.
+
+ */
+export type DonorboxReviewQueue =
+  (typeof DonorboxReviewQueue)[keyof typeof DonorboxReviewQueue];
+
+export const DonorboxReviewQueue = {
+  needs_review: "needs_review",
+  done: "done",
+  excluded: "excluded",
+} as const;
+
+/**
+ * A non-Stripe (PayPal/ACH) Donorbox donation surfaced as a human-reviewed
+new-money candidate. Stripe-type donations never appear here (they enrich
+existing Stripe records instead — see DonorboxEnrichment). A reviewer
+links it to an existing gift, mints a new gift (with a dedupe guard), or
+excludes it. Never auto-minted; never written to staged_payments.
+
+ */
+export interface DonorboxReviewRow {
+  /** Donorbox donation id (primary key). */
+  id: string;
+  /** Donorbox payment instrument (e.g. paypal); never 'stripe' here. */
+  donationType?: string | null;
+  paypalTransactionId?: string | null;
+  amount?: string | null;
+  amountRefunded?: string | null;
+  processingFee?: string | null;
+  currency?: string | null;
+  /** Donorbox donation status (paid/refunded/…), distinct from the review status. */
+  donationStatus?: string | null;
+  refunded: boolean;
+  recurring: boolean;
+  donatedAt?: string | null;
+  dateReceived?: string | null;
+  campaignName?: string | null;
+  designation?: string | null;
+  comment?: string | null;
+  anonymous: boolean;
+  donorName?: string | null;
+  donorEmail?: string | null;
+  donorEmployer?: string | null;
+  /** Review status: pending | approved (minted) | reconciled (linked) | excluded. */
+  status: string;
+  exclusionReason?: DonorboxExclusionReason | null;
+  /** Suggested-donor match tier: unmatched | suggested | matched (a hint; never auto-applied). */
+  matchStatus: string;
+  matchScore?: number | null;
+  matchMethod?: string | null;
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+  matchedPaymentIntermediaryId?: string | null;
+  /** Set when linked to a PRE-EXISTING gift (no new ledger row). */
+  matchedGiftId?: string | null;
+  /** Set when a NEW gift was minted from this donation. */
+  createdGiftId?: string | null;
+  readonly organizationName?: string | null;
+  readonly householdName?: string | null;
+  readonly individualGiverPersonName?: string | null;
+  readonly intermediaryName?: string | null;
+  /** The linked/minted gift (matchedGiftId or createdGiftId), joined for display. */
+  readonly linkedGiftId?: string | null;
+  readonly linkedGiftName?: string | null;
+  readonly linkedGiftAmount?: string | null;
+  readonly linkedGiftDate?: string | null;
+  readonly queue: DonorboxReviewQueue;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DonorboxReviewList {
+  data: DonorboxReviewRow[];
+  pagination: Pagination;
+}
+
+export interface DonorboxLinkGiftBody {
+  /** The existing gift this Donorbox donation is evidence for. The donation adopts that gift's donor; no new gift is minted. */
+  giftId: string;
+}
+
+/**
+ * Mint a NEW gift from a non-Stripe Donorbox donation. Exactly one donor
+FK must be set (Donor XOR). The server runs a dedupe guard against
+existing gifts / staged payments / Donorbox links; pass force=true to
+override a possible-duplicate (409) and mint anyway.
+
+ */
+export interface DonorboxCreateGiftBody {
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+  /** Conduit the donor gave through (Donorbox/PayPal), propagated onto the gift. */
+  paymentIntermediaryId?: string | null;
+  /** Override the dedupe guard and mint even when possible duplicates were found. */
+  force?: boolean;
+}
+
+export interface DonorboxExcludeBody {
+  exclusionReason: DonorboxExclusionReason;
+}
+
+export interface DonorboxCreateGiftResponse {
+  gift: GiftOrPayment;
+  donationId: string;
+}
+
+/**
+ * Where the possible duplicate was found.
+ */
+export type DonorboxDuplicateCandidateKind =
+  (typeof DonorboxDuplicateCandidateKind)[keyof typeof DonorboxDuplicateCandidateKind];
+
+export const DonorboxDuplicateCandidateKind = {
+  gift: "gift",
+  staged_payment: "staged_payment",
+  donorbox: "donorbox",
+} as const;
+
+export interface DonorboxDuplicateCandidate {
+  /** Where the possible duplicate was found. */
+  kind: DonorboxDuplicateCandidateKind;
+  id: string;
+  name?: string | null;
+  amount?: string | null;
+  dateReceived?: string | null;
+  /** Why it matched (amount+date, paypal id, …). */
+  reason?: string | null;
+}
+
+export type DonorboxDuplicateResponseError =
+  (typeof DonorboxDuplicateResponseError)[keyof typeof DonorboxDuplicateResponseError];
+
+export const DonorboxDuplicateResponseError = {
+  possible_duplicate: "possible_duplicate",
+} as const;
+
+/**
+ * 409 body when the dedupe guard finds possible duplicates; resubmit create-gift with force=true to override, or link/exclude instead.
+ */
+export interface DonorboxDuplicateResponse {
+  error: DonorboxDuplicateResponseError;
+  message?: string;
+  candidates: DonorboxDuplicateCandidate[];
+}
+
 export type StripeStagedChargeMetadata = { [key: string]: string } | null;
 
 export interface StripeStagedCharge {
@@ -2721,6 +2921,8 @@ export interface StripeStagedCharge {
   payoutQbConflictGiftId?: string | null;
   /** Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt). */
   readonly reconciliationLanes?: ReconciliationLanes;
+  /** Donorbox donation facts for this Stripe charge (joined 1:1 by donorbox_donations.stripe_charge_id = id), present when the charge originated from a Donorbox donation. Enrichment only — never mints a gift. Present on list reads; omitted from bare mutation responses. */
+  readonly donorbox?: DonorboxEnrichment | null;
 }
 
 export interface StripeStagedChargeList {
@@ -6236,6 +6438,26 @@ export type ListStripeStagedChargesParams = {
   sort?: StagedPaymentSort;
   /**
    * Free-text filter across payer name/email, description, and statement descriptor.
+   */
+  search?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
+};
+
+export type ListDonorboxReviewParams = {
+  /**
+   * Which worklist bucket to list (default needs_review).
+   */
+  queue?: DonorboxReviewQueue;
+  /**
+   * Free-text filter across donor name/email, comment, designation, and campaign.
    */
   search?: string;
   /**

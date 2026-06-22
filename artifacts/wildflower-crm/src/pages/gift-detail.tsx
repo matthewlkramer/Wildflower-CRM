@@ -57,6 +57,7 @@ import {
   type Highlight,
 } from "@/components/record-layout";
 import { GiftPledgeLink, type PledgeDonorScope } from "@/components/pledge-picker";
+import { DonorboxEnrichmentPanel } from "@/components/donorbox-enrichment-panel";
 import { laneBadges } from "@/lib/reconciliation";
 import { type ReconciliationLanes } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -486,6 +487,9 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                 <ReconciliationLaneBadges lanes={gift.reconciliationLanes} />
               </Row>
             </div>
+            {gift.donorbox && (
+              <DonorboxEnrichmentPanel donorbox={gift.donorbox} />
+            )}
           </FieldCard>
 
           <RelatedCard title="Allocations" count={allocations.length}>

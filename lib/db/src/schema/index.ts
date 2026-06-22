@@ -54,6 +54,8 @@ export * from "./stripeSyncState";
 export * from "./stripePayouts";
 export * from "./stripeStagedCharges";
 export * from "./flodeskSyncState";
+export * from "./donorboxDonations";
+export * from "./donorboxSyncState";
 export * from "./connectionEnthusiasmHistory";
 export * from "./grantLeads";
 export * from "./auditLog";

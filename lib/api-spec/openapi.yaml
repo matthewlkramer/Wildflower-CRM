@@ -2231,6 +2231,71 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "No open refund proposal to dismiss on this charge" }
 
+  /donorbox/review:
+    get:
+      operationId: listDonorboxReview
+      tags: [donorbox]
+      summary: List non-Stripe (PayPal/ACH) Donorbox donations as human-reviewed new-money candidates.
+      parameters:
+        - { name: queue, in: query, schema: { $ref: "#/components/schemas/DonorboxReviewQueue" }, description: "Which worklist bucket to list (default needs_review)." }
+        - { name: search, in: query, schema: { type: string }, description: "Free-text filter across donor name/email, comment, designation, and campaign." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DonorboxReviewList" } } } }
+  /donorbox/donations/{id}/link-gift:
+    post:
+      operationId: linkDonorboxDonationToGift
+      tags: [donorbox]
+      summary: Link a non-Stripe Donorbox donation to an existing gift as evidence (adopts the gift's donor; no new gift minted).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DonorboxLinkGiftBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DonorboxReviewRow" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Donation is not a pending non-Stripe candidate, or that gift is already linked elsewhere" }
+  /donorbox/donations/{id}/create-gift:
+    post:
+      operationId: createGiftFromDonorboxDonation
+      tags: [donorbox]
+      summary: Mint a new gift from a non-Stripe Donorbox donation (Donor XOR), with a dedupe guard.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DonorboxCreateGiftBody" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/DonorboxCreateGiftResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Donation is not a pending non-Stripe candidate, or a possible duplicate was found (resubmit with force=true).", content: { application/json: { schema: { $ref: "#/components/schemas/DonorboxDuplicateResponse" } } } }
+  /donorbox/donations/{id}/exclude:
+    post:
+      operationId: excludeDonorboxDonation
+      tags: [donorbox]
+      summary: File a non-Stripe Donorbox candidate out of the new-money worklist.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DonorboxExcludeBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DonorboxReviewRow" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Donation cannot be excluded from its current state" }
+  /donorbox/donations/{id}/re-include:
+    post:
+      operationId: reIncludeDonorboxDonation
+      tags: [donorbox]
+      summary: Move an excluded Donorbox candidate back to pending.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DonorboxReviewRow" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Donation is not excluded" }
+
   /stripe-payouts/reconciliation:
     get:
       operationId: listStripePayoutReconciliations
@@ -5117,6 +5182,7 @@ components:
         displayUsages:              { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct display_usage values from gift_allocations (server-computed labels)." }
         grantYears:                 { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct grant_year values from gift_allocations." }
         archivedAt:                 { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
+        donorbox:                   { allOf: [ { $ref: "#/components/schemas/DonorboxEnrichment" } ], nullable: true, readOnly: true, description: "Donorbox donation facts for this gift, joined via its linked Stripe charge (donorbox_donations.stripe_charge_id = the gift's matched/created stripe_staged_charges.id). Populated only on the detail endpoint. Enrichment only — never mints a gift." }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
     GiftOrPaymentDetail:
@@ -5619,6 +5685,152 @@ components:
         lastError:              { type: string, nullable: true }
         consecutiveErrors:      { type: integer, description: "Consecutive errored runs (cursor held); 0 after a clean run." }
         payoutCreatedWatermark: { type: string, format: date-time, nullable: true, description: "Only payouts created at/after this instant are pulled." }
+    DonorboxEnrichment:
+      type: object
+      description: |
+        Read-only Donorbox donation facts joined onto a Stripe-sourced record
+        (a Stripe staged charge or a gift minted/matched from one) by
+        donorbox_donations.stripe_charge_id = stripe_staged_charges.id — a 1:1
+        join present only for Stripe-type Donorbox donations. Enrichment only:
+        it NEVER mints a gift (the Stripe sync already pulls those charges). The
+        verbatim Donorbox payload, custom questions, and review/donor-match
+        state are deliberately omitted.
+      required: [id, recurring, refunded, anonymous]
+      properties:
+        id:            { type: string, description: "Donorbox donation id." }
+        donationType:  { type: string, nullable: true, description: "Donorbox payment instrument (e.g. stripe)." }
+        amount:        { type: string, nullable: true }
+        processingFee: { type: string, nullable: true }
+        currency:      { type: string, nullable: true }
+        donatedAt:     { type: string, format: date-time, nullable: true }
+        campaignName:  { type: string, nullable: true }
+        designation:   { type: string, nullable: true }
+        comment:       { type: string, nullable: true }
+        recurring:     { type: boolean }
+        refunded:      { type: boolean, description: "True when refunded (fully/partially) in Donorbox. Surfaced as a badge — Donorbox refunds are NOT auto-applied to gifts." }
+        anonymous:     { type: boolean }
+        donorName:     { type: string, nullable: true }
+        donorEmail:    { type: string, nullable: true }
+        donorEmployer: { type: string, nullable: true }
+    DonorboxExclusionReason:
+      type: string
+      enum: [already_booked, duplicate, not_a_gift, other]
+      description: |
+        Why a non-Stripe Donorbox candidate was filed out of the new-money
+        worklist. already_booked = the money is already a CRM gift via another
+        path; duplicate = a duplicate donation; not_a_gift = not donation
+        revenue; other = anything else.
+    DonorboxReviewQueue:
+      type: string
+      enum: [needs_review, done, excluded]
+      description: |
+        Which new-money worklist bucket to list. needs_review = pending
+        candidates; done = linked to an existing gift or minted a new one;
+        excluded = filed out.
+    DonorboxReviewRow:
+      type: object
+      description: |
+        A non-Stripe (PayPal/ACH) Donorbox donation surfaced as a human-reviewed
+        new-money candidate. Stripe-type donations never appear here (they enrich
+        existing Stripe records instead — see DonorboxEnrichment). A reviewer
+        links it to an existing gift, mints a new gift (with a dedupe guard), or
+        excludes it. Never auto-minted; never written to staged_payments.
+      required: [id, recurring, refunded, anonymous, status, matchStatus, queue, createdAt, updatedAt]
+      properties:
+        id:                        { type: string, description: "Donorbox donation id (primary key)." }
+        donationType:              { type: string, nullable: true, description: "Donorbox payment instrument (e.g. paypal); never 'stripe' here." }
+        paypalTransactionId:       { type: string, nullable: true }
+        amount:                    { type: string, nullable: true }
+        amountRefunded:            { type: string, nullable: true }
+        processingFee:             { type: string, nullable: true }
+        currency:                  { type: string, nullable: true }
+        donationStatus:            { type: string, nullable: true, description: "Donorbox donation status (paid/refunded/…), distinct from the review status." }
+        refunded:                  { type: boolean }
+        recurring:                 { type: boolean }
+        donatedAt:                 { type: string, format: date-time, nullable: true }
+        dateReceived:              { type: string, format: date, nullable: true }
+        campaignName:              { type: string, nullable: true }
+        designation:               { type: string, nullable: true }
+        comment:                   { type: string, nullable: true }
+        anonymous:                 { type: boolean }
+        donorName:                 { type: string, nullable: true }
+        donorEmail:                { type: string, nullable: true }
+        donorEmployer:             { type: string, nullable: true }
+        status:                    { type: string, description: "Review status: pending | approved (minted) | reconciled (linked) | excluded." }
+        exclusionReason:           { allOf: [ { $ref: "#/components/schemas/DonorboxExclusionReason" } ], nullable: true }
+        matchStatus:               { type: string, description: "Suggested-donor match tier: unmatched | suggested | matched (a hint; never auto-applied)." }
+        matchScore:                { type: integer, nullable: true }
+        matchMethod:               { type: string, nullable: true }
+        organizationId:            { type: string, nullable: true }
+        individualGiverPersonId:   { type: string, nullable: true }
+        householdId:               { type: string, nullable: true }
+        matchedPaymentIntermediaryId: { type: string, nullable: true }
+        matchedGiftId:             { type: string, nullable: true, description: "Set when linked to a PRE-EXISTING gift (no new ledger row)." }
+        createdGiftId:             { type: string, nullable: true, description: "Set when a NEW gift was minted from this donation." }
+        organizationName:          { type: string, nullable: true, readOnly: true }
+        householdName:             { type: string, nullable: true, readOnly: true }
+        individualGiverPersonName: { type: string, nullable: true, readOnly: true }
+        intermediaryName:          { type: string, nullable: true, readOnly: true }
+        linkedGiftId:              { type: string, nullable: true, readOnly: true, description: "The linked/minted gift (matchedGiftId or createdGiftId), joined for display." }
+        linkedGiftName:            { type: string, nullable: true, readOnly: true }
+        linkedGiftAmount:          { type: string, nullable: true, readOnly: true }
+        linkedGiftDate:            { type: string, format: date, nullable: true, readOnly: true }
+        queue:                     { allOf: [ { $ref: "#/components/schemas/DonorboxReviewQueue" } ], readOnly: true }
+        createdAt:                 { type: string, format: date-time }
+        updatedAt:                 { type: string, format: date-time }
+    DonorboxReviewList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/DonorboxReviewRow" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    DonorboxLinkGiftBody:
+      type: object
+      required: [giftId]
+      properties:
+        giftId: { type: string, description: "The existing gift this Donorbox donation is evidence for. The donation adopts that gift's donor; no new gift is minted." }
+    DonorboxCreateGiftBody:
+      type: object
+      description: |
+        Mint a NEW gift from a non-Stripe Donorbox donation. Exactly one donor
+        FK must be set (Donor XOR). The server runs a dedupe guard against
+        existing gifts / staged payments / Donorbox links; pass force=true to
+        override a possible-duplicate (409) and mint anyway.
+      properties:
+        organizationId:          { type: string, nullable: true }
+        individualGiverPersonId: { type: string, nullable: true }
+        householdId:             { type: string, nullable: true }
+        paymentIntermediaryId:   { type: string, nullable: true, description: "Conduit the donor gave through (Donorbox/PayPal), propagated onto the gift." }
+        force:                   { type: boolean, description: "Override the dedupe guard and mint even when possible duplicates were found." }
+    DonorboxExcludeBody:
+      type: object
+      required: [exclusionReason]
+      properties:
+        exclusionReason: { $ref: "#/components/schemas/DonorboxExclusionReason" }
+    DonorboxCreateGiftResponse:
+      type: object
+      required: [gift, donationId]
+      properties:
+        gift:       { $ref: "#/components/schemas/GiftOrPayment" }
+        donationId: { type: string }
+    DonorboxDuplicateCandidate:
+      type: object
+      required: [kind, id]
+      properties:
+        kind:         { type: string, enum: [gift, staged_payment, donorbox], description: "Where the possible duplicate was found." }
+        id:           { type: string }
+        name:         { type: string, nullable: true }
+        amount:       { type: string, nullable: true }
+        dateReceived: { type: string, format: date, nullable: true }
+        reason:       { type: string, nullable: true, description: "Why it matched (amount+date, paypal id, …)." }
+    DonorboxDuplicateResponse:
+      type: object
+      description: "409 body when the dedupe guard finds possible duplicates; resubmit create-gift with force=true to override, or link/exclude instead."
+      required: [error, candidates]
+      properties:
+        error:      { type: string, enum: [possible_duplicate] }
+        message:    { type: string }
+        candidates: { type: array, items: { $ref: "#/components/schemas/DonorboxDuplicateCandidate" } }
     StripeStagedCharge:
       type: object
       required: [id, stripeAccountId, status, classificationSource, matchStatus, autoApplied, refunded, disputed, refundPropagationStatus, createdAt, updatedAt]
@@ -5695,6 +5907,7 @@ components:
         payoutQbSupersedeStatus:   { type: string, nullable: true, description: "Non-destructive QuickBooks supersede audit for this charge's payout: none | excluded_pending | conflict_approved. 'conflict_approved' blocks minting a per-charge gift here." }
         payoutQbConflictGiftId:    { type: string, nullable: true, description: "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved." }
         reconciliationLanes:       { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt)." }
+        donorbox:                  { allOf: [ { $ref: "#/components/schemas/DonorboxEnrichment" } ], nullable: true, readOnly: true, description: "Donorbox donation facts for this Stripe charge (joined 1:1 by donorbox_donations.stripe_charge_id = id), present when the charge originated from a Donorbox donation. Enrichment only — never mints a gift. Present on list reads; omitted from bare mutation responses." }
     StripeStagedChargeList:
       type: object
       required: [data, pagination]

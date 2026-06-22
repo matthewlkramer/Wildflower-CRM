@@ -639,6 +639,26 @@ export const stagedPaymentFundingSourceProvenanceEnum = pgEnum(
   ["auto", "manual"],
 );
 
+// ──────────────────────────────────────────────────────────────────
+// Donorbox donation sync (enrichment + non-Stripe new-money review)
+// ──────────────────────────────────────────────────────────────────
+
+// Why a non-Stripe Donorbox donation was excluded from the new-money review
+// worklist (a human decided it should NOT mint a new CRM gift). Stripe-type
+// Donorbox donations are enrichment-only and never enter the worklist, so they
+// never carry a reason.
+//   already_booked — the money is already in the CRM via another source
+//                    (a QuickBooks deposit, a Stripe charge, a hand-entered gift).
+//   duplicate      — a duplicate of another Donorbox donation already handled.
+//   not_a_gift     — a test/refunded/non-donation row that is not real new money.
+//   other          — catch-all manual exclusion when no specific category fits.
+export const donorboxExclusionReasonEnum = pgEnum("donorbox_exclusion_reason", [
+  "already_booked",
+  "duplicate",
+  "not_a_gift",
+  "other",
+]);
+
 // Lifecycle of a Stripe refund/chargeback proposal raised against a Stripe
 // staged charge whose money is already booked into a CRM gift (INV-13). The
 // propagation is propose-then-confirm: the sync worker only ever RAISES a

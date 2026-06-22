@@ -46,6 +46,7 @@ import {
   type DonorType,
 } from "@/components/entity-picker";
 import { useToast } from "@/hooks/use-toast";
+import { DonorboxEnrichmentPanel } from "@/components/donorbox-enrichment-panel";
 import { essentialSearchToken, looksLikeOrgName } from "@/lib/donor-seed";
 import {
   AlertTriangle,
@@ -766,6 +767,12 @@ function ChargeRow({
         <p className="mt-2 text-xs text-muted-foreground">
           Excluded as: {REASON_LABEL[row.exclusionReason] ?? row.exclusionReason}
         </p>
+      )}
+
+      {/* Donorbox enrichment — read-only facts joined 1:1 from the Donorbox
+          donation behind this Stripe charge. Enrichment only; never mints. */}
+      {row.donorbox && (
+        <DonorboxEnrichmentPanel donorbox={row.donorbox} />
       )}
 
       {/* Refund / chargeback proposal (INV-13) — propose-then-confirm. */}

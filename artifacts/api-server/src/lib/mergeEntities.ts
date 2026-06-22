@@ -84,6 +84,7 @@ const ORGANIZATION_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "donor_payment_intermediaries", col: "organization_id" },
   { table: "staged_payments", col: "organization_id" },
   { table: "stripe_staged_charges", col: "organization_id" },
+  { table: "donorbox_donations", col: "organization_id" },
   { table: "quickbooks_handling_rules", col: "target_organization_id" },
   { table: "grant_leads", col: "target_organization_id" },
 ];
@@ -117,6 +118,7 @@ const PERSON_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "donor_payment_intermediaries", col: "individual_giver_person_id" },
   { table: "staged_payments", col: "individual_giver_person_id" },
   { table: "stripe_staged_charges", col: "individual_giver_person_id" },
+  { table: "donorbox_donations", col: "individual_giver_person_id" },
 ];
 
 const PERSON_ARRAY_REFS: ReadonlyArray<MergeRef> = [
