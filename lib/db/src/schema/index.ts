@@ -59,3 +59,5 @@ export * from "./auditLog";
 export * from "./duplicateDismissals";
 export * from "./cleanupQueue";
 export * from "./giftAmountAllocationReview";
+export * from "./giftEvidenceLinks";
+export * from "./financialCorrectionDismissals";

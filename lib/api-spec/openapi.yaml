@@ -105,6 +105,56 @@ paths:
         "204": { description: Dismissed (idempotent) }
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  # ─── Financial corrections (mis-split / duplicate gifts, bulk deposits) ──────
+  /financial-corrections:
+    get:
+      operationId: listFinancialCorrections
+      tags: [financial-corrections]
+      summary: >-
+        Admin-only. Proposed corrections that make the CRM money records conform
+        to the intended schema (INV-6 / §4.8) without ever editing a QuickBooks
+        or Stripe record. Two kinds: `merge_gifts` (near-duplicate gifts that
+        should be one gift with several allocations — apply via the existing
+        gifts-and-payments/merge endpoint) and `link_evidence` (one bulk deposit
+        that corroborates many gifts — apply via /financial-corrections/apply).
+        Proposals an admin has dismissed are excluded.
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 200 }, description: "Max proposals to return." }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FinancialCorrectionList" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /financial-corrections/dismiss:
+    post:
+      operationId: dismissFinancialCorrection
+      tags: [financial-corrections]
+      summary: >-
+        Admin-only. Mark a proposed correction as "leave as is" so the detector
+        never re-surfaces it. Idempotent.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DismissFinancialCorrectionBody" } } }
+      responses:
+        "204": { description: Dismissed (idempotent) }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /financial-corrections/apply:
+    post:
+      operationId: applyFinancialCorrection
+      tags: [financial-corrections]
+      summary: >-
+        Admin-only. Apply a `link_evidence` correction: record corroborating
+        many-to-many links from one piece of funding evidence to several gifts.
+        Never edits the QuickBooks/Stripe source — only adds CRM-side
+        corroboration. Idempotent on the (gift, evidence) pair. (Merge proposals
+        are applied through the existing gifts-and-payments/merge endpoint.)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ApplyFinancialCorrectionBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ApplyFinancialCorrectionResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   # ─── Cleanup queue (records flagged for manual data cleanup) ─────────────────
   /cleanup-queue:
     get:
@@ -5991,6 +6041,76 @@ components:
         type: { type: string, enum: [organization, person] }
         idA:  { type: string }
         idB:  { type: string }
+    FinancialCorrectionGift:
+      type: object
+      required: [id, amount, allocationCount]
+      properties:
+        id:              { type: string }
+        donorName:       { type: string, nullable: true, description: "Display name of the gift's donor (anonymous-masked where required)." }
+        amount:          { type: string, nullable: true, description: "Gift gross amount (numeric string)." }
+        date:            { type: string, nullable: true, description: "Date the gift was received (ISO date)." }
+        allocationCount: { type: integer, description: "Number of allocation lines on the gift." }
+        pledgeId:        { type: string, nullable: true, description: "Pledge this gift pays toward, if any." }
+    FinancialCorrectionEvidence:
+      type: object
+      required: [kind, id]
+      properties:
+        kind:       { type: string, enum: [qb_staged, stripe_charge], description: "Which evidence source this row comes from." }
+        id:         { type: string, description: "The evidence row id (staged_payments.id or stripe_staged_charges.id)." }
+        amount:     { type: string, nullable: true, description: "Evidence amount (numeric string)." }
+        date:       { type: string, nullable: true, description: "Evidence date (ISO date)." }
+        payerName:  { type: string, nullable: true, description: "Payer/source name on the evidence (often NOT the donor)." }
+        entityName: { type: string, nullable: true, description: "Attributed fund entity, when known." }
+    FinancialCorrectionMergeSuggestion:
+      type: object
+      required: [primaryId, mergeIds]
+      description: "A ready-to-apply gift merge: keep `primaryId`, fold `mergeIds` into it as additional allocations. Apply through the gifts-and-payments/merge endpoint."
+      properties:
+        primaryId: { type: string }
+        mergeIds:  { type: array, items: { type: string }, minItems: 1 }
+    FinancialCorrection:
+      type: object
+      required: [kind, key, score, reason, gifts, safeApply]
+      properties:
+        kind:    { type: string, enum: [merge_gifts, link_evidence], description: "merge_gifts = collapse near-duplicate gifts into one with allocations; link_evidence = corroborate many gifts with one bulk deposit." }
+        key:     { type: string, description: "Canonical, order-independent proposal key (used for dismissal)." }
+        score:   { type: number, description: "Confidence the records describe the same money; higher is stronger." }
+        reason:  { type: string, description: "Human-readable explanation of why this was flagged." }
+        gifts:   { type: array, items: { $ref: "#/components/schemas/FinancialCorrectionGift" } }
+        evidence:
+          $ref: "#/components/schemas/FinancialCorrectionEvidence"
+        mergeSuggestion:
+          $ref: "#/components/schemas/FinancialCorrectionMergeSuggestion"
+        safeApply:
+          type: boolean
+          description: "True when the proposal can be applied without further human disambiguation (e.g. all gifts share one donor for a merge)."
+    FinancialCorrectionList:
+      type: object
+      required: [corrections]
+      properties:
+        corrections: { type: array, items: { $ref: "#/components/schemas/FinancialCorrection" } }
+    DismissFinancialCorrectionBody:
+      type: object
+      required: [kind, proposalKey]
+      description: "Mark a proposed correction as leave-as-is so the detector never re-surfaces it."
+      properties:
+        kind:        { type: string, enum: [merge_gifts, link_evidence] }
+        proposalKey: { type: string }
+    ApplyFinancialCorrectionBody:
+      type: object
+      required: [evidenceKind, evidenceId, giftIds]
+      description: "Apply a link_evidence correction: corroborate each gift in `giftIds` with the given evidence row. CRM-side only; never edits the source."
+      properties:
+        evidenceKind: { type: string, enum: [qb_staged, stripe_charge] }
+        evidenceId:   { type: string }
+        giftIds:      { type: array, items: { type: string }, minItems: 1 }
+    ApplyFinancialCorrectionResult:
+      type: object
+      required: [evidenceKind, evidenceId, linkedGiftIds]
+      properties:
+        evidenceKind:  { type: string, enum: [qb_staged, stripe_charge] }
+        evidenceId:    { type: string }
+        linkedGiftIds: { type: array, items: { type: string }, description: "Gifts now corroborated by the evidence (idempotent — already-linked gifts included)." }
     CleanupQueueStatus:
       type: string
       enum: [open, resolved, dismissed]

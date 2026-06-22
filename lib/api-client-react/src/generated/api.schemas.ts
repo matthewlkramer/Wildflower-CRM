@@ -3330,6 +3330,135 @@ export interface DismissDuplicateBody {
   idB: string;
 }
 
+export interface FinancialCorrectionGift {
+  id: string;
+  /** Display name of the gift's donor (anonymous-masked where required). */
+  donorName?: string | null;
+  /** Gift gross amount (numeric string). */
+  amount: string | null;
+  /** Date the gift was received (ISO date). */
+  date?: string | null;
+  /** Number of allocation lines on the gift. */
+  allocationCount: number;
+  /** Pledge this gift pays toward, if any. */
+  pledgeId?: string | null;
+}
+
+/**
+ * Which evidence source this row comes from.
+ */
+export type FinancialCorrectionEvidenceKind =
+  (typeof FinancialCorrectionEvidenceKind)[keyof typeof FinancialCorrectionEvidenceKind];
+
+export const FinancialCorrectionEvidenceKind = {
+  qb_staged: "qb_staged",
+  stripe_charge: "stripe_charge",
+} as const;
+
+export interface FinancialCorrectionEvidence {
+  /** Which evidence source this row comes from. */
+  kind: FinancialCorrectionEvidenceKind;
+  /** The evidence row id (staged_payments.id or stripe_staged_charges.id). */
+  id: string;
+  /** Evidence amount (numeric string). */
+  amount?: string | null;
+  /** Evidence date (ISO date). */
+  date?: string | null;
+  /** Payer/source name on the evidence (often NOT the donor). */
+  payerName?: string | null;
+  /** Attributed fund entity, when known. */
+  entityName?: string | null;
+}
+
+/**
+ * A ready-to-apply gift merge: keep `primaryId`, fold `mergeIds` into it as additional allocations. Apply through the gifts-and-payments/merge endpoint.
+ */
+export interface FinancialCorrectionMergeSuggestion {
+  primaryId: string;
+  /** @minItems 1 */
+  mergeIds: string[];
+}
+
+/**
+ * merge_gifts = collapse near-duplicate gifts into one with allocations; link_evidence = corroborate many gifts with one bulk deposit.
+ */
+export type FinancialCorrectionKind =
+  (typeof FinancialCorrectionKind)[keyof typeof FinancialCorrectionKind];
+
+export const FinancialCorrectionKind = {
+  merge_gifts: "merge_gifts",
+  link_evidence: "link_evidence",
+} as const;
+
+export interface FinancialCorrection {
+  /** merge_gifts = collapse near-duplicate gifts into one with allocations; link_evidence = corroborate many gifts with one bulk deposit. */
+  kind: FinancialCorrectionKind;
+  /** Canonical, order-independent proposal key (used for dismissal). */
+  key: string;
+  /** Confidence the records describe the same money; higher is stronger. */
+  score: number;
+  /** Human-readable explanation of why this was flagged. */
+  reason: string;
+  gifts: FinancialCorrectionGift[];
+  evidence?: FinancialCorrectionEvidence;
+  mergeSuggestion?: FinancialCorrectionMergeSuggestion;
+  /** True when the proposal can be applied without further human disambiguation (e.g. all gifts share one donor for a merge). */
+  safeApply: boolean;
+}
+
+export interface FinancialCorrectionList {
+  corrections: FinancialCorrection[];
+}
+
+export type DismissFinancialCorrectionBodyKind =
+  (typeof DismissFinancialCorrectionBodyKind)[keyof typeof DismissFinancialCorrectionBodyKind];
+
+export const DismissFinancialCorrectionBodyKind = {
+  merge_gifts: "merge_gifts",
+  link_evidence: "link_evidence",
+} as const;
+
+/**
+ * Mark a proposed correction as leave-as-is so the detector never re-surfaces it.
+ */
+export interface DismissFinancialCorrectionBody {
+  kind: DismissFinancialCorrectionBodyKind;
+  proposalKey: string;
+}
+
+export type ApplyFinancialCorrectionBodyEvidenceKind =
+  (typeof ApplyFinancialCorrectionBodyEvidenceKind)[keyof typeof ApplyFinancialCorrectionBodyEvidenceKind];
+
+export const ApplyFinancialCorrectionBodyEvidenceKind = {
+  qb_staged: "qb_staged",
+  stripe_charge: "stripe_charge",
+} as const;
+
+/**
+ * Apply a link_evidence correction: corroborate each gift in `giftIds` with the given evidence row. CRM-side only; never edits the source.
+ */
+export interface ApplyFinancialCorrectionBody {
+  evidenceKind: ApplyFinancialCorrectionBodyEvidenceKind;
+  evidenceId: string;
+  /** @minItems 1 */
+  giftIds: string[];
+}
+
+export type ApplyFinancialCorrectionResultEvidenceKind =
+  (typeof ApplyFinancialCorrectionResultEvidenceKind)[keyof typeof ApplyFinancialCorrectionResultEvidenceKind];
+
+export const ApplyFinancialCorrectionResultEvidenceKind = {
+  qb_staged: "qb_staged",
+  stripe_charge: "stripe_charge",
+} as const;
+
+export interface ApplyFinancialCorrectionResult {
+  evidenceKind: ApplyFinancialCorrectionResultEvidenceKind;
+  evidenceId: string;
+  /** Gifts now corroborated by the evidence (idempotent — already-linked gifts included). */
+  linkedGiftIds: string[];
+}
+
 export type CleanupQueueStatus =
   (typeof CleanupQueueStatus)[keyof typeof CleanupQueueStatus];
 
@@ -5106,6 +5235,15 @@ export const ListPotentialDuplicatesType = {
   organization: "organization",
   person: "person",
 } as const;
+
+export type ListFinancialCorrectionsParams = {
+  /**
+   * Max proposals to return.
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
 
 export type ListCleanupQueueParams = {
   /**

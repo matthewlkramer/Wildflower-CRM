@@ -28,6 +28,8 @@ import type {
   AdminGoogleSyncList,
   AdminListEmailIntelFeedbackParams,
   AdminResyncGoogleUser200,
+  ApplyFinancialCorrectionBody,
+  ApplyFinancialCorrectionResult,
   ApplyRuleToPendingBody,
   ApplyRuleToPendingResult,
   ApproveCompleteMatchBody,
@@ -83,6 +85,7 @@ import type {
   DisconnectGoogleOauth200,
   DisconnectQuickbooksOauth200,
   DismissDuplicateBody,
+  DismissFinancialCorrectionBody,
   DismissTaskProposalBody,
   DonorPaymentIntermediary,
   DonorPaymentIntermediaryList,
@@ -105,6 +108,7 @@ import type {
   ErrorResponse,
   ExcludeStagedPaymentBody,
   ExtensionTokenResponse,
+  FinancialCorrectionList,
   FiscalYear,
   FiscalYearBreakdown,
   FiscalYearEntityGoal,
@@ -152,6 +156,7 @@ import type {
   ListEmailMessagesParams,
   ListEmailProposalsParams,
   ListEmailsParams,
+  ListFinancialCorrectionsParams,
   ListFiscalYearEntityGoalsParams,
   ListFiscalYearsParams,
   ListFundableProjectsParams,
@@ -610,6 +615,290 @@ export const useDismissPotentialDuplicate = <
   TContext
 > => {
   return useMutation(getDismissPotentialDuplicateMutationOptions(options));
+};
+
+/**
+ * @summary Admin-only. Proposed corrections that make the CRM money records conform to the intended schema (INV-6 / §4.8) without ever editing a QuickBooks or Stripe record. Two kinds: `merge_gifts` (near-duplicate gifts that should be one gift with several allocations — apply via the existing gifts-and-payments/merge endpoint) and `link_evidence` (one bulk deposit that corroborates many gifts — apply via /financial-corrections/apply). Proposals an admin has dismissed are excluded.
+ */
+export const getListFinancialCorrectionsUrl = (
+  params?: ListFinancialCorrectionsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/financial-corrections?${stringifiedParams}`
+    : `/api/financial-corrections`;
+};
+
+export const listFinancialCorrections = async (
+  params?: ListFinancialCorrectionsParams,
+  options?: RequestInit,
+): Promise<FinancialCorrectionList> => {
+  return customFetch<FinancialCorrectionList>(
+    getListFinancialCorrectionsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListFinancialCorrectionsQueryKey = (
+  params?: ListFinancialCorrectionsParams,
+) => {
+  return [`/api/financial-corrections`, ...(params ? [params] : [])] as const;
+};
+
+export const getListFinancialCorrectionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listFinancialCorrections>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  params?: ListFinancialCorrectionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listFinancialCorrections>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListFinancialCorrectionsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listFinancialCorrections>>
+  > = ({ signal }) =>
+    listFinancialCorrections(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listFinancialCorrections>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListFinancialCorrectionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listFinancialCorrections>>
+>;
+export type ListFinancialCorrectionsQueryError = ErrorType<ForbiddenResponse>;
+
+/**
+ * @summary Admin-only. Proposed corrections that make the CRM money records conform to the intended schema (INV-6 / §4.8) without ever editing a QuickBooks or Stripe record. Two kinds: `merge_gifts` (near-duplicate gifts that should be one gift with several allocations — apply via the existing gifts-and-payments/merge endpoint) and `link_evidence` (one bulk deposit that corroborates many gifts — apply via /financial-corrections/apply). Proposals an admin has dismissed are excluded.
+ */
+
+export function useListFinancialCorrections<
+  TData = Awaited<ReturnType<typeof listFinancialCorrections>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(
+  params?: ListFinancialCorrectionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listFinancialCorrections>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListFinancialCorrectionsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Admin-only. Mark a proposed correction as "leave as is" so the detector never re-surfaces it. Idempotent.
+ */
+export const getDismissFinancialCorrectionUrl = () => {
+  return `/api/financial-corrections/dismiss`;
+};
+
+export const dismissFinancialCorrection = async (
+  dismissFinancialCorrectionBody: DismissFinancialCorrectionBody,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDismissFinancialCorrectionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(dismissFinancialCorrectionBody),
+  });
+};
+
+export const getDismissFinancialCorrectionMutationOptions = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissFinancialCorrection>>,
+    TError,
+    { data: BodyType<DismissFinancialCorrectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dismissFinancialCorrection>>,
+  TError,
+  { data: BodyType<DismissFinancialCorrectionBody> },
+  TContext
+> => {
+  const mutationKey = ["dismissFinancialCorrection"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dismissFinancialCorrection>>,
+    { data: BodyType<DismissFinancialCorrectionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return dismissFinancialCorrection(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DismissFinancialCorrectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dismissFinancialCorrection>>
+>;
+export type DismissFinancialCorrectionMutationBody =
+  BodyType<DismissFinancialCorrectionBody>;
+export type DismissFinancialCorrectionMutationError = ErrorType<
+  BadRequestResponse | ForbiddenResponse
+>;
+
+/**
+ * @summary Admin-only. Mark a proposed correction as "leave as is" so the detector never re-surfaces it. Idempotent.
+ */
+export const useDismissFinancialCorrection = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissFinancialCorrection>>,
+    TError,
+    { data: BodyType<DismissFinancialCorrectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dismissFinancialCorrection>>,
+  TError,
+  { data: BodyType<DismissFinancialCorrectionBody> },
+  TContext
+> => {
+  return useMutation(getDismissFinancialCorrectionMutationOptions(options));
+};
+
+/**
+ * @summary Admin-only. Apply a `link_evidence` correction: record corroborating many-to-many links from one piece of funding evidence to several gifts. Never edits the QuickBooks/Stripe source — only adds CRM-side corroboration. Idempotent on the (gift, evidence) pair. (Merge proposals are applied through the existing gifts-and-payments/merge endpoint.)
+ */
+export const getApplyFinancialCorrectionUrl = () => {
+  return `/api/financial-corrections/apply`;
+};
+
+export const applyFinancialCorrection = async (
+  applyFinancialCorrectionBody: ApplyFinancialCorrectionBody,
+  options?: RequestInit,
+): Promise<ApplyFinancialCorrectionResult> => {
+  return customFetch<ApplyFinancialCorrectionResult>(
+    getApplyFinancialCorrectionUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(applyFinancialCorrectionBody),
+    },
+  );
+};
+
+export const getApplyFinancialCorrectionMutationOptions = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyFinancialCorrection>>,
+    TError,
+    { data: BodyType<ApplyFinancialCorrectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof applyFinancialCorrection>>,
+  TError,
+  { data: BodyType<ApplyFinancialCorrectionBody> },
+  TContext
+> => {
+  const mutationKey = ["applyFinancialCorrection"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof applyFinancialCorrection>>,
+    { data: BodyType<ApplyFinancialCorrectionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return applyFinancialCorrection(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApplyFinancialCorrectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof applyFinancialCorrection>>
+>;
+export type ApplyFinancialCorrectionMutationBody =
+  BodyType<ApplyFinancialCorrectionBody>;
+export type ApplyFinancialCorrectionMutationError = ErrorType<
+  BadRequestResponse | ForbiddenResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Admin-only. Apply a `link_evidence` correction: record corroborating many-to-many links from one piece of funding evidence to several gifts. Never edits the QuickBooks/Stripe source — only adds CRM-side corroboration. Idempotent on the (gift, evidence) pair. (Merge proposals are applied through the existing gifts-and-payments/merge endpoint.)
+ */
+export const useApplyFinancialCorrection = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyFinancialCorrection>>,
+    TError,
+    { data: BodyType<ApplyFinancialCorrectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof applyFinancialCorrection>>,
+  TError,
+  { data: BodyType<ApplyFinancialCorrectionBody> },
+  TContext
+> => {
+  return useMutation(getApplyFinancialCorrectionMutationOptions(options));
 };
 
 /**
