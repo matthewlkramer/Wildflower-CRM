@@ -54,34 +54,32 @@ type NavEntry = NavLink | NavSection;
 
 const navItems: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/top-priorities", label: "Top Priorities", icon: Star },
 
   { section: "Records" },
   { href: "/individuals", label: "Individuals", icon: Users },
   { href: "/organizations", label: "Organizations", icon: Building2 },
   { href: "/payment-intermediaries", label: "Payment Intermediaries", icon: Landmark },
+  { href: "/fundable-projects", label: "Fundable Projects", icon: FolderKanban },
 
   { section: "Fundraising" },
+  { href: "/top-priorities", label: "Top Priorities", icon: Star },
   { href: "/opportunities", label: "Opportunities", icon: Target },
   { href: "/pledges", label: "Pledges", icon: HandCoins },
   { href: "/gifts", label: "Gifts", icon: Gift },
   { href: "/grant-leads", label: "Grant Leads", icon: Lightbulb },
+  { href: "/grants-calendar", label: "Grants Calendar", icon: CalendarDays },
 
   { section: "Engagement" },
   { href: "/moves", label: "Moves", icon: Activity },
   { href: "/interactions", label: "Interactions", icon: MessageSquare },
   { href: "/email-tracking", label: "Email Tracking", icon: Eye },
-
-  { section: "Analysis" },
-  { href: "/projections", label: "Projections", icon: LineChart },
-  { href: "/grants-calendar", label: "Grants Calendar", icon: CalendarDays },
-  { href: "/reporting-deadlines", label: "Reporting Deadlines", icon: FileClock },
   { href: "/email-intelligence", label: "Email Intelligence", icon: Inbox },
+  { href: "/reporting-deadlines", label: "Reporting Deadlines", icon: FileClock },
 
-  { href: "/fundable-projects", label: "Fundable Projects", icon: FolderKanban },
-
-  { section: "Financial Review", indent: true },
-  { href: "/reconciliation", label: "Reconciliation", icon: Workflow, indent: true },
+  { section: "Finance" },
+  { href: "/projections", label: "Projections", icon: LineChart },
+  { href: "/reconciliation", label: "Reconciliation", icon: Workflow },
+  { href: "/financial-corrections", label: "Financial Corrections", icon: GitMerge, adminOnly: true },
 
   { href: "/settings", label: "Settings", icon: Settings },
 
@@ -89,7 +87,6 @@ const navItems: NavEntry[] = [
   { href: "/admin", label: "Admin", icon: Settings },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
   { href: "/potential-duplicates", label: "Potential Duplicates", icon: CopyCheck, adminOnly: true },
-  { href: "/financial-corrections", label: "Financial Corrections", icon: GitMerge, adminOnly: true },
   { href: "/cleanup-queue", label: "Cleanup Queue", icon: ListChecks },
 ];
 
