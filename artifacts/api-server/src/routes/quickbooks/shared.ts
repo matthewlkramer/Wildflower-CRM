@@ -76,7 +76,9 @@ export const FISCALLY_SPONSORED_ENTITY_IDS: readonly string[] = [
 // SQL predicate: this staged row is attributed to a fiscally sponsored entity.
 // inArray (never ANY(...::text[]) — that renders a record cast that fails at
 // runtime) so a NULL entity_id (the Foundation default) is correctly NOT matched.
-const isFiscallySponsoredRow = inArray(stagedPayments.entityId, [
+// Exported so the reconciliation cards flow can park these same rows out of its
+// default "live work" queue (mirroring the legacy needs_review split here).
+export const isFiscallySponsoredRow = inArray(stagedPayments.entityId, [
   ...FISCALLY_SPONSORED_ENTITY_IDS,
 ]);
 

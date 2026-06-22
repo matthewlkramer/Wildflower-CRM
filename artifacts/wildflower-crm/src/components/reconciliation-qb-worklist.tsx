@@ -35,11 +35,15 @@ import { ReconciliationCard } from "@/components/reconciliation-card";
 
 const PAGE_SIZE = 50;
 
-type SubFilter = "todo" | "ready" | "reconciled";
+type SubFilter = "todo" | "ready" | "parked" | "reconciled";
 
 const SUB_FILTERS: { key: SubFilter; label: string }[] = [
   { key: "todo", label: "Needs review" },
   { key: "ready", label: "Ready" },
+  // Fiscally-sponsored money is pass-through for a sponsored project, so it is
+  // PARKED out of the main flow (Needs review / Ready exclude it) and surfaced
+  // only here — still fully matchable when someone gets to it.
+  { key: "parked", label: "Fiscally sponsored" },
   { key: "reconciled", label: "Reconciled" },
 ];
 
@@ -75,6 +79,7 @@ export function QbMoneyWorklist() {
     if (debouncedSearch) base.q = debouncedSearch;
     if (sub === "ready") base.ready = true;
     else if (sub === "reconciled") base.queue = "reconciled";
+    else if (sub === "parked") base.queue = "fiscally_sponsored";
     return base;
   }, [sub, debouncedSearch, page]);
 
@@ -250,7 +255,9 @@ export function QbMoneyWorklist() {
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             {sub === "reconciled"
               ? "No reconciled cards yet."
-              : "Nothing to reconcile here."}
+              : sub === "parked"
+                ? "No parked fiscally-sponsored money."
+                : "Nothing to reconcile here."}
           </CardContent>
         </Card>
       ) : (

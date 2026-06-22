@@ -3471,7 +3471,7 @@ paths:
         same money. `reconciled` cards are excluded by default (filter with
         queue=reconciled). Use the graph endpoint for the full candidate detail.
       parameters:
-        - { name: queue, in: query, schema: { $ref: "#/components/schemas/QuickbooksStagedPaymentQueue" }, description: "Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected)." }
+        - { name: queue, in: query, schema: { $ref: "#/components/schemas/QuickbooksStagedPaymentQueue" }, description: "Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable)." }
         - { name: q, in: query, schema: { type: string }, description: "Free-text over payer name / reference / memo." }
         - { name: entityId, in: query, schema: { type: string }, description: "Filter to one Wildflower legal entity attribution." }
         - { name: ready, in: query, schema: { type: boolean }, description: "Filter to cards whose auto-proposal passes (true) / fails (false) the consistency gate." }

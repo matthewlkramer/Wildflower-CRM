@@ -18548,7 +18548,7 @@ export const ListReconciliationCardsQueryParams = zod.object({
     ])
     .optional()
     .describe(
-      "Queue bucket to list. Omit for the active work queue (excludes reconciled\/excluded\/rejected).",
+      "Queue bucket to list. Omit for the active work queue (excludes reconciled\/excluded\/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable).",
     ),
   q: zod.coerce
     .string()

@@ -67,6 +67,20 @@ Use `inArray` for the predicate, never `ANY(...::text[])` (runtime record-cast
 failure). Parking another entity = add its slug to `FISCALLY_SPONSORED_ENTITY_IDS`
 only (no markers/SQL/migration needed).
 
+**Parking applies to BOTH main flows.** There are TWO queues: the legacy
+`/quickbooks/queue` (parks via `queueWhere`) AND the newer reconciliation CARDS
+flow (`reconciliation/cards.ts`, `reconciliationQueueWhere`). The cards DEFAULT
+("all"/live work) must ALSO exclude pending fiscally-sponsored rows — it's a
+separate `sql` template, so it does NOT inherit `queueWhere`'s split. Mirror the
+needs_review guard inline: `status='pending' AND (entity_id IS NULL OR NOT
+(${isFiscallySponsoredRow}))` on the pending branch ONLY (leave the
+approved-with-Stripe branch untouched). `isFiscallySponsoredRow` is exported from
+`quickbooks/shared.ts` for this reuse. `queue=fiscally_sponsored` already views
+the parked queue on cards (falls through to `queueWhere`); the frontend worklist
+(`reconciliation-qb-worklist.tsx`) exposes it as a "Fiscally sponsored" sub-filter
+(still fully matchable). **Why:** the cards default was missed when the legacy
+split was first added, so sponsored money still cluttered the new main flow.
+
 **Manual entity override (entity_source):** entity attribution can be pinned by a
 human. A separate `staged_payments.entity_source` enum ('auto'|'manual') —
 mirroring `classification_source` but ORTHOGONAL to it — guards the override: a

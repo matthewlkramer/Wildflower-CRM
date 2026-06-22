@@ -6386,7 +6386,7 @@ export type GetOwnedRecordCountsParams = {
 
 export type ListReconciliationCardsParams = {
   /**
-   * Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected).
+   * Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable).
    */
   queue?: QuickbooksStagedPaymentQueue;
   /**

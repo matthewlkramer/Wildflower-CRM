@@ -10,6 +10,7 @@ import { buildReconciliationGraph } from "../../lib/reconciliationGraph";
 import { deriveEvidenceLanes } from "../../lib/reconciliationLanes";
 import {
   entityWhere,
+  isFiscallySponsoredRow,
   queueWhere,
   resolvedGift,
   stagedOrderBy,
@@ -161,18 +162,28 @@ const sourceGroupAggExpr = sql<{
   END
 )`;
 
-// Default reconciliation queue: the live work. `pending` rows are always work.
+// Default reconciliation queue: the live work. `pending` rows are work UNLESS
+// they are attributed to a fiscally sponsored entity — that money is pass-through
+// for a sponsored project, so it is PARKED out of the main flow and only shown
+// when the caller explicitly asks for queue=fiscally_sponsored (matchable later,
+// never cluttering day-to-day reconciliation). The NULL entity_id (Foundation
+// default) must stay IN — `entity_id NOT IN (...)` is NULL-unsafe, so guard it
+// explicitly with an IS NULL branch.
 // `approved` rows came from the LEGACY /staged-payments flow and already minted
 // (createdGiftId) or linked (matchedGiftId) a gift. Such an already-approved
 // QB↔gift link is DONE and should "stay approved" — it only re-enters this queue
 // when there is still Stripe to tie in (a payout matched/proposed to it). So an
 // approved row is excluded iff it has a gift link AND no Stripe to link;
 // otherwise (no gift, or Stripe pending) it stays as real work. "reconciled"
-// surfaces the terminal rows; any other named bucket reuses the legacy mapping.
+// surfaces the terminal rows; any other named bucket reuses the legacy mapping
+// (which includes the fiscally_sponsored parking queue itself).
 function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
   if (!queue || queue === "all")
     return sql`(
-      ${stagedPayments.status} = 'pending'
+      (
+        ${stagedPayments.status} = 'pending'
+        AND (${stagedPayments.entityId} IS NULL OR NOT (${isFiscallySponsoredRow}))
+      )
       OR (
         ${stagedPayments.status} = 'approved'
         AND NOT (
