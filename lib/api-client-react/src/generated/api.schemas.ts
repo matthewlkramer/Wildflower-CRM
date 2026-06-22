@@ -3106,6 +3106,57 @@ export interface ReconciliationCardList {
   pagination: Pagination;
 }
 
+/**
+ * One reviewer 'propose alternative' comment left on a reconciliation card, with its author and timestamp.
+ */
+export interface ReconciliationProposal {
+  id: string;
+  /** The staged_payments row this comment is attached to (the representative row for a source group). */
+  stagedPaymentId: string;
+  /** The reviewer's free-text note 'to the system'. */
+  comment: string;
+  /** Author user id; null if the user row was since removed. */
+  createdByUserId: string | null;
+  /** Author display name, joined for convenience. */
+  createdByUserName: string | null;
+  createdAt: string;
+}
+
+export interface ReconciliationProposalList {
+  data: ReconciliationProposal[];
+}
+
+/**
+ * A reviewer comment joined with its staged-payment context, for cross-card triage.
+ */
+export type ReconciliationProposalWithContext = ReconciliationProposal & {
+  payerName: string | null;
+  /** The staged payment's amount (major units). */
+  amount: string | null;
+  dateReceived: string | null;
+  /** The staged payment's status at read time (e.g. pending / approved / excluded). */
+  stagedStatus: string | null;
+  /** The gift this row is matched/created/group-reconciled into, if any. */
+  resolvedGiftId: string | null;
+};
+
+export interface ReconciliationProposalWithContextList {
+  data: ReconciliationProposalWithContext[];
+  pagination: Pagination;
+}
+
+/**
+ * Body for leaving a free-text 'propose alternative' comment on a reconciliation card.
+ */
+export interface CreateReconciliationProposalBody {
+  /**
+   * The reviewer's note. Trimmed server-side; whitespace-only is rejected.
+   * @minLength 1
+   * @maxLength 10000
+   */
+  comment: string;
+}
+
 export interface ReconciliationSearchList {
   data: ReconciliationCandidate[];
 }
@@ -6440,6 +6491,22 @@ export type SearchReconciliationNodeParams = {
    * @maximum 100
    */
   limit?: number;
+};
+
+export type ListReconciliationProposalsParams = {
+  /**
+   * Filter to the comments on one card.
+   */
+  stagedPaymentId?: string;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+  /**
+   * @minimum 0
+   */
+  offset?: number;
 };
 
 export type SearchReconciliationQbStagedParams = {

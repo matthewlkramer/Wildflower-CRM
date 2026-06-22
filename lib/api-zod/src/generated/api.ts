@@ -19191,6 +19191,167 @@ export const ApproveReconciliationCardResponse = zod.object({
 });
 
 /**
+ * Reviewer feedback for ONE card, newest first. These are the human
+"propose alternative" notes captured beside Approve in the Needs-review
+queue — context for later improving that row's match (and the matcher as
+a whole). Read-only. Open to any authenticated fundraiser.
+
+ * @summary List the free-text "propose alternative" comments left on one reconciliation card.
+ */
+export const ListReconciliationCardProposalsParams = zod.object({
+  stagedPaymentId: zod.coerce.string(),
+});
+
+export const ListReconciliationCardProposalsResponse = zod.object({
+  data: zod.array(
+    zod
+      .object({
+        id: zod.string(),
+        stagedPaymentId: zod
+          .string()
+          .describe(
+            "The staged_payments row this comment is attached to (the representative row for a source group).",
+          ),
+        comment: zod
+          .string()
+          .describe("The reviewer's free-text note 'to the system'."),
+        createdByUserId: zod
+          .string()
+          .nullable()
+          .describe("Author user id; null if the user row was since removed."),
+        createdByUserName: zod
+          .string()
+          .nullable()
+          .describe("Author display name, joined for convenience."),
+        createdAt: zod.string().datetime({}),
+      })
+      .describe(
+        "One reviewer 'propose alternative' comment left on a reconciliation card, with its author and timestamp.",
+      ),
+  ),
+});
+
+/**
+ * Capture a reviewer's free-text comment "to the system" for a staged-payment
+card instead of approving it. Append-only: each call stores a new note with
+the author and timestamp, keyed to the card's staged_payments row (the
+representative row for a source group). Used to flag how a specific row —
+or the matcher overall — should change. Does NOT mutate any match/donor/gift
+state. Open to any authenticated fundraiser.
+
+ * @summary Leave a free-text "propose alternative" comment on one reconciliation card.
+ */
+export const CreateReconciliationProposalParams = zod.object({
+  stagedPaymentId: zod.coerce.string(),
+});
+
+export const createReconciliationProposalBodyCommentMax = 10000;
+
+export const CreateReconciliationProposalBody = zod
+  .object({
+    comment: zod
+      .string()
+      .min(1)
+      .max(createReconciliationProposalBodyCommentMax)
+      .describe(
+        "The reviewer's note. Trimmed server-side; whitespace-only is rejected.",
+      ),
+  })
+  .describe(
+    "Body for leaving a free-text 'propose alternative' comment on a reconciliation card.",
+  );
+
+/**
+ * Cross-card feed of every reviewer "propose alternative" comment, newest
+first, each joined with its staged-payment context (payer / amount / date /
+status / resolved gift) so the notes can be triaged later WITHOUT re-querying
+per card. This is the endpoint the agent reads when the user comes back to
+act on the accumulated comments. Read-only.
+
+ * @summary List all "propose alternative" comments across cards, joined with staged-payment context.
+ */
+export const listReconciliationProposalsQueryLimitDefault = 50;
+export const listReconciliationProposalsQueryLimitMax = 200;
+
+export const listReconciliationProposalsQueryOffsetDefault = 0;
+export const listReconciliationProposalsQueryOffsetMin = 0;
+
+export const ListReconciliationProposalsQueryParams = zod.object({
+  stagedPaymentId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to the comments on one card."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listReconciliationProposalsQueryLimitMax)
+    .default(listReconciliationProposalsQueryLimitDefault),
+  offset: zod.coerce
+    .number()
+    .min(listReconciliationProposalsQueryOffsetMin)
+    .default(listReconciliationProposalsQueryOffsetDefault),
+});
+
+export const ListReconciliationProposalsResponse = zod.object({
+  data: zod.array(
+    zod
+      .object({
+        id: zod.string(),
+        stagedPaymentId: zod
+          .string()
+          .describe(
+            "The staged_payments row this comment is attached to (the representative row for a source group).",
+          ),
+        comment: zod
+          .string()
+          .describe("The reviewer's free-text note 'to the system'."),
+        createdByUserId: zod
+          .string()
+          .nullable()
+          .describe("Author user id; null if the user row was since removed."),
+        createdByUserName: zod
+          .string()
+          .nullable()
+          .describe("Author display name, joined for convenience."),
+        createdAt: zod.string().datetime({}),
+      })
+      .describe(
+        "One reviewer 'propose alternative' comment left on a reconciliation card, with its author and timestamp.",
+      )
+      .and(
+        zod.object({
+          payerName: zod.string().nullable(),
+          amount: zod
+            .string()
+            .nullable()
+            .describe("The staged payment's amount (major units)."),
+          dateReceived: zod.string().date().nullable(),
+          stagedStatus: zod
+            .string()
+            .nullable()
+            .describe(
+              "The staged payment's status at read time (e.g. pending \/ approved \/ excluded).",
+            ),
+          resolvedGiftId: zod
+            .string()
+            .nullable()
+            .describe(
+              "The gift this row is matched\/created\/group-reconciled into, if any.",
+            ),
+        }),
+      )
+      .describe(
+        "A reviewer comment joined with its staged-payment context, for cross-card triage.",
+      ),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+/**
  * Free search over QuickBooks staged-payment rows by text / amount / date window,
 with NO card anchor — used by the stray-Stripe worklist to hunt down the QB
 deposit that a yet-unmatched Stripe payout should belong to. Returns qb

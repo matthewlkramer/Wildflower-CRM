@@ -3554,6 +3554,58 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Card is not in an approvable state, or the chosen gift/opportunity is already claimed." }
+  /reconciliation/cards/{stagedPaymentId}/proposals:
+    get:
+      operationId: listReconciliationCardProposals
+      tags: [reconciliation]
+      summary: List the free-text "propose alternative" comments left on one reconciliation card.
+      description: |
+        Reviewer feedback for ONE card, newest first. These are the human
+        "propose alternative" notes captured beside Approve in the Needs-review
+        queue — context for later improving that row's match (and the matcher as
+        a whole). Read-only. Open to any authenticated fundraiser.
+      parameters:
+        - { name: stagedPaymentId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationProposalList" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: createReconciliationProposal
+      tags: [reconciliation]
+      summary: Leave a free-text "propose alternative" comment on one reconciliation card.
+      description: |
+        Capture a reviewer's free-text comment "to the system" for a staged-payment
+        card instead of approving it. Append-only: each call stores a new note with
+        the author and timestamp, keyed to the card's staged_payments row (the
+        representative row for a source group). Used to flag how a specific row —
+        or the matcher overall — should change. Does NOT mutate any match/donor/gift
+        state. Open to any authenticated fundraiser.
+      parameters:
+        - { name: stagedPaymentId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateReconciliationProposalBody" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationProposal" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/proposals:
+    get:
+      operationId: listReconciliationProposals
+      tags: [reconciliation]
+      summary: List all "propose alternative" comments across cards, joined with staged-payment context.
+      description: |
+        Cross-card feed of every reviewer "propose alternative" comment, newest
+        first, each joined with its staged-payment context (payer / amount / date /
+        status / resolved gift) so the notes can be triaged later WITHOUT re-querying
+        per card. This is the endpoint the agent reads when the user comes back to
+        act on the accumulated comments. Read-only.
+      parameters:
+        - { name: stagedPaymentId, in: query, schema: { type: string }, description: "Filter to the comments on one card." }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationProposalWithContextList" } } } }
   /reconciliation/qb-search:
     get:
       operationId: searchReconciliationQbStaged
@@ -5890,6 +5942,46 @@ components:
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/ReconciliationCard" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    ReconciliationProposal:
+      type: object
+      description: "One reviewer 'propose alternative' comment left on a reconciliation card, with its author and timestamp."
+      required: [id, stagedPaymentId, comment, createdByUserId, createdByUserName, createdAt]
+      properties:
+        id:                { type: string }
+        stagedPaymentId:   { type: string, description: "The staged_payments row this comment is attached to (the representative row for a source group)." }
+        comment:           { type: string, description: "The reviewer's free-text note 'to the system'." }
+        createdByUserId:   { type: string, nullable: true, description: "Author user id; null if the user row was since removed." }
+        createdByUserName: { type: string, nullable: true, description: "Author display name, joined for convenience." }
+        createdAt:         { type: string, format: date-time }
+    ReconciliationProposalList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/ReconciliationProposal" } }
+    ReconciliationProposalWithContext:
+      description: "A reviewer comment joined with its staged-payment context, for cross-card triage."
+      allOf:
+        - $ref: "#/components/schemas/ReconciliationProposal"
+        - type: object
+          required: [payerName, amount, dateReceived, stagedStatus, resolvedGiftId]
+          properties:
+            payerName:      { type: string, nullable: true }
+            amount:         { type: string, nullable: true, description: "The staged payment's amount (major units)." }
+            dateReceived:   { type: string, format: date, nullable: true }
+            stagedStatus:   { type: string, nullable: true, description: "The staged payment's status at read time (e.g. pending / approved / excluded)." }
+            resolvedGiftId: { type: string, nullable: true, description: "The gift this row is matched/created/group-reconciled into, if any." }
+    ReconciliationProposalWithContextList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/ReconciliationProposalWithContext" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreateReconciliationProposalBody:
+      type: object
+      required: [comment]
+      description: "Body for leaving a free-text 'propose alternative' comment on a reconciliation card."
+      properties:
+        comment: { type: string, minLength: 1, maxLength: 10000, description: "The reviewer's note. Trimmed server-side; whitespace-only is rejected." }
     ReconciliationCardGroupMember:
       type: object
       required: [stagedPaymentId, isRepresentative]

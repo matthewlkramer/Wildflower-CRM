@@ -10,13 +10,18 @@ import {
   MinusCircle,
   Users,
   Unlink,
+  MessageSquarePlus,
   type LucideIcon,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetReconciliationGraph,
   getGetReconciliationGraphQueryKey,
   useSetStagedPaymentFundingSource,
   useUngroupStagedPayments,
+  useCreateReconciliationProposal,
+  useListReconciliationCardProposals,
+  getListReconciliationCardProposalsQueryKey,
   type ReconciliationCard as ReconciliationCardType,
   type ReconciliationCandidate,
   type ReconciliationGraph,
@@ -51,6 +56,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -630,6 +643,135 @@ function RecordCard({
   );
 }
 
+/**
+ * "Propose alternative" — leave a free-text comment on this card instead of
+ * approving it. Append-only notes (with author + timestamp) that are read back
+ * later to improve this row's match and the matcher overall. Never mutates any
+ * match/donor/gift state.
+ */
+function ProposeAlternative({
+  stagedPaymentId,
+  disabled,
+}: {
+  stagedPaymentId: string;
+  disabled: boolean;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [comment, setComment] = useState("");
+
+  const listQueryKey = getListReconciliationCardProposalsQueryKey(stagedPaymentId);
+  const { data: list } = useListReconciliationCardProposals(stagedPaymentId, {
+    query: { enabled: open, queryKey: listQueryKey },
+  });
+  const proposals = list?.data ?? [];
+
+  const create = useCreateReconciliationProposal({
+    mutation: {
+      onSuccess: () => {
+        setComment("");
+        void queryClient.invalidateQueries({ queryKey: listQueryKey });
+        toast({ title: "Comment saved" });
+      },
+      onError: () => {
+        toast({
+          title: "Couldn't save comment",
+          description: "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const trimmed = comment.trim();
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+        data-testid={`propose-alternative-${stagedPaymentId}`}
+      >
+        <MessageSquarePlus className="mr-1 h-3.5 w-3.5" />
+        Propose alternative
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent data-testid={`propose-alternative-dialog-${stagedPaymentId}`}>
+          <DialogHeader>
+            <DialogTitle>Propose an alternative</DialogTitle>
+            <DialogDescription>
+              Leave a note about how this row — or the matcher overall — should be
+              handled. These are read back later to improve the matches; this does
+              not change the match or approve anything.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor={`proposal-comment-${stagedPaymentId}`} className="sr-only">
+              Comment
+            </Label>
+            <Textarea
+              id={`proposal-comment-${stagedPaymentId}`}
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="e.g. The donor should be the advisor, not the DAF sponsor; or this payout belongs to a different deposit."
+              rows={4}
+              maxLength={10000}
+              data-testid={`proposal-comment-${stagedPaymentId}`}
+            />
+          </div>
+
+          {proposals.length > 0 ? (
+            <div className="space-y-2 border-t pt-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Previous comments ({proposals.length})
+              </p>
+              <ul className="max-h-48 space-y-2 overflow-y-auto">
+                {proposals.map((p) => (
+                  <li key={p.id} className="rounded-md bg-muted/50 p-2">
+                    <p className="whitespace-pre-wrap text-sm">{p.comment}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {p.createdByUserName ?? "Unknown"} ·{" "}
+                      {formatDate(p.createdAt)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setOpen(false)}
+              disabled={create.isPending}
+            >
+              Close
+            </Button>
+            <Button
+              disabled={trimmed.length === 0 || create.isPending}
+              onClick={() => {
+                if (trimmed.length === 0) return;
+                create.mutate({
+                  stagedPaymentId,
+                  data: { comment: trimmed },
+                });
+              }}
+              data-testid={`proposal-submit-${stagedPaymentId}`}
+            >
+              {create.isPending ? "Saving…" : "Save comment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function CardResolver({
   stagedPaymentId,
   stagedStatus,
@@ -935,24 +1077,27 @@ function CardResolver({
             </p>
           ) : null}
         </div>
-        <Button
-          size="sm"
-          disabled={busy || !derived?.ok}
-          onClick={() => {
-            if (!derived?.ok) return;
-            // A donor switch (or any other gated outcome) routes through an
-            // explicit confirmation before sending; everything else approves
-            // directly.
-            if (derived.confirm) {
-              setConfirmOpen(true);
-              return;
-            }
-            void onApprove(derived.body);
-          }}
-          data-testid={`approve-${stagedPaymentId}`}
-        >
-          {busy ? "Approving…" : "Approve"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ProposeAlternative stagedPaymentId={stagedPaymentId} disabled={busy} />
+          <Button
+            size="sm"
+            disabled={busy || !derived?.ok}
+            onClick={() => {
+              if (!derived?.ok) return;
+              // A donor switch (or any other gated outcome) routes through an
+              // explicit confirmation before sending; everything else approves
+              // directly.
+              if (derived.confirm) {
+                setConfirmOpen(true);
+                return;
+              }
+              void onApprove(derived.body);
+            }}
+            data-testid={`approve-${stagedPaymentId}`}
+          >
+            {busy ? "Approving…" : "Approve"}
+          </Button>
+        </div>
       </div>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

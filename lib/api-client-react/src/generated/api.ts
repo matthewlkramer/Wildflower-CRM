@@ -76,6 +76,7 @@ import type {
   CreatePhoneNumberBody,
   CreatePledgeAllocationBody,
   CreateQuickbooksRuleBody,
+  CreateReconciliationProposalBody,
   CreateRegionBody,
   CreateSavedViewBody,
   CreateTaskBody,
@@ -179,6 +180,7 @@ import type {
   ListPledgeAllocationsParams,
   ListPotentialDuplicatesParams,
   ListReconciliationCardsParams,
+  ListReconciliationProposalsParams,
   ListRegionsParams,
   ListRevenueAccountsParams,
   ListSavedViewsParams,
@@ -243,6 +245,9 @@ import type {
   ReconciliationCardList,
   ReconciliationGraph,
   ReconciliationMatchNodeType,
+  ReconciliationProposal,
+  ReconciliationProposalList,
+  ReconciliationProposalWithContextList,
   ReconciliationSearchList,
   RefreshTaskProposalBody,
   Region,
@@ -24918,6 +24923,339 @@ export const useApproveReconciliationCard = <
 > => {
   return useMutation(getApproveReconciliationCardMutationOptions(options));
 };
+
+/**
+ * Reviewer feedback for ONE card, newest first. These are the human
+"propose alternative" notes captured beside Approve in the Needs-review
+queue — context for later improving that row's match (and the matcher as
+a whole). Read-only. Open to any authenticated fundraiser.
+
+ * @summary List the free-text "propose alternative" comments left on one reconciliation card.
+ */
+export const getListReconciliationCardProposalsUrl = (
+  stagedPaymentId: string,
+) => {
+  return `/api/reconciliation/cards/${stagedPaymentId}/proposals`;
+};
+
+export const listReconciliationCardProposals = async (
+  stagedPaymentId: string,
+  options?: RequestInit,
+): Promise<ReconciliationProposalList> => {
+  return customFetch<ReconciliationProposalList>(
+    getListReconciliationCardProposalsUrl(stagedPaymentId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListReconciliationCardProposalsQueryKey = (
+  stagedPaymentId: string,
+) => {
+  return [`/api/reconciliation/cards/${stagedPaymentId}/proposals`] as const;
+};
+
+export const getListReconciliationCardProposalsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listReconciliationCardProposals>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  stagedPaymentId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listReconciliationCardProposals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListReconciliationCardProposalsQueryKey(stagedPaymentId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listReconciliationCardProposals>>
+  > = ({ signal }) =>
+    listReconciliationCardProposals(stagedPaymentId, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!stagedPaymentId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listReconciliationCardProposals>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListReconciliationCardProposalsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listReconciliationCardProposals>>
+>;
+export type ListReconciliationCardProposalsQueryError =
+  ErrorType<NotFoundResponse>;
+
+/**
+ * @summary List the free-text "propose alternative" comments left on one reconciliation card.
+ */
+
+export function useListReconciliationCardProposals<
+  TData = Awaited<ReturnType<typeof listReconciliationCardProposals>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  stagedPaymentId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listReconciliationCardProposals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListReconciliationCardProposalsQueryOptions(
+    stagedPaymentId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Capture a reviewer's free-text comment "to the system" for a staged-payment
+card instead of approving it. Append-only: each call stores a new note with
+the author and timestamp, keyed to the card's staged_payments row (the
+representative row for a source group). Used to flag how a specific row —
+or the matcher overall — should change. Does NOT mutate any match/donor/gift
+state. Open to any authenticated fundraiser.
+
+ * @summary Leave a free-text "propose alternative" comment on one reconciliation card.
+ */
+export const getCreateReconciliationProposalUrl = (stagedPaymentId: string) => {
+  return `/api/reconciliation/cards/${stagedPaymentId}/proposals`;
+};
+
+export const createReconciliationProposal = async (
+  stagedPaymentId: string,
+  createReconciliationProposalBody: CreateReconciliationProposalBody,
+  options?: RequestInit,
+): Promise<ReconciliationProposal> => {
+  return customFetch<ReconciliationProposal>(
+    getCreateReconciliationProposalUrl(stagedPaymentId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createReconciliationProposalBody),
+    },
+  );
+};
+
+export const getCreateReconciliationProposalMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createReconciliationProposal>>,
+    TError,
+    {
+      stagedPaymentId: string;
+      data: BodyType<CreateReconciliationProposalBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createReconciliationProposal>>,
+  TError,
+  { stagedPaymentId: string; data: BodyType<CreateReconciliationProposalBody> },
+  TContext
+> => {
+  const mutationKey = ["createReconciliationProposal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createReconciliationProposal>>,
+    {
+      stagedPaymentId: string;
+      data: BodyType<CreateReconciliationProposalBody>;
+    }
+  > = (props) => {
+    const { stagedPaymentId, data } = props ?? {};
+
+    return createReconciliationProposal(stagedPaymentId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateReconciliationProposalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createReconciliationProposal>>
+>;
+export type CreateReconciliationProposalMutationBody =
+  BodyType<CreateReconciliationProposalBody>;
+export type CreateReconciliationProposalMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Leave a free-text "propose alternative" comment on one reconciliation card.
+ */
+export const useCreateReconciliationProposal = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createReconciliationProposal>>,
+    TError,
+    {
+      stagedPaymentId: string;
+      data: BodyType<CreateReconciliationProposalBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createReconciliationProposal>>,
+  TError,
+  { stagedPaymentId: string; data: BodyType<CreateReconciliationProposalBody> },
+  TContext
+> => {
+  return useMutation(getCreateReconciliationProposalMutationOptions(options));
+};
+
+/**
+ * Cross-card feed of every reviewer "propose alternative" comment, newest
+first, each joined with its staged-payment context (payer / amount / date /
+status / resolved gift) so the notes can be triaged later WITHOUT re-querying
+per card. This is the endpoint the agent reads when the user comes back to
+act on the accumulated comments. Read-only.
+
+ * @summary List all "propose alternative" comments across cards, joined with staged-payment context.
+ */
+export const getListReconciliationProposalsUrl = (
+  params?: ListReconciliationProposalsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reconciliation/proposals?${stringifiedParams}`
+    : `/api/reconciliation/proposals`;
+};
+
+export const listReconciliationProposals = async (
+  params?: ListReconciliationProposalsParams,
+  options?: RequestInit,
+): Promise<ReconciliationProposalWithContextList> => {
+  return customFetch<ReconciliationProposalWithContextList>(
+    getListReconciliationProposalsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListReconciliationProposalsQueryKey = (
+  params?: ListReconciliationProposalsParams,
+) => {
+  return [
+    `/api/reconciliation/proposals`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListReconciliationProposalsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listReconciliationProposals>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListReconciliationProposalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listReconciliationProposals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListReconciliationProposalsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listReconciliationProposals>>
+  > = ({ signal }) =>
+    listReconciliationProposals(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listReconciliationProposals>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListReconciliationProposalsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listReconciliationProposals>>
+>;
+export type ListReconciliationProposalsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all "propose alternative" comments across cards, joined with staged-payment context.
+ */
+
+export function useListReconciliationProposals<
+  TData = Awaited<ReturnType<typeof listReconciliationProposals>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListReconciliationProposalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listReconciliationProposals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListReconciliationProposalsQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Free search over QuickBooks staged-payment rows by text / amount / date window,
