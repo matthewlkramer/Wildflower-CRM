@@ -1337,6 +1337,7 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string, enum: [exempt, tied, amount_mismatch, missing, untied] } }
+        - { name: awaitingEvidence, in: query, required: false, description: "When true, list only gifts awaiting funding evidence (edge case B4): CRM-first gifts logged by a fundraiser before any funding evidence arrived. The state is human-entered amount (`finalAmountSource = human`, which the DB CHECK guarantees has null QuickBooks/Stripe evidence pointers) AND no QuickBooks tie yet (`quickbooksTieStatus = missing`). Off-books/exempt and processor-sourced (tied) gifts are excluded.", schema: { type: boolean } }
         - { name: sort, in: query, required: false, schema: { $ref: "#/components/schemas/GiftSort" }, description: "Sort order (default date_desc)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }

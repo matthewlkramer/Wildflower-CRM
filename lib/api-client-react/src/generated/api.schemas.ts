@@ -5873,6 +5873,10 @@ should tie to a QuickBooks record but don't.
  */
   quickbooksTie?: ListGiftsAndPaymentsQuickbooksTieItem[];
   /**
+   * When true, list only gifts awaiting funding evidence (edge case B4): CRM-first gifts logged by a fundraiser before any funding evidence arrived. The state is human-entered amount (`finalAmountSource = human`, which the DB CHECK guarantees has null QuickBooks/Stripe evidence pointers) AND no QuickBooks tie yet (`quickbooksTieStatus = missing`). Off-books/exempt and processor-sourced (tied) gifts are excluded.
+   */
+  awaitingEvidence?: boolean;
+  /**
    * Sort order (default date_desc).
    */
   sort?: GiftSort;

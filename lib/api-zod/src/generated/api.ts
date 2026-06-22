@@ -5828,6 +5828,12 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
     .describe(
       "Filter on the derived per-gift QuickBooks-tie status. Repeat or\ncomma-separate for multiple values. The special value `untied`\n(sugar for `missing` + `amount_mismatch`) lists on-books gifts that\nshould tie to a QuickBooks record but don't.\n",
     ),
+  awaitingEvidence: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When true, list only gifts awaiting funding evidence (edge case B4): CRM-first gifts logged by a fundraiser before any funding evidence arrived. The state is human-entered amount (`finalAmountSource = human`, which the DB CHECK guarantees has null QuickBooks\/Stripe evidence pointers) AND no QuickBooks tie yet (`quickbooksTieStatus = missing`). Off-books\/exempt and processor-sourced (tied) gifts are excluded.",
+    ),
   sort: zod
     .enum(["date_desc", "date_asc", "amount_desc", "amount_asc"])
     .optional()

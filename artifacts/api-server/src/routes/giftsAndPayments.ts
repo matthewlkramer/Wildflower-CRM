@@ -182,6 +182,17 @@ router.get(
         }
       }
     }
+    // Awaiting-funding-evidence queue (edge case B4): CRM-first gifts a
+    // fundraiser logged before any funding evidence arrived. The "pending
+    // funding" state is a human-entered amount (`final_amount_source = 'human'`,
+    // which the DB CHECK guarantees has null QuickBooks/Stripe evidence
+    // pointers) AND no QuickBooks tie yet (`quickbooks_tie_status = 'missing'`,
+    // which also excludes off-books/exempt and Stripe-sourced/tied gifts).
+    // Read raw — `zod.coerce.boolean()` would coerce the string "false" to true.
+    if (req.query.awaitingEvidence === "true") {
+      filters.push(eq(giftsAndPayments.finalAmountSource, "human"));
+      filters.push(eq(giftsAndPayments.quickbooksTieStatus, "missing"));
+    }
     {
       const f = splitBlank(q.type as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(giftsAndPayments.type), inArray(giftsAndPayments.type, f.values as never[]))!);

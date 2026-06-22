@@ -327,6 +327,7 @@ export default function Gifts() {
   const [grantYearsPresence, setGrantYearsPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.grantYears", undefined);
   const [paymentMethods, setPaymentMethods] = usePersistedState<string[]>("wf.list.gifts.paymentMethods", []);
   const [thankYouPresence, setThankYouPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.thankYouSentAt", undefined);
+  const [awaitingEvidence, setAwaitingEvidence] = usePersistedState<boolean>("wf.list.gifts.f.awaitingEvidence", false);
   const [page, setPage] = usePersistedState<number>("wf.list.gifts.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     "wf.list.gifts.columns",
@@ -378,6 +379,7 @@ export default function Gifts() {
     ...(grantYearsPresence ? { grantYearsPresence } : {}),
     ...(paymentMethods.length > 0 ? { paymentMethod: [...paymentMethods].sort() as GiftPaymentMethod[] } : {}),
     ...(thankYouPresence ? { thankYouSentAtPresence: thankYouPresence } : {}),
+    ...(awaitingEvidence ? { awaitingEvidence: true } : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
@@ -613,9 +615,36 @@ export default function Gifts() {
           />
         ),
       },
+      {
+        // Edge case B4: CRM-first gifts logged before any funding evidence
+        // arrived. Save it as a view ("Awaiting evidence") to get a queue.
+        key: "awaitingEvidence",
+        label: "Awaiting evidence",
+        defaultVisible: false,
+        active: awaitingEvidence,
+        clear: () => { setAwaitingEvidence(false); setPage(1); selection.clear(); },
+        render: () => (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Awaiting evidence
+            </label>
+            <div className="flex h-9 items-center gap-2">
+              <Checkbox
+                id="filter-awaiting-evidence"
+                checked={awaitingEvidence}
+                onCheckedChange={(c) => { setAwaitingEvidence(c === true); setPage(1); selection.clear(); }}
+                data-testid="filter-awaiting-evidence"
+              />
+              <label htmlFor="filter-awaiting-evidence" className="text-sm">
+                Only awaiting evidence
+              </label>
+            </div>
+          </div>
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence],
+    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -695,6 +724,7 @@ export default function Gifts() {
     grantYearsPresence: PresenceValue;
     paymentMethods: string[];
     thankYouPresence: PresenceValue;
+    awaitingEvidence: boolean;
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -709,6 +739,7 @@ export default function Gifts() {
     grantYearsPresence,
     paymentMethods,
     thankYouPresence,
+    awaitingEvidence,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -723,6 +754,7 @@ export default function Gifts() {
     setGrantYearsPresence(undefined);
     setPaymentMethods([]);
     setThankYouPresence(undefined);
+    setAwaitingEvidence(false);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -740,6 +772,7 @@ export default function Gifts() {
       setGrantYearsPresence(s.grantYearsPresence ?? undefined);
       setPaymentMethods(s.paymentMethods ?? []);
       setThankYouPresence(s.thankYouPresence ?? undefined);
+      setAwaitingEvidence(s.awaitingEvidence ?? false);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
       setFiltersState(s.filters ?? null);
@@ -756,6 +789,7 @@ export default function Gifts() {
       !s.grantYearsPresence &&
       (s.paymentMethods?.length ?? 0) === 0 &&
       !s.thankYouPresence &&
+      !s.awaitingEvidence &&
       (s.sort?.key ?? null) === null &&
       (s.columns ?? null) === null &&
       (s.filters ?? null) === null,
@@ -769,7 +803,8 @@ export default function Gifts() {
     !!usagesPresence ||
     !!grantYearsPresence ||
     paymentMethods.length > 0 ||
-    !!thankYouPresence;
+    !!thankYouPresence ||
+    awaitingEvidence;
 
   return (
     <div className="space-y-6">
