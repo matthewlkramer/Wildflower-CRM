@@ -4,10 +4,8 @@ import {
   getGetDashboardSummaryQueryKey,
   useGetCurrentUser,
   useListTasks,
-  useListNotes,
   useListOrganizations,
   getListTasksQueryKey,
-  getListNotesQueryKey,
   getListOrganizationsQueryKey,
   type TaskStatus,
   type ListOrganizationsParams,
@@ -36,7 +34,6 @@ export default function Dashboard() {
     query: { queryKey: getGetDashboardSummaryQueryKey(summaryParams) },
   });
 
-  const counts = data?.counts;
   const fy = data?.currentFiscalYear;
   const byFy = data?.byFiscalYear ?? [];
 
@@ -51,15 +48,6 @@ export default function Dashboard() {
   const forwardedEntityParam =
     selectedEntityIds.length === 1 ? `&entity=${encodeURIComponent(selectedEntityIds[0])}` : "";
   const entityFilterActive = selectedEntityIds.length > 0;
-
-  const countTiles = [
-    { label: "People", value: counts?.people, href: "/individuals", testId: "tile-people" },
-    { label: "Organizations", value: counts?.organizations, href: "/organizations", testId: "tile-orgs" },
-    { label: "Opportunities", value: counts?.opportunities, href: "/opportunities", testId: "tile-opps" },
-    { label: "Open opps", value: counts?.openOpportunities, href: "/opportunities", testId: "tile-open-opps" },
-    { label: "Pledges", value: counts?.pledges, href: "/pledges", testId: "tile-pledges" },
-    { label: "Gifts & payments", value: counts?.gifts, href: "/gifts", testId: "tile-gifts" },
-  ];
 
   // Goal has no drilldown (it's a single seeded number, no rows behind it).
   // The other three tiles all link to the same detail page, with `metric`
@@ -233,25 +221,6 @@ export default function Dashboard() {
         })}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {countTiles.map((t) => (
-          <Link key={t.label} href={t.href} data-testid={t.testId}>
-            <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {t.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-serif font-bold text-foreground">
-                  {t.value === undefined ? "…" : t.value.toLocaleString()}
-                </p>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <UpcomingMeetingsCard />
         <TeamUpcomingMeetingsCard />
@@ -259,7 +228,7 @@ export default function Dashboard() {
 
       <TopPrioritiesRow />
 
-      <MyTasksAndMentionsRow />
+      <MyTasksRow />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <EmailProposalsCard />
@@ -347,93 +316,48 @@ function TopPrioritiesRow() {
   );
 }
 
-function MyTasksAndMentionsRow() {
+function MyTasksRow() {
   const { data: me } = useGetCurrentUser();
   const userId = me?.id;
   const OPEN_STATUSES: TaskStatus[] = ["open", "waiting"];
   const myTasksParams = { assigneeUserId: userId, status: OPEN_STATUSES, limit: 10 };
-  const taskMentionParams = { mentionUserId: userId, status: OPEN_STATUSES, limit: 10 };
-  const noteMentionParams = { mentionUserId: userId, limit: 10 };
   const { data: tasksData } = useListTasks(myTasksParams, {
     query: { enabled: !!userId, queryKey: getListTasksQueryKey(myTasksParams) },
   });
-  const { data: mentionedTasks } = useListTasks(taskMentionParams, {
-    query: { enabled: !!userId, queryKey: getListTasksQueryKey(taskMentionParams) },
-  });
-  const { data: mentionedNotes } = useListNotes(noteMentionParams, {
-    query: { enabled: !!userId, queryKey: getListNotesQueryKey(noteMentionParams) },
-  });
   const myTasks = tasksData?.data ?? [];
-  const taskMentions = mentionedTasks?.data ?? [];
-  const noteMentions = mentionedNotes?.data ?? [];
   const fmtDate = (iso?: string | null) =>
     iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" }) : "—";
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <Card data-testid="card-my-tasks">
-        <CardHeader>
-          <CardTitle className="text-lg">My open tasks</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {myTasks.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing on your plate.</p>
-          ) : (
-            <ul className="space-y-2">
-              {myTasks.map((t) => (
-                <li
-                  key={t.id}
-                  className="flex items-center justify-between gap-2 text-sm border rounded-md p-2"
-                  data-testid={`dash-task-${t.id}`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Badge variant={t.status === "waiting" ? "secondary" : "default"}>
-                      {t.status}
-                    </Badge>
-                    <span className="truncate">{t.title}</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground shrink-0">
-                    Due {fmtDate(t.dueDate)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-      <Card data-testid="card-mentions">
-        <CardHeader>
-          <CardTitle className="text-lg">Mentions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {taskMentions.length === 0 && noteMentions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No mentions yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {taskMentions.map((t) => (
-                <li
-                  key={`t-${t.id}`}
-                  className="text-sm border rounded-md p-2"
-                  data-testid={`dash-mention-task-${t.id}`}
-                >
-                  <span className="text-xs text-muted-foreground mr-1">Task:</span>
-                  {t.title}
-                </li>
-              ))}
-              {noteMentions.map((n) => (
-                <li
-                  key={`n-${n.id}`}
-                  className="text-sm border rounded-md p-2"
-                  data-testid={`dash-mention-note-${n.id}`}
-                >
-                  <span className="text-xs text-muted-foreground mr-1">Note:</span>
-                  <span className="line-clamp-2 whitespace-pre-wrap">{n.body}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <Card data-testid="card-my-tasks">
+      <CardHeader>
+        <CardTitle className="text-lg">My open tasks</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {myTasks.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nothing on your plate.</p>
+        ) : (
+          <ul className="space-y-2">
+            {myTasks.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center justify-between gap-2 text-sm border rounded-md p-2"
+                data-testid={`dash-task-${t.id}`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Badge variant={t.status === "waiting" ? "secondary" : "default"}>
+                    {t.status}
+                  </Badge>
+                  <span className="truncate">{t.title}</span>
+                </div>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  Due {fmtDate(t.dueDate)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
