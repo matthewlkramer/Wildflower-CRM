@@ -1290,6 +1290,10 @@ router.post(
           paymentIntermediaryId: gift.paymentIntermediaryId,
           ownerUserId: gift.ownerUserId,
           designatedToSchool: gift.designatedToSchool || a.schoolRecipientId != null,
+          // Carry the source gift's goal/payment flags onto every split row so
+          // they aren't silently reset to their column defaults.
+          paymentExpected: gift.paymentExpected,
+          countsTowardGoal: gift.countsTowardGoal,
           tags: gift.tags,
         });
         // Re-point the allocation (a money-trail row — keep its id) onto the new

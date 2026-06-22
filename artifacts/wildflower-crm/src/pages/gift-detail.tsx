@@ -480,6 +480,26 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                   }
                 />
               </Row>
+              <Row label="Payment expected">
+                <InlineEditBoolean
+                  label="Payment expected"
+                  testIdBase="gift-payment-expected"
+                  value={gift.paymentExpected}
+                  allowNull={false}
+                  display={gift.paymentExpected ? "Yes" : "No"}
+                  onSave={(next) => patch({ paymentExpected: next ?? true })}
+                />
+              </Row>
+              <Row label="Counts toward goal">
+                <InlineEditBoolean
+                  label="Counts toward goal"
+                  testIdBase="gift-counts-toward-goal"
+                  value={gift.countsTowardGoal}
+                  allowNull={false}
+                  display={gift.countsTowardGoal ? "Yes" : "No"}
+                  onSave={(next) => patch({ countsTowardGoal: next ?? true })}
+                />
+              </Row>
               <Row label="QuickBooks tie">
                 <GiftQbTieBadge status={gift.quickbooksTieStatus} />
               </Row>

@@ -28,6 +28,22 @@ describe("deriveGiftQbTie", () => {
     ).toBe("exempt");
   });
 
+  it("exempts a payment_expected=false gift (folded into offBooks)", () => {
+    // The applier feeds `offBooks = off_books_fiscal_sponsor OR
+    // designated_to_school OR NOT payment_expected`, so a gift that expects no
+    // payment reads as exempt and drops out of the "untied" filter — even with
+    // no off-books flag and no QuickBooks evidence (otherwise `missing`).
+    expect(
+      deriveGiftQbTie({
+        offBooks: true,
+        giftAmount: "100.00",
+        hasQbLink: false,
+        qbAmount: null,
+        finalAmountSource: "human",
+      }),
+    ).toBe("exempt");
+  });
+
   it("ties a QB-linked gift whose amount sits within the fee band", () => {
     // Exact match.
     expect(

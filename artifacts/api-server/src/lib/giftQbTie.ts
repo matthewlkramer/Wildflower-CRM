@@ -19,7 +19,10 @@ import { amountWithinFeeBand } from "./reconciliationGate";
 export type GiftQbTie = "exempt" | "tied" | "amount_mismatch" | "missing";
 
 export interface GiftQbTieInput {
-  /** off_books_fiscal_sponsor OR designated_to_school (either exempts). */
+  /**
+   * off_books_fiscal_sponsor OR designated_to_school OR NOT payment_expected
+   * (any of the three exempts the gift from the QB-tie requirement).
+   */
   offBooks: boolean;
   /** Gift's final amount (gross), or null when unknown. */
   giftAmount: string | null;
@@ -86,7 +89,7 @@ export async function applyGiftQbTieMany(
     .select({
       id: giftsAndPayments.id,
       giftAmount: giftsAndPayments.amount,
-      offBooks: sql<boolean>`(${giftsAndPayments.offBooksFiscalSponsor} OR ${giftsAndPayments.designatedToSchool})`,
+      offBooks: sql<boolean>`(${giftsAndPayments.offBooksFiscalSponsor} OR ${giftsAndPayments.designatedToSchool} OR NOT ${giftsAndPayments.paymentExpected})`,
       finalAmountSource: giftsAndPayments.finalAmountSource,
       directAmount: sql<string | null>`(
         SELECT sp.amount FROM staged_payments sp

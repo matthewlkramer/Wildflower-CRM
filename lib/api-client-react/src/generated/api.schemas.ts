@@ -1688,6 +1688,10 @@ export interface GiftOrPayment {
   designatedToSchool: boolean;
   /** Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation). */
   offBooksFiscalSponsor: boolean;
+  /** When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor / designatedToSchool). Defaults true. */
+  paymentExpected: boolean;
+  /** When false, this real money is excluded from goal/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true. */
+  countsTowardGoal: boolean;
   /** Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update. */
   readonly quickbooksTieStatus: GiftQuickbooksTie;
   /** Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses. */
@@ -1991,6 +1995,8 @@ export interface CreateGiftOrPaymentBody {
   ownerUserId?: string;
   designatedToSchool?: boolean;
   offBooksFiscalSponsor?: boolean;
+  paymentExpected?: boolean;
+  countsTowardGoal?: boolean;
   tags?: string;
 }
 
@@ -2014,6 +2020,8 @@ export interface UpdateGiftOrPaymentBody {
   ownerUserId?: string | null;
   designatedToSchool?: boolean;
   offBooksFiscalSponsor?: boolean;
+  paymentExpected?: boolean;
+  countsTowardGoal?: boolean;
   tags?: string | null;
 }
 

@@ -146,6 +146,18 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   offBooksFiscalSponsor: boolean("off_books_fiscal_sponsor")
     .default(false)
     .notNull(),
+  // When false, no QuickBooks/QBO record will ever arrive for this gift (e.g.
+  // early gifts handled through the fiscal sponsor, or money paid directly to a
+  // school/charter). Folds into the "exempt from QB tie" rule alongside
+  // offBooksFiscalSponsor / designatedToSchool, so such gifts stop being flagged
+  // as "missing" QuickBooks evidence. Defaults true (almost every gift expects a
+  // payment). User-settable.
+  paymentExpected: boolean("payment_expected").default(true).notNull(),
+  // When false, this is real money that should NOT count against fundraising
+  // goals (e.g. CMO replication grant reimbursements that don't cover core
+  // expenses) — it is excluded from the goal/received analytics rollups.
+  // Orthogonal to paymentExpected. Defaults true. User-settable.
+  countsTowardGoal: boolean("counts_toward_goal").default(true).notNull(),
   // Derived, persisted signal of whether this gift reconciles to a QuickBooks
   // record (see giftQuickbooksTieEnum). Recomputed by applyGiftQbTieMany at
   // every gift link/amount mutation; never hand-set. Defaults to 'missing'

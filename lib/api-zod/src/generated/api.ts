@@ -5214,6 +5214,16 @@ export const GetOpportunityOrPledgeResponse = zod
               .describe(
                 "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
               ),
+            paymentExpected: zod
+              .boolean()
+              .describe(
+                "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor \/ designatedToSchool). Defaults true.",
+              ),
+            countsTowardGoal: zod
+              .boolean()
+              .describe(
+                "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+              ),
             quickbooksTieStatus: zod
               .enum(["exempt", "tied", "amount_mismatch", "missing"])
               .describe(
@@ -5959,6 +5969,16 @@ export const ListGiftsAndPaymentsResponse = zod.object({
         .describe(
           "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
         ),
+      paymentExpected: zod
+        .boolean()
+        .describe(
+          "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor \/ designatedToSchool). Defaults true.",
+        ),
+      countsTowardGoal: zod
+        .boolean()
+        .describe(
+          "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+        ),
       quickbooksTieStatus: zod
         .enum(["exempt", "tied", "amount_mismatch", "missing"])
         .describe(
@@ -6135,6 +6155,8 @@ export const CreateGiftOrPaymentBody = zod.object({
   ownerUserId: zod.string().optional(),
   designatedToSchool: zod.boolean().optional(),
   offBooksFiscalSponsor: zod.boolean().optional(),
+  paymentExpected: zod.boolean().optional(),
+  countsTowardGoal: zod.boolean().optional(),
   tags: zod.string().optional(),
 });
 
@@ -6218,6 +6240,16 @@ export const GetGiftOrPaymentResponse = zod
       .boolean()
       .describe(
         "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+      ),
+    paymentExpected: zod
+      .boolean()
+      .describe(
+        "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor \/ designatedToSchool). Defaults true.",
+      ),
+    countsTowardGoal: zod
+      .boolean()
+      .describe(
+        "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
       ),
     quickbooksTieStatus: zod
       .enum(["exempt", "tied", "amount_mismatch", "missing"])
@@ -6463,6 +6495,8 @@ export const UpdateGiftOrPaymentBody = zod.object({
   ownerUserId: zod.string().nullish(),
   designatedToSchool: zod.boolean().optional(),
   offBooksFiscalSponsor: zod.boolean().optional(),
+  paymentExpected: zod.boolean().optional(),
+  countsTowardGoal: zod.boolean().optional(),
   tags: zod.string().nullish(),
 });
 
@@ -6541,6 +6575,16 @@ export const UpdateGiftOrPaymentResponse = zod.object({
     .boolean()
     .describe(
       "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+    ),
+  paymentExpected: zod
+    .boolean()
+    .describe(
+      "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor \/ designatedToSchool). Defaults true.",
+    ),
+  countsTowardGoal: zod
+    .boolean()
+    .describe(
+      "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
     ),
   quickbooksTieStatus: zod
     .enum(["exempt", "tied", "amount_mismatch", "missing"])
@@ -6788,6 +6832,16 @@ export const LinkThankYouEmailResponse = zod
       .boolean()
       .describe(
         "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+      ),
+    paymentExpected: zod
+      .boolean()
+      .describe(
+        "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor \/ designatedToSchool). Defaults true.",
+      ),
+    countsTowardGoal: zod
+      .boolean()
+      .describe(
+        "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
       ),
     quickbooksTieStatus: zod
       .enum(["exempt", "tied", "amount_mismatch", "missing"])
@@ -14363,6 +14417,16 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
           .describe(
             "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
           ),
+        paymentExpected: zod
+          .boolean()
+          .describe(
+            "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor \/ designatedToSchool). Defaults true.",
+          ),
+        countsTowardGoal: zod
+          .boolean()
+          .describe(
+            "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+          ),
         quickbooksTieStatus: zod
           .enum(["exempt", "tied", "amount_mismatch", "missing"])
           .describe(
@@ -14611,6 +14675,16 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
           .describe(
             "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
           ),
+        paymentExpected: zod
+          .boolean()
+          .describe(
+            "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor \/ designatedToSchool). Defaults true.",
+          ),
+        countsTowardGoal: zod
+          .boolean()
+          .describe(
+            "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+          ),
         quickbooksTieStatus: zod
           .enum(["exempt", "tied", "amount_mismatch", "missing"])
           .describe(
@@ -14853,6 +14927,16 @@ export const ReconcileStagedPaymentResponse = zod.object({
       .boolean()
       .describe(
         "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+      ),
+    paymentExpected: zod
+      .boolean()
+      .describe(
+        "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor \/ designatedToSchool). Defaults true.",
+      ),
+    countsTowardGoal: zod
+      .boolean()
+      .describe(
+        "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
       ),
     quickbooksTieStatus: zod
       .enum(["exempt", "tied", "amount_mismatch", "missing"])
@@ -15160,6 +15244,16 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
       .boolean()
       .describe(
         "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+      ),
+    paymentExpected: zod
+      .boolean()
+      .describe(
+        "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor \/ designatedToSchool). Defaults true.",
+      ),
+    countsTowardGoal: zod
+      .boolean()
+      .describe(
+        "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
       ),
     quickbooksTieStatus: zod
       .enum(["exempt", "tied", "amount_mismatch", "missing"])
@@ -18491,6 +18585,16 @@ export const ArchiveGiftOrPaymentResponse = zod.object({
     .describe(
       "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
     ),
+  paymentExpected: zod
+    .boolean()
+    .describe(
+      "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor \/ designatedToSchool). Defaults true.",
+    ),
+  countsTowardGoal: zod
+    .boolean()
+    .describe(
+      "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+    ),
   quickbooksTieStatus: zod
     .enum(["exempt", "tied", "amount_mismatch", "missing"])
     .describe(
@@ -18698,6 +18802,16 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
     .boolean()
     .describe(
       "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation).",
+    ),
+  paymentExpected: zod
+    .boolean()
+    .describe(
+      "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor \/ designatedToSchool). Defaults true.",
+    ),
+  countsTowardGoal: zod
+    .boolean()
+    .describe(
+      "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
     ),
   quickbooksTieStatus: zod
     .enum(["exempt", "tied", "amount_mismatch", "missing"])

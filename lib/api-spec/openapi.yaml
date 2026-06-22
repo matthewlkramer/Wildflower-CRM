@@ -5126,7 +5126,7 @@ components:
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
       type: object
-      required: [id, designatedToSchool, offBooksFiscalSponsor, quickbooksTieStatus, finalAmountSource, createdAt, updatedAt]
+      required: [id, designatedToSchool, offBooksFiscalSponsor, paymentExpected, countsTowardGoal, quickbooksTieStatus, finalAmountSource, createdAt, updatedAt]
       properties:
         id:                         { type: string }
         legacyGiftId:               { type: string, nullable: true }
@@ -5156,6 +5156,8 @@ components:
         ownerUserId:                      { type: string, nullable: true }
         designatedToSchool:         { type: boolean }
         offBooksFiscalSponsor:      { type: boolean, description: "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation)." }
+        paymentExpected:            { type: boolean, description: "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor / designatedToSchool). Defaults true." }
+        countsTowardGoal:           { type: boolean, description: "When false, this real money is excluded from goal/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true." }
         quickbooksTieStatus:        { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], readOnly: true, description: "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update." }
         reconciliationLanes:        { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses." }
         tags:                       { type: string, nullable: true }
@@ -5280,6 +5282,8 @@ components:
         ownerUserId:                      { type: string }
         designatedToSchool:         { type: boolean }
         offBooksFiscalSponsor:      { type: boolean }
+        paymentExpected:            { type: boolean }
+        countsTowardGoal:           { type: boolean }
         tags:                       { type: string }
     UpdateGiftOrPaymentBody:
       type: object
@@ -5303,6 +5307,8 @@ components:
         ownerUserId:                      { type: string, nullable: true }
         designatedToSchool:         { type: boolean }
         offBooksFiscalSponsor:      { type: boolean }
+        paymentExpected:            { type: boolean }
+        countsTowardGoal:           { type: boolean }
         tags:                       { type: string, nullable: true }
     ThankYouAttachment:
       type: object
