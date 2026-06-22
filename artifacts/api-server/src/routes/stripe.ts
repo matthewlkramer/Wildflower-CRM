@@ -42,6 +42,7 @@ import {
   ExcludeStagedPaymentBody,
 } from "@workspace/api-zod";
 import { buildGiftValuesFromStripeCharge } from "../lib/stripeGift";
+import { removePaymentApplicationsForGift } from "../lib/paymentApplications";
 import {
   unstampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
@@ -892,6 +893,9 @@ router.post(
           await tx
             .delete(giftAllocations)
             .where(eq(giftAllocations.giftId, locked.createdGiftId));
+          // payment_applications.gift_id is RESTRICT too — clear any ledger
+          // rows for this gift first. Empty in Phase 1 (no writers yet).
+          await removePaymentApplicationsForGift(tx, locked.createdGiftId);
           await tx
             .delete(giftsAndPayments)
             .where(eq(giftsAndPayments.id, locked.createdGiftId));

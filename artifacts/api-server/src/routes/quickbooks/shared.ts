@@ -32,6 +32,7 @@ import {
   adjustSingleAllocationOrFlag,
 } from "../../lib/giftFinalAmount";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
+import { removePaymentApplicationsForGift } from "../../lib/paymentApplications";
 
 export function requireAdmin(req: Request, res: Response): boolean {
   const me = getAppUser(req);
@@ -547,6 +548,11 @@ export async function revertOneStagedPayment(
       }
 
       if (isAutoMint && locked.createdGiftId) {
+        // payment_applications.gift_id is RESTRICT — clear any QB cash-
+        // application ledger rows for this minted gift before deleting it.
+        // Empty in Phase 1 (no writers yet), so this is a no-op until
+        // dual-write lands.
+        await removePaymentApplicationsForGift(tx, locked.createdGiftId);
         await tx
           .delete(giftsAndPayments)
           .where(eq(giftsAndPayments.id, locked.createdGiftId));

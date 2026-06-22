@@ -96,3 +96,4 @@
 - [Donorbox API integration](donorbox-api-integration.md) — auth needs login email + key; donation.stripe_charge_id == stripe_staged_charges.id (clean 1:1 join); PayPal donations are new money; enrich, don't re-pipe.
 - [Reconciliation gate vs client blockers](reconciliation-gate-vs-blockers.md) — approve button mirrors only SOME server gate codes (stripe_charge_required etc. slip→409); don't duplicate the gate, surface ApiError.data.details.issues via extractGateIssues.
 - [Prod data-seed slug/id mismatch](prod-data-seed-slug-mismatch.md) — id/slug-matched UPDATE can COMMIT yet flag the wrong row count; verify by affected-row count/state, not clean exit.
+- [payment_applications ledger](payment-applications-ledger.md) — authoritative QB cash-application M:N ledger; phased additive prod rollout; book-once in service layer (not DB); gift_id RESTRICT means hard-delete paths clear/block first.

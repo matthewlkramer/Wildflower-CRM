@@ -254,6 +254,20 @@ Column-level detail lives in each schema file; this is the orientation map.
   exactly-one enforced only at approve/reconcile) + an `entity_id` attribution.
 - `staged_payment_splits` — splits one staged payment across multiple gifts /
   donors (manual grouping & multi-allocation).
+- `payment_applications` — the authoritative **cash-application ledger** (M:N
+  between `staged_payments` and `gifts_and_payments`), being rolled out
+  additively to replace the scattered linkage columns (`matched_gift_id` /
+  `created_gift_id` / `group_reconciled_gift_id` / `final_amount_qb_staged_payment_id`)
+  and `staged_payment_splits`. One row per payment↔gift booking (HEADER grain):
+  `amount_applied` (> 0); `evidence_source` (`quickbooks` / `stripe` / `donorbox`,
+  with the matching `stripe_charge_id` / `donorbox_donation_id` required by CHECK);
+  `match_method` (`system` / `system_confirmed` / `human`); `created_the_gift`
+  (preserves the mint-ownership signal). Both FKs are **RESTRICT** (the QB record
+  and the gift are anchors). Book-once = `UNIQUE(payment_id, gift_id)` + the
+  service helper's tx row-lock + SUM validation — **no** DB aggregate/fee-band
+  constraint. Phase 1 is additive only: the table starts empty, nothing writes or
+  reads it yet (the hard-delete gift paths already clear/block on it). Ledger
+  SUM(amount_applied) per gift is the QB-settled figure the tie deriver will read.
 - `quickbooks_handling_rules` — admin-editable ingest rules; action
   `quickbooks_rule_action` (`exclude` / `auto_create_approve`). The engine's seed
   rules must mirror the code classifier (a fidelity test guards drift).

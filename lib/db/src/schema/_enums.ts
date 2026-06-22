@@ -312,6 +312,28 @@ export const deferredRevenueEnum = pgEnum("deferred_revenue", [
   "na",
 ]);
 
+// ──────────────────────────────────────────────────────────────────
+// QuickBooks cash-application ledger (payment_applications)
+// ──────────────────────────────────────────────────────────────────
+
+// Where the cash-application evidence for a payment↔gift booking came from.
+// `quickbooks` is the anchor (the staged QB record that settled the gift);
+// `stripe` / `donorbox` rows additionally carry the originating charge /
+// donation id (enforced by a CHECK on payment_applications).
+export const paymentApplicationEvidenceSourceEnum = pgEnum(
+  "payment_application_evidence_source",
+  ["quickbooks", "stripe", "donorbox"],
+);
+
+// How a cash-application row was established (audit + UI badge).
+//   system           — booked automatically by a sync / reconcile worker
+//   system_confirmed — auto-booked, then confirmed by a human
+//   human            — a human created the application in the reconciler
+export const paymentApplicationMatchMethodEnum = pgEnum(
+  "payment_application_match_method",
+  ["system", "system_confirmed", "human"],
+);
+
 // ---- Schools enums (mirrored from Airtable "Schools" base) ----
 export const schoolStatusEnum = pgEnum("school_status", [
   "emerging",

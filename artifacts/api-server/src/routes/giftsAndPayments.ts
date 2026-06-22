@@ -19,6 +19,7 @@ import {
   stripeStagedCharges,
   stripePayouts,
   donorboxDonations,
+  paymentApplications,
   type NewGiftAllocation,
 } from "@workspace/db/schema";
 import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
@@ -759,7 +760,16 @@ router.post(
           ),
         )
         .then((r) => r[0]);
-      if (splitLink || stagedLink) {
+      // Block, too, if a loser carries a QuickBooks cash-application ledger row
+      // (payment_applications.gift_id is RESTRICT). The ledger is empty in
+      // Phase 1, so this changes no behaviour yet; it keeps the merge guard
+      // correct once the ledger becomes the QB linkage authority.
+      const ledgerLink = await tx
+        .select({ giftId: paymentApplications.giftId })
+        .from(paymentApplications)
+        .where(inArray(paymentApplications.giftId, loserIds))
+        .then((r) => r[0]);
+      if (splitLink || stagedLink || ledgerLink) {
         return {
           ok: false,
           status: 409,
