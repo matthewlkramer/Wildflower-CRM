@@ -18611,6 +18611,24 @@ export const ListReconciliationCardsResponse = zod.object({
         rawReference: zod.string().nullish(),
         lineDescription: zod.string().nullish(),
         qbPaymentMethod: zod.string().nullish(),
+        qbEntityType: zod
+          .string()
+          .nullish()
+          .describe(
+            "QuickBooks transaction type (SalesReceipt | Payment | Deposit | …) — part of the QB key used to reference this card.",
+          ),
+        qbEntityId: zod
+          .string()
+          .nullish()
+          .describe(
+            "QuickBooks internal transaction id — the stable, unique QB key for this card's record.",
+          ),
+        qbDocNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            "QuickBooks document\/reference number (the 'No.' field), human-visible; may be absent (e.g. some deposits).",
+          ),
         entityId: zod.string().nullish(),
         entityName: zod.string().nullish(),
         proposedDonorId: zod.string().nullish(),

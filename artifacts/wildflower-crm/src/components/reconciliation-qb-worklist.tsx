@@ -23,6 +23,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/use-debounce";
 import { ReconciliationCard } from "@/components/reconciliation-card";
+import { extractGateIssues } from "@/lib/reconciliation";
 
 /* ────────────────────────────────────────────────────────────────────────
  * Worklist 1 of 3 — "QuickBooks money → gifts".
@@ -107,13 +108,21 @@ export function QbMoneyWorklist() {
         refresh();
       },
       onError: (err: unknown) => {
+        // The server's consistency gate returns specific, actionable reasons in
+        // details.issues (e.g. "select the Stripe charge"). The client's
+        // disabled-button check only mirrors SOME of those codes, so the generic
+        // top-level message ("the reconciliation graph isn't consistent") is all
+        // err.message carries — surface the per-issue reasons instead.
+        const issues = extractGateIssues(err);
         toast({
           variant: "destructive",
           title: "Couldn't approve this card",
           description:
-            err instanceof Error
-              ? err.message
-              : "It may already have changed state — refresh and try again.",
+            issues.length > 0
+              ? issues.join(" ")
+              : err instanceof Error
+                ? err.message
+                : "It may already have changed state — refresh and try again.",
         });
       },
     },

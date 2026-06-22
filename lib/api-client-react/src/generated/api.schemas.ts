@@ -3058,6 +3058,12 @@ export interface ReconciliationCard {
   rawReference?: string | null;
   lineDescription?: string | null;
   qbPaymentMethod?: string | null;
+  /** QuickBooks transaction type (SalesReceipt | Payment | Deposit | …) — part of the QB key used to reference this card. */
+  qbEntityType?: string | null;
+  /** QuickBooks internal transaction id — the stable, unique QB key for this card's record. */
+  qbEntityId?: string | null;
+  /** QuickBooks document/reference number (the 'No.' field), human-visible; may be absent (e.g. some deposits). */
+  qbDocNumber?: string | null;
   entityId?: string | null;
   entityName?: string | null;
   proposedDonorId?: string | null;

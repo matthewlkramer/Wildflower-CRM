@@ -220,6 +220,37 @@ export function giftToPledgeStatus(
   }
 }
 
+/**
+ * Pull the specific, actionable reasons out of a failed reconciliation request.
+ *
+ * The server's consistency gate returns a 409 of the shape
+ * `{ error, message, details: { issues: [{ code, message }] } }`. The generated
+ * client throws an `ApiError` whose `.data` carries that parsed body, while its
+ * `.message` only has the generic top-level line ("The reconciliation graph
+ * isn't consistent."). The graph's client-side `blockers` cover only some gate
+ * codes (donor/gift/amount), so codes like `stripe_charge_required` slip past
+ * the disabled-button check and 409 on approve — leaving the reviewer with an
+ * opaque error. Surface the per-issue messages so they see *what* to fix
+ * (e.g. "select the Stripe charge", "the gift has no donor").
+ */
+export function extractGateIssues(err: unknown): string[] {
+  if (!err || typeof err !== "object") return [];
+  const data = (err as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return [];
+  const details = (data as { details?: unknown }).details;
+  if (!details || typeof details !== "object") return [];
+  const issues = (details as { issues?: unknown }).issues;
+  if (!Array.isArray(issues)) return [];
+  const out: string[] = [];
+  for (const issue of issues) {
+    if (issue && typeof issue === "object") {
+      const message = (issue as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) out.push(message.trim());
+    }
+  }
+  return out;
+}
+
 export type OutcomeChoice =
   | "create_gift_from_opportunity"
   | "convert_to_pledge_and_first_payment";

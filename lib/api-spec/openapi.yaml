@@ -5901,6 +5901,9 @@ components:
         rawReference:    { type: string, nullable: true }
         lineDescription: { type: string, nullable: true }
         qbPaymentMethod: { type: string, nullable: true }
+        qbEntityType:    { type: string, nullable: true, description: "QuickBooks transaction type (SalesReceipt | Payment | Deposit | …) — part of the QB key used to reference this card." }
+        qbEntityId:      { type: string, nullable: true, description: "QuickBooks internal transaction id — the stable, unique QB key for this card's record." }
+        qbDocNumber:     { type: string, nullable: true, description: "QuickBooks document/reference number (the 'No.' field), human-visible; may be absent (e.g. some deposits)." }
         entityId:        { type: string, nullable: true }
         entityName:      { type: string, nullable: true }
         proposedDonorId:         { type: string, nullable: true }

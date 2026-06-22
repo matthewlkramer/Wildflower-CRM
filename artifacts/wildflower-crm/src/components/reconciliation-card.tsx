@@ -471,6 +471,20 @@ export function ReconciliationCard({
       crmText
     );
 
+  // Compact QuickBooks reference so a reviewer can identify a card by its unique
+  // QB key. qbEntityType + qbEntityId is the stable unique key (the No./DocNumber
+  // is human-visible but can be absent, e.g. on some deposits). Suppressed on
+  // source-group cards: those bundle MULTIPLE QB events, so the representative
+  // row's key wouldn't identify the whole card — the group panel lists each
+  // member's QB doc number instead.
+  const qbRefParts: string[] = [];
+  if (!card.isSourceGroup) {
+    if (card.qbEntityType) qbRefParts.push(card.qbEntityType);
+    if (card.qbDocNumber) qbRefParts.push(`No. ${card.qbDocNumber}`);
+    if (card.qbEntityId) qbRefParts.push(`ID ${card.qbEntityId}`);
+  }
+  const qbRef = qbRefParts.length ? `QB ${qbRefParts.join(" · ")}` : null;
+
   return (
     <Card data-testid={`reconciliation-card-${card.stagedPaymentId}`}>
       <CardHeader className="pb-3">
@@ -519,6 +533,15 @@ export function ReconciliationCard({
                   </Badge>
                 ) : null}
               </div>
+              {qbRef ? (
+                <div
+                  className="truncate font-mono text-[11px] text-muted-foreground"
+                  title={qbRef}
+                  data-testid={`card-qb-ref-${card.stagedPaymentId}`}
+                >
+                  {qbRef}
+                </div>
+              ) : null}
               {card.rawReference || card.lineDescription ? (
                 <div className="truncate text-xs text-muted-foreground">
                   {card.lineDescription || card.rawReference}
