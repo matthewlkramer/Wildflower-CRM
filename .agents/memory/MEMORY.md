@@ -92,3 +92,4 @@
 - [Gift QB tie status](gift-qb-tie-status.md) — derived+persisted quickbooks_tie_status; recompute at every gift link/amount mutation or it silently goes stale; off-books exempts; audit view excludes off-books.
 - [Two-lane reconciliation model](reconciliation-two-lane-model.md) — every unit of money tracks funding + crmRecord lanes, both DERIVED (no column); replaces blended badge; gift link ≠ donor confirmed; emit on ALL evidence endpoints.
 - [Stripe refund/chargeback propagation](stripe-refund-propagation.md) — refunds/disputes reach gifts via propose-then-confirm; forward-only, re-confirm 409s; confirm archives/reduces gift + re-derives pledge + recomputes QB tie; evidence retained as applied.
+- [Prod data-seed slug/id mismatch](prod-data-seed-slug-mismatch.md) — id/slug-matched UPDATE can COMMIT yet flag the wrong row count; verify by affected-row count/state, not clean exit.
