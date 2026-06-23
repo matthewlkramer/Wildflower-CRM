@@ -1,4 +1,4 @@
-export * from "./generated/api";
+export * from "./generated";
 export * from "./revenue-coding";
 export * from "./loan-or-grant";
 
@@ -8,7 +8,7 @@ import {
   CreateGiftOrPaymentBody,
   CreateMeetingNoteBody,
   CreateMediaMentionBody,
-} from "./generated/api";
+} from "./generated";
 
 /**
  * Shared invariant validators for opportunities/pledges and gifts/payments.

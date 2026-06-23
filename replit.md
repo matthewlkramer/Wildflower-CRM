@@ -87,7 +87,8 @@ tools/
 
 ```bash
 pnpm run typecheck                                       # Full typecheck (builds libs first)
-pnpm --filter @workspace/api-spec run codegen           # Regenerate hooks/Zod from OpenAPI spec
+pnpm --filter @workspace/api-spec run codegen           # Regenerate hooks/Zod from spec (orval + barrel only; no typecheck)
+pnpm --filter @workspace/api-spec run codegen:check      # codegen + typecheck:libs (verify generated code compiles)
 pnpm --filter @workspace/db run push                    # Push DB schema changes (dev only)
 cd lib/db && pnpm exec tsc -p tsconfig.json             # Rebuild DB declarations after schema changes
 pnpm --filter @workspace/api-server run test            # API server vitest
