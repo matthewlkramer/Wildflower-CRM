@@ -37,3 +37,25 @@ read:** make the seed helper also insert the ledger row (mirroring production's
 dual-write) whenever it seeds a legacy link. Keep at least one *ledger-only*
 assertion (a row linked ONLY via the ledger must read as linked) as the regression
 guard that proves reads consult the ledger, not the legacy columns.
+
+## Go-live ordering (parity gate vs derived-persisted recompute)
+
+When the same release also recomputes a **derived-persisted** rollup that is sourced
+from the ledger (e.g. `quickbooks_tie_status` via `backfill:gift-qb-tie`), the order
+is: re-apply backfill SQL → **parity (must pass)** → recompute the rollup. Never run
+the rollup recompute against an unverified ledger.
+
+**Why:** the recompute overwrites the cached status from `SUM(amount_applied)`; if the
+ledger is missing legacy-only links, it bakes wrong statuses (mass `missing`) into the
+column, turning a recoverable gap into a persisted regression.
+
+**How to apply:** re-apply the idempotent backfill SQL on **both** sides of Publish
+(old non-dual-writing code keeps writing legacy-only links right up to the deploy
+swap, incl. the 30-min QB worker; the post-Publish re-apply closes the deploy window).
+Run the full parity script (not an inline spot-check subset — only it proves the
+status-mismatch / link-presence / final-amount-coverage blocking checks) and require
+exit 0 before the recompute. Caveat: a one-directional backfill (e.g. promotes
+legacy-loan→`loan` only) cannot repair a publish-window *reverse* legacy edit, so the
+parity gate — not the backfill — is the real guarantee. Rollback after the recompute
+must freeze finance writes (old buggy deriver re-stales touched rows) and fix-forward
++ re-run the recompute, not just revert.
