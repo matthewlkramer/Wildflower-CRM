@@ -18,6 +18,13 @@ INCREMENTAL — each project that finishes writes its `.tsbuildinfo`. So:
   full `pnpm run typecheck` (libs + 4 leaf packages) fits in one foreground call.
 - `tsc --build` prints nothing on success; an empty log ≠ stuck. Confirm progress
   via `.tsbuildinfo`/`dist` mtimes, not stdout (output is block-buffered to files).
+- The LEAF artifact typechecks (`tsc -p tsconfig.json --noEmit`) are ALSO incremental
+  now — `incremental:true` lives in `tsconfig.base.json`, so each leaf writes its own
+  `tsconfig.tsbuildinfo` on success. A warm re-run cut wildflower-crm's tsc `user` CPU
+  ~73% (≈31s→8s). But wall-clock stays high: the dominant cost is CPU contention from
+  the two Vite dev servers + tsserver, NOT tsc work. First run after any source change
+  is still full; only repeat runs are cheap. To verify fast, reduce contention (or just
+  trust EXIT=0 + an empty error tail — tsc prints errors only at the end).
 
 **`pnpm codegen` (orval):** also CPU-slow (~110s for a single target). If it won't
 finish, generate per-target with temp single-target configs + `prettier:false`,

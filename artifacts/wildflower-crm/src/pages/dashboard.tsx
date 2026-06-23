@@ -15,6 +15,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import EmailProposalsCard from "@/components/EmailProposalsCard";
@@ -238,9 +239,11 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent className="space-y-6">
           {byFy.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {isLoading ? "Loading fiscal-year goals…" : "No fiscal-year data available."}
-            </p>
+            isLoading ? (
+              <DashboardGoalBarSkeleton />
+            ) : (
+              <p className="text-sm text-muted-foreground">No fiscal-year data available.</p>
+            )
           ) : (
             byFy.map((m) => renderGoalBar(m))
           )}
@@ -287,6 +290,27 @@ export default function Dashboard() {
           </Card>
         </Link>
       </div>
+    </div>
+  );
+}
+
+function DashboardGoalBarSkeleton() {
+  return (
+    <div className="space-y-6" data-testid="dashboard-goal-bar-skeleton">
+      {Array.from({ length: 2 }).map((_, i) => (
+        <div key={i} className="space-y-2">
+          <div className="flex items-baseline justify-between gap-4">
+            <Skeleton className="h-6 w-32" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+          <Skeleton className="h-6 w-full rounded-md" />
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-28" />
+            <Skeleton className="h-3 w-36" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

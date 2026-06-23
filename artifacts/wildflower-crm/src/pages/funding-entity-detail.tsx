@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DetailSkeleton } from "@/components/ui/skeleton";
 import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetOrganization,
@@ -166,9 +167,7 @@ export default function OrganizationDetail() {
   });
 
   if (isLoading) {
-    return (
-      <div className="text-sm text-muted-foreground">Loading organization…</div>
-    );
+    return <DetailSkeleton />;
   }
   if (isError || !data) {
     return (

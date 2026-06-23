@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -375,7 +376,7 @@ function ReceivedTable({
         </TableHeader>
         <TableBody>
           {isLoading ? (
-            <TableRow><TableCell colSpan={4} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+            <SkeletonRows cols={4} />
           ) : sortedRows.length === 0 ? (
             <TableRow><TableCell colSpan={4} className="text-center h-24 text-muted-foreground">No gift allocations booked to this fiscal year.</TableCell></TableRow>
           ) : (
@@ -464,7 +465,7 @@ function OpenTable({
         </TableHeader>
         <TableBody>
           {isLoading ? (
-            <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+            <SkeletonRows cols={7} />
           ) : sortedRows.length === 0 ? (
             <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">No open pledge allocations booked to this fiscal year.</TableCell></TableRow>
           ) : (

@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const UNBUCKETED = "__unbucketed__";
@@ -215,14 +216,7 @@ export default function Projections() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={Math.max(entityCols.length + 2, 2)}
-                  className="text-center h-24 text-muted-foreground"
-                >
-                  Loading…
-                </TableCell>
-              </TableRow>
+              <SkeletonRows cols={Math.max(entityCols.length + 2, 2)} />
             ) : isError ? (
               <TableRow>
                 <TableCell

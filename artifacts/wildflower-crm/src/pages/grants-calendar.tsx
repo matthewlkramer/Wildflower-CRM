@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { DonorCell } from "@/components/donor-cell";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 
@@ -151,7 +152,7 @@ export default function GrantsCalendar() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <SkeletonRows cols={8} />
             ) : isError ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center h-24 text-destructive">

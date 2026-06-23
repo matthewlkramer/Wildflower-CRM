@@ -1,0 +1,7 @@
+# can you put a little x in all of the search boxes at the top of all the list pages so that you can clear
+# the search box with one click rather than selecting and deleting...right now, the clear at the end of the 
+# rows remove all filters which is not necessarily what the user wants.
+# We use the eyeball icon for two things - hide/show and view record. lets keep it only for hide/show. for 
+# view record (full page), what else would you suggest?
+# For all the bulk edit dialogs, can you add all the fields that we've made available on the list page as #  
+# editable?

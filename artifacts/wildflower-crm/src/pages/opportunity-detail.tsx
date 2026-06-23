@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { DetailSkeleton } from "@/components/ui/skeleton";
 import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetOpportunityOrPledge,
@@ -145,7 +146,7 @@ export default function OpportunityDetail({
     query: { queryKey: getGetOpportunityOrPledgeQueryKey(id), enabled: !!id },
   });
 
-  if (isLoading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (isLoading) return <DetailSkeleton />;
   if (isError || !data) {
     return (
       <div className="space-y-4">

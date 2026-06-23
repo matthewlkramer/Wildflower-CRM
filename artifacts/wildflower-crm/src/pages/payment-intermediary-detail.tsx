@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DetailSkeleton } from "@/components/ui/skeleton";
 import { Link, useRoute } from "wouter";
 import { Pencil } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -70,7 +71,7 @@ export default function PaymentIntermediaryDetail() {
   });
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading…</div>;
+    return <DetailSkeleton />;
   }
 
   if (isError || !data) {

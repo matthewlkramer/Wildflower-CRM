@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DetailSkeleton } from "@/components/ui/skeleton";
 import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetHousehold,
@@ -46,7 +47,7 @@ export default function HouseholdDetail() {
     query: { queryKey: getGetHouseholdQueryKey(id), enabled: !!id },
   });
 
-  if (isLoading) return <div className="text-sm text-muted-foreground">Loading household…</div>;
+  if (isLoading) return <DetailSkeleton />;
   if (isError || !data) {
     return (
       <div className="space-y-4">
