@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "wouter";
 import {
   useGetDashboardSummary,
@@ -13,7 +14,9 @@ import {
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { formatCurrency } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import EmailProposalsCard from "@/components/EmailProposalsCard";
 import GrantLeadsCard from "@/components/GrantLeadsCard";
 import UpcomingMeetingsCard, {
@@ -49,124 +52,124 @@ export default function Dashboard() {
     selectedEntityIds.length === 1 ? `&entity=${encodeURIComponent(selectedEntityIds[0])}` : "";
   const entityFilterActive = selectedEntityIds.length > 0;
 
-  // Goal has no drilldown (it's a single seeded number, no rows behind it).
-  // The other three tiles all link to the same detail page, with `metric`
-  // controlling which table + total is highlighted — same destination, different
-  // filter/sum, so users learn one page that backs all the money tiles.
-  type MoneyTile = {
-    label: string;
-    value: string | undefined;
-    sub: string;
-    testId: string;
-    href?: string;
-  };
-
   // Loan-fund capital reports as a track parallel to revenue — never mixed.
-  // Each fiscal year renders two rows (Revenue / Gifts + Loan Capital), each
-  // built from the same per-category metrics shape.
+  // A single toggle picks which track BOTH fiscal-year bars render. Defaults
+  // to regular fundraising (revenue); flip to loans (loan capital).
   type CategoryMetrics = FiscalYearMetrics["revenue"];
-  const CATEGORY_TRACKS: {
-    key: "revenue" | "loanCapital";
-    slug: "revenue" | "loan_capital";
+  const [selectedTrack, setSelectedTrack] = useState<"revenue" | "loanCapital">("revenue");
+  const trackSlug: "revenue" | "loan_capital" =
+    selectedTrack === "loanCapital" ? "loan_capital" : "revenue";
+
+  // The bar reads left→right: Received (cash in), Committed (weighted unpaid
+  // pledges), Weighted open pipeline. Same hue, descending strength, so the
+  // "how much is real money vs. probability-weighted" reads at a glance. The
+  // three segments sum to the weighted projection; the goal is the full width.
+  // Drilldown destinations mirror the old tiles: received/weighted-asks lead to
+  // the FY detail page; committed has no standalone detail view, so no link.
+  const BAR_SEGMENTS: {
+    key: "received" | "committed" | "openWeighted";
     label: string;
+    color: string;
+    metric: string | null;
   }[] = [
-    { key: "revenue", slug: "revenue", label: "Revenue / Gifts" },
-    { key: "loanCapital", slug: "loan_capital", label: "Loan Capital" },
+    { key: "received", label: "Received", color: "bg-primary", metric: "received" },
+    { key: "committed", label: "Committed", color: "bg-primary/60", metric: null },
+    { key: "openWeighted", label: "Weighted open pipeline", color: "bg-primary/30", metric: "weighted-asks" },
   ];
 
-  const buildTiles = (
-    fySlug: string,
-    fyLabel: string,
-    catSlug: "revenue" | "loan_capital",
-    cm: CategoryMetrics,
-  ): MoneyTile[] => {
-    const catParam = `&category=${catSlug}`;
-    // Weighted projection = money in (received) + the UNPAID remainder of
-    // written commitments DISCOUNTED by win-probability (committedWeighted —
-    // 0.90 non-conditional / 0.75 conditional; the server nets out payments
-    // already in `received`) + probability-weighted open pipeline. The three
-    // buckets are disjoint, so a partial payment on a pledge is counted once.
-    const weightedProjection = (
-      Number(cm.received) + Number(cm.committedWeighted) + Number(cm.openPipelineWeighted)
-    ).toFixed(2);
-    return [
-      {
-        label: `Goal ${fyLabel}`,
-        value: cm.goal ?? undefined,
-        sub: cm.goal
-          ? entityFilterActive
-            ? `Goal for ${fyLabel} (${selectedEntityIds.length} ${selectedEntityIds.length === 1 ? "entity" : "entities"})`
-            : `Total goal across all entities for ${fyLabel}`
-          : `No goal set for ${fyLabel}`,
-        testId: `tile-goal-${catSlug}-${fySlug}`,
-      },
-      {
-        label: `Weighted projection ${fyLabel}`,
-        value: weightedProjection,
-        sub: multiEntityFilterActive
-          ? `Received + committed + weighted open asks across ${selectedEntityIds.length} entities`
-          : `Received + committed + weighted open asks for ${fyLabel}`,
-        testId: `tile-weighted-projection-${catSlug}-${fySlug}`,
-      },
-      {
-        label: `Received ${fyLabel}`,
-        value: cm.received,
-        sub: multiEntityFilterActive
-          ? `Sum across ${selectedEntityIds.length} entities — narrow to one entity to drill in`
-          : `Allocations booked to ${fyLabel}`,
-        testId: `tile-received-${catSlug}-${fySlug}`,
-        href: multiEntityFilterActive
-          ? undefined
-          : `/fiscal-year/${fySlug}?metric=received${catParam}${forwardedEntityParam}`,
-      },
-      {
-        label: `Open asks ${fyLabel}`,
-        value: cm.openPipelineAsk,
-        sub: multiEntityFilterActive
-          ? `Sum across ${selectedEntityIds.length} entities — narrow to one entity to drill in`
-          : `Open allocations booked to ${fyLabel}`,
-        testId: `tile-pipeline-ask-${catSlug}-${fySlug}`,
-        href: multiEntityFilterActive
-          ? undefined
-          : `/fiscal-year/${fySlug}?metric=open-asks${catParam}${forwardedEntityParam}`,
-      },
-      {
-        label: `Weighted asks ${fyLabel}`,
-        value: cm.openPipelineWeighted,
-        sub: multiEntityFilterActive
-          ? `Sum across ${selectedEntityIds.length} entities — narrow to one entity to drill in`
-          : `${fyLabel} open allocations × win probability`,
-        testId: `tile-pipeline-weighted-${catSlug}-${fySlug}`,
-        href: multiEntityFilterActive
-          ? undefined
-          : `/fiscal-year/${fySlug}?metric=weighted-asks${catParam}${forwardedEntityParam}`,
-      },
-    ];
-  };
+  const renderGoalBar = (m: FiscalYearMetrics) => {
+    const fySlug = m.fiscalYear.id;
+    const fyLabel = m.fiscalYear.label;
+    const cm = m[selectedTrack];
+    const catParam = `&category=${trackSlug}`;
 
-  const renderTile = (t: MoneyTile) => {
-    const card = (
-      <Card
-        data-testid={t.testId}
-        className={t.href ? "cursor-pointer hover:bg-muted/30 transition-colors h-full" : "h-full"}
-      >
-        <CardHeader className="pb-2">
-          <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            {t.label}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-2xl font-serif font-bold text-foreground">
-            {isLoading || t.value === undefined ? "…" : formatCurrency(t.value)}
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">{t.sub}</p>
-        </CardContent>
-      </Card>
-    );
-    return t.href ? (
-      <Link key={t.label} href={t.href}>{card}</Link>
-    ) : (
-      <div key={t.label}>{card}</div>
+    const received = Number(cm.received) || 0;
+    const committed = Number(cm.committedWeighted) || 0;
+    const openWeighted = Number(cm.openPipelineWeighted) || 0;
+    const projection = received + committed + openWeighted;
+    const goalNum = cm.goal != null && Number(cm.goal) > 0 ? Number(cm.goal) : null;
+    const segValue: Record<string, number> = { received, committed, openWeighted };
+
+    const hasGoal = goalNum != null;
+    const overGoal = hasGoal && projection > goalNum;
+    // Width denominator: against the goal when one is set and not exceeded
+    // (so the empty remainder fills to goal); against the projection itself
+    // when over goal or when no goal is set (segments fill the whole bar).
+    const denom = hasGoal ? (overGoal ? projection : goalNum) : projection > 0 ? projection : 1;
+    const coverage = hasGoal ? projection / goalNum : null;
+    const remaining = hasGoal && !overGoal ? Math.max(0, goalNum - projection) : 0;
+
+    const segHref = (metric: string | null) =>
+      metric && !multiEntityFilterActive
+        ? `/fiscal-year/${fySlug}?metric=${metric}${catParam}${forwardedEntityParam}`
+        : undefined;
+
+    return (
+      <div key={fySlug} className="space-y-2" data-testid={`fy-bar-${fySlug}`}>
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="text-lg font-serif font-semibold text-foreground">{fyLabel}</h2>
+          <div className="text-sm text-right" data-testid={`fy-bar-summary-${fySlug}`}>
+            {isLoading ? (
+              <span className="text-muted-foreground">…</span>
+            ) : hasGoal ? (
+              <span>
+                <span className="font-semibold text-foreground">{formatCurrency(projection)}</span>
+                <span className="text-muted-foreground"> of {formatCurrency(goalNum)} goal</span>
+                <span className="ml-2 font-medium text-foreground">{Math.round(coverage! * 100)}%</span>
+                {overGoal ? (
+                  <span className="ml-1 text-emerald-600">
+                    (+{formatCurrency(projection - goalNum)} over)
+                  </span>
+                ) : null}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                <span className="font-semibold text-foreground">{formatCurrency(projection)}</span>{" "}
+                projected · No goal set
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex h-6 w-full overflow-hidden rounded-md bg-muted" role="img" aria-label={`${fyLabel} progress to goal`}>
+          {BAR_SEGMENTS.map((seg) => {
+            const v = segValue[seg.key];
+            const width = denom > 0 ? (v / denom) * 100 : 0;
+            if (width <= 0) return null;
+            const href = segHref(seg.metric);
+            const title = `${seg.label}: ${formatCurrency(v)}`;
+            const className = cn(
+              "block h-full first:rounded-l-md transition-opacity",
+              seg.color,
+              href ? "cursor-pointer hover:opacity-80" : "",
+            );
+            const style = { width: `${width}%` };
+            const testId = `fy-bar-seg-${seg.key}-${fySlug}`;
+            return href ? (
+              <Link key={seg.key} href={href} className={className} style={style} title={title} data-testid={testId} />
+            ) : (
+              <div key={seg.key} className={className} style={style} title={title} data-testid={testId} />
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          {BAR_SEGMENTS.map((seg) => (
+            <div key={seg.key} className="flex items-center gap-1.5">
+              <span className={cn("inline-block h-2.5 w-2.5 rounded-sm", seg.color)} />
+              <span className="text-muted-foreground">{seg.label}</span>
+              <span className="font-medium text-foreground">{formatCurrency(segValue[seg.key])}</span>
+            </div>
+          ))}
+          {hasGoal && !overGoal && remaining > 0 ? (
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm border bg-muted" />
+              <span className="text-muted-foreground">Remaining to goal</span>
+              <span className="font-medium text-foreground">{formatCurrency(remaining)}</span>
+            </div>
+          ) : null}
+        </div>
+      </div>
     );
   };
 
@@ -197,30 +200,52 @@ export default function Dashboard() {
         </div>
       ) : null}
 
-      <div className="space-y-6">
-        {byFy.map((m) => {
-          const fySlug = m.fiscalYear.id;
-          const fyLabel = m.fiscalYear.label;
-          return (
-            <div key={fySlug} className="space-y-3" data-testid={`fy-block-${fySlug}`}>
-              <h2 className="text-lg font-serif font-semibold text-foreground">{fyLabel}</h2>
-              {CATEGORY_TRACKS.map((track) => {
-                const cm = m[track.key];
-                return (
-                  <div key={track.key} className="space-y-2" data-testid={`fy-track-${track.slug}-${fySlug}`}>
-                    <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      {track.label}
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                      {buildTiles(fySlug, fyLabel, track.slug, cm).map(renderTile)}
-                    </div>
-                  </div>
-                );
-              })}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-4">
+            <CardTitle className="text-lg">Progress to goal</CardTitle>
+            <div className="flex items-center gap-2 text-sm" data-testid="dashboard-track-toggle">
+              <span
+                className={cn(
+                  selectedTrack === "revenue" ? "font-medium text-foreground" : "text-muted-foreground",
+                )}
+              >
+                Regular fundraising
+              </span>
+              <Switch
+                checked={selectedTrack === "loanCapital"}
+                onCheckedChange={(checked) => setSelectedTrack(checked ? "loanCapital" : "revenue")}
+                aria-label="Switch between regular fundraising and loans"
+                data-testid="dashboard-track-switch"
+              />
+              <span
+                className={cn(
+                  selectedTrack === "loanCapital" ? "font-medium text-foreground" : "text-muted-foreground",
+                )}
+              >
+                Loans
+              </span>
             </div>
-          );
-        })}
-      </div>
+          </div>
+          {multiEntityFilterActive ? (
+            <p className="text-xs text-muted-foreground">
+              Showing the combined total across {selectedEntityIds.length} entities — narrow to a
+              single entity to drill into a segment.
+            </p>
+          ) : entityFilterActive ? (
+            <p className="text-xs text-muted-foreground">Filtered to 1 entity (change in the header).</p>
+          ) : null}
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {byFy.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {isLoading ? "Loading fiscal-year goals…" : "No fiscal-year data available."}
+            </p>
+          ) : (
+            byFy.map((m) => renderGoalBar(m))
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <UpcomingMeetingsCard />
