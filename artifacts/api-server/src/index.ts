@@ -7,6 +7,7 @@ import { startQuickbooksSyncScheduler } from "./lib/quickbooksSyncScheduler";
 import { startStripeSyncScheduler } from "./lib/stripeSyncScheduler";
 import { startDonorboxSyncScheduler } from "./lib/donorboxSyncScheduler";
 import { startFlodeskSyncScheduler } from "./lib/flodeskSyncScheduler";
+import { startSchoolSyncScheduler } from "./lib/schoolSyncScheduler";
 import { startTaskSuggestionScheduler } from "./lib/taskSuggestionScheduler";
 import { startEmailIntelRecoveryScheduler } from "./lib/emailIntelRecoveryScheduler";
 import { runTaskSuggestionBackfillIfDue } from "./lib/taskSuggestionBackfill";
@@ -40,6 +41,7 @@ app.listen(port, (err) => {
   startStripeSyncScheduler();
   startDonorboxSyncScheduler();
   startFlodeskSyncScheduler();
+  startSchoolSyncScheduler();
   startTaskSuggestionScheduler();
   startEmailIntelRecoveryScheduler();
 
