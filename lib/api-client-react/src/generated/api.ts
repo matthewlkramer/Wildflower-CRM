@@ -123,7 +123,6 @@ import type {
   ForbiddenResponse,
   FundableProject,
   FundableProjectProgress,
-  FundraisingCategory,
   GetDashboardSummaryParams,
   GetFiscalYearBreakdownParams,
   GetOwnedRecordCountsParams,
@@ -139,6 +138,7 @@ import type {
   GiftOrPaymentList,
   GiftStripeChain,
   GmailSyncRunResponse,
+  GoalCategoryParam,
   GoogleOauthStatus,
   GoogleSyncStatus,
   GrantLead,
@@ -4200,7 +4200,7 @@ export function useListFiscalYearEntityGoals<
 export const getUpsertFiscalYearEntityGoalUrl = (
   fyId: string,
   entityId: string,
-  category: FundraisingCategory,
+  category: GoalCategoryParam,
 ) => {
   return `/api/fiscal-year-entity-goals/${fyId}/${entityId}/${category}`;
 };
@@ -4208,7 +4208,7 @@ export const getUpsertFiscalYearEntityGoalUrl = (
 export const upsertFiscalYearEntityGoal = async (
   fyId: string,
   entityId: string,
-  category: FundraisingCategory,
+  category: GoalCategoryParam,
   upsertFiscalYearEntityGoalBody: UpsertFiscalYearEntityGoalBody,
   options?: RequestInit,
 ): Promise<FiscalYearEntityGoal> => {
@@ -4233,7 +4233,7 @@ export const getUpsertFiscalYearEntityGoalMutationOptions = <
     {
       fyId: string;
       entityId: string;
-      category: FundraisingCategory;
+      category: GoalCategoryParam;
       data: BodyType<UpsertFiscalYearEntityGoalBody>;
     },
     TContext
@@ -4245,7 +4245,7 @@ export const getUpsertFiscalYearEntityGoalMutationOptions = <
   {
     fyId: string;
     entityId: string;
-    category: FundraisingCategory;
+    category: GoalCategoryParam;
     data: BodyType<UpsertFiscalYearEntityGoalBody>;
   },
   TContext
@@ -4264,7 +4264,7 @@ export const getUpsertFiscalYearEntityGoalMutationOptions = <
     {
       fyId: string;
       entityId: string;
-      category: FundraisingCategory;
+      category: GoalCategoryParam;
       data: BodyType<UpsertFiscalYearEntityGoalBody>;
     }
   > = (props) => {
@@ -4301,7 +4301,7 @@ export const useUpsertFiscalYearEntityGoal = <
     {
       fyId: string;
       entityId: string;
-      category: FundraisingCategory;
+      category: GoalCategoryParam;
       data: BodyType<UpsertFiscalYearEntityGoalBody>;
     },
     TContext
@@ -4313,7 +4313,7 @@ export const useUpsertFiscalYearEntityGoal = <
   {
     fyId: string;
     entityId: string;
-    category: FundraisingCategory;
+    category: GoalCategoryParam;
     data: BodyType<UpsertFiscalYearEntityGoalBody>;
   },
   TContext
@@ -4324,7 +4324,7 @@ export const useUpsertFiscalYearEntityGoal = <
 export const getDeleteFiscalYearEntityGoalUrl = (
   fyId: string,
   entityId: string,
-  category: FundraisingCategory,
+  category: GoalCategoryParam,
 ) => {
   return `/api/fiscal-year-entity-goals/${fyId}/${entityId}/${category}`;
 };
@@ -4332,7 +4332,7 @@ export const getDeleteFiscalYearEntityGoalUrl = (
 export const deleteFiscalYearEntityGoal = async (
   fyId: string,
   entityId: string,
-  category: FundraisingCategory,
+  category: GoalCategoryParam,
   options?: RequestInit,
 ): Promise<void> => {
   return customFetch<void>(
@@ -4351,14 +4351,14 @@ export const getDeleteFiscalYearEntityGoalMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>,
     TError,
-    { fyId: string; entityId: string; category: FundraisingCategory },
+    { fyId: string; entityId: string; category: GoalCategoryParam },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>,
   TError,
-  { fyId: string; entityId: string; category: FundraisingCategory },
+  { fyId: string; entityId: string; category: GoalCategoryParam },
   TContext
 > => {
   const mutationKey = ["deleteFiscalYearEntityGoal"];
@@ -4372,7 +4372,7 @@ export const getDeleteFiscalYearEntityGoalMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>,
-    { fyId: string; entityId: string; category: FundraisingCategory }
+    { fyId: string; entityId: string; category: GoalCategoryParam }
   > = (props) => {
     const { fyId, entityId, category } = props ?? {};
 
@@ -4395,14 +4395,14 @@ export const useDeleteFiscalYearEntityGoal = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>,
     TError,
-    { fyId: string; entityId: string; category: FundraisingCategory },
+    { fyId: string; entityId: string; category: GoalCategoryParam },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>,
   TError,
-  { fyId: string; entityId: string; category: FundraisingCategory },
+  { fyId: string; entityId: string; category: GoalCategoryParam },
   TContext
 > => {
   return useMutation(getDeleteFiscalYearEntityGoalMutationOptions(options));

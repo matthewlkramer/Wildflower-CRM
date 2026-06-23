@@ -1963,9 +1963,11 @@ export const ListFiscalYearEntityGoalsQueryParams = zod.object({
   fyId: zod.coerce.string().optional().describe("Filter by fiscal_year.id"),
   entityId: zod.coerce.string().optional().describe("Filter by entity.id"),
   category: zod
-    .enum(["revenue", "loan_capital"])
+    .enum(["revenue", "loan_capital", "loan", "grant"])
     .optional()
-    .describe("Filter by fundraising category (revenue | loan_capital)."),
+    .describe(
+      "Filter by category. Accepts the new loan\/grant tokens AND the legacy revenue\/loan_capital tokens.",
+    ),
 });
 
 export const ListFiscalYearEntityGoalsResponseItem = zod.object({
@@ -1975,6 +1977,15 @@ export const ListFiscalYearEntityGoalsResponseItem = zod.object({
     .enum(["revenue", "loan_capital"])
     .describe(
       "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+    ),
+  loanOrGrant: zod
+    .enum(["loan", "grant"])
+    .describe(
+      "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+    )
+    .optional()
+    .describe(
+      "Authoritative loan-vs-grant classification (supersedes category). Derived-but-persisted; dual-written from category.",
     ),
   goalAmount: zod.string().describe("Decimal string (numeric(14,2))."),
   createdAt: zod.string().datetime({}),
@@ -1987,7 +1998,7 @@ export const ListFiscalYearEntityGoalsResponse = zod.array(
 export const UpsertFiscalYearEntityGoalParams = zod.object({
   fyId: zod.coerce.string(),
   entityId: zod.coerce.string(),
-  category: zod.enum(["revenue", "loan_capital"]),
+  category: zod.enum(["revenue", "loan_capital", "loan", "grant"]),
 });
 
 export const UpsertFiscalYearEntityGoalBody = zod.object({
@@ -2006,6 +2017,15 @@ export const UpsertFiscalYearEntityGoalResponse = zod.object({
     .describe(
       "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
     ),
+  loanOrGrant: zod
+    .enum(["loan", "grant"])
+    .describe(
+      "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+    )
+    .optional()
+    .describe(
+      "Authoritative loan-vs-grant classification (supersedes category). Derived-but-persisted; dual-written from category.",
+    ),
   goalAmount: zod.string().describe("Decimal string (numeric(14,2))."),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -2014,7 +2034,7 @@ export const UpsertFiscalYearEntityGoalResponse = zod.object({
 export const DeleteFiscalYearEntityGoalParams = zod.object({
   fyId: zod.coerce.string(),
   entityId: zod.coerce.string(),
-  category: zod.enum(["revenue", "loan_capital"]),
+  category: zod.enum(["revenue", "loan_capital", "loan", "grant"]),
 });
 
 export const ListFundableProjectsQueryParams = zod.object({
@@ -4793,6 +4813,15 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
         .describe(
           "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
         ),
+      loanOrGrant: zod
+        .enum(["loan", "grant"])
+        .describe(
+          "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+        )
+        .optional()
+        .describe(
+          "Authoritative loan-vs-grant classification (supersedes fundraisingCategory). Derived-but-persisted; dual-written from fundraisingCategory during the transition. Analytics read from this.",
+        ),
       askAmount: zod.string().nullish(),
       awardedAmount: zod.string().nullish(),
       paidAmount: zod.string().optional(),
@@ -4967,6 +4996,15 @@ export const GetOpportunityOrPledgeResponse = zod
       .enum(["revenue", "loan_capital"])
       .describe(
         "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+      ),
+    loanOrGrant: zod
+      .enum(["loan", "grant"])
+      .describe(
+        "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+      )
+      .optional()
+      .describe(
+        "Authoritative loan-vs-grant classification (supersedes fundraisingCategory). Derived-but-persisted; dual-written from fundraisingCategory during the transition. Analytics read from this.",
       ),
     askAmount: zod.string().nullish(),
     awardedAmount: zod.string().nullish(),
@@ -5237,6 +5275,15 @@ export const GetOpportunityOrPledgeResponse = zod
               .describe(
                 "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
               ),
+            loanOrGrant: zod
+              .enum(["loan", "grant"])
+              .describe(
+                "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+              )
+              .optional()
+              .describe(
+                "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition.",
+              ),
             reconciliationLanes: zod
               .object({
                 funding: zod
@@ -5443,6 +5490,15 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
     .enum(["revenue", "loan_capital"])
     .describe(
       "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+    ),
+  loanOrGrant: zod
+    .enum(["loan", "grant"])
+    .describe(
+      "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+    )
+    .optional()
+    .describe(
+      "Authoritative loan-vs-grant classification (supersedes fundraisingCategory). Derived-but-persisted; dual-written from fundraisingCategory during the transition. Analytics read from this.",
     ),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
@@ -5997,6 +6053,15 @@ export const ListGiftsAndPaymentsResponse = zod.object({
         .describe(
           "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
         ),
+      loanOrGrant: zod
+        .enum(["loan", "grant"])
+        .describe(
+          "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+        )
+        .optional()
+        .describe(
+          "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition.",
+        ),
       reconciliationLanes: zod
         .object({
           funding: zod
@@ -6274,6 +6339,15 @@ export const GetGiftOrPaymentResponse = zod
       )
       .describe(
         "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
+    loanOrGrant: zod
+      .enum(["loan", "grant"])
+      .describe(
+        "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+      )
+      .optional()
+      .describe(
+        "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition.",
       ),
     reconciliationLanes: zod
       .object({
@@ -6616,6 +6690,15 @@ export const UpdateGiftOrPaymentResponse = zod.object({
     .describe(
       "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
     ),
+  loanOrGrant: zod
+    .enum(["loan", "grant"])
+    .describe(
+      "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+    )
+    .optional()
+    .describe(
+      "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition.",
+    ),
   reconciliationLanes: zod
     .object({
       funding: zod
@@ -6877,6 +6960,15 @@ export const LinkThankYouEmailResponse = zod
       )
       .describe(
         "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
+    loanOrGrant: zod
+      .enum(["loan", "grant"])
+      .describe(
+        "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+      )
+      .optional()
+      .describe(
+        "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition.",
       ),
     reconciliationLanes: zod
       .object({
@@ -14773,6 +14865,15 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
           .describe(
             "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
           ),
+        loanOrGrant: zod
+          .enum(["loan", "grant"])
+          .describe(
+            "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+          )
+          .optional()
+          .describe(
+            "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition.",
+          ),
         reconciliationLanes: zod
           .object({
             funding: zod
@@ -15036,6 +15137,15 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
           .describe(
             "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
           ),
+        loanOrGrant: zod
+          .enum(["loan", "grant"])
+          .describe(
+            "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+          )
+          .optional()
+          .describe(
+            "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition.",
+          ),
         reconciliationLanes: zod
           .object({
             funding: zod
@@ -15293,6 +15403,15 @@ export const ReconcileStagedPaymentResponse = zod.object({
       )
       .describe(
         "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
+    loanOrGrant: zod
+      .enum(["loan", "grant"])
+      .describe(
+        "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+      )
+      .optional()
+      .describe(
+        "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition.",
       ),
     reconciliationLanes: zod
       .object({
@@ -15615,6 +15734,15 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
       )
       .describe(
         "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+      ),
+    loanOrGrant: zod
+      .enum(["loan", "grant"])
+      .describe(
+        "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+      )
+      .optional()
+      .describe(
+        "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition.",
       ),
     reconciliationLanes: zod
       .object({
@@ -18691,6 +18819,15 @@ export const ArchiveOpportunityOrPledgeResponse = zod.object({
     .describe(
       "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
     ),
+  loanOrGrant: zod
+    .enum(["loan", "grant"])
+    .describe(
+      "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+    )
+    .optional()
+    .describe(
+      "Authoritative loan-vs-grant classification (supersedes fundraisingCategory). Derived-but-persisted; dual-written from fundraisingCategory during the transition. Analytics read from this.",
+    ),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
   paidAmount: zod.string().optional(),
@@ -18788,6 +18925,15 @@ export const UnarchiveOpportunityOrPledgeResponse = zod.object({
     .enum(["revenue", "loan_capital"])
     .describe(
       "Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n",
+    ),
+  loanOrGrant: zod
+    .enum(["loan", "grant"])
+    .describe(
+      "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+    )
+    .optional()
+    .describe(
+      "Authoritative loan-vs-grant classification (supersedes fundraisingCategory). Derived-but-persisted; dual-written from fundraisingCategory during the transition. Analytics read from this.",
     ),
   askAmount: zod.string().nullish(),
   awardedAmount: zod.string().nullish(),
@@ -18975,6 +19121,15 @@ export const ArchiveGiftOrPaymentResponse = zod.object({
     )
     .describe(
       "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+    ),
+  loanOrGrant: zod
+    .enum(["loan", "grant"])
+    .describe(
+      "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+    )
+    .optional()
+    .describe(
+      "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition.",
     ),
   reconciliationLanes: zod
     .object({
@@ -19198,6 +19353,15 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
     )
     .describe(
       "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create\/update.",
+    ),
+  loanOrGrant: zod
+    .enum(["loan", "grant"])
+    .describe(
+      "The single authoritative loan-vs-grant classification, superseding three\nscattered legacy signals during the transition:\n  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)\n  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')\n  - fiscal_year_entity_goals.category (= fundraising_category)\nMapping (1:1): loan_capital \/ loan_fund_investment → `loan`; everything\nelse → `grant`. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n",
+    )
+    .optional()
+    .describe(
+      "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition.",
     ),
   reconciliationLanes: zod
     .object({

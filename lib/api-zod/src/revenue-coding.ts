@@ -242,8 +242,13 @@ export interface CodingInput {
   // organizations.entity_type for an org donor (else null).
   orgEntityType: string | null;
   restrictionType: RestrictionType | null;
-  // gifts_and_payments.type — 'loan_fund_investment' gets NO revenue account.
+  // gifts_and_payments.type — 'loan_fund_investment' was the LEGACY loan signal.
+  // Prefer `loanOrGrant` when present; this stays only as the fallback.
   giftType?: string | null;
+  // Authoritative loan-vs-grant flag (A002 read cutover). When provided it
+  // supersedes the giftType loan signal. 'loan' ⇒ principal movement, no
+  // revenue account.
+  loanOrGrant?: string | null;
   // The fund entity this allocation lands in (entities.id).
   entityId: string | null;
   // intended_usage + fundable_project for location hints.
@@ -288,7 +293,13 @@ export function deriveRevenueCoding(
   const flags: string[] = [];
 
   // Loan-fund investments are principal movements, not revenue — no account.
-  if (input.giftType === "loan_fund_investment") {
+  // Read the authoritative loan_or_grant flag when present (A002 read cutover);
+  // fall back to the legacy giftType signal for callers not yet passing it.
+  const isLoan =
+    input.loanOrGrant != null
+      ? input.loanOrGrant === "loan"
+      : input.giftType === "loan_fund_investment";
+  if (isLoan) {
     return {
       objectCode: null,
       location: deriveLocation(input, entityRules, flags),

@@ -48,6 +48,7 @@ interface ParentDonor {
   donorKind: DonorKind | null;
   organizationId: string | null;
   giftType: string | null;
+  loanOrGrant: string | null;
 }
 
 async function loadGiftDonor(giftId: string): Promise<ParentDonor | null> {
@@ -57,6 +58,7 @@ async function loadGiftDonor(giftId: string): Promise<ParentDonor | null> {
       individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
       householdId: giftsAndPayments.householdId,
       type: giftsAndPayments.type,
+      loanOrGrant: giftsAndPayments.loanOrGrant,
     })
     .from(giftsAndPayments)
     .where(eq(giftsAndPayments.id, giftId));
@@ -65,6 +67,7 @@ async function loadGiftDonor(giftId: string): Promise<ParentDonor | null> {
     donorKind: donorKindOf(row),
     organizationId: row.organizationId ?? null,
     giftType: row.type ?? null,
+    loanOrGrant: row.loanOrGrant ?? null,
   };
 }
 
@@ -82,6 +85,9 @@ async function loadOppDonor(oppId: string): Promise<ParentDonor | null> {
     donorKind: donorKindOf(row),
     organizationId: row.organizationId ?? null,
     giftType: null,
+    // Opportunity/pledge allocations were never coded as loans via this path
+    // (gifts only). Keep that behavior — pass null so isLoan stays false.
+    loanOrGrant: null,
   };
 }
 
@@ -126,6 +132,7 @@ async function computeFromDonor(
     orgEntityType: entityType,
     restrictionType: (fields.restrictionType ?? null) as CodingInput["restrictionType"],
     giftType: donor?.giftType ?? null,
+    loanOrGrant: donor?.loanOrGrant ?? null,
     entityId: fields.entityId ?? null,
     intendedUsage: fields.intendedUsage ?? null,
     fundableProjectId: fields.fundableProjectId ?? null,

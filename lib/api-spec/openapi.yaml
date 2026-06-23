@@ -597,7 +597,7 @@ paths:
       parameters:
         - { name: fyId,     in: query, schema: { type: string }, description: "Filter by fiscal_year.id" }
         - { name: entityId, in: query, schema: { type: string }, description: "Filter by entity.id" }
-        - { name: category, in: query, schema: { $ref: "#/components/schemas/FundraisingCategory" }, description: "Filter by fundraising category (revenue | loan_capital)." }
+        - { name: category, in: query, schema: { $ref: "#/components/schemas/GoalCategoryParam" }, description: "Filter by category. Accepts the new loan/grant tokens AND the legacy revenue/loan_capital tokens." }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FiscalYearEntityGoal" } } } } }
   /fiscal-year-entity-goals/{fyId}/{entityId}/{category}:
@@ -607,7 +607,7 @@ paths:
       parameters:
         - { name: fyId,     in: path, required: true, schema: { type: string } }
         - { name: entityId, in: path, required: true, schema: { type: string } }
-        - { name: category, in: path, required: true, schema: { $ref: "#/components/schemas/FundraisingCategory" } }
+        - { name: category, in: path, required: true, schema: { $ref: "#/components/schemas/GoalCategoryParam" } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpsertFiscalYearEntityGoalBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYearEntityGoal" } } } }
@@ -619,7 +619,7 @@ paths:
       parameters:
         - { name: fyId,     in: path, required: true, schema: { type: string } }
         - { name: entityId, in: path, required: true, schema: { type: string } }
-        - { name: category, in: path, required: true, schema: { $ref: "#/components/schemas/FundraisingCategory" } }
+        - { name: category, in: path, required: true, schema: { $ref: "#/components/schemas/GoalCategoryParam" } }
       responses:
         "204": { description: Deleted }
 
@@ -3842,6 +3842,25 @@ components:
         parallel. `loan_capital` = principal investments (`loan_fund_investment`
         gifts + opportunities/pledges flagged loan-capital); `revenue` = everything
         else. Defaults to `revenue` so existing data is treated as revenue.
+    LoanOrGrant:
+      type: string
+      enum: [loan, grant]
+      description: |
+        The single authoritative loan-vs-grant classification, superseding three
+        scattered legacy signals during the transition:
+          - opportunities_and_pledges.fundraising_category (revenue | loan_capital)
+          - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')
+          - fiscal_year_entity_goals.category (= fundraising_category)
+        Mapping (1:1): loan_capital / loan_fund_investment → `loan`; everything
+        else → `grant`. NOTE: `grant` means ALL non-loan money (individual
+        donations, foundation grants, earned revenue, …), not literally grants.
+    GoalCategoryParam:
+      type: string
+      enum: [revenue, loan_capital, loan, grant]
+      description: |
+        Fiscal-year goal category path/query token. During the loan_or_grant
+        transition it accepts BOTH the new authoritative loan/grant tokens AND
+        the legacy revenue/loan_capital tokens (loan↔loan_capital, grant↔revenue).
     GiftPaymentMethod: { type: string, enum: [ach, check, wire, stock, donor_box, daf_ach, daf_check, daf_bill_com] }
     GiftFinalAmountSource: { type: string, enum: [human, stripe, quickbooks], description: "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields." }
     GiftQuickbooksTie: { type: string, enum: [exempt, tied, amount_mismatch, missing], description: "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence." }
@@ -4009,6 +4028,7 @@ components:
         fiscalYearId: { type: string }
         entityId:     { type: string }
         category:     { $ref: "#/components/schemas/FundraisingCategory" }
+        loanOrGrant:  { allOf: [ { $ref: "#/components/schemas/LoanOrGrant" } ], readOnly: true, description: "Authoritative loan-vs-grant classification (supersedes category). Derived-but-persisted; dual-written from category." }
         goalAmount:   { type: string, description: "Decimal string (numeric(14,2))." }
         createdAt:    { type: string, format: date-time }
         updatedAt:    { type: string, format: date-time }
@@ -4906,6 +4926,7 @@ components:
         organizationId:                   { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
         fundraisingCategory:        { $ref: "#/components/schemas/FundraisingCategory" }
+        loanOrGrant:                { allOf: [ { $ref: "#/components/schemas/LoanOrGrant" } ], readOnly: true, description: "Authoritative loan-vs-grant classification (supersedes fundraisingCategory). Derived-but-persisted; dual-written from fundraisingCategory during the transition. Analytics read from this." }
         askAmount:                  { type: string, nullable: true }
         awardedAmount:              { type: string, nullable: true }
         # Server-computed: SUM(gifts_and_payments.amount) for payments
@@ -5179,6 +5200,7 @@ components:
         countsTowardGoal:           { type: boolean, description: "When false, this real money is excluded from goal/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true." }
         needsResearch:              { type: boolean, description: "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status / derivation / QuickBooks tie." }
         quickbooksTieStatus:        { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], readOnly: true, description: "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update." }
+        loanOrGrant:                { allOf: [ { $ref: "#/components/schemas/LoanOrGrant" } ], readOnly: true, description: "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition." }
         reconciliationLanes:        { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses." }
         tags:                       { type: string, nullable: true }
         thankYouSentAt:             { type: string, format: date, nullable: true, description: "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time." }

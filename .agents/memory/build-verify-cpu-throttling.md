@@ -23,6 +23,31 @@ INCREMENTAL — each project that finishes writes its `.tsbuildinfo`. So:
 finish, generate per-target with temp single-target configs + `prettier:false`,
 then run prettier separately (delete the temp configs after).
 
+**Most reliable escape hatch — a Replit-managed WORKFLOW, not nohup/setsid.**
+Under severe throttle, detached background jobs (`nohup`/`setsid`, even with
+`</dev/null` + a completion sentinel) get SIGKILL-reaped after ~4 min — NOT an
+OOM (mem + cpu-time are both unlimited here), but an external reaper of orphaned
+processes, so the `; echo done` sentinel never fires (0-byte log, process gone).
+Foreground bash dies at the ~120s cap. A configured workflow
+(`configureWorkflow({name, command, outputType:"console", autoStart:true})`) is
+Replit-managed and is NOT reaped — it runs to completion however long it takes.
+Poll `getWorkflowStatus({name})` until `state` is `finished`/`failed`, read
+`.output`, then `removeWorkflow`. This is how codegen, full `tsc`, the parity
+script, and vitest were each run to completion. (`getWorkflowStatus` still
+returns `.output` for a `finished` workflow, despite the skill's caveat.)
+
+**Integration-test failures under throttle are TIMEOUTS, not assertions.** A full
+vitest run with dozens of DB-backed files each booting `app.listen(0)` + sharing
+the one dev DB shows a few "Test timed out in 5000ms" failures purely from
+contention. Re-run the ONE suspect file in isolation with a raised hook budget
+(`pnpm --filter <pkg> exec vitest run <file> --hookTimeout=240000 --testTimeout=60000`)
+— the limiter is usually the `beforeAll` DB-setup hook (when IT times out every
+test in the file SKIPs, not fails), and isolation removes cross-file contention.
+Green-in-isolation confirms the suite failures were environmental, not a regression.
+NOTE: `pnpm run test -- <filter>` forwards as `vitest run -- <filter>`; the stray
+`--` swallows the positional filter so the WHOLE suite runs — use `exec vitest run
+<file>` to actually target one file.
+
 **Running a real app function as a one-off (DB-touching verification):** do NOT
 `npx tsx` a script that imports the full app graph (DB pool + pino workers) — cold
 runtime TS compilation of the whole graph blows past the foreground cap and the

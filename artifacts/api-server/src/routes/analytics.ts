@@ -80,15 +80,19 @@ function computeCurrentFiscalYear(now: Date = new Date()): FyDescriptor {
 // rows with their own grant_year slugs).
 // ─── Fundraising category (revenue vs loan_capital) ─────────────────────────
 // Loan-fund capital reports as a track parallel to revenue, never mixed in.
-//   - gifts:        category derived from gift type (loan_fund_investment).
-//   - opps/pledges: category from opportunities_and_pledges.fundraising_category.
-//   - goals:        category from fiscal_year_entity_goals.category.
-// Everything else (default) is revenue, so existing data is unaffected.
+// A002 READ CUTOVER: the bucket string for every track is now DERIVED from the
+// authoritative `loan_or_grant` flag on each table (loan → loan_capital,
+// grant → revenue), no longer from the scattered legacy signals (gift type /
+// fundraising_category / goal category). The response keys + downstream
+// bucketing stay on the legacy `revenue`/`loan_capital` slugs until A003 — only
+// the SOURCE column changed, so existing data + API consumers are unaffected.
 const FUNDRAISING_CATEGORIES = ["revenue", "loan_capital"] as const;
 type FundraisingCategory = (typeof FUNDRAISING_CATEGORIES)[number];
 
-// gift_allocations → category, derived from the parent gift's type.
-const giftCategorySql = sql<string>`CASE WHEN ${giftsAndPayments.type} = 'loan_fund_investment' THEN 'loan_capital' ELSE 'revenue' END`;
+// loan_or_grant → legacy bucket string, one helper per source table.
+const giftCategorySql = sql<string>`CASE WHEN ${giftsAndPayments.loanOrGrant} = 'loan' THEN 'loan_capital' ELSE 'revenue' END`;
+const oppCategorySql = sql<string>`CASE WHEN ${opportunitiesAndPledges.loanOrGrant} = 'loan' THEN 'loan_capital' ELSE 'revenue' END`;
+const goalCategorySql = sql<string>`CASE WHEN ${fiscalYearEntityGoals.loanOrGrant} = 'loan' THEN 'loan_capital' ELSE 'revenue' END`;
 
 type CategoryMetrics = {
   openPipelineAsk: string;
@@ -124,7 +128,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   const pledgedPerOpp = db
     .select({
       oppId: sql<string>`${pledgeAllocations.pledgeOrOpportunityId}`.as("pledged_opp_id"),
-      category: sql<string>`${opportunitiesAndPledges.fundraisingCategory}`.as("pledged_category"),
+      category: oppCategorySql.as("pledged_category"),
       pledged: sql<string>`SUM(${pledgeAllocations.subAmount})`.as("pledged"),
     })
     .from(pledgeAllocations)
@@ -139,7 +143,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
         hasEntityFilter ? inArray(pledgeAllocations.entityId, entityIds!) : undefined,
       ),
     )
-    .groupBy(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.fundraisingCategory)
+    .groupBy(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.loanOrGrant)
     .as("pledged_per_opp");
 
   // Payments already booked against those pledges, scoped to the same FY +
@@ -170,7 +174,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   const [openRows, committedRows, receivedRows, goalRows] = await Promise.all([
     db
       .select({
-        category: sql<string>`${opportunitiesAndPledges.fundraisingCategory}`,
+        category: oppCategorySql,
         ask: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
         weighted: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1)), 0)::text`,
       })
@@ -188,7 +192,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
             : undefined,
         ),
       )
-      .groupBy(opportunitiesAndPledges.fundraisingCategory),
+      .groupBy(opportunitiesAndPledges.loanOrGrant),
     // "Committed" = UNPAID remainder of written commitments (status='pledge')
     // for this FY: pledged amount minus payments already received against each
     // pledge (see pledgedPerOpp / paidPerOpp above). This dedupes partial
@@ -227,7 +231,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
       .groupBy(giftCategorySql),
     db
       .select({
-        category: sql<string>`${fiscalYearEntityGoals.category}`,
+        category: goalCategorySql,
         goal: sql<string | null>`NULLIF(SUM(${fiscalYearEntityGoals.goalAmount}), 0)::text`,
       })
       .from(fiscalYearEntityGoals)
@@ -239,7 +243,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
             : undefined,
         ),
       )
-      .groupBy(fiscalYearEntityGoals.category),
+      .groupBy(fiscalYearEntityGoals.loanOrGrant),
   ]);
 
   const byCategory: Record<FundraisingCategory, CategoryMetrics> = {
@@ -381,7 +385,7 @@ router.get(
     // category when no goals are recorded.
     const goalRows = await db
       .select({
-        category: sql<string>`${fiscalYearEntityGoals.category}`,
+        category: goalCategorySql,
         goal: sql<string | null>`NULLIF(SUM(${fiscalYearEntityGoals.goalAmount}), 0)::text`,
       })
       .from(fiscalYearEntityGoals)
@@ -391,7 +395,7 @@ router.get(
           entityIdParam ? eq(fiscalYearEntityGoals.entityId, entityIdParam) : undefined,
         ),
       )
-      .groupBy(fiscalYearEntityGoals.category);
+      .groupBy(fiscalYearEntityGoals.loanOrGrant);
     const goalByCategory: Record<FundraisingCategory, string | null> = {
       revenue: null,
       loan_capital: null,
@@ -455,7 +459,7 @@ router.get(
           allocationId: pledgeAllocations.id,
           subAmount: sql<string>`${pledgeAllocations.subAmount}::text`,
           weightedAmount: sql<string>`(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1))::text`,
-          category: sql<string>`${opportunitiesAndPledges.fundraisingCategory}`,
+          category: oppCategorySql,
           allocationStatus: sql<string | null>`${pledgeAllocations.status}::text`,
           entityId: pledgeAllocations.entityId,
           intendedUsage: sql<string | null>`${pledgeAllocations.intendedUsage}::text`,
@@ -556,7 +560,7 @@ router.get(
       .select({
         grantYear: pledgeAllocations.grantYear,
         entityId: pledgeAllocations.entityId,
-        category: sql<string>`${opportunitiesAndPledges.fundraisingCategory}`,
+        category: oppCategorySql,
         allocationCount: count(),
         totalSubAmount: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
         expected: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1)), 0)::text`,
@@ -573,7 +577,7 @@ router.get(
       .groupBy(
         pledgeAllocations.grantYear,
         pledgeAllocations.entityId,
-        opportunitiesAndPledges.fundraisingCategory,
+        opportunitiesAndPledges.loanOrGrant,
       );
 
     res.json({
