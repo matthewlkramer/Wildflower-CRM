@@ -44,6 +44,12 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import {
+  INLINE_EDIT_GROUP,
+  EDIT_PENCIL_REVEAL,
+  EDIT_VALUE_CLICKABLE,
+  makeEditValueClick,
+} from "@/components/inline-edit";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 type SaveResult = unknown | Promise<unknown>;
@@ -326,13 +332,22 @@ export function InlineEditEntityPicker({
 
   if (!editing) {
     return (
-      <div className="flex items-center gap-2 min-w-0">
-        <div className="truncate text-right flex-1">{display}</div>
+      <div className={cn(INLINE_EDIT_GROUP, "flex items-center gap-2 min-w-0")}>
+        <div
+          className={cn("truncate text-right flex-1", EDIT_VALUE_CLICKABLE)}
+          onClick={makeEditValueClick(() => setEditing(true))}
+          title={`Edit ${label}`}
+        >
+          {display}
+        </div>
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="h-6 w-6 text-muted-foreground hover:text-foreground"
+          className={cn(
+            "h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground",
+            EDIT_PENCIL_REVEAL,
+          )}
           onClick={() => setEditing(true)}
           aria-label={`Edit ${label}`}
           data-testid={testIdBase ? `button-edit-${testIdBase}` : undefined}
@@ -785,13 +800,22 @@ export function InlineEditDonor({
 
   if (!editing) {
     return (
-      <div className="flex items-center gap-2 min-w-0">
-        <div className="truncate text-right flex-1">{display}</div>
+      <div className={cn(INLINE_EDIT_GROUP, "flex items-center gap-2 min-w-0")}>
+        <div
+          className={cn("truncate text-right flex-1", EDIT_VALUE_CLICKABLE)}
+          onClick={makeEditValueClick(() => setEditing(true))}
+          title="Edit donor"
+        >
+          {display}
+        </div>
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="h-6 w-6 text-muted-foreground hover:text-foreground"
+          className={cn(
+            "h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground",
+            EDIT_PENCIL_REVEAL,
+          )}
           onClick={() => setEditing(true)}
           aria-label="Edit donor"
           data-testid={testIdBase ? `button-edit-${testIdBase}` : undefined}

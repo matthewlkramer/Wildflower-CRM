@@ -28,6 +28,12 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import {
+  INLINE_EDIT_GROUP,
+  EDIT_PENCIL_REVEAL,
+  EDIT_VALUE_CLICKABLE,
+  makeEditValueClick,
+} from "@/components/inline-edit";
 import { regionDisplayName, buildRegionIndex } from "@/components/region-picker";
 import { formatEnum } from "@/lib/format";
 
@@ -150,8 +156,15 @@ export function InlineEditMultiSelect({
   // Read mode: chips + pencil edit button.
   if (!editing) {
     return (
-      <div className="flex items-start gap-2 min-w-0">
-        <div className="flex flex-wrap gap-1 flex-1 min-w-0 justify-end">
+      <div className={cn(INLINE_EDIT_GROUP, "flex items-start gap-2 min-w-0")}>
+        <div
+          className={cn(
+            "flex flex-wrap gap-1 flex-1 min-w-0 justify-end",
+            EDIT_VALUE_CLICKABLE,
+          )}
+          onClick={makeEditValueClick(() => setEditing(true))}
+          title={`Edit ${label}`}
+        >
           {value.length === 0 ? (
             <span className="text-muted-foreground">{emptyLabel}</span>
           ) : (
@@ -172,7 +185,10 @@ export function InlineEditMultiSelect({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-6 w-6 text-muted-foreground hover:text-foreground shrink-0"
+          className={cn(
+            "h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground",
+            EDIT_PENCIL_REVEAL,
+          )}
           onClick={() => setEditing(true)}
           aria-label={`Edit ${label}`}
           data-testid={testIdBase ? `button-edit-${testIdBase}` : undefined}

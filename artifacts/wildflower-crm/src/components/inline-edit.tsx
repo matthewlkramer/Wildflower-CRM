@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +26,48 @@ type BaseProps = {
   display: ReactNode;
 };
 
+// Detail-page inline-edit affordances. The edit pencil stays hidden in the
+// calm resting state and is revealed only when the user hovers the field row
+// or reaches it by keyboard (focus-within). On touch devices — which have no
+// hover capability — the pencil stays visible so it remains usable.
+//
+// Mark the field row container with `INLINE_EDIT_GROUP`, the pencil/trigger
+// button with `EDIT_PENCIL_REVEAL`, and the (clickable) value with
+// `EDIT_VALUE_CLICKABLE` + `makeEditValueClick(onEdit)`.
+export const INLINE_EDIT_GROUP = "group/inline-edit";
+
+export const EDIT_PENCIL_REVEAL = cn(
+  "transition-opacity",
+  "[@media(hover:hover)]:opacity-0",
+  "[@media(hover:hover)]:group-hover/inline-edit:opacity-100",
+  "[@media(hover:hover)]:group-focus-within/inline-edit:opacity-100",
+);
+
+export const EDIT_VALUE_CLICKABLE =
+  "cursor-pointer rounded transition-colors hover:bg-muted/50";
+
+/**
+ * Click handler for a clickable field value: enters edit mode, but only when
+ * the click isn't on a nested interactive element (link/button/control) and
+ * the user isn't in the middle of selecting text. This keeps a hidden pencil
+ * from ever being the only way into edit mode without hijacking text
+ * selection or embedded links.
+ */
+export function makeEditValueClick(onEdit: () => void) {
+  return (e: MouseEvent<HTMLElement>) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.closest(
+        "a, button, input, textarea, select, [role='combobox'], [data-no-edit]",
+      )
+    ) {
+      return;
+    }
+    if ((window.getSelection()?.toString().length ?? 0) > 0) return;
+    onEdit();
+  };
+}
+
 export function EditTriggerRow({
   display,
   onEdit,
@@ -34,12 +82,15 @@ export function EditTriggerRow({
   align?: "left" | "right";
 }) {
   return (
-    <div className="flex items-center gap-2 min-w-0">
+    <div className={cn(INLINE_EDIT_GROUP, "flex items-center gap-2 min-w-0")}>
       <div
         className={cn(
           "truncate flex-1",
           align === "right" ? "text-right" : "text-left",
+          EDIT_VALUE_CLICKABLE,
         )}
+        onClick={makeEditValueClick(onEdit)}
+        title={ariaLabel}
       >
         {display}
       </div>
@@ -47,7 +98,10 @@ export function EditTriggerRow({
         type="button"
         variant="ghost"
         size="icon"
-        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+        className={cn(
+          "h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground",
+          EDIT_PENCIL_REVEAL,
+        )}
         onClick={onEdit}
         aria-label={ariaLabel}
         data-testid={testIdBase ? `button-edit-${testIdBase}` : undefined}
@@ -244,13 +298,24 @@ export function InlineEditTextarea({
     // Render the display block at full width with the edit pencil
     // floated alongside instead.
     return (
-      <div className="flex items-start gap-2 min-w-0 w-full">
-        <div className="flex-1 min-w-0">{display}</div>
+      <div
+        className={cn(INLINE_EDIT_GROUP, "flex items-start gap-2 min-w-0 w-full")}
+      >
+        <div
+          className={cn("flex-1 min-w-0", EDIT_VALUE_CLICKABLE)}
+          onClick={makeEditValueClick(() => setEditing(true))}
+          title={`Edit ${label}`}
+        >
+          {display}
+        </div>
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+          className={cn(
+            "h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground",
+            EDIT_PENCIL_REVEAL,
+          )}
           onClick={() => setEditing(true)}
           aria-label={`Edit ${label}`}
           data-testid={testIdBase ? `button-edit-${testIdBase}` : undefined}
