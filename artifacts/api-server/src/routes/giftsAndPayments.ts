@@ -91,6 +91,8 @@ import {
   SplitGiftIntoPledgeBody,
   validateGiftInvariants,
   validateOppInvariants,
+  giftTypeToLoanOrGrant,
+  loanOrGrantToLegacyCategory,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -396,6 +398,13 @@ router.post(
       table: giftsAndPayments,
       bodySchema: BulkUpdateGiftsAndPaymentsBody,
       allowedFields: ["ownerUserId", "type"],
+      // Mirror the authoritative loan_or_grant flag whenever a bulk edit
+      // changes the gift `type` (legacy `type` stays the read source this
+      // phase); written atomically in the same per-row UPDATE.
+      deriveColumns: (p) =>
+        "type" in p
+          ? { loanOrGrant: giftTypeToLoanOrGrant((p as { type?: string | null }).type) }
+          : {},
       // Allocation-set reconciliation fields — managed via extraApply
       // rather than as columns on gifts_and_payments.
       virtualFields: [
@@ -525,7 +534,16 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateGiftOrPaymentBodyRefined, req.body, res);
     if (!body) return;
-    const [row] = await db.insert(giftsAndPayments).values({ id: newId(), ...body }).returning();
+    const [row] = await db
+      .insert(giftsAndPayments)
+      .values({
+        id: newId(),
+        ...body,
+        // Dual-write the authoritative loan_or_grant flag from the gift type
+        // (legacy `type` stays the read source this phase).
+        loanOrGrant: giftTypeToLoanOrGrant(body.type),
+      })
+      .returning();
     await applyDerivedOppFieldsMany(row?.paymentOnPledgeId);
     await applyGiftQbTieMany(row?.id);
     if (row) {
@@ -564,9 +582,15 @@ router.patch(
     });
     if (issues.length) return respondInvariantFailure(res, issues);
 
+    // Mirror loan_or_grant whenever the legacy `type` is touched (derive from
+    // the merged state so an explicit type change maps correctly).
+    const giftWrite: typeof body & { loanOrGrant?: "loan" | "grant" } = { ...body };
+    if (body.type !== undefined) {
+      giftWrite.loanOrGrant = giftTypeToLoanOrGrant(merged.type);
+    }
     const [row] = await db
       .update(giftsAndPayments)
-      .set({ ...body, updatedAt: new Date() })
+      .set({ ...giftWrite, updatedAt: new Date() })
       .where(eq(giftsAndPayments.id, id))
       .returning();
     if (!row) return notFound(res, "gift");
@@ -1024,6 +1048,13 @@ router.post(
           awardedAmount: summedAmount,
           stage: "written_commitment",
           wasPledge: true,
+          // Inherit loan-vs-grant from the source gift(s) so loan-fund money
+          // doesn't create a grant pledge; if any source gift is loan the
+          // pledge is loan. Keep the legacy fundraising_category in lockstep.
+          fundraisingCategory: loanOrGrantToLegacyCategory(
+            gifts.some((g) => g.loanOrGrant === "loan") ? "loan" : "grant",
+          ),
+          loanOrGrant: gifts.some((g) => g.loanOrGrant === "loan") ? "loan" : "grant",
         });
         // Minimal allocation so the pledge satisfies the "at least one
         // allocation" expectation; carries the full summed amount.
@@ -1236,6 +1267,11 @@ router.post(
         awardedAmount: gift.amount,
         stage: "written_commitment",
         wasPledge: true,
+        // Inherit loan-vs-grant from the source gift so a loan-fund gift
+        // doesn't create a grant pledge; keep legacy fundraising_category in
+        // lockstep with the authoritative flag.
+        fundraisingCategory: loanOrGrantToLegacyCategory(gift.loanOrGrant),
+        loanOrGrant: gift.loanOrGrant,
       });
 
       // 2. Mirror each gift allocation onto a pledge allocation. The gifts are
@@ -1292,6 +1328,9 @@ router.post(
           individualGiverPersonId: gift.individualGiverPersonId,
           householdId: gift.householdId,
           type: gift.type,
+          // Carry the authoritative loan_or_grant flag onto every split row so
+          // it isn't silently reset to the column default.
+          loanOrGrant: gift.loanOrGrant,
           paymentOnPledgeId: pledgeId,
           advisorPersonId: gift.advisorPersonId,
           grantYear: a.grantYear ?? gift.grantYear,

@@ -18,6 +18,7 @@ import {
   opportunityConditionalEnum,
   opportunityConditionsMetEnum,
   fundraisingCategoryEnum,
+  loanOrGrantEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
 import { people } from "./people";
@@ -104,6 +105,12 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   fundraisingCategory: fundraisingCategoryEnum("fundraising_category")
     .notNull()
     .default("revenue"),
+  // Authoritative loan-vs-grant flag (see loanOrGrantEnum). Backfilled from
+  // fundraisingCategory (revenue→grant, loan_capital→loan) and dual-written on
+  // every create/patch during the transition. Becomes the single read source
+  // (replacing fundraisingCategory in dashboard/projections/goals) once the
+  // parity-gated read cutover lands. Default 'grant' (non-destructive).
+  loanOrGrant: loanOrGrantEnum("loan_or_grant").notNull().default("grant"),
   type: opportunityTypeEnum("type"),
   conditional: opportunityConditionalEnum("conditional"),
   conditions: text("conditions"),

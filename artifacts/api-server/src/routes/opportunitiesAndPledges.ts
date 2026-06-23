@@ -76,6 +76,7 @@ import {
   BulkUpdateOpportunitiesAndPledgesBody,
   BulkArchiveOpportunitiesAndPledgesBody,
   validateOppInvariants,
+  legacyCategoryToLoanOrGrant,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -476,7 +477,13 @@ router.post(
     // win_probability off the derived value. Explicit winProbability in
     // the body always wins. (applyDerivedOppFields below is authoritative
     // and re-canonicalises once payments are known.)
-    const writeValues: typeof body & { winProbability?: string | null } = { ...body };
+    const writeValues: typeof body & {
+      winProbability?: string | null;
+      loanOrGrant?: "loan" | "grant";
+    } = { ...body };
+    // Dual-write the authoritative loan_or_grant flag from the legacy
+    // fundraising_category signal (legacy stays the read source this phase).
+    writeValues.loanOrGrant = legacyCategoryToLoanOrGrant(body.fundraisingCategory);
     if (
       (body.stage !== undefined || body.lossType !== undefined) &&
       body.winProbability === undefined
@@ -547,9 +554,16 @@ router.patch(
     // authoritative and re-canonicalises once payments are known.)
     const stageOrLossTypeInBody =
       body.stage !== undefined || body.lossType !== undefined;
-    const writeData: typeof body & { winProbability?: string | null } = {
+    const writeData: typeof body & {
+      winProbability?: string | null;
+      loanOrGrant?: "loan" | "grant";
+    } = {
       ...body,
     };
+    // Mirror loan_or_grant whenever the legacy fundraising_category is set.
+    if (body.fundraisingCategory !== undefined) {
+      writeData.loanOrGrant = legacyCategoryToLoanOrGrant(body.fundraisingCategory);
+    }
     if (stageOrLossTypeInBody && body.winProbability === undefined) {
       const derivedStatus = deriveOppFields({
         stage: merged.stage ?? null,

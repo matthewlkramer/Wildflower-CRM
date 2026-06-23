@@ -1,0 +1,407 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AddressInfo } from "node:net";
+import type { Server } from "node:http";
+
+/**
+ * End-to-end coverage for the loan_or_grant DUAL-WRITE (phase A001). Every
+ * write path that sets a legacy signal (opp `fundraising_category`, gift
+ * `type`, goal `category`) must also mirror the authoritative `loan_or_grant`
+ * column so legacy + new stay in lockstep until reads flip (A002).
+ *
+ * Exercises the real route handlers against the dev Postgres so it can assert
+ * the persisted `loan_or_grant` value, covering: gift create/patch/bulk-update,
+ * opportunity create/patch, goal upsert, and the two gift->pledge paths
+ * (split-into-pledge, merge-into-pledge) which must inherit loan-vs-grant from
+ * their source gift(s).
+ *
+ * The only seam mocked is the Clerk auth gate (`requireAuth`) — a seeded admin
+ * user is injected (goal upsert is admin-only). All seeded rows use a unique
+ * run prefix and are cleaned up. Skips automatically when no real DATABASE_URL
+ * is configured.
+ */
+
+const RAW_DB_URL = process.env.DATABASE_URL;
+const HAS_DB = !!RAW_DB_URL && !/test:test@localhost:5432\/test/.test(RAW_DB_URL);
+
+const { TEST_USER_ID } = vi.hoisted(() => ({
+  TEST_USER_ID: `lorg_test_user_${Date.now()}`,
+}));
+
+vi.mock("../middlewares/requireAuth", () => ({
+  requireAuth: (
+    req: { appUser?: { id: string; role: string } },
+    _res: unknown,
+    next: () => void,
+  ) => {
+    // Goal upsert is admin-gated (requireAdmin reads appUser.role), so inject
+    // an admin role alongside the seeded user id.
+    req.appUser = { id: TEST_USER_ID, role: "admin" };
+    next();
+  },
+}));
+
+const RUN = `lorg_${Date.now()}`;
+const ORG_ID = `${RUN}_org`;
+const ENTITY_ID = `${RUN}_entity`;
+const FY_ID = `${RUN}_fy`;
+
+type Db = typeof import("@workspace/db");
+
+let db: Db["db"];
+let schema: {
+  users: Db["users"];
+  organizations: Db["organizations"];
+  entities: Db["entities"];
+  fiscalYears: Db["fiscalYears"];
+  giftsAndPayments: Db["giftsAndPayments"];
+  giftAllocations: Db["giftAllocations"];
+  opportunitiesAndPledges: Db["opportunitiesAndPledges"];
+  pledgeAllocations: Db["pledgeAllocations"];
+  fiscalYearEntityGoals: Db["fiscalYearEntityGoals"];
+  bulkOperations: Db["bulkOperations"];
+};
+let eqFn: (typeof import("drizzle-orm"))["eq"];
+let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
+let andFn: (typeof import("drizzle-orm"))["and"];
+let server: Server;
+let baseUrl = "";
+
+let gen = 0;
+function nextId(label: string): string {
+  gen += 1;
+  return `${RUN}_${label}_${String(gen).padStart(3, "0")}`;
+}
+
+const seededGiftIds: string[] = [];
+const seededPledgeIds: string[] = [];
+
+async function send(
+  method: "POST" | "PATCH" | "PUT",
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; json: any }> {
+  const res = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let json: unknown = null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+  return { status: res.status, json };
+}
+
+async function readGiftLoanOrGrant(id: string): Promise<string | undefined> {
+  const [row] = await db
+    .select()
+    .from(schema.giftsAndPayments)
+    .where(eqFn(schema.giftsAndPayments.id, id));
+  return row?.loanOrGrant;
+}
+
+async function readPledge(id: string) {
+  const [row] = await db
+    .select()
+    .from(schema.opportunitiesAndPledges)
+    .where(eqFn(schema.opportunitiesAndPledges.id, id));
+  return row;
+}
+
+/** Seed a gift directly (bypassing the route) with explicit loan_or_grant. */
+async function seedGift(
+  amount: string,
+  loanOrGrant: "loan" | "grant",
+  allocs: string[],
+): Promise<string> {
+  const id = nextId("gift");
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    amount,
+    organizationId: ORG_ID,
+    type: loanOrGrant === "loan" ? "loan_fund_investment" : "standard_gift",
+    loanOrGrant,
+  });
+  for (const sub of allocs) {
+    await db.insert(schema.giftAllocations).values({
+      id: nextId("alloc"),
+      giftId: id,
+      subAmount: sub,
+    });
+  }
+  seededGiftIds.push(id);
+  return id;
+}
+
+beforeAll(async () => {
+  if (!HAS_DB) return;
+  const dbMod = await import("@workspace/db");
+  const drizzle = await import("drizzle-orm");
+  db = dbMod.db;
+  schema = {
+    users: dbMod.users,
+    organizations: dbMod.organizations,
+    entities: dbMod.entities,
+    fiscalYears: dbMod.fiscalYears,
+    giftsAndPayments: dbMod.giftsAndPayments,
+    giftAllocations: dbMod.giftAllocations,
+    opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
+    pledgeAllocations: dbMod.pledgeAllocations,
+    fiscalYearEntityGoals: dbMod.fiscalYearEntityGoals,
+    bulkOperations: dbMod.bulkOperations,
+  };
+  eqFn = drizzle.eq;
+  inArrayFn = drizzle.inArray;
+  andFn = drizzle.and;
+
+  await db.insert(schema.users).values({
+    id: TEST_USER_ID,
+    clerkId: `clerk_${TEST_USER_ID}`,
+    email: `${TEST_USER_ID}@wildflowerschools.org`,
+    role: "admin",
+  });
+  await db.insert(schema.organizations).values({ id: ORG_ID, name: `LorG Org ${RUN}` });
+  await db.insert(schema.entities).values({ id: ENTITY_ID, name: `LorG Entity ${RUN}` });
+  await db.insert(schema.fiscalYears).values({ id: FY_ID, label: `FY ${RUN}` });
+
+  const { default: app } = await import("../app");
+  server = await new Promise<Server>((resolve) => {
+    const s = app.listen(0, () => resolve(s));
+  });
+  const addr = server.address() as AddressInfo;
+  baseUrl = `http://127.0.0.1:${addr.port}`;
+}, 60_000);
+
+afterAll(async () => {
+  if (!HAS_DB) return;
+  if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  await db
+    .delete(schema.giftAllocations)
+    .where(inArrayFn(schema.giftAllocations.giftId, seededGiftIds.length ? seededGiftIds : [""]));
+  if (seededPledgeIds.length) {
+    await db
+      .delete(schema.pledgeAllocations)
+      .where(inArrayFn(schema.pledgeAllocations.pledgeOrOpportunityId, seededPledgeIds));
+  }
+  if (seededGiftIds.length) {
+    await db
+      .delete(schema.giftsAndPayments)
+      .where(inArrayFn(schema.giftsAndPayments.id, seededGiftIds));
+  }
+  if (seededPledgeIds.length) {
+    await db
+      .delete(schema.opportunitiesAndPledges)
+      .where(inArrayFn(schema.opportunitiesAndPledges.id, seededPledgeIds));
+  }
+  await db
+    .delete(schema.fiscalYearEntityGoals)
+    .where(eqFn(schema.fiscalYearEntityGoals.fiscalYearId, FY_ID));
+  await db
+    .delete(schema.bulkOperations)
+    .where(eqFn(schema.bulkOperations.actorUserId, TEST_USER_ID));
+  await db.delete(schema.fiscalYears).where(eqFn(schema.fiscalYears.id, FY_ID));
+  await db.delete(schema.entities).where(eqFn(schema.entities.id, ENTITY_ID));
+  await db.delete(schema.organizations).where(eqFn(schema.organizations.id, ORG_ID));
+  await db.delete(schema.users).where(eqFn(schema.users.id, TEST_USER_ID));
+}, 60_000);
+
+beforeEach(() => {
+  if (!HAS_DB) console.warn("[loan-or-grant-dualwrite] skipped: no live DATABASE_URL");
+});
+
+describe.skipIf(!HAS_DB)("loan_or_grant dual-write", () => {
+  it("gift create mirrors loan_or_grant from type", async () => {
+    const loan = await send("POST", "/api/gifts-and-payments", {
+      amount: "100.00",
+      organizationId: ORG_ID,
+      type: "loan_fund_investment",
+    });
+    expect(loan.status).toBe(201);
+    expect(loan.json.loanOrGrant).toBe("loan");
+    seededGiftIds.push(loan.json.id);
+
+    const grant = await send("POST", "/api/gifts-and-payments", {
+      amount: "50.00",
+      organizationId: ORG_ID,
+      type: "standard_gift",
+    });
+    expect(grant.status).toBe(201);
+    expect(grant.json.loanOrGrant).toBe("grant");
+    seededGiftIds.push(grant.json.id);
+
+    const noType = await send("POST", "/api/gifts-and-payments", {
+      amount: "25.00",
+      organizationId: ORG_ID,
+    });
+    expect(noType.status).toBe(201);
+    expect(noType.json.loanOrGrant).toBe("grant");
+    seededGiftIds.push(noType.json.id);
+  });
+
+  it("gift patch flips loan_or_grant only when type changes", async () => {
+    const created = await send("POST", "/api/gifts-and-payments", {
+      amount: "100.00",
+      organizationId: ORG_ID,
+      type: "standard_gift",
+    });
+    const id = created.json.id as string;
+    seededGiftIds.push(id);
+    expect(created.json.loanOrGrant).toBe("grant");
+
+    const toLoan = await send("PATCH", `/api/gifts-and-payments/${id}`, {
+      type: "loan_fund_investment",
+    });
+    expect(toLoan.status).toBe(200);
+    expect(toLoan.json.loanOrGrant).toBe("loan");
+
+    // A non-type patch must not reset the flag.
+    const annotate = await send("PATCH", `/api/gifts-and-payments/${id}`, { amount: "120.00" });
+    expect(annotate.status).toBe(200);
+    expect(annotate.json.loanOrGrant).toBe("loan");
+
+    const backToGrant = await send("PATCH", `/api/gifts-and-payments/${id}`, {
+      type: "standard_gift",
+    });
+    expect(backToGrant.json.loanOrGrant).toBe("grant");
+  });
+
+  it("gift bulk-update mirrors loan_or_grant from a type change", async () => {
+    const a = await send("POST", "/api/gifts-and-payments", {
+      amount: "10.00",
+      organizationId: ORG_ID,
+      type: "standard_gift",
+    });
+    const b = await send("POST", "/api/gifts-and-payments", {
+      amount: "20.00",
+      organizationId: ORG_ID,
+      type: "standard_gift",
+    });
+    const ids = [a.json.id as string, b.json.id as string];
+    seededGiftIds.push(...ids);
+
+    const bulk = await send("POST", "/api/gifts-and-payments/bulk-update", {
+      ids,
+      patch: { type: "loan_fund_investment" },
+    });
+    expect(bulk.status).toBe(200);
+    expect(await readGiftLoanOrGrant(ids[0])).toBe("loan");
+    expect(await readGiftLoanOrGrant(ids[1])).toBe("loan");
+
+    // An owner-only bulk patch must leave the mirrored flag untouched.
+    const ownerOnly = await send("POST", "/api/gifts-and-payments/bulk-update", {
+      ids: [ids[0]],
+      patch: { ownerUserId: TEST_USER_ID },
+    });
+    expect(ownerOnly.status).toBe(200);
+    expect(await readGiftLoanOrGrant(ids[0])).toBe("loan");
+  });
+
+  it("opportunity create mirrors loan_or_grant from fundraising_category", async () => {
+    const loan = await send("POST", "/api/opportunities-and-pledges", {
+      name: `${RUN} loan opp`,
+      organizationId: ORG_ID,
+      fundraisingCategory: "loan_capital",
+    });
+    expect(loan.status).toBe(201);
+    expect(loan.json.loanOrGrant).toBe("loan");
+    seededPledgeIds.push(loan.json.id);
+
+    const grant = await send("POST", "/api/opportunities-and-pledges", {
+      name: `${RUN} grant opp`,
+      organizationId: ORG_ID,
+      fundraisingCategory: "revenue",
+    });
+    expect(grant.json.loanOrGrant).toBe("grant");
+    seededPledgeIds.push(grant.json.id);
+
+    const omitted = await send("POST", "/api/opportunities-and-pledges", {
+      name: `${RUN} default opp`,
+      organizationId: ORG_ID,
+    });
+    expect(omitted.json.loanOrGrant).toBe("grant");
+    seededPledgeIds.push(omitted.json.id);
+  });
+
+  it("opportunity patch flips loan_or_grant when fundraising_category changes", async () => {
+    const created = await send("POST", "/api/opportunities-and-pledges", {
+      name: `${RUN} flip opp`,
+      organizationId: ORG_ID,
+      fundraisingCategory: "revenue",
+    });
+    const id = created.json.id as string;
+    seededPledgeIds.push(id);
+
+    const toLoan = await send("PATCH", `/api/opportunities-and-pledges/${id}`, {
+      fundraisingCategory: "loan_capital",
+    });
+    expect(toLoan.status).toBe(200);
+    expect(toLoan.json.loanOrGrant).toBe("loan");
+
+    const back = await send("PATCH", `/api/opportunities-and-pledges/${id}`, {
+      fundraisingCategory: "revenue",
+    });
+    expect(back.json.loanOrGrant).toBe("grant");
+  });
+
+  it("goal upsert mirrors loan_or_grant from the category path param", async () => {
+    const loan = await send(
+      "PUT",
+      `/api/fiscal-year-entity-goals/${FY_ID}/${ENTITY_ID}/loan_capital`,
+      { goalAmount: "1000" },
+    );
+    expect(loan.status).toBe(200);
+    expect(loan.json.loanOrGrant).toBe("loan");
+
+    const grant = await send(
+      "PUT",
+      `/api/fiscal-year-entity-goals/${FY_ID}/${ENTITY_ID}/revenue`,
+      { goalAmount: "2000" },
+    );
+    expect(grant.json.loanOrGrant).toBe("grant");
+
+    // onConflict update path keeps the mirrored flag correct.
+    const reLoan = await send(
+      "PUT",
+      `/api/fiscal-year-entity-goals/${FY_ID}/${ENTITY_ID}/loan_capital`,
+      { goalAmount: "1500" },
+    );
+    expect(reLoan.json.loanOrGrant).toBe("loan");
+    expect(reLoan.json.goalAmount).toBe("1500.00");
+  });
+
+  it("split-into-pledge inherits loan from the source gift", async () => {
+    const giftId = await seedGift("300.00", "loan", ["100.00", "200.00"]);
+    const res = await send("POST", `/api/gifts-and-payments/${giftId}/split-into-pledge`, {});
+    expect(res.status).toBe(200);
+    const pledgeId = res.json.pledgeId as string;
+    seededPledgeIds.push(pledgeId);
+
+    const pledge = await readPledge(pledgeId);
+    expect(pledge?.loanOrGrant).toBe("loan");
+    expect(pledge?.fundraisingCategory).toBe("loan_capital");
+
+    // Every payment-gift (original + minted) carries the loan flag.
+    for (const gid of res.json.giftIds as string[]) {
+      if (!seededGiftIds.includes(gid)) seededGiftIds.push(gid);
+      expect(await readGiftLoanOrGrant(gid)).toBe("loan");
+    }
+  });
+
+  it("merge-into-pledge inherits loan from the source gift(s)", async () => {
+    const giftId = await seedGift("500.00", "loan", ["500.00"]);
+    const res = await send("POST", "/api/gifts-and-payments/merge-into-pledge", {
+      giftIds: [giftId],
+      organizationId: ORG_ID,
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.created).toBe(true);
+    const pledgeId = res.json.pledgeId as string;
+    seededPledgeIds.push(pledgeId);
+
+    const pledge = await readPledge(pledgeId);
+    expect(pledge?.loanOrGrant).toBe("loan");
+    expect(pledge?.fundraisingCategory).toBe("loan_capital");
+  });
+});

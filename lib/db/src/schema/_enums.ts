@@ -262,6 +262,19 @@ export const fundraisingCategoryEnum = pgEnum("fundraising_category", [
   "loan_capital",
 ]);
 
+// Authoritative loan-vs-grant classification — the SINGLE flag that designates
+// whether a gift / opportunity / goal is loan-fund principal ("loan") or
+// ordinary fundraising money ("grant"). Supersedes the two scattered legacy
+// signals it is backfilled from and dual-written alongside during the
+// transition:
+//   - opportunities_and_pledges.fundraising_category (revenue→grant, loan_capital→loan)
+//   - gifts_and_payments.type (loan_fund_investment→loan, everything else→grant)
+// NOTE: 'grant' means ALL non-loan money — individual donations, foundation
+// grants, earned revenue, etc. — NOT literally only grants. Default 'grant' so
+// pre-existing rows are non-destructively classified. The 1:1 mappers live in
+// @workspace/api-zod (loan-or-grant.ts).
+export const loanOrGrantEnum = pgEnum("loan_or_grant", ["loan", "grant"]);
+
 // ---- Gift / payment enums ----
 export const giftTypeEnum = pgEnum("gift_type", [
   "standard_gift",

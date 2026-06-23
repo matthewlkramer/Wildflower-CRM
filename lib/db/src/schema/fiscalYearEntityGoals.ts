@@ -1,7 +1,7 @@
 import { pgTable, text, numeric, timestamp, primaryKey } from "drizzle-orm/pg-core";
 import { fiscalYears } from "./fiscalYears";
 import { entities } from "./entities";
-import { fundraisingCategoryEnum } from "./_enums";
+import { fundraisingCategoryEnum, loanOrGrantEnum } from "./_enums";
 
 // Per-(fiscal_year, entity, category) fundraising goal. Wildflower books goals
 // against individual fund entities (Wildflower Foundation, Black Wildflowers
@@ -23,6 +23,13 @@ export const fiscalYearEntityGoals = pgTable(
     category: fundraisingCategoryEnum("category")
       .notNull()
       .default("revenue"),
+    // Authoritative loan-vs-grant flag (see loanOrGrantEnum). Backfilled 1:1
+    // from `category` (revenue→grant, loan_capital→loan) and dual-written on
+    // re-seed during the transition. Not yet in the PK (still keyed on
+    // category for rollback safety); the parity-gated read cutover will add a
+    // unique (fiscal_year_id, entity_id, loan_or_grant) and switch the goals
+    // route to read this column. Default 'grant' (non-destructive).
+    loanOrGrant: loanOrGrantEnum("loan_or_grant").notNull().default("grant"),
     goalAmount: numeric("goal_amount", { precision: 14, scale: 2 }).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

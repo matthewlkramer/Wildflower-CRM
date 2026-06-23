@@ -1,5 +1,6 @@
 export * from "./generated/api";
 export * from "./revenue-coding";
+export * from "./loan-or-grant";
 
 import { z } from "zod";
 import {

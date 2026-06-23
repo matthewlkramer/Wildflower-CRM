@@ -16,6 +16,7 @@ import {
   giftPaymentMethodEnum,
   giftFinalAmountSourceEnum,
   giftQuickbooksTieEnum,
+  loanOrGrantEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
 import { people } from "./people";
@@ -100,6 +101,14 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
     onDelete: "restrict",
   }),
   type: giftTypeEnum("type"),
+  // Authoritative loan-vs-grant flag (see loanOrGrantEnum). Backfilled from
+  // `type` (loan_fund_investment→loan, else grant) plus explicit data
+  // corrections, and dual-written whenever `type` changes during the
+  // transition. Becomes the single loan signal (replacing the
+  // type='loan_fund_investment' read) once the parity-gated read cutover lands.
+  // Default 'grant' (non-destructive); auto-minted QB/Stripe/Donorbox gifts are
+  // never loans so the default is correct for them.
+  loanOrGrant: loanOrGrantEnum("loan_or_grant").notNull().default("grant"),
   // RESTRICT: a payment must keep its link to the pledge it pays.
   paymentOnPledgeId: text("payment_on_pledge_id").references(
     () => opportunitiesAndPledges.id,

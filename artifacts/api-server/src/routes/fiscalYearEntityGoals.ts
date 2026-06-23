@@ -5,6 +5,7 @@ import { and, asc, eq, type SQL } from "drizzle-orm";
 import {
   ListFiscalYearEntityGoalsQueryParams,
   UpsertFiscalYearEntityGoalBody,
+  legacyCategoryToLoanOrGrant,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { requireAdmin } from "../lib/archive";
@@ -84,16 +85,19 @@ router.put(
     if (!fy) return notFound(res, `fiscal year '${fyId}'`);
     if (!ent) return notFound(res, `entity '${entityId}'`);
 
+    // Dual-write the authoritative loan_or_grant flag from the goal's legacy
+    // category (legacy `category` stays the read source this phase).
+    const loanOrGrant = legacyCategoryToLoanOrGrant(category);
     const [row] = await db
       .insert(fiscalYearEntityGoals)
-      .values({ fiscalYearId: fyId, entityId, category, goalAmount: body.goalAmount })
+      .values({ fiscalYearId: fyId, entityId, category, goalAmount: body.goalAmount, loanOrGrant })
       .onConflictDoUpdate({
         target: [
           fiscalYearEntityGoals.fiscalYearId,
           fiscalYearEntityGoals.entityId,
           fiscalYearEntityGoals.category,
         ],
-        set: { goalAmount: body.goalAmount, updatedAt: new Date() },
+        set: { goalAmount: body.goalAmount, loanOrGrant, updatedAt: new Date() },
       })
       .returning();
     res.json(row);

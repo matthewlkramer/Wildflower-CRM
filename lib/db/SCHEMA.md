@@ -113,7 +113,11 @@ merge — see "Re-importing" below.)
   `(fiscal_year_id, entity_id, category)`** where `category` is the
   `fundraising_category` enum, so the revenue and loan-capital tracks each carry their
   own goal. Cascading FKs to both parents. Analytics sum across this table honoring
-  the same entity/category filters as the money rollups.
+  the same entity/category filters as the money rollups. Also carries the
+  authoritative **`loan_or_grant`** flag (see below), dual-written 1:1 from
+  `category` during the transition; not yet in the PK (a later phase adds a
+  unique `(fiscal_year_id, entity_id, loan_or_grant)` and flips the goals route
+  to read it).
 
 - `users` — Clerk-provisioned app users (`role` includes `admin`; admin gates
   show-archived, restore, and admin-only screens).
@@ -138,7 +142,8 @@ merge — see "Re-importing" below.)
     `conditional_unspecified` / `reimbursable` /
     `conditional_on_funder_determination` / `conditional_on_target`),
     **`fundraising_category`** (`revenue` / `loan_capital`, NOT NULL default
-    `revenue`).
+    `revenue`), **`loan_or_grant`** (the authoritative loan-vs-grant flag — see
+    below — dual-written from `fundraising_category`).
   - A sticky `was_pledge` flag latches true once a row reaches a commitment stage
     (`conditional_commitment` / `written_commitment`) or gets a grant letter, and is
     never auto-cleared; it drives the **Pledges-page filter, NOT** the calculated
@@ -158,7 +163,9 @@ merge — see "Re-importing" below.)
 - `gifts_and_payments` — gift records + payments against pledges, **header-only**.
   Scope lives on `gift_allocations`. `payment_on_pledge_id` →
   `opportunities_and_pledges`. Enums: `type` (`standard_gift` / `pledge_payment` /
-  `directed_gift` / `loan_fund_investment` / `matching_gift`), `payment_method`
+  `directed_gift` / `loan_fund_investment` / `matching_gift`), **`loan_or_grant`**
+  (the authoritative loan-vs-grant flag — see below — dual-written from `type`),
+  `payment_method`
   (`ach` / `check` / `wire` / `stock` / `donor_box` / `daf_ach` / `daf_check` /
   `daf_bill_com`). `date_received` is the canonical "money arrived" date.
   `thank_you_sent_at` / `thank_you_email_message_id` stamped by the email-intel
@@ -223,6 +230,29 @@ out of revenue so the two tracks report in parallel. Loan capital =
 carry `fundraising_category` (NOT NULL default `revenue`); goals are per-category via
 `fiscal_year_entity_goals`'s composite PK. All pre-existing data is `revenue`
 (non-destructive).
+
+## loan_or_grant (the authoritative loan-vs-grant flag)
+
+`loan_or_grant` enum (`loan` / `grant`, NOT NULL default `grant`) is the **single
+source of truth** for whether money is loan-fund principal or ordinary
+fundraising money. It supersedes the two scattered legacy signals above:
+`opportunities_and_pledges.fundraising_category` and the gift
+`type='loan_fund_investment'` derivation. Lives on `gifts_and_payments`,
+`opportunities_and_pledges`, and `fiscal_year_entity_goals`.
+
+**Semantic map (1:1):** `loan_capital` / `loan_fund_investment` → `loan`;
+`revenue` / every other gift type → `grant`. **`grant` means ALL non-loan
+money** — individual donations, foundation grants, earned revenue, etc. — **not
+literally only grants.** The pure mappers live in `@workspace/api-zod`
+(`loan-or-grant.ts`: `legacyCategoryToLoanOrGrant`, `loanOrGrantToLegacyCategory`,
+`giftTypeToLoanOrGrant`).
+
+Rolled out in additive phases (mirrors the ledger discipline): Phase 1 (current)
+adds the column, dual-writes it on every opp/gift create/patch/split, and
+backfills it from the legacy signals (migrations 0067/0068) — **legacy stays the
+read source**. A later phase flips analytics/goals/revenue-coding reads to
+`loan_or_grant` behind a parity gate, then deprecates (does not drop) the legacy
+signals.
 
 ## Many-to-many via slug arrays
 

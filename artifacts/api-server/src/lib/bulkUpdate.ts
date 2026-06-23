@@ -86,6 +86,14 @@ export interface BulkUpdateConfig<Row, P extends object> {
    * post-hook failure doesn't undo an already-committed batch.
    */
   afterApply?: (id: string) => Promise<void>;
+  /**
+   * Optional derived-column hook. Given the (already-whitelisted) column
+   * patch, returns extra column values to write atomically in the SAME
+   * per-row UPDATE — use to keep a mirrored column in lockstep with a
+   * user-set one (e.g. gifts' loan_or_grant mirrored from `type`). Only
+   * invoked when there is a column patch; return {} to write nothing.
+   */
+  deriveColumns?: (cleanPatch: Partial<P>) => Record<string, unknown>;
 }
 
 interface BulkFailure {
@@ -187,9 +195,10 @@ export async function executeBulkUpdate<Row extends Record<string, unknown>, P e
       try {
         await tx.transaction(async (sp: TX) => {
           if (hasColumnPatch) {
+            const derived = cfg.deriveColumns?.(cleanPatch) ?? {};
             await sp
               .update(cfg.table)
-              .set({ ...cleanPatch, updatedAt: new Date() })
+              .set({ ...cleanPatch, ...derived, updatedAt: new Date() })
               .where(eq(cfg.table.id, id) as SQL);
           }
           if (cfg.extraApply && hasVirtualPatch) {
