@@ -74,7 +74,7 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-COPPER_USER_EMAIL = "matthew.kramer@wildflowerschools.org"
+COPPER_USER_EMAIL = "erica.cantoni@wildflowerschools.org"
 FLODESK_SEGMENT_ID = "6a21f3ece6615f531081c6b2"
 DONORBOX_USER_EMAIL = "matthew.kramer@wildflowerschools.org"
 
