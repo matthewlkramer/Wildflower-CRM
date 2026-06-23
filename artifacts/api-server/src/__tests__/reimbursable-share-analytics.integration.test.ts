@@ -233,7 +233,7 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
       stage: "written_commitment",
       conditional: "reimbursable",
       awardedAmount: "1500.00",
-      wasPledge: true,
+      writtenPledge: true,
     });
     seededOppIds.push(oppId);
     await db.insert(schema.pledgeAllocations).values([
@@ -262,7 +262,7 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
       amount: "1500.00",
       organizationId: ORG_ID,
       type: "standard_gift",
-      paymentOnPledgeId: oppId,
+      opportunityId: oppId,
     });
     seededGiftIds.push(payId);
 

@@ -10,7 +10,7 @@ import {
   giftsAndPayments,
   type NewEmailProposal,
 } from "@workspace/db/schema";
-import { and, eq, gte, ilike, lte, sql } from "drizzle-orm";
+import { and, eq, gte, ilike, lte, or, sql, type SQL } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
 import { proposeActionsForProposal } from "./proposeActions";
@@ -813,41 +813,57 @@ async function detectThankYou(args: {
     .filter((r): r is string => !!r);
   if (recipients.length === 0) return;
 
-  // Resolve every recipient to an organization id, either directly
-  // (organization-level email row) or via people_entity_roles where
-  // current='current'. Returns the de-duped union.
-  const orgRows = await db.execute<{ organization_id: string }>(sql`
-    SELECT DISTINCT organization_id FROM (
-      SELECT e.organization_id
-      FROM emails e
-      WHERE lower(e.email) = ANY(${recipients}::text[])
-        AND e.organization_id IS NOT NULL
-      UNION
-      SELECT per.organization_id
-      FROM emails e
-      JOIN people_entity_roles per ON per.person_id = e.person_id
-      WHERE lower(e.email) = ANY(${recipients}::text[])
-        AND e.person_id IS NOT NULL
-        AND per.current = 'current'
-        AND per.organization_id IS NOT NULL
-    ) t
-  `);
-  const organizationIds = orgRows.rows.map((r) => r.organization_id).filter(Boolean);
-  if (organizationIds.length === 0) return;
+  // Resolve every recipient to the THREE donor kinds a gift can carry
+  // (Donor XOR: organization / individual giver / household), so an
+  // acknowledgment letter is caught no matter who the donor is.
+  //
+  //   - organization: a recipient on an org-level email row, or on a
+  //     person who currently holds a role at that org.
+  //   - individual giver: a recipient whose email belongs directly to a
+  //     person — that person is the candidate individual donor.
+  //   - household: a recipient on a household-level email row, or on a
+  //     person who is currently a member of that household.
+  const donorRows = await resolveThankYouDonors(recipients);
+  const { organizationIds, personIds, householdIds } = donorRows;
+  if (
+    organizationIds.length === 0 &&
+    personIds.length === 0 &&
+    householdIds.length === 0
+  ) {
+    return;
+  }
 
-  // Find candidate gifts from those organizations within ±30 days of the
-  // outbound email. Most often there is one and we link it directly;
-  // when several match we emit one proposal per gift and let the
-  // reviewer pick the right one — payload.giftId is the suggestion,
+  // Find candidate gifts for ANY of the resolved donors within ±30 days
+  // of the outbound email. Most often there is one and we link it
+  // directly; when several match we emit one proposal per gift and let
+  // the reviewer pick the right one — payload.giftId is the suggestion,
   // not the only option.
   const windowStart = new Date(args.sentAt.getTime() - 30 * 24 * 60 * 60 * 1000);
   const windowEnd = new Date(args.sentAt.getTime() + 1 * 24 * 60 * 60 * 1000);
   const startDate = windowStart.toISOString().slice(0, 10);
   const endDate = windowEnd.toISOString().slice(0, 10);
+  const donorConds: SQL[] = [];
+  if (organizationIds.length > 0) {
+    donorConds.push(
+      sql`${giftsAndPayments.organizationId} = ANY(${organizationIds}::text[])`,
+    );
+  }
+  if (personIds.length > 0) {
+    donorConds.push(
+      sql`${giftsAndPayments.individualGiverPersonId} = ANY(${personIds}::text[])`,
+    );
+  }
+  if (householdIds.length > 0) {
+    donorConds.push(
+      sql`${giftsAndPayments.householdId} = ANY(${householdIds}::text[])`,
+    );
+  }
   const candidateGifts = await db
     .select({
       id: giftsAndPayments.id,
       organizationId: giftsAndPayments.organizationId,
+      individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
+      householdId: giftsAndPayments.householdId,
       amount: giftsAndPayments.amount,
       dateReceived: giftsAndPayments.dateReceived,
       thankYouEmailMessageId: giftsAndPayments.thankYouEmailMessageId,
@@ -855,7 +871,7 @@ async function detectThankYou(args: {
     .from(giftsAndPayments)
     .where(
       and(
-        sql`${giftsAndPayments.organizationId} = ANY(${organizationIds}::text[])`,
+        or(...donorConds),
         gte(giftsAndPayments.dateReceived, startDate),
         lte(giftsAndPayments.dateReceived, endDate),
       ),
@@ -874,7 +890,11 @@ async function detectThankYou(args: {
       // partial unique index (status='pending') already enforces that.
       dedupeKey: `thankyou:${gift.id}:${args.messageRowId}`,
       sourceMessageId: args.messageRowId,
+      // Target columns only exist for person/organization (households
+      // aren't a proposal target type); the accept path keys off
+      // payload.giftId so it is donor-type agnostic regardless.
       targetOrganizationId: gift.organizationId,
+      targetPersonId: gift.individualGiverPersonId,
       subjectEmail: recipients[0] ?? null,
       subjectDomain: domainOf(recipients[0] ?? null),
       subjectName: null,
@@ -882,6 +902,8 @@ async function detectThankYou(args: {
       payload: {
         giftId: gift.id,
         organizationId: gift.organizationId,
+        individualGiverPersonId: gift.individualGiverPersonId,
+        householdId: gift.householdId,
         giftAmount: gift.amount,
         giftDateReceived: gift.dateReceived,
         fromEmail: args.fromEmail,
@@ -892,4 +914,66 @@ async function detectThankYou(args: {
       },
     });
   }
+}
+
+/**
+ * Resolve a set of recipient email addresses (already lowercased) to the
+ * three donor kinds a gift can carry under Donor XOR. Each set is a
+ * de-duped array of ids; any may be empty. Exported for testing.
+ */
+export async function resolveThankYouDonors(
+  recipients: string[],
+): Promise<{
+  organizationIds: string[];
+  personIds: string[];
+  householdIds: string[];
+}> {
+  if (recipients.length === 0) {
+    return { organizationIds: [], personIds: [], householdIds: [] };
+  }
+  const [orgRows, personRows, householdRows] = await Promise.all([
+    db.execute<{ organization_id: string }>(sql`
+      SELECT DISTINCT organization_id FROM (
+        SELECT e.organization_id
+        FROM emails e
+        WHERE lower(e.email) = ANY(${recipients}::text[])
+          AND e.organization_id IS NOT NULL
+        UNION
+        SELECT per.organization_id
+        FROM emails e
+        JOIN people_entity_roles per ON per.person_id = e.person_id
+        WHERE lower(e.email) = ANY(${recipients}::text[])
+          AND e.person_id IS NOT NULL
+          AND per.current = 'current'
+          AND per.organization_id IS NOT NULL
+      ) t
+    `),
+    db.execute<{ person_id: string }>(sql`
+      SELECT DISTINCT e.person_id
+      FROM emails e
+      WHERE lower(e.email) = ANY(${recipients}::text[])
+        AND e.person_id IS NOT NULL
+    `),
+    db.execute<{ household_id: string }>(sql`
+      SELECT DISTINCT household_id FROM (
+        SELECT e.household_id
+        FROM emails e
+        WHERE lower(e.email) = ANY(${recipients}::text[])
+          AND e.household_id IS NOT NULL
+        UNION
+        SELECT per.household_id
+        FROM emails e
+        JOIN people_entity_roles per ON per.person_id = e.person_id
+        WHERE lower(e.email) = ANY(${recipients}::text[])
+          AND e.person_id IS NOT NULL
+          AND per.current = 'current'
+          AND per.household_id IS NOT NULL
+      ) t
+    `),
+  ]);
+  return {
+    organizationIds: orgRows.rows.map((r) => r.organization_id).filter(Boolean),
+    personIds: personRows.rows.map((r) => r.person_id).filter(Boolean),
+    householdIds: householdRows.rows.map((r) => r.household_id).filter(Boolean),
+  };
 }
