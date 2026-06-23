@@ -7,6 +7,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -211,6 +212,7 @@ afterAll(async () => {
         seededGiftIds.length ? seededGiftIds : [""],
       ),
     );
+  await clearPaymentApplicationsForRealm(REALM_ID);
   await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.realmId, REALM_ID));

@@ -56,6 +56,22 @@ references the table goes live — even Phase 1's merge guard queries the table 
 every gift merge, so a live-code-before-table window 500s with
 `relation "payment_applications" does not exist`.
 
+## Confirmation is a SEPARATE state transition that must promote provenance
+`match_method` has three states (`system` → auto-applied by worker/rule;
+`system_confirmed` → a human graduated that auto-match; `human` → human-created).
+Dual-write is not just "write a row" — when a fundraiser confirms an auto-match
+(the confirm-match handlers that stamp `staged_payments.match_confirmed_*`), the
+ledger rows for that payment must be promoted `system` → `system_confirmed`
+(stamping `confirmed_by`/`confirmed_at`, never touching amount/gift link). Do this
+inside the same `db.transaction` as the staged-row update, with one shared `now`.
+Promotion is scoped `WHERE payment_id = ? AND match_method = 'system'` so it is a
+no-op for `human`/already-`system_confirmed`/no-ledger rows (idempotent on
+re-confirm). **Why:** the architect FAILED a "dual-write done" claim that wrote
+`system`/`human` but never promoted on confirm — provenance silently went stale and
+audit couldn't tell auto-from-confirmed. The backfill CASE must mirror this exactly
+(`auto_applied AND match_confirmed_at` ⇒ `system_confirmed`), or historical rows
+disagree with live writes.
+
 ## Untouched by design
 `pledgeStage.ts` pledge `paid_amount` (SUM of `gifts_and_payments.amount` on the
 pledge, excluding archived) is a separate 1:N and is NOT folded into the ledger.

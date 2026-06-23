@@ -27,6 +27,7 @@ import {
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
+import { applyPaymentApplication } from "../../lib/paymentApplications";
 import { recordAudit } from "../../lib/audit";
 import {
   runConsistencyGate,
@@ -583,6 +584,48 @@ async function mintGiftFromEvidence(
               updatedAt: new Date(),
             })
             .where(eq(stripePayouts.id, charge.stripePayoutId));
+        }
+      }
+
+      // Dual-write (Phase 2): book the QB cash-application ledger. The anchor
+      // staged payment CREATED this gift; each grouped member also applies its
+      // QB amount to the same gift. amountApplied is the QB-settled figure
+      // (staged.amount) — independent of a selected Stripe charge's GROSS, which
+      // sets the gift's amount but is tracked as separate Stripe evidence.
+      if (staged.amount && Number(staged.amount) > 0) {
+        await applyPaymentApplication(tx, {
+          paymentId: stagedPaymentId,
+          giftId: newGiftId,
+          amountApplied: staged.amount,
+          evidenceSource: "quickbooks",
+          matchMethod: "human",
+          confirmedByUserId: user.id,
+          confirmedAt: new Date(),
+          createdTheGift: true,
+        });
+      }
+      if (group) {
+        const memberIds = group.memberIds.filter(
+          (mid) => mid !== stagedPaymentId,
+        );
+        if (memberIds.length > 0) {
+          const members = await tx
+            .select({ id: stagedPayments.id, amount: stagedPayments.amount })
+            .from(stagedPayments)
+            .where(inArray(stagedPayments.id, memberIds));
+          for (const member of members) {
+            if (!(member.amount && Number(member.amount) > 0)) continue;
+            await applyPaymentApplication(tx, {
+              paymentId: member.id,
+              giftId: newGiftId,
+              amountApplied: member.amount,
+              evidenceSource: "quickbooks",
+              matchMethod: "human",
+              confirmedByUserId: user.id,
+              confirmedAt: new Date(),
+              createdTheGift: false,
+            });
+          }
         }
       }
 
@@ -1195,6 +1238,23 @@ router.post(
             stamp.newAmount,
             charge ? "stripe" : "quickbooks",
           );
+        }
+
+        // Dual-write (Phase 2): book the QB cash-application ledger row. The QB
+        // staged payment settles this EXISTING gift (links, never mints). A
+        // selected Stripe charge is separate evidence (it sets the gift's GROSS
+        // amount); the QB ledger row still records the QB-settled amount.
+        if (staged.amount && Number(staged.amount) > 0) {
+          await applyPaymentApplication(tx, {
+            paymentId: stagedPaymentId,
+            giftId,
+            amountApplied: staged.amount,
+            evidenceSource: "quickbooks",
+            matchMethod: "human",
+            confirmedByUserId: user.id,
+            confirmedAt: new Date(),
+            createdTheGift: false,
+          });
         }
 
         // Mark the Stripe charge + its payout as permanent reconciled evidence.

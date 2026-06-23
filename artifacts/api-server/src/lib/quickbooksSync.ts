@@ -26,6 +26,7 @@ import {
 } from "./quickbooksRules";
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
 import { applyGiftQbTieMany } from "./giftQbTie";
+import { applyPaymentApplication } from "./paymentApplications";
 import { validateGiftInvariants } from "@workspace/api-zod";
 
 /** Postgres unique_violation — a concurrent staged row grabbed this gift first. */
@@ -379,6 +380,16 @@ async function applyAutoCreateRule(
         updatedAt: new Date(),
       })
       .where(eq(stagedPayments.id, stagedId));
+    // Dual-write (Phase 2): book the QB cash-application ledger for the
+    // auto-minted gift (this rule created it; the staged payment fully applies).
+    await applyPaymentApplication(tx, {
+      paymentId: stagedId,
+      giftId,
+      amountApplied: locked.amount!,
+      evidenceSource: "quickbooks",
+      matchMethod: "system",
+      createdTheGift: true,
+    });
     applied = true;
   });
   if (applied) {
@@ -566,6 +577,16 @@ async function applyAutoCreateRuleToRow(
         updatedAt: new Date(),
       })
       .where(eq(stagedPayments.id, stagedId));
+    // Dual-write (Phase 2): book the QB cash-application ledger for the
+    // auto-minted gift (this rule created it; the staged payment fully applies).
+    await applyPaymentApplication(tx, {
+      paymentId: stagedId,
+      giftId,
+      amountApplied: locked.amount!,
+      evidenceSource: "quickbooks",
+      matchMethod: "system",
+      createdTheGift: true,
+    });
     applied = true;
   });
   if (applied) {
@@ -817,27 +838,45 @@ async function autoApply(
   if (scored.matchedGiftId) {
     const giftId = scored.matchedGiftId;
     try {
-      const upd = await db
-        .update(stagedPayments)
-        .set({
-          status: "approved",
-          matchStatus: "matched",
-          matchedGiftId: giftId,
-          autoApplied: true,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            stillPending,
-            sql`NOT EXISTS (
+      const upd = await db.transaction(async (tx) => {
+        const rows = await tx
+          .update(stagedPayments)
+          .set({
+            status: "approved",
+            matchStatus: "matched",
+            matchedGiftId: giftId,
+            autoApplied: true,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              stillPending,
+              sql`NOT EXISTS (
               SELECT 1 FROM staged_payments sp2
               WHERE (sp2.matched_gift_id = ${giftId}
                      OR sp2.created_gift_id = ${giftId})
                 AND sp2.id <> ${stagedId}
             )`,
-          ),
-        )
-        .returning({ id: stagedPayments.id });
+            ),
+          )
+          .returning({ id: stagedPayments.id, amount: stagedPayments.amount });
+        if (rows.length > 0) {
+          // Dual-write (Phase 2): book the QB cash-application ledger row for
+          // this auto-reconciled (system) match to an existing gift.
+          const amt = rows[0].amount;
+          if (amt && Number(amt) > 0) {
+            await applyPaymentApplication(tx, {
+              paymentId: stagedId,
+              giftId,
+              amountApplied: amt,
+              evidenceSource: "quickbooks",
+              matchMethod: "system",
+              createdTheGift: false,
+            });
+          }
+        }
+        return rows;
+      });
       if (upd.length > 0) {
         // The reconciled gift now carries QB linkage — persist its tie status.
         await applyGiftQbTieMany(giftId);

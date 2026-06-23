@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearPaymentApplicationsForStagedIds } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -238,6 +239,7 @@ afterAll(async () => {
     await db
       .delete(schema.stripeStagedCharges)
       .where(inArrayFn(schema.stripeStagedCharges.id, chargeIds));
+  await clearPaymentApplicationsForStagedIds(stagedIds);
   if (stagedIds.length)
     await db
       .delete(schema.stagedPayments)

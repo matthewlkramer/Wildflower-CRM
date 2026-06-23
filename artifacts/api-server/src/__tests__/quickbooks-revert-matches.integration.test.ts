@@ -7,6 +7,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -187,6 +188,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  await clearPaymentApplicationsForRealm(REALM_ID);
   await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.realmId, REALM_ID));

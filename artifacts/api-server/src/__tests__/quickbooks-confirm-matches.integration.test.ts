@@ -7,6 +7,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -58,6 +59,8 @@ let schema: {
   users: Db["users"];
   organizations: Db["organizations"];
   stagedPayments: Db["stagedPayments"];
+  giftsAndPayments: Db["giftsAndPayments"];
+  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let server: Server;
@@ -118,6 +121,42 @@ async function readStaged(id: string) {
   return row;
 }
 
+async function seedGift(id: string, amount: string): Promise<string> {
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    amount,
+    organizationId: ORG_ID,
+  });
+  return id;
+}
+
+async function seedLedgerRow(opts: {
+  id: string;
+  paymentId: string;
+  giftId: string;
+  amountApplied: string;
+  matchMethod: "system" | "system_confirmed" | "human";
+}): Promise<string> {
+  await db.insert(schema.paymentApplications).values({
+    id: opts.id,
+    paymentId: opts.paymentId,
+    giftId: opts.giftId,
+    amountApplied: opts.amountApplied,
+    evidenceSource: "quickbooks",
+    matchMethod: opts.matchMethod,
+    createdTheGift: false,
+  });
+  return opts.id;
+}
+
+async function readPaymentApplication(id: string) {
+  const [row] = await db
+    .select()
+    .from(schema.paymentApplications)
+    .where(eqFn(schema.paymentApplications.id, id));
+  return row;
+}
+
 beforeAll(async () => {
   if (!HAS_DB) return;
   const dbMod = await import("@workspace/db");
@@ -127,6 +166,8 @@ beforeAll(async () => {
     users: dbMod.users,
     organizations: dbMod.organizations,
     stagedPayments: dbMod.stagedPayments,
+    giftsAndPayments: dbMod.giftsAndPayments,
+    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
 
@@ -152,9 +193,13 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  await clearPaymentApplicationsForRealm(REALM_ID);
   await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.realmId, REALM_ID));
+  await db
+    .delete(schema.giftsAndPayments)
+    .where(eqFn(schema.giftsAndPayments.organizationId, ORG_ID));
   await db
     .delete(schema.organizations)
     .where(eqFn(schema.organizations.id, ORG_ID));
@@ -225,6 +270,44 @@ describe.skipIf(!HAS_DB)("QuickBooks bulk confirm-matches (integration)", () => 
     // `requested` reflects the raw payload; the row is confirmed exactly once.
     expect(res.json.requested).toBe(3);
     expect(res.json.confirmedIds).toEqual([aId]);
+  }, 30_000);
+
+  it("promotes auto-applied (system) ledger rows to system_confirmed; leaves human rows untouched", async () => {
+    if (!HAS_DB) return;
+    const giftId = await seedGift(`${RUN}_g_promote`, "100.00");
+    // An auto-matched card: worker wrote a 'system' ledger row.
+    const sysStaged = await seedStaged("promote_sys");
+    const sysPa = await seedLedgerRow({
+      id: `${RUN}_pa_sys`,
+      paymentId: sysStaged,
+      giftId,
+      amountApplied: "100.00",
+      matchMethod: "system",
+    });
+    // Control: a human-method ledger row on a separate payment must NOT change.
+    const humanStaged = await seedStaged("promote_human");
+    const humanPa = await seedLedgerRow({
+      id: `${RUN}_pa_human`,
+      paymentId: humanStaged,
+      giftId,
+      amountApplied: "0.01",
+      matchMethod: "human",
+    });
+
+    const res = await api("/api/staged-payments/confirm-matches", {
+      ids: [sysStaged, humanStaged],
+    });
+    expect(res.status).toBe(200);
+
+    const sysRow = await readPaymentApplication(sysPa);
+    expect(sysRow.matchMethod).toBe("system_confirmed");
+    expect(sysRow.confirmedByUserId).toBe(TEST_USER_ID);
+    expect(sysRow.confirmedAt).not.toBeNull();
+
+    const humanRow = await readPaymentApplication(humanPa);
+    expect(humanRow.matchMethod).toBe("human");
+    expect(humanRow.confirmedByUserId).toBeNull();
+    expect(humanRow.confirmedAt).toBeNull();
   }, 30_000);
 
   it("rejects an empty id list with 400", async () => {

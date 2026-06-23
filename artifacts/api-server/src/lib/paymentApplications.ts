@@ -220,3 +220,37 @@ export async function removePaymentApplicationsForPayment(
     .returning({ giftId: paymentApplications.giftId });
   return removed.map((r) => r.giftId);
 }
+
+/**
+ * Human confirmation of an auto-applied (`system`) match: promote every
+ * `system` ledger row anchored to this payment to `system_confirmed` and stamp
+ * who/when. No amount or link change, so no book-once re-check is needed. Rows
+ * already `human` or `system_confirmed` are deliberately left untouched (a
+ * confirm only graduates auto-applied rows). A payment with no `system` rows —
+ * e.g. confirming a pending donor match that never minted a gift — is a clean
+ * no-op. Returns the affected gift ids (recompute their tie). Caller holds the
+ * transaction.
+ */
+export async function confirmPaymentApplicationsForPayment(
+  tx: Tx,
+  paymentId: string,
+  confirmedByUserId: string | null,
+  confirmedAt: Date,
+): Promise<string[]> {
+  const updated = await tx
+    .update(paymentApplications)
+    .set({
+      matchMethod: "system_confirmed",
+      confirmedByUserId: confirmedByUserId ?? null,
+      confirmedAt,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(paymentApplications.paymentId, paymentId),
+        eq(paymentApplications.matchMethod, "system"),
+      ),
+    )
+    .returning({ giftId: paymentApplications.giftId });
+  return updated.map((r) => r.giftId);
+}

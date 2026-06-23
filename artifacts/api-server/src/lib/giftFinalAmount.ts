@@ -118,19 +118,43 @@ export async function stampGiftFinalAmount(
   }
 
   const oldAmount = gift.amount;
+
+  // QuickBooks settlement (Phase 2: payment_applications rollout). A QB stamp no
+  // longer overwrites the gift's human-entered amount — the QB-settled figure
+  // now lives in the payment_applications ledger, and giftQbTie compares that
+  // ledger SUM against the (preserved) human amount. We STILL record the
+  // provenance pointer: live readers (gifts-missing-qb, financialCorrections)
+  // filter on final_amount_qb_staged_payment_id, and the schema's
+  // source⇔pointer CHECK requires it. `amount` and `original_human_crm_amount`
+  // are deliberately left untouched, so the QB revert (unstampGiftFinalAmount,
+  // which restores amount ← original_human_crm_amount ?? amount) is a correct
+  // no-op for the amount. changed=false ⇒ callers' adjustSingleAllocationOrFlag
+  // no-ops (no rescale of allocations to the QB figure).
+  if (args.source === "quickbooks") {
+    await tx
+      .update(giftsAndPayments)
+      .set({
+        finalAmountSource: "quickbooks",
+        finalAmountStripeChargeId: null,
+        finalAmountQbStagedPaymentId: qbStagedPaymentId,
+        updatedAt: new Date(),
+      })
+      .where(eq(giftsAndPayments.id, giftId));
+    return { oldAmount, newAmount: oldAmount, changed: false, skipped: false };
+  }
+
+  // Stripe GROSS remains authoritative — overwrite the amount + snapshot the
+  // human figure (unchanged from before the ledger rollout). Stripe records the
+  // per-charge fee; the XOR pointer lands on the Stripe charge side.
   await tx
     .update(giftsAndPayments)
     .set({
       amount: args.amount,
-      // Stripe records the per-charge fee; QuickBooks has none, so the
-      // processor_fee is left untouched on that path.
-      ...(args.source === "stripe"
-        ? { processorFee: args.processorFee ?? null }
-        : {}),
+      processorFee: args.processorFee ?? null,
       originalHumanCrmAmount: gift.originalHumanCrmAmount ?? oldAmount,
-      finalAmountSource: args.source,
+      finalAmountSource: "stripe",
       finalAmountStripeChargeId: stripeChargeId,
-      finalAmountQbStagedPaymentId: qbStagedPaymentId,
+      finalAmountQbStagedPaymentId: null,
       updatedAt: new Date(),
     })
     .where(eq(giftsAndPayments.id, giftId));

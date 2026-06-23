@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { clearPaymentApplicationsForStagedIds } from "./paymentApplicationsTestUtil";
 
 /**
  * DB-backed coverage for the D4 human-confirm/revert payout ↔ QuickBooks-deposit
@@ -186,6 +187,7 @@ afterAll(async () => {
     await db
       .delete(schema.stripePayouts)
       .where(inArrayFn(schema.stripePayouts.id, payoutIds));
+  await clearPaymentApplicationsForStagedIds(stagedIds);
   if (stagedIds.length)
     await db
       .delete(schema.stagedPayments)

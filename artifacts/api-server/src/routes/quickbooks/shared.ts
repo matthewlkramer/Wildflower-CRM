@@ -32,7 +32,10 @@ import {
   adjustSingleAllocationOrFlag,
 } from "../../lib/giftFinalAmount";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
-import { removePaymentApplicationsForGift } from "../../lib/paymentApplications";
+import {
+  removePaymentApplicationsForGift,
+  removePaymentApplicationsForPayment,
+} from "../../lib/paymentApplications";
 
 export function requireAdmin(req: Request, res: Response): boolean {
   const me = getAppUser(req);
@@ -437,6 +440,9 @@ export async function revertOneStagedPayment(
           .from(stagedPaymentSplits)
           .where(eq(stagedPaymentSplits.stagedPaymentId, id));
         for (const s of splitGifts) if (s.giftId) affectedGiftIds.add(s.giftId);
+        // Ledger cleanup (Phase 2): undo this payment's split cash-applications
+        // (the split-target gifts are pre-existing and are never deleted).
+        await removePaymentApplicationsForPayment(tx, id);
         await tx
           .delete(stagedPaymentSplits)
           .where(eq(stagedPaymentSplits.stagedPaymentId, id));
@@ -469,6 +475,9 @@ export async function revertOneStagedPayment(
         const gid = locked.groupReconciledGiftId;
         // The group's pre-existing gift loses this evidence — recompute.
         affectedGiftIds.add(gid);
+        // Ledger cleanup (Phase 2): undo every member payment's QB cash-
+        // application to the group gift (the gift is pre-existing, not deleted).
+        await removePaymentApplicationsForGift(tx, gid);
         const members = await tx
           .select({
             id: stagedPayments.id,
@@ -532,6 +541,9 @@ export async function revertOneStagedPayment(
       if (isReconcile && locked.matchedGiftId) {
         // The pre-existing matched gift loses this evidence — recompute.
         affectedGiftIds.add(locked.matchedGiftId);
+        // Ledger cleanup (Phase 2): undo this payment's cash-application to the
+        // matched gift (the gift is pre-existing and is never deleted).
+        await removePaymentApplicationsForPayment(tx, id);
         const un = await unstampGiftFinalAmount(tx, locked.matchedGiftId, {
           source: "quickbooks",
           qbStagedPaymentId: id,
@@ -548,10 +560,9 @@ export async function revertOneStagedPayment(
       }
 
       if (isAutoMint && locked.createdGiftId) {
-        // payment_applications.gift_id is RESTRICT — clear any QB cash-
-        // application ledger rows for this minted gift before deleting it.
-        // Empty in Phase 1 (no writers yet), so this is a no-op until
-        // dual-write lands.
+        // payment_applications.gift_id is RESTRICT — clear the QB cash-
+        // application ledger row(s) booked at mint for this auto-minted gift
+        // before deleting it (Phase 2 dual-write books one on auto-create).
         await removePaymentApplicationsForGift(tx, locked.createdGiftId);
         await tx
           .delete(giftsAndPayments)

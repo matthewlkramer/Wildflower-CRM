@@ -24,6 +24,7 @@ import {
 } from "@workspace/api-zod";
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
+import { applyPaymentApplication } from "../../lib/paymentApplications";
 import { respondInvariantFailure } from "./shared";
 
 const router: IRouter = Router();
@@ -208,6 +209,21 @@ router.post(
             updatedAt: new Date(),
           })
           .where(eq(stagedPayments.id, id));
+
+        // Dual-write (Phase 2): book the QB cash-application ledger row for the
+        // freshly-minted gift (this staged payment created + fully applies to it).
+        if (locked.amount && Number(locked.amount) > 0) {
+          await applyPaymentApplication(tx, {
+            paymentId: id,
+            giftId,
+            amountApplied: locked.amount,
+            evidenceSource: "quickbooks",
+            matchMethod: "human",
+            confirmedByUserId: user.id,
+            confirmedAt: new Date(),
+            createdTheGift: true,
+          });
+        }
       });
     } catch (e) {
       if (e instanceof Error && e.message === NOT_PENDING) {

@@ -20,6 +20,10 @@ import {
   stampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
 } from "../../lib/giftFinalAmount";
+import {
+  applyPaymentApplication,
+  confirmPaymentApplicationsForPayment,
+} from "../../lib/paymentApplications";
 
 const router: IRouter = Router();
 
@@ -178,6 +182,21 @@ router.post(
               stamp.newAmount,
               "quickbooks",
             );
+          }
+
+          // Dual-write (Phase 2): book the QB cash-application ledger row. This
+          // staged payment fully applies to the matched gift (1:1 link).
+          if (existing.amount && Number(existing.amount) > 0) {
+            await applyPaymentApplication(tx, {
+              paymentId: id,
+              giftId,
+              amountApplied: existing.amount,
+              evidenceSource: "quickbooks",
+              matchMethod: "human",
+              confirmedByUserId: user.id,
+              confirmedAt: new Date(),
+              createdTheGift: false,
+            });
           }
         }
       });
@@ -485,6 +504,23 @@ router.post(
             "quickbooks",
           );
         }
+
+        // Dual-write (Phase 2): one QB cash-application ledger row PER member
+        // payment → the group's gift (each payment fully applies to it; the
+        // per-member amounts SUM to the group total).
+        for (const member of locked) {
+          if (!(member.amount && Number(member.amount) > 0)) continue;
+          await applyPaymentApplication(tx, {
+            paymentId: member.id,
+            giftId,
+            amountApplied: member.amount,
+            evidenceSource: "quickbooks",
+            matchMethod: "human",
+            confirmedByUserId: user.id,
+            confirmedAt: new Date(),
+            createdTheGift: false,
+          });
+        }
       });
     } catch (e) {
       if (e instanceof Error && e.message === NOT_FOUND) {
@@ -704,6 +740,27 @@ router.post(
           throw e;
         }
 
+        // Dual-write (Phase 2): one QB cash-application ledger row per split
+        // target gift (amount = that gift's gross sub-amount). The summed GROSS
+        // sub-amounts can run slightly above the NET deposit, so pass a fee-band
+        // tolerance matching the route's band (staged*1.1+1) so the book-once
+        // guard accepts the full set.
+        const splitLedgerTolerance = Number(locked.amount ?? 0) * 0.1 + 1;
+        for (const g of gifts) {
+          if (!(g.amount && Number(g.amount) > 0)) continue;
+          await applyPaymentApplication(tx, {
+            paymentId: id,
+            giftId: g.id,
+            amountApplied: g.amount,
+            evidenceSource: "quickbooks",
+            matchMethod: "human",
+            confirmedByUserId: user.id,
+            confirmedAt: new Date(),
+            createdTheGift: false,
+            tolerance: splitLedgerTolerance,
+          });
+        }
+
         // Mark the staged row resolved. Its own donor columns are NOT
         // authoritative for a split (the money spans several donors), so clear
         // them along with every single-gift link column.
@@ -814,24 +871,34 @@ router.post(
     // values fed to the UPDATE so a repeated id can't be confirmed twice.
     const requested = parsed.data.ids.length;
     const ids = Array.from(new Set(parsed.data.ids));
-    const rows = await db
-      .update(stagedPayments)
-      .set({
-        matchStatus: "matched",
-        matchConfirmedByUserId: user.id,
-        matchConfirmedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          inArray(stagedPayments.id, ids),
-          sql`num_nonnulls(${stagedPayments.organizationId}, ${stagedPayments.individualGiverPersonId}, ${stagedPayments.householdId}) >= 1`,
-          sql`(${stagedPayments.status} = 'pending'
-               OR (${stagedPayments.status} = 'approved' AND ${stagedPayments.autoApplied} = true))`,
-        ),
-      )
-      .returning({ id: stagedPayments.id });
-    res.json({ confirmedIds: rows.map((r) => r.id), requested });
+    const now = new Date();
+    const confirmedIds = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(stagedPayments)
+        .set({
+          matchStatus: "matched",
+          matchConfirmedByUserId: user.id,
+          matchConfirmedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            inArray(stagedPayments.id, ids),
+            sql`num_nonnulls(${stagedPayments.organizationId}, ${stagedPayments.individualGiverPersonId}, ${stagedPayments.householdId}) >= 1`,
+            sql`(${stagedPayments.status} = 'pending'
+                 OR (${stagedPayments.status} = 'approved' AND ${stagedPayments.autoApplied} = true))`,
+          ),
+        )
+        .returning({ id: stagedPayments.id });
+      // Promote any auto-applied (system) ledger rows for these payments to
+      // system_confirmed (who/when stamped, no amount/link change). Pending
+      // donor-match rows that never minted a gift have no system rows ⇒ no-op.
+      for (const r of rows) {
+        await confirmPaymentApplicationsForPayment(tx, r.id, user.id, now);
+      }
+      return rows.map((r) => r.id);
+    });
+    res.json({ confirmedIds, requested });
   }),
 );
 
@@ -849,23 +916,32 @@ router.post(
       return;
     }
     const id = paramId(req);
-    const [row] = await db
-      .update(stagedPayments)
-      .set({
-        matchStatus: "matched",
-        matchConfirmedByUserId: user.id,
-        matchConfirmedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(stagedPayments.id, id),
-          sql`num_nonnulls(${stagedPayments.organizationId}, ${stagedPayments.individualGiverPersonId}, ${stagedPayments.householdId}) >= 1`,
-          sql`(${stagedPayments.status} = 'pending'
-               OR (${stagedPayments.status} = 'approved' AND ${stagedPayments.autoApplied} = true))`,
-        ),
-      )
-      .returning();
+    const now = new Date();
+    const row = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(stagedPayments)
+        .set({
+          matchStatus: "matched",
+          matchConfirmedByUserId: user.id,
+          matchConfirmedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(stagedPayments.id, id),
+            sql`num_nonnulls(${stagedPayments.organizationId}, ${stagedPayments.individualGiverPersonId}, ${stagedPayments.householdId}) >= 1`,
+            sql`(${stagedPayments.status} = 'pending'
+                 OR (${stagedPayments.status} = 'approved' AND ${stagedPayments.autoApplied} = true))`,
+          ),
+        )
+        .returning();
+      // Promote auto-applied (system) ledger rows for this payment to
+      // system_confirmed; no-op when the row wasn't confirmable or had none.
+      if (updated) {
+        await confirmPaymentApplicationsForPayment(tx, id, user.id, now);
+      }
+      return updated;
+    });
     if (!row) {
       const exists = await db
         .select({ id: stagedPayments.id })
