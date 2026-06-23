@@ -12,6 +12,7 @@ import {
   useRevertStagedPayment,
   useExcludeStagedPayment,
   useSetStagedPaymentEntity,
+  useSetStagedPaymentNeedsResearch,
   useConfirmStagedPaymentMatch,
   useConfirmStagedPaymentMatches,
   useRevertStagedPaymentMatches,
@@ -1848,6 +1849,20 @@ function StagedPaymentCard({
         }),
     },
   });
+  const setNeedsResearch = useSetStagedPaymentNeedsResearch({
+    mutation: {
+      onSuccess: () => {
+        onChanged();
+        toast({ title: "Needs research updated" });
+      },
+      onError: (e: unknown) =>
+        toast({
+          title: "Needs research update failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
   const confirmMatch = useConfirmStagedPaymentMatch({
     mutation: {
       onSuccess: () => {
@@ -1924,6 +1939,7 @@ function StagedPaymentCard({
     reInclude.isPending ||
     exclude.isPending ||
     setEntity.isPending ||
+    setNeedsResearch.isPending ||
     confirmMatch.isPending ||
     unmatch.isPending ||
     revert.isPending;
@@ -2059,6 +2075,29 @@ function StagedPaymentCard({
             </CardDescription>
           </button>
           <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
+            <Badge
+              variant={row.needsResearch ? "default" : "outline"}
+              className={
+                row.needsResearch
+                  ? "cursor-pointer border-amber-500 bg-amber-500 text-white hover:bg-amber-600"
+                  : "cursor-pointer"
+              }
+              onClick={() =>
+                !busy &&
+                setNeedsResearch.mutate({
+                  id: row.id,
+                  data: { needsResearch: !row.needsResearch },
+                })
+              }
+              data-testid={`staged-needs-research-${row.id}`}
+              title={
+                row.needsResearch
+                  ? "Flagged for further research — click to clear."
+                  : "Flag this payment for further research (unknown donor, ambiguous coding, unclear restriction, etc.)."
+              }
+            >
+              {row.needsResearch ? "Needs research ✓" : "Needs research"}
+            </Badge>
             {selectable ? (
               <Badge
                 variant={selected ? "default" : "outline"}

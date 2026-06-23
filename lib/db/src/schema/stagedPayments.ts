@@ -312,6 +312,12 @@ export const stagedPayments = pgTable(
       .notNull()
       .default("auto"),
 
+    // Plain human-set flag: a reviewer hasn't fully figured this incoming money
+    // out yet (unknown donor, ambiguous coding, unclear restriction, etc.) and
+    // wants to come back to it. Never auto-derived and has NO side effects on
+    // reconcile status / matching — a pure annotation set via set-needs-research.
+    needsResearch: boolean("needs_research").notNull().default(false),
+
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

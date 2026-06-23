@@ -1692,6 +1692,8 @@ export interface GiftOrPayment {
   paymentExpected: boolean;
   /** When false, this real money is excluded from goal/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true. */
   countsTowardGoal: boolean;
+  /** Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status / derivation / QuickBooks tie. */
+  needsResearch: boolean;
   /** Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update. */
   readonly quickbooksTieStatus: GiftQuickbooksTie;
   /** Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses. */
@@ -1997,6 +1999,7 @@ export interface CreateGiftOrPaymentBody {
   offBooksFiscalSponsor?: boolean;
   paymentExpected?: boolean;
   countsTowardGoal?: boolean;
+  needsResearch?: boolean;
   tags?: string;
 }
 
@@ -2022,6 +2025,7 @@ export interface UpdateGiftOrPaymentBody {
   offBooksFiscalSponsor?: boolean;
   paymentExpected?: boolean;
   countsTowardGoal?: boolean;
+  needsResearch?: boolean;
   tags?: string | null;
 }
 
@@ -2563,6 +2567,8 @@ export interface StagedPayment {
   /** WHERE this money came from / how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown / not yet determined. Auto-seeded at ingest, human-correctable. */
   fundingSource?: StagedPaymentFundingSource | null;
   fundingSourceProvenance: StagedPaymentFundingSourceProvenance;
+  /** Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via /set-needs-research with no side effects on reconcile status or matching. */
+  needsResearch: boolean;
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
@@ -3897,6 +3903,14 @@ export interface SetStagedPaymentEntityBody {
 export interface SetStagedPaymentFundingSourceBody {
   /** The origin to attribute this money to, or null to clear it (keeping the manual pin). */
   fundingSource: StagedPaymentFundingSource | null;
+}
+
+/**
+ * Set or clear the plain human 'needs research' flag on a staged payment. A pure annotation with no side effects on reconcile status or matching.
+ */
+export interface SetStagedPaymentNeedsResearchBody {
+  /** True to flag this row for further research, false to clear it. */
+  needsResearch: boolean;
 }
 
 /**

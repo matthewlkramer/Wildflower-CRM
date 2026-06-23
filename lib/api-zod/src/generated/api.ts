@@ -5224,6 +5224,11 @@ export const GetOpportunityOrPledgeResponse = zod
               .describe(
                 "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
               ),
+            needsResearch: zod
+              .boolean()
+              .describe(
+                "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status \/ derivation \/ QuickBooks tie.",
+              ),
             quickbooksTieStatus: zod
               .enum(["exempt", "tied", "amount_mismatch", "missing"])
               .describe(
@@ -5979,6 +5984,11 @@ export const ListGiftsAndPaymentsResponse = zod.object({
         .describe(
           "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
         ),
+      needsResearch: zod
+        .boolean()
+        .describe(
+          "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status \/ derivation \/ QuickBooks tie.",
+        ),
       quickbooksTieStatus: zod
         .enum(["exempt", "tied", "amount_mismatch", "missing"])
         .describe(
@@ -6157,6 +6167,7 @@ export const CreateGiftOrPaymentBody = zod.object({
   offBooksFiscalSponsor: zod.boolean().optional(),
   paymentExpected: zod.boolean().optional(),
   countsTowardGoal: zod.boolean().optional(),
+  needsResearch: zod.boolean().optional(),
   tags: zod.string().optional(),
 });
 
@@ -6250,6 +6261,11 @@ export const GetGiftOrPaymentResponse = zod
       .boolean()
       .describe(
         "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+      ),
+    needsResearch: zod
+      .boolean()
+      .describe(
+        "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status \/ derivation \/ QuickBooks tie.",
       ),
     quickbooksTieStatus: zod
       .enum(["exempt", "tied", "amount_mismatch", "missing"])
@@ -6497,6 +6513,7 @@ export const UpdateGiftOrPaymentBody = zod.object({
   offBooksFiscalSponsor: zod.boolean().optional(),
   paymentExpected: zod.boolean().optional(),
   countsTowardGoal: zod.boolean().optional(),
+  needsResearch: zod.boolean().optional(),
   tags: zod.string().nullish(),
 });
 
@@ -6585,6 +6602,11 @@ export const UpdateGiftOrPaymentResponse = zod.object({
     .boolean()
     .describe(
       "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+    ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status \/ derivation \/ QuickBooks tie.",
     ),
   quickbooksTieStatus: zod
     .enum(["exempt", "tied", "amount_mismatch", "missing"])
@@ -6842,6 +6864,11 @@ export const LinkThankYouEmailResponse = zod
       .boolean()
       .describe(
         "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+      ),
+    needsResearch: zod
+      .boolean()
+      .describe(
+        "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status \/ derivation \/ QuickBooks tie.",
       ),
     quickbooksTieStatus: zod
       .enum(["exempt", "tied", "amount_mismatch", "missing"])
@@ -12614,6 +12641,11 @@ export const ListStagedPaymentsResponse = zod.object({
         .describe(
           "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
         ),
+      needsResearch: zod
+        .boolean()
+        .describe(
+          "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via \/set-needs-research with no side effects on reconcile status or matching.",
+        ),
       resolvedGiftId: zod.string().nullish(),
       resolvedGiftName: zod.string().nullish(),
       resolvedGiftAmount: zod.string().nullish(),
@@ -12931,6 +12963,11 @@ export const ResolveStagedPaymentResponse = zod.object({
     .describe(
       "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via \/set-needs-research with no side effects on reconcile status or matching.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -13186,6 +13223,11 @@ export const RejectStagedPaymentResponse = zod.object({
     .describe(
       "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via \/set-needs-research with no side effects on reconcile status or matching.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -13433,6 +13475,11 @@ export const ReIncludeStagedPaymentResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
+    ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via \/set-needs-research with no side effects on reconcile status or matching.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -13701,6 +13748,11 @@ export const SetStagedPaymentEntityResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
+    ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via \/set-needs-research with no side effects on reconcile status or matching.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -13981,6 +14033,282 @@ export const SetStagedPaymentFundingSourceResponse = zod.object({
     .describe(
       "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via \/set-needs-research with no side effects on reconcile status or matching.",
+    ),
+  resolvedGiftId: zod.string().nullish(),
+  resolvedGiftName: zod.string().nullish(),
+  resolvedGiftAmount: zod.string().nullish(),
+  resolvedGiftDate: zod.string().date().nullish(),
+  splitCount: zod
+    .number()
+    .optional()
+    .describe(
+      "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.",
+    ),
+  splitTotal: zod
+    .string()
+    .nullish()
+    .describe(
+      "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.",
+    ),
+  splitGiftNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Names of the gifts this staged payment is split across, for display. Null when not split.",
+    ),
+  giftAlreadyLinkedElsewhere: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate).",
+    ),
+  matchedRuleId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.",
+    ),
+  matchedRuleName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.",
+    ),
+  reconciliationLanes: zod
+    .object({
+      funding: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        ),
+      crmRecord: zod
+        .enum(["unlinked", "proposed", "confirmed", "exempt"])
+        .describe(
+          "Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.",
+        )
+        .nullable(),
+    })
+    .describe(
+      "The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).",
+    )
+    .optional()
+    .describe(
+      "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).",
+    ),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
+/**
+ * Reviewer flags a staged payment as not yet fully figured out (unknown
+donor, ambiguous coding, unclear restriction, etc.) so they can come
+back to it. A pure annotation: orthogonal to reconcile status, allowed
+on a row in any state, and never auto-derived. Flipping it has no side
+effects on matching, status, or reconciliation.
+
+ * @summary Set or clear the plain human "needs research" flag on a staged payment.
+ */
+export const SetStagedPaymentNeedsResearchParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const SetStagedPaymentNeedsResearchBody = zod
+  .object({
+    needsResearch: zod
+      .boolean()
+      .describe(
+        "True to flag this row for further research, false to clear it.",
+      ),
+  })
+  .describe(
+    "Set or clear the plain human 'needs research' flag on a staged payment. A pure annotation with no side effects on reconcile status or matching.",
+  );
+
+export const SetStagedPaymentNeedsResearchResponse = zod.object({
+  id: zod.string(),
+  realmId: zod.string(),
+  qbEntityType: zod.enum(["sales_receipt", "payment", "deposit"]),
+  qbEntityId: zod.string(),
+  qbLineId: zod.string().nullish(),
+  qbDepositId: zod
+    .string()
+    .nullish()
+    .describe(
+      "The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).",
+    ),
+  amount: zod.string().nullish(),
+  dateReceived: zod.string().date().nullish(),
+  payerName: zod.string().nullish(),
+  payerEmail: zod.string().nullish(),
+  rawReference: zod.string().nullish(),
+  lineDescription: zod.string().nullish(),
+  status: zod
+    .enum(["pending", "approved", "rejected", "excluded", "reconciled"])
+    .describe(
+      "Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.",
+    ),
+  exclusionReason: zod
+    .enum([
+      "zero_amount",
+      "loan",
+      "membership",
+      "interest",
+      "government_reimbursement",
+      "tax_refund",
+      "other_revenue",
+      "earned_income",
+      "fiscally_sponsored",
+      "intercompany_transfer",
+      "other",
+      "insurance",
+      "expense_refund",
+      "expensify",
+      "returned_wire",
+    ])
+    .nullish(),
+  classificationSource: zod.enum(["auto", "manual"]),
+  lineItemNames: zod.array(zod.string()).nullish(),
+  lineAccountNames: zod.array(zod.string()).nullish(),
+  lineClasses: zod.array(zod.string()).nullish(),
+  qbPayerType: zod
+    .enum(["vendor", "customer", "employee"])
+    .nullish()
+    .describe(
+      "The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).",
+    ),
+  qbPayerId: zod.string().nullish(),
+  qbPaymentMethod: zod.string().nullish(),
+  qbCheckNumber: zod.string().nullish(),
+  qbDepositToAccountName: zod.string().nullish(),
+  qbDocNumber: zod.string().nullish(),
+  qbBillingAddress: zod.string().nullish(),
+  qbTransactionMemo: zod.string().nullish(),
+  qbCurrency: zod.string().nullish(),
+  qbExchangeRate: zod.string().nullish(),
+  qbCreateTime: zod.string().datetime({}).nullish(),
+  qbLinkedTxn: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish(),
+  qbDepositLinks: zod
+    .array(
+      zod.object({
+        txnId: zod.string(),
+        txnType: zod.string(),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)",
+    ),
+  matchStatus: zod.enum(["matched", "suggested", "unmatched"]),
+  matchScore: zod.number().nullish(),
+  matchMethod: zod
+    .enum([
+      "email",
+      "name",
+      "name_amount_date",
+      "amount_date",
+      "memo",
+      "intermediary",
+      "manual",
+    ])
+    .nullish(),
+  matchConfirmedByUserId: zod.string().nullish(),
+  matchConfirmedAt: zod.string().datetime({}).nullish(),
+  organizationId: zod.string().nullish(),
+  individualGiverPersonId: zod.string().nullish(),
+  householdId: zod.string().nullish(),
+  matchedPaymentIntermediaryId: zod.string().nullish(),
+  matchedGiftId: zod.string().nullish(),
+  createdGiftId: zod.string().nullish(),
+  groupReconciledGiftId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.",
+    ),
+  sourceGroupId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).",
+    ),
+  autoApplied: zod.boolean(),
+  approvedByUserId: zod.string().nullish(),
+  approvedAt: zod.string().datetime({}).nullish(),
+  rejectedByUserId: zod.string().nullish(),
+  rejectedAt: zod.string().datetime({}).nullish(),
+  queue: zod
+    .enum([
+      "needs_review",
+      "fiscally_sponsored",
+      "auto_matched",
+      "excluded",
+      "done",
+      "rejected",
+      "reconciled",
+    ])
+    .optional()
+    .describe(
+      "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).",
+    ),
+  organizationName: zod.string().nullish(),
+  householdName: zod.string().nullish(),
+  individualGiverPersonName: zod.string().nullish(),
+  intermediaryName: zod.string().nullish(),
+  entityId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).",
+    ),
+  entityName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.",
+    ),
+  entitySource: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.",
+    ),
+  fundingSource: zod
+    .enum([
+      "stripe",
+      "brokerage",
+      "daf",
+      "donorbox",
+      "paypal",
+      "wire_ach",
+      "check",
+      "cash",
+      "employer_match",
+      "other",
+    ])
+    .nullish()
+    .describe(
+      "WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.",
+    ),
+  fundingSourceProvenance: zod
+    .enum(["auto", "manual"])
+    .describe(
+      "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
+    ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via \/set-needs-research with no side effects on reconcile status or matching.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -14258,6 +14586,11 @@ export const ExcludeStagedPaymentResponse = zod.object({
     .describe(
       "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via \/set-needs-research with no side effects on reconcile status or matching.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -14426,6 +14759,11 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
           .boolean()
           .describe(
             "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+          ),
+        needsResearch: zod
+          .boolean()
+          .describe(
+            "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status \/ derivation \/ QuickBooks tie.",
           ),
         quickbooksTieStatus: zod
           .enum(["exempt", "tied", "amount_mismatch", "missing"])
@@ -14685,6 +15023,11 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
           .describe(
             "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
           ),
+        needsResearch: zod
+          .boolean()
+          .describe(
+            "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status \/ derivation \/ QuickBooks tie.",
+          ),
         quickbooksTieStatus: zod
           .enum(["exempt", "tied", "amount_mismatch", "missing"])
           .describe(
@@ -14937,6 +15280,11 @@ export const ReconcileStagedPaymentResponse = zod.object({
       .boolean()
       .describe(
         "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+      ),
+    needsResearch: zod
+      .boolean()
+      .describe(
+        "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status \/ derivation \/ QuickBooks tie.",
       ),
     quickbooksTieStatus: zod
       .enum(["exempt", "tied", "amount_mismatch", "missing"])
@@ -15254,6 +15602,11 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
       .boolean()
       .describe(
         "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+      ),
+    needsResearch: zod
+      .boolean()
+      .describe(
+        "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status \/ derivation \/ QuickBooks tie.",
       ),
     quickbooksTieStatus: zod
       .enum(["exempt", "tied", "amount_mismatch", "missing"])
@@ -15741,6 +16094,11 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
     .describe(
       "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
     ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via \/set-needs-research with no side effects on reconcile status or matching.",
+    ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
   resolvedGiftAmount: zod.string().nullish(),
@@ -15988,6 +16346,11 @@ export const UnmatchStagedPaymentResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
+    ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via \/set-needs-research with no side effects on reconcile status or matching.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -16243,6 +16606,11 @@ export const RevertStagedPaymentResponse = zod.object({
     .enum(["auto", "manual"])
     .describe(
       "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.",
+    ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via \/set-needs-research with no side effects on reconcile status or matching.",
     ),
   resolvedGiftId: zod.string().nullish(),
   resolvedGiftName: zod.string().nullish(),
@@ -18595,6 +18963,11 @@ export const ArchiveGiftOrPaymentResponse = zod.object({
     .describe(
       "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
     ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status \/ derivation \/ QuickBooks tie.",
+    ),
   quickbooksTieStatus: zod
     .enum(["exempt", "tied", "amount_mismatch", "missing"])
     .describe(
@@ -18812,6 +19185,11 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
     .boolean()
     .describe(
       "When false, this real money is excluded from goal\/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true.",
+    ),
+  needsResearch: zod
+    .boolean()
+    .describe(
+      "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status \/ derivation \/ QuickBooks tie.",
     ),
   quickbooksTieStatus: zod
     .enum(["exempt", "tied", "amount_mismatch", "missing"])

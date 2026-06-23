@@ -500,6 +500,16 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                   onSave={(next) => patch({ countsTowardGoal: next ?? true })}
                 />
               </Row>
+              <Row label="Needs research">
+                <InlineEditBoolean
+                  label="Needs research"
+                  testIdBase="gift-needs-research"
+                  value={gift.needsResearch}
+                  allowNull={false}
+                  display={gift.needsResearch ? "Yes" : "No"}
+                  onSave={(next) => patch({ needsResearch: next ?? false })}
+                />
+              </Row>
               <Row label="QuickBooks tie">
                 <GiftQbTieBadge status={gift.quickbooksTieStatus} />
               </Row>

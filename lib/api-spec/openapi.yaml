@@ -2573,6 +2573,25 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /staged-payments/{id}/set-needs-research:
+    post:
+      operationId: setStagedPaymentNeedsResearch
+      tags: [staged-payments]
+      summary: Set or clear the plain human "needs research" flag on a staged payment.
+      description: |
+        Reviewer flags a staged payment as not yet fully figured out (unknown
+        donor, ambiguous coding, unclear restriction, etc.) so they can come
+        back to it. A pure annotation: orthogonal to reconcile status, allowed
+        on a row in any state, and never auto-derived. Flipping it has no side
+        effects on matching, status, or reconciliation.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SetStagedPaymentNeedsResearchBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /staged-payments/{id}/exclude:
     post:
       operationId: excludeStagedPayment
@@ -5126,7 +5145,7 @@ components:
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
       type: object
-      required: [id, designatedToSchool, offBooksFiscalSponsor, paymentExpected, countsTowardGoal, quickbooksTieStatus, finalAmountSource, createdAt, updatedAt]
+      required: [id, designatedToSchool, offBooksFiscalSponsor, paymentExpected, countsTowardGoal, needsResearch, quickbooksTieStatus, finalAmountSource, createdAt, updatedAt]
       properties:
         id:                         { type: string }
         legacyGiftId:               { type: string, nullable: true }
@@ -5158,6 +5177,7 @@ components:
         offBooksFiscalSponsor:      { type: boolean, description: "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation)." }
         paymentExpected:            { type: boolean, description: "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor / designatedToSchool). Defaults true." }
         countsTowardGoal:           { type: boolean, description: "When false, this real money is excluded from goal/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true." }
+        needsResearch:              { type: boolean, description: "Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status / derivation / QuickBooks tie." }
         quickbooksTieStatus:        { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], readOnly: true, description: "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update." }
         reconciliationLanes:        { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses." }
         tags:                       { type: string, nullable: true }
@@ -5284,6 +5304,7 @@ components:
         offBooksFiscalSponsor:      { type: boolean }
         paymentExpected:            { type: boolean }
         countsTowardGoal:           { type: boolean }
+        needsResearch:              { type: boolean }
         tags:                       { type: string }
     UpdateGiftOrPaymentBody:
       type: object
@@ -5309,6 +5330,7 @@ components:
         offBooksFiscalSponsor:      { type: boolean }
         paymentExpected:            { type: boolean }
         countsTowardGoal:           { type: boolean }
+        needsResearch:              { type: boolean }
         tags:                       { type: string, nullable: true }
     ThankYouAttachment:
       type: object
@@ -5508,7 +5530,7 @@ components:
         notes:           { type: string, nullable: true }
     StagedPayment:
       type: object
-      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, classificationSource, entitySource, fundingSourceProvenance, createdAt, updatedAt]
+      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, needsResearch, classificationSource, entitySource, fundingSourceProvenance, createdAt, updatedAt]
       properties:
         id:                        { type: string }
         realmId:                   { type: string }
@@ -5591,6 +5613,7 @@ components:
         entitySource:              { $ref: "#/components/schemas/StagedPaymentEntitySource" }
         fundingSource:             { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true, description: "WHERE this money came from / how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown / not yet determined. Auto-seeded at ingest, human-correctable." }
         fundingSourceProvenance:   { $ref: "#/components/schemas/StagedPaymentFundingSourceProvenance" }
+        needsResearch:             { type: boolean, description: "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via /set-needs-research with no side effects on reconcile status or matching." }
         resolvedGiftId:            { type: string, nullable: true }
         resolvedGiftName:          { type: string, nullable: true }
         resolvedGiftAmount:        { type: string, nullable: true }
@@ -6580,6 +6603,12 @@ components:
       description: "Pin (or clear) the funding source by hand. Sets fundingSourceProvenance='manual' so detectFundingSource never overwrites it on re-sync / reclassify. fundingSource null clears the value back to unknown while keeping the manual pin (so it is not re-derived)."
       properties:
         fundingSource: { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true, description: "The origin to attribute this money to, or null to clear it (keeping the manual pin)." }
+    SetStagedPaymentNeedsResearchBody:
+      type: object
+      required: [needsResearch]
+      description: "Set or clear the plain human 'needs research' flag on a staged payment. A pure annotation with no side effects on reconcile status or matching."
+      properties:
+        needsResearch: { type: boolean, description: "True to flag this row for further research, false to clear it." }
     GroupStagedPaymentsBody:
       type: object
       required: [stagedPaymentIds]

@@ -285,6 +285,7 @@ import type {
   SendTrackedEmailResult,
   SetStagedPaymentEntityBody,
   SetStagedPaymentFundingSourceBody,
+  SetStagedPaymentNeedsResearchBody,
   SplitGiftIntoPledgeBody,
   SplitGrantLeadBody,
   SplitGrantLeadResponse,
@@ -18532,6 +18533,102 @@ export const useSetStagedPaymentFundingSource = <
   TContext
 > => {
   return useMutation(getSetStagedPaymentFundingSourceMutationOptions(options));
+};
+
+/**
+ * Reviewer flags a staged payment as not yet fully figured out (unknown
+donor, ambiguous coding, unclear restriction, etc.) so they can come
+back to it. A pure annotation: orthogonal to reconcile status, allowed
+on a row in any state, and never auto-derived. Flipping it has no side
+effects on matching, status, or reconciliation.
+
+ * @summary Set or clear the plain human "needs research" flag on a staged payment.
+ */
+export const getSetStagedPaymentNeedsResearchUrl = (id: string) => {
+  return `/api/staged-payments/${id}/set-needs-research`;
+};
+
+export const setStagedPaymentNeedsResearch = async (
+  id: string,
+  setStagedPaymentNeedsResearchBody: SetStagedPaymentNeedsResearchBody,
+  options?: RequestInit,
+): Promise<StagedPayment> => {
+  return customFetch<StagedPayment>(getSetStagedPaymentNeedsResearchUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(setStagedPaymentNeedsResearchBody),
+  });
+};
+
+export const getSetStagedPaymentNeedsResearchMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setStagedPaymentNeedsResearch>>,
+    TError,
+    { id: string; data: BodyType<SetStagedPaymentNeedsResearchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setStagedPaymentNeedsResearch>>,
+  TError,
+  { id: string; data: BodyType<SetStagedPaymentNeedsResearchBody> },
+  TContext
+> => {
+  const mutationKey = ["setStagedPaymentNeedsResearch"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setStagedPaymentNeedsResearch>>,
+    { id: string; data: BodyType<SetStagedPaymentNeedsResearchBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return setStagedPaymentNeedsResearch(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetStagedPaymentNeedsResearchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setStagedPaymentNeedsResearch>>
+>;
+export type SetStagedPaymentNeedsResearchMutationBody =
+  BodyType<SetStagedPaymentNeedsResearchBody>;
+export type SetStagedPaymentNeedsResearchMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Set or clear the plain human "needs research" flag on a staged payment.
+ */
+export const useSetStagedPaymentNeedsResearch = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setStagedPaymentNeedsResearch>>,
+    TError,
+    { id: string; data: BodyType<SetStagedPaymentNeedsResearchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setStagedPaymentNeedsResearch>>,
+  TError,
+  { id: string; data: BodyType<SetStagedPaymentNeedsResearchBody> },
+  TContext
+> => {
+  return useMutation(getSetStagedPaymentNeedsResearchMutationOptions(options));
 };
 
 /**

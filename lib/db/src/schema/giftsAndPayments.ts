@@ -158,6 +158,11 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // expenses) — it is excluded from the goal/received analytics rollups.
   // Orthogonal to paymentExpected. Defaults true. User-settable.
   countsTowardGoal: boolean("counts_toward_goal").default(true).notNull(),
+  // Plain human-set flag: a fundraiser/finance reviewer hasn't fully figured
+  // this money record out yet (unknown donor, ambiguous coding, unclear
+  // restriction, etc.) and wants to come back to it. Never auto-derived and has
+  // NO side effects on status / derivation / QB tie — a pure annotation.
+  needsResearch: boolean("needs_research").default(false).notNull(),
   // Derived, persisted signal of whether this gift reconciles to a QuickBooks
   // record (see giftQuickbooksTieEnum). Recomputed by applyGiftQbTieMany at
   // every gift link/amount mutation; never hand-set. Defaults to 'missing'

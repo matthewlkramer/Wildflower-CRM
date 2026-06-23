@@ -574,7 +574,16 @@ router.patch(
     // old and the new pledge so a newly-covered target advances.
     await applyDerivedOppFieldsMany(existing.paymentOnPledgeId, row.paymentOnPledgeId);
     // Amount / off-books / designated-to-school edits change the QB-tie status.
-    await applyGiftQbTieMany(row.id);
+    // Only recompute when one of those tie-affecting fields actually changed so
+    // a pure-annotation edit (e.g. the needs-research flag) is a no-op for
+    // derivation, never silently re-deriving tie status.
+    if (
+      existing.amount !== row.amount ||
+      existing.offBooksFiscalSponsor !== row.offBooksFiscalSponsor ||
+      existing.designatedToSchool !== row.designatedToSchool
+    ) {
+      await applyGiftQbTieMany(row.id);
+    }
     // A donor or gift-type change shifts the derived revenue coding (payer type /
     // loan exclusion) of every allocation under this gift — re-derive snapshots.
     if (
