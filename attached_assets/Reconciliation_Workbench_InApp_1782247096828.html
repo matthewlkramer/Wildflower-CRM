@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reconciliation — WF CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fcfaf8; --ink:#2e241f; --mut:#857b73; --line:#dedbd3; --line2:#ece8e1;
+    --card:#ffffff; --muted:#efeae3; --accent:#f4ebe1;
+    --primary:#295c4a; --primary-d:#21503f; --primarybg:#e7f0ea;
+    --green:#2f7d57; --greenbg:#e6f1ea; --amber:#9a6b00; --amberbg:#f7eed6;
+    --red:#b23b2e; --redbg:#f6e1dc; --purple:#6c4ea3; --purplebg:#ece5f6;
+    --teal:#1a7a8c; --tealbg:#e0f0f3; --orange:#b8601c; --orangebg:#f6e6d6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13.5px;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer}
+  /* this module assumes the app's 256px left nav sits to its left; it renders only the content area */
+  .content{max-width:1080px;margin:0 auto;padding:22px 26px 120px}
+  /* header */
+  .phead{display:flex;align-items:baseline;gap:12px;margin-bottom:3px}
+  .phead h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-.2px}
+  .phead .crumb{color:var(--mut);font-size:12.5px}
+  .subhead{color:var(--mut);font-size:12.5px;margin-bottom:16px}
+  /* metrics strip */
+  .stats{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 15px;min-width:150px}
+  .stat .l{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--mut)}
+  .stat .v{font-size:18px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+  .stat .v small{font-size:11px;font-weight:500;color:var(--mut)}
+  .stat .track{height:6px;background:var(--muted);border-radius:5px;overflow:hidden;margin-top:7px}
+  .stat .track>i{display:block;height:100%;background:var(--primary)}
+  .stat.tie .v{color:var(--green);font-size:15px}
+  /* toolbar */
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .pills{display:flex;gap:6px;flex-wrap:wrap}
+  .pill{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:6px 13px;font-size:12.5px;color:var(--ink);display:inline-flex;align-items:center;gap:7px}
+  .pill:hover{background:var(--accent)}
+  .pill.active{background:var(--primary);border-color:var(--primary);color:#fff}
+  .pill .dot{width:7px;height:7px;border-radius:50%}
+  .pill .ct{font-size:11px;background:var(--muted);color:var(--mut);border-radius:10px;padding:0 7px}
+  .pill.active .ct{background:rgba(255,255,255,.22);color:#fff}
+  .tools-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+  select,.ipt{padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;color:var(--ink);background:var(--card);font-family:inherit}
+  .btn{border:1px solid var(--line);background:var(--card);border-radius:9px;padding:7px 12px;font-size:12.5px;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+  .btn:hover{background:var(--accent)}
+  .btn.pri{background:var(--primary);border-color:var(--primary);color:#fff}
+  .btn.pri:hover{background:var(--primary-d)}
+  .btn.ok{background:var(--green);border-color:var(--green);color:#fff}
+  .btn.ok:hover{filter:brightness(.94)}
+  .btn.danger{color:var(--red);border-color:#e7c4bd;background:#fff}
+  .btn.danger:hover{background:var(--redbg)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  /* card */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:visible;transition:box-shadow .12s,border-color .12s}
+  .card.sel{border-color:var(--primary);box-shadow:0 3px 16px rgba(41,92,74,.12)}
+  .recs{display:grid;grid-template-columns:1fr 38px 1fr;cursor:pointer}
+  .recs .col{padding:13px 16px}
+  .recs .col.l{border-right:1px solid var(--line2)}
+  .recs .lbl{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--mut);margin-bottom:3px}
+  .recs .nm{font-weight:600;font-size:14px;line-height:1.25}
+  .recs .amt{font-variant-numeric:tabular-nums;font-size:16px;font-weight:700;margin-top:2px}
+  .recs .meta{color:var(--mut);font-size:11.5px;margin-top:3px}
+  .recs .mid{display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:17px}
+  .none{color:var(--mut);font-style:italic;display:flex;align-items:center;height:100%;font-size:12.5px}
+  /* evidence + chips inline */
+  .ev{padding:10px 16px;border-top:1px solid var(--line2);display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+  .chip{font-size:11px;padding:2px 9px;border-radius:20px;font-weight:600;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .chip.high{background:var(--greenbg);color:var(--green)} .chip.med{background:var(--amberbg);color:var(--amber)}
+  .chip.low{background:var(--orangebg);color:var(--orange)} .chip.weak{background:var(--redbg);color:var(--red)}
+  .chip.tag{background:var(--muted);color:var(--mut);font-weight:500}
+  .evlist{display:flex;flex-direction:column;gap:2px;flex:1;min-width:240px}
+  .evlist .e{font-size:12px;color:#5c534c}
+  .note{background:var(--primarybg);color:var(--primary-d);border-radius:8px;padding:7px 11px;font-size:12px;margin:0 16px 10px}
+  /* lineage + apps inline */
+  .extra{padding:2px 16px 12px}
+  .sechd{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin:10px 0 6px}
+  .chain{display:flex;flex-wrap:wrap;gap:0;align-items:center}
+  .chain .cn{display:flex;align-items:center;gap:7px}
+  .chain .cdot{width:9px;height:9px;border-radius:50%;border:2px solid var(--primary);background:#fff}
+  .chain .cdot.done{background:var(--green);border-color:var(--green)}
+  .chain .ci{font-size:11.5px} .chain .ci .a{font-weight:600} .chain .ci .b{color:var(--mut)}
+  .chain .arr{color:var(--mut);margin:0 10px}
+  .applist{border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .applist .ar{display:flex;justify-content:space-between;align-items:center;padding:6px 11px;font-size:12.5px;border-bottom:1px solid var(--line2)}
+  .applist .ar:last-child{border-bottom:none}
+  .applist .ar .anm{display:flex;align-items:center;gap:7px}
+  .applist .st{font-size:9px;text-transform:uppercase;letter-spacing:.4px;padding:1px 6px;border-radius:5px;font-weight:700}
+  .applist .st.prop{background:var(--amberbg);color:var(--amber)} .applist .st.conf{background:var(--greenbg);color:var(--green)}
+  .applist .aamt{font-variant-numeric:tabular-nums;font-weight:600}
+  /* balance meter */
+  .meter{margin-top:10px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--bg)}
+  .meter .mrow{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px;font-variant-numeric:tabular-nums}
+  .meter .trk{height:8px;background:var(--muted);border-radius:6px;overflow:hidden;margin:6px 0}
+  .meter .trk>i{display:block;height:100%;transition:width .15s}
+  .meter .vd{font-size:12px;font-weight:600}
+  .meter.bal{border-color:#bfe0cd;background:var(--greenbg)} .meter.over{border-color:#e7c4bd;background:var(--redbg)}
+  .meter .vd.ok{color:var(--green)} .meter .vd.no{color:var(--amber)} .meter .vd.ov{color:var(--red)}
+  /* action bar */
+  .abar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--line2);background:#fdfcfb;border-radius:0 0 12px 12px}
+  .abar .staged{color:var(--green);font-weight:600;font-size:12.5px;display:flex;align-items:center;gap:6px}
+  .abar .right{margin-left:auto;display:flex;gap:8px;position:relative}
+  /* resolve dropdown */
+  .menu{position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:0 14px 40px rgba(46,36,31,.16);width:300px;z-index:30;overflow:hidden;display:none}
+  .menu.on{display:block}
+  .menu .grp{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);padding:8px 13px 3px;background:#fbfaf8}
+  .menu .mi{display:block;width:100%;text-align:left;border:none;background:none;padding:8px 13px;font-size:12.5px;color:var(--ink);line-height:1.2}
+  .menu .mi:hover{background:var(--accent)}
+  .menu .mi .d{display:block;color:var(--mut);font-size:11px}
+  .empty{color:var(--mut);text-align:center;padding:48px 20px;font-size:14px;background:var(--card);border:1px dashed var(--line);border-radius:12px}
+  .kbd{background:var(--muted);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 5px;font-size:11px;font-family:ui-monospace,monospace}
+  /* tray */
+  .tray{position:fixed;right:18px;bottom:18px;width:340px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 44px rgba(46,36,31,.2);overflow:hidden;z-index:40}
+  .tray .th{background:var(--primary);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;cursor:pointer}
+  .tray .th .ct{margin-left:auto;background:rgba(255,255,255,.2);padding:1px 8px;border-radius:10px;font-size:11.5px}
+  .tray .tb{max-height:220px;overflow-y:auto}
+  .tray .ti{padding:9px 14px;border-bottom:1px solid var(--line2);font-size:12px;display:flex;gap:8px;align-items:flex-start}
+  .tray .ti .b2{font-size:9px;text-transform:uppercase;letter-spacing:.4px;padding:2px 6px;border-radius:5px;font-weight:700;color:#fff;flex:0 0 auto;margin-top:1px}
+  .tray .ti .x{margin-left:auto;color:var(--mut);border:none;background:none;font-size:14px}
+  .tray .tf{padding:10px 14px;display:flex;gap:8px;border-top:1px solid var(--line);background:#fbfaf8}
+  /* modal */
+  .scrim{position:fixed;inset:0;background:rgba(40,30,25,.4);display:none;align-items:center;justify-content:center;z-index:50}
+  .scrim.on{display:flex}
+  .modal{background:#fff;border-radius:14px;width:560px;max-width:92vw;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.3)}
+  .modal .mh{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .modal .mh .mt{font-size:15px;font-weight:700}
+  .modal .mh .x{margin-left:auto;border:none;background:none;font-size:20px;color:var(--mut)}
+  .modal .mb{padding:16px 18px;overflow-y:auto}
+  .modal .mf{padding:13px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;background:#fbfaf8}
+  .fld{margin-bottom:13px}
+  .fld label{display:block;font-size:11.5px;color:var(--mut);margin-bottom:4px;font-weight:600}
+  .fld input,.fld select,.fld textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit}
+  .hint{background:var(--primarybg);color:var(--primary-d);border-radius:8px;padding:9px 11px;font-size:12px;margin-bottom:13px}
+  .warn{background:var(--redbg);color:var(--red);border-radius:8px;padding:9px 11px;font-size:12px;margin-bottom:13px;font-weight:500}
+  .small{font-size:11.5px;color:var(--mut)}
+  .approw{display:grid;grid-template-columns:1.9fr 120px 30px;gap:8px;margin-bottom:7px;align-items:center}
+  .approw input.nmf{padding:6px 9px}
+  .approw .amtf{position:relative}
+  .approw .amtf input{padding:6px 9px 6px 18px;text-align:right;font-variant-numeric:tabular-nums;width:100%}
+  .approw .amtf:before{content:"$";position:absolute;left:7px;top:7px;color:var(--mut);font-size:12px}
+  .approw .rx{border:none;background:none;color:var(--mut);font-size:15px}
+  .approw.head{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);margin-bottom:4px}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .2s;z-index:60;pointer-events:none}
+  .toast.on{opacity:1}
+</style>
+</head>
+<body>
+<div class="content">
+  <div class="phead"><span class="crumb">CRM ›</span><h1>Reconciliation</h1></div>
+  <div class="subhead">Match QuickBooks payments to gifts, Stripe, and Donorbox — and resolve the issues that surface along the way. Staged changes are held until you apply them; nothing is written automatically.</div>
+
+  <div class="stats">
+    <div class="stat"><div class="l">Gifts resolved</div><div class="v" id="pdone">560 <small>/ 707</small></div><div class="track"><i id="pbar"></i></div></div>
+    <div class="stat"><div class="l">Open items</div><div class="v" id="popen">—</div></div>
+    <div class="stat"><div class="l">Staged</div><div class="v" id="pstaged">0</div></div>
+    <div class="stat tie"><div class="l">Tie-out</div><div class="v">● $76,530,594</div></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="pills" id="pills"></div>
+    <div class="tools-right">
+      <select id="axis" onchange="render()">
+        <option value="all">All sources</option>
+        <option value="qg">QuickBooks ⇄ Gift</option>
+        <option value="qs">QuickBooks ⇄ Stripe</option>
+        <option value="qd">QuickBooks ⇄ Donorbox</option>
+        <option value="ds">Donorbox ⇄ Stripe</option>
+      </select>
+      <button class="btn sm" onclick="bulkApproveHigh()">✓ Approve all high-confidence</button>
+    </div>
+  </div>
+
+  <div id="list"></div>
+</div>
+
+<!-- pending tray -->
+<div class="tray" id="tray">
+  <div class="th" onclick="toggleTray()">⤓ Pending changes <span class="ct" id="trayct">0</span><span style="margin-left:6px;font-weight:400;font-size:11px">(staged — not written)</span></div>
+  <div class="tb" id="traybody"></div>
+  <div class="tf"><button class="btn sm" onclick="clearTray()">Discard all</button><button class="btn pri sm" style="margin-left:auto" onclick="applyTray()">Apply to QuickBooks &amp; CRM →</button></div>
+</div>
+
+<div class="scrim" id="scrim"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- queues ---------- */
+const Q=[
+  {id:'review',name:'Needs review',color:'#9a6b00'},
+  {id:'qbo',name:'QBO-only',color:'#b23b2e'},
+  {id:'crm',name:'CRM-only',color:'#b23b2e'},
+  {id:'split',name:'Splits & pledges',color:'#6c4ea3'},
+  {id:'bundle',name:'Stripe/Donorbox bundles',color:'#1a7a8c'},
+  {id:'sync',name:'Sync gaps',color:'#b8601c'},
+  {id:'research',name:'Research',color:'#857b73'},
+  {id:'confirmed',name:'Confirmed',color:'#2f7d57'},
+  {id:'excluded',name:'Excluded',color:'#6c4ea3'},
+];
+
+/* ---------- seed data ---------- */
+let items=[
+  {id:'i1',q:'review',axis:'qg',conf:'high',status:'open',
+   L:{src:'QBO',t:'Payment',nm:'OMIDYAR NETWORK FUND INC',amt:500000,meta:'2019-11-19 · deposit dep_8841'},
+   R:{src:'Gift',t:'Gift',nm:'Omidyar FY21',amt:500000,meta:'pledge_payment · Gen Ops'},
+   ev:['Linked by matched_gift_id','Amount agrees exactly','Payer = linked donor entity']},
+  {id:'i2',q:'review',axis:'qd',conf:'high',status:'open',
+   L:{src:'QBO',t:'Payment',nm:'Stripe payout py_4471',amt:486.50,meta:'2024-03-02 · net of fees'},
+   R:{src:'Gift',t:'Gift',nm:'Donorbox — A. Kuthart recurring',amt:500.00,meta:'gross $500.00'},
+   ev:['Amount delta $13.50 (2.7%) = processor fee','Date matches payout','Donorbox campaign linked'],
+   chain:[['Donorbox','$500.00 ApplePay',1],['Stripe charge','$500.00 / $13.50 fee',0],['Payout py_4471','$486.50 net',1],['QBO deposit','matches',0],['Gift','this',0]]},
+  {id:'i3',q:'review',axis:'qg',conf:'med',status:'open',
+   L:{src:'QBO',t:'Payment',nm:'William Penn Foundation',amt:480,meta:'2023-05-11 · check 20551'},
+   R:{src:'Gift',t:'Gift',nm:'Kellie Brown — matching gift',amt:480,meta:'CRM-only · individual'},
+   ev:['Same amount & timeframe','William Penn is Kellie Brown’s employer','Likely employer match — payer ≠ donor'],
+   note:'Resolve with “Change donor / payer” → set matching_employer, not by renaming the donor.'},
+  {id:'i4',q:'review',axis:'qg',conf:'weak',status:'open',
+   L:{src:'QBO',t:'Payment',nm:'Stripe deposit (BWF)',amt:300,meta:'2024-09-08'},
+   R:{src:'Gift',t:'Gift',nm:'Anonymous $300 — BWF',amt:300,meta:'CRM-only'},
+   ev:['Amount coincidence only','Shared deposit, but it holds 11 donors','No payer / name evidence'],
+   note:'Flagged weak — round-number coincidence. Excluded from bulk-approve; needs a human call.'},
+  {id:'i5',q:'qbo',axis:'qg',conf:null,status:'open',
+   L:{src:'QBO',t:'Payment',nm:'Excellent Schools New Mexico',amt:1292.57,meta:'2023-08-14 · memo “reimb”'},R:null,
+   ev:['No CRM gift','Memo + account suggest expense reimbursement','Allowable grant expenses']},
+  {id:'i6',q:'qbo',axis:'qg',conf:null,status:'open',
+   L:{src:'QBO',t:'Payment',nm:'Future Focused Solutions',amt:14000,meta:'2022-11-30'},R:null,
+   ev:['No CRM gift','Counterparty is a vendor','Not inbound philanthropy']},
+  {id:'i7',q:'qbo',axis:'qg',conf:null,status:'open',
+   L:{src:'QBO',t:'Payment',nm:'Blue Cross Blue Shield',amt:70000,meta:'2021-07-06'},R:null,
+   ev:['No linked gift in export','CRM shows BCBS Healthy Start $70k (summer 2021)','Likely sync gap, else create gift']},
+  {id:'i8',q:'qbo',axis:'qg',conf:null,status:'open',
+   L:{src:'QBO',t:'Payment',nm:'Fidelity Charitable',amt:50000,meta:'2022-02-18 · DAF'},R:null,
+   ev:['Payer is a DAF intermediary','Should link to “Rick & Molly Klau — Flame Lily Startup”','That gift not in export — sync gap']},
+  {id:'i9',q:'review',axis:'qg',conf:'med',status:'open',
+   L:{src:'QBO',t:'Payment',nm:'Mardag Foundation',amt:75000,meta:'2022-06-30 · 2nd payment'},
+   R:{src:'Gift',t:'Gift',nm:'Mardag — St Paul & Minneapolis',amt:75000,meta:'currently mis-linked'},
+   ev:['Currently linked to the wrong Mardag gift','Should re-target to the 2nd Mardag gift','Frees the other for QBO-only'],
+   note:'Use “Re-target match” to point at the correct gift.'},
+  {id:'i10',q:'split',axis:'qg',conf:null,status:'open',editor:'split',
+   L:{src:'QBO',t:'Payment',nm:'OMIDYAR NETWORK FUND INC',amt:1000000,meta:'2017-12-12 · single wire'},
+   R:{src:'Gift',t:'2 gifts',nm:'Omidyar FY18 + FY19 ($500k each)',amt:1000000,meta:'pledge recL1lu…'},
+   ev:['One payment covers 2 annual gifts','Both are pledge installments','Link to pledge; apply $1M across two'],
+   apps:[{nm:'Omidyar FY18 (pledge installment)',amt:500000,status:'prop'},{nm:'Omidyar FY19 (pledge installment)',amt:500000,status:'prop'}]},
+  {id:'i11',q:'split',axis:'qg',conf:null,status:'open',editor:'merge',
+   L:{src:'QBO',t:'Payment',nm:'Avi and Sandra Nash',amt:200000,meta:'2021-01-05'},
+   R:{src:'Gift',t:'3 gifts',nm:'Avi Nash $118k + Nash FY21 $75k + Goldenrod $7k',amt:200000,meta:'same date, one funder'},
+   ev:['One payment recorded as 3 separate gifts','Really one $200k grant','Merge → single gift with 4 allocations'],
+   apps:[{nm:'Avi Nash — Gen Ops',amt:118000,status:'prop'},{nm:'Nash FY21 — Bay Area',amt:25000,status:'prop'},{nm:'Nash FY21 — Colorado',amt:20000,status:'prop'},{nm:'Nash FY21 — Massachusetts',amt:30000,status:'prop'},{nm:'Goldenrod hub grant',amt:7000,status:'prop'}]},
+  {id:'i12',q:'split',axis:'qg',conf:null,status:'open',editor:'partial',
+   L:{src:'QBO',t:'Payment',nm:'Stranahan Foundation',amt:300000,meta:'2020-11-16 · 1 of 2'},
+   R:{src:'Gift',t:'Gift',nm:'Stranahan Foundation 2021 (9 allocations)',amt:225000,meta:'amount ≠ payment'},
+   ev:['$600k pledge paid as 2×$300k','Gift already carries 9 allocation rows','Attach to pledge; reconcile amount'],
+   apps:[{nm:'Stranahan 2021 gift (this installment)',amt:225000,status:'prop'}]},
+  {id:'i13',q:'bundle',axis:'qs',conf:null,status:'open',
+   L:{src:'QBO',t:'Deposit',nm:'QBO deposit — single line',amt:3199.32,meta:'2024-04-30'},
+   R:{src:'Stripe',t:'Payout',nm:'Stripe payout py_pyhf — 17 charges',amt:3199.32,meta:'net matches exactly'},
+   ev:['Deposit = payout net (exact)','Bundles 17 separate donors','Split deposit → per-donor gifts'],
+   chain:[['QBO deposit','$3,199.32 one line',0],['Payout py_pyhf','17 charges',1],['17 donations','distinct donors',0]]},
+  {id:'i14',q:'bundle',axis:'ds',conf:'high',status:'open',
+   L:{src:'Donorbox',t:'Donation',nm:'M. Downey — $875 (ApplePay)',amt:875,meta:'2025-02-04 · campaign BWF'},
+   R:{src:'Stripe',t:'Charge',nm:'ch_AOL_38f',amt:875,meta:'processor=stripe via wallet'},
+   ev:['ApplePay settles through Stripe','Charge id + amount + date match','Confirms Donorbox ⇄ Stripe link']},
+];
+
+let sel=null,trayOpen=true,curQ='review',openMenuId=null;
+const tray=[];
+
+/* ---------- helpers ---------- */
+function counts(){const c={};items.forEach(it=>c[it.q]=(c[it.q]||0)+1);return c;}
+function money(n){return '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function confChip(c){if(!c)return `<span class="chip tag">needs action</span>`;const m={high:'High confidence',med:'Medium',low:'Low',weak:'Weak — coincidence'};return `<span class="chip ${c}">${c==='high'?'✓ ':c==='weak'?'⚠ ':''}${m[c]}</span>`;}
+function findIt(id){return items.find(x=>x.id===id);}
+
+function staticMeter(applied,total){
+  const rem=+(total-applied).toFixed(2),pct=total?Math.min(100,applied/total*100):0;
+  const bal=Math.abs(rem)<0.005,over=rem<-0.005,cls=bal?'bal':over?'over':'',fill=over?'var(--red)':bal?'var(--green)':'var(--primary)';
+  const v=bal?`<span class="vd ok">● balances — applied = payment</span>`:over?`<span class="vd ov">▲ over-applied by ${money(-rem)}</span>`:`<span class="vd no">○ ${money(rem)} unapplied — route the remainder</span>`;
+  return `<div class="meter ${cls}"><div class="mrow"><span>Applied</span><b>${money(applied)}</b></div><div class="trk"><i style="width:${pct}%;background:${fill}"></i></div><div class="mrow"><span>Payment total</span><b>${money(total)}</b></div>${v}</div>`;
+}
+function appsBlock(it){
+  if(!it.apps||!it.L)return '';
+  const applied=it.apps.reduce((s,a)=>s+a.amt,0);
+  const verb={split:'one payment → many gifts',merge:'many gifts → one gift + allocations',partial:'installment of a larger commitment'}[it.editor]||'';
+  return `<div class="sechd">payment_applications · ${verb}</div>
+    <div class="applist">${it.apps.map(a=>`<div class="ar"><span class="anm"><span class="st ${a.status}">${a.status==='conf'?'confirmed':'proposed'}</span>${a.nm}</span><span class="aamt">${money(a.amt)}</span></div>`).join('')}</div>
+    ${staticMeter(applied,it.L.amt)}`;
+}
+function chainBlock(it){
+  if(!it.chain)return '';
+  return `<div class="sechd">Settlement lineage</div><div class="chain">`+it.chain.map((n,i)=>`<span class="cn"><span class="cdot ${n[2]?'done':''}"></span><span class="ci"><span class="a">${n[0]}</span> <span class="b">${n[1]}</span></span></span>${i<it.chain.length-1?'<span class="arr">→</span>':''}`).join('')+`</div>`;
+}
+
+/* ---------- render ---------- */
+function render(){
+  const c=counts(),axis=document.getElementById('axis').value;
+  document.getElementById('pills').innerHTML=Q.map(q=>`<button class="pill ${q.id===curQ?'active':''}" onclick="pick('${q.id}')"><span class="dot" style="background:${q.color}"></span>${q.name}<span class="ct">${c[q.id]||0}</span></button>`).join('');
+  let rows=items.filter(it=>it.q===curQ);
+  if(axis!=='all')rows=rows.filter(it=>it.axis===axis);
+  const L=document.getElementById('list');
+  L.innerHTML=rows.length?rows.map(card).join(''):`<div class="empty">Nothing in this queue. 🎉</div>`;
+  const open=items.filter(it=>it.status==='open').length;
+  const done=560+tray.length;
+  document.getElementById('pdone').innerHTML=`${done} <small>/ 707</small>`;
+  document.getElementById('pbar').style.width=Math.min(100,done/707*100).toFixed(1)+'%';
+  document.getElementById('popen').textContent=open;
+  document.getElementById('pstaged').textContent=tray.length;
+}
+function col(s,cls){
+  if(!s)return `<div class="col ${cls}"><div class="none">— no counterpart —</div></div>`;
+  return `<div class="col ${cls}"><div class="lbl">${s.src} · ${s.t}</div><div class="nm">${s.nm}</div><div class="amt">${money(s.amt)}</div><div class="meta">${s.meta}</div></div>`;
+}
+function card(it){
+  const staged=it.status!=='open';
+  const abar=staged
+    ? `<span class="staged">✓ staged — in the pending tray</span><div class="right"><button class="btn sm" onclick="unstageItem('${it.id}')">Undo</button></div>`
+    : `<div class="right">
+        ${it.R?`<button class="btn sm ok" onclick="confirmIt('${it.id}')">✓ Approve</button>`:''}
+        ${it.R?`<button class="btn sm danger" onclick="reject('${it.id}')">✕ Reject</button>`:''}
+        <button class="btn sm pri" onclick="toggleMenu(event,'${it.id}')">Resolve ▾</button>
+        <div class="menu" id="menu-${it.id}">${menuFor(it)}</div>
+       </div>`;
+  return `<div class="card ${sel===it.id?'sel':''}" id="card-${it.id}">
+    <div class="recs" onclick="setSel('${it.id}')">${col(it.L,'l')}<div class="mid">⇄</div>${col(it.R,'r')}</div>
+    <div class="ev">${confChip(it.conf)}<div class="evlist">${it.ev.map(e=>`<span class="e">• ${e}</span>`).join('')}</div></div>
+    ${it.note?`<div class="note">💡 ${it.note}</div>`:''}
+    ${(it.apps||it.chain)?`<div class="extra">${chainBlock(it)}${appsBlock(it)}</div>`:''}
+    <div class="abar">${abar}</div>
+  </div>`;
+}
+function pick(q){curQ=q;sel=null;closeMenu();render();}
+function setSel(id){sel=id;render();}
+
+/* ---------- resolve dropdown ---------- */
+function menuFor(it){
+  const has=!!it.R,qbo=it.L&&!it.R;
+  const G=(t)=>`<div class="grp">${t}</div>`;
+  const I=(k,t,d)=>`<button class="mi" onclick="action('${it.id}','${k}')"><b>${t}</b><span class="d">${d}</span></button>`;
+  let h='';
+  h+=G('Matching');
+  if(has){h+=I('confirm','Confirm match','approve this link');h+=I('reject','Reject match','these are not the same');h+=I('retarget','Re-target match','link to a different gift');}
+  if(qbo) h+=I('create','Create gift','build a gift from this payment');
+  h+=G('Classify');
+  h+=I('exclude','Exclude payment','reason: vendor, reimbursement, loan…');
+  h+=I('donor','Change donor / payer','payer-vehicle → donor; DAF / employer');
+  h+=G('Restructure');
+  h+=I('merge','Merge → single gift + allocations','combine several gifts into one');
+  h+=I('pledge','Link / convert to pledge','attach installment to a pledge');
+  h+=I('split','Split payment across gifts','one payment → many application rows');
+  h+=I('group','Group payments → one gift','many payments → one gift');
+  if(has) h+=I('partial','Apply as partial / installment','applied_amount < payment');
+  if(it.q==='bundle') h+=I('explode','Split deposit → per-donor gifts','explode a Stripe/Donorbox payout');
+  h+=G('Flag');
+  h+=I('sync','Flag as sync gap','exists in CRM, missing from export');
+  h+=I('dup','Mark duplicate','point at the canonical record');
+  h+=I('research','Send to research','park with a note + assignee');
+  return h;
+}
+function toggleMenu(e,id){e.stopPropagation();const m=document.getElementById('menu-'+id);const on=m.classList.contains('on');closeMenu();if(!on){m.classList.add('on');openMenuId=id;}}
+function closeMenu(){if(openMenuId){const m=document.getElementById('menu-'+openMenuId);if(m)m.classList.remove('on');openMenuId=null;}}
+document.addEventListener('click',e=>{if(!e.target.closest('.menu')&&!e.target.closest('[onclick^="toggleMenu"]'))closeMenu();});
+
+/* ---------- actions ---------- */
+function confirmIt(id){const it=findIt(id);stage('MATCH',`Confirm: ${it.L.nm} ⇄ ${it.R.nm}`,id);}
+function reject(id){const it=findIt(id);stage('UNMATCH',`Reject link: ${it.L.nm} ⇄ ${(it.R||{}).nm||''}`,id);}
+function bulkApproveHigh(){const hi=items.filter(it=>it.q===curQ&&it.status==='open'&&it.conf==='high');if(!hi.length){toast('No high-confidence items in this queue.');return;}hi.forEach(it=>stage('MATCH',`Confirm: ${it.L.nm} ⇄ ${it.R.nm}`,it.id,true));render();toast(`Staged ${hi.length} high-confidence matches.`);}
+function action(id,kind){
+  closeMenu();const it=findIt(id);
+  const F={
+    confirm:()=>confirmIt(id),
+    reject:()=>reject(id),
+    retarget:()=>modal('Re-target match',`<div class="hint">Break the current link and point this payment at the correct gift.</div><div class="fld"><label>Search gifts</label><input value="Mardag — 2nd gift FY22"/></div><div class="fld"><label>Applied amount</label><input value="${it.L?money(it.L.amt):''}"/></div>`,()=>stage('RETARGET',`Re-link ${it.L.nm} → new gift`,id)),
+    create:()=>modal('Create gift from payment',`<div class="hint">Pre-filled from the QuickBooks payment. Nothing is written until you Apply.</div><div class="fld"><label>Gift name</label><input value="${it.L.nm} — 2026"/></div><div class="approw" style="grid-template-columns:1fr 1fr"><div class="fld" style="margin:0"><label>Amount</label><input value="${money(it.L.amt)}"/></div><div class="fld" style="margin:0"><label>Gift type</label><select><option>standard_gift</option><option>pledge_payment</option><option>directed_gift</option></select></div></div><div class="fld"><label>Donor</label><input placeholder="search organizations / people"/></div>`,()=>stage('CREATE GIFT',`Create gift for ${it.L.nm} (${money(it.L.amt)})`,id)),
+    exclude:()=>modal('Exclude payment',`<div class="fld"><label>Reason (required)</label><select id="exr"><option>Vendor payment — not a gift</option><option>Expense reimbursement — allowable grant expenses</option><option>Earned / service income</option><option>Loan capital / PRI</option><option>Government reimbursement</option><option>Credit-card payable</option><option>Intercompany transfer</option><option>Tax refund</option><option>Fiscally-sponsored pass-through</option></select></div><div class="fld"><label>Note</label><textarea rows="2" placeholder="optional supporting detail"></textarea></div><div class="small">Moves ${it.L?it.L.nm:''} out of gift scope and onto the Excluded list with this reason.</div>`,()=>stage('EXCLUDE',`Exclude ${it.L.nm}: ${document.getElementById('exr').value}`,id)),
+    donor:()=>modal('Change donor / payer',`<div class="hint">Use when the payer isn’t the real donor — a DAF, employer match, or fiscal intermediary.</div><div class="fld"><label>This is…</label><select><option>A DAF / giving vehicle (set advised_by)</option><option>An employer match (set matching_employer)</option><option>A fiscal intermediary (set true donor)</option></select></div><div class="fld"><label>Real donor</label><input value="${/penn/i.test(it.L.nm)?'Kellie Brown':/fidelity/i.test(it.L.nm)?'Rick & Molly Klau':''}" placeholder="search people / orgs"/></div><div class="fld"><label>Keep payer as</label><input value="${it.L.nm}" disabled/></div>`,()=>stage('DONOR',`Reassign ${it.L.nm} → real donor / vehicle`,id)),
+    merge:()=>liveEditor(id,'MERGE','Merge into single gift with allocations','Combine the gift rows one payment covers into a single gift; each line becomes an allocation. Lines must sum to the payment.',it.apps||[{nm:'',amt:0}],it.L.amt,`<div class="fld"><label>Parent gift name</label><input value="${it.R?it.R.nm.split(' + ')[0]:it.L.nm} (consolidated)"/></div>`,`Merge ${(it.apps||[]).length} gifts → 1 gift + allocations`),
+    split:()=>liveEditor(id,'SPLIT','Split payment across gifts','Allocate one payment to several gifts as application rows; route any remainder to a new gift. Lines must sum to the payment.',it.apps||[{nm:'Sep FY21',amt:337224},{nm:'Sep NJ FY21 (remainder · create)',amt:141436}],it.L.amt,'',`Split ${it.L.nm} into application rows`),
+    group:()=>liveEditor(id,'GROUP','Group payments → one gift','Several payments satisfy one gift; each becomes an application row. Rows sum to the gift amount.',it.apps||[{nm:'Payment 1',amt:0},{nm:'Payment 2',amt:0}],it.R?it.R.amt:0,`<div class="fld"><label>Target gift</label><input value="${it.R?it.R.nm:''}" placeholder="search gifts"/></div>`,`Group payments → ${it.R?it.R.nm:'gift'}`),
+    partial:()=>liveEditor(id,'PARTIAL','Apply as partial / installment','This payment covers part of a larger commitment. Apply what it satisfies; the balance stays open on the pledge.',it.apps||[{nm:it.R?it.R.nm:'this gift',amt:it.R?it.R.amt:0}],it.L.amt,`<div class="fld"><label>Against pledge</label><select><option>Existing — Stranahan $600k (2 installments)</option><option>＋ Create new pledge</option></select></div>`,`Apply ${it.L.nm} as installment`),
+    pledge:()=>modal('Link / convert to pledge',`<div class="hint">Attach this gift to a multi-year pledge; one payment can satisfy several installments.</div><div class="fld"><label>Pledge</label><select><option>Existing — Omidyar (recL1lu…)</option><option>Existing — Frey renewal</option><option>＋ Create new pledge</option></select></div><div class="approw" style="grid-template-columns:1fr 1fr"><div class="fld" style="margin:0"><label>Pledge total</label><input value="$2,000,000"/></div><div class="fld" style="margin:0"><label>This payment covers</label><input value="FY18 + FY19 installments"/></div></div>`,()=>stage('PLEDGE',`Link ${it.R?it.R.nm:it.L.nm} to pledge`,id)),
+    explode:()=>modal('Split deposit into per-donor gifts',`<div class="warn">⚠ This deposit bundles many different donors. Do NOT merge — explode it into separate gifts.</div><div class="small">17 Stripe charges detected inside payout py_pyhf. Each becomes its own gift, matched to its Donorbox donation.</div><div class="fld" style="margin-top:10px"><label>Action</label><select><option>Create 17 gifts from charges &amp; auto-match to Donorbox</option><option>Review each charge first</option></select></div>`,()=>stage('EXPLODE',`Explode deposit ${it.L.nm} → 17 per-donor gifts`,id)),
+    sync:()=>modal('Flag as sync gap',`<div class="hint">The matching gift exists in the CRM but is missing from the export. Flag for re-import rather than creating a duplicate.</div><div class="fld"><label>CRM gift it should match</label><input value="${/blue/i.test(it.L.nm)?'BCBS Healthy Start $70k (2021)':/fidelity/i.test(it.L.nm)?'Rick & Molly Klau — Flame Lily':''}" placeholder="search CRM"/></div><div class="fld"><label>Note</label><textarea rows="2">Present in CRM, absent from export — re-sync.</textarea></div>`,()=>stage('SYNC GAP',`Flag sync gap: ${it.L.nm}`,id)),
+    dup:()=>modal('Mark duplicate',`<div class="fld"><label>Canonical record to merge into</label><input placeholder="search gifts"/></div><div class="small">Keeps history via merged_into pointer; nothing is deleted.</div>`,()=>stage('DUPLICATE',`Mark ${it.L?it.L.nm:it.R.nm} as duplicate`,id)),
+    research:()=>modal('Send to research',`<div class="fld"><label>Assignee</label><input value="Matt K."/></div><div class="fld"><label>Question</label><textarea rows="2" placeholder="what needs to be verified?"></textarea></div>`,()=>stage('RESEARCH',`Research: ${it.L?it.L.nm:it.R.nm}`,id)),
+  };
+  (F[kind]||(()=>{}))();
+}
+
+/* ---------- live editor ---------- */
+let EDIT_TOTAL=0;
+function appRowHtml(r){return `<div class="approw"><input class="nmf" value="${(r.nm||'').replace(/"/g,'&quot;')}" placeholder="gift / application name"/><span class="amtf"><input type="text" value="${r.amt?r.amt.toLocaleString('en-US'):''}" oninput="recalcEditor()" placeholder="0"/></span><button class="rx" onclick="this.parentNode.remove();recalcEditor()">✕</button></div>`;}
+function liveEditor(id,kind,title,help,rows,total,extra,label){
+  EDIT_TOTAL=total;
+  modal(title,`<div class="hint">💡 ${help}</div>${extra||''}<div class="approw head"><span>Application row (→ gift)</span><span style="text-align:right">applied_amount</span><span></span></div><div id="appRows">${rows.map(appRowHtml).join('')}</div><button class="btn sm" onclick="document.getElementById('appRows').insertAdjacentHTML('beforeend',appRowHtml({nm:'',amt:0}));recalcEditor()">+ Add application row</button><div id="editMeter"></div>`,()=>stage(kind,label,id));
+  recalcEditor();
+}
+function recalcEditor(){
+  const inputs=[...document.querySelectorAll('#appRows .amtf input')];
+  let applied=0;inputs.forEach(i=>applied+=parseFloat((i.value||'').replace(/[^0-9.\-]/g,''))||0);
+  document.getElementById('editMeter').innerHTML=staticMeter(applied,EDIT_TOTAL);
+  const bal=Math.abs(EDIT_TOTAL-applied)<0.005,sv=document.getElementById('msave');
+  if(sv){sv.disabled=!bal;sv.style.opacity=bal?'1':'.45';sv.style.pointerEvents=bal?'auto':'none';sv.textContent=bal?'Stage application rows':'Balance to enable';}
+}
+
+/* ---------- tray ---------- */
+const badge={MATCH:'#2f7d57',UNMATCH:'#b23b2e',RETARGET:'#295c4a','CREATE GIFT':'#295c4a',EXCLUDE:'#6c4ea3',DONOR:'#295c4a',MERGE:'#6c4ea3',PLEDGE:'#6c4ea3',SPLIT:'#6c4ea3',GROUP:'#6c4ea3',PARTIAL:'#6c4ea3',EXPLODE:'#1a7a8c','SYNC GAP':'#b8601c',DUPLICATE:'#b8601c',RESEARCH:'#857b73'};
+function stage(kind,label,id,quiet){
+  tray.push({kind,label,id});const it=findIt(id);
+  if(it){it.status='staged';if(kind==='EXCLUDE')it.q='excluded';else if(kind==='MATCH')it.q='confirmed';else if(kind==='SYNC GAP')it.q='sync';else if(kind==='RESEARCH')it.q='research';}
+  closeModal();renderTray();if(!quiet){render();toast(kind+' staged.');}
+}
+function renderTray(){
+  document.getElementById('trayct').textContent=tray.length;
+  const b=document.getElementById('traybody');
+  b.innerHTML=tray.length?tray.map((t,i)=>`<div class="ti"><span class="b2" style="background:${badge[t.kind]||'#888'}">${t.kind}</span><span>${t.label}</span><button class="x" onclick="unstage(${i})">✕</button></div>`).join(''):`<div class="empty" style="padding:22px;border:none">No staged changes.</div>`;
+}
+function unstage(i){const t=tray[i];const it=findIt(t.id);if(it)it.status='open';tray.splice(i,1);renderTray();render();}
+function unstageItem(id){const i=tray.findIndex(t=>t.id===id);if(i>=0)unstage(i);}
+function clearTray(){tray.length=0;items.forEach(it=>{if(it.status==='staged')it.status='open'});renderTray();render();toast('Discarded staged changes.');}
+function applyTray(){if(!tray.length){toast('Nothing to apply.');return;}toast(`Applied ${tray.length} change(s) to QuickBooks & CRM. ✓`);tray.length=0;renderTray();render();}
+function toggleTray(){const b=document.getElementById('traybody');trayOpen=!trayOpen;b.style.display=trayOpen?'block':'none';}
+
+/* ---------- modal ---------- */
+function modal(title,body,onsave){
+  document.getElementById('modal').innerHTML=`<div class="mh"><div class="mt">${title}</div><button class="x" onclick="closeModal()">×</button></div><div class="mb">${body}</div><div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" id="msave">Stage change</button></div>`;
+  document.getElementById('scrim').classList.add('on');
+  document.getElementById('msave').onclick=()=>onsave();
+}
+function closeModal(){document.getElementById('scrim').classList.remove('on');}
+document.getElementById('scrim').addEventListener('click',e=>{if(e.target.id==='scrim')closeModal();});
+
+/* ---------- toast + keys ---------- */
+let tt;function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('on'),1900);}
+document.addEventListener('keydown',e=>{
+  if(document.getElementById('scrim').classList.contains('on'))return;
+  const rows=items.filter(it=>it.q===curQ);
+  if(e.key==='j'||e.key==='k'){let i=rows.findIndex(r=>r.id===sel);i=e.key==='j'?Math.min(rows.length-1,i+1):Math.max(0,i-1);if(rows[i]){setSel(rows[i].id);document.getElementById('card-'+rows[i].id)?.scrollIntoView({block:'nearest'});}}
+  if(sel){const it=findIt(sel);if(!it||it.status!=='open')return;if(e.key==='a'&&it.R)confirmIt(sel);if(e.key==='r')reject(sel);if(e.key==='e')action(sel,'exclude');}
+});
+
+render();renderTray();
+</script>
+</body>
+</html>
