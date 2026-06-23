@@ -48,8 +48,10 @@ review queue). Trigger it on-demand:
 pnpm --filter @workspace/api-server run sync:donorbox
 ```
 
-(or wait for the 30-minute scheduler). Requires `DONORBOX_API_EMAIL` +
-`DONORBOX_API_KEY` secrets to be set — the sync is a safe no-op until both are.
+(or wait for the 30-minute scheduler). Requires the account email config value
+`DONORBOX_USER_EMAIL` (falls back to the legacy `DONORBOX_API_EMAIL` if unset) +
+the `DONORBOX_API_KEY` secret to be set — the sync is a safe no-op until both
+are.
 
 ## Idempotency
 

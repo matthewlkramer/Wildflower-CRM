@@ -4,9 +4,11 @@ import { logger } from "./logger";
  * Minimal client for the Donorbox public API (https://donorbox.org/api/v1).
  *
  * Auth: HTTP Basic with the Donorbox account email as the username and the API
- * key as the password (`Authorization: Basic base64("<email>:<key>")`). Both
- * come from secrets (DONORBOX_API_EMAIL / DONORBOX_API_KEY) and are NEVER
- * logged. Donorbox also requires a descriptive `User-Agent` header.
+ * key as the password (`Authorization: Basic base64("<email>:<key>")`). The
+ * account email is a non-secret config value (DONORBOX_USER_EMAIL, falling back
+ * to the legacy DONORBOX_API_EMAIL when unset); the API key stays a secret
+ * (DONORBOX_API_KEY). Neither is ever logged. Donorbox also requires a
+ * descriptive `User-Agent` header.
  *
  * We use it pull-only: list donations (the enrichment + new-money source) and,
  * optionally, recurring plans. The `/donations` endpoint returns a bare JSON
@@ -46,21 +48,31 @@ export class DonorboxApiError extends Error {
   }
 }
 
+/**
+ * Resolve the Donorbox account email from config: the non-secret
+ * `DONORBOX_USER_EMAIL`, falling back to the legacy `DONORBOX_API_EMAIL` secret
+ * for environments that haven't migrated yet.
+ */
+function getConfiguredEmail(): string | undefined {
+  return (
+    process.env["DONORBOX_USER_EMAIL"]?.trim() ||
+    process.env["DONORBOX_API_EMAIL"]?.trim() ||
+    undefined
+  );
+}
+
 /** True when both the account email and the API key are configured. */
 export function isDonorboxConfigured(): boolean {
-  return (
-    !!process.env["DONORBOX_API_EMAIL"]?.trim() &&
-    !!process.env["DONORBOX_API_KEY"]?.trim()
-  );
+  return !!getConfiguredEmail() && !!process.env["DONORBOX_API_KEY"]?.trim();
 }
 
 /** Resolve credentials from the environment; throw loudly when missing. */
 function getCredentials(): { email: string; key: string } {
-  const email = process.env["DONORBOX_API_EMAIL"]?.trim();
+  const email = getConfiguredEmail();
   const key = process.env["DONORBOX_API_KEY"]?.trim();
   if (!email || !key) {
     throw new DonorboxNotConfiguredError(
-      "DONORBOX_API_EMAIL / DONORBOX_API_KEY are not set — cannot reach Donorbox.",
+      "DONORBOX_USER_EMAIL (or legacy DONORBOX_API_EMAIL) / DONORBOX_API_KEY are not set — cannot reach Donorbox.",
     );
   }
   return { email, key };
