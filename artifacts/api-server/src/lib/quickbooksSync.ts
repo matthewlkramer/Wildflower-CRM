@@ -15,7 +15,11 @@ import { withSyncLock } from "./syncLock";
 import { getValidQuickbooksAccessToken } from "./quickbooksTokenStore";
 import { pullIncomingPayments } from "./quickbooksClient";
 import { scoreStagedPayment, type ScoredMatch } from "./quickbooksMatch";
-import { classifyStagedPayment, detectEntity } from "./quickbooksExclusionRules";
+import {
+  classifyStagedPayment,
+  detectEntity,
+  isGovernmentReimbursement,
+} from "./quickbooksExclusionRules";
 import { detectFundingSource } from "./quickbooksFundingSource";
 import {
   evaluateRules,
@@ -109,6 +113,11 @@ export function buildStagedLineUpsert(
     // state and survives every re-pull untouched. The provenance column itself is
     // never in this set, so a manual row keeps both its value AND its pin.
     fundingSource: sql`CASE WHEN ${stagedPayments.fundingSourceProvenance} = 'manual' THEN ${stagedPayments.fundingSource} ELSE coalesce(excluded.funding_source, ${stagedPayments.fundingSource}) END`,
+    // counts_toward_goal is a derived QB fact (government reimbursement by payer),
+    // never review state — refresh it to the freshly computed incoming value so a
+    // full re-pull can backfill historical rows. NOT NULL on the row, so excluded
+    // always carries a concrete boolean.
+    countsTowardGoal: sql`excluded.counts_toward_goal`,
     updatedAt: new Date(),
   };
 
@@ -350,6 +359,7 @@ async function applyAutoCreateRule(
           individualGiverPersonId: null,
           householdId: null,
           matchedPaymentIntermediaryId: locked.matchedPaymentIntermediaryId,
+          countsTowardGoal: locked.countsTowardGoal,
         },
         // Auto-created at ingest — no acting user.
         null,
@@ -549,6 +559,7 @@ async function applyAutoCreateRuleToRow(
           individualGiverPersonId: null,
           householdId: null,
           matchedPaymentIntermediaryId: locked.matchedPaymentIntermediaryId,
+          countsTowardGoal: locked.countsTowardGoal,
         },
         null,
       ),
@@ -693,6 +704,20 @@ export async function syncQuickbooks(
         qbDepositToAccountName: p.qbDepositToAccountName,
       });
 
+      // Government reimbursements (the "CSP" payer) are NOT excluded — they flow
+      // into the queue like any other row — but they are real money that doesn't
+      // advance the fundraising goal. Flag the staged row so the eventual gift
+      // mints with counts_toward_goal=false. Orthogonal to exclusion + entity.
+      const countsTowardGoal = !isGovernmentReimbursement({
+        amount: p.amount,
+        payerName: p.payerName,
+        lineItemNames: p.lineItemNames,
+        lineAccountNames: p.lineAccountNames,
+        lineClasses: p.lineClasses,
+        rawReference: p.rawReference,
+        lineDescription: p.lineDescription,
+      });
+
       const scored: ScoredMatch | null = excluded
         ? null
         : await scoreStagedPayment({
@@ -737,6 +762,7 @@ export async function syncQuickbooks(
         matchedRuleId: ruleHit?.ruleId ?? null,
         entityId,
         fundingSource,
+        countsTowardGoal,
         matchStatus,
         matchScore: scored && scored.method ? scored.score : null,
         matchMethod: scored ? scored.method : null,
@@ -1072,6 +1098,9 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
                 qbDepositToAccountName: row.qbDepositToAccountName,
               }),
             };
+      // counts_toward_goal is a derived QB fact (government reimbursement by
+      // payer), refreshed on every reclassified row like entity + funding source.
+      const goalSet = { countsTowardGoal: !isGovernmentReimbursement(input) };
       if (cls.excluded && row.status !== "excluded") {
         const upd = await db
           .update(stagedPayments)
@@ -1080,6 +1109,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
             exclusionReason: cls.reason,
             ...entitySet,
             ...fundingSet,
+            ...goalSet,
             updatedAt: new Date(),
           })
           .where(guard(row.id))
@@ -1093,6 +1123,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
             exclusionReason: cls.reason,
             ...entitySet,
             ...fundingSet,
+            ...goalSet,
             updatedAt: new Date(),
           })
           .where(guard(row.id));
@@ -1104,16 +1135,17 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
             exclusionReason: null,
             ...entitySet,
             ...fundingSet,
+            ...goalSet,
             updatedAt: new Date(),
           })
           .where(guard(row.id))
           .returning({ id: stagedPayments.id });
         if (upd.length) included += 1;
       } else {
-        // Pending and staying pending — still refresh entity + funding source.
+        // Pending and staying pending — still refresh entity + funding + goal.
         await db
           .update(stagedPayments)
-          .set({ ...entitySet, ...fundingSet, updatedAt: new Date() })
+          .set({ ...entitySet, ...fundingSet, ...goalSet, updatedAt: new Date() })
           .where(guard(row.id));
       }
     }

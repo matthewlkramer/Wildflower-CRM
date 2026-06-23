@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   classifyStagedPayment,
   detectEntity,
+  isGovernmentReimbursement,
   type ClassifierInput,
 } from "../lib/quickbooksExclusionRules";
 
@@ -43,25 +44,28 @@ describe("classifyStagedPayment", () => {
     );
   });
 
-  it("excludes loan-account payers", () => {
+  it("excludes loan-account payers as loan_repayment", () => {
     expect(
       classifyStagedPayment({ ...base, payerName: "Loan - Snowdrop" }).reason,
-    ).toBe("loan");
+    ).toBe("loan_repayment");
   });
 
-  it("excludes repayments and guaranty fees (case-insensitive)", () => {
+  it("excludes repayment payers as loan_repayment (case-insensitive)", () => {
     expect(
       classifyStagedPayment({
         ...base,
         payerName: "Dahlia Montessori Repayment",
       }).reason,
-    ).toBe("loan");
+    ).toBe("loan_repayment");
+  });
+
+  it("folds a guaranty-fee payer into earned_income (case-insensitive)", () => {
     expect(
       classifyStagedPayment({
         ...base,
         payerName: "echinacea GUARANTY  fee",
       }).reason,
-    ).toBe("loan");
+    ).toBe("earned_income");
   });
 
   it("does not treat loan-like substrings as loans", () => {
@@ -124,7 +128,7 @@ describe("classifyStagedPayment", () => {
     ).toBe(false);
   });
 
-  it("zero_amount and loan take precedence over membership", () => {
+  it("zero_amount and loan_repayment take precedence over membership", () => {
     expect(
       classifyStagedPayment({
         ...base,
@@ -138,19 +142,33 @@ describe("classifyStagedPayment", () => {
         payerName: "Loan - Snowdrop",
         lineItemNames: ["School Contributions"],
       }).reason,
-    ).toBe("loan");
+    ).toBe("loan_repayment");
   });
 
-  it("excludes the funder 'CSP' as government_reimbursement (exact, case-insensitive)", () => {
-    expect(classifyStagedPayment({ ...base, payerName: "CSP" }).reason).toBe(
-      "government_reimbursement",
+  it("no longer EXCLUDES the funder 'CSP' — it stays in the queue", () => {
+    // government_reimbursement is no longer a classifier exclusion: CSP money is
+    // real and flows into the review queue like any other payment.
+    expect(classifyStagedPayment({ ...base, payerName: "CSP" }).excluded).toBe(
+      false,
     );
-    expect(classifyStagedPayment({ ...base, payerName: "  csp  " }).reason).toBe(
-      "government_reimbursement",
+    expect(
+      classifyStagedPayment({ ...base, payerName: "  csp  " }).excluded,
+    ).toBe(false);
+  });
+
+  it("flags the funder 'CSP' as a government reimbursement (exact, case-insensitive)", () => {
+    // The standalone detector marks the row so its eventual gift mints with
+    // counts_toward_goal = false (real money that doesn't advance the goal).
+    expect(isGovernmentReimbursement({ ...base, payerName: "CSP" })).toBe(true);
+    expect(isGovernmentReimbursement({ ...base, payerName: "  csp  " })).toBe(
+      true,
     );
   });
 
-  it("does not treat 'CSP' substrings as government_reimbursement", () => {
+  it("does not flag 'CSP' substrings as a government reimbursement", () => {
+    expect(
+      isGovernmentReimbursement({ ...base, payerName: "CSPire Communications" }),
+    ).toBe(false);
     expect(
       classifyStagedPayment({ ...base, payerName: "CSPire Communications" })
         .excluded,
@@ -339,19 +357,19 @@ describe("classifyStagedPayment", () => {
     ).toBe(false);
   });
 
-  it("excludes guaranty revenue as loan activity (line-based)", () => {
+  it("folds guaranty revenue into earned_income (line-based)", () => {
     expect(
       classifyStagedPayment({
         ...base,
         lineAccountNames: ["4102 Guaranty Revenue"],
       }).reason,
-    ).toBe("loan");
+    ).toBe("earned_income");
     expect(
       classifyStagedPayment({
         ...base,
         lineItemNames: ["Springpoint:Guaranty Revenue"],
       }).reason,
-    ).toBe("loan");
+    ).toBe("earned_income");
   });
 
   it("excludes payroll-tax / tax / insurance refunds as tax_refund", () => {
@@ -416,14 +434,16 @@ describe("classifyStagedPayment", () => {
     ).toBe(false);
   });
 
-  it("CSP exclusion is definitive even on a donation-coded line", () => {
-    expect(
-      classifyStagedPayment({
-        ...base,
-        payerName: "CSP",
-        lineAccountNames: ["4000 Unrestricted Donations"],
-      }).reason,
-    ).toBe("government_reimbursement");
+  it("CSP money stays in the queue even on a donation-coded line", () => {
+    // No longer excluded — it flows into the queue but is flagged as a
+    // government reimbursement so its eventual gift mints non-goal.
+    const input = {
+      ...base,
+      payerName: "CSP",
+      lineAccountNames: ["4000 Unrestricted Donations"],
+    };
+    expect(classifyStagedPayment(input).excluded).toBe(false);
+    expect(isGovernmentReimbursement(input)).toBe(true);
   });
 
   it("interest account 4010 is not mistaken for a 4000-series donation", () => {
@@ -688,7 +708,7 @@ describe("classifyStagedPayment", () => {
   });
 
   // ─── loan on the LINE detail (no loan-account payer) ──────────────────────
-  it("excludes a 'LOAN REPAYMENT' line item as loan (generic payer)", () => {
+  it("excludes a 'LOAN REPAYMENT' line item as loan_repayment (generic payer)", () => {
     expect(
       classifyStagedPayment({
         ...base,
@@ -696,10 +716,10 @@ describe("classifyStagedPayment", () => {
         lineItemNames: ["LOAN REPAYMENT"],
         lineAccountNames: ["Loans to Schools"],
       }).reason,
-    ).toBe("loan");
+    ).toBe("loan_repayment");
   });
 
-  it("excludes a 'Loans to Schools' posting account as loan (plural-aware)", () => {
+  it("excludes a 'Loans to Schools' posting account as loan_repayment", () => {
     expect(
       classifyStagedPayment({
         ...base,
@@ -707,17 +727,20 @@ describe("classifyStagedPayment", () => {
         lineAccountNames: ["1600 Loans to Schools"],
         lineDescription: "ATM CHECK DEPOSIT",
       }).reason,
-    ).toBe("loan");
+    ).toBe("loan_repayment");
   });
 
-  it("excludes a '… Repayment' deposit description as loan", () => {
+  it("excludes a '… Repayment' deposit description as loan_repayment", () => {
     expect(
       classifyStagedPayment({
         ...base,
         payerName: null,
         lineDescription: "Dahlia Montessori Repayment",
       }).reason,
-    ).toBe("loan");
+    ).toBe("loan_repayment");
+  });
+
+  it("excludes 'PPP Loan Received' as loan_proceeds (borrowed funds in)", () => {
     expect(
       classifyStagedPayment({
         ...base,
@@ -725,7 +748,33 @@ describe("classifyStagedPayment", () => {
         lineAccountNames: ["2503 PPP Loan Received"],
         lineDescription: "PPP 2 Loan",
       }).reason,
-    ).toBe("loan");
+    ).toBe("loan_proceeds");
+  });
+
+  it("excludes a 'Note Payable' liability booking as note_payable", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: null,
+        lineAccountNames: ["2500 Notes Payable"],
+        lineDescription: "Note payable draw",
+      }).reason,
+    ).toBe("note_payable");
+  });
+
+  it("does NOT sweep loan-fund capital posted to a contributions account", () => {
+    // Loan-fund CAPITAL (money INTO the revolving fund) is a real gift posted to
+    // a contributions account; the narrowed loan markers must let it fall through
+    // to the queue rather than mislabel it loan_repayment/loan_proceeds.
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "SpringPoint",
+        lineItemNames: ["Loan Fund Investment"],
+        lineAccountNames: ["4100 Restricted Donations:Loan Fund"],
+        lineDescription: "Loan fund capital contribution",
+      }).excluded,
+    ).toBe(false);
   });
 
   it("does not treat loan-like line substrings as loans", () => {
@@ -801,7 +850,7 @@ describe("classifyStagedPayment", () => {
         lineAccountNames: ["1600 Loans to Schools"],
         rawReference: "WNYCS Loan Payment",
       }).reason,
-    ).toBe("loan");
+    ).toBe("loan_repayment");
   });
 
   // ─── expense_refund (the word "refund") ───────────────────────────────────

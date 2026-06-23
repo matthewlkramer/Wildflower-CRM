@@ -244,16 +244,16 @@ export const SEED_RULES: EngineRule[] = [
     targetFundableProjectId: null,
   },
   {
-    id: "seed_loan_payer",
+    // Guaranty fee by payer → EARNED INCOME (fee-for-service, never a gift).
+    // Checked before the loan-repayment payer rule (markers are disjoint).
+    id: "seed_guaranty_payer",
     enabled: true,
     priority: 30,
     action: "exclude",
-    exclusionReason: "loan",
+    exclusionReason: "earned_income",
     donationGuard: N,
     matchLogic: "any",
     conditions: [
-      { field: "payer_name", mode: "regex", value: "\\bloan\\b" },
-      { field: "payer_name", mode: "regex", value: "\\brepayment\\b" },
       { field: "payer_name", mode: "regex", value: "\\bguaranty\\s+fee\\b" },
     ],
     targetOrganizationId: null,
@@ -261,24 +261,36 @@ export const SEED_RULES: EngineRule[] = [
     targetFundableProjectId: null,
   },
   {
-    id: "seed_government_reimbursement",
+    // Loan REPAYMENT by payer (a loan-account / "… Repayment" payer): principal
+    // / interest returning on a loan Wildflower made.
+    id: "seed_loan_repayment_payer",
     enabled: true,
     priority: 40,
     action: "exclude",
-    exclusionReason: "government_reimbursement",
+    exclusionReason: "loan_repayment",
     donationGuard: N,
     matchLogic: "any",
-    conditions: [{ field: "payer_name", mode: "exact", value: "CSP" }],
+    conditions: [
+      { field: "payer_name", mode: "regex", value: "\\bloan\\b" },
+      { field: "payer_name", mode: "regex", value: "\\brepayment\\b" },
+    ],
     targetOrganizationId: null,
     targetIntendedUsage: null,
     targetFundableProjectId: null,
   },
+  // NOTE: the former `seed_government_reimbursement` exclude rule (was priority
+  // 40, "CSP" payer) was REMOVED — government reimbursements are no longer
+  // excluded. They flow into the review queue and are flagged by
+  // `isGovernmentReimbursement` (counts_toward_goal=false on the staged row) so
+  // the eventual gift mints non-goal. The migration disables/deletes the
+  // persisted seed_government_reimbursement handling rule.
+  //
   // NOTE: the former `seed_fiscally_sponsored` exclude rule (priority 50) was
-  // removed — fiscally sponsored money is no longer auto-excluded. It is now
+  // likewise removed — fiscally sponsored money is no longer auto-excluded. It is
   // attributed to its Wildflower entity (entity_id) via `detectEntity` and kept
-  // in the review queue. Priority 50 is intentionally left as a gap. The
-  // migration disables/deletes the persisted seed_fiscally_sponsored handling
-  // rule so the INGEST path stops excluding too.
+  // in the review queue, surfaced via the "Fiscally-sponsored without
+  // corresponding gift" worklist. Priority 50 is intentionally left a gap. The
+  // migration disables/deletes the persisted seed_fiscally_sponsored rule too.
   {
     id: "seed_insurance",
     enabled: true,
@@ -321,29 +333,75 @@ export const SEED_RULES: EngineRule[] = [
     targetFundableProjectId: null,
   },
   {
-    id: "seed_loan_line",
+    // NOTE PAYABLE liability booking ("Note Payable(s)" account) — checked first
+    // so a note-payable line never falls to a generic loan match.
+    id: "seed_note_payable_line",
     enabled: true,
     priority: 90,
     action: "exclude",
-    exclusionReason: "loan",
+    exclusionReason: "note_payable",
     donationGuard: G,
     matchLogic: "any",
     conditions: [
-      { field: "memo_reference", mode: "regex", value: "\\bloans?\\b|\\brepayment\\b" },
-      { field: "line_description", mode: "regex", value: "\\bloans?\\b|\\brepayment\\b" },
-      { field: "line_item_name", mode: "regex", value: "\\bloans?\\b|\\brepayment\\b" },
-      { field: "line_account_name", mode: "regex", value: "\\bloans?\\b|\\brepayment\\b" },
+      { field: "memo_reference", mode: "regex", value: "notes? payable" },
+      { field: "line_description", mode: "regex", value: "notes? payable" },
+      { field: "line_item_name", mode: "regex", value: "notes? payable" },
+      { field: "line_account_name", mode: "regex", value: "notes? payable" },
     ],
     targetOrganizationId: null,
     targetIntendedUsage: null,
     targetFundableProjectId: null,
   },
   {
+    // LOAN PROCEEDS — borrowed funds in ("PPP Loan Received", "loan received",
+    // "loan proceeds"). Checked before loan_repayment so "PPP Loan Received" lands
+    // here, not on a generic loan match.
+    id: "seed_loan_proceeds_line",
+    enabled: true,
+    priority: 92,
+    action: "exclude",
+    exclusionReason: "loan_proceeds",
+    donationGuard: G,
+    matchLogic: "any",
+    conditions: [
+      { field: "memo_reference", mode: "regex", value: "ppp loan|loan received|loan proceeds" },
+      { field: "line_description", mode: "regex", value: "ppp loan|loan received|loan proceeds" },
+      { field: "line_item_name", mode: "regex", value: "ppp loan|loan received|loan proceeds" },
+      { field: "line_account_name", mode: "regex", value: "ppp loan|loan received|loan proceeds" },
+    ],
+    targetOrganizationId: null,
+    targetIntendedUsage: null,
+    targetFundableProjectId: null,
+  },
+  {
+    // LOAN REPAYMENT markers on the LINE detail: "Loans to Schools" asset account,
+    // a "loan repayment" item, any "… Repayment" line. NARROW by design — the old
+    // broad `\bloans?\b` match was retired so tracked loan-FUND CAPITAL (posted to
+    // a contributions account) is NOT swept and stays in the queue.
+    id: "seed_loan_repayment_line",
+    enabled: true,
+    priority: 94,
+    action: "exclude",
+    exclusionReason: "loan_repayment",
+    donationGuard: G,
+    matchLogic: "any",
+    conditions: [
+      { field: "memo_reference", mode: "regex", value: "loans to schools|loan repayment|\\brepayment\\b" },
+      { field: "line_description", mode: "regex", value: "loans to schools|loan repayment|\\brepayment\\b" },
+      { field: "line_item_name", mode: "regex", value: "loans to schools|loan repayment|\\brepayment\\b" },
+      { field: "line_account_name", mode: "regex", value: "loans to schools|loan repayment|\\brepayment\\b" },
+    ],
+    targetOrganizationId: null,
+    targetIntendedUsage: null,
+    targetFundableProjectId: null,
+  },
+  {
+    // Guaranty fees on the LINE → EARNED INCOME (fee-for-service, never a gift).
     id: "seed_guaranty",
     enabled: true,
     priority: 100,
     action: "exclude",
-    exclusionReason: "loan",
+    exclusionReason: "earned_income",
     donationGuard: G,
     matchLogic: "any",
     conditions: [

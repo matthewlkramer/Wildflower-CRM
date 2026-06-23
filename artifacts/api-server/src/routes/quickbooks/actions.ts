@@ -184,6 +184,7 @@ router.post(
               individualGiverPersonId: donor.individualGiverPersonId,
               householdId: donor.householdId,
               matchedPaymentIntermediaryId: locked.matchedPaymentIntermediaryId,
+              countsTowardGoal: locked.countsTowardGoal,
             },
             user.id,
           ),

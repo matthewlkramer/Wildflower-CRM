@@ -2153,25 +2153,33 @@ export const StagedPaymentStatus = {
   reconciled: 'reconciled',
 } as const;
 
+/**
+ * Why a staged QuickBooks payment was filtered from the queue. loan / government_reimbursement / fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).
+ */
 export type StagedPaymentExclusionReason = typeof StagedPaymentExclusionReason[keyof typeof StagedPaymentExclusionReason];
 
 
 export const StagedPaymentExclusionReason = {
   zero_amount: 'zero_amount',
-  loan: 'loan',
   membership: 'membership',
   interest: 'interest',
-  government_reimbursement: 'government_reimbursement',
   tax_refund: 'tax_refund',
   other_revenue: 'other_revenue',
   earned_income: 'earned_income',
-  fiscally_sponsored: 'fiscally_sponsored',
   intercompany_transfer: 'intercompany_transfer',
   other: 'other',
   insurance: 'insurance',
   expense_refund: 'expense_refund',
   expensify: 'expensify',
   returned_wire: 'returned_wire',
+  processor_payout: 'processor_payout',
+  loan_repayment: 'loan_repayment',
+  loan_proceeds: 'loan_proceeds',
+  note_payable: 'note_payable',
+  miscoded_withdrawal: 'miscoded_withdrawal',
+  loan: 'loan',
+  government_reimbursement: 'government_reimbursement',
+  fiscally_sponsored: 'fiscally_sponsored',
 } as const;
 
 export type StagedPaymentMatchStatus = typeof StagedPaymentMatchStatus[keyof typeof StagedPaymentMatchStatus];
@@ -2701,6 +2709,10 @@ export type StagedPaymentSummaryExcludedByReason = {
   expense_refund: number;
   expensify: number;
   returned_wire: number;
+  loan_repayment: number;
+  loan_proceeds: number;
+  note_payable: number;
+  miscoded_withdrawal: number;
 };
 
 export interface StagedPaymentSummary {

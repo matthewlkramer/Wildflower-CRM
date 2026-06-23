@@ -568,27 +568,46 @@ export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
   "reconciled",
 ]);
 
-// Why a staged QuickBooks payment was auto-excluded from the review queue.
+// Why a staged QuickBooks payment was filtered out of the review queue. Grouped
+// into the families the finance team thinks in (see the UI label map). NOTE the
+// three LEGACY values `loan`, `government_reimbursement`, `fiscally_sponsored`:
+// the classifier NO LONGER emits any of them, but they are RETAINED as valid
+// enum members so historical rows stay readable until a reviewed prod migration
+// re-codes them and (optionally) recreates the enum without them.
+//
+// — Not real money —
 //   zero_amount              — amount is null or <= 0
-//   loan                     — school loan activity (loan account, repayment, guaranty fee)
-//   membership               — school membership dues (matched by QB item / income account)
+//   note_payable             — a liability booking (Note Payable account), not a real cash receipt
+// — Earned & other income (real revenue, not a gift) —
+//   membership               — school membership contributions (matched by QB item / income account)
+//   earned_income            — fees-for-service / program revenue (4020 Services - Earned Income) + guaranty fees; never a gift
 //   interest                 — bank/investment income (Interest Earned 4010 + Realized Gain/Loss on Investments 4040)
-//   government_reimbursement — government grant reimbursements (exact payer name, e.g. "CSP")
-//   tax_refund               — payroll-tax / tax / insurance refunds (unemployment tax, workers-comp, etc.)
 //   other_revenue            — clear non-gifts posted to Other Revenue (4030): credit-card rewards / bank-account activity (matched by memo)
-//   earned_income            — fees-for-service / program revenue (4020 Services - Earned Income); never a gift
-//   intercompany_transfer    — movement of money between the org's own entities/accounts; not a gift (manual-only)
-//   other                    — catch-all manual exclusion when no specific category fits (manual-only)
-//   insurance                — COBRA / insurance-premium reimbursements (BASICCOBRA marker); never a gift
+// — A payment, but not revenue (money returning / not income) —
+//   loan_repayment           — principal/interest returning on loans Wildflower MADE ("Loans to Schools" account, "repayment" marker)
+//   loan_proceeds            — borrowed funds coming in (e.g. "PPP Loan Received"); a liability, not income
 //   expense_refund           — refunds of the org's own expenses (vendor overpayments, ERC tax refunds, etc.); not a contribution
+//   tax_refund               — payroll-tax / tax / insurance refunds (unemployment tax, workers-comp, etc.)
+//   insurance                — COBRA / insurance-premium reimbursements (BASICCOBRA marker); never a gift
 //   expensify                — Expensify expense-reimbursement activity ("expensify" marker); never a gift
 //   returned_wire            — a wire transfer the org sent that bounced back ("returned wire" marker); not an incoming gift
+// — Not incoming money —
+//   miscoded_withdrawal      — an outflow QuickBooks recorded as a deposit/payment (manual-only)
+//   intercompany_transfer    — movement of money between the org's own entities/accounts; not a gift (manual-only)
+// — Already booked elsewhere (would double-count) —
 //   processor_payout         — a Stripe (processor) NET-payout lump that has been
 //                              reconciled to its individual Stripe charges in the
 //                              Stripe↔QB reconciliation queue. Excluded so the same
 //                              money isn't booked twice (the per-charge gross Stripe
 //                              gifts are the precise record), kept + linked for audit.
 //                              Set ONLY on human confirm — never auto-applied.
+// — Other (manual catch-all) —
+//   other                    — catch-all manual exclusion when no specific category fits (manual-only)
+//
+// — LEGACY (no longer emitted; retained for historical rows only) —
+//   loan                     — old overloaded "school loan activity"; split into loan_repayment / loan_proceeds / note_payable / earned_income(guaranty)
+//   government_reimbursement — government program reimbursements (CSP marker); now KEPT IN QUEUE and minted as a gift with counts_toward_goal=false
+//   fiscally_sponsored       — pass-through money for a sponsored project; now KEPT IN QUEUE, attributed via detectEntity + surfaced in the "without corresponding gift" worklist
 export const stagedPaymentExclusionReasonEnum = pgEnum(
   "staged_payment_exclusion_reason",
   [
@@ -608,6 +627,11 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
     "expensify",
     "returned_wire",
     "processor_payout",
+    // Added by task #363 (loan split + new families).
+    "loan_repayment",
+    "loan_proceeds",
+    "note_payable",
+    "miscoded_withdrawal",
   ],
 );
 

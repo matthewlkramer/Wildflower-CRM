@@ -58,7 +58,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -129,21 +131,81 @@ const GIFT_SORTS: { value: GiftSort; label: string }[] = [
 
 const EXCLUSION_REASON_LABELS: Record<StagedPaymentExclusionReason, string> = {
   zero_amount: "Zero amount",
-  loan: "Loan activity",
-  membership: "Membership dues",
-  interest: "Interest / investment income",
-  government_reimbursement: "Government reimbursement",
-  tax_refund: "Tax / insurance refund",
+  // Loan family (the overloaded `loan` is split into these three).
+  loan_repayment: "Loan repayment",
+  loan_proceeds: "Borrowed funds / loan proceeds",
+  note_payable: "Note payable",
+  // Non-gift income.
+  earned_income: "Earned income / fees for service",
   other_revenue: "Other revenue (non-gift)",
-  earned_income: "Earned income (non-gift)",
-  fiscally_sponsored: "Fiscally sponsored project",
-  intercompany_transfer: "Intercompany transfer",
-  other: "Other (not a gift)",
+  interest: "Interest / investment income",
+  membership: "Membership contributions",
+  // Refunds & reimbursements.
+  tax_refund: "Tax refund",
   insurance: "Insurance / COBRA reimbursement",
   expense_refund: "Expense refund (non-gift)",
   expensify: "Expensify reimbursement (non-gift)",
+  // Internal movement / corrections.
+  intercompany_transfer: "Intercompany transfer",
+  miscoded_withdrawal: "Miscoded withdrawal",
   returned_wire: "Returned wire (non-gift)",
+  other: "Other (not a gift)",
+  // Reconciliation-only — set by the Stripe↔QB reconcile flow, never a manual
+  // pick. Kept here so the label renders if such a row is displayed.
+  processor_payout: "Processor payout (reconciled to Stripe)",
+  // Legacy reasons — no longer produced (split / promoted to the queue or the
+  // fiscally-sponsored worklist), retained only so historical rows still label.
+  loan: "Loan activity (legacy)",
+  government_reimbursement: "Government reimbursement (legacy)",
+  fiscally_sponsored: "Fiscally sponsored (legacy)",
 };
+
+// Grouped families for the manual "Exclude as…" / "Change category…" pickers.
+// Reconciliation-only (processor_payout) and legacy (loan / government_reimbursement
+// / fiscally_sponsored) reasons are intentionally NOT offered here — they still
+// render in the Excluded display via EXCLUSION_REASON_LABELS for historical rows.
+const EXCLUSION_REASON_FAMILIES: {
+  family: string;
+  reasons: StagedPaymentExclusionReason[];
+}[] = [
+  { family: "No money", reasons: ["zero_amount"] },
+  {
+    family: "Loans & borrowed funds",
+    reasons: ["loan_repayment", "loan_proceeds", "note_payable"],
+  },
+  {
+    family: "Non-gift income",
+    reasons: ["earned_income", "other_revenue", "interest", "membership"],
+  },
+  {
+    family: "Refunds & reimbursements",
+    reasons: ["tax_refund", "insurance", "expense_refund", "expensify"],
+  },
+  {
+    family: "Internal movement & corrections",
+    reasons: ["intercompany_transfer", "miscoded_withdrawal", "returned_wire"],
+  },
+  { family: "Other", reasons: ["other"] },
+];
+
+// Render the grouped manual-picker options. `testKind` distinguishes the two
+// pickers (exclude vs reclassify) for stable test ids.
+function renderExclusionReasonOptions(rowId: string, testKind: string) {
+  return EXCLUSION_REASON_FAMILIES.map((group) => (
+    <SelectGroup key={group.family}>
+      <SelectLabel>{group.family}</SelectLabel>
+      {group.reasons.map((value) => (
+        <SelectItem
+          key={value}
+          value={value}
+          data-testid={`staged-${testKind}-reason-${rowId}-${value}`}
+        >
+          {EXCLUSION_REASON_LABELS[value]}
+        </SelectItem>
+      ))}
+    </SelectGroup>
+  ));
+}
 
 const QB_ENTITY_TYPE_LABELS: Record<QuickbooksEntityType, string> = {
   sales_receipt: "Sales Receipt",
@@ -2236,17 +2298,7 @@ function StagedPaymentCard({
                   <SelectValue placeholder="Exclude as…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(EXCLUSION_REASON_LABELS).map(
-                    ([value, label]) => (
-                      <SelectItem
-                        key={value}
-                        value={value}
-                        data-testid={`staged-exclude-reason-${row.id}-${value}`}
-                      >
-                        {label}
-                      </SelectItem>
-                    ),
-                  )}
+                  {renderExclusionReasonOptions(row.id, "exclude")}
                 </SelectContent>
               </Select>
               <Button
@@ -2309,17 +2361,7 @@ function StagedPaymentCard({
                   <SelectValue placeholder="Change category…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(EXCLUSION_REASON_LABELS).map(
-                    ([value, label]) => (
-                      <SelectItem
-                        key={value}
-                        value={value}
-                        data-testid={`staged-reclassify-reason-${row.id}-${value}`}
-                      >
-                        {label}
-                      </SelectItem>
-                    ),
-                  )}
+                  {renderExclusionReasonOptions(row.id, "reclassify")}
                 </SelectContent>
               </Select>
               <Button

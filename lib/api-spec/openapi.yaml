@@ -5436,7 +5436,7 @@ components:
     QuickbooksEntityType: { type: string, enum: [sales_receipt, payment, deposit] }
     QuickbooksPayerType: { type: string, enum: [vendor, customer, employee], description: "The QuickBooks payer/entity kind behind this incoming money (Customer for a SalesReceipt/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line)." }
     StagedPaymentStatus: { type: string, enum: [pending, approved, rejected, excluded, reconciled], description: "Lifecycle of a staged payment / Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges." }
-    StagedPaymentExclusionReason: { type: string, enum: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income, fiscally_sponsored, intercompany_transfer, other, insurance, expense_refund, expensify, returned_wire] }
+    StagedPaymentExclusionReason: { type: string, enum: [zero_amount, membership, interest, tax_refund, other_revenue, earned_income, intercompany_transfer, other, insurance, expense_refund, expensify, returned_wire, processor_payout, loan_repayment, loan_proceeds, note_payable, miscoded_withdrawal, loan, government_reimbursement, fiscally_sponsored], description: "Why a staged QuickBooks payment was filtered from the queue. loan / government_reimbursement / fiscally_sponsored are LEGACY (no longer produced; retained for historical rows)." }
     StagedPaymentMatchStatus: { type: string, enum: [matched, suggested, unmatched] }
     StagedPaymentMatchMethod: { type: string, enum: [email, name, name_amount_date, amount_date, memo, intermediary, manual] }
     StagedPaymentClassificationSource: { type: string, enum: [auto, manual] }
@@ -5734,7 +5734,7 @@ components:
         excluded:    { type: integer }
         excludedByReason:
           type: object
-          required: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income, fiscally_sponsored, intercompany_transfer, other, insurance, expense_refund, expensify, returned_wire]
+          required: [zero_amount, loan, membership, interest, government_reimbursement, tax_refund, other_revenue, earned_income, fiscally_sponsored, intercompany_transfer, other, insurance, expense_refund, expensify, returned_wire, loan_repayment, loan_proceeds, note_payable, miscoded_withdrawal]
           properties:
             zero_amount:             { type: integer }
             loan:                    { type: integer }
@@ -5751,6 +5751,10 @@ components:
             expense_refund:          { type: integer }
             expensify:               { type: integer }
             returned_wire:           { type: integer }
+            loan_repayment:          { type: integer }
+            loan_proceeds:           { type: integer }
+            note_payable:            { type: integer }
+            miscoded_withdrawal:     { type: integer }
     QuickbooksStagedPaymentSummary:
       description: "QuickBooks staged-payment summary. StagedPaymentSummary plus the fiscally_sponsored parking-queue count."
       allOf:

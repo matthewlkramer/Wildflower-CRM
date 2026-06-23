@@ -39,7 +39,7 @@ export const ListStagedPaymentsResponse = zod.object({
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire']).nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
   "lineAccountNames": zod.array(zod.string()).nullish(),
@@ -137,7 +137,11 @@ export const GetStagedPaymentsSummaryResponse = zod.object({
   "insurance": zod.number(),
   "expense_refund": zod.number(),
   "expensify": zod.number(),
-  "returned_wire": zod.number()
+  "returned_wire": zod.number(),
+  "loan_repayment": zod.number(),
+  "loan_proceeds": zod.number(),
+  "note_payable": zod.number(),
+  "miscoded_withdrawal": zod.number()
 })
 }).and(zod.object({
   "fiscallySponsored": zod.number()
@@ -186,7 +190,7 @@ export const ResolveStagedPaymentResponse = zod.object({
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire']).nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
   "lineAccountNames": zod.array(zod.string()).nullish(),
@@ -285,7 +289,7 @@ export const RejectStagedPaymentResponse = zod.object({
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire']).nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
   "lineAccountNames": zod.array(zod.string()).nullish(),
@@ -377,7 +381,7 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire']).nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
   "lineAccountNames": zod.array(zod.string()).nullish(),
@@ -480,7 +484,7 @@ export const SetStagedPaymentEntityResponse = zod.object({
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire']).nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
   "lineAccountNames": zod.array(zod.string()).nullish(),
@@ -583,7 +587,7 @@ export const SetStagedPaymentFundingSourceResponse = zod.object({
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire']).nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
   "lineAccountNames": zod.array(zod.string()).nullish(),
@@ -685,7 +689,7 @@ export const SetStagedPaymentNeedsResearchResponse = zod.object({
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire']).nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
   "lineAccountNames": zod.array(zod.string()).nullish(),
@@ -771,7 +775,7 @@ export const ExcludeStagedPaymentParams = zod.object({
 })
 
 export const ExcludeStagedPaymentBody = zod.object({
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire'])
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).')
 }).describe('File the staged payment under a non-gift exclusion category.')
 
 export const ExcludeStagedPaymentResponse = zod.object({
@@ -788,7 +792,7 @@ export const ExcludeStagedPaymentResponse = zod.object({
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire']).nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
   "lineAccountNames": zod.array(zod.string()).nullish(),
@@ -1444,7 +1448,7 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire']).nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
   "lineAccountNames": zod.array(zod.string()).nullish(),
@@ -1536,7 +1540,7 @@ export const UnmatchStagedPaymentResponse = zod.object({
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire']).nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
   "lineAccountNames": zod.array(zod.string()).nullish(),
@@ -1635,7 +1639,7 @@ export const RevertStagedPaymentResponse = zod.object({
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'loan', 'membership', 'interest', 'government_reimbursement', 'tax_refund', 'other_revenue', 'earned_income', 'fiscally_sponsored', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire']).nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
   "lineAccountNames": zod.array(zod.string()).nullish(),

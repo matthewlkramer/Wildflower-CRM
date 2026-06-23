@@ -419,13 +419,23 @@ router.get(
 
     const excludedByReason = {
       zero_amount: 0,
+      // `loan` is a retired legacy reason kept for historical rows; new rows use
+      // the split loan_repayment / loan_proceeds / note_payable reasons.
       loan: 0,
+      loan_repayment: 0,
+      loan_proceeds: 0,
+      note_payable: 0,
+      miscoded_withdrawal: 0,
       membership: 0,
       interest: 0,
+      // `government_reimbursement` no longer excludes (rows flow into the queue);
+      // kept here so any legacy excluded rows still surface in the summary.
       government_reimbursement: 0,
       tax_refund: 0,
       other_revenue: 0,
       earned_income: 0,
+      // `fiscally_sponsored` exclusion retired (surfaced via the worklist now);
+      // legacy excluded rows still counted.
       fiscally_sponsored: 0,
       intercompany_transfer: 0,
       other: 0,

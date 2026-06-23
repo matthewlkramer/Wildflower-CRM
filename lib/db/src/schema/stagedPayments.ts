@@ -318,6 +318,16 @@ export const stagedPayments = pgTable(
     // reconcile status / matching — a pure annotation set via set-needs-research.
     needsResearch: boolean("needs_research").notNull().default(false),
 
+    // Derived "doesn't count toward fundraising goal" hint. Set to false at
+    // ingest / reclassify when the money is detected as a GOVERNMENT
+    // REIMBURSEMENT (the "CSP" payer marker) — real money that flows into the
+    // queue like any other but, when a fundraiser records it as a gift, mints the
+    // gift with `counts_toward_goal = false` (reusing the existing gift flag +
+    // analytics rollups). Defaults true (ordinary money counts). Read-only
+    // derived QB attribution, not review state — the re-runnable classifier
+    // refreshes it on every `auto` row, exactly like entity / funding source.
+    countsTowardGoal: boolean("counts_toward_goal").notNull().default(true),
+
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

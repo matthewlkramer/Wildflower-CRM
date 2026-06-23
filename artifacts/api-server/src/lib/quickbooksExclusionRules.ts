@@ -83,26 +83,37 @@
  * categorically not a gift regardless of how the line is coded.
  *
  * Rules are applied in a deterministic order (see `classifyStagedPayment`):
- * zero_amount → loan (payer) → government_reimbursement → insurance → expensify →
- * returned_wire → loan (line/memo) → loan (guaranty line) → interest → tax_refund
- * → other_revenue → earned_income → expense_refund → membership. The first match
- * wins.
+ * zero_amount → guaranty (payer→earned_income) → loan_repayment (payer) →
+ * insurance → expensify → returned_wire → note_payable → loan_proceeds →
+ * loan_repayment (line) → guaranty (line→earned_income) → interest → tax_refund →
+ * other_revenue → earned_income → expense_refund → membership. The first match
+ * wins. (government_reimbursement and fiscally_sponsored are NO LONGER excluded —
+ * they flow into the queue; see the notes in `classifyStagedPayment`.)
  */
 
 export type ExclusionReason =
   | "zero_amount"
-  | "loan"
   | "membership"
   | "interest"
-  | "government_reimbursement"
   | "tax_refund"
   | "other_revenue"
   | "earned_income"
-  | "fiscally_sponsored"
   | "insurance"
   | "expense_refund"
   | "expensify"
-  | "returned_wire";
+  | "returned_wire"
+  | "loan_repayment"
+  | "loan_proceeds"
+  | "note_payable"
+  | "miscoded_withdrawal"
+  | "intercompany_transfer"
+  | "other"
+  | "processor_payout"
+  // Legacy values: NO LONGER emitted by the classifier, but retained in the
+  // union so historical rows + the manual exclude picker stay type-compatible.
+  | "loan"
+  | "government_reimbursement"
+  | "fiscally_sponsored";
 
 export interface ClassifierInput {
   amount: string | null;
@@ -139,32 +150,65 @@ export interface ClassificationResult {
 }
 
 /**
- * Payer-name patterns that mark a row as school LOAN activity. Case-insensitive.
- * Covers loan-account payments ("Loan - Snowdrop"), repayments
- * ("Dahlia Montessori Repayment") and guaranty fees ("Echinacea Guaranty Fee").
- * Word-boundary anchored so e.g. "Reloaning Co" or an unrelated "Repaymental"
- * token cannot match by accident.
+ * Payer-name patterns that mark a row as LOAN REPAYMENT activity — principal /
+ * interest returning on a loan Wildflower MADE. Case-insensitive. Covers
+ * loan-account payments ("Loan - Snowdrop") and repayments ("Dahlia Montessori
+ * Repayment"). Word-boundary anchored so "Reloaning Co" or "Repaymental" can't
+ * match by accident.
+ *
+ * NB the bare `\bloan\b` here is safe on the PAYER field specifically: loan-fund
+ * CAPITAL investors are named foundations (e.g. "SpringPoint"), never "Loan …",
+ * so this never sweeps a tracked loan-fund investment. (The LINE markers below
+ * are deliberately narrowed for the same reason — see LOAN_REPAYMENT_LINE_*.)
  */
-export const LOAN_PAYER_PATTERNS: readonly RegExp[] = [
+export const LOAN_REPAYMENT_PAYER_PATTERNS: readonly RegExp[] = [
   /\bloan\b/i,
   /\brepayment\b/i,
-  /\bguaranty\s+fee\b/i,
 ];
 
 /**
- * Loan / repayment markers found on the LINE detail (item name, posting-account
- * name, line description, memo) rather than the payer. Many school loans arrive
- * with a generic or blank payer but a telltale line: the "Loans to Schools" /
- * "Loan Funds" / "PPP Loan Received" / "Note Payable" balance-sheet accounts, a
- * "LOAN REPAYMENT" item, or a "… Repayment" deposit description. Word-anchored
- * and plural-aware ("loan"/"loans") so "Reloaning" / "loaning" can't match by
- * accident. Folded into the `loan` reason and honored only on rows WITHOUT a
- * donation line (donation-first guard), so a gift bundled with a loan reference
- * is never hidden.
+ * Payer-name patterns marking a GUARANTY fee ("Echinacea Guaranty Fee"). Guaranty
+ * fees are fee-for-service EARNED INCOME (not loan activity, not a gift), so they
+ * fold into the `earned_income` reason. Payer-identity rule (never a gift).
  */
-export const LOAN_LINE_TEXT_PATTERNS: readonly RegExp[] = [
-  /\bloans?\b/i,
+export const GUARANTY_PAYER_PATTERNS: readonly RegExp[] = [/\bguaranty\s+fee\b/i];
+
+/**
+ * LOAN REPAYMENT markers on the LINE detail (item, posting account, line
+ * description, memo): principal/interest returning on loans Wildflower made.
+ * DELIBERATELY NARROW — the old broad `\bloans?\b` match was retired because it
+ * also swept tracked loan-FUND CAPITAL investments (money INTO the revolving loan
+ * fund, which is a real gift posted to a contributions account). These specific
+ * markers only catch the "Loans to Schools" asset account, an explicit "loan
+ * repayment" item, or any "… Repayment" line — loan-fund capital posted to a
+ * contributions account no longer matches and stays in the queue. Honored behind
+ * the donation-first guard.
+ */
+export const LOAN_REPAYMENT_LINE_PATTERNS: readonly RegExp[] = [
+  /loans to schools/i,
+  /loan repayment/i,
   /\brepayment\b/i,
+];
+
+/**
+ * LOAN PROCEEDS markers — borrowed funds coming IN (a liability, not income):
+ * "PPP Loan Received", a "loan received" / "loan proceeds" line. Distinct from
+ * repayment (money returning on loans we made) and from note_payable. Honored
+ * behind the donation-first guard. Checked BEFORE loan_repayment so "PPP Loan
+ * Received" lands here, not on a generic loan match.
+ */
+export const LOAN_PROCEEDS_LINE_PATTERNS: readonly RegExp[] = [
+  /ppp loan/i,
+  /loan received/i,
+  /loan proceeds/i,
+];
+
+/**
+ * NOTE PAYABLE markers — a liability booking on the "Note Payable(s)" balance-
+ * sheet account, not a real cash gift. Honored behind the donation-first guard.
+ */
+export const NOTE_PAYABLE_LINE_PATTERNS: readonly RegExp[] = [
+  /notes? payable/i,
 ];
 
 /**
@@ -229,8 +273,9 @@ export const INTEREST_ACCOUNT_NAME_SUBSTRINGS: readonly string[] = [
 ];
 
 /**
- * GUARANTY-fee markers (folded into the `loan` reason — guaranty fees are loan
- * activity). The "Guaranty Revenue" income account (code prefix) and item.
+ * GUARANTY-fee markers (folded into the `earned_income` reason — guaranty fees
+ * are fee-for-service income, not loan activity and not a gift). The "Guaranty
+ * Revenue" income account (code prefix) and item.
  */
 export const GUARANTY_ACCOUNT_CODE_PREFIXES: readonly string[] = ["4102"];
 export const GUARANTY_ITEM_SUBSTRINGS: readonly string[] = ["guaranty"];
@@ -457,9 +502,8 @@ export function hasDonationLine(input: ClassifierInput): boolean {
  * (The `fiscally_sponsored` rule DOES read classes, but only for an explicit,
  * curated project allowlist — never a broad loan-word match.)
  */
-function isLoanLineOrText(input: ClassifierInput): boolean {
-  if (LOAN_LINE_TEXT_PATTERNS.length === 0) return false;
-  const hay = [
+function loanLineHaystack(input: ClassifierInput): string {
+  return [
     input.rawReference,
     input.lineDescription ?? null,
     ...(input.lineItemNames ?? []),
@@ -467,10 +511,45 @@ function isLoanLineOrText(input: ClassifierInput): boolean {
   ]
     .filter((s): s is string => !!s)
     .join(" ");
-  return LOAN_LINE_TEXT_PATTERNS.some((re) => re.test(hay));
 }
 
-/** True if a row matches the guaranty-fee (loan) markers. */
+/** True if a row's LINE detail marks it as loan-repayment activity. */
+function isLoanRepaymentLine(input: ClassifierInput): boolean {
+  if (LOAN_REPAYMENT_LINE_PATTERNS.length === 0) return false;
+  const hay = loanLineHaystack(input);
+  return LOAN_REPAYMENT_LINE_PATTERNS.some((re) => re.test(hay));
+}
+
+/** True if a row's LINE detail marks it as loan PROCEEDS (borrowed funds in). */
+function isLoanProceedsLine(input: ClassifierInput): boolean {
+  if (LOAN_PROCEEDS_LINE_PATTERNS.length === 0) return false;
+  const hay = loanLineHaystack(input);
+  return LOAN_PROCEEDS_LINE_PATTERNS.some((re) => re.test(hay));
+}
+
+/** True if a row's LINE detail marks it as a Note Payable liability booking. */
+function isNotePayableLine(input: ClassifierInput): boolean {
+  if (NOTE_PAYABLE_LINE_PATTERNS.length === 0) return false;
+  const hay = loanLineHaystack(input);
+  return NOTE_PAYABLE_LINE_PATTERNS.some((re) => re.test(hay));
+}
+
+/**
+ * True if a row is a GOVERNMENT REIMBURSEMENT (the exact "CSP" payer marker).
+ * NOT an exclusion — this money flows into the review queue like any other. It is
+ * a standalone detector (run alongside detectEntity / detectFundingSource at
+ * ingest + reclassify) used to set `staged_payments.counts_toward_goal = false`,
+ * so when a fundraiser records it as a gift the gift is minted with
+ * `counts_toward_goal = false` (real money, but it doesn't advance the goal).
+ */
+export function isGovernmentReimbursement(input: ClassifierInput): boolean {
+  return matchesAny(
+    input.payerName ? [input.payerName] : null,
+    GOVERNMENT_REIMBURSEMENT_PAYERS,
+  );
+}
+
+/** True if a row matches the guaranty-fee (earned-income) markers. */
 function isGuarantyLine(input: ClassifierInput): boolean {
   return (
     anyAccountCodeStartsWith(
@@ -649,12 +728,16 @@ function isReturnedWire(input: ClassifierInput): boolean {
 /**
  * Pure noise classifier. Takes a normalized payment + its captured line detail
  * and returns whether it should be auto-excluded and why. Deterministic rule
- * order: zero_amount → loan (payer) → government_reimbursement → insurance →
- * expensify → returned_wire → loan (guaranty line) → interest → tax_refund →
+ * order: zero_amount → guaranty (payer→earned_income) → loan_repayment (payer) →
+ * insurance → expensify → returned_wire → note_payable → loan_proceeds →
+ * loan_repayment (line) → guaranty (line→earned_income) → interest → tax_refund →
  * other_revenue → earned_income → expense_refund → membership; first match wins.
  * The line-based rules honor the donation-first guard; the identity / text rules
  * (insurance, expensify, returned_wire, expense_refund) intentionally bypass it.
- * (Entity attribution is handled separately by `detectEntity`, not here.)
+ * government_reimbursement and fiscally_sponsored are NOT excluded here — they
+ * flow into the queue (gov reimbursement is flagged by `isGovernmentReimbursement`
+ * so its eventual gift mints with counts_toward_goal=false). Entity attribution
+ * is handled separately by `detectEntity`, not here.
  */
 export function classifyStagedPayment(
   input: ClassifierInput,
@@ -665,27 +748,30 @@ export function classifyStagedPayment(
     return { excluded: true, reason: "zero_amount" };
   }
 
-  // 2. Loan activity by payer name.
+  // 2. Guaranty fee by payer name → EARNED INCOME (fee-for-service, never a
+  //    gift). Payer-identity rule — definitive, no donation guard. Checked before
+  //    the loan-repayment payer rule (disjoint markers, but keeps intent clear).
   const payer = input.payerName ?? "";
-  if (payer && LOAN_PAYER_PATTERNS.some((re) => re.test(payer))) {
-    return { excluded: true, reason: "loan" };
+  if (payer && GUARANTY_PAYER_PATTERNS.some((re) => re.test(payer))) {
+    return { excluded: true, reason: "earned_income" };
   }
 
-  // 3. Government reimbursement by exact payer name (e.g. "CSP"). Payer-identity
-  //    rule — definitive, no donation guard.
-  if (
-    matchesAny(
-      input.payerName ? [input.payerName] : null,
-      GOVERNMENT_REIMBURSEMENT_PAYERS,
-    )
-  ) {
-    return { excluded: true, reason: "government_reimbursement" };
+  // 3. Loan REPAYMENT by payer name (a loan account / "… Repayment" payer):
+  //    principal/interest returning on a loan Wildflower made. Payer-identity.
+  if (payer && LOAN_REPAYMENT_PAYER_PATTERNS.some((re) => re.test(payer))) {
+    return { excluded: true, reason: "loan_repayment" };
   }
 
-  // NOTE: fiscally sponsored money is NO LONGER excluded here. It is attributed
-  // to its Wildflower entity via `detectEntity` (entity_id) and kept in the
-  // review queue for a fundraiser to reconcile. The `fiscally_sponsored`
-  // exclusion reason is retained as a (now legacy) enum value for historical rows.
+  // NOTE: GOVERNMENT REIMBURSEMENT (the "CSP" payer) is NO LONGER excluded here.
+  // It is real money that flows into the queue like any other; a separate
+  // `isGovernmentReimbursement` detector marks the row so the eventual gift is
+  // minted with counts_toward_goal=false. (`government_reimbursement` is retained
+  // as a legacy enum value for historical rows only.)
+  //
+  // NOTE: FISCALLY SPONSORED money is NO LONGER excluded here either. It is
+  // attributed to its Wildflower entity via `detectEntity` (entity_id) and kept
+  // in the review queue, surfaced via the "Fiscally-sponsored without
+  // corresponding gift" worklist. (`fiscally_sponsored` is likewise legacy.)
 
   // 4b. Insurance / COBRA reimbursements (the "BASICCOBRA" marker). Identity
   //     rule — never a gift, so it fires BEFORE the donation guard and scans
@@ -711,17 +797,31 @@ export function classifyStagedPayment(
   // a real donation line, so a bundled gift is never wrongly hidden.
   const donation = hasDonationLine(input);
 
-  // 5. Loan / repayment markers on the LINE detail (item, posting account,
-  //    description, memo): the "Loans to Schools" / "PPP Loan Received" accounts,
-  //    a "LOAN REPAYMENT" item, "… Repayment" deposit lines, etc. — school loan
-  //    activity that arrives with a generic / blank payer.
-  if (!donation && isLoanLineOrText(input)) {
-    return { excluded: true, reason: "loan" };
+  // 5a. NOTE PAYABLE liability booking ("Note Payable" account) — not real cash.
+  //     Checked first so a "Note Payable" line never falls to a loan match.
+  if (!donation && isNotePayableLine(input)) {
+    return { excluded: true, reason: "note_payable" };
   }
 
-  // 6. Guaranty fees are loan activity (reason `loan`), detected on the line.
+  // 5b. LOAN PROCEEDS — borrowed funds in ("PPP Loan Received", "loan received").
+  //     Checked before loan_repayment so "PPP Loan Received" lands here.
+  if (!donation && isLoanProceedsLine(input)) {
+    return { excluded: true, reason: "loan_proceeds" };
+  }
+
+  // 5c. LOAN REPAYMENT markers on the LINE detail: the "Loans to Schools" asset
+  //     account, a "LOAN REPAYMENT" item, "… Repayment" deposit lines — principal
+  //     / interest returning on loans Wildflower made. NARROW by design so
+  //     tracked loan-FUND CAPITAL (posted to a contributions account) is NOT swept
+  //     and stays in the queue.
+  if (!donation && isLoanRepaymentLine(input)) {
+    return { excluded: true, reason: "loan_repayment" };
+  }
+
+  // 6. Guaranty fees are EARNED INCOME (fee-for-service, never a gift), detected
+  //    on the line.
   if (!donation && isGuarantyLine(input)) {
-    return { excluded: true, reason: "loan" };
+    return { excluded: true, reason: "earned_income" };
   }
 
   // 7. Interest income.

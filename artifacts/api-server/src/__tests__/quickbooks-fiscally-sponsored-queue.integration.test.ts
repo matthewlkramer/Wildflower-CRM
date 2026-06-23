@@ -42,6 +42,8 @@ const SPONSORED_NOT_PARKED = "black_wildflowers_fund";
 type Db = typeof import("@workspace/db");
 let db: Db["db"];
 let stagedPayments: Db["stagedPayments"];
+let organizations: Db["organizations"];
+let giftsAndPayments: Db["giftsAndPayments"];
 let andFn: (typeof import("drizzle-orm"))["and"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let queueWhere: (typeof import("../routes/quickbooks/shared"))["queueWhere"];
@@ -54,10 +56,20 @@ const PARKED_PENDING_B = `${RUN}_parked_b`;
 const NULL_PENDING = `${RUN}_null`;
 const NOT_PARKED_PENDING = `${RUN}_notparked`;
 const PARKED_EXCLUDED = `${RUN}_parked_excluded`;
+// A pending, parked-entity row that ALREADY has a corresponding gift — the
+// "without corresponding gift" worklist must EXCLUDE it (the whole point of the
+// T363 no-gift scope) and leave it out of needs_review too.
+const PARKED_WITH_GIFT = `${RUN}_parked_with_gift`;
+const ORG_ID = `${RUN}_org`;
+const GIFT_ID = `${RUN}_gift`;
 
 async function seed(
   id: string,
-  opts: { entityId: string | null; status: "pending" | "excluded" },
+  opts: {
+    entityId: string | null;
+    status: "pending" | "excluded";
+    matchedGiftId?: string | null;
+  },
 ): Promise<void> {
   await db.insert(stagedPayments).values({
     id,
@@ -70,6 +82,7 @@ async function seed(
     classificationSource: "auto",
     entitySource: "auto",
     entityId: opts.entityId,
+    matchedGiftId: opts.matchedGiftId ?? null,
   } satisfies StagedInsert);
 }
 
@@ -100,6 +113,8 @@ beforeAll(async () => {
   const shared = await import("../routes/quickbooks/shared");
   db = dbMod.db;
   stagedPayments = dbMod.stagedPayments;
+  organizations = dbMod.organizations;
+  giftsAndPayments = dbMod.giftsAndPayments;
   andFn = drizzle.and;
   eqFn = drizzle.eq;
   queueWhere = shared.queueWhere;
@@ -113,11 +128,28 @@ beforeAll(async () => {
     status: "pending",
   });
   await seed(PARKED_EXCLUDED, { entityId: PARKED_A, status: "excluded" });
+
+  // A parked-entity pending row that already HAS a corresponding gift. Mint a
+  // minimal donor (org) + gift to satisfy the Donor-XOR check and the staged
+  // matched_gift_id FK, then link the staged row to it.
+  await db
+    .insert(organizations)
+    .values({ id: ORG_ID, name: `${RUN} Fiscally Sponsored Test Org` });
+  await db
+    .insert(giftsAndPayments)
+    .values({ id: GIFT_ID, amount: "100.00", organizationId: ORG_ID });
+  await seed(PARKED_WITH_GIFT, {
+    entityId: PARKED_A,
+    status: "pending",
+    matchedGiftId: GIFT_ID,
+  });
 }, 60_000);
 
 afterAll(async () => {
   if (!HAS_DB) return;
   await db.delete(stagedPayments).where(eqFn(stagedPayments.realmId, REALM_ID));
+  await db.delete(giftsAndPayments).where(eqFn(giftsAndPayments.id, GIFT_ID));
+  await db.delete(organizations).where(eqFn(organizations.id, ORG_ID));
 });
 
 describe.skipIf(!HAS_DB)("queueWhere — fiscally sponsored split", () => {
@@ -131,6 +163,22 @@ describe.skipIf(!HAS_DB)("queueWhere — fiscally sponsored split", () => {
       expect(fs.has(NULL_PENDING)).toBe(false);
       expect(fs.has(NOT_PARKED_PENDING)).toBe(false);
       expect(fs.has(PARKED_EXCLUDED)).toBe(false);
+      // A parked row that ALREADY has a corresponding gift is OUT of the
+      // "without corresponding gift" worklist (the T363 no-gift scope).
+      expect(fs.has(PARKED_WITH_GIFT)).toBe(false);
+    },
+    30_000,
+  );
+
+  it(
+    "reconciles a parked, already-gifted row in needs_review, not the worklist (no-gift scope)",
+    async () => {
+      const fs = await idsInQueue("fiscally_sponsored");
+      const nr = await idsInQueue("needs_review");
+      // Already has a gift, so it drops OUT of the "without corresponding gift"
+      // worklist and reconciles normally in the main needs_review flow.
+      expect(fs.has(PARKED_WITH_GIFT)).toBe(false);
+      expect(nr.has(PARKED_WITH_GIFT)).toBe(true);
     },
     30_000,
   );

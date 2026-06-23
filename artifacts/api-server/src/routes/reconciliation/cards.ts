@@ -11,7 +11,7 @@ import { buildReconciliationGraph } from "../../lib/reconciliationGraph";
 import { deriveEvidenceLanes } from "../../lib/reconciliationLanes";
 import {
   entityWhere,
-  isFiscallySponsoredRow,
+  isParkedFiscallyRow,
   queueWhere,
   resolvedGift,
   stagedOrderBy,
@@ -178,7 +178,7 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
     return sql`(
       (
         ${stagedPayments.status} = 'pending'
-        AND (${stagedPayments.entityId} IS NULL OR NOT (${isFiscallySponsoredRow}))
+        AND (${stagedPayments.entityId} IS NULL OR NOT (${isParkedFiscallyRow}))
       )
       OR (
         ${stagedPayments.status} = 'approved'

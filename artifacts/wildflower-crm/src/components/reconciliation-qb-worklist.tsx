@@ -41,10 +41,11 @@ type SubFilter = "todo" | "ready" | "parked" | "reconciled";
 const SUB_FILTERS: { key: SubFilter; label: string }[] = [
   { key: "todo", label: "Needs review" },
   { key: "ready", label: "Ready" },
-  // Fiscally-sponsored money is pass-through for a sponsored project, so it is
-  // PARKED out of the main flow (Needs review / Ready exclude it) and surfaced
-  // only here — still fully matchable when someone gets to it.
-  { key: "parked", label: "Fiscally sponsored" },
+  // Fiscally-sponsored money that has no gift yet is PARKED out of the main flow
+  // (Needs review / Ready exclude it) and surfaced only here — with the sponsored
+  // entity pre-filled so a fundraiser can create the gift by hand. Sponsored money
+  // that already matches a gift reconciles normally in the main flow.
+  { key: "parked", label: "Fiscally-sponsored without corresponding gift" },
   { key: "reconciled", label: "Reconciled" },
 ];
 
@@ -265,7 +266,7 @@ export function QbMoneyWorklist() {
             {sub === "reconciled"
               ? "No reconciled cards yet."
               : sub === "parked"
-                ? "No parked fiscally-sponsored money."
+                ? "No fiscally-sponsored money without a corresponding gift."
                 : "Nothing to reconcile here."}
           </CardContent>
         </Card>

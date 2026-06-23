@@ -90,13 +90,28 @@ export const isFiscallySponsoredRow = inArray(stagedPayments.entityId, [
   ...FISCALLY_SPONSORED_ENTITY_IDS,
 ]);
 
+// A staged row with no gift yet (neither a manually-matched nor a minted gift,
+// and not group-reconciled into someone else's gift). Used to scope the
+// fiscally-sponsored worklist to receipts that still NEED a hand-made gift.
+export const hasNoGiftLink = sql`(
+  ${stagedPayments.matchedGiftId} IS NULL
+  AND ${stagedPayments.createdGiftId} IS NULL
+  AND ${stagedPayments.groupReconciledGiftId} IS NULL
+)`;
+
+// The fiscally-sponsored money that is PARKED out of the main reconciliation flow
+// and surfaced in the "Fiscally-sponsored without corresponding gift" worklist:
+// sponsored receipts that still lack a gift. Sponsored money that already matches
+// a gift is NOT parked — it reconciles normally in the main flow (entity set).
+export const isParkedFiscallyRow = sql`(${isFiscallySponsoredRow} AND ${hasNoGiftLink})`;
+
 // Derived queue bucket for a staged row (kept in sync with the where-clauses
 // in queueWhere below).
 export const queueExpr = sql<string>`
   CASE
     WHEN ${stagedPayments.status} = 'excluded' THEN 'excluded'
     WHEN ${stagedPayments.status} = 'rejected' THEN 'rejected'
-    WHEN ${stagedPayments.status} = 'pending' AND ${isFiscallySponsoredRow} THEN 'fiscally_sponsored'
+    WHEN ${stagedPayments.status} = 'pending' AND ${isParkedFiscallyRow} THEN 'fiscally_sponsored'
     WHEN ${stagedPayments.status} = 'pending'  THEN 'needs_review'
     WHEN ${stagedPayments.status} = 'approved'
          AND ${stagedPayments.autoApplied} = true
@@ -321,17 +336,20 @@ export function queueWhere(queue: Queue) {
     case "rejected":
       return eq(stagedPayments.status, "rejected");
     case "fiscally_sponsored":
-      // Pending money attributed to a fiscally sponsored entity — parked here so
-      // it stays out of the default needs-review queue.
-      return and(eq(stagedPayments.status, "pending"), isFiscallySponsoredRow);
+      // The "Fiscally-sponsored without corresponding gift" worklist: pending
+      // money attributed to a fiscally sponsored entity that has NO gift yet —
+      // parked here so a fundraiser can create the gift by hand. Sponsored money
+      // that already matches a gift is NOT parked (it reconciles in the main flow).
+      return and(eq(stagedPayments.status, "pending"), isParkedFiscallyRow);
     case "needs_review":
     default:
-      // Pending money that is NOT fiscally sponsored. NULL entity_id (Foundation
-      // default) must stay IN — `entity_id NOT IN (...)` is NULL-unsafe, so guard
-      // it explicitly with an IS NULL branch.
+      // Pending money that is NOT parked-fiscally-sponsored. NULL entity_id
+      // (Foundation default) must stay IN — `entity_id NOT IN (...)` is NULL-unsafe,
+      // so guard it explicitly with an IS NULL branch. Sponsored money that already
+      // has a gift flows here normally (it is not parked).
       return and(
         eq(stagedPayments.status, "pending"),
-        or(isNull(stagedPayments.entityId), not(isFiscallySponsoredRow)),
+        or(isNull(stagedPayments.entityId), not(isParkedFiscallyRow)),
       );
   }
 }

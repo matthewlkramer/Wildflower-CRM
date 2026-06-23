@@ -2275,20 +2275,21 @@ const QB_ACTION_LABELS: Record<QuickbooksRuleAction, string> = {
 
 const QB_EXCLUSION_REASONS: StagedPaymentExclusionReason[] = [
   "zero_amount",
-  "loan",
-  "membership",
-  "interest",
-  "government_reimbursement",
-  "tax_refund",
-  "other_revenue",
+  "loan_repayment",
+  "loan_proceeds",
+  "note_payable",
   "earned_income",
-  "fiscally_sponsored",
-  "intercompany_transfer",
-  "other",
+  "other_revenue",
+  "interest",
+  "membership",
+  "tax_refund",
   "insurance",
   "expense_refund",
   "expensify",
+  "intercompany_transfer",
+  "miscoded_withdrawal",
   "returned_wire",
+  "other",
 ];
 
 const QB_INTENDED_USAGES: IntendedUsage[] = [

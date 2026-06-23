@@ -21,6 +21,12 @@ export interface StagedGiftSource {
   householdId: string | null;
   /** Conduit the donor gave through, propagated onto the gift when present. */
   matchedPaymentIntermediaryId: string | null;
+  /**
+   * Whether the minted gift advances fundraising goals. Carried from the staged
+   * row (set false for government reimbursements — real money that doesn't count
+   * toward the goal). Optional so legacy callers default to true.
+   */
+  countsTowardGoal?: boolean | null;
 }
 
 export function buildGiftValuesFromStaged(
@@ -41,6 +47,7 @@ export function buildGiftValuesFromStaged(
     individualGiverPersonId: staged.individualGiverPersonId,
     householdId: staged.householdId,
     paymentIntermediaryId: staged.matchedPaymentIntermediaryId,
+    countsTowardGoal: staged.countsTowardGoal ?? true,
     details: `Imported from QuickBooks (${staged.qbEntityType} #${staged.qbEntityId}).`,
     ownerUserId,
   };
