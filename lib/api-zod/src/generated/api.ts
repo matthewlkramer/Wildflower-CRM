@@ -9127,6 +9127,72 @@ export const AdminResyncGoogleUserResponse = zod.record(
   zod.unknown(),
 );
 
+/**
+ * @summary Last Airtable → schools sync run state (admin-only).
+ */
+export const AdminGetSchoolSyncStatusResponse = zod.object({
+  configured: zod
+    .boolean()
+    .describe(
+      "Server has Airtable credentials set; the sync is a no-op without them",
+    ),
+  lastRunStartedAt: zod.string().datetime({}).nullish(),
+  lastRunFinishedAt: zod.string().datetime({}).nullish(),
+  lastStatus: zod
+    .enum(["ok", "error", "running"])
+    .nullish()
+    .describe("State of the most recent run"),
+  lastError: zod.string().nullish(),
+  schoolsFetched: zod
+    .number()
+    .nullish()
+    .describe("Records pulled from the Airtable Schools view in the last run"),
+  schoolsUpserted: zod
+    .number()
+    .nullish()
+    .describe("Schools inserted\/updated in the CRM in the last run"),
+  staleInDb: zod
+    .number()
+    .nullish()
+    .describe(
+      "Schools present in the CRM but absent from the Airtable source view",
+    ),
+  updatedAt: zod.string().datetime({}).nullish(),
+});
+
+/**
+ * @summary Trigger an immediate Airtable → schools sync (admin-only). Returns the updated run state.
+ */
+export const AdminRunSchoolSyncResponse = zod.object({
+  configured: zod
+    .boolean()
+    .describe(
+      "Server has Airtable credentials set; the sync is a no-op without them",
+    ),
+  lastRunStartedAt: zod.string().datetime({}).nullish(),
+  lastRunFinishedAt: zod.string().datetime({}).nullish(),
+  lastStatus: zod
+    .enum(["ok", "error", "running"])
+    .nullish()
+    .describe("State of the most recent run"),
+  lastError: zod.string().nullish(),
+  schoolsFetched: zod
+    .number()
+    .nullish()
+    .describe("Records pulled from the Airtable Schools view in the last run"),
+  schoolsUpserted: zod
+    .number()
+    .nullish()
+    .describe("Schools inserted\/updated in the CRM in the last run"),
+  staleInDb: zod
+    .number()
+    .nullish()
+    .describe(
+      "Schools present in the CRM but absent from the Airtable source view",
+    ),
+  updatedAt: zod.string().datetime({}).nullish(),
+});
+
 export const GetGoogleOauthStatusResponse = zod.object({
   configured: zod
     .boolean()

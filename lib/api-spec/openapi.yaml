@@ -1976,6 +1976,25 @@ paths:
         "403": { description: Admin required }
         "409": { description: User has no active Google grant }
 
+  # ─── Admin: Airtable → schools sync health + manual trigger ───────────────
+  /admin/school-sync:
+    get:
+      operationId: adminGetSchoolSyncStatus
+      tags: [admin]
+      summary: Last Airtable → schools sync run state (admin-only).
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SchoolSyncStatus" } } } }
+        "403": { description: Admin required }
+  /admin/school-sync/run:
+    post:
+      operationId: adminRunSchoolSync
+      tags: [admin]
+      summary: Trigger an immediate Airtable → schools sync (admin-only). Returns the updated run state.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SchoolSyncStatus" } } } }
+        "403": { description: Admin required }
+        "502": { description: "School sync failed" }
+
   # ─── Google OAuth (per-CRM-user Gmail + Calendar grants) ──────────────────
   # NB: /google-oauth/start and /google-oauth/callback are browser
   # navigations (302 redirects to/from Google), not API client calls, so
@@ -6971,6 +6990,21 @@ components:
         grantedAt:    { type: string, format: date-time, nullable: true }
         revokedAt:    { type: string, format: date-time, nullable: true }
         lastError:    { type: string, nullable: true }
+
+    # ─── Airtable → schools sync status (admin) ──────────────────────────────
+    SchoolSyncStatus:
+      type: object
+      required: [configured]
+      properties:
+        configured:        { type: boolean, description: "Server has Airtable credentials set; the sync is a no-op without them" }
+        lastRunStartedAt:  { type: string, format: date-time, nullable: true }
+        lastRunFinishedAt: { type: string, format: date-time, nullable: true }
+        lastStatus:        { type: string, nullable: true, enum: [ok, error, running], description: "State of the most recent run" }
+        lastError:         { type: string, nullable: true }
+        schoolsFetched:    { type: integer, nullable: true, description: "Records pulled from the Airtable Schools view in the last run" }
+        schoolsUpserted:   { type: integer, nullable: true, description: "Schools inserted/updated in the CRM in the last run" }
+        staleInDb:         { type: integer, nullable: true, description: "Schools present in the CRM but absent from the Airtable source view" }
+        updatedAt:         { type: string, format: date-time, nullable: true }
 
     # ─── Google sync status + run report ──────────────────────────────────────
     GoogleSyncDateRange:

@@ -1,14 +1,97 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { schools } from "@workspace/db/schema";
+import { schools, schoolSyncState, SCHOOL_SYNC_STATE_ID } from "@workspace/db/schema";
 import { and, asc, count, eq, ilike, type SQL } from "drizzle-orm";
 import { ListSchoolsQueryParams, UpdateSchoolBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
 import { activeOnlyUnlessAdmin, archiveOne, unarchiveOne } from "../lib/archive";
+import { getAppUser } from "../lib/appRequest";
+import { runSchoolSyncIfDue } from "../lib/schoolSyncScheduler";
+import { isAirtableConfigured } from "../lib/airtableClient";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 router.use(requireAuth);
+
+function requireAdmin(
+  req: import("express").Request,
+  res: import("express").Response,
+): boolean {
+  const me = getAppUser(req);
+  if (!me || me.role !== "admin") {
+    res.status(403).json({ error: "admin_required" });
+    return false;
+  }
+  return true;
+}
+
+// Shape the singleton run-state row into the wire response. `configured`
+// reflects whether Airtable credentials are present — the sync is a no-op
+// without them, so the panel can warn instead of looking silently broken.
+async function readSchoolSyncStatus(): Promise<{
+  configured: boolean;
+  lastRunStartedAt: string | null;
+  lastRunFinishedAt: string | null;
+  lastStatus: string | null;
+  lastError: string | null;
+  schoolsFetched: number | null;
+  schoolsUpserted: number | null;
+  staleInDb: number | null;
+  updatedAt: string | null;
+}> {
+  const row = await db
+    .select()
+    .from(schoolSyncState)
+    .where(eq(schoolSyncState.id, SCHOOL_SYNC_STATE_ID))
+    .then((r) => r[0]);
+  return {
+    configured: isAirtableConfigured(),
+    lastRunStartedAt: row?.lastRunStartedAt?.toISOString() ?? null,
+    lastRunFinishedAt: row?.lastRunFinishedAt?.toISOString() ?? null,
+    lastStatus: row?.lastStatus ?? null,
+    lastError: row?.lastError ?? null,
+    schoolsFetched: row?.schoolsFetched ?? null,
+    schoolsUpserted: row?.schoolsUpserted ?? null,
+    staleInDb: row?.staleInDb ?? null,
+    updatedAt: row?.updatedAt?.toISOString() ?? null,
+  };
+}
+
+// Admin-only: last Airtable → schools sync run state. Mirrors the per-user
+// Google sync health panel — surfaces the singleton run-state row that the
+// scheduler writes after every run so admins can see sync health.
+router.get(
+  "/admin/school-sync",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json(await readSchoolSyncStatus());
+  }),
+);
+
+// Admin-only: trigger an immediate sync. Wraps the same locked code path the
+// scheduler uses (force-bypasses the "due" check). The run is synchronous —
+// the schools pull is cheap (a few Airtable pages) and bounded, so we wait and
+// return the updated state. A contended advisory lock (another run in flight)
+// just returns the current state rather than starting a second run.
+router.post(
+  "/admin/school-sync/run",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      await runSchoolSyncIfDue({ force: true });
+    } catch (err) {
+      logger.error({ err }, "Admin-triggered school sync failed");
+      res.status(502).json({
+        error: "school_sync_failed",
+        message: err instanceof Error ? err.message : String(err),
+        status: await readSchoolSyncStatus(),
+      });
+      return;
+    }
+    res.json(await readSchoolSyncStatus());
+  }),
+);
 
 router.get(
   "/schools",

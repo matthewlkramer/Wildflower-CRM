@@ -4258,6 +4258,36 @@ export interface GoogleOauthStatus {
   lastError?: string | null;
 }
 
+/**
+ * State of the most recent run
+ */
+export type SchoolSyncStatusLastStatus =
+  | (typeof SchoolSyncStatusLastStatus)[keyof typeof SchoolSyncStatusLastStatus]
+  | null;
+
+export const SchoolSyncStatusLastStatus = {
+  ok: "ok",
+  error: "error",
+  running: "running",
+} as const;
+
+export interface SchoolSyncStatus {
+  /** Server has Airtable credentials set; the sync is a no-op without them */
+  configured: boolean;
+  lastRunStartedAt?: string | null;
+  lastRunFinishedAt?: string | null;
+  /** State of the most recent run */
+  lastStatus?: SchoolSyncStatusLastStatus;
+  lastError?: string | null;
+  /** Records pulled from the Airtable Schools view in the last run */
+  schoolsFetched?: number | null;
+  /** Schools inserted/updated in the CRM in the last run */
+  schoolsUpserted?: number | null;
+  /** Schools present in the CRM but absent from the Airtable source view */
+  staleInDb?: number | null;
+  updatedAt?: string | null;
+}
+
 export interface GoogleSyncDateRange {
   earliest?: string | null;
   latest?: string | null;

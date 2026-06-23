@@ -10,6 +10,9 @@ import {
   useDeleteFiscalYearEntityGoal,
   useAdminListGoogleSync,
   useAdminResyncGoogleUser,
+  useAdminGetSchoolSyncStatus,
+  useAdminRunSchoolSync,
+  getAdminGetSchoolSyncStatusQueryKey,
   useGetCalendarMeetingFilters,
   useUpdateCalendarMeetingFilters,
   useGetInternalEmailDomains,
@@ -169,6 +172,7 @@ export default function Admin() {
       <EntitiesSection entities={entities} loading={entitiesQ.isLoading} />
       <GoalsSection entities={entities} fyList={fyList} goals={goals} loading={goalsQ.isLoading || fyListQ.isLoading} />
       <AdminSyncSection />
+      <SchoolSyncSection />
       <CalendarMeetingFiltersSection />
       <InternalEmailDomainsSection />
       <QuickbooksRulesSection />
@@ -370,6 +374,137 @@ function AdminSyncSection() {
             </TableBody>
           </Table>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Admin: Airtable → schools sync health ────────────────────────────────────
+// Admin-only card surfacing the singleton run-state for the nightly Airtable →
+// schools sync: when it last ran, ok/error, schools fetched/upserted, and the
+// count of schools present in the CRM but missing from the Airtable source
+// view. "Sync now" runs the same locked code path the scheduler does.
+
+function SchoolSyncSection() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const q = useAdminGetSchoolSyncStatus({
+    query: {
+      queryKey: getAdminGetSchoolSyncStatusQueryKey(),
+      refetchInterval: 30_000,
+    },
+  });
+  const run = useAdminRunSchoolSync({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getAdminGetSchoolSyncStatusQueryKey() });
+        toast({ title: "School sync finished" });
+      },
+      onError: (e: unknown) => {
+        toast({
+          title: "School sync failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  // 403 for non-admins: hide the whole card so regular staff visiting /admin
+  // don't see a permanent error block.
+  const errStatus = (q.error as unknown as { status?: number } | null)?.status;
+  if (errStatus === 403) return null;
+
+  const s = q.data;
+  const status = s?.lastStatus ?? null;
+
+  return (
+    <Card data-testid="admin-school-sync-section">
+      <CardHeader>
+        <CardTitle>Airtable → schools sync</CardTitle>
+        <CardDescription>
+          Schools are mirrored one-way from the Airtable Schools view nightly
+          (off-hours, America/Chicago). The sync is non-destructive — it never
+          deletes, but counts schools that fell out of the source view so you
+          can reconcile them by hand. Use "Sync now" to run it immediately.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {s && !s.configured ? (
+          <div
+            className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm text-amber-800"
+            data-testid="school-sync-unconfigured"
+          >
+            ⚠ Airtable isn't configured on the server, so the sync is a no-op.
+            Set the Airtable credentials to enable it.
+          </div>
+        ) : null}
+        {status === "error" && s?.lastError ? (
+          <div
+            className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            data-testid="school-sync-error"
+          >
+            <span className="font-medium">Last sync failed</span> — {s.lastError}
+          </div>
+        ) : null}
+        {q.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : !s ? (
+          <p className="text-sm text-muted-foreground">No status available.</p>
+        ) : (
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-muted-foreground">Last run</dt>
+              <dd className="font-medium" data-testid="school-sync-last-run">
+                {fmtTime(s.lastRunFinishedAt)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Status</dt>
+              <dd data-testid="school-sync-status">
+                {status === "ok" ? (
+                  <span className="text-emerald-700 font-medium">OK</span>
+                ) : status === "error" ? (
+                  <span className="text-destructive font-medium">Error</span>
+                ) : status === "running" ? (
+                  <span className="text-amber-700 font-medium">Running…</span>
+                ) : (
+                  <span className="text-muted-foreground">Never run</span>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Schools fetched</dt>
+              <dd className="font-medium" data-testid="school-sync-fetched">
+                {s.schoolsFetched ?? "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Schools upserted</dt>
+              <dd className="font-medium" data-testid="school-sync-upserted">
+                {s.schoolsUpserted ?? "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground" title="Schools in the CRM but absent from the Airtable source view (not deleted).">
+                Missing from Airtable
+              </dt>
+              <dd className="font-medium" data-testid="school-sync-stale">
+                {s.staleInDb ?? "—"}
+              </dd>
+            </div>
+          </dl>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={run.isPending}
+          onClick={() => run.mutate()}
+          data-testid="school-sync-now"
+          title="Runs the Airtable → schools sync immediately."
+        >
+          {run.isPending ? "Syncing…" : "Sync now"}
+        </Button>
       </CardContent>
     </Card>
   );

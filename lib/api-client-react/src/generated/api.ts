@@ -275,6 +275,7 @@ import type {
   SavedViewList,
   School,
   SchoolList,
+  SchoolSyncStatus,
   SearchParams,
   SearchReconciliationNodeParams,
   SearchReconciliationQbStagedParams,
@@ -13692,6 +13693,163 @@ export const useAdminResyncGoogleUser = <
   TContext
 > => {
   return useMutation(getAdminResyncGoogleUserMutationOptions(options));
+};
+
+/**
+ * @summary Last Airtable → schools sync run state (admin-only).
+ */
+export const getAdminGetSchoolSyncStatusUrl = () => {
+  return `/api/admin/school-sync`;
+};
+
+export const adminGetSchoolSyncStatus = async (
+  options?: RequestInit,
+): Promise<SchoolSyncStatus> => {
+  return customFetch<SchoolSyncStatus>(getAdminGetSchoolSyncStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdminGetSchoolSyncStatusQueryKey = () => {
+  return [`/api/admin/school-sync`] as const;
+};
+
+export const getAdminGetSchoolSyncStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminGetSchoolSyncStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>
+  > = ({ signal }) => adminGetSchoolSyncStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminGetSchoolSyncStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>
+>;
+export type AdminGetSchoolSyncStatusQueryError = ErrorType<void>;
+
+/**
+ * @summary Last Airtable → schools sync run state (admin-only).
+ */
+
+export function useAdminGetSchoolSyncStatus<
+  TData = Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminGetSchoolSyncStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Trigger an immediate Airtable → schools sync (admin-only). Returns the updated run state.
+ */
+export const getAdminRunSchoolSyncUrl = () => {
+  return `/api/admin/school-sync/run`;
+};
+
+export const adminRunSchoolSync = async (
+  options?: RequestInit,
+): Promise<SchoolSyncStatus> => {
+  return customFetch<SchoolSyncStatus>(getAdminRunSchoolSyncUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getAdminRunSchoolSyncMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminRunSchoolSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminRunSchoolSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["adminRunSchoolSync"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminRunSchoolSync>>,
+    void
+  > = () => {
+    return adminRunSchoolSync(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminRunSchoolSyncMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminRunSchoolSync>>
+>;
+
+export type AdminRunSchoolSyncMutationError = ErrorType<void>;
+
+/**
+ * @summary Trigger an immediate Airtable → schools sync (admin-only). Returns the updated run state.
+ */
+export const useAdminRunSchoolSync = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminRunSchoolSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminRunSchoolSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getAdminRunSchoolSyncMutationOptions(options));
 };
 
 export const getGetGoogleOauthStatusUrl = () => {
