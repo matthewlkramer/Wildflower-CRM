@@ -74,6 +74,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -1151,7 +1152,7 @@ export default function Individuals() {
     <div className="space-y-6">
       <ListPageHeader
         title="Individuals"
-        subtitle={isLoading ? "Loading…" : `${total.toLocaleString()} total`}
+        subtitle={isLoading ? <Skeleton className="h-4 w-20" /> : `${total.toLocaleString()} total`}
         addAction={<CreatePersonDialog />}
         controls={
           <>
@@ -1312,11 +1313,7 @@ export default function Individuals() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">
-                  Loading…
-                </TableCell>
-              </TableRow>
+              <SkeletonRows cols={colSpan} />
             ) : isError ? (
               <TableRow>
                 <TableCell colSpan={colSpan} className="text-center h-24 text-destructive">

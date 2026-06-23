@@ -66,6 +66,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
@@ -810,7 +811,7 @@ export default function Gifts() {
     <div className="space-y-6">
       <ListPageHeader
         title="Gifts & payments"
-        subtitle={isLoading ? "Loading…" : `${total.toLocaleString()} total`}
+        subtitle={isLoading ? <Skeleton className="h-4 w-20" /> : `${total.toLocaleString()} total`}
         addAction={<GiftFormDialog />}
         controls={
           <>
@@ -910,7 +911,7 @@ export default function Gifts() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <SkeletonRows cols={colSpan} />
             ) : isError ? (
               <TableRow>
                 <TableCell colSpan={colSpan} className="text-center h-24 text-destructive">

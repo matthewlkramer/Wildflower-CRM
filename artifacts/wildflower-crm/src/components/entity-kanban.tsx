@@ -11,6 +11,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import type { ReactNode } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * Kanban column layout for the connection/enthusiasm calculated field.
@@ -203,7 +204,11 @@ function EntityColumn<T extends EntityKanbanRow>({
       </div>
       <div className="flex-1 space-y-2 p-2 min-h-[100px]">
         {loading ? (
-          <div className="text-xs text-muted-foreground text-center py-6">Loading…</div>
+          <>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </>
         ) : rows.length === 0 ? (
           <div className="text-xs text-muted-foreground text-center py-6">—</div>
         ) : (

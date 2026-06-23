@@ -20,6 +20,7 @@ import {
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort, formatEnum, fiscalYearFromDate } from "@/lib/format";
 import { DonorCell } from "@/components/donor-cell";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useUserNameMap } from "@/components/user-picker";
 import { useToast } from "@/hooks/use-toast";
 
@@ -188,7 +189,11 @@ function StageColumn({
       </div>
       <div className="flex-1 space-y-2 p-2 min-h-[120px]">
         {loading ? (
-          <div className="text-xs text-muted-foreground text-center py-6">Loading…</div>
+          <>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-20 w-full" />
+            ))}
+          </>
         ) : opps.length === 0 ? (
           <div className="text-xs text-muted-foreground text-center py-6">No opportunities</div>
         ) : (

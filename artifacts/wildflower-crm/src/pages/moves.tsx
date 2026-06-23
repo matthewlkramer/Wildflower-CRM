@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SkeletonRows } from "@/components/ui/skeleton";
 
 const FETCH_LIMIT = 200;
 const PRIORITIES: Priority[] = ["top", "high", "medium", "low"];
@@ -138,7 +139,7 @@ export default function Moves() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center h-24 text-muted-foreground">Loading…</TableCell></TableRow>
+              <SkeletonRows cols={7} />
             ) : isError ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center h-24 text-destructive">

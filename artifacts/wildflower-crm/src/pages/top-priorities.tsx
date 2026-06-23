@@ -18,7 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { PriorityStar } from "@/components/priority-star";
 import { useUserNameMap } from "@/components/user-picker";
 import { ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
@@ -26,22 +26,6 @@ import { personDisplayName } from "@/lib/person";
 import { formatCurrency, formatDateShort } from "@/lib/format";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import { Star } from "lucide-react";
-
-function SkeletonRows({ cols }: { cols: number }) {
-  return (
-    <>
-      {Array.from({ length: 4 }).map((_, i) => (
-        <TableRow key={i}>
-          {Array.from({ length: cols }).map((_, j) => (
-            <TableCell key={j}>
-              <Skeleton className="h-4 w-full" />
-            </TableCell>
-          ))}
-        </TableRow>
-      ))}
-    </>
-  );
-}
 
 // Names are already masked server-side; render the label as-is.
 function FunderNameCell({ funder }: { funder: TopPriorityOrganization }) {
