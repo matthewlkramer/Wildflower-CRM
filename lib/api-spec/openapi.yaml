@@ -47,6 +47,7 @@ tags:
   - { name: suppression-windows }
   - { name: calendar-meeting-filters }
   - { name: internal-email-domains }
+  - { name: wildflower-updates }
   - { name: top-priorities }
   - { name: quickbooks-oauth }
   - { name: quickbooks-sync }
@@ -3516,6 +3517,23 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateInternalEmailDomainsBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/InternalEmailDomainsConfig" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /wildflower-updates:
+    get:
+      operationId: getWildflowerUpdate
+      tags: [wildflower-updates]
+      summary: Get the shared Wildflower updates note
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/WildflowerUpdateConfig" } } } }
+    put:
+      operationId: updateWildflowerUpdate
+      tags: [wildflower-updates]
+      summary: Replace the shared Wildflower updates note (admin only)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateWildflowerUpdateBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/WildflowerUpdateConfig" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -7118,7 +7136,7 @@ components:
     # ─── Email intelligence ───────────────────────────────────────────────────
     EmailProposalKind:
       type: string
-      enum: [linkedin_job_change, auto_responder_move, bounce_invalid, bounce_soft, signature_update, grant_opportunity, thank_you_acknowledgment]
+      enum: [linkedin_job_change, auto_responder_move, bounce_invalid, bounce_soft, signature_update, grant_opportunity, thank_you_acknowledgment, wildflower_update]
     EmailProposalStatus:
       type: string
       enum: [pending, applied, rejected, ignored]
@@ -8129,6 +8147,20 @@ components:
       required: [domains]
       properties:
         domains: { type: array, items: { type: string } }
+
+    # ─── Wildflower updates (shared admin-editable note) ─────────────────────
+    WildflowerUpdateConfig:
+      type: object
+      required: [content, updatedAt]
+      properties:
+        content:         { type: string }
+        updatedAt:       { type: string, format: date-time }
+        updatedByUserId: { type: string, nullable: true }
+    UpdateWildflowerUpdateBody:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string }
 
     # ─── Audit log ────────────────────────────────────────────────────────────
     AuditChange:

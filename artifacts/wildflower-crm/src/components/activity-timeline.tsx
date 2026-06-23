@@ -86,6 +86,7 @@ const PROPOSAL_KIND_LABEL: Record<EmailProposalKind, string> = {
   signature_update: "Signature drift",
   grant_opportunity: "Grant opportunity",
   thank_you_acknowledgment: "Thank-you acknowledgment",
+  wildflower_update: "Wildflower update",
 };
 
 function InteractionIcon({ kind }: { kind: InteractionKind }) {

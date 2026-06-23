@@ -4,6 +4,8 @@ import {
   emailProposals,
   emails,
   people,
+  tasks,
+  wildflowerUpdates,
 } from "@workspace/db/schema";
 import { and, count, desc, eq, sql, type SQL } from "drizzle-orm";
 import {
@@ -15,6 +17,7 @@ import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
 import {
   asyncHandler,
+  newId,
   notFound,
   paramId,
   parseOrBadRequest,
@@ -22,6 +25,7 @@ import {
 } from "../lib/helpers";
 import { applyAction, validateAction, type ApplyActionResult } from "../lib/applyProposalActions";
 import { invalidateStaffDefaultSuppressionCache } from "../lib/emailMatcher";
+import { invalidateWildflowerUpdateNoteCache } from "../lib/wildflowerUpdatesNote";
 import { emailMessages, giftsAndPayments } from "@workspace/db/schema";
 import { proposeActionsForProposal } from "../lib/proposeActions";
 
@@ -190,6 +194,108 @@ router.post(
         .returning();
       if (!claimed) return undefined;
       const proposal = claimed;
+
+      // ── Wildflower update: no ProposedAction dispatcher. Two flavors
+      // (stored in payload.flavor):
+      //   donor_outreach → mint a cultivation task linked to the donor.
+      //   note_revision  → overwrite the singleton Wildflower-updates note
+      //                    (the reviewer may override the AI's proposed text
+      //                    via body.content; AcceptEmailProposalBody is an
+      //                    open record so no spec change is required).
+      // The note cache is busted AFTER the transaction commits (below),
+      // keyed off the resolved proposal kind.
+      if (proposal.kind === "wildflower_update") {
+        const payload = (proposal.payload ?? {}) as Record<string, unknown>;
+        const flavor = typeof payload.flavor === "string" ? payload.flavor : null;
+
+        if (flavor === "donor_outreach") {
+          const title =
+            typeof payload.title === "string" && payload.title.trim()
+              ? payload.title.trim()
+              : "Wildflower update: donor outreach";
+          const description =
+            typeof payload.description === "string" && payload.description.trim()
+              ? payload.description.trim()
+              : null;
+          const taskId = newId();
+          await tx.insert(tasks).values({
+            id: taskId,
+            title: title.slice(0, 500),
+            description,
+            kind: "general",
+            createdByUserId: user.id,
+            assigneeUserId: user.id,
+            personIds: proposal.targetPersonId ? [proposal.targetPersonId] : null,
+            organizationIds: proposal.targetOrganizationId
+              ? [proposal.targetOrganizationId]
+              : null,
+          });
+          return {
+            proposal,
+            applyResults: [{
+              type: "wildflower_update" as unknown as ApplyActionResult["type"],
+              status: "applied" as const,
+              message: "Created donor-outreach task from Wildflower update.",
+              createdId: taskId,
+            }],
+          };
+        }
+
+        if (flavor === "note_revision") {
+          // Reviewer-edited final text wins; fall back to the AI's
+          // proposed content. Refuse an empty result so accepting can't
+          // silently wipe the note.
+          const override = (body as Record<string, unknown>).content;
+          const proposed =
+            typeof override === "string"
+              ? override
+              : typeof payload.proposedContent === "string"
+                ? payload.proposedContent
+                : "";
+          if (!proposed.trim()) {
+            const failed: ApplyActionResult = {
+              type: "wildflower_update" as unknown as ApplyActionResult["type"],
+              status: "failed",
+              message: "Note revision has no content to apply.",
+            };
+            throw new ProposalApplyError(failed, [failed]);
+          }
+          await tx
+            .insert(wildflowerUpdates)
+            .values({
+              id: "singleton",
+              content: proposed,
+              updatedAt: new Date(),
+              updatedByUserId: user.id,
+            })
+            .onConflictDoUpdate({
+              target: wildflowerUpdates.id,
+              set: {
+                content: proposed,
+                updatedAt: new Date(),
+                updatedByUserId: user.id,
+              },
+            });
+          return {
+            proposal,
+            applyResults: [{
+              type: "wildflower_update" as unknown as ApplyActionResult["type"],
+              status: "applied" as const,
+              message: "Applied revision to the Wildflower updates note.",
+            }],
+          };
+        }
+
+        // Unknown / missing flavor: resolve with no side-effect.
+        return {
+          proposal,
+          applyResults: [{
+            type: "wildflower_update" as unknown as ApplyActionResult["type"],
+            status: "applied" as const,
+            message: "Acknowledged Wildflower update.",
+          }],
+        };
+      }
 
       // ── Thank-you acknowledgment: no ProposedAction dispatcher.
       // The detector stores the gift id in payload.giftId; accept
@@ -385,6 +491,14 @@ router.post(
         r.status === "applied",
     );
     if (touchedPersonEmail) invalidateStaffDefaultSuppressionCache();
+    // Applying a note_revision overwrote the singleton note; bust its
+    // cache so the AI prompts (proposeTask / proposeActions) pick up the
+    // new text on the next call.
+    const appliedNoteRevision =
+      outcome.proposal.kind === "wildflower_update" &&
+      ((outcome.proposal.payload ?? {}) as Record<string, unknown>).flavor ===
+        "note_revision";
+    if (appliedNoteRevision) invalidateWildflowerUpdateNoteCache();
     res.json({ ...outcome.proposal, appliedActions: outcome.applyResults });
   }),
 );

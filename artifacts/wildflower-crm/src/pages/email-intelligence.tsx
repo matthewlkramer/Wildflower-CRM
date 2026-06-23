@@ -50,7 +50,8 @@ type Kind =
   | "bounce_invalid"
   | "bounce_soft"
   | "signature_update"
-  | "thank_you_acknowledgment";
+  | "thank_you_acknowledgment"
+  | "wildflower_update";
 
 const KIND_TABS: { value: Kind; label: string }[] = [
   { value: "linkedin_job_change", label: "Job changes" },
@@ -59,6 +60,7 @@ const KIND_TABS: { value: Kind; label: string }[] = [
   { value: "bounce_soft", label: "Soft bounces" },
   { value: "signature_update", label: "Signature updates" },
   { value: "thank_you_acknowledgment", label: "Thank-you acks" },
+  { value: "wildflower_update", label: "Wildflower updates" },
 ];
 
 const UNRECOGNIZED_TAB = "unrecognized";
@@ -968,6 +970,20 @@ function summarizeProposal(p: {
       if (amount) parts.push(`($${amount.toLocaleString()})`);
       return parts.join(" ");
     }
+    case "wildflower_update": {
+      const flavor = payload.flavor as string | undefined;
+      if (flavor === "donor_outreach") {
+        return `Wildflower outreach: ${
+          (payload.title as string | undefined) ??
+          p.subjectName ??
+          "donor follow-up"
+        }`;
+      }
+      if (flavor === "note_revision") {
+        return "Wildflower note revision proposed";
+      }
+      return "Wildflower update";
+    }
     default:
       return p.subjectName ?? p.subjectEmail ?? p.kind;
   }
@@ -1050,6 +1066,46 @@ function ProposalDetail({
           ) : null}
         </div>
       );
+    }
+    case "wildflower_update": {
+      const flavor = payload.flavor as string | undefined;
+      if (flavor === "donor_outreach") {
+        return (
+          <div className="space-y-1">
+            <Badge variant="outline" className="mb-1">Donor outreach</Badge>
+            {cell("Task", payload.title)}
+            {cell("Guidance", payload.description)}
+            {payload.rationale ? (
+              <p className="text-xs italic text-muted-foreground border-l-2 pl-2 mt-2">
+                {String(payload.rationale)}
+              </p>
+            ) : null}
+            <p className="text-xs text-muted-foreground mt-2">
+              Accept creates a cultivation task linked to this donor.
+            </p>
+          </div>
+        );
+      }
+      if (flavor === "note_revision") {
+        return (
+          <div className="space-y-1">
+            <Badge variant="outline" className="mb-1">Note revision</Badge>
+            {payload.rationale ? (
+              <p className="text-xs italic text-muted-foreground border-l-2 pl-2 mb-2">
+                {String(payload.rationale)}
+              </p>
+            ) : null}
+            <div className="text-xs text-muted-foreground">Proposed note:</div>
+            <pre className="text-sm whitespace-pre-wrap rounded bg-muted p-2 mt-1">
+              {String(payload.proposedContent ?? "")}
+            </pre>
+            <p className="text-xs text-muted-foreground mt-2">
+              Accept overwrites the shared Wildflower updates note.
+            </p>
+          </div>
+        );
+      }
+      return null;
     }
     default:
       return null;

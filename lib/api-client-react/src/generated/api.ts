@@ -346,8 +346,10 @@ import type {
   UpdateSavedViewBody,
   UpdateSchoolBody,
   UpdateTaskBody,
+  UpdateWildflowerUpdateBody,
   UpsertFiscalYearEntityGoalBody,
   User,
+  WildflowerUpdateConfig,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -24901,6 +24903,170 @@ export const useUpdateInternalEmailDomains = <
   TContext
 > => {
   return useMutation(getUpdateInternalEmailDomainsMutationOptions(options));
+};
+
+/**
+ * @summary Get the shared Wildflower updates note
+ */
+export const getGetWildflowerUpdateUrl = () => {
+  return `/api/wildflower-updates`;
+};
+
+export const getWildflowerUpdate = async (
+  options?: RequestInit,
+): Promise<WildflowerUpdateConfig> => {
+  return customFetch<WildflowerUpdateConfig>(getGetWildflowerUpdateUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetWildflowerUpdateQueryKey = () => {
+  return [`/api/wildflower-updates`] as const;
+};
+
+export const getGetWildflowerUpdateQueryOptions = <
+  TData = Awaited<ReturnType<typeof getWildflowerUpdate>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getWildflowerUpdate>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetWildflowerUpdateQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getWildflowerUpdate>>
+  > = ({ signal }) => getWildflowerUpdate({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getWildflowerUpdate>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetWildflowerUpdateQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getWildflowerUpdate>>
+>;
+export type GetWildflowerUpdateQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the shared Wildflower updates note
+ */
+
+export function useGetWildflowerUpdate<
+  TData = Awaited<ReturnType<typeof getWildflowerUpdate>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getWildflowerUpdate>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetWildflowerUpdateQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Replace the shared Wildflower updates note (admin only)
+ */
+export const getUpdateWildflowerUpdateUrl = () => {
+  return `/api/wildflower-updates`;
+};
+
+export const updateWildflowerUpdate = async (
+  updateWildflowerUpdateBody: UpdateWildflowerUpdateBody,
+  options?: RequestInit,
+): Promise<WildflowerUpdateConfig> => {
+  return customFetch<WildflowerUpdateConfig>(getUpdateWildflowerUpdateUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateWildflowerUpdateBody),
+  });
+};
+
+export const getUpdateWildflowerUpdateMutationOptions = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWildflowerUpdate>>,
+    TError,
+    { data: BodyType<UpdateWildflowerUpdateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateWildflowerUpdate>>,
+  TError,
+  { data: BodyType<UpdateWildflowerUpdateBody> },
+  TContext
+> => {
+  const mutationKey = ["updateWildflowerUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateWildflowerUpdate>>,
+    { data: BodyType<UpdateWildflowerUpdateBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateWildflowerUpdate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateWildflowerUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateWildflowerUpdate>>
+>;
+export type UpdateWildflowerUpdateMutationBody =
+  BodyType<UpdateWildflowerUpdateBody>;
+export type UpdateWildflowerUpdateMutationError = ErrorType<
+  BadRequestResponse | ForbiddenResponse
+>;
+
+/**
+ * @summary Replace the shared Wildflower updates note (admin only)
+ */
+export const useUpdateWildflowerUpdate = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWildflowerUpdate>>,
+    TError,
+    { data: BodyType<UpdateWildflowerUpdateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateWildflowerUpdate>>,
+  TError,
+  { data: BodyType<UpdateWildflowerUpdateBody> },
+  TContext
+> => {
+  return useMutation(getUpdateWildflowerUpdateMutationOptions(options));
 };
 
 /**

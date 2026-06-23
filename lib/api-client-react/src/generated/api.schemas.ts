@@ -4430,6 +4430,7 @@ export const EmailProposalKind = {
   signature_update: "signature_update",
   grant_opportunity: "grant_opportunity",
   thank_you_acknowledgment: "thank_you_acknowledgment",
+  wildflower_update: "wildflower_update",
 } as const;
 
 export type EmailProposalStatus =
@@ -5496,6 +5497,16 @@ export interface InternalEmailDomainsConfig {
 
 export interface UpdateInternalEmailDomainsBody {
   domains: string[];
+}
+
+export interface WildflowerUpdateConfig {
+  content: string;
+  updatedAt: string;
+  updatedByUserId?: string | null;
+}
+
+export interface UpdateWildflowerUpdateBody {
+  content: string;
 }
 
 export interface AuditChange {

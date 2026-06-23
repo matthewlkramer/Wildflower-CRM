@@ -5,6 +5,7 @@ import { anthropic, withRateLimitRetry } from "@workspace/integrations-anthropic
 import { aiProposalLimit } from "./aiConcurrency";
 import { logger } from "./logger";
 import { gatherTaskSignals, type TaskSignals } from "./gatherTaskSignals";
+import { loadWildflowerUpdateNote } from "./wildflowerUpdatesNote";
 
 /**
  * Task intelligence: AI-suggested next-step cultivation task.
@@ -85,17 +86,26 @@ function buildSystemPrompt(): string {
     "• Be specific in the title and grounded in the rationale — quote or paraphrase the signal that justifies the step.",
     "• If the signals genuinely warrant no action right now, set noSuggestion=true and briefly explain why; still fill title/description/rationale.",
     "• Never invent facts not present in the snapshot. Do not reference donations, meetings, or amounts that aren't in the data.",
+    "• When a WILDFLOWER UPDATES note is provided, treat it as the team's current talking points / news. Where it is genuinely relevant to THIS donor, weave it into the suggested step (e.g. share a specific current update). Do not force it in when it doesn't fit.",
   ].join("\n");
 }
 
 function buildUserPrompt(
   signals: TaskSignals,
   reviewerGuidance?: string | null,
+  wildflowerNote?: string | null,
 ): string {
   const e = signals.entity;
   const lines: string[] = [];
   lines.push(`TODAY'S DATE: ${new Date().toISOString().slice(0, 10)}`);
   lines.push("");
+  if (wildflowerNote && wildflowerNote.trim()) {
+    lines.push(
+      "WILDFLOWER UPDATES (the team's current shared talking points / news — weave in when relevant to this donor):",
+    );
+    lines.push(wildflowerNote.trim().slice(0, 4000));
+    lines.push("");
+  }
   if (reviewerGuidance && reviewerGuidance.trim()) {
     lines.push(
       "REVIEWER GUIDANCE (a human reviewer corrected the previous suggestion — treat this as authoritative and honor it when proposing the next step; where it conflicts with your own interpretation, follow the reviewer):",
@@ -232,7 +242,12 @@ export async function generateTaskProposal(
     }
 
     const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildUserPrompt(signals, opts?.reviewerGuidance);
+    const wildflowerNote = await loadWildflowerUpdateNote();
+    const userPrompt = buildUserPrompt(
+      signals,
+      opts?.reviewerGuidance,
+      wildflowerNote,
+    );
 
     const response = await aiProposalLimit(() =>
       withRateLimitRetry(

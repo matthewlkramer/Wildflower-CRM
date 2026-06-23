@@ -583,6 +583,7 @@ export const ListEmailProposalsQueryParams = zod.object({
       "signature_update",
       "grant_opportunity",
       "thank_you_acknowledgment",
+      "wildflower_update",
     ])
     .optional(),
   status: zod.enum(["pending", "applied", "rejected", "ignored"]).optional(),
@@ -616,6 +617,7 @@ export const ListEmailProposalsResponse = zod.object({
         "signature_update",
         "grant_opportunity",
         "thank_you_acknowledgment",
+        "wildflower_update",
       ]),
       status: zod.enum(["pending", "applied", "rejected", "ignored"]),
       sourceMessageId: zod.string().nullish(),
@@ -682,6 +684,7 @@ export const GetEmailProposalSummaryResponse = zod.object({
         "signature_update",
         "grant_opportunity",
         "thank_you_acknowledgment",
+        "wildflower_update",
       ]),
       pending: zod.number(),
     }),
@@ -709,6 +712,7 @@ export const AcceptEmailProposalResponse = zod.object({
     "signature_update",
     "grant_opportunity",
     "thank_you_acknowledgment",
+    "wildflower_update",
   ]),
   status: zod.enum(["pending", "applied", "rejected", "ignored"]),
   sourceMessageId: zod.string().nullish(),
@@ -776,6 +780,7 @@ export const RejectEmailProposalResponse = zod.object({
     "signature_update",
     "grant_opportunity",
     "thank_you_acknowledgment",
+    "wildflower_update",
   ]),
   status: zod.enum(["pending", "applied", "rejected", "ignored"]),
   sourceMessageId: zod.string().nullish(),
@@ -842,6 +847,7 @@ export const RetryEmailProposalResponse = zod.object({
     "signature_update",
     "grant_opportunity",
     "thank_you_acknowledgment",
+    "wildflower_update",
   ]),
   status: zod.enum(["pending", "applied", "rejected", "ignored"]),
   sourceMessageId: zod.string().nullish(),
@@ -912,6 +918,7 @@ export const ReviseEmailProposalResponse = zod.object({
     "signature_update",
     "grant_opportunity",
     "thank_you_acknowledgment",
+    "wildflower_update",
   ]),
   status: zod.enum(["pending", "applied", "rejected", "ignored"]),
   sourceMessageId: zod.string().nullish(),
@@ -1311,6 +1318,7 @@ export const AdminListEmailIntelFeedbackQueryParams = zod.object({
       "signature_update",
       "grant_opportunity",
       "thank_you_acknowledgment",
+      "wildflower_update",
     ])
     .optional(),
   status: zod.enum(["pending", "applied", "rejected", "ignored"]).optional(),
@@ -1343,6 +1351,7 @@ export const AdminListEmailIntelFeedbackResponse = zod.object({
         "signature_update",
         "grant_opportunity",
         "thank_you_acknowledgment",
+        "wildflower_update",
       ]),
       status: zod.enum(["pending", "applied", "rejected", "ignored"]),
       reviewerNote: zod.string().nullish(),
@@ -20299,6 +20308,28 @@ export const UpdateInternalEmailDomainsBody = zod.object({
 export const UpdateInternalEmailDomainsResponse = zod.object({
   domains: zod.array(zod.string()),
   updatedAt: zod.string().datetime({}).nullable(),
+});
+
+/**
+ * @summary Get the shared Wildflower updates note
+ */
+export const GetWildflowerUpdateResponse = zod.object({
+  content: zod.string(),
+  updatedAt: zod.string().datetime({}),
+  updatedByUserId: zod.string().nullish(),
+});
+
+/**
+ * @summary Replace the shared Wildflower updates note (admin only)
+ */
+export const UpdateWildflowerUpdateBody = zod.object({
+  content: zod.string(),
+});
+
+export const UpdateWildflowerUpdateResponse = zod.object({
+  content: zod.string(),
+  updatedAt: zod.string().datetime({}),
+  updatedByUserId: zod.string().nullish(),
 });
 
 /**

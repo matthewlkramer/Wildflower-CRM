@@ -433,6 +433,18 @@ export const emailProposalKindEnum = pgEnum("email_proposal_kind", [
   // candidate gift inside the dialog. Payload: { giftId, fromEmail,
   // toEmail, subject, sentAt, attachmentIds[] }.
   "thank_you_acknowledgment",
+  // AI-suggested action derived from the shared "Wildflower updates" note
+  // (see wildflowerUpdates.ts). Two flavors, distinguished by
+  // payload.flavor:
+  //   - "donor_outreach": accept mints a cultivation next-step task for the
+  //     target donor about a current Wildflower theme. Payload:
+  //     { flavor, title, description?, rationale, sourceProposalId }.
+  //   - "note_revision": accept overwrites the shared note's content after a
+  //     human reviews (and may edit) the proposed text. Payload:
+  //     { flavor, proposedContent, rationale, sourceProposalId }.
+  // These rows are materialized already-analyzed (no further AI), so they
+  // carry an empty proposedActions array and their own accept branch.
+  "wildflower_update",
 ]);
 
 // Lifecycle of an email_proposals row. `pending` is the review queue;

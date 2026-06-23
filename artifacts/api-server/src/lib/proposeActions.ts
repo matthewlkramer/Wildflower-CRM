@@ -16,6 +16,8 @@ import { anthropic, withRateLimitRetry } from "@workspace/integrations-anthropic
 import { deadlineHasPassed } from "./intelDetectors";
 import { aiProposalLimit } from "./aiConcurrency";
 import { logger } from "./logger";
+import { newId } from "./helpers";
+import { loadWildflowerUpdateNote } from "./wildflowerUpdatesNote";
 
 /**
  * AI-proposed structured actions for email-intelligence proposals.
@@ -378,10 +380,73 @@ const ACTION_TOOL_SCHEMA = {
           ],
         },
       },
+      wildflowerUpdate: {
+        type: "object",
+        description:
+          "OPTIONAL and RARE. Only relevant when a WILDFLOWER UPDATES note is shown in the context. Set one or both sub-objects when THIS email warrants it; omit the whole object otherwise. (a) donorOutreach — propose a cultivation next-step to reach out to this donor about a current Wildflower talking point from the note (set only when there is a matched donor and the note is genuinely relevant to them). (b) noteRevision — propose an edit to the shared note itself when this email contains a concrete, newsworthy Wildflower update the team should add. Be conservative: when in doubt, omit. This is independent of the actions array.",
+        properties: {
+          donorOutreach: {
+            type: "object",
+            required: ["title", "rationale"],
+            properties: {
+              title: {
+                type: "string",
+                description:
+                  "Imperative, specific outreach task title (e.g. 'Share new microschool launch with Jane Doe'). Under 100 chars.",
+              },
+              description: {
+                type: "string",
+                description:
+                  "1-3 sentences of concrete guidance on the outreach, referencing the relevant Wildflower update.",
+              },
+              rationale: {
+                type: "string",
+                description:
+                  "Why this donor + this update now. Under 240 chars.",
+              },
+            },
+          },
+          noteRevision: {
+            type: "object",
+            required: ["proposedContent", "rationale"],
+            properties: {
+              proposedContent: {
+                type: "string",
+                description:
+                  "The full proposed NEW text of the shared Wildflower updates note (the human reviewer can edit before applying). Incorporate the new information rather than only describing the delta.",
+              },
+              rationale: {
+                type: "string",
+                description:
+                  "What in this email justifies revising the shared note. Under 240 chars.",
+              },
+            },
+          },
+        },
+      },
     },
     required: ["actions"],
   },
 } as const;
+
+/**
+ * Optional model output describing Wildflower-update follow-ups for a single
+ * email. Materialized into separate `kind='wildflower_update'` email_proposals
+ * rows (already analyzed — no further AI). `donorOutreach` accept mints a
+ * cultivation task; `noteRevision` accept applies the edit to the shared note
+ * after human review.
+ */
+type WildflowerUpdateToolOutput = {
+  donorOutreach?: {
+    title?: string;
+    description?: string;
+    rationale?: string;
+  };
+  noteRevision?: {
+    proposedContent?: string;
+    rationale?: string;
+  };
+};
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -707,6 +772,9 @@ export function buildDefaultSystemPrompt(): string {
     "• When you suppress, you should normally also return an empty actions array.",
     "• Be conservative: suppression hides the item from the reviewer entirely, so when in doubt, leave shouldSuppress=false and let the reviewer decide.",
     "",
+    "Wildflower updates (separate from actions and suppression):",
+    "• When a WILDFLOWER UPDATES note appears in the context, it holds the team's current shared talking points / news. You MAY set the optional `wildflowerUpdate` object on the tool — but only rarely, when this specific email genuinely warrants it: `donorOutreach` to suggest reaching out to THIS matched donor about a relevant current update, and/or `noteRevision` to suggest editing the shared note when this email contains a concrete newsworthy Wildflower update worth adding. Omit `wildflowerUpdate` entirely when neither applies — that is the common case.",
+    "",
     "Return an empty actions array when no automatic mutation is warranted — that is a valid and often correct answer.",
   ].join("\n");
 }
@@ -736,8 +804,9 @@ function buildUserPrompt(args: {
   targetOrgName: string | null;
   messageBody: string | null;
   reviewerGuidance?: string | null;
+  wildflowerNote?: string | null;
 }): string {
-  const { proposal, personContext, organizationCandidates, targetOrgId, targetOrgName, messageBody, reviewerGuidance } = args;
+  const { proposal, personContext, organizationCandidates, targetOrgId, targetOrgName, messageBody, reviewerGuidance, wildflowerNote } = args;
   const lines: string[] = [];
   lines.push(`PROPOSAL KIND: ${proposal.kind}`);
   lines.push(`PROPOSAL SUBJECT: ${proposal.subjectName ?? proposal.subjectEmail ?? "(none)"}`);
@@ -789,6 +858,13 @@ function buildUserPrompt(args: {
     lines.push("");
     lines.push("EMAIL MESSAGE (truncated to 4000 chars):");
     lines.push(messageBody.slice(0, 4000));
+  }
+  if (wildflowerNote && wildflowerNote.trim()) {
+    lines.push("");
+    lines.push(
+      "WILDFLOWER UPDATES (the team's current shared talking points / news — consider whether this email warrants a donor-outreach suggestion or a revision to this note, via the optional `wildflowerUpdate` tool field):",
+    );
+    lines.push(wildflowerNote.trim().slice(0, 4000));
   }
   if (reviewerGuidance && reviewerGuidance.trim()) {
     lines.push("");
@@ -911,6 +987,7 @@ export async function proposeActionsForProposal(
     // fall back to that when the source message id isn't set.
     const messageBody = await loadMessageBody(proposal);
 
+    const wildflowerNote = await loadWildflowerUpdateNote();
     const userPrompt = buildUserPrompt({
       proposal,
       personContext,
@@ -919,6 +996,7 @@ export async function proposeActionsForProposal(
       targetOrgName,
       messageBody,
       reviewerGuidance: opts?.reviewerGuidance ?? null,
+      wildflowerNote,
     });
 
     // Load the admin-editable system prompt (active DB version, or the
@@ -978,14 +1056,22 @@ export async function proposeActionsForProposal(
 
     let actions: ProposedAction[] = [];
     let suppress: { shouldSuppress?: boolean; reason?: string } | null = null;
+    let wildflowerUpdate: WildflowerUpdateToolOutput | null = null;
     for (const block of response.content) {
       if (block.type === "tool_use" && block.name === "propose_actions") {
-        const input = block.input as { actions?: unknown; suppress?: unknown };
+        const input = block.input as {
+          actions?: unknown;
+          suppress?: unknown;
+          wildflowerUpdate?: unknown;
+        };
         if (Array.isArray(input.actions)) {
           actions = input.actions as ProposedAction[];
         }
         if (input.suppress && typeof input.suppress === "object") {
           suppress = input.suppress as { shouldSuppress?: boolean; reason?: string };
+        }
+        if (input.wildflowerUpdate && typeof input.wildflowerUpdate === "object") {
+          wildflowerUpdate = input.wildflowerUpdate as WildflowerUpdateToolOutput;
         }
         break;
       }
@@ -1067,6 +1153,19 @@ export async function proposeActionsForProposal(
         );
     }
 
+    // Materialize any Wildflower-update follow-ups the model proposed into
+    // their own standalone `kind='wildflower_update'` rows so they surface in
+    // the email-intelligence queue alongside the source proposal. These are
+    // already fully analyzed (no further AI): we stamp actionsAnalyzedAt and
+    // leave proposedActions empty. Dedupe mirrors upsertProposal's partial
+    // (mailbox_user_id, dedupe_key) WHERE status='pending' unique index.
+    if (wildflowerUpdate) {
+      await materializeWildflowerUpdateProposals({
+        sourceProposal: proposal,
+        wildflowerUpdate,
+      });
+    }
+
     return { ranAI: true, actions };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1084,6 +1183,89 @@ export async function proposeActionsForProposal(
       })
       .where(eq(emailProposals.id, proposalId));
     return { ranAI: true, error: msg };
+  }
+}
+
+/**
+ * Insert standalone `kind='wildflower_update'` proposal rows for the donor-
+ * outreach and/or note-revision follow-ups the model proposed for a source
+ * email. Rows are inserted already-analyzed (no further AI). Dedupe is the
+ * partial unique (mailbox_user_id, dedupe_key) WHERE status='pending' index,
+ * so a re-emit while a prior identical row is still pending is a no-op.
+ */
+async function materializeWildflowerUpdateProposals(args: {
+  sourceProposal: EmailProposal;
+  wildflowerUpdate: WildflowerUpdateToolOutput;
+}): Promise<void> {
+  const { sourceProposal: src, wildflowerUpdate } = args;
+  const now = new Date();
+
+  type WfRow = {
+    dedupeKey: string;
+    payload: Record<string, unknown>;
+    targetPersonId: string | null;
+    targetOrganizationId: string | null;
+  };
+  const rows: WfRow[] = [];
+
+  // donor_outreach — only when we actually have a donor to reach out to.
+  const outreach = wildflowerUpdate.donorOutreach;
+  const donorKey = src.targetPersonId ?? src.targetOrganizationId ?? null;
+  if (outreach && outreach.title && donorKey) {
+    rows.push({
+      dedupeKey: `wf_update:outreach:${donorKey}`,
+      targetPersonId: src.targetPersonId ?? null,
+      targetOrganizationId: src.targetOrganizationId ?? null,
+      payload: {
+        flavor: "donor_outreach",
+        title: outreach.title,
+        description: outreach.description ?? null,
+        rationale: outreach.rationale ?? null,
+        sourceProposalId: src.id,
+      },
+    });
+  }
+
+  // note_revision — only when the model proposed concrete new note content.
+  const revision = wildflowerUpdate.noteRevision;
+  if (revision && revision.proposedContent && revision.proposedContent.trim()) {
+    rows.push({
+      dedupeKey: `wf_update:revision:${src.sourceMessageId ?? src.id}`,
+      targetPersonId: src.targetPersonId ?? null,
+      targetOrganizationId: src.targetOrganizationId ?? null,
+      payload: {
+        flavor: "note_revision",
+        proposedContent: revision.proposedContent,
+        rationale: revision.rationale ?? null,
+        sourceProposalId: src.id,
+      },
+    });
+  }
+
+  for (const row of rows) {
+    await db
+      .insert(emailProposals)
+      .values({
+        id: newId(),
+        mailboxUserId: src.mailboxUserId,
+        kind: "wildflower_update",
+        dedupeKey: row.dedupeKey,
+        sourceMessageId: src.sourceMessageId ?? null,
+        targetPersonId: row.targetPersonId,
+        targetOrganizationId: row.targetOrganizationId,
+        subjectEmail: src.subjectEmail ?? null,
+        subjectName: src.subjectName ?? null,
+        subjectDomain: src.subjectDomain ?? null,
+        emailSentAt: src.emailSentAt ?? null,
+        payload: row.payload,
+        proposedActions: [],
+        actionsAnalyzedAt: now,
+        actionsModel: MODEL,
+      })
+      .onConflictDoNothing({
+        target: [emailProposals.mailboxUserId, emailProposals.dedupeKey],
+        where: sql`status = 'pending'`,
+      });
   }
 }
 
