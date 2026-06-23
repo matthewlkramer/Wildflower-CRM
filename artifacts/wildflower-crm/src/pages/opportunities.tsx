@@ -378,7 +378,13 @@ export default function Opportunities({
     `${persistNs}.filters`,
     null,
   );
-  const [viewMode, setViewMode] = usePersistedState<"list" | "kanban">(`${persistNs}.view`, "list");
+  // Opportunities default to the Kanban board on first visit; pledges and the
+  // unscoped view default to the list. Existing saved preferences are respected.
+  const defaultViewMode: "list" | "kanban" = pledgeView === "opportunities" ? "kanban" : "list";
+  const [viewMode, setViewMode] = usePersistedState<"list" | "kanban">(`${persistNs}.view`, defaultViewMode);
+  // Pledges never offer Kanban — force the effective view to the list so a
+  // previously-persisted Kanban preference can't surface it there.
+  const effectiveViewMode: "list" | "kanban" = pledgeView === "pledges" ? "list" : viewMode;
   const selection = useRowSelection();
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -417,8 +423,8 @@ export default function Opportunities({
   const ts = useTableState("opportunities");
   const sortActive = ts.sort.key !== null;
   const params: ListOpportunitiesAndPledgesParams = {
-    limit: viewMode === "kanban" ? KANBAN_LIMIT : (sortActive ? 10000 : PAGE_SIZE),
-    page: viewMode === "kanban" ? 1 : (sortActive ? 1 : page),
+    limit: effectiveViewMode === "kanban" ? KANBAN_LIMIT : (sortActive ? 10000 : PAGE_SIZE),
+    page: effectiveViewMode === "kanban" ? 1 : (sortActive ? 1 : page),
     ...(isAdmin && showArchived ? { includeArchived: true } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(pledgeView ? { pledgeView } : {}),
@@ -710,7 +716,7 @@ export default function Opportunities({
     [rows, ts.sort, userNames],
   );
   const total = data?.pagination.total ?? 0;
-  const kanbanTruncated = viewMode === "kanban" && total > rows.length;
+  const kanbanTruncated = effectiveViewMode === "kanban" && total > rows.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pagedRows = useMemo(() => {
     if (!sortActive) return sortedRows;
@@ -834,34 +840,36 @@ export default function Opportunities({
               }}
               testId="toggle-show-archived-opportunities"
             />
-            <div className="flex rounded-md border overflow-hidden">
-              <Button
-                variant={viewMode === "list" ? "secondary" : "ghost"}
-                size="sm"
-                className="rounded-none border-0 px-2"
-                onClick={() => setViewMode("list")}
-                title="List view"
-                aria-label="Switch to list view"
-              >
-                <LayoutList className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewMode === "kanban" ? "secondary" : "ghost"}
-                size="sm"
-                className="rounded-none border-0 px-2"
-                onClick={() => setViewMode("kanban")}
-                title="Kanban view"
-                aria-label="Switch to kanban view"
-              >
-                <Columns3 className="h-4 w-4" />
-              </Button>
-            </div>
+            {!isPledgeView && (
+              <div className="flex rounded-md border overflow-hidden">
+                <Button
+                  variant={effectiveViewMode === "list" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="rounded-none border-0 px-2"
+                  onClick={() => setViewMode("list")}
+                  title="List view"
+                  aria-label="Switch to list view"
+                >
+                  <LayoutList className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={effectiveViewMode === "kanban" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="rounded-none border-0 px-2"
+                  onClick={() => setViewMode("kanban")}
+                  title="Kanban view"
+                  aria-label="Switch to kanban view"
+                >
+                  <Columns3 className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
             <FiltersMenu
               registry={filterRegistry}
               state={filtersState}
               onChange={setFiltersState}
             />
-            {viewMode === "list" && (
+            {effectiveViewMode === "list" && (
               <ColumnsMenu
                 registry={registry}
                 state={columnsState}
@@ -914,7 +922,7 @@ export default function Opportunities({
         )}
       </div>
 
-      {viewMode === "kanban" ? (
+      {effectiveViewMode === "kanban" ? (
         <OpportunityKanban
           rows={rows}
           isLoading={isLoading}
@@ -988,7 +996,7 @@ export default function Opportunities({
       </div>
       )}
 
-      {viewMode === "list" && (
+      {effectiveViewMode === "list" && (
         <BulkActionBar
           count={selection.count}
           onEdit={() => setBulkOpen(true)}
@@ -1025,7 +1033,7 @@ export default function Opportunities({
         }}
       />
 
-      {viewMode === "list" && totalPages > 1 && (
+      {effectiveViewMode === "list" && totalPages > 1 && (
         <Pagination>
           <PaginationContent>
             <PaginationItem>
