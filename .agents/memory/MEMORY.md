@@ -104,3 +104,4 @@
 - [QBO/live data lives in PROD not dev](qbo-data-prod-only.md) — dev DB is stale/partial; QuickBooks staged_payments + recently changed schools are prod-only; query prod read-only for QBO facts, don't conclude "missing" from dev.
 - [Reimbursable direct/indirect share exclusion](reimbursable-share-exclusion.md) — direct-tagged alloc lines recorded full but excluded from goal analytics via IS DISTINCT FROM 'direct'; never leak into opp-status or paid-amount derivation.
 - [Thank-you detector donor coverage](thank-you-detector-donor-coverage.md) — links gifts for org/individual/household; households have no proposal target col (payload only); accept is donor-agnostic.
+- [Individual org soft-credit](individual-org-soft-credit.md) — person lifetime/last-gift folds in org gifts (primary-contact|advisor|current-principal); disjoint via donor XOR (org_id NOT NULL); all paths now filter archived; org/hh totals unchanged.

@@ -1,0 +1,31 @@
+-- Migration 0072: people_entity_roles(person_id, connection) index (additive)
+--
+-- Backs the new individual SOFT-CREDIT rollups (lifetime giving / last gift) on
+-- the people route and the dashboard "Top priorities" person cards. An individual
+-- is now also credited for an ORGANIZATION's gift when they are its primary
+-- contact, its advisor, OR a *current principal* of the donor organization. The
+-- "current principal" leg runs a correlated subquery filtering
+-- people_entity_roles by (person_id, connection='principal', current='current')
+-- per people-list row, so this composite index keeps that lookup cheap.
+--
+-- The primary_contact / advisor / organization legs are already covered by the
+-- existing gifts_and_payments indexes
+-- (primary_contact_person_id, advisor_person_id, organization_id); only the
+-- principal-role lookup needed a new index.
+--
+-- WHY A HAND-APPLIED FILE (not relying on the Publish schema diff alone):
+--   drizzle-kit push / the Publish diff can ABORT on a PRE-EXISTING, unrelated
+--   drift in the live DB, which would skip ALL additive changes -- including this
+--   index. This file adds it idempotently without touching anything else.
+--
+-- SAFETY / IDEMPOTENCY:
+--   * CREATE INDEX IF NOT EXISTS -- re-running is a no-op.
+--   * Purely additive: one index. Touches no data, drops nothing.
+--
+-- Apply with psql -1 (it wraps the whole file in ONE transaction; do NOT add a
+-- top-level BEGIN/COMMIT here or it nests and warns):
+--   psql "$DATABASE_URL"      -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0072_people_principal_connection_index.sql   (dev)
+--   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0072_people_principal_connection_index.sql   (prod)
+
+CREATE INDEX IF NOT EXISTS people_entity_roles_person_id_connection_idx
+  ON people_entity_roles (person_id, connection);

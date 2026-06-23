@@ -47,6 +47,10 @@ export const peopleEntityRoles = pgTable(
   },
   (t) => [
     index("people_entity_roles_person_id_idx").on(t.personId),
+    // Backs the soft-credit "current principal of this org" lookup used by the
+    // people-route and dashboard lifetime-giving / last-gift rollups (correlated
+    // subquery filtering by person_id + connection).
+    index("people_entity_roles_person_id_connection_idx").on(t.personId, t.connection),
     index("people_entity_roles_organization_id_idx").on(t.organizationId),
     index("people_entity_roles_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
     index("people_entity_roles_household_id_idx").on(t.householdId),

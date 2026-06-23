@@ -83,30 +83,62 @@ const PEOPLE_ID = sql.raw(`"people"."id"`);
 // Rollup expressions are defined once and reused by both the SELECT
 // (cast/aliased) and the presence WHERE filters so the two can never
 // drift. Each is a correlated fragment scoped to `people.id`.
+// Soft-credit fragment: an organization-donor gift (organization_id IS NOT NULL)
+// that this person should be credited for, because they are its primary contact,
+// its advisor, OR a *current principal* of the donor organization (the
+// owner/controller, even when someone else is the primary contact — the
+// Katherine Bradley → Bradley Holdings case). Scoping to organization-donor gifts
+// keeps this set disjoint from the direct + household sums (donor XOR guarantees
+// those gifts have a NULL organization_id), so no gift is ever double-counted, and
+// the three signals are OR-combined inside one subquery so a gift matching several
+// of them is still counted once. Aliased `g` so the inner principal lookup's
+// `organization_id` can't collide. archived_at IS NULL aligns with the app-wide
+// "archived gifts are excluded from financial totals" invariant.
+const peopleOrgCreditGiftWhere = sql`(
+  g.organization_id IS NOT NULL AND g.archived_at IS NULL
+  AND (
+    g.primary_contact_person_id = ${PEOPLE_ID}
+    OR g.advisor_person_id = ${PEOPLE_ID}
+    OR g.organization_id IN (
+      SELECT organization_id FROM people_entity_roles
+      WHERE person_id = ${PEOPLE_ID}
+        AND connection = 'principal'
+        AND current = 'current'
+        AND organization_id IS NOT NULL
+    )
+  )
+)`;
 const peopleLifetimeGivingExpr = sql`(
   COALESCE(
     (SELECT SUM(amount) FROM gifts_and_payments
-      WHERE individual_giver_person_id = ${PEOPLE_ID}),
+      WHERE individual_giver_person_id = ${PEOPLE_ID} AND archived_at IS NULL),
     0
   ) + COALESCE(
     (SELECT SUM(amount) FROM gifts_and_payments
-      WHERE household_id IN (
+      WHERE archived_at IS NULL AND household_id IN (
         SELECT household_id FROM people_entity_roles
         WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
       )),
+    0
+  ) + COALESCE(
+    (SELECT SUM(g.amount) FROM gifts_and_payments g
+      WHERE ${peopleOrgCreditGiftWhere}),
     0
   )
 )`;
 const peopleMostRecentGiftExpr = sql`(
   SELECT MAX(d) FROM (
     SELECT MAX(date_received) AS d FROM gifts_and_payments
-      WHERE individual_giver_person_id = ${PEOPLE_ID}
+      WHERE individual_giver_person_id = ${PEOPLE_ID} AND archived_at IS NULL
     UNION ALL
     SELECT MAX(date_received) AS d FROM gifts_and_payments
-      WHERE household_id IN (
+      WHERE archived_at IS NULL AND household_id IN (
         SELECT household_id FROM people_entity_roles
         WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
       )
+    UNION ALL
+    SELECT MAX(g.date_received) AS d FROM gifts_and_payments g
+      WHERE ${peopleOrgCreditGiftWhere}
   ) AS _gift_dates
 )`;
 const peopleOpenOppCountExpr = sql`(

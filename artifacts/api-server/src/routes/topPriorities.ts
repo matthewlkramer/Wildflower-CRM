@@ -105,26 +105,60 @@ const personOpenAsksExpr = sql`(
   WHERE o.individual_giver_person_id = ${PEOPLE_ID} AND o.status = 'open'
 )`;
 
+// Soft-credit fragment (mirrors peopleOrgCreditGiftWhere in routes/people.ts so
+// the dashboard "Top priorities" person cards match the person page): an
+// organization-donor gift this person is credited for as its primary contact,
+// advisor, OR a current principal of the donor org. Scoped to organization-donor
+// gifts so it stays disjoint from the direct + household sets (donor XOR), the
+// signals OR-combined so each gift counts once, and archived gifts excluded.
+const personOrgCreditGiftWhere = sql`(
+  g.organization_id IS NOT NULL AND g.archived_at IS NULL
+  AND (
+    g.primary_contact_person_id = ${PEOPLE_ID}
+    OR g.advisor_person_id = ${PEOPLE_ID}
+    OR g.organization_id IN (
+      SELECT organization_id FROM people_entity_roles
+      WHERE person_id = ${PEOPLE_ID}
+        AND connection = 'principal'
+        AND current = 'current'
+        AND organization_id IS NOT NULL
+    )
+  )
+)`;
+
 const personLastGiftDateExpr = sql`(
   SELECT MAX(d)::text FROM (
     SELECT MAX(date_received) AS d FROM gifts_and_payments
-      WHERE individual_giver_person_id = ${PEOPLE_ID}
+      WHERE individual_giver_person_id = ${PEOPLE_ID} AND archived_at IS NULL
     UNION ALL
     SELECT MAX(date_received) AS d FROM gifts_and_payments
-      WHERE household_id IN (
+      WHERE archived_at IS NULL AND household_id IN (
         SELECT household_id FROM people_entity_roles
         WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
       )
+    UNION ALL
+    SELECT MAX(g.date_received) AS d FROM gifts_and_payments g
+      WHERE ${personOrgCreditGiftWhere}
   ) AS _gift_dates
 )`;
 
+// Amount of the single most-recent gift across direct, household, AND org-credit
+// gifts — UNION the candidate rows then pick the latest, so the dashboard amount
+// tracks the same gift the date expression reports.
 const personLastGiftAmountExpr = sql`(
-  SELECT amount::text FROM gifts_and_payments
-  WHERE individual_giver_person_id = ${PEOPLE_ID}
-    OR household_id IN (
-      SELECT household_id FROM people_entity_roles
-      WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
-    )
+  SELECT amount::text FROM (
+    SELECT amount, date_received FROM gifts_and_payments
+      WHERE archived_at IS NULL AND (
+        individual_giver_person_id = ${PEOPLE_ID}
+        OR household_id IN (
+          SELECT household_id FROM people_entity_roles
+          WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
+        )
+      )
+    UNION ALL
+    SELECT g.amount, g.date_received FROM gifts_and_payments g
+      WHERE ${personOrgCreditGiftWhere}
+  ) AS _gift_amounts
   ORDER BY date_received DESC NULLS LAST
   LIMIT 1
 )`;
