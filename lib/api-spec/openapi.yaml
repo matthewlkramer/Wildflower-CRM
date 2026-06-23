@@ -3931,6 +3931,7 @@ components:
         funding:   { $ref: "#/components/schemas/ReconciliationLaneStatus" }
         crmRecord: { allOf: [ { $ref: "#/components/schemas/ReconciliationLaneStatus" } ], nullable: true }
     IntendedUsage: { type: string, enum: [gen_ops, growth, school_startup, teacher_training, project] }
+    ReimbursableShare: { type: string, enum: [direct, indirect], description: "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation." }
     RestrictionType: { type: string, enum: [unrestricted, purpose, time, both, unclear, na], description: "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted." }
     DeferredRevenue: { type: string, enum: [yes, no, na] }
 
@@ -5135,6 +5136,7 @@ components:
         fundableProjectId:      { type: string, nullable: true }
         directToSchool:         { type: boolean }
         formallyRestricted:     { type: boolean, description: "True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent." }
+        reimbursableShare:      { allOf: [ { $ref: "#/components/schemas/ReimbursableShare" } ], nullable: true, description: "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count." }
         status:                 { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         contingent:             { type: boolean, description: "Scheduled (false) vs contingent (true) future payment." }
         conditions:             { type: string, nullable: true }
@@ -5171,6 +5173,7 @@ components:
         fundableProjectId:     { type: string }
         directToSchool:        { type: boolean }
         formallyRestricted:    { type: boolean }
+        reimbursableShare:     { $ref: "#/components/schemas/ReimbursableShare" }
         status:                { $ref: "#/components/schemas/PledgeAllocationStatus" }
         contingent:            { type: boolean }
         conditions:            { type: string }
@@ -5195,6 +5198,7 @@ components:
         fundableProjectId:     { type: string, nullable: true }
         directToSchool:        { type: boolean }
         formallyRestricted:    { type: boolean }
+        reimbursableShare:     { allOf: [ { $ref: "#/components/schemas/ReimbursableShare" } ], nullable: true }
         status:                { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         contingent:            { type: boolean }
         conditions:            { type: string, nullable: true }
@@ -6753,6 +6757,7 @@ components:
         intendedUsage:               { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
         fundableProjectId:           { type: string, nullable: true }
         formalFundUseRestriction:    { type: boolean }
+        reimbursableShare:           { allOf: [ { $ref: "#/components/schemas/ReimbursableShare" } ], nullable: true, description: "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count." }
         schoolRecipientId:           { type: string, nullable: true }
         spendingStart:               { type: string, format: date, nullable: true }
         spendingEnd:                 { type: string, format: date, nullable: true }
@@ -6789,6 +6794,7 @@ components:
         intendedUsage:               { $ref: "#/components/schemas/IntendedUsage" }
         fundableProjectId:           { type: string }
         formalFundUseRestriction:    { type: boolean }
+        reimbursableShare:           { $ref: "#/components/schemas/ReimbursableShare" }
         schoolRecipientId:           { type: string }
         spendingStart:               { type: string, format: date }
         spendingEnd:                 { type: string, format: date }
@@ -6812,6 +6818,7 @@ components:
         intendedUsage:               { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
         fundableProjectId:           { type: string, nullable: true }
         formalFundUseRestriction:    { type: boolean }
+        reimbursableShare:           { allOf: [ { $ref: "#/components/schemas/ReimbursableShare" } ], nullable: true }
         schoolRecipientId:           { type: string, nullable: true }
         spendingStart:               { type: string, format: date, nullable: true }
         spendingEnd:                 { type: string, format: date, nullable: true }

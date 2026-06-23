@@ -18,6 +18,7 @@ import {
   type GiftAllocation,
   type IntendedUsage,
   type PledgeAllocationStatus,
+  type ReimbursableShare,
   type RestrictionType,
   type DeferredRevenue,
   type CreatePledgeAllocationBody,
@@ -103,6 +104,18 @@ const DEFERRED_REVENUE_OPTIONS: ReadonlyArray<Option> = [
   { value: "no", label: "No" },
   { value: "na", label: "N/A" },
 ];
+
+// Direct vs indirect share on a reimbursable grant. DIRECT-tagged allocations are
+// EXCLUDED from goal analytics (received, committed, open ask, weighted); the
+// full award/reimbursement amount is still recorded on the line. Untagged (the
+// default) and indirect both still count toward goals.
+const REIMBURSABLE_SHARE_OPTIONS: ReadonlyArray<Option> = [
+  { value: "direct", label: "Direct (excluded from goals)" },
+  { value: "indirect", label: "Indirect (counts toward goals)" },
+];
+
+const REIMBURSABLE_SHARE_HINT =
+  "Tag the direct vs indirect share on a reimbursable grant. The full amount is still recorded; only DIRECT-tagged shares are excluded from goal totals.";
 
 const NONE = "__none__";
 
@@ -582,10 +595,47 @@ const PLEDGE_HEADERS = [
   { key: "usage", label: "Usage" },
   { key: "fy", label: "FY" },
   { key: "regions", label: "Regions" },
+  { key: "share", label: "Share" },
   { key: "restriction", label: "Restriction" },
 ];
 
 const GIFT_HEADERS = PLEDGE_HEADERS;
+
+// Small badge for a direct/indirect reimbursable-share tag, or an em-dash when
+// untagged. Direct is the visually distinct one since it's excluded from goals.
+function ReimbursableShareCell({ value }: { value: string | null | undefined }) {
+  if (value === "direct") {
+    return (
+      <Badge variant="outline" className="whitespace-nowrap border-amber-500 text-amber-700">
+        Direct
+      </Badge>
+    );
+  }
+  if (value === "indirect") {
+    return (
+      <Badge variant="outline" className="whitespace-nowrap">
+        Indirect
+      </Badge>
+    );
+  }
+  return <span className="text-muted-foreground">—</span>;
+}
+
+// Sum of subAmounts on direct-tagged allocations — the portion excluded from
+// goal analytics. Returns null when nothing is direct-tagged.
+function directExcludedTotal(
+  allocations: ReadonlyArray<{ reimbursableShare?: string | null; subAmount?: string | null }>,
+): number | null {
+  let sum = 0;
+  let any = false;
+  for (const a of allocations) {
+    if (a.reimbursableShare === "direct") {
+      any = true;
+      sum += parseAmount(a.subAmount ?? null) ?? 0;
+    }
+  }
+  return any ? sum : null;
+}
 
 /* ──────────────────────────────────────────────────────────────────────── */
 /* Pledge allocation dialog (add + edit)                                     */
@@ -598,6 +648,7 @@ type PledgeFormState = CodingFormState & {
   grantYear: string;
   regionIds: string[];
   formallyRestricted: boolean;
+  reimbursableShare: string;
   status: string;
   fundableProjectId: string;
   directToSchool: boolean;
@@ -615,6 +666,7 @@ function pledgeStateFrom(a: PledgeAllocation | null): PledgeFormState {
     grantYear: a?.grantYear ?? "",
     regionIds: a?.regionIds ?? [],
     formallyRestricted: a?.formallyRestricted ?? false,
+    reimbursableShare: a?.reimbursableShare ?? "",
     status: a?.status ?? "",
     fundableProjectId: a?.fundableProjectId ?? "",
     directToSchool: a?.directToSchool ?? false,
@@ -670,6 +722,7 @@ function PledgeAllocationDialog({
         grantYear: noneToNull(s.grantYear),
         regionIds: s.regionIds,
         formallyRestricted: s.formallyRestricted,
+        reimbursableShare: (noneToNull(s.reimbursableShare) as ReimbursableShare | null) ?? null,
         status: (noneToNull(s.status) as PledgeAllocationStatus | null) ?? null,
         fundableProjectId: noneToNull(s.fundableProjectId),
         directToSchool: s.directToSchool,
@@ -690,6 +743,7 @@ function PledgeAllocationDialog({
     if (noneToNull(s.intendedUsage)) body.intendedUsage = s.intendedUsage as IntendedUsage;
     if (noneToNull(s.grantYear)) body.grantYear = s.grantYear;
     if (s.regionIds.length) body.regionIds = s.regionIds;
+    if (noneToNull(s.reimbursableShare)) body.reimbursableShare = s.reimbursableShare as ReimbursableShare;
     if (noneToNull(s.status)) body.status = s.status as PledgeAllocationStatus;
     if (noneToNull(s.fundableProjectId)) body.fundableProjectId = s.fundableProjectId;
     if (emptyToNull(s.conditions)) body.conditions = s.conditions.trim();
@@ -772,6 +826,16 @@ function PledgeAllocationDialog({
               value={s.regionIds}
               onChange={(v) => set("regionIds", v)}
             />
+          </DialogField>
+
+          <DialogField label="Reimbursable share" htmlFor="pa-share">
+            <DialogSelect
+              id="pa-share"
+              value={s.reimbursableShare || NONE}
+              onValueChange={(v) => set("reimbursableShare", v)}
+              options={REIMBURSABLE_SHARE_OPTIONS}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">{REIMBURSABLE_SHARE_HINT}</p>
           </DialogField>
 
           <MoreDetails>
@@ -907,10 +971,15 @@ export function PledgeAllocationsEditor({
   pledgeOrOpportunityId,
   allocations,
   totalAmount = null,
+  reimbursablePrompt = false,
 }: {
   pledgeOrOpportunityId: string;
   allocations: ReadonlyArray<PledgeAllocation>;
   totalAmount?: number | string | null;
+  // True when the parent opportunity is `conditional = reimbursable`. Surfaces a
+  // prompt to split each line into its direct vs indirect share so goal totals
+  // exclude the direct portion.
+  reimbursablePrompt?: boolean;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -977,8 +1046,20 @@ export function PledgeAllocationsEditor({
     return formatEnum(a.intendedUsage) || "—";
   }
 
+  const directExcluded = directExcludedTotal(allocations);
+
   return (
     <div className="space-y-3">
+      {reimbursablePrompt ? (
+        <p
+          className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          data-testid="text-opp-reimbursable-prompt"
+        >
+          This is a reimbursable grant. Split each allocation into its direct and
+          indirect shares and tag the direct share so it's excluded from goal
+          totals (the full amount is still recorded).
+        </p>
+      ) : null}
       {allocations.length === 0 ? (
         <p className="text-sm text-muted-foreground">No allocations.</p>
       ) : (
@@ -1008,6 +1089,9 @@ export function PledgeAllocationsEditor({
                 >
                   {regionLabels.length ? regionLabels.join(", ") : "—"}
                 </TableCell>
+                <TableCell data-testid={`text-opp-alloc-${a.id}-share`}>
+                  <ReimbursableShareCell value={a.reimbursableShare} />
+                </TableCell>
                 <TableCell>
                   {a.formallyRestricted ? (
                     <Badge variant="secondary" className="gap-1 whitespace-nowrap">
@@ -1033,6 +1117,11 @@ export function PledgeAllocationsEditor({
         <Plus className="h-4 w-4 mr-1" />
         Add allocation
       </Button>
+      {directExcluded != null ? (
+        <p className="text-xs text-muted-foreground" data-testid="text-opp-direct-excluded">
+          {formatCurrency(String(directExcluded))} tagged direct — excluded from goal totals.
+        </p>
+      ) : null}
       <PledgeAllocationDialog
         open={dialog !== null}
         mode={dialog?.mode ?? "add"}
@@ -1057,6 +1146,7 @@ type GiftFormState = CodingFormState & {
   regionIds: string[];
   formalRegionalRestriction: boolean;
   formalFundUseRestriction: boolean;
+  reimbursableShare: string;
   fundableProjectId: string;
   schoolRecipientId: string;
   spendingStart: string;
@@ -1073,6 +1163,7 @@ function giftStateFrom(a: GiftAllocation | null): GiftFormState {
     regionIds: a?.regionIds ?? [],
     formalRegionalRestriction: a?.formalRegionalRestriction ?? false,
     formalFundUseRestriction: a?.formalFundUseRestriction ?? false,
+    reimbursableShare: a?.reimbursableShare ?? "",
     fundableProjectId: a?.fundableProjectId ?? "",
     schoolRecipientId: a?.schoolRecipientId ?? "",
     spendingStart: a?.spendingStart ?? "",
@@ -1127,6 +1218,7 @@ function GiftAllocationDialog({
         regionIds: s.regionIds,
         formalRegionalRestriction: s.formalRegionalRestriction,
         formalFundUseRestriction: s.formalFundUseRestriction,
+        reimbursableShare: (noneToNull(s.reimbursableShare) as ReimbursableShare | null) ?? null,
         fundableProjectId: noneToNull(s.fundableProjectId),
         schoolRecipientId: emptyToNull(s.schoolRecipientId),
         spendingStart: emptyToNull(s.spendingStart),
@@ -1144,6 +1236,7 @@ function GiftAllocationDialog({
     if (noneToNull(s.intendedUsage)) body.intendedUsage = s.intendedUsage as IntendedUsage;
     if (noneToNull(s.grantYear)) body.grantYear = s.grantYear;
     if (s.regionIds.length) body.regionIds = s.regionIds;
+    if (noneToNull(s.reimbursableShare)) body.reimbursableShare = s.reimbursableShare as ReimbursableShare;
     if (noneToNull(s.fundableProjectId)) body.fundableProjectId = s.fundableProjectId;
     if (emptyToNull(s.schoolRecipientId)) body.schoolRecipientId = s.schoolRecipientId.trim();
     if (emptyToNull(s.spendingStart)) body.spendingStart = s.spendingStart;
@@ -1226,6 +1319,16 @@ function GiftAllocationDialog({
               value={s.regionIds}
               onChange={(v) => set("regionIds", v)}
             />
+          </DialogField>
+
+          <DialogField label="Reimbursable share" htmlFor="ga-share">
+            <DialogSelect
+              id="ga-share"
+              value={s.reimbursableShare || NONE}
+              onValueChange={(v) => set("reimbursableShare", v)}
+              options={REIMBURSABLE_SHARE_OPTIONS}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">{REIMBURSABLE_SHARE_HINT}</p>
           </DialogField>
 
           <MoreDetails>
@@ -1420,6 +1523,8 @@ export function GiftAllocationsEditor({
     return base || a.displayUsage || "—";
   }
 
+  const directExcluded = directExcludedTotal(allocations);
+
   return (
     <div className="space-y-3">
       {allocations.length === 0 ? (
@@ -1451,6 +1556,9 @@ export function GiftAllocationsEditor({
                   data-testid={`text-gift-alloc-${a.id}-regions`}
                 >
                   {regionLabels.length ? regionLabels.join(", ") : "—"}
+                </TableCell>
+                <TableCell data-testid={`text-gift-alloc-${a.id}-share`}>
+                  <ReimbursableShareCell value={a.reimbursableShare} />
                 </TableCell>
                 <TableCell>
                   {restricted ? (
@@ -1487,6 +1595,11 @@ export function GiftAllocationsEditor({
         <Plus className="h-4 w-4 mr-1" />
         Add allocation
       </Button>
+      {directExcluded != null ? (
+        <p className="text-xs text-muted-foreground" data-testid="text-gift-direct-excluded">
+          {formatCurrency(String(directExcluded))} tagged direct — excluded from goal totals.
+        </p>
+      ) : null}
       <GiftAllocationDialog
         open={dialog !== null}
         mode={dialog?.mode ?? "add"}

@@ -11,6 +11,7 @@ import {
   intendedUsageEnum,
   restrictionTypeEnum,
   deferredRevenueEnum,
+  reimbursableShareEnum,
 } from "./_enums";
 import { opportunitiesAndPledges } from "./opportunitiesAndPledges";
 import { entities } from "./entities";
@@ -49,6 +50,11 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   // gift_allocations equivalent is split into regional + fund-use booleans; at
   // the opportunity/pledge stage a single flag is sufficient.
   formallyRestricted: boolean("formally_restricted").default(false).notNull(),
+  // Direct vs indirect share on a reimbursable grant. Nullable = untagged
+  // (normal money). DIRECT is excluded from goal analytics; null + indirect
+  // both count. Never affects opportunity-status / pledge paid-amount
+  // derivation (those keep summing ALL allocations). See _enums.ts.
+  reimbursableShare: reimbursableShareEnum("reimbursable_share"),
   status: pledgeAllocationStatusEnum("status"),
   // Scheduled (false, the default) vs contingent (true) future payment. The
   // opportunity-level `conditional` enum is header-only; booking treats each

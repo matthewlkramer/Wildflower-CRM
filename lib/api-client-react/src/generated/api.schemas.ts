@@ -554,6 +554,17 @@ export const IntendedUsage = {
 } as const;
 
 /**
+ * Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.
+ */
+export type ReimbursableShare =
+  (typeof ReimbursableShare)[keyof typeof ReimbursableShare];
+
+export const ReimbursableShare = {
+  direct: "direct",
+  indirect: "indirect",
+} as const;
+
+/**
  * CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.
  */
 export type RestrictionType =
@@ -1649,6 +1660,8 @@ export interface PledgeAllocation {
   directToSchool: boolean;
   /** True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent. */
   formallyRestricted: boolean;
+  /** Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count. */
+  reimbursableShare?: ReimbursableShare | null;
   status?: PledgeAllocationStatus | null;
   /** Scheduled (false) vs contingent (true) future payment. */
   contingent?: boolean;
@@ -1873,6 +1886,7 @@ export interface CreatePledgeAllocationBody {
   fundableProjectId?: string;
   directToSchool?: boolean;
   formallyRestricted?: boolean;
+  reimbursableShare?: ReimbursableShare;
   status?: PledgeAllocationStatus;
   contingent?: boolean;
   conditions?: string;
@@ -1897,6 +1911,7 @@ export interface UpdatePledgeAllocationBody {
   fundableProjectId?: string | null;
   directToSchool?: boolean;
   formallyRestricted?: boolean;
+  reimbursableShare?: ReimbursableShare | null;
   status?: PledgeAllocationStatus | null;
   contingent?: boolean;
   conditions?: string | null;
@@ -1922,6 +1937,8 @@ export interface GiftAllocation {
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
   formalFundUseRestriction: boolean;
+  /** Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count. */
+  reimbursableShare?: ReimbursableShare | null;
   schoolRecipientId?: string | null;
   spendingStart?: string | null;
   spendingEnd?: string | null;
@@ -4049,6 +4066,7 @@ export interface CreateGiftAllocationBody {
   intendedUsage?: IntendedUsage;
   fundableProjectId?: string;
   formalFundUseRestriction?: boolean;
+  reimbursableShare?: ReimbursableShare;
   schoolRecipientId?: string;
   spendingStart?: string;
   spendingEnd?: string;
@@ -4072,6 +4090,7 @@ export interface UpdateGiftAllocationBody {
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
   formalFundUseRestriction?: boolean;
+  reimbursableShare?: ReimbursableShare | null;
   schoolRecipientId?: string | null;
   spendingStart?: string | null;
   spendingEnd?: string | null;

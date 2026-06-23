@@ -1297,6 +1297,9 @@ router.post(
           regionIds: a.regionIds,
           directToSchool: a.schoolRecipientId != null,
           formallyRestricted: a.formalFundUseRestriction || a.formalRegionalRestriction,
+          // Carry the direct/indirect reimbursable tag onto the pledge allocation
+          // so the goal-analytics exclusion survives a gift→pledge split.
+          reimbursableShare: a.reimbursableShare,
           status: "superseded_by_gift",
         });
       }

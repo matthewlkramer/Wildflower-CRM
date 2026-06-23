@@ -5134,6 +5134,15 @@ export const GetOpportunityOrPledgeResponse = zod
               .describe(
                 "True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent.",
               ),
+            reimbursableShare: zod
+              .enum(["direct", "indirect"])
+              .describe(
+                "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.",
+              )
+              .nullish()
+              .describe(
+                "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.",
+              ),
             status: zod
               .enum([
                 "working",
@@ -5653,6 +5662,15 @@ export const ListPledgeAllocationsResponse = zod.object({
         .describe(
           "True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent.",
         ),
+      reimbursableShare: zod
+        .enum(["direct", "indirect"])
+        .describe(
+          "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.",
+        )
+        .nullish()
+        .describe(
+          "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.",
+        ),
       status: zod
         .enum([
           "working",
@@ -5726,6 +5744,12 @@ export const CreatePledgeAllocationBody = zod.object({
   fundableProjectId: zod.string().optional(),
   directToSchool: zod.boolean().optional(),
   formallyRestricted: zod.boolean().optional(),
+  reimbursableShare: zod
+    .enum(["direct", "indirect"])
+    .optional()
+    .describe(
+      "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.",
+    ),
   status: zod
     .enum([
       "working",
@@ -5777,6 +5801,12 @@ export const UpdatePledgeAllocationBody = zod.object({
   fundableProjectId: zod.string().nullish(),
   directToSchool: zod.boolean().optional(),
   formallyRestricted: zod.boolean().optional(),
+  reimbursableShare: zod
+    .enum(["direct", "indirect"])
+    .describe(
+      "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.",
+    )
+    .nullish(),
   status: zod
     .enum([
       "working",
@@ -5828,6 +5858,15 @@ export const UpdatePledgeAllocationResponse = zod.object({
     .boolean()
     .describe(
       "True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent.",
+    ),
+  reimbursableShare: zod
+    .enum(["direct", "indirect"])
+    .describe(
+      "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.",
+    )
+    .nullish()
+    .describe(
+      "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.",
     ),
   status: zod
     .enum([
@@ -6517,6 +6556,15 @@ export const GetGiftOrPaymentResponse = zod
               .nullish(),
             fundableProjectId: zod.string().nullish(),
             formalFundUseRestriction: zod.boolean(),
+            reimbursableShare: zod
+              .enum(["direct", "indirect"])
+              .describe(
+                "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.",
+              )
+              .nullish()
+              .describe(
+                "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.",
+              ),
             schoolRecipientId: zod.string().nullish(),
             spendingStart: zod.string().date().nullish(),
             spendingEnd: zod.string().date().nullish(),
@@ -7138,6 +7186,15 @@ export const LinkThankYouEmailResponse = zod
               .nullish(),
             fundableProjectId: zod.string().nullish(),
             formalFundUseRestriction: zod.boolean(),
+            reimbursableShare: zod
+              .enum(["direct", "indirect"])
+              .describe(
+                "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.",
+              )
+              .nullish()
+              .describe(
+                "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.",
+              ),
             schoolRecipientId: zod.string().nullish(),
             spendingStart: zod.string().date().nullish(),
             spendingEnd: zod.string().date().nullish(),
@@ -7400,6 +7457,15 @@ export const ListGiftAllocationsResponse = zod.object({
         .nullish(),
       fundableProjectId: zod.string().nullish(),
       formalFundUseRestriction: zod.boolean(),
+      reimbursableShare: zod
+        .enum(["direct", "indirect"])
+        .describe(
+          "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.",
+        )
+        .nullish()
+        .describe(
+          "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.",
+        ),
       schoolRecipientId: zod.string().nullish(),
       spendingStart: zod.string().date().nullish(),
       spendingEnd: zod.string().date().nullish(),
@@ -7465,6 +7531,12 @@ export const CreateGiftAllocationBody = zod.object({
     .optional(),
   fundableProjectId: zod.string().optional(),
   formalFundUseRestriction: zod.boolean().optional(),
+  reimbursableShare: zod
+    .enum(["direct", "indirect"])
+    .optional()
+    .describe(
+      "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.",
+    ),
   schoolRecipientId: zod.string().optional(),
   spendingStart: zod.string().date().optional(),
   spendingEnd: zod.string().date().optional(),
@@ -7505,6 +7577,12 @@ export const UpdateGiftAllocationBody = zod.object({
     .nullish(),
   fundableProjectId: zod.string().nullish(),
   formalFundUseRestriction: zod.boolean().optional(),
+  reimbursableShare: zod
+    .enum(["direct", "indirect"])
+    .describe(
+      "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.",
+    )
+    .nullish(),
   schoolRecipientId: zod.string().nullish(),
   spendingStart: zod.string().date().nullish(),
   spendingEnd: zod.string().date().nullish(),
@@ -7542,6 +7620,15 @@ export const UpdateGiftAllocationResponse = zod.object({
     .nullish(),
   fundableProjectId: zod.string().nullish(),
   formalFundUseRestriction: zod.boolean(),
+  reimbursableShare: zod
+    .enum(["direct", "indirect"])
+    .describe(
+      "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.",
+    )
+    .nullish()
+    .describe(
+      "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.",
+    ),
   schoolRecipientId: zod.string().nullish(),
   spendingStart: zod.string().date().nullish(),
   spendingEnd: zod.string().date().nullish(),

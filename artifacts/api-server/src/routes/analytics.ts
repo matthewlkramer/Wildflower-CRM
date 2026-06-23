@@ -118,6 +118,16 @@ function isFundraisingCategory(v: unknown): v is FundraisingCategory {
   return v === "revenue" || v === "loan_capital";
 }
 
+// Goal analytics EXCLUDE direct-tagged reimbursable allocation lines. Untagged
+// (null) and indirect both still count, so use IS DISTINCT FROM (null-safe).
+// Recording is non-destructive: the full award/reimbursement amount stays on the
+// allocation; only the goal rollups (received, committed, open ask, weighted)
+// drop the direct share. This must NEVER be applied to opportunity-status or
+// pledge paid-amount derivation (those keep summing ALL allocations so cash_in
+// still fires on full reimbursement).
+const pledgeAllocCountsTowardGoal = sql`${pledgeAllocations.reimbursableShare} IS DISTINCT FROM 'direct'`;
+const giftAllocCountsTowardGoal = sql`${giftAllocations.reimbursableShare} IS DISTINCT FROM 'direct'`;
+
 async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   // Entity scoping is applied at the allocation level (both pledge_allocations
   // and gift_allocations carry an entity_id). An empty/undefined list means
@@ -146,6 +156,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
       and(
         eq(opportunitiesAndPledges.status, "pledge"),
         eq(pledgeAllocations.grantYear, fy.id),
+        pledgeAllocCountsTowardGoal,
         hasEntityFilter ? inArray(pledgeAllocations.entityId, entityIds!) : undefined,
       ),
     )
@@ -171,6 +182,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
         // Gifts flagged out of goal tracking neither add to `received` nor
         // pay down `committed`, so the goal numbers stay internally consistent.
         eq(giftsAndPayments.countsTowardGoal, true),
+        giftAllocCountsTowardGoal,
         hasEntityFilter ? inArray(giftAllocations.entityId, entityIds!) : undefined,
       ),
     )
@@ -193,6 +205,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
         and(
           eq(opportunitiesAndPledges.status, "open"),
           eq(pledgeAllocations.grantYear, fy.id),
+          pledgeAllocCountsTowardGoal,
           hasEntityFilter
             ? inArray(pledgeAllocations.entityId, entityIds!)
             : undefined,
@@ -233,6 +246,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
           eq(giftAllocations.grantYear, fy.id),
           isNull(giftsAndPayments.archivedAt),
           eq(giftsAndPayments.countsTowardGoal, true),
+          giftAllocCountsTowardGoal,
           hasEntityFilter
             ? inArray(giftAllocations.entityId, entityIds!)
             : undefined,
@@ -461,6 +475,7 @@ router.get(
             // API-edge total) stay in agreement with the tile.
             isNull(giftsAndPayments.archivedAt),
             eq(giftsAndPayments.countsTowardGoal, true),
+            giftAllocCountsTowardGoal,
             entityIdParam ? eq(giftAllocations.entityId, entityIdParam) : undefined,
           ),
         )
@@ -501,6 +516,7 @@ router.get(
           and(
             eq(opportunitiesAndPledges.status, "open"),
             eq(pledgeAllocations.grantYear, fyId),
+            pledgeAllocCountsTowardGoal,
             entityIdParam ? eq(pledgeAllocations.entityId, entityIdParam) : undefined,
           ),
         )
@@ -563,6 +579,7 @@ router.get(
         "committed",
         "committed_with_conditions",
       ]),
+      pledgeAllocCountsTowardGoal,
     ];
     if (entityIds.length > 0) {
       baseFilters.push(inArray(pledgeAllocations.entityId, entityIds));

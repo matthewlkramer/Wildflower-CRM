@@ -720,6 +720,7 @@ function OppView({
                   pledgeOrOpportunityId={opp.id}
                   allocations={opp.allocations ?? []}
                   totalAmount={targetAmount}
+                  reimbursablePrompt={opp.conditional === "reimbursable"}
                 />
               </div>
             </RelatedCard>

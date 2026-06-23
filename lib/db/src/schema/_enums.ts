@@ -243,6 +243,16 @@ export const opportunityStageEnum = pgEnum("opportunity_stage", [
   "complete",
 ]);
 
+// Direct vs indirect share on a reimbursable-grant allocation line. Nullable
+// (untagged is the default). DIRECT-tagged allocations are EXCLUDED from goal
+// analytics (received, committed, open ask, weighted); untagged (null) and
+// indirect both still count. Never affects opportunity-status or pledge
+// paid-amount derivation (those keep summing all allocations). Manual entry only.
+export const reimbursableShareEnum = pgEnum("reimbursable_share", [
+  "direct",
+  "indirect",
+]);
+
 export const opportunityConditionalEnum = pgEnum("opportunity_conditional", [
   "unconditional",
   "conditional_unspecified",

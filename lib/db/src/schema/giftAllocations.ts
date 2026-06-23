@@ -11,6 +11,7 @@ import {
   intendedUsageEnum,
   restrictionTypeEnum,
   deferredRevenueEnum,
+  reimbursableShareEnum,
 } from "./_enums";
 import { giftsAndPayments } from "./giftsAndPayments";
 import { entities } from "./entities";
@@ -52,6 +53,11 @@ export const giftAllocations = pgTable("gift_allocations", {
   formalFundUseRestriction: boolean("formal_fund_use_restriction")
     .default(false)
     .notNull(),
+  // Direct vs indirect share on a reimbursable grant. Nullable = untagged
+  // (normal money). DIRECT is excluded from goal analytics; null + indirect
+  // both count. Never affects pledge paid-amount / opportunity-status
+  // derivation (those keep summing ALL allocations). See _enums.ts.
+  reimbursableShare: reimbursableShareEnum("reimbursable_share"),
   // RESTRICT: see giftsAndPayments.schoolRecipientId rationale.
   schoolRecipientId: text("school_recipient_id").references(() => schools.id, {
     onDelete: "restrict",
