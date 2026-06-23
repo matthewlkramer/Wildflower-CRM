@@ -10,6 +10,7 @@ import {
   type UpdateHouseholdBody,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { EDIT_PENCIL_REVEAL } from "@/components/inline-edit";
 import {
   EditPeopleEntityRoleDialog,
   AddHouseholdMemberDialog,
@@ -165,6 +166,7 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
       <Button
         variant="outline"
         size="sm"
+        className={EDIT_PENCIL_REVEAL}
         onClick={() => setEditingName(true)}
         data-testid="button-edit-household-name"
       >

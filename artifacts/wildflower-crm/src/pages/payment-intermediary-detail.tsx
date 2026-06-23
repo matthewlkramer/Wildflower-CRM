@@ -10,6 +10,8 @@ import {
   PaymentIntermediaryType,
 } from "@workspace/api-client-react";
 import { formatEnum, formatDate } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { INLINE_EDIT_GROUP, EDIT_PENCIL_REVEAL } from "@/components/inline-edit";
 import {
   INTERMEDIARY_TYPES,
   NONE_TYPE,
@@ -113,7 +115,12 @@ export default function PaymentIntermediaryDetail() {
         </Link>
       </div>
 
-      <div className="flex items-start justify-between gap-4">
+      <div
+        className={cn(
+          INLINE_EDIT_GROUP,
+          "flex items-start justify-between gap-4",
+        )}
+      >
         <div className="space-y-1">
           <h1 className="text-3xl font-serif font-bold text-foreground">{data.name}</h1>
           {data.type && (
@@ -124,6 +131,7 @@ export default function PaymentIntermediaryDetail() {
           <Button
             variant="outline"
             size="sm"
+            className={EDIT_PENCIL_REVEAL}
             onClick={startEdit}
             data-testid="button-edit-payint-detail"
           >

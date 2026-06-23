@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronDown, Plus, PanelLeft, X, EyeOff, Eye } from "lucid
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSidebarCollapsed } from "@/components/sidebar-collapsed-context";
+import { INLINE_EDIT_GROUP } from "@/components/inline-edit";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ */
@@ -65,7 +66,12 @@ export function RecordLayout({
 
       {/* Highlights bar */}
       <div className="mb-6 rounded-xl border bg-card shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4 px-5 pt-5">
+        <div
+          className={cn(
+            INLINE_EDIT_GROUP,
+            "flex flex-wrap items-start justify-between gap-4 px-5 pt-5",
+          )}
+        >
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <div className="font-serif text-3xl font-bold leading-tight text-foreground">

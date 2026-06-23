@@ -48,6 +48,7 @@ import {
   InlineEditSelect,
   InlineEditText,
   InlineEditTextarea,
+  EDIT_PENCIL_REVEAL,
   type InlineSelectOption,
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
@@ -293,6 +294,7 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
         <Button
           variant="outline"
           size="sm"
+          className={EDIT_PENCIL_REVEAL}
           onClick={() => setEditingName(true)}
           data-testid="button-edit-organization-name"
         >

@@ -38,6 +38,7 @@ import {
   EditTriggerRow,
   ActionButtons,
   useSaveRunner,
+  EDIT_PENCIL_REVEAL,
   type InlineSelectOption,
   type SaveResult,
 } from "@/components/inline-edit";
@@ -383,6 +384,7 @@ function OppView({
       <Button
         variant="outline"
         size="sm"
+        className={EDIT_PENCIL_REVEAL}
         onClick={() => setEditingName(true)}
         data-testid="button-edit-opp-name"
       >

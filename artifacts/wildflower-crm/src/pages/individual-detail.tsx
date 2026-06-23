@@ -62,6 +62,7 @@ import {
   InlineEditSelect,
   InlineEditText,
   InlineEditTextarea,
+  EDIT_PENCIL_REVEAL,
   type InlineSelectOption,
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
@@ -347,7 +348,10 @@ function PersonView({ person }: { person: PersonDetail }) {
           type="button"
           size="icon"
           variant="ghost"
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          className={cn(
+            "h-8 w-8 text-muted-foreground hover:text-foreground",
+            EDIT_PENCIL_REVEAL,
+          )}
           onClick={startEditName}
           aria-label="Edit name"
           data-testid="button-edit-person-name"
