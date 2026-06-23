@@ -4,6 +4,7 @@ import { stagedPayments } from "@workspace/db/schema";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { opportunitiesAndPledges } from "@workspace/db/schema";
+import { qbLedgerExistsForGiftExcludingPayment } from "../../lib/paymentApplications";
 import { asyncHandler, notFound } from "../../lib/helpers";
 import { getViewer } from "../../lib/identityVisibility";
 import { buildReconciliationGraph } from "../../lib/reconciliationGraph";
@@ -46,15 +47,10 @@ function unlinkedDonorGiftWhere(): SQL {
   AND g.amount >= ${stagedPayments.amount}::numeric - 0.01
   AND g.amount <= ${stagedPayments.amount}::numeric * 1.10 + 1
   AND g.archived_at IS NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM staged_payments sp2
-    WHERE (sp2.matched_gift_id = g.id OR sp2.created_gift_id = g.id)
-      AND sp2.id <> ${stagedPayments.id}
-  )
-  AND NOT EXISTS (
-    SELECT 1 FROM staged_payment_splits spl2
-    WHERE spl2.gift_id = g.id AND spl2.staged_payment_id <> ${stagedPayments.id}
-  )`;
+  AND NOT ${qbLedgerExistsForGiftExcludingPayment(
+    sql.raw("g.id"),
+    sql.raw('"staged_payments"."id"'),
+  )}`;
 }
 
 const autoGiftCountExpr = sql<number>`(

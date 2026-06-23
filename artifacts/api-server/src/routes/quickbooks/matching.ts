@@ -4,6 +4,7 @@ import {
   stagedPayments,
   stagedPaymentSplits,
   giftsAndPayments,
+  paymentApplications,
 } from "@workspace/db/schema";
 import { and, eq, inArray, notInArray, or, sql } from "drizzle-orm";
 import { asyncHandler, newId, notFound, paramId } from "../../lib/helpers";
@@ -23,6 +24,7 @@ import {
 import {
   applyPaymentApplication,
   confirmPaymentApplicationsForPayment,
+  qbLedgerExistsForGiftExcludingPayment,
 } from "../../lib/paymentApplications";
 
 const router: IRouter = Router();
@@ -149,17 +151,10 @@ router.post(
             and(
               eq(stagedPayments.id, id),
               eq(stagedPayments.status, "pending"),
-              sql`NOT EXISTS (
-                SELECT 1 FROM staged_payments sp2
-                WHERE (sp2.matched_gift_id = ${giftId}
-                       OR sp2.created_gift_id = ${giftId}
-                       OR sp2.group_reconciled_gift_id = ${giftId})
-                  AND sp2.id <> ${id}
-              )`,
-              sql`NOT EXISTS (
-                SELECT 1 FROM staged_payment_splits spl
-                WHERE spl.gift_id = ${giftId}
-              )`,
+              // Gift must not already be QB-linked to another staged payment.
+              // The ledger unifies direct + split + group-reconciled links, so
+              // one existence check replaces the legacy direct + split guards.
+              sql`NOT ${qbLedgerExistsForGiftExcludingPayment(sql`${giftId}`, sql`${id}`)}`,
             ),
           )
           .returning({ id: stagedPayments.id });
@@ -419,30 +414,22 @@ router.post(
           }
         }
 
-        // Gift must not already be linked to any staged row outside this group.
+        // Gift must not already be QB-linked to a staged payment OUTSIDE this
+        // group. The ledger unifies direct + split + group-reconciled links, so
+        // one existence check (excluding this group's payments) replaces the
+        // legacy direct + split guards.
         const conflict = await tx
-          .select({ id: stagedPayments.id })
-          .from(stagedPayments)
+          .select({ paymentId: paymentApplications.paymentId })
+          .from(paymentApplications)
           .where(
             and(
-              or(
-                eq(stagedPayments.matchedGiftId, giftId),
-                eq(stagedPayments.createdGiftId, giftId),
-                eq(stagedPayments.groupReconciledGiftId, giftId),
-              ),
-              notInArray(stagedPayments.id, ids),
+              eq(paymentApplications.giftId, giftId),
+              eq(paymentApplications.evidenceSource, "quickbooks"),
+              notInArray(paymentApplications.paymentId, ids),
             ),
           )
           .then((r) => r[0]);
         if (conflict) throw new Error(CONFLICT);
-
-        // …and not already split-linked by any staged row.
-        const splitConflict = await tx
-          .select({ giftId: stagedPaymentSplits.giftId })
-          .from(stagedPaymentSplits)
-          .where(eq(stagedPaymentSplits.giftId, giftId))
-          .then((r) => r[0]);
-        if (splitConflict) throw new Error(CONFLICT);
 
         const stamp = {
           ...giftDonor,
@@ -675,27 +662,22 @@ router.post(
           }
         }
 
-        // No target gift may already be linked anywhere: matched / created /
-        // group-reconciled by another staged row, or split-linked at all (incl.
-        // an earlier split — the unique index on gift_id also backstops this).
+        // No target gift may already be QB-linked to any staged payment. The
+        // ledger unifies direct + split + group-reconciled links, so one
+        // existence check replaces the legacy direct + split guards. (The row
+        // being split, `id`, has no ledger rows for these gifts yet — it is
+        // about to get them — so no exclusion is needed.)
         const linkedElsewhere = await tx
-          .select({ id: stagedPayments.id })
-          .from(stagedPayments)
+          .select({ giftId: paymentApplications.giftId })
+          .from(paymentApplications)
           .where(
-            or(
-              inArray(stagedPayments.matchedGiftId, giftIds),
-              inArray(stagedPayments.createdGiftId, giftIds),
-              inArray(stagedPayments.groupReconciledGiftId, giftIds),
+            and(
+              inArray(paymentApplications.giftId, giftIds),
+              eq(paymentApplications.evidenceSource, "quickbooks"),
             ),
           )
           .then((r) => r[0]);
         if (linkedElsewhere) throw new Error(CONFLICT);
-        const splitLinked = await tx
-          .select({ giftId: stagedPaymentSplits.giftId })
-          .from(stagedPaymentSplits)
-          .where(inArray(stagedPaymentSplits.giftId, giftIds))
-          .then((r) => r[0]);
-        if (splitLinked) throw new Error(CONFLICT);
 
         // Tolerance band around the staged NET amount. The gifts' summed GROSS
         // total may run up to ~10% + $1 OVER (processor fees withheld before the

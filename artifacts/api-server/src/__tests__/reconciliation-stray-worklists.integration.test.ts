@@ -60,6 +60,7 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   stagedPayments: Db["stagedPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
+  paymentApplications: Db["paymentApplications"];
   entities: Db["entities"];
 };
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -159,6 +160,23 @@ async function seedStaged(opts: {
     groupReconciledGiftId: opts.groupReconciledGiftId ?? null,
   });
   stagedIds.push(id);
+  // QB cash-application reads now come from the authoritative ledger, so mirror
+  // the production dual-write: any staged payment that links a gift (matched /
+  // created / group-reconciled) also gets a `payment_applications` row. The
+  // teardown clears these by payment_id before deleting staged_payments.
+  const linkedGiftId =
+    opts.matchedGiftId ?? opts.createdGiftId ?? opts.groupReconciledGiftId ?? null;
+  if (linkedGiftId) {
+    await db.insert(schema.paymentApplications).values({
+      id: nextId("pa"),
+      paymentId: id,
+      giftId: linkedGiftId,
+      amountApplied: opts.amount ?? "100.00",
+      evidenceSource: "quickbooks",
+      matchMethod: "system",
+      createdTheGift: opts.createdGiftId != null,
+    });
+  }
   return id;
 }
 
@@ -211,6 +229,7 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     stagedPayments: dbMod.stagedPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
+    paymentApplications: dbMod.paymentApplications,
     entities: dbMod.entities,
   };
   inArrayFn = drizzle.inArray;
@@ -292,6 +311,29 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
     expect(pagination.limit).toBe(200);
     expect(typeof pagination.total).toBe("number");
     expect(pagination.total).toBeGreaterThanOrEqual(1);
+  }, 30_000);
+
+  it("excludes a gift QB-linked ONLY via the ledger (no legacy columns) — proves the read consults payment_applications", async () => {
+    // Ledger-only divergence: a staged payment with NO legacy matched/created/
+    // group pointer, whose only tie to the gift is a `payment_applications` row.
+    // The legacy read (staged_payments.*_gift_id) would still surface this gift as
+    // "missing QB"; the ledger read must EXCLUDE it. This is the one state where
+    // the two reads disagree, so it isolates which source the endpoint trusts.
+    const org = await seedOrg({ label: "Ledger-Only Org" });
+    const giftLedgerOnly = await seedGift({ organizationId: org });
+    const stagedUnlinked = await seedStaged({ label: "ledger-only" }); // no legacy link ⇒ no auto PA row
+    await db.insert(schema.paymentApplications).values({
+      id: nextId("pa"),
+      paymentId: stagedUnlinked,
+      giftId: giftLedgerOnly,
+      amountApplied: "100.00",
+      evidenceSource: "quickbooks",
+      matchMethod: "system",
+      createdTheGift: false,
+    });
+
+    const { ids } = await listGifts(`q=${encodeURIComponent(MARKER)}&limit=200`);
+    expect(ids.has(giftLedgerOnly)).toBe(false); // ledger row alone excludes it
   }, 30_000);
 
   it("masks anonymous donor names for a non-owner, non-admin viewer (match RAW, mask DISPLAY)", async () => {

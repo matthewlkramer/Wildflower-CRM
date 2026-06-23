@@ -70,6 +70,7 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
   stagedPaymentSplits: Db["stagedPaymentSplits"];
+  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -135,6 +136,19 @@ async function seedStaged(
     dateReceived: "2025-07-01",
     organizationId: ORG_ID,
   });
+  // Mirror production's dual-write: a legacy QB match seeded here also gets an
+  // authoritative `payment_applications` row, since reads now consult the ledger.
+  if (opts.matchedGiftId) {
+    await db.insert(schema.paymentApplications).values({
+      id: nextId("pa"),
+      paymentId: id,
+      giftId: opts.matchedGiftId,
+      amountApplied: amount,
+      evidenceSource: "quickbooks",
+      matchMethod: "system",
+      createdTheGift: false,
+    });
+  }
   return id;
 }
 
@@ -177,6 +191,7 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
     stagedPaymentSplits: dbMod.stagedPaymentSplits,
+    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;

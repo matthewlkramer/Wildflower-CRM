@@ -21,6 +21,10 @@ import {
   DismissFinancialCorrectionBody,
   ApplyFinancialCorrectionBody,
 } from "@workspace/api-zod";
+import {
+  qbLedgerExistsForGift,
+  qbLedgerExistsForPayment,
+} from "../lib/paymentApplications";
 
 // ── Financial-corrections review queue (admin-only) ──────────────────────────
 //
@@ -104,15 +108,19 @@ async function loadActiveGifts(): Promise<GiftRow[]> {
   const allocationCount = sql<number>`(
     SELECT COUNT(*)::int FROM ${giftAllocations} ga WHERE ga.gift_id = ${g.id}
   )`;
+  // QB cash-application is now sourced from the authoritative ledger
+  // (replaces the legacy final_amount_qb pointer + staged matched/created/
+  // group_reconciled + split arms, all of which read scattered columns and
+  // — via the drizzle bare-column footgun — under-correlated). The Stripe arms
+  // are preserved, with their correlation written explicitly-qualified to the
+  // outer gift so they actually match (the parity:reconciliation-guards gate
+  // proves the full predicate is unchanged vs the corrected legacy semantics).
   const countedLinked = sql<boolean>`(
-    ${g.finalAmountQbStagedPaymentId} IS NOT NULL
+    ${qbLedgerExistsForGift()}
     OR ${g.finalAmountStripeChargeId} IS NOT NULL
-    OR EXISTS (SELECT 1 FROM ${stagedPayments} sp
-      WHERE sp.matched_gift_id = ${g.id} OR sp.created_gift_id = ${g.id}
-        OR sp.group_reconciled_gift_id = ${g.id})
-    OR EXISTS (SELECT 1 FROM staged_payment_splits ss WHERE ss.gift_id = ${g.id})
     OR EXISTS (SELECT 1 FROM ${stripeStagedCharges} sc
-      WHERE sc.matched_gift_id = ${g.id} OR sc.created_gift_id = ${g.id})
+      WHERE sc.matched_gift_id = "gifts_and_payments"."id"
+        OR sc.created_gift_id = "gifts_and_payments"."id")
   )`;
   const rows = await db
     .select({
@@ -169,10 +177,10 @@ async function loadUnlinkedQbStaged(): Promise<EvidenceRow[]> {
     .where(
       and(
         sql`${sp.status} <> 'excluded'`,
-        isNull(sp.matchedGiftId),
-        isNull(sp.createdGiftId),
-        isNull(sp.groupReconciledGiftId),
-        sql`NOT EXISTS (SELECT 1 FROM staged_payment_splits ss WHERE ss.staged_payment_id = ${sp.id})`,
+        // QB cash-application reads come from the authoritative ledger: a staged
+        // payment is "unlinked" iff it anchors NO payment_applications row
+        // (subsumes the legacy matched/created/group-null + no-split check).
+        sql`NOT ${qbLedgerExistsForPayment()}`,
       ),
     );
   return rows.map((r) => ({

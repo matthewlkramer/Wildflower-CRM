@@ -26,7 +26,10 @@ import {
 } from "./quickbooksRules";
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
 import { applyGiftQbTieMany } from "./giftQbTie";
-import { applyPaymentApplication } from "./paymentApplications";
+import {
+  applyPaymentApplication,
+  qbLedgerExistsForGiftExcludingPayment,
+} from "./paymentApplications";
 import { validateGiftInvariants } from "@workspace/api-zod";
 
 /** Postgres unique_violation — a concurrent staged row grabbed this gift first. */
@@ -851,12 +854,9 @@ async function autoApply(
           .where(
             and(
               stillPending,
-              sql`NOT EXISTS (
-              SELECT 1 FROM staged_payments sp2
-              WHERE (sp2.matched_gift_id = ${giftId}
-                     OR sp2.created_gift_id = ${giftId})
-                AND sp2.id <> ${stagedId}
-            )`,
+              // Gift must not already be QB-linked to another staged payment
+              // (ledger is authoritative; unifies direct + split + group).
+              sql`NOT ${qbLedgerExistsForGiftExcludingPayment(sql`${giftId}`, sql`${stagedId}`)}`,
             ),
           )
           .returning({ id: stagedPayments.id, amount: stagedPayments.amount });

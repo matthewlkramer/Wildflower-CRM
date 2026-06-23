@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { giftsAndPayments } from "@workspace/db/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { amountWithinFeeBand } from "./reconciliationGate";
+import { qbLedgerExistsForGift, qbLedgerSumForGift } from "./paymentApplications";
 
 /**
  * Per-gift QuickBooks-tie derivation (INV-2 / INV-3 / INV-10).
@@ -63,19 +64,16 @@ interface TieRow {
   giftAmount: string | null;
   offBooks: boolean;
   finalAmountSource: string | null;
-  directAmount: string | null;
-  hasDirect: boolean;
-  groupAmount: string | null;
-  hasGroup: boolean;
-  splitAmount: string | null;
-  hasSplit: boolean;
+  qbSum: string | null;
+  hasQb: boolean;
 }
 
 /**
  * Recompute and persist `quickbooks_tie_status` for the given gift ids. Reads
- * the gift + its QuickBooks evidence (matched/created/group/split) via the
- * global `db`, so call it AFTER the mutating transaction commits (same contract
- * as `applyDerivedOppFieldsMany`). De-dupes and ignores null/undefined ids.
+ * the gift + its authoritative QuickBooks cash-application ledger
+ * (`payment_applications`, evidence_source = 'quickbooks') via the global `db`,
+ * so call it AFTER the mutating transaction commits (same contract as
+ * `applyDerivedOppFieldsMany`). De-dupes and ignores null/undefined ids.
  */
 export async function applyGiftQbTieMany(
   ...ids: Array<string | null | undefined>
@@ -83,64 +81,32 @@ export async function applyGiftQbTieMany(
   const giftIds = [...new Set(ids.filter((x): x is string => !!x))];
   if (giftIds.length === 0) return;
 
-  // Gather, per gift, the off-books exemption inputs plus the QB evidence
-  // amount under each of the three mutually-exclusive resolution mechanisms.
+  // Gather, per gift, the off-books exemption inputs plus the authoritative
+  // QuickBooks cash-application figure from the ledger: SUM(amount_applied) over
+  // the gift's evidence_source = 'quickbooks' rows, and whether any such row
+  // exists (hasQb). The ledger correlation lives in the shared helpers, which
+  // take a literal, pre-qualified gift-id expression so they never hit the
+  // drizzle bare-column footgun (see paymentApplications.ts). The off-books /
+  // final_amount_source expressions are top-level (single FROM table), so column
+  // interpolation is safe there.
   const rows = (await db
     .select({
       id: giftsAndPayments.id,
       giftAmount: giftsAndPayments.amount,
       offBooks: sql<boolean>`(${giftsAndPayments.offBooksFiscalSponsor} OR ${giftsAndPayments.designatedToSchool} OR NOT ${giftsAndPayments.paymentExpected})`,
       finalAmountSource: giftsAndPayments.finalAmountSource,
-      directAmount: sql<string | null>`(
-        SELECT sp.amount FROM staged_payments sp
-        WHERE sp.matched_gift_id = ${giftsAndPayments.id}
-           OR sp.created_gift_id = ${giftsAndPayments.id}
-        LIMIT 1
-      )`,
-      hasDirect: sql<boolean>`EXISTS (
-        SELECT 1 FROM staged_payments sp
-        WHERE sp.matched_gift_id = ${giftsAndPayments.id}
-           OR sp.created_gift_id = ${giftsAndPayments.id}
-      )`,
-      groupAmount: sql<string | null>`(
-        SELECT SUM(sp.amount) FROM staged_payments sp
-        WHERE sp.group_reconciled_gift_id = ${giftsAndPayments.id}
-      )`,
-      hasGroup: sql<boolean>`EXISTS (
-        SELECT 1 FROM staged_payments sp
-        WHERE sp.group_reconciled_gift_id = ${giftsAndPayments.id}
-      )`,
-      splitAmount: sql<string | null>`(
-        SELECT spl.sub_amount FROM staged_payment_splits spl
-        WHERE spl.gift_id = ${giftsAndPayments.id}
-        LIMIT 1
-      )`,
-      hasSplit: sql<boolean>`EXISTS (
-        SELECT 1 FROM staged_payment_splits spl
-        WHERE spl.gift_id = ${giftsAndPayments.id}
-      )`,
+      qbSum: qbLedgerSumForGift(),
+      hasQb: qbLedgerExistsForGift(),
     })
     .from(giftsAndPayments)
     .where(inArray(giftsAndPayments.id, giftIds))) as TieRow[];
 
   for (const r of rows) {
-    const hasQbLink = r.hasDirect || r.hasGroup || r.hasSplit;
-    // Precedence when more than one mechanism resolves (e.g. a group's
-    // representative row carries both its own matched link and the group link):
-    // split > group > direct.
-    const qbAmount = r.hasSplit
-      ? r.splitAmount
-      : r.hasGroup
-        ? r.groupAmount
-        : r.hasDirect
-          ? r.directAmount
-          : null;
-
     const status = deriveGiftQbTie({
       offBooks: r.offBooks,
       giftAmount: r.giftAmount,
-      hasQbLink,
-      qbAmount,
+      hasQbLink: r.hasQb,
+      qbAmount: r.hasQb ? r.qbSum : null,
       finalAmountSource: r.finalAmountSource,
     });
 

@@ -27,7 +27,10 @@ import {
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
-import { applyPaymentApplication } from "../../lib/paymentApplications";
+import {
+  applyPaymentApplication,
+  qbLedgerExistsForGiftExcludingPayment,
+} from "../../lib/paymentApplications";
 import { recordAudit } from "../../lib/audit";
 import {
   runConsistencyGate,
@@ -1153,10 +1156,10 @@ router.post(
         // gate validated Donor XOR on `effectiveGiftDonor` above.
         const finalDonor = effectiveGiftDonor;
 
-        // Tie the staged row to the gift. Only succeeds if still pending AND no
-        // other staged row / split already claims this gift — the NOT EXISTS
-        // guards + the partial-unique index on matched_gift_id backstop a
-        // write-skew between the lock and the commit.
+        // Tie the staged row to the gift. Only succeeds if still approvable AND
+        // no other staged payment already QB-claims this gift in the ledger —
+        // the ledger guard + the (still-dual-written) partial-unique index on
+        // matched_gift_id backstop a write-skew between the lock and the commit.
         const updated = await tx
           .update(stagedPayments)
           .set({
@@ -1178,17 +1181,9 @@ router.post(
             and(
               eq(stagedPayments.id, stagedPaymentId),
               inArray(stagedPayments.status, [...APPROVABLE_STAGED_STATUSES]),
-              sql`NOT EXISTS (
-                SELECT 1 FROM staged_payments sp2
-                WHERE (sp2.matched_gift_id = ${giftId}
-                       OR sp2.created_gift_id = ${giftId}
-                       OR sp2.group_reconciled_gift_id = ${giftId})
-                  AND sp2.id <> ${stagedPaymentId}
-              )`,
-              sql`NOT EXISTS (
-                SELECT 1 FROM staged_payment_splits spl
-                WHERE spl.gift_id = ${giftId}
-              )`,
+              // Gift must not already be QB-linked to another staged payment.
+              // The ledger unifies direct + split + group-reconciled links.
+              sql`NOT ${qbLedgerExistsForGiftExcludingPayment(sql`${giftId}`, sql`${stagedPaymentId}`)}`,
             ),
           )
           .returning({ id: stagedPayments.id });

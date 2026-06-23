@@ -35,6 +35,10 @@ import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import {
   removePaymentApplicationsForGift,
   removePaymentApplicationsForPayment,
+  qbLedgerExistsForGift,
+  qbLedgerExistsForGiftExcludingPayment,
+  qbLedgerPaymentIdForGiftExcludingPayment,
+  DEFAULT_GIFT_ID_SQL,
 } from "../../lib/paymentApplications";
 
 export function requireAdmin(req: Request, res: Response): boolean {
@@ -178,18 +182,10 @@ export const stagedSelect = {
       )
       AND g.amount >= ${stagedPayments.amount}::numeric - 0.01
       AND g.amount <= ${stagedPayments.amount}::numeric * 1.10 + 1
-      AND (
-        EXISTS (
-          SELECT 1 FROM staged_payments sp2
-          WHERE (sp2.matched_gift_id = g.id OR sp2.created_gift_id = g.id)
-            AND sp2.id <> ${stagedPayments.id}
-        )
-        OR EXISTS (
-          SELECT 1 FROM staged_payment_splits spl2
-          WHERE spl2.gift_id = g.id
-            AND spl2.staged_payment_id <> ${stagedPayments.id}
-        )
-      )
+      AND ${qbLedgerExistsForGiftExcludingPayment(
+        sql.raw("g.id"),
+        sql.raw('"staged_payments"."id"'),
+      )}
     )
     AND NOT EXISTS (
       SELECT 1 FROM gifts_and_payments g2
@@ -200,14 +196,7 @@ export const stagedSelect = {
       )
       AND g2.amount >= ${stagedPayments.amount}::numeric - 0.01
       AND g2.amount <= ${stagedPayments.amount}::numeric * 1.10 + 1
-      AND NOT EXISTS (
-        SELECT 1 FROM staged_payments sp3
-        WHERE (sp3.matched_gift_id = g2.id OR sp3.created_gift_id = g2.id)
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM staged_payment_splits spl3
-        WHERE spl3.gift_id = g2.id
-      )
+      AND NOT ${qbLedgerExistsForGift(sql.raw("g2.id"))}
     )
   )`.as("gift_already_linked_elsewhere"),
 };
@@ -354,17 +343,10 @@ export function giftCandidateSelect(excludeStagedId: string) {
     organizationName: organizations.name,
     householdName: households.name,
     individualGiverPersonName: people.fullName,
-    alreadyLinkedStagedPaymentId: sql<string | null>`COALESCE(
-      (SELECT sp2.id FROM staged_payments sp2
-        WHERE (sp2.matched_gift_id = ${giftsAndPayments.id}
-               OR sp2.created_gift_id = ${giftsAndPayments.id})
-          AND sp2.id <> ${excludeStagedId}
-        LIMIT 1),
-      (SELECT spl.staged_payment_id FROM staged_payment_splits spl
-        WHERE spl.gift_id = ${giftsAndPayments.id}
-          AND spl.staged_payment_id <> ${excludeStagedId}
-        LIMIT 1)
-    )`,
+    alreadyLinkedStagedPaymentId: qbLedgerPaymentIdForGiftExcludingPayment(
+      DEFAULT_GIFT_ID_SQL,
+      sql`${excludeStagedId}`,
+    ),
   };
 }
 

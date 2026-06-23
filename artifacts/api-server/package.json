@@ -16,6 +16,8 @@
     "backfill:flodesk": "tsx src/scripts/backfill-flodesk.ts",
     "backfill:derived-opps": "tsx src/scripts/backfill-derived-opp-fields.ts",
     "backfill:gift-qb-tie": "tsx src/scripts/backfill-gift-qb-tie.ts",
+    "parity:payment-applications": "tsx src/scripts/parity-payment-applications.ts",
+    "parity:reconciliation-guards": "tsx src/scripts/parity-reconciliation-guards.ts",
     "backfill:funding-source": "tsx src/scripts/backfill-funding-source.ts",
     "reconcile:unknown-users": "tsx src/scripts/reconcile-unknown-users.ts",
     "backfill:user-identities": "tsx src/scripts/backfill-user-identities.ts",

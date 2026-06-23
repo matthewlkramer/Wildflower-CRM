@@ -71,18 +71,14 @@ const donorJoinSelect = {
     SELECT pi.name FROM payment_intermediaries pi
     WHERE pi.id = ${giftsAndPayments.paymentIntermediaryId}
   )`.as("payment_intermediary_name"),
-  // The QuickBooks staged payment reconciled to / that created this gift, if
-  // any (at most one — backed by partial-unique indexes on staged_payments).
-  // Lets the reconciler show linked status and offer an unmatch action.
-  quickbooksStagedPaymentId: sql<string | null>`COALESCE(
-    (SELECT sp.id FROM staged_payments sp
-      WHERE sp.matched_gift_id = ${giftsAndPayments.id}
-         OR sp.created_gift_id = ${giftsAndPayments.id}
-      LIMIT 1),
-    (SELECT spl.staged_payment_id FROM staged_payment_splits spl
-      WHERE spl.gift_id = ${giftsAndPayments.id}
-      LIMIT 1)
-  )`.as("quickbooks_staged_payment_id"),
+  // The QuickBooks staged payment linked to this gift via the authoritative
+  // cash-application ledger (one anchoring payment_id, LIMIT 1). Lets the
+  // reconciler show linked status and offer an unmatch action. Read from the
+  // ledger (T003 cutover); the legacy scattered linkage columns are retained for
+  // rollback but no longer read here.
+  quickbooksStagedPaymentId: qbLedgerPaymentIdForGift().as(
+    "quickbooks_staged_payment_id",
+  ),
 };
 import {
   ListGiftsAndPaymentsQueryParams,
@@ -104,6 +100,10 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
+import {
+  qbLedgerExistsForGift,
+  qbLedgerPaymentIdForGift,
+} from "../lib/paymentApplications";
 import { deriveGiftLanes } from "../lib/reconciliationLanes";
 import { rederiveGiftAllocations } from "../lib/revenueCoding";
 import { inArray } from "drizzle-orm";
@@ -159,12 +159,12 @@ router.get(
     // Date-received window (inclusive) for the reconciler's amount/date search.
     if (q.dateAfter) filters.push(gte(giftsAndPayments.dateReceived, q.dateAfter));
     if (q.dateBefore) filters.push(lte(giftsAndPayments.dateReceived, q.dateBefore));
-    // Linked-to-QuickBooks filter — whether a staged payment reconciles to /
-    // created this gift. Correlated EXISTS so no join is forced.
+    // Linked-to-QuickBooks filter — whether the gift has any QuickBooks
+    // cash-application ledger row (T003 cutover). Correlated EXISTS, no join.
     if (q.linkedToQuickbooks === "linked") {
-      filters.push(sql`(EXISTS (SELECT 1 FROM staged_payments sp WHERE sp.matched_gift_id = ${giftsAndPayments.id} OR sp.created_gift_id = ${giftsAndPayments.id}) OR EXISTS (SELECT 1 FROM staged_payment_splits spl WHERE spl.gift_id = ${giftsAndPayments.id}))`);
+      filters.push(qbLedgerExistsForGift());
     } else if (q.linkedToQuickbooks === "unlinked") {
-      filters.push(sql`(NOT EXISTS (SELECT 1 FROM staged_payments sp WHERE sp.matched_gift_id = ${giftsAndPayments.id} OR sp.created_gift_id = ${giftsAndPayments.id}) AND NOT EXISTS (SELECT 1 FROM staged_payment_splits spl WHERE spl.gift_id = ${giftsAndPayments.id}))`);
+      filters.push(sql`NOT ${qbLedgerExistsForGift()}`);
     }
     // Persisted QuickBooks-tie status filter. The synthetic value `untied`
     // expands to the on-books gifts that don't tie to QuickBooks
@@ -1717,13 +1717,19 @@ router.get(
       donor = { kind: "household", id: gift.householdId, name };
     }
 
-    // WHERE — the QuickBooks staged record(s) this gift ties to. Direct
-    // (matched/created) + group-reconciled rows come from staged_payments;
-    // split allocations come from staged_payment_splits. Off-books gifts may
-    // still surface evidence if any exists, but it isn't required of them.
-    const directRows = await db
+    // WHERE — the QuickBooks staged record(s) this gift ties to, sourced from the
+    // authoritative cash-application ledger (payment_applications): one row per QB
+    // payment applied to this gift, `amount` = the applied amount (the split
+    // sub-amount for split rows, the full staged amount for direct/group rows).
+    // The staged_payments join supplies the QB record detail; the cosmetic
+    // linkType label still reads the legacy split table + group column (display
+    // only — deprecated in the cleanup phase). Off-books gifts may still surface
+    // evidence if any exists, but it isn't required of them.
+    const ledgerRows = await db
       .select({
-        stagedPaymentId: stagedPayments.id,
+        stagedPaymentId: paymentApplications.paymentId,
+        amountApplied: paymentApplications.amountApplied,
+        createdTheGift: paymentApplications.createdTheGift,
         realmId: stagedPayments.realmId,
         qbEntityType: stagedPayments.qbEntityType,
         qbEntityId: stagedPayments.qbEntityId,
@@ -1731,68 +1737,48 @@ router.get(
         qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
         qbPaymentMethod: stagedPayments.qbPaymentMethod,
         payerName: stagedPayments.payerName,
-        amount: stagedPayments.amount,
         dateReceived: stagedPayments.dateReceived,
-        matched: stagedPayments.matchedGiftId,
-        group: stagedPayments.groupReconciledGiftId,
+        groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+        splitMarker: stagedPaymentSplits.stagedPaymentId,
       })
-      .from(stagedPayments)
+      .from(paymentApplications)
+      .innerJoin(
+        stagedPayments,
+        eq(stagedPayments.id, paymentApplications.paymentId),
+      )
+      .leftJoin(
+        stagedPaymentSplits,
+        and(
+          eq(stagedPaymentSplits.stagedPaymentId, paymentApplications.paymentId),
+          eq(stagedPaymentSplits.giftId, id),
+        ),
+      )
       .where(
-        or(
-          eq(stagedPayments.matchedGiftId, id),
-          eq(stagedPayments.createdGiftId, id),
-          eq(stagedPayments.groupReconciledGiftId, id),
+        and(
+          eq(paymentApplications.giftId, id),
+          eq(paymentApplications.evidenceSource, "quickbooks"),
         ),
       );
 
-    const splitRows = await db
-      .select({
-        stagedPaymentId: stagedPaymentSplits.stagedPaymentId,
-        subAmount: stagedPaymentSplits.subAmount,
-        realmId: stagedPayments.realmId,
-        qbEntityType: stagedPayments.qbEntityType,
-        qbEntityId: stagedPayments.qbEntityId,
-        qbDocNumber: stagedPayments.qbDocNumber,
-        qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
-        qbPaymentMethod: stagedPayments.qbPaymentMethod,
-        payerName: stagedPayments.payerName,
-        dateReceived: stagedPayments.dateReceived,
-      })
-      .from(stagedPaymentSplits)
-      .leftJoin(
-        stagedPayments,
-        eq(stagedPayments.id, stagedPaymentSplits.stagedPaymentId),
-      )
-      .where(eq(stagedPaymentSplits.giftId, id));
-
-    const quickbooksRecords = [
-      ...directRows.map((r) => ({
-        stagedPaymentId: r.stagedPaymentId,
-        linkType: r.group === id ? "group" : r.matched === id ? "matched" : "created",
-        realmId: r.realmId,
-        qbEntityType: r.qbEntityType,
-        qbEntityId: r.qbEntityId,
-        qbDocNumber: r.qbDocNumber,
-        qbDepositToAccountName: r.qbDepositToAccountName,
-        qbPaymentMethod: r.qbPaymentMethod,
-        payerName: r.payerName,
-        amount: r.amount,
-        dateReceived: r.dateReceived,
-      })),
-      ...splitRows.map((r) => ({
-        stagedPaymentId: r.stagedPaymentId,
-        linkType: "split" as const,
-        realmId: r.realmId,
-        qbEntityType: r.qbEntityType,
-        qbEntityId: r.qbEntityId,
-        qbDocNumber: r.qbDocNumber,
-        qbDepositToAccountName: r.qbDepositToAccountName,
-        qbPaymentMethod: r.qbPaymentMethod,
-        payerName: r.payerName,
-        amount: r.subAmount,
-        dateReceived: r.dateReceived,
-      })),
-    ];
+    const quickbooksRecords = ledgerRows.map((r) => ({
+      stagedPaymentId: r.stagedPaymentId,
+      linkType: (r.splitMarker != null
+        ? "split"
+        : r.createdTheGift
+          ? "created"
+          : r.groupReconciledGiftId === id
+            ? "group"
+            : "matched") as "matched" | "created" | "group" | "split",
+      realmId: r.realmId,
+      qbEntityType: r.qbEntityType,
+      qbEntityId: r.qbEntityId,
+      qbDocNumber: r.qbDocNumber,
+      qbDepositToAccountName: r.qbDepositToAccountName,
+      qbPaymentMethod: r.qbPaymentMethod,
+      payerName: r.payerName,
+      amount: r.amountApplied,
+      dateReceived: r.dateReceived,
+    }));
 
     // RESTRICTIONS — the per-allocation restriction coding under this gift.
     const restrictions = await db

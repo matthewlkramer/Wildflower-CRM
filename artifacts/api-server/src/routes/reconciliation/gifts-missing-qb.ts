@@ -3,7 +3,6 @@ import { db } from "@workspace/db";
 import {
   giftsAndPayments,
   giftAllocations,
-  stagedPayments,
   stripeStagedCharges,
   organizations,
   people,
@@ -14,6 +13,7 @@ import { and, count, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-
 import { asyncHandler } from "../../lib/helpers";
 import { getViewer, maskName } from "../../lib/identityVisibility";
 import { escapeLike } from "../quickbooks/shared";
+import { qbLedgerExistsForGift } from "../../lib/paymentApplications";
 
 const router: IRouter = Router();
 
@@ -98,17 +98,12 @@ router.get(
     const limit = clampInt(req.query["limit"], 50, 1, 200);
     const offset = clampInt(req.query["offset"], 0, 0, 1_000_000);
 
-    // "Missing a QuickBooks record": the gift carries no QB final-amount pointer
-    // AND no staged_payments row links it (match / mint / group reconcile).
-    const noQbRecord = and(
-      isNull(giftsAndPayments.finalAmountQbStagedPaymentId),
-      sql`NOT EXISTS (
-        SELECT 1 FROM ${stagedPayments} sp
-        WHERE sp.matched_gift_id = ${giftsAndPayments.id}
-           OR sp.created_gift_id = ${giftsAndPayments.id}
-           OR sp.group_reconciled_gift_id = ${giftsAndPayments.id}
-      )`,
-    );
+    // "Missing a QuickBooks record": the gift has no QuickBooks cash-application
+    // ledger row (T003 cutover — the authoritative QB-link signal). The legacy
+    // final-amount pointer + scattered staged_payments linkage is subsumed by the
+    // ledger (every such pointer is backfilled into a ledger row; the parity gate
+    // blocks the cutover on any final-amount pointer with no ledger row).
+    const noQbRecord = sql`NOT ${qbLedgerExistsForGift()}`;
 
     // Does the gift have Stripe evidence behind it? (final-amount pointer or a
     // staged charge linked to it.) Anomaly signal: Stripe but no QB.
@@ -120,7 +115,7 @@ router.get(
       )
     )`;
 
-    const conds: SQL[] = [isNull(giftsAndPayments.archivedAt), noQbRecord!];
+    const conds: SQL[] = [isNull(giftsAndPayments.archivedAt), noQbRecord];
 
     if (q.length >= 2) {
       const like = `%${escapeLike(q)}%`;

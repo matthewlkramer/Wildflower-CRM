@@ -4,7 +4,7 @@
 // `db` singleton at runtime.
 import type { db } from "@workspace/db";
 import { paymentApplications, stagedPayments } from "@workspace/db/schema";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, ne, sql, type SQL } from "drizzle-orm";
 import { newId } from "./helpers";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -253,4 +253,135 @@ export async function confirmPaymentApplicationsForPayment(
     )
     .returning({ giftId: paymentApplications.giftId });
   return updated.map((r) => r.giftId);
+}
+
+// ─── Read helpers — the authoritative QuickBooks cash-application ledger ─────
+//
+// These build correlated-subquery SQL chunks that read a gift's QuickBooks ledger
+// rows (evidence_source = 'quickbooks'). They are the single source the T003 read
+// cutover flips every QB-link / QB-amount surface onto.
+//
+// CRITICAL CORRELATION RULE: the gift-id correlation is passed in as a *literal*
+// SQL expression, never as an interpolated drizzle Column. Interpolating a Column
+// (`${giftsAndPayments.id}`) into a `sql` template renders the BARE, UNQUALIFIED
+// name (`"id"`), which inside a correlated subquery silently binds to the INNER
+// table's own `id` (inner scope wins, no ambiguity error) and returns wrong
+// results. See `.agents/memory/drizzle-sql-template-bare-column.md`. By taking a
+// pre-qualified expression we keep the correlation explicit and always correct.
+//
+// The default targets an UN-ALIASED `.from(giftsAndPayments)` query: drizzle names
+// such a relation by its table name and qualifies columns as
+// `"gifts_and_payments"."id"`, so the default correlates correctly there. Raw-SQL
+// or aliased callers pass their own alias, e.g. `sql.raw("g.id")`.
+export const DEFAULT_GIFT_ID_SQL: SQL = sql.raw('"gifts_and_payments"."id"');
+
+/** EXISTS a QuickBooks cash-application ledger row for the gift. */
+export function qbLedgerExistsForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks'
+  )`;
+}
+
+/** SUM(amount_applied) of the gift's QuickBooks ledger rows, as text ('0' none). */
+export function qbLedgerSumForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<string> {
+  return sql<string>`(
+    SELECT COALESCE(SUM(pa.amount_applied), 0)::text
+    FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks'
+  )`;
+}
+
+/**
+ * One staged-payment id linked to the gift via the QuickBooks ledger (LIMIT 1),
+ * or null. Preserves the meaning of the legacy `quickbooks_staged_payment_id`
+ * surface (a staged_payments.id reconciled to / that created the gift), now
+ * sourced from the ledger's anchoring `payment_id`.
+ */
+export function qbLedgerPaymentIdForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT pa.payment_id FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks'
+    LIMIT 1
+  )`;
+}
+
+// ─── Payment-excluding variants (reconciliation "linked-elsewhere" guards) ───
+//
+// The candidate/proposal queries ask a subtly different question than the
+// gift-detail surfaces above: "is this gift QB-linked to some staged payment
+// OTHER than the one I am currently resolving?" These model that by excluding the
+// current payment id. Both correlations are passed as PRE-QUALIFIED SQL exprs —
+// the same bare-column footgun rule as the helpers above
+// (`.agents/memory/drizzle-sql-template-bare-column.md`). The excluded payment id
+// is whatever the caller already uses for the outer staged row (a qualified
+// column like `"staged_payments"."id"`, or a bound string param).
+//
+// NOTE the deliberate behavior change vs. the legacy guards: the ledger row set
+// INCLUDES group-reconciled applications, which the legacy direct+split guards
+// omitted. A group-reconciled gift is already QB-applied, so it correctly stops
+// being offered as a free/unlinked candidate. The reconciliation-guards parity
+// gate proves the ledger never DROPS a payment the legacy guard counted and that
+// every added linker is a group-reconciled one.
+
+/**
+ * EXISTS a QuickBooks ledger row tying the gift to a staged payment OTHER than
+ * the excluded one. Ledger replacement for the legacy "linked to another staged
+ * payment (matched/created/split)" guard.
+ */
+export function qbLedgerExistsForGiftExcludingPayment(
+  giftIdSql: SQL,
+  excludePaymentIdSql: SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql}
+      AND pa.evidence_source = 'quickbooks'
+      AND pa.payment_id <> ${excludePaymentIdSql}
+  )`;
+}
+
+/**
+ * One staged-payment id (other than the excluded one) tied to the gift via the
+ * QuickBooks ledger, or null. Ledger replacement for the legacy
+ * `alreadyLinkedStagedPaymentId` candidate-gift surface.
+ */
+export function qbLedgerPaymentIdForGiftExcludingPayment(
+  giftIdSql: SQL,
+  excludePaymentIdSql: SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT pa.payment_id FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql}
+      AND pa.evidence_source = 'quickbooks'
+      AND pa.payment_id <> ${excludePaymentIdSql}
+    LIMIT 1
+  )`;
+}
+
+// ─── Payment-side helper — "is this staged payment already applied?" ─────────
+//
+// The inverse of the gift-side helpers: given a staged QuickBooks payment, is it
+// already applied to a CRM gift? Used by the unlinked-staged worklists (e.g.
+// financialCorrections.loadUnlinkedQbStaged) that previously asked it as
+// "matched/created/group all null AND no split". Same bare-column footgun rule —
+// the default targets an UN-ALIASED `.from(stagedPayments)` query (drizzle
+// qualifies as `"staged_payments"."id"`); aliased/raw callers pass their own
+// qualified expression. See `.agents/memory/drizzle-sql-template-bare-column.md`.
+export const DEFAULT_PAYMENT_ID_SQL: SQL = sql.raw('"staged_payments"."id"');
+
+/** EXISTS a QuickBooks cash-application ledger row anchored to the staged payment. */
+export function qbLedgerExistsForPayment(
+  paymentIdSql: SQL = DEFAULT_PAYMENT_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.payment_id = ${paymentIdSql} AND pa.evidence_source = 'quickbooks'
+  )`;
 }

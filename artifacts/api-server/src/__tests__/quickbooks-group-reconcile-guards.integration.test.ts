@@ -69,6 +69,7 @@ let schema: {
   organizations: Db["organizations"];
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
+  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -147,6 +148,26 @@ async function seedStaged(
     dateReceived: opts.dateReceived ?? null,
     organizationId: ORG_ID,
   });
+  // Mirror production's dual-write: any legacy QB link seeded here also gets an
+  // authoritative `payment_applications` row, since reads now consult the ledger.
+  const linkGiftIds = [
+    ...new Set(
+      [opts.matchedGiftId, opts.groupReconciledGiftId].filter(
+        (g): g is string => !!g,
+      ),
+    ),
+  ];
+  for (const linkGiftId of linkGiftIds) {
+    await db.insert(schema.paymentApplications).values({
+      id: `${id}_pa_${linkGiftId}`,
+      paymentId: id,
+      giftId: linkGiftId,
+      amountApplied: amount,
+      evidenceSource: "quickbooks",
+      matchMethod: "system",
+      createdTheGift: false,
+    });
+  }
   return id;
 }
 
@@ -170,6 +191,7 @@ beforeAll(async () => {
     organizations: dbMod.organizations,
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
+    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
