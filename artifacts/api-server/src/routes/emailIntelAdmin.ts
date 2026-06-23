@@ -6,11 +6,12 @@ import {
   users,
   type EmailIntelPrompt,
 } from "@workspace/db/schema";
-import { and, count, desc, eq, inArray, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, notExists, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { anthropic, withRateLimitRetry } from "@workspace/integrations-anthropic-ai";
 import {
+  AdminListEmailIntelFeedbackQueryParams,
   AdminSaveEmailIntelPromptBody,
-  ListEmailProposalsQueryParams,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
@@ -416,7 +417,7 @@ router.get(
   "/admin/email-intel/feedback",
   asyncHandler(async (req, res) => {
     if (!requireAdmin(req, res)) return;
-    const q = parseOrBadRequest(ListEmailProposalsQueryParams, req.query, res);
+    const q = parseOrBadRequest(AdminListEmailIntelFeedbackQueryParams, req.query, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
 
@@ -425,6 +426,29 @@ router.get(
     ];
     if (q.kind) filters.push(eq(emailProposals.kind, q.kind));
     if (q.status) filters.push(eq(emailProposals.status, q.status));
+    // `real` hides feedback authored by the automated test accounts that e2e
+    // runs auto-provision ("Test Dev" / "Test Admin"), leaving only feedback
+    // from genuine human reviewers. The test-account predicate MUST stay in
+    // lockstep with scripts/src/cleanup-test-users.ts. Rows with a NULL
+    // resolver (e.g. legacy/system-resolved) are kept — NOT EXISTS is true
+    // when there is no matching test user.
+    if (q.reviewerSource === "real") {
+      const testReviewer = alias(users, "test_reviewer");
+      filters.push(
+        notExists(
+          db
+            .select({ id: testReviewer.id })
+            .from(testReviewer)
+            .where(
+              and(
+                eq(testReviewer.id, emailProposals.resolvedByUserId),
+                ilike(testReviewer.firstName, "Test"),
+                inArray(testReviewer.lastName, ["Dev", "Admin"]),
+              ),
+            ),
+        ),
+      );
+    }
     const where = and(...filters);
 
     const mailbox = users;

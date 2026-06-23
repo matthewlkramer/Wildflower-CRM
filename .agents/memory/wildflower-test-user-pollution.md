@@ -22,3 +22,12 @@ the dev DB; nothing prunes them.
 - They WILL reappear after any future e2e run. This is expected, not a bug.
 - The nameless `user_...@unknown.com` rows have no usable identity, so they are
   already filtered out of the owner dropdown — leave them.
+
+**Canonical predicate + lockstep:** the identity test for an automated account is
+`first_name ILIKE 'Test' AND last_name IN ('Dev','Admin')`. It lives in
+`scripts/src/cleanup-test-users.ts` and is mirrored in the admin email-intel
+"Reviewer feedback" feed (`GET /admin/email-intel/feedback`, `reviewerSource`
+param: `all` vs `real`; `real` = NOT EXISTS a test resolver, NULL resolvers
+kept). Any change to the predicate must update BOTH places or the feed/cleanup
+drift. The `prompts/generate` endpoint still samples test feedback (not yet
+filtered) — a known related gap.

@@ -427,6 +427,15 @@ paths:
       parameters:
         - { name: kind, in: query, schema: { $ref: "#/components/schemas/EmailProposalKind" } }
         - { name: status, in: query, schema: { $ref: "#/components/schemas/EmailProposalStatus" } }
+        - name: reviewerSource
+          in: query
+          description: >
+            Filter the feed by who resolved each proposal. `all` (default)
+            returns every resolved proposal. `real` excludes feedback authored
+            by automated test accounts (the "Test Dev"/"Test Admin" users
+            auto-provisioned during end-to-end test runs), leaving only
+            feedback from real human reviewers.
+          schema: { type: string, enum: [all, real], default: all }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:

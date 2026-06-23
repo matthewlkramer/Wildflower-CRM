@@ -1295,6 +1295,7 @@ export const AdminDiscardEmailIntelPromptResponse = zod.object({
 /**
  * @summary Cross-mailbox feed of resolved proposal feedback (admin only)
  */
+export const adminListEmailIntelFeedbackQueryReviewerSourceDefault = `all`;
 export const adminListEmailIntelFeedbackQueryLimitDefault = 50;
 export const adminListEmailIntelFeedbackQueryLimitMax = 10000;
 
@@ -1313,6 +1314,12 @@ export const AdminListEmailIntelFeedbackQueryParams = zod.object({
     ])
     .optional(),
   status: zod.enum(["pending", "applied", "rejected", "ignored"]).optional(),
+  reviewerSource: zod
+    .enum(["all", "real"])
+    .default(adminListEmailIntelFeedbackQueryReviewerSourceDefault)
+    .describe(
+      'Filter the feed by who resolved each proposal. `all` (default) returns every resolved proposal. `real` excludes feedback authored by automated test accounts (the \"Test Dev\"\/\"Test Admin\" users auto-provisioned during end-to-end test runs), leaving only feedback from real human reviewers.\n',
+    ),
   limit: zod.coerce
     .number()
     .min(1)

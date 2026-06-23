@@ -5654,6 +5654,11 @@ export type AdminListEmailIntelFeedbackParams = {
   kind?: EmailProposalKind;
   status?: EmailProposalStatus;
   /**
+ * Filter the feed by who resolved each proposal. `all` (default) returns every resolved proposal. `real` excludes feedback authored by automated test accounts (the "Test Dev"/"Test Admin" users auto-provisioned during end-to-end test runs), leaving only feedback from real human reviewers.
+
+ */
+  reviewerSource?: AdminListEmailIntelFeedbackReviewerSource;
+  /**
    * @minimum 1
    * @maximum 10000
    */
@@ -5663,6 +5668,14 @@ export type AdminListEmailIntelFeedbackParams = {
    */
   page?: PageParameter;
 };
+
+export type AdminListEmailIntelFeedbackReviewerSource =
+  (typeof AdminListEmailIntelFeedbackReviewerSource)[keyof typeof AdminListEmailIntelFeedbackReviewerSource];
+
+export const AdminListEmailIntelFeedbackReviewerSource = {
+  all: "all",
+  real: "real",
+} as const;
 
 export type ListUnrecognizedCorrespondentsParams = {
   mailboxUserId?: string;

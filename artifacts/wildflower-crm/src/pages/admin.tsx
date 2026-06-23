@@ -1930,11 +1930,16 @@ const FEEDBACK_PAGE_SIZE = 20;
 function EmailIntelFeedbackFeed() {
   const [kind, setKind] = useState<EmailProposalKind | "all">("all");
   const [status, setStatus] = useState<EmailProposalStatus | "all">("all");
+  // Default to real reviewers: the feed is otherwise dominated by feedback
+  // from the automated "Test Dev"/"Test Admin" accounts created during e2e
+  // runs. Admins can switch back to "all" to inspect that automated noise.
+  const [reviewerSource, setReviewerSource] = useState<"all" | "real">("real");
   const [page, setPage] = useState(1);
 
   const params = {
     ...(kind !== "all" ? { kind } : {}),
     ...(status !== "all" ? { status } : {}),
+    reviewerSource,
     limit: FEEDBACK_PAGE_SIZE,
     page,
   };
@@ -1958,6 +1963,21 @@ function EmailIntelFeedbackFeed() {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="text-sm font-medium">Reviewer feedback (all mailboxes)</span>
         <div className="flex gap-2">
+          <Select
+            value={reviewerSource}
+            onValueChange={(v) => {
+              setReviewerSource(v as "all" | "real");
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-44 h-8 text-xs" data-testid="feedback-source-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="real">Real users only</SelectItem>
+              <SelectItem value="all">All (incl. automated)</SelectItem>
+            </SelectContent>
+          </Select>
           <Select
             value={kind}
             onValueChange={(v) => {
