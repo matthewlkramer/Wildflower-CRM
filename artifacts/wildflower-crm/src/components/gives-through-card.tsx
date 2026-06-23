@@ -117,6 +117,7 @@ export function GivesThroughCard({ donor }: { donor: GivesThroughDonor }) {
     <RelatedCard
       title="Gives through"
       count={links.length}
+      empty={links.length === 0 && giftDerived.length === 0}
       action={
         <CardAction
           label="Add"

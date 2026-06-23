@@ -574,7 +574,14 @@ function PersonView({ person }: { person: PersonDetail }) {
             </div>
           </FieldCard>
 
-          <FieldCard title="Contact info">
+          <FieldCard
+            title="Contact info"
+            empty={
+              (person.emails?.length ?? 0) === 0 &&
+              (person.phoneNumbers?.length ?? 0) === 0 &&
+              (person.addresses?.length ?? 0) === 0
+            }
+          >
             <div className="space-y-4">
               <EmailsEditor
                 owner={{ kind: "person", id: person.id }}
@@ -593,7 +600,15 @@ function PersonView({ person }: { person: PersonDetail }) {
             </div>
           </FieldCard>
 
-          <FieldCard title="Interests">
+          <FieldCard
+            title="Interests"
+            empty={
+              (person.interestsThematic?.length ?? 0) === 0 &&
+              (person.interestsAges?.length ?? 0) === 0 &&
+              (person.interestsGovModels?.length ?? 0) === 0 &&
+              (person.regionIds?.length ?? 0) === 0
+            }
+          >
             <div className="space-y-3">
               <TagEditRow label="Thematic">
                 <InlineEditInterestsThematic
@@ -626,7 +641,17 @@ function PersonView({ person }: { person: PersonDetail }) {
             </div>
           </FieldCard>
 
-          <FieldCard title="Web">
+          <FieldCard
+            title="Web"
+            empty={
+              !person.website &&
+              !person.linkedin &&
+              !person.x &&
+              !person.facebook &&
+              !person.instagram &&
+              !person.meetingLink
+            }
+          >
             <div className="space-y-1">
               <Row label="Website">
                 <InlineEditText label="Website" testIdBase="person-website"
@@ -757,7 +782,14 @@ function PersonView({ person }: { person: PersonDetail }) {
             </div>
           </FieldCard>
 
-          <FieldCard title="Engagement">
+          <FieldCard
+            title="Engagement"
+            empty={
+              person.ownerUserId == null &&
+              person.newsletter == null &&
+              person.unsubscribedToNewsletter == null
+            }
+          >
             <div className="space-y-1">
               <Row label="Owner">
                 <InlineEditUserPicker testIdBase="person-owner"
@@ -1007,6 +1039,7 @@ function PeopleCard({ person }: { person: PersonDetail }) {
   return (
     <RelatedCard
       title="Colleagues"
+      empty={!hasAny}
       action={
         canHaveInactive ? (
           <HideInactiveToggle
@@ -1058,6 +1091,7 @@ function HouseholdCard({ person }: { person: PersonDetail }) {
     <RelatedCard
       title="Household"
       count={householdIds.length > 0 ? householdIds.length : undefined}
+      empty={householdIds.length === 0}
       action={<AddPersonToHouseholdDialog personId={person.id} />}
     >
       {householdIds.length === 0 ? (

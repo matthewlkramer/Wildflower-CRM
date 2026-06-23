@@ -590,7 +590,16 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
             </div>
           </FieldCard>
 
-          <FieldCard title="Interests">
+          <FieldCard
+            title="Interests"
+            empty={
+              (org.interestsThematic?.length ?? 0) === 0 &&
+              (org.interestsAges?.length ?? 0) === 0 &&
+              (org.interestsGovModels?.length ?? 0) === 0 &&
+              (org.regionIds?.length ?? 0) === 0 &&
+              !org.priorityAreasNotes
+            }
+          >
             <div className="space-y-3">
               <TagEditRow label="Thematic">
                 <InlineEditInterestsThematic
@@ -646,7 +655,14 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
             </div>
           </FieldCard>
 
-          <FieldCard title="Contact info">
+          <FieldCard
+            title="Contact info"
+            empty={
+              (org.emails?.length ?? 0) === 0 &&
+              (org.phoneNumbers?.length ?? 0) === 0 &&
+              (org.addresses?.length ?? 0) === 0
+            }
+          >
             <div className="space-y-4">
               <EmailsEditor
                 owner={{ kind: "organization", id: org.id }}

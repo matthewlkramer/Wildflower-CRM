@@ -637,6 +637,15 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
           <RelatedCard
             title="People"
             count={associatedPeople.length || undefined}
+            empty={
+              funderDetail.isLoading ||
+              householdDetail.isLoading ||
+              intermediaryDetail.isLoading
+                ? undefined
+                : !gift.advisorPersonId &&
+                  !gift.primaryContactPersonId &&
+                  associatedPeople.length === 0
+            }
             action={
               hasInactivePeople ? (
                 <HideInactiveToggle
@@ -692,7 +701,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
             ) : null}
           </RelatedCard>
 
-          <RelatedCard title="Linked pledges">
+          <RelatedCard title="Linked pledges" empty={!gift.opportunityId}>
             <GiftPledgeLink
               value={gift.opportunityId ?? null}
               scope={pledgeDonorScope}

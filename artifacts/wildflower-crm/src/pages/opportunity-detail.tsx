@@ -575,7 +575,15 @@ function OppView({
         highlights={highlights}
         left={
           <>
-            <FieldCard title="Pipeline">
+            <FieldCard
+              title="Pipeline"
+              empty={
+                !opp.applicationDeadline &&
+                !opp.winProbability &&
+                !opp.writtenPledge &&
+                !opp.grantLetterUrl
+              }
+            >
               <div className="space-y-1">
                 <Row label="Application deadline">
                   <InlineEditDate
@@ -637,7 +645,12 @@ function OppView({
               </div>
             </FieldCard>
 
-            <FieldCard title="Conditions">
+            <FieldCard
+              title="Conditions"
+              empty={
+                !opp.conditional && !opp.conditions && opp.conditionsMet === "no"
+              }
+            >
               <div className="space-y-1">
                 <Row label="Conditional">
                   <InlineEditSelect
@@ -817,6 +830,13 @@ function OppView({
             <RelatedCard
               title="People"
               count={associatedPeople.length || undefined}
+              empty={
+                funderDetail.isLoading || householdDetail.isLoading
+                  ? undefined
+                  : !opp.primaryContactPersonId &&
+                    !opp.individualAdvisorPersonId &&
+                    associatedPeople.length === 0
+              }
               action={
                 hasInactivePeople ? (
                   <HideInactiveToggle

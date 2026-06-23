@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { Link } from "wouter";
 import { ChevronLeft, ChevronDown, Plus, PanelLeft, X, EyeOff, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -183,15 +183,23 @@ export function RecordLayout({
 export function FieldCard({
   title,
   defaultOpen = true,
+  empty,
   action,
   children,
 }: {
   title: string;
   defaultOpen?: boolean;
+  /**
+   * When true the card holds no actual data (placeholder "—" rows don't
+   * count) and starts collapsed on first render. An explicit
+   * `defaultOpen={false}` still wins. Default-on-first-render only — there's
+   * no persistence, so the user can always click to expand.
+   */
+  empty?: boolean;
   action?: ReactNode;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(defaultOpen && !empty);
   return (
     <div className="rounded-xl border bg-card shadow-sm">
       <div className="flex w-full items-center justify-between px-4 py-3">
@@ -247,17 +255,41 @@ export function FieldRow({
 export function RelatedCard({
   title,
   count,
+  empty,
   defaultOpen = true,
   action,
   children,
 }: {
   title: string;
   count?: number;
+  /**
+   * Explicit emptiness override. When omitted, emptiness is derived from
+   * `count` (a numeric 0 = empty). Pass this for cards that show content
+   * beyond the counted list (e.g. "Gives through" suggestions) or that hide
+   * the count badge when empty. An explicit `defaultOpen={false}` still wins.
+   */
+  empty?: boolean;
   defaultOpen?: boolean;
   action?: ReactNode;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  // Resolve emptiness: an explicit `empty` wins; otherwise derive from
+  // `count` where a numeric 0 means empty. `undefined` means "not yet known"
+  // (async cards pass `count={isLoading ? undefined : total}`).
+  const resolvedEmpty = empty ?? (count != null ? count === 0 : undefined);
+  const [open, setOpen] = useState(() =>
+    resolvedEmpty === undefined ? defaultOpen : defaultOpen && !resolvedEmpty,
+  );
+  // For async cards emptiness is unknown on first render; once it resolves we
+  // collapse it exactly once if it turned out empty. We only ever collapse
+  // (never re-open) so a user who toggled the card during loading keeps their
+  // choice when the data finally lands.
+  const settledRef = useRef(resolvedEmpty !== undefined);
+  useEffect(() => {
+    if (settledRef.current || resolvedEmpty === undefined) return;
+    settledRef.current = true;
+    if (resolvedEmpty) setOpen(false);
+  }, [resolvedEmpty]);
   return (
     <div className="rounded-xl border bg-card shadow-sm">
       <div className="flex w-full items-center justify-between px-4 py-3">

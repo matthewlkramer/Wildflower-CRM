@@ -217,7 +217,13 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
       highlights={highlights}
       left={
         <>
-          <FieldCard title="Contact info">
+          <FieldCard
+            title="Contact info"
+            empty={
+              (household.emails?.length ?? 0) === 0 &&
+              (household.addresses?.length ?? 0) === 0
+            }
+          >
             <div className="space-y-4">
               <div>
                 <div className="text-xs font-medium text-muted-foreground mb-1">Emails</div>
