@@ -186,7 +186,7 @@ async function seedGiftOnPledge(
     id,
     amount,
     organizationId: ORG_ID,
-    paymentOnPledgeId: pledgeId,
+    opportunityId: pledgeId,
     details: "Payment on pledge",
   });
   const allocId = nextId("alloc");
@@ -312,9 +312,11 @@ async function seedOpp(opts: {
     | "in_conversation"
     | "conditional_commitment"
     | "written_commitment"
-    | "cash_in";
+    | "cash_in"
+    | "complete";
+  status?: "open" | "pledge" | "cash_in" | "dormant" | "lost";
   awardedAmount?: string | null;
-  wasPledge?: boolean;
+  writtenPledge?: boolean;
   lossType?: "dormant" | "lost" | null;
 }): Promise<string> {
   const id = nextId("opp");
@@ -323,8 +325,9 @@ async function seedOpp(opts: {
     name: `Opp ${id}`,
     organizationId: ORG_ID,
     stage: opts.stage,
+    ...(opts.status ? { status: opts.status } : {}),
     awardedAmount: opts.awardedAmount ?? null,
-    wasPledge: opts.wasPledge ?? false,
+    writtenPledge: opts.writtenPledge ?? false,
     lossType: opts.lossType ?? null,
   });
   oppIds.push(id);
@@ -435,7 +438,7 @@ afterAll(async () => {
     await db
       .delete(schema.giftsAndPayments)
       .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
-  // Opportunities are referenced by gifts (paymentOnPledgeId) and by the org;
+  // Opportunities are referenced by gifts (opportunityId) and by the org;
   // delete them after the gifts above and before the org below.
   if (oppIds.length)
     await db
@@ -788,11 +791,11 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — legacy `approved` rows stay
 });
 
 describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integration)", () => {
-  it("create_gift_from_opportunity ties the minted gift to the opp (paymentOnPledgeId), derives the donor from the opp, and the opp derives cash_in when fully paid", async () => {
+  it("create_gift_from_opportunity ties the minted gift to the opp (opportunityId), derives the donor from the opp, and the opp derives cash_in when fully paid", async () => {
     // A pledge awaiting its (full) payment.
     const oppId = await seedOpp({
       stage: "written_commitment",
-      wasPledge: true,
+      writtenPledge: true,
       awardedAmount: "100.00",
     });
     const stagedId = await seedStaged("100.00");
@@ -813,7 +816,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
 
     // The gift is tied to the opp and inherits the opp's donor (NOT a body donor).
     const gift = await readGift(giftId);
-    expect(gift.paymentOnPledgeId).toBe(oppId);
+    expect(gift.opportunityId).toBe(oppId);
     expect(gift.organizationId).toBe(ORG_ID);
     expect(gift.amount).toBe("100.00");
     expect(gift.finalAmountSource).toBe("quickbooks");
@@ -824,17 +827,18 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     expect(staged.status).toBe("reconciled");
     expect(staged.createdGiftId).toBe(giftId);
 
-    // Fully paid (100 >= awarded 100) ⇒ the opp derives to cash_in (stage advances).
+    // Fully paid (100 >= awarded 100) ⇒ status derives to cash_in and the funnel
+    // stage advances to the terminal `complete` (won).
     const opp = await readOpp(oppId);
     expect(opp.status).toBe("cash_in");
-    expect(opp.stage).toBe("cash_in");
-    expect(opp.wasPledge).toBe(true);
+    expect(opp.stage).toBe("complete");
+    expect(opp.writtenPledge).toBe(true);
   }, 30_000);
 
   it("create_gift_from_opportunity against a partially-paid pledge leaves it a pledge (paid < awarded)", async () => {
     const oppId = await seedOpp({
       stage: "written_commitment",
-      wasPledge: true,
+      writtenPledge: true,
       awardedAmount: "500.00",
     });
     const stagedId = await seedStaged("100.00");
@@ -848,14 +852,16 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
 
     const opp = await readOpp(oppId);
     expect(opp.status).toBe("pledge");
-    expect(opp.stage).toBe("written_commitment");
+    // A written pledge is a won row: the funnel stage advances to `complete`
+    // (status stays 'pledge' = "Waiting for payment" until fully paid).
+    expect(opp.stage).toBe("complete");
     expect(opp.awardedAmount).toBe("500.00");
   }, 30_000);
 
   it("convert_to_pledge_and_first_payment latches an OPEN opp into a pledge, sets awarded from the evidence, and books the first payment", async () => {
     const oppId = await seedOpp({
       stage: "in_conversation",
-      wasPledge: false,
+      writtenPledge: false,
       awardedAmount: null,
     });
     const stagedId = await seedStaged("100.00");
@@ -871,22 +877,23 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     giftIds.push(giftId);
 
     const gift = await readGift(giftId);
-    expect(gift.paymentOnPledgeId).toBe(oppId);
+    expect(gift.opportunityId).toBe(oppId);
     expect(gift.organizationId).toBe(ORG_ID);
 
-    // Latched into a pledge: was_pledge derived true, awarded filled from the
-    // evidence (was null), and a single full payment derives it to cash_in.
+    // Latched into a pledge: written_pledge derived true, awarded filled from the
+    // evidence (was null), and a single full payment derives status to cash_in
+    // with the funnel stage advanced to the terminal `complete` (won).
     const opp = await readOpp(oppId);
-    expect(opp.wasPledge).toBe(true);
+    expect(opp.writtenPledge).toBe(true);
     expect(opp.awardedAmount).toBe("100.00");
     expect(opp.status).toBe("cash_in");
-    expect(opp.stage).toBe("cash_in");
+    expect(opp.stage).toBe("complete");
   }, 30_000);
 
   it("convert_to_pledge_and_first_payment preserves a real awarded amount (partial first payment stays a pledge)", async () => {
     const oppId = await seedOpp({
       stage: "in_conversation",
-      wasPledge: false,
+      writtenPledge: false,
       awardedAmount: "500.00",
     });
     const stagedId = await seedStaged("100.00");
@@ -900,15 +907,17 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
 
     const opp = await readOpp(oppId);
     expect(opp.awardedAmount).toBe("500.00");
-    expect(opp.stage).toBe("written_commitment");
+    // A written pledge is a won row: the funnel stage advances to `complete`
+    // (status stays 'pledge' = "Waiting for payment" until fully paid).
+    expect(opp.stage).toBe("complete");
     expect(opp.status).toBe("pledge");
-    expect(opp.wasPledge).toBe(true);
+    expect(opp.writtenPledge).toBe(true);
   }, 30_000);
 
   it("convert_to_pledge_and_first_payment rejects an opp already latched as a pledge (already_pledge) and mutates nothing", async () => {
     const oppId = await seedOpp({
       stage: "written_commitment",
-      wasPledge: true,
+      writtenPledge: true,
       awardedAmount: "100.00",
     });
     const stagedId = await seedStaged("100.00");
@@ -924,13 +933,36 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     expect((await readStaged(stagedId)).status).toBe("pending");
     const opp = await readOpp(oppId);
     expect(opp.stage).toBe("written_commitment");
-    expect(opp.wasPledge).toBe(true);
+    expect(opp.writtenPledge).toBe(true);
+  }, 30_000);
+
+  it("convert_to_pledge_and_first_payment rejects a won direct-gift opp (status cash_in, stage complete, writtenPledge false) and mutates nothing", async () => {
+    const oppId = await seedOpp({
+      stage: "complete",
+      status: "cash_in",
+      writtenPledge: false,
+      awardedAmount: "100.00",
+    });
+    const stagedId = await seedStaged("100.00");
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "convert_to_pledge_and_first_payment",
+      opportunityId: oppId,
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("already_pledge");
+
+    // Nothing minted or mutated: a won direct gift must not be re-latched.
+    expect((await readStaged(stagedId)).status).toBe("pending");
+    const opp = await readOpp(oppId);
+    expect(opp.stage).toBe("complete");
+    expect(opp.writtenPledge).toBe(false);
   }, 30_000);
 
   it("convert_to_pledge_and_first_payment rejects an opp with a loss_type override (already_pledge)", async () => {
     const oppId = await seedOpp({
       stage: "in_conversation",
-      wasPledge: false,
+      writtenPledge: false,
       lossType: "dormant",
     });
     const stagedId = await seedStaged("100.00");
@@ -947,7 +979,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
   it("create_gift_from_opportunity stamps the Stripe GROSS when a charge is selected (charge matchedGiftId, payout confirmed_reconciled)", async () => {
     const oppId = await seedOpp({
       stage: "written_commitment",
-      wasPledge: true,
+      writtenPledge: true,
       awardedAmount: "100.00",
     });
     const stagedId = await seedStaged("100.00");
@@ -964,7 +996,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     giftIds.push(giftId);
 
     const gift = await readGift(giftId);
-    expect(gift.paymentOnPledgeId).toBe(oppId);
+    expect(gift.opportunityId).toBe(oppId);
     expect(gift.finalAmountSource).toBe("stripe");
     expect(gift.finalAmountStripeChargeId).toBe(chargeId);
     expect(gift.finalAmountQbStagedPaymentId).toBeNull();
@@ -987,7 +1019,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     // donor from the opp or attach the payment to it.
     const oppId = await seedOpp({
       stage: "in_conversation",
-      wasPledge: false,
+      writtenPledge: false,
       awardedAmount: null,
     });
     const stagedId = await seedStaged("100.00");
@@ -1006,12 +1038,12 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     // The gift is a plain donor gift — NOT tied to the opportunity.
     const gift = await readGift(giftId);
     expect(gift.organizationId).toBe(ORG_ID);
-    expect(gift.paymentOnPledgeId).toBeNull();
+    expect(gift.opportunityId).toBeNull();
 
     // The opportunity is completely untouched (no stage advance, no derivation).
     const opp = await readOpp(oppId);
     expect(opp.stage).toBe("in_conversation");
-    expect(opp.wasPledge).toBe(false);
+    expect(opp.writtenPledge).toBe(false);
   }, 30_000);
 
   it("create_gift_from_opportunity requires an opportunityId (validation_error)", async () => {

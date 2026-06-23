@@ -304,19 +304,22 @@ export const OrganizationType = {
 
 /**
  * Lifecycle status of an opportunity/pledge row. FULLY CALCULATED and
-read-only — never set this directly. Derived server-side from stage +
-payments + lossType on every write:
-  lossType set                                  → status = lossType
-  else fully paid (paid≥awarded) or stage=cash_in → cash_in
-  else stage = written_commitment                      → pledge
-  else                                                 → open
+read-only — never set this directly. Derived server-side from the
+writtenPledge outcome flag + payments + lossType on every write:
+  lossType set                              → status = lossType
+  else fully paid (paid ≥ awarded)          → cash_in
+  else writtenPledge = true                 → pledge
+  else                                      → open
 Values:
   open    — actively in the funnel, not yet committed
-  pledge  — funder has committed (stage = written, or conditional/grant-letter sticky flag)
-  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)
+  pledge  — funder has committed but not fully paid; UI labels this
+            "Waiting for payment" (stored value stays `pledge`)
+  cash_in — fully paid (sum of non-archived payments ≥ awarded)
   dormant — paused (mirrors lossType='dormant')
   lost    — declined/withdrawn (mirrors lossType='lost')
-To mark a row dormant/lost, set the `lossType` field instead.
+To mark a row dormant/lost, set the `lossType` field instead. The
+commitment outcome is the writtenPledge flag — cultivation `stage` no
+longer feeds status.
 
  */
 export type OpportunityStatus =
@@ -354,6 +357,18 @@ export const OpportunityType = {
   open_application: "open_application",
 } as const;
 
+/**
+ * Cultivation funnel stage — a PURE pipeline position, fully separate from
+the commitment outcome (writtenPledge) and the calculated status. Active
+funnel: cold_lead → warm_lead → in_conversation → convince →
+probable_renewal → verbal_confirmation → complete (terminal: won).
+`complete` is set automatically when an opp is won (status pledge|cash_in)
+and reverted off a stale `complete` when no longer won.
+DEPRECATED (retained for historical rows, never written going forward):
+conditional_commitment, written_commitment, cash_in — the commitment
+outcome now lives on the writtenPledge flag, not the stage.
+
+ */
 export type OpportunityStage =
   (typeof OpportunityStage)[keyof typeof OpportunityStage];
 
@@ -367,6 +382,7 @@ export const OpportunityStage = {
   verbal_confirmation: "verbal_confirmation",
   written_commitment: "written_commitment",
   cash_in: "cash_in",
+  complete: "complete",
 } as const;
 
 export type OpportunityConditional =
@@ -815,8 +831,10 @@ export interface FiscalYearCategoryMetrics {
   openPipelineAsk: string;
   /** SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps (of this category) with grant_year = this FY. */
   openPipelineWeighted: string;
-  /** Per-pledge UNPAID remainder for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only). */
+  /** Per-pledge UNPAID remainder (at 100%) for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only). */
   committed: string;
+  /** Per-pledge UNPAID remainder discounted by the pledge's win_probability (0.90 non-conditional / 0.75 conditional) for status='pledge' opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed. */
+  committedWeighted: string;
   /** SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else). */
   received: string;
   /** Fundraising goal for the FY+category; null if not set. */
@@ -1598,7 +1616,7 @@ export interface OpportunityOrPledge {
   paymentDetails?: string | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
-  wasPledge: boolean;
+  writtenPledge: boolean;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;
   grantLetterUploadedAt?: string | null;
@@ -1716,7 +1734,7 @@ export interface GiftOrPayment {
   individualGiverPersonId?: string | null;
   householdId?: string | null;
   type?: GiftType | null;
-  paymentOnPledgeId?: string | null;
+  opportunityId?: string | null;
   advisorPersonId?: string | null;
   grantYear?: string | null;
   giftBeingMatchedId?: string | null;
@@ -1801,7 +1819,7 @@ export interface CreateOpportunityOrPledgeBody {
   paymentDetails?: string;
   usageNotes?: string;
   copperPledgeId?: string;
-  wasPledge?: boolean;
+  writtenPledge?: boolean;
   grantLetterUrl?: string;
   grantLetterFilename?: string;
   grantLetterUploadedAt?: string;
@@ -1833,7 +1851,7 @@ export interface UpdateOpportunityOrPledgeBody {
   paymentDetails?: string | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
-  wasPledge?: boolean;
+  writtenPledge?: boolean;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;
   grantLetterUploadedAt?: string | null;
@@ -2028,7 +2046,7 @@ export interface CreateGiftOrPaymentBody {
   individualGiverPersonId?: string;
   householdId?: string;
   type?: GiftType;
-  paymentOnPledgeId?: string;
+  opportunityId?: string;
   advisorPersonId?: string;
   grantYear?: string;
   giftBeingMatchedId?: string;
@@ -2054,7 +2072,7 @@ export interface UpdateGiftOrPaymentBody {
   individualGiverPersonId?: string | null;
   householdId?: string | null;
   type?: GiftType | null;
-  paymentOnPledgeId?: string | null;
+  opportunityId?: string | null;
   advisorPersonId?: string | null;
   grantYear?: string | null;
   giftBeingMatchedId?: string | null;
@@ -3154,7 +3172,7 @@ export const ReconciliationMatchNodeType = {
 
 /**
  * Resolution state of a node within a card's graph.
-determined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.
+determined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via opportunityId). The human may still override.
 ambiguous: several plausible candidates; the human must choose.
 filter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.
 conflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).
@@ -3460,8 +3478,8 @@ export interface GiftMissingQbList {
  * What approving the card does.
 link_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.
 create_gift: human-mint a new gift from the QB evidence for the chosen donor.
-create_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (paymentOnPledgeId); the opp derives to cash_in when fully paid.
-convert_to_pledge_and_first_payment: latch the opportunity as a pledge (commitment stage, wasPledge) and mint the first-payment gift linked to it.
+create_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (opportunityId); the opp derives to cash_in when fully paid.
+convert_to_pledge_and_first_payment: latch the opportunity as a pledge (set writtenPledge=true; cultivation stage is untouched) and mint the first-payment gift linked to it.
 
  */
 export type ReconciliationOutcome =
@@ -5223,7 +5241,7 @@ export interface MergeGiftsBody {
 }
 
 /**
- * Attach `giftIds` to a pledge as its payments (each gift's payment_on_pledge_id is set). Provide `pledgeId` to attach to an existing pledge, OR omit it to create a NEW pledge — in which case exactly one donor field must be set (donor XOR) for the new pledge.
+ * Attach `giftIds` to a pledge as its payments (each gift's opportunity_id is set). Provide `pledgeId` to attach to an existing pledge, OR omit it to create a NEW pledge — in which case exactly one donor field must be set (donor XOR) for the new pledge.
  */
 export interface MergeGiftsIntoPledgeBody {
   /**
@@ -5340,7 +5358,7 @@ export interface BulkUpdateOpportunitiesPatch {
   lossType?: OpportunityLossType | null;
   stage?: OpportunityStage | null;
   type?: OpportunityType | null;
-  wasPledge?: boolean | null;
+  writtenPledge?: boolean | null;
   /** Optional close date when bulk-setting lossType to lost (or stage to cash_in). Left null is allowed to support historical cleanup workflows. */
   actualCompletionDate?: string | null;
   /** Set of fiscal-year slugs (e.g. 'fy2026') to attach to each opportunity via pledge_allocations. Combined with coveredFiscalYearsMode. */
@@ -6086,8 +6104,9 @@ export type ListOpportunitiesAndPledgesParams = {
   stage?: string[];
   /**
  * Convenience filter encoding the page split:
-  pledges       — wasPledge=true OR stage ∈ (conditional, verbal,
-                  written). Drives the /pledges page.
+  pledges       — writtenPledge=true (the sticky commitment outcome).
+                  Drives the /pledges page; historical pledges stay
+                  after they're fully paid.
   opportunities — the complement (rest of the rows). Drives the
                   /opportunities page.
 Omit to include all rows.
@@ -6095,9 +6114,9 @@ Omit to include all rows.
  */
   pledgeView?: ListOpportunitiesAndPledgesPledgeView;
   /**
-   * Filter strictly on the was_pledge column.
+   * Filter strictly on the written_pledge column.
    */
-  wasPledge?: boolean;
+  writtenPledge?: boolean;
   type?: string[];
   organizationId?: string;
   householdId?: string;
@@ -6195,7 +6214,7 @@ export type ListGiftsAndPaymentsParams = {
   organizationId?: string;
   householdId?: string;
   individualGiverPersonId?: string;
-  paymentOnPledgeId?: string;
+  opportunityId?: string;
   paymentMethod?: string[];
   /**
    * Presence filter on thank-you sent date (`has` = sent, `blank` = not sent).

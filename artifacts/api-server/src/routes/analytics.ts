@@ -98,6 +98,7 @@ type CategoryMetrics = {
   openPipelineAsk: string;
   openPipelineWeighted: string;
   committed: string;
+  committedWeighted: string;
   received: string;
   goal: string | null;
 };
@@ -107,6 +108,7 @@ function emptyCategoryMetrics(): CategoryMetrics {
     openPipelineAsk: "0",
     openPipelineWeighted: "0",
     committed: "0",
+    committedWeighted: "0",
     received: "0",
     goal: null,
   };
@@ -130,6 +132,10 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
       oppId: sql<string>`${pledgeAllocations.pledgeOrOpportunityId}`.as("pledged_opp_id"),
       category: oppCategorySql.as("pledged_category"),
       pledged: sql<string>`SUM(${pledgeAllocations.subAmount})`.as("pledged"),
+      // Win-probability is per-opp; the derivation sets it to 0.90 for an unpaid
+      // written pledge (0.75 if conditional). Carried through so the weighted
+      // commitment line discounts pledges instead of counting them at 100%.
+      winProb: sql<string>`COALESCE(MAX(${opportunitiesAndPledges.winProbability}), 0.9)`.as("pledged_win_prob"),
     })
     .from(pledgeAllocations)
     .innerJoin(
@@ -150,7 +156,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   // entities as `received`, so we only ever subtract money `received` counts.
   const paidPerOpp = db
     .select({
-      oppId: sql<string>`${giftsAndPayments.paymentOnPledgeId}`.as("paid_opp_id"),
+      oppId: sql<string>`${giftsAndPayments.opportunityId}`.as("paid_opp_id"),
       paid: sql<string>`SUM(${giftAllocations.subAmount})`.as("paid"),
     })
     .from(giftAllocations)
@@ -168,7 +174,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
         hasEntityFilter ? inArray(giftAllocations.entityId, entityIds!) : undefined,
       ),
     )
-    .groupBy(giftsAndPayments.paymentOnPledgeId)
+    .groupBy(giftsAndPayments.opportunityId)
     .as("paid_per_opp");
 
   const [openRows, committedRows, receivedRows, goalRows] = await Promise.all([
@@ -204,6 +210,10 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
       .select({
         category: sql<string>`${pledgedPerOpp.category}`,
         v: sql<string>`COALESCE(SUM(GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0)), 0)::text`,
+        // Same unpaid remainder, but discounted by the pledge's win-probability
+        // (0.90 non-conditional / 0.75 conditional). This is the figure the
+        // projection tile uses — an unpaid written pledge is NOT counted at 100%.
+        weighted: sql<string>`COALESCE(SUM(GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0) * ${pledgedPerOpp.winProb}), 0)::text`,
       })
       .from(pledgedPerOpp)
       .leftJoin(paidPerOpp, eq(pledgedPerOpp.oppId, paidPerOpp.oppId))
@@ -258,6 +268,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   for (const r of committedRows) {
     if (!isFundraisingCategory(r.category)) continue;
     byCategory[r.category].committed = r.v;
+    byCategory[r.category].committedWeighted = r.weighted;
   }
   for (const r of receivedRows) {
     if (!isFundraisingCategory(r.category)) continue;
@@ -319,13 +330,13 @@ router.get(
         .select({ value: count() })
         .from(opportunitiesAndPledges)
         .where(eq(opportunitiesAndPledges.status, "open")),
-      // Pledges-page count: was_pledge=true OR stage ∈ pledge stages.
+      // Pledges-page count: written_pledge=true OR stage ∈ pledge stages.
       // Mirrors the pledgeView=pledges filter in the opps list route.
       db
         .select({ value: count() })
         .from(opportunitiesAndPledges)
         .where(
-          sql`(${opportunitiesAndPledges.wasPledge} = true OR ${opportunitiesAndPledges.stage} IN ('conditional_commitment','written_commitment'))`,
+          sql`(${opportunitiesAndPledges.writtenPledge} = true OR ${opportunitiesAndPledges.stage} IN ('conditional_commitment','written_commitment'))`,
         ),
       db
         .select({ value: count() })

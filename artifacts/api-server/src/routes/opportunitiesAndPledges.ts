@@ -59,13 +59,14 @@ const donorJoinSelect = {
       AND pa.entity_id IS NOT NULL
   )`.as("entity_ids"),
   // Total received against this pledge — SUM(amount) of every
-  // gifts_and_payments row whose payment_on_pledge_id points at this
+  // gifts_and_payments row whose opportunity_id points at this
   // opp. Returned as a numeric string ("0" when no payments). Lets the
   // pledges UI render a Paid column without one fetch per row.
   paidAmount: sql<string>`(
     SELECT COALESCE(SUM(gp.amount), 0)::text
     FROM gifts_and_payments gp
-    WHERE gp.payment_on_pledge_id = ${opportunitiesAndPledges.id}
+    WHERE gp.opportunity_id = ${opportunitiesAndPledges.id}
+      AND gp.archived_at IS NULL
   )`.as("paid_amount"),
 };
 
@@ -128,13 +129,6 @@ function maskOppDonorRow<
 }
 
 const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type", "ownerUserId", "entityId"] as const;
-
-// Stages that put a row on the Pledges page even without was_pledge=true.
-// Mirrors `PLEDGE_STAGES` in lib/pledgeStage.ts.
-const PLEDGE_STAGE_VALUES = [
-  "conditional_commitment",
-  "written_commitment",
-] as const;
 
 function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
   res.status(400).json({
@@ -210,24 +204,16 @@ router.get(
       else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.ownerUserId));
       else if (f.values.length > 0) filters.push(inArray(opportunitiesAndPledges.ownerUserId, f.values));
     }
-    if (typeof q.wasPledge === "boolean") filters.push(eq(opportunitiesAndPledges.wasPledge, q.wasPledge));
-    // Convenience filter that encodes the page split. Translates to a
-    // boolean OR on (was_pledge, stage ∈ pledge stages). See the
-    // OpportunityOrPledge schema comments for the rationale.
+    if (typeof q.writtenPledge === "boolean") filters.push(eq(opportunitiesAndPledges.writtenPledge, q.writtenPledge));
+    // Convenience filter that encodes the page split. Commitment now lives on
+    // the sticky writtenPledge flag (cultivation stage is a pure funnel), so the
+    // split is simply writtenPledge true/false. Legacy committed rows are
+    // latched writtenPledge=true by the backfill. See the OpportunityOrPledge
+    // schema comments for the rationale.
     if (q.pledgeView === "pledges") {
-      filters.push(
-        sql`(${opportunitiesAndPledges.wasPledge} = true OR ${opportunitiesAndPledges.stage} = ANY(ARRAY[${sql.join(
-          PLEDGE_STAGE_VALUES.map((v) => sql`${v}`),
-          sql`, `,
-        )}]::opportunity_stage[]))`,
-      );
+      filters.push(eq(opportunitiesAndPledges.writtenPledge, true));
     } else if (q.pledgeView === "opportunities") {
-      filters.push(
-        sql`(${opportunitiesAndPledges.wasPledge} = false AND (${opportunitiesAndPledges.stage} IS NULL OR ${opportunitiesAndPledges.stage} <> ALL(ARRAY[${sql.join(
-          PLEDGE_STAGE_VALUES.map((v) => sql`${v}`),
-          sql`, `,
-        )}]::opportunity_stage[])))`,
-      );
+      filters.push(eq(opportunitiesAndPledges.writtenPledge, false));
     }
     // Multi-value fiscal-year filter — matches opps that have at least
     // one pledge_allocation row whose grant_year is in the selected set.
@@ -289,9 +275,9 @@ router.get(
     // Presence filters on computed rollup fields (has value vs blank).
     // Each mirrors the matching column expression in donorJoinSelect.
     if (q.paidPresence === "has") {
-      filters.push(sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.payment_on_pledge_id = ${opportunitiesAndPledges.id}) > 0`);
+      filters.push(sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.opportunity_id = ${opportunitiesAndPledges.id} AND gp.archived_at IS NULL) > 0`);
     } else if (q.paidPresence === "blank") {
-      filters.push(sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.payment_on_pledge_id = ${opportunitiesAndPledges.id}) <= 0`);
+      filters.push(sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.opportunity_id = ${opportunitiesAndPledges.id} AND gp.archived_at IS NULL) <= 0`);
     }
     if (q.coveredFysPresence === "has") {
       filters.push(sql`EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.grantYear} IS NOT NULL)`);
@@ -348,7 +334,7 @@ router.get(
     if (!row) return notFound(res, "opportunity");
     const [allocations, payments] = await Promise.all([
       db.select().from(pledgeAllocations).where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
-      db.select().from(giftsAndPayments).where(eq(giftsAndPayments.paymentOnPledgeId, id)),
+      db.select().from(giftsAndPayments).where(eq(giftsAndPayments.opportunityId, id)),
     ]);
     res.json({ ...maskOppDonorRow(row, getViewer(req)), allocations, payments });
   }),
@@ -361,7 +347,7 @@ router.post(
       entity: "opportunities_and_pledges",
       table: opportunitiesAndPledges,
       bodySchema: BulkUpdateOpportunitiesAndPledgesBody,
-      allowedFields: ["ownerUserId", "lossType", "stage", "type", "wasPledge", "actualCompletionDate"],
+      allowedFields: ["ownerUserId", "lossType", "stage", "type", "writtenPledge", "actualCompletionDate"],
       // Allocation-table reconciliation fields — not columns on
       // opportunities_and_pledges, so they go through extraApply and
       // are excluded from the column SET.
@@ -384,7 +370,7 @@ router.post(
       },
       // After a successful bulk write, recompute derived fields per row
       // — bulk patches commonly flip stage or status, which can change
-      // was_pledge (sticky-true) or trigger the written_commitment→cash_in
+      // written_pledge (sticky-true) or trigger the written_commitment→cash_in
       // auto-advance once payments are in.
       afterApply: async (id) => {
         await applyDerivedOppFields(id);
@@ -491,12 +477,17 @@ router.post(
       const derivedStatus = deriveOppFields({
         stage: body.stage ?? null,
         lossType: body.lossType ?? null,
-        wasPledge: body.wasPledge ?? null,
+        writtenPledge: body.writtenPledge ?? null,
+        conditional: body.conditional ?? null,
         grantLetterUrl: body.grantLetterUrl ?? null,
         awardedAmount: body.awardedAmount ?? null,
         paidAmount: 0,
       }).status;
-      const wp = canonicalWinProbability(derivedStatus, body.stage ?? null);
+      const wp = canonicalWinProbability(
+        derivedStatus,
+        body.stage ?? null,
+        body.conditional ?? null,
+      );
       if (wp !== null) writeValues.winProbability = wp;
     }
     const [row] = await db
@@ -568,12 +559,17 @@ router.patch(
       const derivedStatus = deriveOppFields({
         stage: merged.stage ?? null,
         lossType: merged.lossType ?? null,
-        wasPledge: merged.wasPledge ?? null,
+        writtenPledge: merged.writtenPledge ?? null,
+        conditional: merged.conditional ?? null,
         grantLetterUrl: merged.grantLetterUrl ?? null,
         awardedAmount: merged.awardedAmount ?? null,
         paidAmount: 0,
       }).status;
-      const wp = canonicalWinProbability(derivedStatus, merged.stage);
+      const wp = canonicalWinProbability(
+        derivedStatus,
+        merged.stage,
+        merged.conditional ?? null,
+      );
       if (wp !== null) writeData.winProbability = wp;
     }
 
@@ -584,7 +580,7 @@ router.patch(
       .returning();
     if (!row) return notFound(res, "opportunity");
     // The patch may have changed stage, awardedAmount, or status — any
-    // of which can flip was_pledge sticky-true, change the derived
+    // of which can flip written_pledge sticky-true, change the derived
     // status, or trigger the written_commitment→cash_in auto-advance
     // (which itself re-canonicalises win_probability inside the helper).
     await applyDerivedOppFields(id);

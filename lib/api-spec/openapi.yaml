@@ -1172,16 +1172,17 @@ paths:
           required: false
           description: |
             Convenience filter encoding the page split:
-              pledges       — wasPledge=true OR stage ∈ (conditional, verbal,
-                              written). Drives the /pledges page.
+              pledges       — writtenPledge=true (the sticky commitment outcome).
+                              Drives the /pledges page; historical pledges stay
+                              after they're fully paid.
               opportunities — the complement (rest of the rows). Drives the
                               /opportunities page.
             Omit to include all rows.
           schema: { type: string, enum: [pledges, opportunities] }
-        - name: wasPledge
+        - name: writtenPledge
           in: query
           required: false
-          description: "Filter strictly on the was_pledge column."
+          description: "Filter strictly on the written_pledge column."
           schema: { type: boolean }
         - name: type
           in: query
@@ -1300,7 +1301,7 @@ paths:
         - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
-        - { name: paymentOnPledgeId, in: query, schema: { type: string } }
+        - { name: opportunityId, in: query, schema: { type: string } }
         - name: paymentMethod
           in: query
           style: form
@@ -3829,19 +3830,22 @@ components:
       enum: [open, pledge, cash_in, dormant, lost]
       description: |
         Lifecycle status of an opportunity/pledge row. FULLY CALCULATED and
-        read-only — never set this directly. Derived server-side from stage +
-        payments + lossType on every write:
-          lossType set                                  → status = lossType
-          else fully paid (paid≥awarded) or stage=cash_in → cash_in
-          else stage = written_commitment                      → pledge
-          else                                                 → open
+        read-only — never set this directly. Derived server-side from the
+        writtenPledge outcome flag + payments + lossType on every write:
+          lossType set                              → status = lossType
+          else fully paid (paid ≥ awarded)          → cash_in
+          else writtenPledge = true                 → pledge
+          else                                      → open
         Values:
           open    — actively in the funnel, not yet committed
-          pledge  — funder has committed (stage = written, or conditional/grant-letter sticky flag)
-          cash_in — fully paid (stage=cash_in or sum of payments >= awarded)
+          pledge  — funder has committed but not fully paid; UI labels this
+                    "Waiting for payment" (stored value stays `pledge`)
+          cash_in — fully paid (sum of non-archived payments ≥ awarded)
           dormant — paused (mirrors lossType='dormant')
           lost    — declined/withdrawn (mirrors lossType='lost')
-        To mark a row dormant/lost, set the `lossType` field instead.
+        To mark a row dormant/lost, set the `lossType` field instead. The
+        commitment outcome is the writtenPledge flag — cultivation `stage` no
+        longer feeds status.
     OpportunityLossType:
       type: string
       enum: [dormant, lost]
@@ -3851,7 +3855,19 @@ components:
         (paused) or 'lost' (declined/withdrawn). The only user-settable half
         of the old status overload — when set, `status` mirrors it.
     OpportunityType: { type: string, enum: [solicitation, renewal, open_application] }
-    OpportunityStage: { type: string, enum: [cold_lead, warm_lead, in_conversation, convince, conditional_commitment, probable_renewal, verbal_confirmation, written_commitment, cash_in] }
+    OpportunityStage:
+      type: string
+      enum: [cold_lead, warm_lead, in_conversation, convince, conditional_commitment, probable_renewal, verbal_confirmation, written_commitment, cash_in, complete]
+      description: |
+        Cultivation funnel stage — a PURE pipeline position, fully separate from
+        the commitment outcome (writtenPledge) and the calculated status. Active
+        funnel: cold_lead → warm_lead → in_conversation → convince →
+        probable_renewal → verbal_confirmation → complete (terminal: won).
+        `complete` is set automatically when an opp is won (status pledge|cash_in)
+        and reverted off a stale `complete` when no longer won.
+        DEPRECATED (retained for historical rows, never written going forward):
+        conditional_commitment, written_commitment, cash_in — the commitment
+        outcome now lives on the writtenPledge flag, not the stage.
     OpportunityConditional: { type: string, enum: [unconditional, conditional_unspecified, reimbursable, conditional_on_funder_determination, conditional_on_target] }
     OpportunityConditionsMet:
       type: string
@@ -4133,7 +4149,7 @@ components:
         organizations:     { type: integer }
         opportunities:     { type: integer }
         openOpportunities: { type: integer }
-        # Count of rows currently on the Pledges page: wasPledge=true OR
+        # Count of rows currently on the Pledges page: writtenPledge=true OR
         # stage ∈ (conditional, verbal, written).
         pledges:           { type: integer }
         gifts:             { type: integer }
@@ -4147,7 +4163,7 @@ components:
         endDate:   { type: string, format: date }
     FiscalYearCategoryMetrics:
       type: object
-      required: [openPipelineAsk, openPipelineWeighted, committed, received, goal]
+      required: [openPipelineAsk, openPipelineWeighted, committed, committedWeighted, received, goal]
       description: |
         Fundraising metrics for one category (revenue OR loan_capital) within a
         fiscal year. All money values are decimal strings (PostgreSQL numeric) to
@@ -4155,7 +4171,8 @@ components:
       properties:
         openPipelineAsk:      { type: string, description: "SUM(pledge_allocations.sub_amount) for status='open' opps (of this category) with grant_year = this FY." }
         openPipelineWeighted: { type: string, description: "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps (of this category) with grant_year = this FY." }
-        committed:            { type: string, description: "Per-pledge UNPAID remainder for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only)." }
+        committed:            { type: string, description: "Per-pledge UNPAID remainder (at 100%) for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only)." }
+        committedWeighted:    { type: string, description: "Per-pledge UNPAID remainder discounted by the pledge's win_probability (0.90 non-conditional / 0.75 conditional) for status='pledge' opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed." }
         received:             { type: string, description: "SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else)." }
         goal:                 { type: string, nullable: true, description: "Fundraising goal for the FY+category; null if not set." }
     FiscalYearMetrics:
@@ -4947,7 +4964,7 @@ components:
     # ─── Opportunities & pledges ───────────────────────────────────────────────
     OpportunityOrPledge:
       type: object
-      required: [id, conditionsMet, wasPledge, fundraisingCategory, createdAt, updatedAt]
+      required: [id, conditionsMet, writtenPledge, fundraisingCategory, createdAt, updatedAt]
       properties:
         id:                         { type: string }
         name:                       { type: string, nullable: true }
@@ -4958,7 +4975,7 @@ components:
         askAmount:                  { type: string, nullable: true }
         awardedAmount:              { type: string, nullable: true }
         # Server-computed: SUM(gifts_and_payments.amount) for payments
-        # whose payment_on_pledge_id = this opp. "0" when no payments
+        # whose opportunity_id = this opp. "0" when no payments
         # exist. Primarily meaningful for pledges (status='won') so the
         # UI can show a Paid column and a paid-vs-awarded comparison.
         paidAmount:                 { type: string, readOnly: true }
@@ -4980,14 +4997,15 @@ components:
         paymentDetails:             { type: string, nullable: true }
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
-        # Sticky-true marker: was this opp ever a pledge? Server flips it
-        # true automatically when stage hits conditional/verbal/written or
-        # when a grant letter is uploaded; user can also tick it manually.
-        # Drives the Pledges page filter — historical pledges stay on the
-        # Pledges page after they're fully paid.
-        wasPledge:                  { type: boolean }
+        # Sticky-true commitment outcome (renamed from writtenPledge): has this opp
+        # ever reached a written commitment? Latches true automatically when a
+        # grant letter is uploaded or a legacy commitment stage is set; user can
+        # also tick it manually. Never auto-cleared. Drives the Pledges page
+        # filter AND the calculated status (writtenPledge=true ⇒ status pledge,
+        # unless fully paid ⇒ cash_in).
+        writtenPledge:              { type: boolean }
         # Foundation grant letter (object storage URL + display name +
-        # upload time). Uploading flips wasPledge=true.
+        # upload time). Uploading flips writtenPledge=true.
         grantLetterUrl:             { type: string, nullable: true }
         grantLetterFilename:        { type: string, nullable: true }
         grantLetterUploadedAt:      { type: string, format: date-time, nullable: true }
@@ -5064,7 +5082,7 @@ components:
         paymentDetails:             { type: string }
         usageNotes:                 { type: string }
         copperPledgeId:             { type: string }
-        wasPledge:                  { type: boolean }
+        writtenPledge:                  { type: boolean }
         grantLetterUrl:             { type: string }
         grantLetterFilename:        { type: string }
         grantLetterUploadedAt:      { type: string, format: date-time }
@@ -5096,7 +5114,7 @@ components:
         paymentDetails:             { type: string, nullable: true }
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
-        wasPledge:                  { type: boolean }
+        writtenPledge:                  { type: boolean }
         grantLetterUrl:             { type: string, nullable: true }
         grantLetterFilename:        { type: string, nullable: true }
         grantLetterUploadedAt:      { type: string, format: date-time, nullable: true }
@@ -5215,7 +5233,7 @@ components:
         individualGiverPersonId:    { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
-        paymentOnPledgeId:          { type: string, nullable: true }
+        opportunityId:          { type: string, nullable: true }
         advisorPersonId:            { type: string, nullable: true }
         grantYear:                  { type: string, nullable: true }
         giftBeingMatchedId:         { type: string, nullable: true }
@@ -5343,7 +5361,7 @@ components:
         individualGiverPersonId:    { type: string }
         householdId:                { type: string }
         type:                       { $ref: "#/components/schemas/GiftType" }
-        paymentOnPledgeId:          { type: string }
+        opportunityId:          { type: string }
         advisorPersonId:            { type: string }
         grantYear:                  { type: string }
         giftBeingMatchedId:         { type: string }
@@ -5369,7 +5387,7 @@ components:
         individualGiverPersonId:    { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
-        paymentOnPledgeId:          { type: string, nullable: true }
+        opportunityId:          { type: string, nullable: true }
         advisorPersonId:            { type: string, nullable: true }
         grantYear:                  { type: string, nullable: true }
         giftBeingMatchedId:         { type: string, nullable: true }
@@ -6105,7 +6123,7 @@ components:
       enum: [determined, ambiguous, filter_only, conflict, none, create]
       description: |
         Resolution state of a node within a card's graph.
-        determined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.
+        determined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via opportunityId). The human may still override.
         ambiguous: several plausible candidates; the human must choose.
         filter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.
         conflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).
@@ -6322,8 +6340,8 @@ components:
         What approving the card does.
         link_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.
         create_gift: human-mint a new gift from the QB evidence for the chosen donor.
-        create_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (paymentOnPledgeId); the opp derives to cash_in when fully paid.
-        convert_to_pledge_and_first_payment: latch the opportunity as a pledge (commitment stage, wasPledge) and mint the first-payment gift linked to it.
+        create_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (opportunityId); the opp derives to cash_in when fully paid.
+        convert_to_pledge_and_first_payment: latch the opportunity as a pledge (set writtenPledge=true; cultivation stage is untouched) and mint the first-payment gift linked to it.
     ApproveCompleteMatchBody:
       type: object
       required: [outcome]
@@ -7901,7 +7919,7 @@ components:
     MergeGiftsIntoPledgeBody:
       type: object
       required: [giftIds]
-      description: "Attach `giftIds` to a pledge as its payments (each gift's payment_on_pledge_id is set). Provide `pledgeId` to attach to an existing pledge, OR omit it to create a NEW pledge — in which case exactly one donor field must be set (donor XOR) for the new pledge."
+      description: "Attach `giftIds` to a pledge as its payments (each gift's opportunity_id is set). Provide `pledgeId` to attach to an existing pledge, OR omit it to create a NEW pledge — in which case exactly one donor field must be set (donor XOR) for the new pledge."
       properties:
         giftIds: { type: array, items: { type: string }, minItems: 1, maxItems: 49 }
         pledgeId: { type: string, nullable: true, description: "Existing pledge to attach to. Omit/null to create a new pledge." }
@@ -7978,7 +7996,7 @@ components:
         lossType:    { allOf: [ { $ref: "#/components/schemas/OpportunityLossType" } ], nullable: true }
         stage:       { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true }
         type:        { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
-        wasPledge:   { type: boolean, nullable: true }
+        writtenPledge:   { type: boolean, nullable: true }
         actualCompletionDate: { type: string, format: date, nullable: true, description: "Optional close date when bulk-setting lossType to lost (or stage to cash_in). Left null is allowed to support historical cleanup workflows." }
         coveredFiscalYears:
           type: array

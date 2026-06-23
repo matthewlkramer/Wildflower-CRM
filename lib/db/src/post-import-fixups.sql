@@ -997,7 +997,7 @@ ON CONFLICT (id) DO NOTHING;
 -- The schema's `opportunities_and_pledges_won_requires_completion_date` CHECK
 -- requires every status='won' row to carry an `actual_completion_date`. Four
 -- rows from the initial import violated this; we backfill each from the
--- MAX(date_received) of the gifts tied to that opp via payment_on_pledge_id,
+-- MAX(date_received) of the gifts tied to that opp via opportunity_id,
 -- which is a defensible "the money landed by this date" stand-in.
 --
 --   recEDlbIedGzGfGxq — Imaginable Futures FY24-26 BWF — full $900K paid in
@@ -1015,14 +1015,14 @@ ON CONFLICT (id) DO NOTHING;
 UPDATE opportunities_and_pledges o
    SET actual_completion_date = sub.max_date, updated_at = NOW()
   FROM (
-    SELECT payment_on_pledge_id AS opp_id, MAX(date_received) AS max_date
+    SELECT opportunity_id AS opp_id, MAX(date_received) AS max_date
       FROM gifts_and_payments
-     WHERE payment_on_pledge_id IN (
+     WHERE opportunity_id IN (
              'recEDlbIedGzGfGxq','recohEH4lZm5yixFm',
              'recshOnvUb0A390qj','rec3MTMlSE06qaL2L'
            )
        AND date_received IS NOT NULL
-     GROUP BY payment_on_pledge_id
+     GROUP BY opportunity_id
   ) sub
  WHERE o.id = sub.opp_id
    AND o.status = 'won'

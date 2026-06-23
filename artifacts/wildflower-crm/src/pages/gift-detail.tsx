@@ -277,7 +277,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   // donor-scoped, so a payment must stay on a pledge belonging to its donor —
   // keeping a stale link would point the gift at a different donor's pledge.
   const saveDonor = (body: DonorSaveBody) =>
-    patch({ ...body, paymentOnPledgeId: null });
+    patch({ ...body, opportunityId: null });
 
   async function saveName() {
     const trimmed = nameValue.trim();
@@ -332,7 +332,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       >
         Edit name
       </Button>
-      {(gift.allocations?.length ?? 0) >= 2 && gift.paymentOnPledgeId == null ? (
+      {(gift.allocations?.length ?? 0) >= 2 && gift.opportunityId == null ? (
         <Button
           variant="outline"
           size="sm"
@@ -588,7 +588,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
             ...(gift.organizationId ? { organizationIds: [gift.organizationId] } : {}),
             ...(gift.householdId ? { householdIds: [gift.householdId] } : {}),
             ...(giftPersonIds.length > 0 ? { personIds: giftPersonIds } : {}),
-            ...(gift.paymentOnPledgeId ? { opportunityIds: [gift.paymentOnPledgeId] } : {}),
+            ...(gift.opportunityId ? { opportunityIds: [gift.opportunityId] } : {}),
           };
           return (
             <>
@@ -692,9 +692,9 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
 
           <RelatedCard title="Linked pledges">
             <GiftPledgeLink
-              value={gift.paymentOnPledgeId ?? null}
+              value={gift.opportunityId ?? null}
               scope={pledgeDonorScope}
-              onSave={(next) => patch({ paymentOnPledgeId: next })}
+              onSave={(next) => patch({ opportunityId: next })}
             />
           </RelatedCard>
 

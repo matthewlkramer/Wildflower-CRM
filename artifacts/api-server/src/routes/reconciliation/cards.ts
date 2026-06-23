@@ -256,7 +256,7 @@ router.get(
     )
       .leftJoin(
         recCardOpp,
-        eq(recCardOpp.id, resolvedGift.paymentOnPledgeId),
+        eq(recCardOpp.id, resolvedGift.opportunityId),
       )
       .where(where)
       .orderBy(...stagedOrderBy("date_desc"))

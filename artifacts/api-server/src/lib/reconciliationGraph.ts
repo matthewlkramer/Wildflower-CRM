@@ -764,7 +764,7 @@ export async function buildReconciliationGraph(
   let oppLocked = false;
   let oppCandidates: RecCandidate[] = [];
 
-  const pledgeId = selectedGiftRow?.paymentOnPledgeId ?? null;
+  const pledgeId = selectedGiftRow?.opportunityId ?? null;
   if (pledgeId) {
     const opp = await loadOpp(pledgeId);
     if (opp) {

@@ -10,7 +10,6 @@ import {
   getListOrganizationsQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
   type OpportunityOrPledge,
-  type OpportunityStage,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -326,8 +325,8 @@ function OppFollowUpDialog({
     },
   });
 
-  function patch(stage: OpportunityStage) {
-    updateOpp.mutate({ id: opp.id, data: { stage } });
+  function markWrittenPledge() {
+    updateOpp.mutate({ id: opp.id, data: { writtenPledge: true } });
   }
 
   return (
@@ -337,25 +336,19 @@ function OppFollowUpDialog({
           <DialogTitle>Update the linked opportunity?</DialogTitle>
           <DialogDescription>
             The gift was created and linked to{" "}
-            <span className="font-medium">{opp.name ?? opp.id}</span>. That
-            opportunity is still open — would you like to advance its stage?
+            <span className="font-medium">{opp.name ?? opp.id}</span>. The
+            payment is now counted toward this opportunity — its status updates
+            automatically. Mark it as a written pledge if the funder has made a
+            written commitment.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2 pt-1">
           <Button
-            onClick={() => patch("cash_in")}
-            disabled={updateOpp.isPending}
-            data-testid="button-opp-followup-cash-in"
-          >
-            Mark as cash in
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => patch("written_commitment")}
+            onClick={markWrittenPledge}
             disabled={updateOpp.isPending}
             data-testid="button-opp-followup-pledge"
           >
-            Convert to a pledge
+            Mark as a written pledge
           </Button>
           <Button
             variant="ghost"
@@ -560,7 +553,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
       data: {
         name: trimmed,
         ...donorFields,
-        ...(linkedOpp ? { paymentOnPledgeId: linkedOpp.id } : {}),
+        ...(linkedOpp ? { opportunityId: linkedOpp.id } : {}),
         ...(amt ? { amount: amt } : {}),
         ...(date ? { dateReceived: date } : {}),
         paymentExpected,

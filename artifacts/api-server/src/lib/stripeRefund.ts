@@ -179,7 +179,7 @@ export async function confirmRefundPropagation(
         id: giftsAndPayments.id,
         amount: giftsAndPayments.amount,
         archivedAt: giftsAndPayments.archivedAt,
-        paymentOnPledgeId: giftsAndPayments.paymentOnPledgeId,
+        opportunityId: giftsAndPayments.opportunityId,
         details: giftsAndPayments.details,
       })
       .from(giftsAndPayments)
@@ -192,7 +192,7 @@ export async function confirmRefundPropagation(
     }
 
     const kind = locked.refundPropagationKind as StripeRefundKind;
-    const pledgeId = gift.paymentOnPledgeId ?? null;
+    const pledgeId = gift.opportunityId ?? null;
     const now = new Date();
     let newGiftAmount: string | null = gift.amount;
     let archivedGift = false;

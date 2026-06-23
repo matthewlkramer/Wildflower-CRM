@@ -43,11 +43,8 @@ const STAGE_OPTIONS: { value: OpportunityStage; label: string }[] = [
   { value: "warm_lead", label: "Warm lead" },
   { value: "in_conversation", label: "In conversation" },
   { value: "convince", label: "Convince" },
-  { value: "conditional_commitment", label: "Conditional commitment" },
   { value: "probable_renewal", label: "Probable renewal" },
   { value: "verbal_confirmation", label: "Verbal confirmation" },
-  { value: "written_commitment", label: "Written commitment" },
-  { value: "cash_in", label: "Cash in" },
 ];
 
 const TYPE_OPTIONS: { value: OpportunityType; label: string }[] = [
@@ -183,7 +180,7 @@ export function CreateOpportunityDialog({
         organizationId: donor.organizationId ?? undefined,
         individualGiverPersonId: donor.individualGiverPersonId ?? undefined,
         householdId: donor.householdId ?? undefined,
-        ...(isPledge ? { wasPledge: true } : {}),
+        ...(isPledge ? { writtenPledge: true } : {}),
         ...(form.stage ? { stage: form.stage } : {}),
         ...(form.type ? { type: form.type } : {}),
         fundraisingCategory: form.fundraisingCategory,

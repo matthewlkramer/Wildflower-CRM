@@ -109,8 +109,11 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // Default 'grant' (non-destructive); auto-minted QB/Stripe/Donorbox gifts are
   // never loans so the default is correct for them.
   loanOrGrant: loanOrGrantEnum("loan_or_grant").notNull().default("grant"),
-  // RESTRICT: a payment must keep its link to the pledge it pays.
-  paymentOnPledgeId: text("payment_on_pledge_id").references(
+  // RESTRICT: a payment must keep its link to the opportunity/pledge it pays.
+  // Renamed from payment_on_pledge_id — the link is now generic (a gift may be
+  // linked to any opportunity, not only a committed pledge); presence of this
+  // link is what distinguishes a pledge payment from a direct one-off gift.
+  opportunityId: text("opportunity_id").references(
     () => opportunitiesAndPledges.id,
     { onDelete: "restrict" },
   ),
@@ -203,7 +206,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_organization_id_idx").on(t.organizationId),
   index("gifts_and_payments_individual_giver_person_id_idx").on(t.individualGiverPersonId),
   index("gifts_and_payments_household_id_idx").on(t.householdId),
-  index("gifts_and_payments_payment_on_pledge_id_idx").on(t.paymentOnPledgeId),
+  index("gifts_and_payments_opportunity_id_idx").on(t.opportunityId),
   index("gifts_and_payments_advisor_person_id_idx").on(t.advisorPersonId),
   index("gifts_and_payments_gift_being_matched_id_idx").on(t.giftBeingMatchedId),
   index("gifts_and_payments_primary_contact_person_id_idx").on(t.primaryContactPersonId),

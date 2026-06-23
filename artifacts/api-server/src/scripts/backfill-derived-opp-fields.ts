@@ -1,5 +1,5 @@
 /**
- * One-shot backfill: recompute the derived fields (status, wasPledge,
+ * One-shot backfill: recompute the derived fields (status, writtenPledge,
  * stage auto-advance) on every existing opportunities_and_pledges row
  * by calling the same applyDerivedOppFields helper the write paths use.
  *

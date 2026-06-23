@@ -97,6 +97,11 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   }),
   askAmount: numeric("ask_amount", { precision: 14, scale: 2 }),
   awardedAmount: numeric("awarded_amount", { precision: 14, scale: 2 }),
+  // Persisted derived rollup: SUM of linked non-archived gift amounts (gifts
+  // whose opportunity_id = this row). Recomputed by applyDerivedOppFields on
+  // every payment link/amount/archive mutation. Surfaced as the API
+  // `paidAmount` field and drives the cash_in status derivation (paid≥awarded).
+  paid: numeric("paid", { precision: 14, scale: 2 }).notNull().default("0"),
   // Fundraising category — designates whether this opportunity/pledge is a
   // revenue commitment or a loan-fund capital (principal) commitment. Kept
   // independent of `status` (which is calculated) and of donor type. Default
@@ -165,13 +170,15 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // Legacy integer pledge ID inherited from Copper. Not a FK; preserved for
   // cross-reference back to the prior CRM.
   copperPledgeId: text("copper_pledge_id"),
-  // Sticky-true: once an opp ever became a pledge (stage hit conditional/
-  // verbal/written, grant letter uploaded, or manually flagged), this
-  // stays true forever. Drives the Pledges page filter so historical
-  // pledges remain visible after being fully paid.
-  wasPledge: boolean("was_pledge").default(false).notNull(),
+  // Sticky-true commitment flag (renamed from was_pledge): the funder has
+  // made a written commitment. Latched true when a grant letter is uploaded,
+  // when a user explicitly marks the commitment, or (for legacy/imported
+  // rows) when the stage is a legacy commitment value. Never auto-flipped
+  // back to false. Drives the calculated `status` (→ 'pledge') and the
+  // Pledges page filter so historical pledges remain visible after payment.
+  writtenPledge: boolean("written_pledge").default(false).notNull(),
   // Grant letter (foundation pledge documentation). Lives in object
-  // storage; only the URL is stored. Uploading flips was_pledge=true.
+  // storage; only the URL is stored. Uploading flips written_pledge=true.
   grantLetterUrl: text("grant_letter_url"),
   grantLetterFilename: text("grant_letter_filename"),
   // ISO-string mode so the OpenAPI-typed string flows through without

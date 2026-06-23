@@ -81,16 +81,22 @@ import { OpportunityKanban } from "@/components/opportunity-kanban";
 
 const KANBAN_LIMIT = 500;
 const STATUSES: OpportunityStatus[] = ["open", "pledge", "cash_in", "dormant", "lost"];
+// `pledge` is stored as-is but surfaced to fundraisers as "Waiting for payment".
+const STATUS_LABEL: Record<string, string> = {
+  open: "Open",
+  pledge: "Waiting for payment",
+  cash_in: "Cash in",
+  dormant: "Dormant",
+  lost: "Lost",
+};
 const STAGES: OpportunityStage[] = [
   "cold_lead",
   "warm_lead",
   "in_conversation",
   "convince",
-  "conditional_commitment",
   "probable_renewal",
   "verbal_confirmation",
-  "written_commitment",
-  "cash_in",
+  "complete",
 ];
 const TYPES: OpportunityType[] = ["solicitation", "renewal", "open_application"];
 
@@ -169,7 +175,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<OpportunityOrPledge>[] {
       cell: (o) =>
         o.status ? (
           <Badge variant={o.status === "cash_in" || o.status === "pledge" ? "default" : "outline"}>
-            {formatEnum(o.status)}
+            {STATUS_LABEL[o.status] ?? formatEnum(o.status)}
           </Badge>
         ) : (
           "—"
@@ -667,8 +673,9 @@ export default function Opportunities({
 
   const STAGE_ORDER: Record<string, number> = {
     cold_lead: 1, warm_lead: 2, in_conversation: 3, convince: 4,
-    conditional_commitment: 5, probable_renewal: 6, verbal_confirmation: 7,
-    written_commitment: 8, cash_in: 9,
+    probable_renewal: 5, verbal_confirmation: 6, complete: 7,
+    // deprecated stages retained so any not-yet-backfilled rows still sort sanely
+    conditional_commitment: 6, written_commitment: 6, cash_in: 7,
   };
   const sortedRows = useMemo(
     () =>

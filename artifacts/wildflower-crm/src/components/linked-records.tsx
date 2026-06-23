@@ -167,18 +167,18 @@ export function LinkedOpportunitiesCard({
       ) : (
         <div data-testid="linked-opportunities">
           {rows.map((o) => {
-            // Rows that belong on the Pledges page (wasPledge=true OR
-            // stage ∈ pledge stages) link through /pledges so
-            // breadcrumbs/back-links stay consistent with how the user
-            // navigated in; everything else routes through /opportunities.
-            const stageIsPledge =
-              o.stage === "conditional_commitment" ||
-              o.stage === "written_commitment";
-            const href =
-              o.wasPledge || stageIsPledge
-                ? `/pledges/${o.id}`
-                : `/opportunities/${o.id}`;
-            const statusLabel = o.status ? formatEnum(o.status) : null;
+            // Rows that belong on the Pledges page (writtenPledge=true) link
+            // through /pledges so breadcrumbs/back-links stay consistent with
+            // how the user navigated in; everything else routes through
+            // /opportunities.
+            const href = o.writtenPledge
+              ? `/pledges/${o.id}`
+              : `/opportunities/${o.id}`;
+            const statusLabel = o.status
+              ? o.status === "pledge"
+                ? "Waiting for payment"
+                : formatEnum(o.status)
+              : null;
             const fy = o.fiscalYear?.toUpperCase();
             const sub = [formatEnum(o.stage), statusLabel, fy]
               .filter(Boolean)

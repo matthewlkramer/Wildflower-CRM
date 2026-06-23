@@ -210,7 +210,7 @@ router.get(
     if (q.organizationId) filters.push(eq(giftsAndPayments.organizationId, q.organizationId));
     if (q.householdId) filters.push(eq(giftsAndPayments.householdId, q.householdId));
     if (q.individualGiverPersonId) filters.push(eq(giftsAndPayments.individualGiverPersonId, q.individualGiverPersonId));
-    if (q.paymentOnPledgeId) filters.push(eq(giftsAndPayments.paymentOnPledgeId, q.paymentOnPledgeId));
+    if (q.opportunityId) filters.push(eq(giftsAndPayments.opportunityId, q.opportunityId));
     {
       const f = splitBlank(q.paymentMethod as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(giftsAndPayments.paymentMethod), inArray(giftsAndPayments.paymentMethod, f.values as never[]))!);
@@ -544,7 +544,7 @@ router.post(
         loanOrGrant: giftTypeToLoanOrGrant(body.type),
       })
       .returning();
-    await applyDerivedOppFieldsMany(row?.paymentOnPledgeId);
+    await applyDerivedOppFieldsMany(row?.opportunityId);
     await applyGiftQbTieMany(row?.id);
     if (row) {
       // New gift is a fresh relationship signal — refresh the donor's
@@ -594,9 +594,9 @@ router.patch(
       .where(eq(giftsAndPayments.id, id))
       .returning();
     if (!row) return notFound(res, "gift");
-    // PATCH may re-point payment_on_pledge_id — recompute on both the
+    // PATCH may re-point opportunity_id — recompute on both the
     // old and the new pledge so a newly-covered target advances.
-    await applyDerivedOppFieldsMany(existing.paymentOnPledgeId, row.paymentOnPledgeId);
+    await applyDerivedOppFieldsMany(existing.opportunityId, row.opportunityId);
     // Amount / off-books / designated-to-school edits change the QB-tie status.
     // Only recompute when one of those tie-affecting fields actually changed so
     // a pure-annotation edit (e.g. the needs-research flag) is a no-op for
@@ -820,7 +820,7 @@ router.post(
 
       // Any pledge whose paid total changes — survivor's + every loser's pledge.
       const pledges = new Set<string>();
-      for (const r of rows) if (r.paymentOnPledgeId) pledges.add(r.paymentOnPledgeId);
+      for (const r of rows) if (r.opportunityId) pledges.add(r.opportunityId);
 
       // Move every loser's allocation rows onto the survivor.
       await tx
@@ -880,7 +880,7 @@ router.post(
  * are attached to that existing pledge; without it a NEW fully-paid pledge is
  * created (donor XOR required — defaults to the first gift's donor) whose
  * awarded amount is the SUM of the gifts. The gifts are NOT deleted; each keeps
- * its own donor and gets `paymentOnPledgeId` set. Derived pledge fields
+ * its own donor and gets `opportunityId` set. Derived pledge fields
  * (status/stage/paid totals) are recomputed afterward — status is never written
  * directly.
  */
@@ -939,7 +939,7 @@ router.post(
       // Pledges whose paid total changes — the target plus any pledge the gifts
       // were previously attached to.
       const pledges = new Set<string>();
-      for (const g of gifts) if (g.paymentOnPledgeId) pledges.add(g.paymentOnPledgeId);
+      for (const g of gifts) if (g.opportunityId) pledges.add(g.opportunityId);
 
       // A gift that already pays a DIFFERENT pledge must be surfaced, not
       // silently re-pointed (the pledge payment link is RESTRICT and moving it
@@ -947,7 +947,7 @@ router.post(
       // requested target pledge are an idempotent no-op re-attach and allowed;
       // for a NEW pledge (no body.pledgeId) any existing link conflicts.
       const alreadyLinked = gifts.filter(
-        (g) => g.paymentOnPledgeId != null && g.paymentOnPledgeId !== body.pledgeId,
+        (g) => g.opportunityId != null && g.opportunityId !== body.pledgeId,
       );
       if (alreadyLinked.length) {
         return {
@@ -1046,8 +1046,11 @@ router.post(
           individualGiverPersonId: donor.individualGiverPersonId,
           householdId: donor.householdId,
           awardedAmount: summedAmount,
-          stage: "written_commitment",
-          wasPledge: true,
+          // Cultivation stage is a pure funnel now; the commitment outcome is the
+          // writtenPledge latch. applyDerivedOppFieldsMany below advances stage to
+          // `complete` (won) and derives status/paid — never written by hand.
+          stage: "verbal_confirmation",
+          writtenPledge: true,
           // Inherit loan-vs-grant from the source gift(s) so loan-fund money
           // doesn't create a grant pledge; if any source gift is loan the
           // pledge is loan. Keep the legacy fundraising_category in lockstep.
@@ -1068,7 +1071,7 @@ router.post(
 
       await tx
         .update(giftsAndPayments)
-        .set({ paymentOnPledgeId: pledgeId, updatedAt: new Date() })
+        .set({ opportunityId: pledgeId, updatedAt: new Date() })
         .where(inArray(giftsAndPayments.id, giftIds));
 
       if (actor) {
@@ -1076,7 +1079,7 @@ router.post(
           id: newId(),
           actorUserId: actor.id,
           entity: "gifts-and-payments/merge-into-pledge",
-          fields: ["paymentOnPledgeId"],
+          fields: ["opportunityId"],
           targetIds: giftIds,
           succeededIds: giftIds,
           failedIds: [],
@@ -1107,8 +1110,8 @@ router.post(
  * each booked to a different allocation). Non-destructive: the original gift is
  * KEPT and becomes the payment for its FIRST allocation; a new gift is minted
  * for every remaining allocation and that allocation is re-pointed onto its new
- * gift. A pledge (awarded = gift amount, donor = gift donor, was_pledge = true)
- * is created and every payment-gift links to it via paymentOnPledgeId. Derived
+ * gift. A pledge (awarded = gift amount, donor = gift donor, written_pledge = true)
+ * is created and every payment-gift links to it via opportunityId. Derived
  * pledge fields are recomputed afterward — status is never written directly.
  *
  * Guards (all checked inside one tx; nothing changes unless every check passes):
@@ -1152,7 +1155,7 @@ router.post(
           json: { error: "gift_archived", message: "Restore this gift before splitting it." },
         };
       }
-      if (gift.paymentOnPledgeId != null) {
+      if (gift.opportunityId != null) {
         return {
           ok: false,
           status: 409,
@@ -1265,8 +1268,11 @@ router.post(
         individualGiverPersonId: donor.individualGiverPersonId,
         householdId: donor.householdId,
         awardedAmount: gift.amount,
-        stage: "written_commitment",
-        wasPledge: true,
+        // Cultivation stage is a pure funnel now; the commitment outcome is the
+        // writtenPledge latch. Derived fields (status/stage→complete/paid) are
+        // recomputed afterward — never written by hand (invariant #3).
+        stage: "verbal_confirmation",
+        writtenPledge: true,
         // Inherit loan-vs-grant from the source gift so a loan-fund gift
         // doesn't create a grant pledge; keep legacy fundraising_category in
         // lockstep with the authoritative flag.
@@ -1308,7 +1314,7 @@ router.post(
         .update(giftsAndPayments)
         .set({
           amount: first.subAmount,
-          paymentOnPledgeId: pledgeId,
+          opportunityId: pledgeId,
           grantYear: first.grantYear ?? gift.grantYear,
           designatedToSchool: gift.designatedToSchool || first.schoolRecipientId != null,
           updatedAt: new Date(),
@@ -1331,7 +1337,7 @@ router.post(
           // Carry the authoritative loan_or_grant flag onto every split row so
           // it isn't silently reset to the column default.
           loanOrGrant: gift.loanOrGrant,
-          paymentOnPledgeId: pledgeId,
+          opportunityId: pledgeId,
           advisorPersonId: gift.advisorPersonId,
           grantYear: a.grantYear ?? gift.grantYear,
           primaryContactPersonId: gift.primaryContactPersonId,
@@ -1358,7 +1364,7 @@ router.post(
           id: newId(),
           actorUserId: actor.id,
           entity: "gifts-and-payments/split-into-pledge",
-          fields: ["amount", "paymentOnPledgeId", "grantYear", "designatedToSchool"],
+          fields: ["amount", "opportunityId", "grantYear", "designatedToSchool"],
           targetIds: [gift.id],
           succeededIds: giftIds,
           failedIds: [],

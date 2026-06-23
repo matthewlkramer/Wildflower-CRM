@@ -207,11 +207,8 @@ export const OPPORTUNITIES_BULK_FIELDS: ReadonlyArray<BulkField> = [
       { value: "warm_lead", label: "Warm lead" },
       { value: "in_conversation", label: "In conversation" },
       { value: "convince", label: "Convince" },
-      { value: "conditional_commitment", label: "Conditional commitment" },
       { value: "probable_renewal", label: "Probable renewal" },
       { value: "verbal_confirmation", label: "Verbal confirmation" },
-      { value: "written_commitment", label: "Written commitment" },
-      { value: "cash_in", label: "Cash in" },
     ],
   },
   {

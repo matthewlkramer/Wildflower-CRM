@@ -68,12 +68,18 @@ const STAGE_OPTIONS = [
   { value: "warm_lead", label: "Warm lead" },
   { value: "in_conversation", label: "In conversation" },
   { value: "convince", label: "Convince" },
-  { value: "conditional_commitment", label: "Conditional commitment" },
   { value: "probable_renewal", label: "Probable renewal" },
   { value: "verbal_confirmation", label: "Verbal confirmation" },
-  { value: "written_commitment", label: "Written commitment" },
-  { value: "cash_in", label: "Cash in" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityStage>>;
+
+// `pledge` is stored as-is but surfaced to fundraisers as "Waiting for payment".
+const STATUS_LABEL: Record<string, string> = {
+  open: "Open",
+  pledge: "Waiting for payment",
+  cash_in: "Cash in",
+  dormant: "Dormant",
+  lost: "Lost",
+};
 
 // `status` is fully calculated server-side and shown read-only. The only
 // user-settable override is `lossType` (None / Dormant / Lost).
@@ -415,7 +421,7 @@ function OppView({
       <Badge
         variant={status === "cash_in" || status === "pledge" ? "default" : "outline"}
       >
-        {formatEnum(status)}
+        {STATUS_LABEL[status] ?? formatEnum(status)}
       </Badge>
     ) : (
       <span className="text-muted-foreground">—</span>
@@ -598,12 +604,12 @@ function OppView({
                     the user can clear it.
                   */}
                   <InlineEditBoolean
-                    label="Was pledge"
-                    testIdBase="opp-was-pledge"
-                    value={opp.wasPledge ?? false}
+                    label="Written pledge"
+                    testIdBase="opp-written-pledge"
+                    value={opp.writtenPledge ?? false}
                     allowNull={false}
-                    display={opp.wasPledge ? "Yes" : "No"}
-                    onSave={(next) => patch({ wasPledge: next ?? false })}
+                    display={opp.writtenPledge ? "Yes" : "No"}
+                    onSave={(next) => patch({ writtenPledge: next ?? false })}
                   />
                 </Row>
                 <Row label="Grant letter">

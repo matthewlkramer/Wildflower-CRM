@@ -82,11 +82,12 @@ export default function Dashboard() {
   ): MoneyTile[] => {
     const catParam = `&category=${catSlug}`;
     // Weighted projection = money in (received) + the UNPAID remainder of
-    // written commitments (committed — the server nets out payments already in
-    // `received`) + probability-weighted open pipeline. The three buckets are
-    // disjoint, so a partial payment on a pledge is counted once.
+    // written commitments DISCOUNTED by win-probability (committedWeighted —
+    // 0.90 non-conditional / 0.75 conditional; the server nets out payments
+    // already in `received`) + probability-weighted open pipeline. The three
+    // buckets are disjoint, so a partial payment on a pledge is counted once.
     const weightedProjection = (
-      Number(cm.received) + Number(cm.committed) + Number(cm.openPipelineWeighted)
+      Number(cm.received) + Number(cm.committedWeighted) + Number(cm.openPipelineWeighted)
     ).toFixed(2);
     return [
       {

@@ -446,12 +446,12 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
       .from(schema.opportunitiesAndPledges)
       .where(eqFn(schema.opportunitiesAndPledges.id, pledgeId));
     expect(Number(pledge.awardedAmount)).toBeCloseTo(500);
-    expect(pledge.wasPledge).toBe(true);
+    expect(pledge.writtenPledge).toBe(true);
     expect(pledge.organizationId).toBe(ORG_ID);
 
     // Both gifts now point at the new pledge; neither is deleted.
-    expect((await readGift(a)).paymentOnPledgeId).toBe(pledgeId);
-    expect((await readGift(b)).paymentOnPledgeId).toBe(pledgeId);
+    expect((await readGift(a)).opportunityId).toBe(pledgeId);
+    expect((await readGift(b)).opportunityId).toBe(pledgeId);
   }, 30_000);
 
   it("attaches gifts to an existing pledge", async () => {
@@ -462,7 +462,7 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
       organizationId: ORG_ID,
       awardedAmount: "1000.00",
       stage: "written_commitment",
-      wasPledge: true,
+      writtenPledge: true,
     });
     seededPledgeIds.push(pledgeId);
     const a = await seedGiftWithAllocation("75.00");
@@ -475,7 +475,7 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
     expect(res.status).toBe(200);
     expect(res.json.created).toBe(false);
     expect(res.json.pledgeId).toBe(pledgeId);
-    expect((await readGift(a)).paymentOnPledgeId).toBe(pledgeId);
+    expect((await readGift(a)).opportunityId).toBe(pledgeId);
   }, 30_000);
 
   it("rejects (409 donor_mismatch) attaching a gift whose donor differs from the existing pledge", async () => {
@@ -486,7 +486,7 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
       organizationId: ORG_ID,
       awardedAmount: "500.00",
       stage: "written_commitment",
-      wasPledge: true,
+      writtenPledge: true,
     });
     seededPledgeIds.push(pledgeId);
     // Gift belongs to a PERSON, not the pledge's organization.
@@ -502,7 +502,7 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
     expect(res.status).toBe(409);
     expect(res.json.error).toBe("donor_mismatch");
     // The gift must NOT have been re-pointed at the pledge.
-    expect((await readGift(a)).paymentOnPledgeId).toBeNull();
+    expect((await readGift(a)).opportunityId).toBeNull();
   }, 30_000);
 
   it("rejects (409 gift_already_on_pledge) re-pointing a gift already on another pledge", async () => {
@@ -513,7 +513,7 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
       organizationId: ORG_ID,
       awardedAmount: "100.00",
       stage: "written_commitment",
-      wasPledge: true,
+      writtenPledge: true,
     });
     seededPledgeIds.push(firstPledgeId);
     const a = await seedGiftWithAllocation("80.00");
@@ -524,7 +524,7 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
       pledgeId: firstPledgeId,
     });
     expect(attach.status).toBe(200);
-    expect((await readGift(a)).paymentOnPledgeId).toBe(firstPledgeId);
+    expect((await readGift(a)).opportunityId).toBe(firstPledgeId);
 
     // Now try to merge it into a brand-new pledge — must be surfaced, not moved.
     const res = await api("/api/gifts-and-payments/merge-into-pledge", {
@@ -534,7 +534,7 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
     expect(res.status).toBe(409);
     expect(res.json.error).toBe("gift_already_on_pledge");
     // Still attached to the first pledge.
-    expect((await readGift(a)).paymentOnPledgeId).toBe(firstPledgeId);
+    expect((await readGift(a)).opportunityId).toBe(firstPledgeId);
   }, 30_000);
 
   it("returns 409 when the target pledge does not exist", async () => {
@@ -561,8 +561,8 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
     expect(res.status).toBe(400);
     expect(res.json.error).toBe("donor_resolution_required");
     // Neither gift was attached to a pledge.
-    expect((await readGift(a)).paymentOnPledgeId).toBeNull();
-    expect((await readGift(b)).paymentOnPledgeId).toBeNull();
+    expect((await readGift(a)).opportunityId).toBeNull();
+    expect((await readGift(b)).opportunityId).toBeNull();
   }, 30_000);
 
   it("returns 400 on an empty giftIds body", async () => {
@@ -611,10 +611,12 @@ describe.skipIf(!HAS_DB)(
         .from(schema.opportunitiesAndPledges)
         .where(eqFn(schema.opportunitiesAndPledges.id, pledgeId));
       expect(Number(pledge.awardedAmount)).toBeCloseTo(100000);
-      expect(pledge.wasPledge).toBe(true);
+      expect(pledge.writtenPledge).toBe(true);
       // Stage is always derived (never written directly): the two payment-gifts
-      // fully fund the pledge, so applyDerivedOppFieldsMany resolves it to cash_in.
-      expect(pledge.stage).toBe("cash_in");
+      // fully fund the pledge (a win), so applyDerivedOppFieldsMany advances the
+      // funnel stage to the terminal `complete` (status resolves to cash_in).
+      expect(pledge.stage).toBe("complete");
+      expect(pledge.status).toBe("cash_in");
       expect(pledge.organizationId).toBe(ORG_ID);
 
       // One pledge allocation per gift allocation, all superseded by the gifts.
@@ -628,7 +630,7 @@ describe.skipIf(!HAS_DB)(
       // Original gift: amount = first allocation, points at the pledge, FY_A.
       const original = await readGift(giftId);
       expect(Number(original.amount)).toBeCloseTo(60000);
-      expect(original.paymentOnPledgeId).toBe(pledgeId);
+      expect(original.opportunityId).toBe(pledgeId);
       expect(original.grantYear).toBe(FY_A_ID);
       const originalAllocs = await allocationsFor(giftId);
       expect(originalAllocs.length).toBe(1);
@@ -638,7 +640,7 @@ describe.skipIf(!HAS_DB)(
       const mintedId = giftIds.find((g) => g !== giftId)!;
       const minted = await readGift(mintedId);
       expect(Number(minted.amount)).toBeCloseTo(40000);
-      expect(minted.paymentOnPledgeId).toBe(pledgeId);
+      expect(minted.opportunityId).toBe(pledgeId);
       expect(minted.organizationId).toBe(ORG_ID);
       expect(minted.grantYear).toBe(FY_B_ID);
       const mintedAllocs = await allocationsFor(mintedId);
@@ -663,7 +665,7 @@ describe.skipIf(!HAS_DB)(
       expect(res.json.error).toBe("allocation_sum_mismatch");
       // Nothing changed — no pledge link, amount intact, allocations intact.
       const g = await readGift(giftId);
-      expect(g.paymentOnPledgeId).toBeNull();
+      expect(g.opportunityId).toBeNull();
       expect(Number(g.amount)).toBeCloseTo(100000);
       expect((await allocationsFor(giftId)).length).toBe(2);
     }, 30_000);
@@ -676,7 +678,7 @@ describe.skipIf(!HAS_DB)(
       );
       expect(res.status).toBe(400);
       expect(res.json.error).toBe("not_enough_allocations");
-      expect((await readGift(giftId)).paymentOnPledgeId).toBeNull();
+      expect((await readGift(giftId)).opportunityId).toBeNull();
     }, 30_000);
 
     it("rejects (409 gift_already_on_pledge) a gift that already pays a pledge", async () => {
@@ -687,7 +689,7 @@ describe.skipIf(!HAS_DB)(
         organizationId: ORG_ID,
         awardedAmount: "1000.00",
         stage: "written_commitment",
-        wasPledge: true,
+        writtenPledge: true,
       });
       seededPledgeIds.push(pledgeId);
       const giftId = await seedGiftWithAllocations([
@@ -696,7 +698,7 @@ describe.skipIf(!HAS_DB)(
       ]);
       await db
         .update(schema.giftsAndPayments)
-        .set({ paymentOnPledgeId: pledgeId })
+        .set({ opportunityId: pledgeId })
         .where(eqFn(schema.giftsAndPayments.id, giftId));
 
       const res = await api(
@@ -707,7 +709,7 @@ describe.skipIf(!HAS_DB)(
       expect(res.status).toBe(409);
       expect(res.json.error).toBe("gift_already_on_pledge");
       // No second pledge was created (still attached to the original).
-      expect((await readGift(giftId)).paymentOnPledgeId).toBe(pledgeId);
+      expect((await readGift(giftId)).opportunityId).toBe(pledgeId);
       expect((await allocationsFor(giftId)).length).toBe(2);
     }, 30_000);
 
@@ -734,7 +736,7 @@ describe.skipIf(!HAS_DB)(
 
       expect(res.status).toBe(409);
       expect(res.json.error).toBe("quickbooks_linked");
-      expect((await readGift(giftId)).paymentOnPledgeId).toBeNull();
+      expect((await readGift(giftId)).opportunityId).toBeNull();
     }, 30_000);
 
     it("blocks (409 quickbooks_linked) a gift wired into a staged-payment split", async () => {
@@ -766,7 +768,7 @@ describe.skipIf(!HAS_DB)(
 
       expect(res.status).toBe(409);
       expect(res.json.error).toBe("quickbooks_linked");
-      expect((await readGift(giftId)).paymentOnPledgeId).toBeNull();
+      expect((await readGift(giftId)).opportunityId).toBeNull();
     }, 30_000);
 
     it("returns 404 when the gift does not exist", async () => {

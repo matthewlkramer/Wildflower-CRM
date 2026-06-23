@@ -4774,12 +4774,12 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
     .enum(["pledges", "opportunities"])
     .optional()
     .describe(
-      "Convenience filter encoding the page split:\n  pledges       — wasPledge=true OR stage ∈ (conditional, verbal,\n                  written). Drives the \/pledges page.\n  opportunities — the complement (rest of the rows). Drives the\n                  \/opportunities page.\nOmit to include all rows.\n",
+      "Convenience filter encoding the page split:\n  pledges       — writtenPledge=true (the sticky commitment outcome).\n                  Drives the \/pledges page; historical pledges stay\n                  after they're fully paid.\n  opportunities — the complement (rest of the rows). Drives the\n                  \/opportunities page.\nOmit to include all rows.\n",
     ),
-  wasPledge: zod.coerce
+  writtenPledge: zod.coerce
     .boolean()
     .optional()
-    .describe("Filter strictly on the was_pledge column."),
+    .describe("Filter strictly on the written_pledge column."),
   type: zod.array(zod.coerce.string()).optional(),
   organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
@@ -4854,7 +4854,7 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
       status: zod
         .enum(["open", "pledge", "cash_in", "dormant", "lost"])
         .describe(
-          "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage = written_commitment                      → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage = written, or conditional\/grant-letter sticky flag)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+          "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n",
         )
         .nullish(),
       lossType: zod
@@ -4877,14 +4877,18 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
           "verbal_confirmation",
           "written_commitment",
           "cash_in",
+          "complete",
         ])
+        .describe(
+          "Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n",
+        )
         .nullish(),
       lossReason: zod.string().nullish(),
       applicationDeadline: zod.string().date().nullish(),
       paymentDetails: zod.string().nullish(),
       usageNotes: zod.string().nullish(),
       copperPledgeId: zod.string().nullish(),
-      wasPledge: zod.boolean(),
+      writtenPledge: zod.boolean(),
       grantLetterUrl: zod.string().nullish(),
       grantLetterFilename: zod.string().nullish(),
       grantLetterUploadedAt: zod.string().datetime({}).nullish(),
@@ -4974,14 +4978,18 @@ export const CreateOpportunityOrPledgeBody = zod.object({
       "verbal_confirmation",
       "written_commitment",
       "cash_in",
+      "complete",
     ])
-    .optional(),
+    .optional()
+    .describe(
+      "Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n",
+    ),
   lossReason: zod.string().optional(),
   applicationDeadline: zod.string().date().optional(),
   paymentDetails: zod.string().optional(),
   usageNotes: zod.string().optional(),
   copperPledgeId: zod.string().optional(),
-  wasPledge: zod.boolean().optional(),
+  writtenPledge: zod.boolean().optional(),
   grantLetterUrl: zod.string().optional(),
   grantLetterFilename: zod.string().optional(),
   grantLetterUploadedAt: zod.string().datetime({}).optional(),
@@ -5038,7 +5046,7 @@ export const GetOpportunityOrPledgeResponse = zod
     status: zod
       .enum(["open", "pledge", "cash_in", "dormant", "lost"])
       .describe(
-        "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage = written_commitment                      → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage = written, or conditional\/grant-letter sticky flag)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+        "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n",
       )
       .nullish(),
     lossType: zod
@@ -5061,14 +5069,18 @@ export const GetOpportunityOrPledgeResponse = zod
         "verbal_confirmation",
         "written_commitment",
         "cash_in",
+        "complete",
       ])
+      .describe(
+        "Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n",
+      )
       .nullish(),
     lossReason: zod.string().nullish(),
     applicationDeadline: zod.string().date().nullish(),
     paymentDetails: zod.string().nullish(),
     usageNotes: zod.string().nullish(),
     copperPledgeId: zod.string().nullish(),
-    wasPledge: zod.boolean(),
+    writtenPledge: zod.boolean(),
     grantLetterUrl: zod.string().nullish(),
     grantLetterFilename: zod.string().nullish(),
     grantLetterUploadedAt: zod.string().datetime({}).nullish(),
@@ -5246,7 +5258,7 @@ export const GetOpportunityOrPledgeResponse = zod
                 "matching_gift",
               ])
               .nullish(),
-            paymentOnPledgeId: zod.string().nullish(),
+            opportunityId: zod.string().nullish(),
             advisorPersonId: zod.string().nullish(),
             grantYear: zod.string().nullish(),
             giftBeingMatchedId: zod.string().nullish(),
@@ -5473,14 +5485,18 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
       "verbal_confirmation",
       "written_commitment",
       "cash_in",
+      "complete",
     ])
+    .describe(
+      "Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n",
+    )
     .nullish(),
   lossReason: zod.string().nullish(),
   applicationDeadline: zod.string().date().nullish(),
   paymentDetails: zod.string().nullish(),
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
-  wasPledge: zod.boolean().optional(),
+  writtenPledge: zod.boolean().optional(),
   grantLetterUrl: zod.string().nullish(),
   grantLetterFilename: zod.string().nullish(),
   grantLetterUploadedAt: zod.string().datetime({}).nullish(),
@@ -5532,7 +5548,7 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   status: zod
     .enum(["open", "pledge", "cash_in", "dormant", "lost"])
     .describe(
-      "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage = written_commitment                      → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage = written, or conditional\/grant-letter sticky flag)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+      "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n",
     )
     .nullish(),
   lossType: zod
@@ -5555,14 +5571,18 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
       "verbal_confirmation",
       "written_commitment",
       "cash_in",
+      "complete",
     ])
+    .describe(
+      "Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n",
+    )
     .nullish(),
   lossReason: zod.string().nullish(),
   applicationDeadline: zod.string().date().nullish(),
   paymentDetails: zod.string().nullish(),
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
-  wasPledge: zod.boolean(),
+  writtenPledge: zod.boolean(),
   grantLetterUrl: zod.string().nullish(),
   grantLetterFilename: zod.string().nullish(),
   grantLetterUploadedAt: zod.string().datetime({}).nullish(),
@@ -5895,7 +5915,7 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
   organizationId: zod.coerce.string().optional(),
   householdId: zod.coerce.string().optional(),
   individualGiverPersonId: zod.coerce.string().optional(),
-  paymentOnPledgeId: zod.coerce.string().optional(),
+  opportunityId: zod.coerce.string().optional(),
   paymentMethod: zod.array(zod.coerce.string()).optional(),
   thankYouSentAtPresence: zod
     .enum(["has", "blank"])
@@ -6024,7 +6044,7 @@ export const ListGiftsAndPaymentsResponse = zod.object({
           "matching_gift",
         ])
         .nullish(),
-      paymentOnPledgeId: zod.string().nullish(),
+      opportunityId: zod.string().nullish(),
       advisorPersonId: zod.string().nullish(),
       grantYear: zod.string().nullish(),
       giftBeingMatchedId: zod.string().nullish(),
@@ -6228,7 +6248,7 @@ export const CreateGiftOrPaymentBody = zod.object({
       "matching_gift",
     ])
     .optional(),
-  paymentOnPledgeId: zod.string().optional(),
+  opportunityId: zod.string().optional(),
   advisorPersonId: zod.string().optional(),
   grantYear: zod.string().optional(),
   giftBeingMatchedId: zod.string().optional(),
@@ -6311,7 +6331,7 @@ export const GetGiftOrPaymentResponse = zod
         "matching_gift",
       ])
       .nullish(),
-    paymentOnPledgeId: zod.string().nullish(),
+    opportunityId: zod.string().nullish(),
     advisorPersonId: zod.string().nullish(),
     grantYear: zod.string().nullish(),
     giftBeingMatchedId: zod.string().nullish(),
@@ -6583,7 +6603,7 @@ export const UpdateGiftOrPaymentBody = zod.object({
       "matching_gift",
     ])
     .nullish(),
-  paymentOnPledgeId: zod.string().nullish(),
+  opportunityId: zod.string().nullish(),
   advisorPersonId: zod.string().nullish(),
   grantYear: zod.string().nullish(),
   giftBeingMatchedId: zod.string().nullish(),
@@ -6661,7 +6681,7 @@ export const UpdateGiftOrPaymentResponse = zod.object({
       "matching_gift",
     ])
     .nullish(),
-  paymentOnPledgeId: zod.string().nullish(),
+  opportunityId: zod.string().nullish(),
   advisorPersonId: zod.string().nullish(),
   grantYear: zod.string().nullish(),
   giftBeingMatchedId: zod.string().nullish(),
@@ -6932,7 +6952,7 @@ export const LinkThankYouEmailResponse = zod
         "matching_gift",
       ])
       .nullish(),
-    paymentOnPledgeId: zod.string().nullish(),
+    opportunityId: zod.string().nullish(),
     advisorPersonId: zod.string().nullish(),
     grantYear: zod.string().nullish(),
     giftBeingMatchedId: zod.string().nullish(),
@@ -14902,7 +14922,7 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
             "matching_gift",
           ])
           .nullish(),
-        paymentOnPledgeId: zod.string().nullish(),
+        opportunityId: zod.string().nullish(),
         advisorPersonId: zod.string().nullish(),
         grantYear: zod.string().nullish(),
         giftBeingMatchedId: zod.string().nullish(),
@@ -15174,7 +15194,7 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
             "matching_gift",
           ])
           .nullish(),
-        paymentOnPledgeId: zod.string().nullish(),
+        opportunityId: zod.string().nullish(),
         advisorPersonId: zod.string().nullish(),
         grantYear: zod.string().nullish(),
         giftBeingMatchedId: zod.string().nullish(),
@@ -15441,7 +15461,7 @@ export const ReconcileStagedPaymentResponse = zod.object({
         "matching_gift",
       ])
       .nullish(),
-    paymentOnPledgeId: zod.string().nullish(),
+    opportunityId: zod.string().nullish(),
     advisorPersonId: zod.string().nullish(),
     grantYear: zod.string().nullish(),
     giftBeingMatchedId: zod.string().nullish(),
@@ -15772,7 +15792,7 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
         "matching_gift",
       ])
       .nullish(),
-    paymentOnPledgeId: zod.string().nullish(),
+    opportunityId: zod.string().nullish(),
     advisorPersonId: zod.string().nullish(),
     grantYear: zod.string().nullish(),
     giftBeingMatchedId: zod.string().nullish(),
@@ -17430,7 +17450,12 @@ export const GetDashboardSummaryResponse = zod.object({
               committed: zod
                 .string()
                 .describe(
-                  "Per-pledge UNPAID remainder for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
+                  "Per-pledge UNPAID remainder (at 100%) for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
+                ),
+              committedWeighted: zod
+                .string()
+                .describe(
+                  "Per-pledge UNPAID remainder discounted by the pledge's win_probability (0.90 non-conditional \/ 0.75 conditional) for status='pledge' opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.",
                 ),
               received: zod
                 .string()
@@ -17462,7 +17487,12 @@ export const GetDashboardSummaryResponse = zod.object({
               committed: zod
                 .string()
                 .describe(
-                  "Per-pledge UNPAID remainder for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
+                  "Per-pledge UNPAID remainder (at 100%) for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
+                ),
+              committedWeighted: zod
+                .string()
+                .describe(
+                  "Per-pledge UNPAID remainder discounted by the pledge's win_probability (0.90 non-conditional \/ 0.75 conditional) for status='pledge' opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.",
                 ),
               received: zod
                 .string()
@@ -17991,7 +18021,7 @@ export const MergeGiftsIntoPledgeBody = zod
     householdId: zod.string().nullish(),
   })
   .describe(
-    "Attach `giftIds` to a pledge as its payments (each gift's payment_on_pledge_id is set). Provide `pledgeId` to attach to an existing pledge, OR omit it to create a NEW pledge — in which case exactly one donor field must be set (donor XOR) for the new pledge.",
+    "Attach `giftIds` to a pledge as its payments (each gift's opportunity_id is set). Provide `pledgeId` to attach to an existing pledge, OR omit it to create a NEW pledge — in which case exactly one donor field must be set (donor XOR) for the new pledge.",
   );
 
 export const MergeGiftsIntoPledgeResponse = zod.object({
@@ -18092,10 +18122,14 @@ export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
         "verbal_confirmation",
         "written_commitment",
         "cash_in",
+        "complete",
       ])
+      .describe(
+        "Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n",
+      )
       .nullish(),
     type: zod.enum(["solicitation", "renewal", "open_application"]).nullish(),
-    wasPledge: zod.boolean().nullish(),
+    writtenPledge: zod.boolean().nullish(),
     actualCompletionDate: zod
       .string()
       .date()
@@ -18926,7 +18960,7 @@ export const ArchiveOpportunityOrPledgeResponse = zod.object({
   status: zod
     .enum(["open", "pledge", "cash_in", "dormant", "lost"])
     .describe(
-      "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage = written_commitment                      → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage = written, or conditional\/grant-letter sticky flag)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+      "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n",
     )
     .nullish(),
   lossType: zod
@@ -18949,14 +18983,18 @@ export const ArchiveOpportunityOrPledgeResponse = zod.object({
       "verbal_confirmation",
       "written_commitment",
       "cash_in",
+      "complete",
     ])
+    .describe(
+      "Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n",
+    )
     .nullish(),
   lossReason: zod.string().nullish(),
   applicationDeadline: zod.string().date().nullish(),
   paymentDetails: zod.string().nullish(),
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
-  wasPledge: zod.boolean(),
+  writtenPledge: zod.boolean(),
   grantLetterUrl: zod.string().nullish(),
   grantLetterFilename: zod.string().nullish(),
   grantLetterUploadedAt: zod.string().datetime({}).nullish(),
@@ -19033,7 +19071,7 @@ export const UnarchiveOpportunityOrPledgeResponse = zod.object({
   status: zod
     .enum(["open", "pledge", "cash_in", "dormant", "lost"])
     .describe(
-      "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from stage +\npayments + lossType on every write:\n  lossType set                                  → status = lossType\n  else fully paid (paid≥awarded) or stage=cash_in → cash_in\n  else stage = written_commitment                      → pledge\n  else                                                 → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed (stage = written, or conditional\/grant-letter sticky flag)\n  cash_in — fully paid (stage=cash_in or sum of payments >= awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead.\n",
+      "Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType='dormant')\n  lost    — declined\/withdrawn (mirrors lossType='lost')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n",
     )
     .nullish(),
   lossType: zod
@@ -19056,14 +19094,18 @@ export const UnarchiveOpportunityOrPledgeResponse = zod.object({
       "verbal_confirmation",
       "written_commitment",
       "cash_in",
+      "complete",
     ])
+    .describe(
+      "Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n",
+    )
     .nullish(),
   lossReason: zod.string().nullish(),
   applicationDeadline: zod.string().date().nullish(),
   paymentDetails: zod.string().nullish(),
   usageNotes: zod.string().nullish(),
   copperPledgeId: zod.string().nullish(),
-  wasPledge: zod.boolean(),
+  writtenPledge: zod.boolean(),
   grantLetterUrl: zod.string().nullish(),
   grantLetterFilename: zod.string().nullish(),
   grantLetterUploadedAt: zod.string().datetime({}).nullish(),
@@ -19159,7 +19201,7 @@ export const ArchiveGiftOrPaymentResponse = zod.object({
       "matching_gift",
     ])
     .nullish(),
-  paymentOnPledgeId: zod.string().nullish(),
+  opportunityId: zod.string().nullish(),
   advisorPersonId: zod.string().nullish(),
   grantYear: zod.string().nullish(),
   giftBeingMatchedId: zod.string().nullish(),
@@ -19391,7 +19433,7 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
       "matching_gift",
     ])
     .nullish(),
-  paymentOnPledgeId: zod.string().nullish(),
+  opportunityId: zod.string().nullish(),
   advisorPersonId: zod.string().nullish(),
   grantYear: zod.string().nullish(),
   giftBeingMatchedId: zod.string().nullish(),
@@ -20436,7 +20478,7 @@ export const ListReconciliationCardsResponse = zod.object({
           ])
           .optional()
           .describe(
-            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
+            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via opportunityId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
           ),
         giftState: zod
           .enum([
@@ -20449,7 +20491,7 @@ export const ListReconciliationCardsResponse = zod.object({
           ])
           .optional()
           .describe(
-            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
+            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via opportunityId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
           ),
         opportunityState: zod
           .enum([
@@ -20462,7 +20504,7 @@ export const ListReconciliationCardsResponse = zod.object({
           ])
           .optional()
           .describe(
-            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
+            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via opportunityId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
           ),
         hasStripeEvidence: zod.boolean(),
         stripePayoutId: zod.string().nullish(),
@@ -20642,7 +20684,7 @@ export const GetReconciliationGraphResponse = zod
             "create",
           ])
           .describe(
-            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via paymentOnPledgeId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
+            "Resolution state of a node within a card's graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via opportunityId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n",
           ),
         selectedId: zod
           .string()
@@ -20919,7 +20961,7 @@ export const ApproveReconciliationCardBody = zod
         "convert_to_pledge_and_first_payment",
       ])
       .describe(
-        "What approving the card does.\nlink_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.\ncreate_gift: human-mint a new gift from the QB evidence for the chosen donor.\ncreate_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (paymentOnPledgeId); the opp derives to cash_in when fully paid.\nconvert_to_pledge_and_first_payment: latch the opportunity as a pledge (commitment stage, wasPledge) and mint the first-payment gift linked to it.\n",
+        "What approving the card does.\nlink_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.\ncreate_gift: human-mint a new gift from the QB evidence for the chosen donor.\ncreate_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (opportunityId); the opp derives to cash_in when fully paid.\nconvert_to_pledge_and_first_payment: latch the opportunity as a pledge (set writtenPledge=true; cultivation stage is untouched) and mint the first-payment gift linked to it.\n",
       ),
     giftId: zod
       .string()
@@ -20978,7 +21020,7 @@ export const ApproveReconciliationCardResponse = zod.object({
       "convert_to_pledge_and_first_payment",
     ])
     .describe(
-      "What approving the card does.\nlink_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.\ncreate_gift: human-mint a new gift from the QB evidence for the chosen donor.\ncreate_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (paymentOnPledgeId); the opp derives to cash_in when fully paid.\nconvert_to_pledge_and_first_payment: latch the opportunity as a pledge (commitment stage, wasPledge) and mint the first-payment gift linked to it.\n",
+      "What approving the card does.\nlink_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.\ncreate_gift: human-mint a new gift from the QB evidence for the chosen donor.\ncreate_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (opportunityId); the opp derives to cash_in when fully paid.\nconvert_to_pledge_and_first_payment: latch the opportunity as a pledge (set writtenPledge=true; cultivation stage is untouched) and mint the first-payment gift linked to it.\n",
     ),
   stagedPaymentId: zod.string(),
   giftId: zod

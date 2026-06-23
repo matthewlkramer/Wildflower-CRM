@@ -129,7 +129,7 @@ async function loadActiveGifts(): Promise<GiftRow[]> {
       donorName,
       amount: g.amount,
       date: g.dateReceived,
-      pledgeId: g.paymentOnPledgeId,
+      pledgeId: g.opportunityId,
       allocationCount,
       countedLinked,
     })

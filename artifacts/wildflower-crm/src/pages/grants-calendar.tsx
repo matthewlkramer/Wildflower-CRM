@@ -85,8 +85,9 @@ export default function GrantsCalendar() {
   const ts = useTableState("grants-calendar", { key: "applicationDeadline", dir: "asc" });
   const STAGE_ORDER: Record<string, number> = {
     cold_lead: 1, warm_lead: 2, in_conversation: 3, convince: 4,
-    conditional_commitment: 5, probable_renewal: 6, verbal_confirmation: 7,
-    written_commitment: 8, cash_in: 9,
+    probable_renewal: 5, verbal_confirmation: 6, complete: 7,
+    // deprecated stages retained so any not-yet-backfilled rows still sort sanely
+    conditional_commitment: 6, written_commitment: 6, cash_in: 7,
   };
   const upcoming = useMemo(() => {
     const rows = data?.data ?? [];

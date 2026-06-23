@@ -221,7 +221,15 @@ export const opportunityTypeEnum = pgEnum("opportunity_type", [
   "open_application",
 ]);
 
-// Stage values map to a default win-probability in the UI/API layer.
+// Pure cultivation funnel. Stage is now SEPARATE from outcome: it tracks how
+// far the conversation has progressed, and reads `complete` (terminal) once the
+// opp is WON (written pledge or paid) — auto-driven server-side, never for
+// lost/dormant rows. Stage values map to a default win-probability in the
+// API layer. The three legacy commitment/outcome values
+// (conditional_commitment, written_commitment, cash_in) are RETAINED for
+// historical / un-migrated rows but are no longer written by the app — the
+// commitment signal now lives on the separate `written_pledge` flag and the
+// calculated `status`.
 export const opportunityStageEnum = pgEnum("opportunity_stage", [
   "cold_lead",
   "warm_lead",
@@ -232,6 +240,7 @@ export const opportunityStageEnum = pgEnum("opportunity_stage", [
   "verbal_confirmation",
   "written_commitment",
   "cash_in",
+  "complete",
 ]);
 
 export const opportunityConditionalEnum = pgEnum("opportunity_conditional", [

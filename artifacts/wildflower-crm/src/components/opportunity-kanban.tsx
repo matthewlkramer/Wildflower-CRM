@@ -28,11 +28,11 @@ const STAGES: OpportunityStage[] = [
   "warm_lead",
   "in_conversation",
   "convince",
-  "conditional_commitment",
   "probable_renewal",
   "verbal_confirmation",
-  "written_commitment",
-  "cash_in",
+  // Terminal/won column. `complete` is auto-derived on a win, never set by
+  // hand, so the board renders won rows here but does not accept drops into it.
+  "complete",
 ];
 
 type OppsPage = { data: OpportunityOrPledge[]; pagination: { page: number; limit: number; total: number } };
@@ -99,6 +99,8 @@ export function OpportunityKanban({
     const oppId = String(e.active.id);
     const nextStage = e.over?.id ? (String(e.over.id) as OpportunityStage) : null;
     if (!nextStage || !STAGES.includes(nextStage)) return;
+    // `complete` is derived on a win and cannot be set by hand.
+    if (nextStage === "complete") return;
     const moved = rows.find((r) => r.id === oppId);
     if (!moved || moved.stage === nextStage) return;
 
@@ -164,7 +166,7 @@ function StageColumn({
   draggingId: string | null;
   userNames: Map<string, string>;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: stage });
+  const { setNodeRef, isOver } = useDroppable({ id: stage, disabled: stage === "complete" });
   const totalAsk = opps.reduce((sum, o) => sum + Number(o.askAmount ?? 0), 0);
 
   return (

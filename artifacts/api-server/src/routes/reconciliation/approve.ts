@@ -108,7 +108,7 @@ type GroupMintContext = {
  *
  *   - create_gift: donor is the human-chosen BODY donor; no opportunity.
  *   - create_gift_from_opportunity: a one-time PAYMENT against an existing
- *     opportunity/pledge — donor DERIVED from the opp; gift.paymentOnPledgeId set;
+ *     opportunity/pledge — donor DERIVED from the opp; gift.opportunityId set;
  *     the opp derives to cash_in when fully paid. Stage is left untouched.
  *   - convert_to_pledge_and_first_payment: latch an OPEN opportunity into a pledge
  *     (stage → written_commitment; was_pledge + status DERIVED post-commit) AND
@@ -128,7 +128,7 @@ async function mintGiftFromEvidence(
   // on the mere presence of body.opportunityId: the shared approve body allows
   // opportunityId for every outcome, so a stray/stale id on a plain create_gift
   // must NOT silently lock that opp, hijack the donor away from the validated body
-  // donor, attach the payment (paymentOnPledgeId), or re-derive the opp.
+  // donor, attach the payment (opportunityId), or re-derive the opp.
   const opportunityId = opts.requireOpportunity ? (body.opportunityId ?? null) : null;
   if (opts.requireOpportunity && !opportunityId) {
     res.status(400).json({
@@ -303,7 +303,11 @@ async function mintGiftFromEvidence(
           });
         }
         const alreadyPledgeLike =
-          opp.wasPledge === true ||
+          opp.writtenPledge === true ||
+          // Won/closed: redesigned wins land at stage 'complete' / status
+          // 'cash_in'; legacy rows may still carry deprecated commitment stages.
+          opp.stage === "complete" ||
+          opp.status === "cash_in" ||
           opp.stage === "conditional_commitment" ||
           opp.stage === "written_commitment" ||
           opp.stage === "cash_in" ||
@@ -413,12 +417,13 @@ async function mintGiftFromEvidence(
         });
       }
 
-      // convert: latch the opportunity into a pledge by setting a commitment
-      // stage (the user-driven lifecycle input). was_pledge + status are DERIVED
-      // post-commit by applyDerivedOppFields — never written by hand (invariant
-      // #3). Preserve a real (positive) awarded amount; only when it's missing
-      // fall back to the evidence amount so a single-payment commitment derives to
-      // cash_in instead of staying $0.
+      // convert: latch the opportunity into a pledge by setting the writtenPledge
+      // outcome flag (the user-driven lifecycle input). Cultivation stage is a
+      // pure funnel now and is NOT touched here; status + stage→complete are
+      // DERIVED post-commit by applyDerivedOppFields — never written by hand
+      // (invariant #3). Preserve a real (positive) awarded amount; only when it's
+      // missing fall back to the evidence amount so a single-payment commitment
+      // derives to cash_in instead of staying $0.
       if (opts.convert && opp) {
         const existingAwarded = Number(opp.awardedAmount ?? 0);
         const evNum = Number(evidenceAmount ?? 0);
@@ -429,7 +434,7 @@ async function mintGiftFromEvidence(
         await tx
           .update(opportunitiesAndPledges)
           .set({
-            stage: "written_commitment",
+            writtenPledge: true,
             awardedAmount,
             updatedAt: new Date(),
           })
@@ -439,7 +444,7 @@ async function mintGiftFromEvidence(
       // Mint the gift HEADER. The amount is the FINAL amount, stamped at insert
       // from the chosen evidence (single XOR pointer); no prior human figure
       // exists, so original_human_crm_amount stays null. The opp outcomes tie the
-      // gift to the opportunity via paymentOnPledgeId so the pledge derives
+      // gift to the opportunity via opportunityId so the pledge derives
       // cash_in when fully paid.
       await tx.insert(giftsAndPayments).values({
         ...buildGiftValuesFromStaged(
@@ -460,7 +465,7 @@ async function mintGiftFromEvidence(
           user.id,
         ),
         amount: evidenceAmount,
-        ...(opportunityId ? { paymentOnPledgeId: opportunityId } : {}),
+        ...(opportunityId ? { opportunityId: opportunityId } : {}),
         ...(charge
           ? {
               processorFee: charge.feeAmount,
@@ -1039,14 +1044,14 @@ router.post(
         // owned by a different donor — re-pointing the payment alone would split
         // the money off its commitment. Reuse the already-locked `opp` when it IS
         // that pledge; otherwise lock the tied pledge too.
-        if (donorSwitching && gift.paymentOnPledgeId) {
+        if (donorSwitching && gift.opportunityId) {
           const tiedPledge =
-            opp && opp.id === gift.paymentOnPledgeId
+            opp && opp.id === gift.opportunityId
               ? opp
               : ((await tx
                   .select()
                   .from(opportunitiesAndPledges)
-                  .where(eq(opportunitiesAndPledges.id, gift.paymentOnPledgeId))
+                  .where(eq(opportunitiesAndPledges.id, gift.opportunityId))
                   .for("update")
                   .then((r) => r[0])) ?? null);
           if (tiedPledge && !donorsMatch(donorOf(tiedPledge), bodyDonor)) {
@@ -1292,16 +1297,16 @@ router.post(
 
         // A changed gift amount shifts the paid total of the pledge it's already
         // on (if any) — re-derive that pledge after commit.
-        if (stamp.changed && gift.paymentOnPledgeId) {
-          rederivePledgeIds.push(gift.paymentOnPledgeId);
+        if (stamp.changed && gift.opportunityId) {
+          rederivePledgeIds.push(gift.opportunityId);
         }
         // Optionally tie the gift to the chosen opportunity (payment-on-pledge),
         // without clobbering an existing link; the newly linked pledge also needs
         // re-derivation (a payment was attached to it).
-        if (opp && gift.paymentOnPledgeId == null) {
+        if (opp && gift.opportunityId == null) {
           await tx
             .update(giftsAndPayments)
-            .set({ paymentOnPledgeId: opp.id, updatedAt: new Date() })
+            .set({ opportunityId: opp.id, updatedAt: new Date() })
             .where(eq(giftsAndPayments.id, giftId));
           rederivePledgeIds.push(opp.id);
         }
