@@ -4,6 +4,14 @@ import {
   useListReconciliationCards,
   getListReconciliationCardsQueryKey,
   useGetReconciliationLineage,
+  getGetReconciliationLineageQueryKey,
+  useListStripePayoutReconciliations,
+  useConfirmStripePayoutExclude,
+  useConfirmStripePayoutKeep,
+  useRevertStripePayoutReconciliation,
+  useCreateGiftFromStripeStagedCharge,
+  useConfirmStripeRefundPropagation,
+  useConfirmBundleCrossProcessorTies,
   useResolveStagedPayment,
   useCreateGiftFromStagedPayment,
   useExcludeStagedPayment,
@@ -26,6 +34,7 @@ import {
   type StagedPaymentExclusionReason,
   type GiftOrPayment,
   type GiftOrPaymentDetail,
+  type StripePayoutReconciliation,
 } from "@workspace/api-client-react";
 import {
   AlertCircle,
@@ -109,7 +118,7 @@ const QUEUES: { id: QueueId; name: string; dot: string; live: boolean }[] = [
   { id: "qbo", name: "QBO-only", dot: "#b23b2e", live: true },
   { id: "crm", name: "CRM-only", dot: "#b23b2e", live: true },
   { id: "split", name: "Splits & pledges", dot: "#6c4ea3", live: true },
-  { id: "bundle", name: "Stripe/Donorbox bundles", dot: "#1a7a8c", live: false },
+  { id: "bundle", name: "Stripe/Donorbox bundles", dot: "#1a7a8c", live: true },
   { id: "sync", name: "Sync gaps", dot: "#b8601c", live: true },
   { id: "research", name: "Research", dot: "#857b73", live: true },
   { id: "confirmed", name: "Confirmed", dot: "#2f7d57", live: false },
@@ -851,7 +860,9 @@ export default function ReconciliationWorkbench() {
               loading={cardsQuery.isLoading}
               onSplit={(c) => setSplitCard(c)}
             />
-          ) : queue === "bundle" || queue === "confirmed" ? (
+          ) : queue === "bundle" ? (
+            <BundlesQueue axis={axis} search={search} />
+          ) : queue === "confirmed" ? (
             <ComingSoon name={activeQueue.name} />
           ) : queue === "excluded" ? (
             excludedQuery.isLoading ? (
@@ -1296,6 +1307,405 @@ function LineageStrip({ stagedPaymentId }: { stagedPaymentId: string }) {
             )}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Stripe/Donorbox settlement bundles ───────────────────────────────────────
+
+const PAYOUT_STATUS_META: Record<
+  string,
+  { label: string; className: string }
+> = {
+  proposed: {
+    label: "Proposed",
+    className: "bg-amber-100 text-amber-800 border-amber-200",
+  },
+  conflict_approved: {
+    label: "Conflict — already a gift",
+    className: "bg-rose-100 text-rose-800 border-rose-200",
+  },
+  confirmed_reconciled: {
+    label: "Confirmed · reconciled",
+    className: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  },
+  confirmed_excluded: {
+    label: "Confirmed · excluded",
+    className: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  },
+  confirmed_keep: {
+    label: "Confirmed · kept",
+    className: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  },
+  confirmed_replace: {
+    label: "Confirmed · replaced",
+    className: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  },
+  unmatched: {
+    label: "Unmatched",
+    className: "bg-muted text-muted-foreground border-border",
+  },
+};
+
+/**
+ * Settlement bundles are payout-anchored: their spine is the QuickBooks⇄Stripe
+ * deposit-to-payout tie, with per-charge Stripe gifts and Donorbox enrichment
+ * living inside each card's lineage. The pure QuickBooks⇄Gift and
+ * QuickBooks⇄Donorbox axes have no payout-bundle surface, so they show empty.
+ */
+function BundlesQueue({ axis, search }: { axis: AxisId; search: string }) {
+  const q = useListStripePayoutReconciliations({ queue: "all", limit: 200 });
+  const rows = q.data?.data ?? [];
+  const term = search.trim().toLowerCase();
+
+  const filtered = useMemo(
+    () =>
+      rows.filter((b) => {
+        if (!term) return true;
+        return (
+          b.id.toLowerCase().includes(term) ||
+          (b.depositPayerName ?? "").toLowerCase().includes(term)
+        );
+      }),
+    [rows, term],
+  );
+
+  const axisOk = axis === "all" || axis === "qs" || axis === "ds";
+  if (!axisOk) return <EmptyBundlesAxis />;
+  if (q.isLoading) return <LoadingRow />;
+  if (q.isError) return <ErrorRow label="settlement bundles" />;
+  if (filtered.length === 0) return <EmptyBundles />;
+
+  return (
+    <>
+      {filtered.map((b) => (
+        <BundleCard key={b.id} bundle={b} />
+      ))}
+    </>
+  );
+}
+
+function EmptyBundles() {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center text-muted-foreground">
+      <Check className="mb-2 h-8 w-8 text-emerald-500" />
+      <p className="font-medium">No settlement bundles</p>
+      <p className="text-sm">
+        No Stripe payouts are matched to a QuickBooks deposit yet.
+      </p>
+    </div>
+  );
+}
+
+function EmptyBundlesAxis() {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center text-muted-foreground">
+      <Layers className="mb-2 h-8 w-8" />
+      <p className="font-medium">No bundles on this axis</p>
+      <p className="max-w-sm text-sm">
+        Settlement bundles live on the QuickBooks ⇄ Stripe and Donorbox ⇄ Stripe
+        axes. Switch to "All sources" to see every bundle.
+      </p>
+    </div>
+  );
+}
+
+function BundleCard({ bundle }: { bundle: StripePayoutReconciliation }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const depositId = bundle.depositId ?? "";
+
+  const lineageQ = useGetReconciliationLineage(depositId, {
+    query: {
+      enabled: depositId !== "",
+      queryKey: getGetReconciliationLineageQueryKey(depositId),
+    },
+  });
+  const charges = useMemo(
+    () => lineageQ.data?.charges ?? [],
+    [lineageQ.data],
+  );
+
+  const confirmExclude = useConfirmStripePayoutExclude();
+  const confirmKeep = useConfirmStripePayoutKeep();
+  const revert = useRevertStripePayoutReconciliation();
+  const createGift = useCreateGiftFromStripeStagedCharge();
+  const confirmRefund = useConfirmStripeRefundPropagation();
+  const confirmTies = useConfirmBundleCrossProcessorTies();
+
+  const busy =
+    confirmExclude.isPending ||
+    confirmKeep.isPending ||
+    revert.isPending ||
+    createGift.isPending ||
+    confirmRefund.isPending ||
+    confirmTies.isPending;
+
+  const invalidate = useCallback(() => {
+    void qc.invalidateQueries({
+      queryKey: ["/api/stripe-payouts/reconciliation"],
+    });
+    if (depositId) {
+      void qc.invalidateQueries({
+        queryKey: getGetReconciliationLineageQueryKey(depositId),
+      });
+    }
+  }, [qc, depositId]);
+
+  const status = bundle.qbReconciliationStatus;
+  const statusMeta = PAYOUT_STATUS_META[status] ?? {
+    label: status,
+    className: "bg-muted text-muted-foreground border-border",
+  };
+  const isConfirmed = status.startsWith("confirmed_");
+
+  const mintable = charges.filter((c) => c.donorResolved && !c.hasGift);
+  const refundable = charges.filter((c) => c.refunded || c.disputed);
+
+  const onConfirm = async () => {
+    try {
+      await confirmExclude.mutateAsync({ id: bundle.id });
+      toast({ title: "Payout reconciled to the QuickBooks deposit." });
+      invalidate();
+    } catch {
+      toast({
+        title: "Couldn't confirm the reconciliation.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const onKeep = async () => {
+    try {
+      await confirmKeep.mutateAsync({ id: bundle.id });
+      toast({ title: "Kept — the existing gift stands, no double-count." });
+      invalidate();
+    } catch {
+      toast({ title: "Couldn't keep the payout.", variant: "destructive" });
+    }
+  };
+
+  const onRevert = async () => {
+    try {
+      await revert.mutateAsync({ id: bundle.id });
+      toast({ title: "Reconciliation reverted." });
+      invalidate();
+    } catch {
+      toast({ title: "Couldn't revert.", variant: "destructive" });
+    }
+  };
+
+  const onExplode = async () => {
+    if (mintable.length === 0) return;
+    let made = 0;
+    let failed = 0;
+    for (const c of mintable) {
+      try {
+        await createGift.mutateAsync({ id: c.chargeId });
+        made += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    toast({
+      title: `Exploded payout into ${made} gift${made === 1 ? "" : "s"}.`,
+      description: failed > 0 ? `${failed} charge(s) couldn't be minted.` : undefined,
+      variant: failed > 0 && made === 0 ? "destructive" : undefined,
+    });
+    invalidate();
+  };
+
+  const onConfirmRefund = async (chargeId: string) => {
+    try {
+      await confirmRefund.mutateAsync({ id: chargeId });
+      toast({ title: "Refund propagated to the gift." });
+      invalidate();
+    } catch {
+      toast({
+        title: "Couldn't propagate the refund.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const onConfirmTies = async () => {
+    if (!depositId) return;
+    try {
+      const res = await confirmTies.mutateAsync({ stagedPaymentId: depositId });
+      toast({
+        title: "Cross-processor links saved.",
+        description: `${res.chargesLinked} charge(s) · ${res.donationsLinked} Donorbox donation(s) tied.`,
+      });
+      invalidate();
+    } catch {
+      toast({
+        title: "Couldn't save the cross-processor links.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <div className="rounded-lg border bg-card">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+        <Wallet className="h-4 w-4 text-muted-foreground" />
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium">
+            {bundle.depositPayerName || "Stripe payout"}{" "}
+            <span className="font-normal text-muted-foreground">
+              {money(bundle.netTotal ?? bundle.amount)} net ·{" "}
+              {bundle.chargeCount ?? 0} charges
+            </span>
+          </div>
+          <div className="truncate text-[11px] text-muted-foreground">
+            {bundle.id}
+            {bundle.arrivalDate ? ` · arrived ${bundle.arrivalDate}` : ""}
+          </div>
+        </div>
+        <Badge
+          variant="outline"
+          className={cn("ml-auto text-[11px]", statusMeta.className)}
+        >
+          {statusMeta.label}
+        </Badge>
+      </div>
+
+      {depositId ? (
+        <LineageStrip stagedPaymentId={depositId} />
+      ) : (
+        <div className="border-t bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          No QuickBooks deposit linked yet.
+        </div>
+      )}
+
+      {/* ── Per-charge explode + refund propagation ─────────────────────── */}
+      {charges.length > 0 && (
+        <div className="border-t px-3 py-2">
+          <div className="mb-1 flex items-center justify-between">
+            <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Per-donor charges
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              disabled={busy || mintable.length === 0}
+              onClick={onExplode}
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Explode into {mintable.length} gift
+              {mintable.length === 1 ? "" : "s"}
+            </Button>
+          </div>
+          <div className="space-y-1">
+            {charges.map((c) => (
+              <div
+                key={c.chargeId}
+                className="flex flex-wrap items-center gap-2 rounded border bg-background px-2 py-1 text-[11px]"
+              >
+                <span className="font-medium tabular-nums">
+                  {money(c.grossAmount)}
+                </span>
+                <span className="truncate text-muted-foreground">
+                  {c.resolvedDonorName || c.payerName || c.payerEmail || "—"}
+                </span>
+                {(c.refunded || c.disputed) && (
+                  <Badge
+                    variant="outline"
+                    className="border-rose-200 bg-rose-50 text-rose-700"
+                  >
+                    {c.disputed ? "Disputed" : "Refunded"}
+                  </Badge>
+                )}
+                {c.hasGift ? (
+                  <Badge
+                    variant="outline"
+                    className="ml-auto border-emerald-200 bg-emerald-50 text-emerald-700"
+                  >
+                    <Check className="mr-1 h-3 w-3" /> Gift created
+                  </Badge>
+                ) : c.donorResolved ? (
+                  <Badge
+                    variant="outline"
+                    className="ml-auto border-amber-200 bg-amber-50 text-amber-700"
+                  >
+                    Ready to mint
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="ml-auto border-border text-muted-foreground"
+                  >
+                    Needs donor
+                  </Badge>
+                )}
+                {(c.refunded || c.disputed) && c.hasGift && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2"
+                    disabled={busy}
+                    onClick={() => onConfirmRefund(c.chargeId)}
+                  >
+                    <Undo2 className="mr-1 h-3 w-3" /> Propagate refund
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+          {refundable.length > 0 && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {refundable.length} charge(s) refunded or disputed — propagate to
+              reduce the linked gift.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Stripe ⇄ QuickBooks + cross-processor tie actions ───────────── */}
+      <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2">
+        {status === "proposed" && (
+          <Button size="sm" className="h-8" disabled={busy} onClick={onConfirm}>
+            <Check className="mr-1 h-4 w-4" /> Confirm reconciliation
+          </Button>
+        )}
+        {status === "conflict_approved" && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            disabled={busy}
+            onClick={onKeep}
+          >
+            Keep — no double-count
+          </Button>
+        )}
+        {isConfirmed && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              disabled={busy || !depositId}
+              onClick={onConfirmTies}
+            >
+              <GitMerge className="mr-1 h-4 w-4" /> Persist cross-processor links
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8"
+              disabled={busy}
+              onClick={onRevert}
+            >
+              <Undo2 className="mr-1 h-4 w-4" /> Revert
+            </Button>
+          </>
+        )}
+        {busy && (
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        )}
       </div>
     </div>
   );

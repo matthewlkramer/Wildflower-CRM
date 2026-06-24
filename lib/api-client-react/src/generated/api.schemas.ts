@@ -3371,6 +3371,25 @@ export interface SettlementLineageCharge {
   refunded?: boolean;
   disputed?: boolean;
   linkSource: SettlementLineageLinkSource;
+  /** The staged charge's reconciliation status (pending | reconciled | excluded). */
+  status?: string | null;
+  /** True when a donor (org/person/household) is already resolved on this charge, so it can be exploded into a gift. */
+  donorResolved: boolean;
+  /** True when this charge already has a created or matched gift (already exploded). */
+  hasGift: boolean;
+  /** The resolved donor's display name, when known. */
+  resolvedDonorName?: string | null;
+}
+
+/**
+ * Outcome of persisting a settlement bundle's cross-processor ties — counts of link fields newly filled (idempotent: re-running yields zeros).
+ */
+export interface BundleTieResult {
+  ok: boolean;
+  /** Stripe charges whose linkedQbStagedPaymentId was newly set to the deposit. */
+  chargesLinked: number;
+  /** Donorbox donations whose linkedStripeChargeId/linkedQbStagedPaymentId were newly set. */
+  donationsLinked: number;
 }
 
 /**

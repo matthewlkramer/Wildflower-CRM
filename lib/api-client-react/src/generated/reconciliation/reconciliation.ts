@@ -22,6 +22,7 @@ import type {
 import type {
   ApproveCompleteMatchBody,
   BadRequestResponse,
+  BundleTieResult,
   CreateReconciliationProposalBody,
   GiftMissingQbList,
   ListGiftsMissingQbParams,
@@ -306,6 +307,84 @@ export function useGetReconciliationLineage<TData = Awaited<ReturnType<typeof ge
 
 
 /**
+ * Stamps the additive cross-processor link fields for the bundle anchored on
+a QB staged-payment deposit: every Stripe charge settled in the tied payout
+gets `linkedQbStagedPaymentId` set to this deposit, and every enrichment
+Donorbox donation (donationType=stripe) tied to one of those charges gets
+`linkedStripeChargeId` + `linkedQbStagedPaymentId` set, both stamped with the
+reviewer + timestamp. Idempotent — only ever fills NULL link fields, never
+overwrites. Additive and CRM-only: it writes nothing back to QuickBooks,
+Stripe, or Donorbox and mints no gifts (enrich, don't mint).
+
+ * @summary Persist the human-confirmed cross-processor links for one settlement bundle.
+ */
+export const getConfirmBundleCrossProcessorTiesUrl = (stagedPaymentId: string,) => {
+
+
+  
+
+  return `/api/reconciliation/bundles/${stagedPaymentId}/confirm-ties`
+}
+
+export const confirmBundleCrossProcessorTies = async (stagedPaymentId: string, options?: RequestInit): Promise<BundleTieResult> => {
+  
+  return customFetch<BundleTieResult>(getConfirmBundleCrossProcessorTiesUrl(stagedPaymentId),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getConfirmBundleCrossProcessorTiesMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>, TError,{stagedPaymentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>, TError,{stagedPaymentId: string}, TContext> => {
+
+const mutationKey = ['confirmBundleCrossProcessorTies'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>, {stagedPaymentId: string}> = (props) => {
+          const {stagedPaymentId} = props ?? {};
+
+          return  confirmBundleCrossProcessorTies(stagedPaymentId,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfirmBundleCrossProcessorTiesMutationResult = NonNullable<Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>>
+    
+    export type ConfirmBundleCrossProcessorTiesMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Persist the human-confirmed cross-processor links for one settlement bundle.
+ */
+export const useConfirmBundleCrossProcessorTies = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>, TError,{stagedPaymentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>,
+        TError,
+        {stagedPaymentId: string},
+        TContext
+      > => {
+      return useMutation(getConfirmBundleCrossProcessorTiesMutationOptions(options));
+    }
+    /**
  * Powers the four cross-filtering search boxes. Always scoped to a card
 (stagedPaymentId) so amount/date windows come from the QB anchor; pass
 donorId to cross-filter gift/opportunity candidates to a chosen donor

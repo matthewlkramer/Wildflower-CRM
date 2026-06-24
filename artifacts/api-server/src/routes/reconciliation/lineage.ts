@@ -5,8 +5,11 @@ import {
   stripePayouts,
   stripeStagedCharges,
   donorboxDonations,
+  organizations,
+  people,
+  households,
 } from "@workspace/db/schema";
-import { eq, inArray, or } from "drizzle-orm";
+import { eq, inArray, or, sql } from "drizzle-orm";
 import { asyncHandler, notFound } from "../../lib/helpers";
 
 type LinkSource = "pulled" | "qb_confirmed" | "stripe_pulled" | "stripe_confirmed";
@@ -97,8 +100,28 @@ router.get(
         refunded: stripeStagedCharges.refunded,
         disputed: stripeStagedCharges.disputed,
         stripePayoutId: stripeStagedCharges.stripePayoutId,
+        status: stripeStagedCharges.status,
+        organizationId: stripeStagedCharges.organizationId,
+        individualGiverPersonId: stripeStagedCharges.individualGiverPersonId,
+        householdId: stripeStagedCharges.householdId,
+        matchedGiftId: stripeStagedCharges.matchedGiftId,
+        createdGiftId: stripeStagedCharges.createdGiftId,
+        resolvedDonorName: sql<string | null>`
+          COALESCE(
+            ${organizations.name},
+            ${households.name},
+            NULLIF(TRIM(${people.fullName}), ''),
+            NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
+          )
+        `,
       })
       .from(stripeStagedCharges)
+      .leftJoin(
+        organizations,
+        eq(organizations.id, stripeStagedCharges.organizationId),
+      )
+      .leftJoin(people, eq(people.id, stripeStagedCharges.individualGiverPersonId))
+      .leftJoin(households, eq(households.id, stripeStagedCharges.householdId))
       .where(chargeFilters.length === 1 ? chargeFilters[0] : or(...chargeFilters));
 
     // Dedupe by charge id; a charge that settled in the payout is "pulled",
@@ -124,6 +147,12 @@ router.get(
         linkSource: (payoutRow && c.stripePayoutId === payoutRow.id
           ? "pulled"
           : "qb_confirmed") as LinkSource,
+        status: c.status,
+        donorResolved: Boolean(
+          c.organizationId || c.individualGiverPersonId || c.householdId,
+        ),
+        hasGift: Boolean(c.matchedGiftId || c.createdGiftId),
+        resolvedDonorName: c.resolvedDonorName,
       }));
 
     // ── Donorbox donations: enrichment for the Stripe charges (pulled

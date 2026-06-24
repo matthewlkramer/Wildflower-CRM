@@ -214,7 +214,11 @@ export const GetReconciliationLineageResponse = zod.object({
   "description": zod.string().nullish(),
   "refunded": zod.boolean().optional(),
   "disputed": zod.boolean().optional(),
-  "linkSource": zod.enum(['pulled', 'qb_confirmed', 'stripe_pulled', 'stripe_confirmed']).describe('HOW a lineage leg was tied to the anchor.\npulled: from a Stripe-pulled join key (payout↔QB tie, or charge.stripePayoutId).\nqb_confirmed: a reviewer-confirmed link directly to the QB staged row (charge.linkedQbStagedPaymentId \/ donation.linkedQbStagedPaymentId).\nstripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donation.stripeChargeId key.\nstripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).\n')
+  "linkSource": zod.enum(['pulled', 'qb_confirmed', 'stripe_pulled', 'stripe_confirmed']).describe('HOW a lineage leg was tied to the anchor.\npulled: from a Stripe-pulled join key (payout↔QB tie, or charge.stripePayoutId).\nqb_confirmed: a reviewer-confirmed link directly to the QB staged row (charge.linkedQbStagedPaymentId \/ donation.linkedQbStagedPaymentId).\nstripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donation.stripeChargeId key.\nstripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).\n'),
+  "status": zod.string().nullish().describe('The staged charge\'s reconciliation status (pending | reconciled | excluded).'),
+  "donorResolved": zod.boolean().describe('True when a donor (org\/person\/household) is already resolved on this charge, so it can be exploded into a gift.'),
+  "hasGift": zod.boolean().describe('True when this charge already has a created or matched gift (already exploded).'),
+  "resolvedDonorName": zod.string().nullish().describe('The resolved donor\'s display name, when known.')
 }).describe('One Stripe charge in the settlement chain (the per-donor gross behind a payout).')).describe('The individual Stripe charges behind the payout (and any reviewer-confirmed per-charge ties to this deposit). Empty when no Stripe charges back the money.'),
   "donations": zod.array(zod.object({
   "donationId": zod.string(),
@@ -229,6 +233,28 @@ export const GetReconciliationLineageResponse = zod.object({
   "linkSource": zod.enum(['pulled', 'qb_confirmed', 'stripe_pulled', 'stripe_confirmed']).describe('HOW a lineage leg was tied to the anchor.\npulled: from a Stripe-pulled join key (payout↔QB tie, or charge.stripePayoutId).\nqb_confirmed: a reviewer-confirmed link directly to the QB staged row (charge.linkedQbStagedPaymentId \/ donation.linkedQbStagedPaymentId).\nstripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donation.stripeChargeId key.\nstripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).\n')
 }).describe('One Donorbox donation in the settlement chain (enrichment for a Stripe charge, or non-Stripe money landing in the QB deposit).')).describe('Donorbox donations tied to the chain — enrichment for the Stripe charges, or non-Stripe new money the reviewer linked to this deposit. Empty when none apply.')
 }).describe('Read-only settlement lineage for one card: the QB deposit (anchor) and the\nSAME money traced across Stripe (payout + charges) and Donorbox (donations).\nDerived from pulled join keys plus any human-confirmed cross-processor links;\na leg is null\/empty when it doesn\'t apply to this deposit.\n')
+
+/**
+ * Stamps the additive cross-processor link fields for the bundle anchored on
+a QB staged-payment deposit: every Stripe charge settled in the tied payout
+gets `linkedQbStagedPaymentId` set to this deposit, and every enrichment
+Donorbox donation (donationType=stripe) tied to one of those charges gets
+`linkedStripeChargeId` + `linkedQbStagedPaymentId` set, both stamped with the
+reviewer + timestamp. Idempotent — only ever fills NULL link fields, never
+overwrites. Additive and CRM-only: it writes nothing back to QuickBooks,
+Stripe, or Donorbox and mints no gifts (enrich, don't mint).
+
+ * @summary Persist the human-confirmed cross-processor links for one settlement bundle.
+ */
+export const ConfirmBundleCrossProcessorTiesParams = zod.object({
+  "stagedPaymentId": zod.coerce.string()
+})
+
+export const ConfirmBundleCrossProcessorTiesResponse = zod.object({
+  "ok": zod.literal(true),
+  "chargesLinked": zod.number().describe('Stripe charges whose linkedQbStagedPaymentId was newly set to the deposit.'),
+  "donationsLinked": zod.number().describe('Donorbox donations whose linkedStripeChargeId\/linkedQbStagedPaymentId were newly set.')
+}).describe('Outcome of persisting a settlement bundle\'s cross-processor ties — counts of link fields newly filled (idempotent: re-running yields zeros).')
 
 /**
  * Powers the four cross-filtering search boxes. Always scoped to a card

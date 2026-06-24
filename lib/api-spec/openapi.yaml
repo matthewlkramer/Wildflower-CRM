@@ -3669,6 +3669,25 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SettlementLineage" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/bundles/{stagedPaymentId}/confirm-ties:
+    post:
+      operationId: confirmBundleCrossProcessorTies
+      tags: [reconciliation]
+      summary: Persist the human-confirmed cross-processor links for one settlement bundle.
+      description: |
+        Stamps the additive cross-processor link fields for the bundle anchored on
+        a QB staged-payment deposit: every Stripe charge settled in the tied payout
+        gets `linkedQbStagedPaymentId` set to this deposit, and every enrichment
+        Donorbox donation (donationType=stripe) tied to one of those charges gets
+        `linkedStripeChargeId` + `linkedQbStagedPaymentId` set, both stamped with the
+        reviewer + timestamp. Idempotent — only ever fills NULL link fields, never
+        overwrites. Additive and CRM-only: it writes nothing back to QuickBooks,
+        Stripe, or Donorbox and mints no gifts (enrich, don't mint).
+      parameters:
+        - { name: stagedPaymentId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BundleTieResult" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
   /reconciliation/search/{nodeType}:
     get:
       operationId: searchReconciliationNode
@@ -6275,7 +6294,7 @@ components:
         stripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).
     SettlementLineageCharge:
       type: object
-      required: [chargeId, linkSource]
+      required: [chargeId, linkSource, donorResolved, hasGift]
       description: "One Stripe charge in the settlement chain (the per-donor gross behind a payout)."
       properties:
         chargeId:     { type: string }
@@ -6289,6 +6308,19 @@ components:
         refunded:     { type: boolean }
         disputed:     { type: boolean }
         linkSource:   { $ref: "#/components/schemas/SettlementLineageLinkSource" }
+        # Explode-into-per-donor-gifts support (read-only; drives the bundle queue).
+        status:            { type: string, nullable: true, description: "The staged charge's reconciliation status (pending | reconciled | excluded)." }
+        donorResolved:     { type: boolean, description: "True when a donor (org/person/household) is already resolved on this charge, so it can be exploded into a gift." }
+        hasGift:           { type: boolean, description: "True when this charge already has a created or matched gift (already exploded)." }
+        resolvedDonorName: { type: string, nullable: true, description: "The resolved donor's display name, when known." }
+    BundleTieResult:
+      type: object
+      required: [ok, chargesLinked, donationsLinked]
+      description: "Outcome of persisting a settlement bundle's cross-processor ties — counts of link fields newly filled (idempotent: re-running yields zeros)."
+      properties:
+        ok:               { type: boolean, enum: [true] }
+        chargesLinked:    { type: integer, description: "Stripe charges whose linkedQbStagedPaymentId was newly set to the deposit." }
+        donationsLinked:  { type: integer, description: "Donorbox donations whose linkedStripeChargeId/linkedQbStagedPaymentId were newly set." }
     SettlementLineageDonation:
       type: object
       required: [donationId, linkSource]
