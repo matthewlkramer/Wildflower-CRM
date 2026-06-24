@@ -4,7 +4,10 @@ import { stagedPayments } from "@workspace/db/schema";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { opportunitiesAndPledges } from "@workspace/db/schema";
-import { qbLedgerExistsForGiftExcludingPayment } from "../../lib/paymentApplications";
+import {
+  qbLedgerExistsForGiftExcludingPayment,
+  qbLedgerSumForGift,
+} from "../../lib/paymentApplications";
 import { asyncHandler, notFound } from "../../lib/helpers";
 import { getViewer } from "../../lib/identityVisibility";
 import { buildReconciliationGraph } from "../../lib/reconciliationGraph";
@@ -158,6 +161,47 @@ const sourceGroupAggExpr = sql<{
   END
 )`;
 
+// ─── Fidelity-meter data ───────────────────────────────────────────────────
+// The resolved gift's allocation breakdown + how much of THIS payment (and of
+// ALL QuickBooks payments) is booked against it. Lets the meter recognise that a
+// QB payment covering ONE allocation of a larger multi-allocation gift is a
+// legitimate PARTIAL application, not an over-application.
+//
+// The resolved gift id is the joined `resolved_gift` alias (the COALESCE of the
+// staged row's matched/created/group-reconciled gift). It is referenced as an
+// explicit, fully-qualified raw SQL fragment so it cannot bind to an inner
+// same-named column inside these correlated subqueries
+// (`.agents/memory/drizzle-sql-template-bare-column.md`).
+const RESOLVED_GIFT_ID = sql.raw('"resolved_gift"."id"');
+
+const resolvedGiftAllocationsExpr = sql<
+  Array<{ id: string; subAmount: string | null; displayUsage: string | null }>
+>`(
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', ga.id,
+        'subAmount', ga.sub_amount::text,
+        'displayUsage', ga.display_usage
+      ) ORDER BY ga.sub_amount DESC NULLS LAST, ga.id
+    ),
+    '[]'::jsonb
+  )
+  FROM gift_allocations ga
+  WHERE ga.gift_id = ${RESOLVED_GIFT_ID}
+)`;
+
+// SUM(amount_applied) of THIS staged payment's QuickBooks ledger rows against
+// the resolved gift — how much of this QB payment lands on the gift. '0' when no
+// ledger row yet (legacy match booked before the ledger); the UI then falls back.
+const thisPaymentAppliedExpr = sql<string>`(
+  SELECT COALESCE(SUM(pa.amount_applied), 0)::text
+  FROM payment_applications pa
+  WHERE pa.gift_id = ${RESOLVED_GIFT_ID}
+    AND pa.payment_id = ${stagedPayments.id}
+    AND pa.evidence_source = 'quickbooks'
+)`;
+
 // Default reconciliation queue: the live work. `pending` rows are work UNLESS
 // they are attributed to a fiscally sponsored entity — that money is pass-through
 // for a sponsored project, so it is PARKED out of the main flow and only shown
@@ -243,6 +287,9 @@ router.get(
         .select({
           ...stagedSelect,
           finalAmountSource: resolvedGift.finalAmountSource,
+          resolvedGiftAllocations: resolvedGiftAllocationsExpr,
+          resolvedGiftQbApplied: qbLedgerSumForGift(RESOLVED_GIFT_ID),
+          thisPaymentApplied: thisPaymentAppliedExpr,
           autoGiftCount: autoGiftCountExpr,
           autoGiftPick: autoGiftPickExpr,
           cardReady: readyExpr,
@@ -354,6 +401,17 @@ router.get(
         resolvedGiftId: row.resolvedGiftId ?? null,
         resolvedGiftName: row.resolvedGiftName ?? null,
         resolvedGiftAmount: row.resolvedGiftAmount ?? null,
+        // Allocation breakdown + QB ledger sums only make sense for a resolved
+        // gift; null them out otherwise so the meter never reads stale '0'/[].
+        resolvedGiftAllocations: row.resolvedGiftId
+          ? (row.resolvedGiftAllocations ?? [])
+          : null,
+        resolvedGiftQbAppliedAmount: row.resolvedGiftId
+          ? (row.resolvedGiftQbApplied ?? null)
+          : null,
+        thisPaymentAppliedAmount: row.resolvedGiftId
+          ? (row.thisPaymentApplied ?? null)
+          : null,
         finalAmountSource: row.finalAmountSource ?? null,
         fundingSource: isSourceGroup
           ? (groupAgg?.commonFundingSource ?? null)

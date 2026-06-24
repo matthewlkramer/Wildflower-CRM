@@ -30,6 +30,7 @@ import {
   getGetGiftOrPaymentQueryOptions,
   type ReconciliationCard,
   type ReconciliationCandidate,
+  type ReconciliationGiftAllocation,
   type ApproveCompleteMatchBody,
   type SplitStagedPaymentBody,
   type StagedPaymentExclusionReason,
@@ -266,6 +267,8 @@ export default function ReconciliationWorkbench() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [applying, setApplying] = useState(false);
+  // The card whose Approve is applying right now (one-click apply, no tray hop).
+  const [applyingCardId, setApplyingCardId] = useState<string | null>(null);
   const [retargetCard, setRetargetCard] = useState<ReconciliationCard | null>(
     null,
   );
@@ -623,6 +626,38 @@ export default function ReconciliationWorkbench() {
     [createGiftM, invalidateAll, toast, errMessage],
   );
 
+  // One-click Approve: derive the auto-proposal (or re-targeted gift) body and
+  // apply it to the CRM immediately, no staging-tray hop. Mirrors handleCreateGift
+  // (invalidate + toast on success, gate issues surfaced via errMessage). The
+  // bulk "Approve All High Confidence" path still stages into the tray.
+  const confirmAndApply = useCallback(
+    async (
+      card: ReconciliationCard,
+      giftOverride?: ReconciliationCandidate | null,
+    ) => {
+      setApplyingCardId(card.stagedPaymentId);
+      try {
+        const res = await deriveConfirmBody(card, giftOverride);
+        if (typeof res === "string") {
+          toast({ title: "Can't confirm yet", description: res });
+          return;
+        }
+        await approveReconciliationCard(card.stagedPaymentId, res.body);
+        invalidateAll();
+        setRetargetCard(null);
+        toast({
+          title: "Approved",
+          description: "Applied to the CRM.",
+        });
+      } catch (err) {
+        toast({ title: "Couldn't approve", description: errMessage(err) });
+      } finally {
+        setApplyingCardId(null);
+      }
+    },
+    [deriveConfirmBody, invalidateAll, toast, errMessage],
+  );
+
   const handleResolveDonor = useCallback(
     async (card: ReconciliationCard, donor: ReconciliationCandidate) => {
       const body = {
@@ -911,7 +946,11 @@ export default function ReconciliationWorkbench() {
                     (s) => s.stagedPaymentId === card.stagedPaymentId,
                   )}
                   expanded={expanded === card.stagedPaymentId}
-                  busy={busy || actionBusy}
+                  busy={
+                    busy ||
+                    actionBusy ||
+                    applyingCardId === card.stagedPaymentId
+                  }
                   selected={selectedIds.has(card.stagedPaymentId)}
                   onToggleSelect={() => toggleSelect(card.stagedPaymentId)}
                   onToggle={() =>
@@ -919,7 +958,7 @@ export default function ReconciliationWorkbench() {
                       e === card.stagedPaymentId ? null : card.stagedPaymentId,
                     )
                   }
-                  onConfirm={() => stageConfirm(card)}
+                  onConfirm={() => confirmAndApply(card)}
                   onReject={() => stageReject(card)}
                   onRetarget={() => setRetargetCard(card)}
                   onCreateGift={() => handleCreateGift(card)}
@@ -1300,6 +1339,9 @@ function ReconCard({
       <BalanceMeter
         paymentTotal={num(card.amount)}
         applied={num(card.resolvedGiftAmount)}
+        allocations={card.resolvedGiftAllocations}
+        giftQbApplied={num(card.resolvedGiftQbAppliedAmount)}
+        thisPaymentApplied={num(card.thisPaymentAppliedAmount)}
       />
 
       {/* Lanes + evidence */}
@@ -1409,87 +1451,186 @@ function ReconCard({
 function BalanceMeter({
   paymentTotal,
   applied,
+  allocations,
+  giftQbApplied,
+  thisPaymentApplied,
 }: {
   paymentTotal: number | null;
   applied: number | null;
+  // Optional fidelity context (card view only; the tray omits these). Lets the
+  // meter tell a legitimate multi-allocation / multi-source gift apart from a
+  // true over-application.
+  allocations?: ReconciliationGiftAllocation[] | null;
+  giftQbApplied?: number | null;
+  thisPaymentApplied?: number | null;
 }) {
   if (paymentTotal == null || applied == null) return null;
+
+  // The split tray omits the fidelity context; the card always supplies it
+  // (even as null). The distinction matters: in the TRAY `applied` is the amount
+  // the user is applying, so `applied > payment` IS a real over-application. On
+  // the CARD `applied` is the matched GIFT's total — a gift larger than this
+  // payment is a multi-allocation / multi-source gift, NOT an over-application.
+  // On the card the only true over-application is the QB ledger booking MORE
+  // than THIS payment (a book-once violation).
+  const cardMode =
+    giftQbApplied !== undefined ||
+    thisPaymentApplied !== undefined ||
+    allocations !== undefined;
+
   const remainder = +(paymentTotal - applied).toFixed(2);
   const balanced = Math.abs(remainder) < 0.005;
-  const over = remainder < -0.005;
   // When the gift exceeds the QB deposit by an amount inside the processor
   // fee-band, that gap is the processor fee (gift is gross, deposit is net) —
   // not an over-application error.
   const fee = feeRemainder(paymentTotal, applied);
   const isFee = fee != null;
+  // `applied` is larger than this payment and the gap isn't a processor fee.
+  const exceedsPayment = remainder < -0.005 && !isFee;
+
+  // ── Over-application ──
+  // Tray: applied > payment. Card: the QB ledger booked more than THIS payment;
+  // a bigger gift header is never, by itself, an over-application.
+  const ledgerOver =
+    cardMode && thisPaymentApplied != null
+      ? +(thisPaymentApplied - paymentTotal).toFixed(2)
+      : 0;
+  const over = cardMode ? ledgerOver > 0.005 : exceedsPayment;
+  const overBy = cardMode ? ledgerOver : +(-remainder).toFixed(2);
+
+  // ── Multi-source (card only) ──
+  // This payment covers ONE allocation of a multi-allocation gift, or other QB
+  // payments already cover the rest. Booking is per-payment, so only THIS
+  // payment's share lands here. Require concrete evidence — a matching
+  // allocation amount, or other QB funding already booked to the gift — before
+  // claiming the gift is fully covered.
+  const allocs = allocations ?? [];
+  const appliedFromThisPayment =
+    thisPaymentApplied != null && thisPaymentApplied > 0
+      ? thisPaymentApplied
+      : Math.min(paymentTotal, applied);
+  const matchedAlloc =
+    allocs.find(
+      (a) =>
+        a.subAmount != null &&
+        Math.abs(Number(a.subAmount) - appliedFromThisPayment) < 0.5,
+    ) ?? null;
+  const otherQbFunding =
+    giftQbApplied != null && thisPaymentApplied != null
+      ? +(giftQbApplied - thisPaymentApplied).toFixed(2)
+      : 0;
+  const multiSource =
+    cardMode &&
+    exceedsPayment &&
+    !over &&
+    (matchedAlloc != null || otherQbFunding > 0.005);
+  // Card, gift bigger than the payment, but no allocation/ledger evidence yet.
+  const partialToLarger = cardMode && exceedsPayment && !over && !multiSource;
+  const otherToGift = +(applied - appliedFromThisPayment).toFixed(2);
+
+  // Card-only reframe: when the gift is larger than this payment, the two rows
+  // read "This payment" vs "Gift total" so $80k isn't mislabeled "Applied".
+  const reframe = cardMode && exceedsPayment;
+  const topLabel = reframe ? "This payment" : "Applied";
+  const topValue = reframe ? paymentTotal : applied;
+  const botLabel = reframe ? "Gift total" : "Payment total";
+  const botValue = reframe ? applied : paymentTotal;
+
+  const tone: "emerald" | "sky" | "red" | "amber" = over
+    ? "red"
+    : balanced || multiSource
+      ? "emerald"
+      : isFee
+        ? "sky"
+        : "amber";
+  const toneBox = {
+    emerald: "border-emerald-200 bg-emerald-50/60",
+    sky: "border-sky-200 bg-sky-50/60",
+    red: "border-red-200 bg-red-50/60",
+    amber: "border-amber-200 bg-amber-50/60",
+  }[tone];
+  const toneBar = {
+    emerald: "bg-emerald-500",
+    sky: "bg-sky-500",
+    red: "bg-red-500",
+    amber: "bg-amber-500",
+  }[tone];
+  const toneText = {
+    emerald: "text-emerald-700",
+    sky: "text-sky-700",
+    red: "text-red-700",
+    amber: "text-amber-700",
+  }[tone];
+
+  // Full bar when this payment is fully directed (over / multi-source /
+  // partial-to-larger); otherwise keep the applied/payment ratio.
   const pct =
-    paymentTotal > 0
-      ? Math.max(0, Math.min(100, (applied / paymentTotal) * 100))
-      : applied > 0
-        ? 100
-        : 0;
+    over || multiSource || partialToLarger
+      ? 100
+      : paymentTotal > 0
+        ? Math.max(0, Math.min(100, (applied / paymentTotal) * 100))
+        : applied > 0
+          ? 100
+          : 0;
   return (
     <div className="px-3 pb-2">
-      <div
-        className={cn(
-          "rounded-lg border p-3 text-[12.5px]",
-          balanced
-            ? "border-emerald-200 bg-emerald-50/60"
-            : isFee
-              ? "border-sky-200 bg-sky-50/60"
-              : over
-                ? "border-red-200 bg-red-50/60"
-                : "border-amber-200 bg-amber-50/60",
-        )}
-      >
+      <div className={cn("rounded-lg border p-3 text-[12.5px]", toneBox)}>
         <div className="flex items-baseline justify-between tabular-nums">
-          <span className="text-muted-foreground">Applied</span>
-          <span className="font-semibold">{money(String(applied))}</span>
+          <span className="text-muted-foreground">{topLabel}</span>
+          <span className="font-semibold">{money(String(topValue))}</span>
         </div>
         <div className="my-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
           <div
-            className={cn(
-              "h-full rounded-full transition-all",
-              isFee
-                ? "bg-sky-500"
-                : over
-                  ? "bg-red-500"
-                  : balanced
-                    ? "bg-emerald-500"
-                    : "bg-amber-500",
-            )}
+            className={cn("h-full rounded-full transition-all", toneBar)}
             style={{ width: `${pct}%` }}
           />
         </div>
         <div className="flex items-baseline justify-between tabular-nums">
-          <span className="text-muted-foreground">Payment total</span>
-          <span className="font-semibold">{money(String(paymentTotal))}</span>
+          <span className="text-muted-foreground">{botLabel}</span>
+          <span className="font-semibold">{money(String(botValue))}</span>
         </div>
         <div
           className={cn(
             "mt-2 flex items-center gap-1.5 font-semibold",
-            balanced
-              ? "text-emerald-700"
-              : isFee
-                ? "text-sky-700"
-                : over
-                  ? "text-red-700"
-                  : "text-amber-700",
+            toneText,
           )}
         >
-          {balanced ? (
+          {over ? (
+            <>
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" /> Over-applied by{" "}
+              {money(String(overBy))}
+            </>
+          ) : balanced ? (
             <>
               <Check className="h-3.5 w-3.5" /> Balances — applied equals payment
+            </>
+          ) : multiSource ? (
+            <>
+              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Fully applied — this {money(String(paymentTotal))} is the{" "}
+                {matchedAlloc?.displayUsage
+                  ? `${matchedAlloc.displayUsage} `
+                  : ""}
+                allocation of a {money(String(applied))} gift
+                {otherToGift > 0.005
+                  ? ` · other sources: ${money(String(otherToGift))}`
+                  : ""}
+              </span>
             </>
           ) : isFee ? (
             <>
               <Check className="h-3.5 w-3.5" /> {money(String(fee))} fee — gift is
               gross; deposit is net of the processor fee
             </>
-          ) : over ? (
+          ) : partialToLarger ? (
             <>
-              <AlertCircle className="h-3.5 w-3.5" /> Over-applied by{" "}
-              {money(String(-remainder))}
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                This {money(String(paymentTotal))} covers part of a{" "}
+                {money(String(applied))} gift — confirm the rest is funded
+                elsewhere
+              </span>
             </>
           ) : (
             <>

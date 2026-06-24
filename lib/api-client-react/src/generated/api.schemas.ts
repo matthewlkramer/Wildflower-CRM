@@ -3461,6 +3461,17 @@ export interface SettlementLineage {
   donations: SettlementLineageDonation[];
 }
 
+/**
+ * One allocation (child line) of a resolved CRM gift, summarised for the reconciler's fidelity meter so it can name the allocation a QB payment covers.
+ */
+export interface ReconciliationGiftAllocation {
+  id: string;
+  /** This allocation's portion of the gift, major units. */
+  subAmount?: string | null;
+  /** Human-readable label for the allocation's intended usage (e.g. 'Gen Ops', a school or project name). */
+  displayUsage?: string | null;
+}
+
 export type ReconciliationCardProposedDonorKind = typeof ReconciliationCardProposedDonorKind[keyof typeof ReconciliationCardProposedDonorKind] | null;
 
 
@@ -3524,6 +3535,12 @@ export interface ReconciliationCard {
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
+  /** Allocation (sub-amount) breakdown of the resolved CRM gift, so the fidelity meter can show that a QB payment covering ONE allocation of a larger multi-allocation gift is a legitimate partial application, not an over-application. Null when there is no resolved gift; empty array when the gift has no allocations. */
+  resolvedGiftAllocations?: ReconciliationGiftAllocation[] | null;
+  /** SUM(payment_applications.amount_applied) booked from ALL QuickBooks staged payments against the resolved gift (the gift's total QB-applied money). Lets the meter tell a multi-payment-funded gift apart from a true over-application. '0' / null when there is no QB ledger for the gift. */
+  resolvedGiftQbAppliedAmount?: string | null;
+  /** SUM(payment_applications.amount_applied) booked from THIS staged payment against the resolved gift — how much of this QB payment lands on the gift. '0' / null when no QB ledger row yet (e.g. a legacy match booked before the ledger existed); the UI then falls back to the lesser of payment and gift total. */
+  thisPaymentAppliedAmount?: string | null;
   finalAmountSource?: GiftFinalAmountSource | null;
   /** Auto-proposal satisfies the consistency gate (one-click approve). */
   ready: boolean;

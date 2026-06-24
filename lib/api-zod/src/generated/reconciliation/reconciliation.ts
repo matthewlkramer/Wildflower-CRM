@@ -69,6 +69,13 @@ export const ListReconciliationCardsResponse = zod.object({
   "resolvedGiftId": zod.string().nullish(),
   "resolvedGiftName": zod.string().nullish(),
   "resolvedGiftAmount": zod.string().nullish(),
+  "resolvedGiftAllocations": zod.array(zod.object({
+  "id": zod.string(),
+  "subAmount": zod.string().nullish().describe('This allocation\'s portion of the gift, major units.'),
+  "displayUsage": zod.string().nullish().describe('Human-readable label for the allocation\'s intended usage (e.g. \'Gen Ops\', a school or project name).')
+}).describe('One allocation (child line) of a resolved CRM gift, summarised for the reconciler\'s fidelity meter so it can name the allocation a QB payment covers.')).nullish().describe('Allocation (sub-amount) breakdown of the resolved CRM gift, so the fidelity meter can show that a QB payment covering ONE allocation of a larger multi-allocation gift is a legitimate partial application, not an over-application. Null when there is no resolved gift; empty array when the gift has no allocations.'),
+  "resolvedGiftQbAppliedAmount": zod.string().nullish().describe('SUM(payment_applications.amount_applied) booked from ALL QuickBooks staged payments against the resolved gift (the gift\'s total QB-applied money). Lets the meter tell a multi-payment-funded gift apart from a true over-application. \'0\' \/ null when there is no QB ledger for the gift.'),
+  "thisPaymentAppliedAmount": zod.string().nullish().describe('SUM(payment_applications.amount_applied) booked from THIS staged payment against the resolved gift — how much of this QB payment lands on the gift. \'0\' \/ null when no QB ledger row yet (e.g. a legacy match booked before the ledger existed); the UI then falls back to the lesser of payment and gift total.'),
   "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).nullish().describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.'),
   "ready": zod.boolean().describe('Auto-proposal satisfies the consistency gate (one-click approve).'),
   "needsResearch": zod.boolean().describe('Plain human-set \'needs research\' flag (parked for later); orthogonal to reconcile status. Set via \/staged-payments\/{id}\/set-needs-research.'),

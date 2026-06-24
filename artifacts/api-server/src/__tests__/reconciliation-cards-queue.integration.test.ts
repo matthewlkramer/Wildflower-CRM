@@ -53,6 +53,8 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
   stripePayouts: Db["stripePayouts"];
+  giftAllocations: Db["giftAllocations"];
+  paymentApplications: Db["paymentApplications"];
 };
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -62,6 +64,7 @@ let baseUrl = "";
 const stagedIds: string[] = [];
 const giftIds: string[] = [];
 const payoutIds: string[] = [];
+const allocationIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 
@@ -93,6 +96,7 @@ async function seedStaged(opts: {
   status: "pending" | "approved" | "reconciled";
   matchedGiftId?: string | null;
   createdGiftId?: string | null;
+  amount?: string;
 }): Promise<string> {
   const id = nextId("sp");
   await db.insert(schema.stagedPayments).values({
@@ -100,7 +104,7 @@ async function seedStaged(opts: {
     realmId: REALM_ID,
     qbEntityType: "deposit",
     qbEntityId: id,
-    amount: "100.00",
+    amount: opts.amount ?? "100.00",
     dateReceived: "2026-03-15",
     payerName: `${MARKER} ${opts.label}`,
     status: opts.status,
@@ -111,6 +115,37 @@ async function seedStaged(opts: {
   });
   stagedIds.push(id);
   return id;
+}
+
+// Seed one allocation row on a gift. displayUsage is set explicitly AND mirrored
+// via intendedUsage='gen_ops' so the value is deterministic whether or not the
+// display-usage trigger is present in the test DB.
+async function seedAllocation(giftId: string, subAmount: string): Promise<string> {
+  const id = nextId("alloc");
+  await db.insert(schema.giftAllocations).values({
+    id,
+    giftId,
+    subAmount,
+    intendedUsage: "gen_ops",
+    displayUsage: "Gen Ops",
+  });
+  allocationIds.push(id);
+  return id;
+}
+
+// Book `amountApplied` of a staged payment against a gift in the QB ledger.
+async function seedPaymentApplication(
+  paymentId: string,
+  giftId: string,
+  amountApplied: string,
+): Promise<void> {
+  await db.insert(schema.paymentApplications).values({
+    id: nextId("pa"),
+    paymentId,
+    giftId,
+    amountApplied,
+    evidenceSource: "quickbooks",
+  });
 }
 
 async function seedPayoutFor(
@@ -153,6 +188,8 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
     stripePayouts: dbMod.stripePayouts,
+    giftAllocations: dbMod.giftAllocations,
+    paymentApplications: dbMod.paymentApplications,
   };
   inArrayFn = drizzle.inArray;
   eqFn = drizzle.eq;
@@ -188,6 +225,10 @@ afterAll(async () => {
     await db
       .delete(schema.stagedPayments)
       .where(inArrayFn(schema.stagedPayments.id, stagedIds));
+  if (allocationIds.length)
+    await db
+      .delete(schema.giftAllocations)
+      .where(inArrayFn(schema.giftAllocations.id, allocationIds));
   if (giftIds.length)
     await db
       .delete(schema.giftsAndPayments)
@@ -262,5 +303,58 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     expect(done.has(reconciledId)).toBe(true);
     expect(done.has(pendingId)).toBe(false);
     expect(done.has(approvedMatchedId)).toBe(false);
+  }, 30_000);
+});
+
+/**
+ * Allocation-aware "fidelity row" coverage. A $65k QB payment matched to an $80k
+ * gift that splits into a $65k + $15k allocation pair must NOT read as
+ * "over-applied by $15k": the card carries the gift's allocations (largest
+ * first), the gift's total QB-ledger applied amount, and THIS payment's applied
+ * amount — so the meter can say "this $65k is the $65k allocation of an $80k
+ * gift" instead of comparing $65k against the full $80k.
+ */
+async function cardFor(stagedPaymentId: string): Promise<any> {
+  const q = `q=${encodeURIComponent(MARKER)}&limit=100`;
+  const res = await apiGet(`/api/reconciliation/cards?${q}`);
+  expect(res.status).toBe(200);
+  const card = (res.json.data as Array<{ stagedPaymentId: string }>).find(
+    (c) => c.stagedPaymentId === stagedPaymentId,
+  );
+  expect(card, `card ${stagedPaymentId} should be in the queue`).toBeTruthy();
+  return card;
+}
+
+describe.skipIf(!HAS_DB)("Reconciliation fidelity fields — allocation-aware (integration)", () => {
+  it("surfaces gift allocations + QB-applied amounts for a partial-allocation match", async () => {
+    const gift = await seedGift("80000.00");
+    await seedAllocation(gift, "65000.00");
+    await seedAllocation(gift, "15000.00");
+
+    const stagedId = await seedStaged({
+      label: "fidelity-65k-of-80k",
+      status: "pending",
+      matchedGiftId: gift,
+      amount: "65000.00",
+    });
+    await seedPaymentApplication(stagedId, gift, "65000.00");
+
+    const card = await cardFor(stagedId);
+
+    // The resolved gift is the $80k header, not the $65k payment.
+    expect(card.resolvedGiftAmount).toBe("80000.00");
+
+    // Allocations come through ordered largest-first.
+    expect(Array.isArray(card.resolvedGiftAllocations)).toBe(true);
+    expect(card.resolvedGiftAllocations).toHaveLength(2);
+    expect(card.resolvedGiftAllocations[0].subAmount).toBe("65000.00");
+    expect(card.resolvedGiftAllocations[1].subAmount).toBe("15000.00");
+    expect(card.resolvedGiftAllocations[0].displayUsage).toBe("Gen Ops");
+
+    // Ledger sums: the whole gift has $65k applied so far; THIS payment is the
+    // $65k that was applied (so it reads as a clean allocation match, not
+    // over-applied against the full $80k).
+    expect(card.resolvedGiftQbAppliedAmount).toBe("65000.00");
+    expect(card.thisPaymentAppliedAmount).toBe("65000.00");
   }, 30_000);
 });
