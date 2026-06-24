@@ -9,6 +9,7 @@
 - [Verify under CPU throttling](build-verify-cpu-throttling.md) — monorepo tsc --build/orval/runTest blow past tool caps; let one full build finish to warm .tsbuildinfo (then incremental is fast); e2e can exceed the 600s cap.
 - [cross-env DB schema drift](cross-env-db-schema-drift.md) — successor task's dev DB lacks predecessor's new column (only code propagates); fix additively via SQL, never blunt push (drops unrelated drifted columns = data loss).
 - [post-merge push abort](post-merge-push-abort.md) — interactive drizzle-kit push aborts (skipping ALL additive changes) on schema-dropped columns still present in live DB; retain them as @deprecated, don't approve the drop.
+- [Schema-rename reconciliation](lifecycle-rename-reconciliation.md) — clear a stuck post-merge RENAME via guarded manual pre-rename→push (never push-force); prove Publish safe by checking prod-only cols == rename sources; rename exposes stale migration-file col refs + -1 BEGIN/COMMIT.
 - [api-zod must stay env-neutral](api-zod-cross-env.md) — imported by server AND browser; no URL/node/DOM globals; validate via pure regex + superRefine, PATCH re-validates merged state.
 - [wildflower email/calendar HTML entities](wildflower-html-entities.md) — Gmail/Calendar/Airtable text is HTML-escaped; decode at render via decodeHtmlEntities, not user-authored content.
 - [Donor XOR across split pickers](wildflower-donor-xor-pickers.md) — per-type donor pickers must send all 3 FK fields (null the rest) + allowNull=false to keep exactly-one invariant.

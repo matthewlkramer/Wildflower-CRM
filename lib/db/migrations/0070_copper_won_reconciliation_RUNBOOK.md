@@ -88,9 +88,15 @@ touches 0 rows.
 
 ## Ordering
 
-Independent — **no Publish step required**. Every column, enum value
-(`payment_method = stock`, `restriction_type = unclear`), entity slug
-(`wildflower_foundation`), and `fiscal_years` id used here already exists in prod.
+**Run AFTER Publish**, and **before** `0070_opportunity_lifecycle_backfill.sql`.
+Step 7.2 links the restored Stranahan FY22 payment via the gift→pledge column,
+which the lifecycle redesign renamed `payment_on_pledge_id` → `opportunity_id`.
+This file now uses the new name, so the rename must already be live (i.e. Publish
+done) before it runs. Running it *before* the lifecycle backfill ensures that
+backfill's `paid` rollup picks up the restructured Stranahan payments. Every
+other column, enum value (`payment_method = stock`, `restriction_type =
+unclear`), entity slug (`wildflower_foundation`), and `fiscal_years` id used here
+already exists in prod.
 
 ## Idempotency
 

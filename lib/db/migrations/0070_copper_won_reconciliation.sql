@@ -372,7 +372,7 @@ UPDATE gifts_and_payments
 -- 7.2 Mint the FY22 $300k payment gift on the same pledge + donor (FK-safe).
 INSERT INTO gifts_and_payments
   (id, name, date_received, amount, organization_id, type,
-   payment_on_pledge_id, grant_year)
+   opportunity_id, grant_year)
 SELECT 'stranahan-fy22-payment', 'Stranahan Foundation 2022 (payment 2)',
        DATE '2021-12-13', 300000.00, 'recLn1w2ZuhFJBvR0', 'pledge_payment',
        'rec8J1Lbc9jYMzG5d', 'fy2022'

@@ -46,3 +46,10 @@ this way (dev applied; prod pending human psql apply).
 **Publish note:** Publish diffs dev-DB vs prod-DB (not schema-vs-DB). As long as
 both DBs carry the same columns, Publish proposes no drop — the data-loss warnings
 in post-merge logs are dev-push-only and do not surface at Publish.
+
+**RENAMEs are the other recurring abort cause** (not just drops): an interactive
+push can't answer the "is X a rename of Y?" prompt and aborts the whole push, so
+dev stalls at the pre-rename schema every merge. Clearing it (guarded manual
+pre-rename → push applies additive non-interactively → verify dev==schema, never
+`push-force`) and the safe-Publish proof are in
+[Schema-rename reconciliation](lifecycle-rename-reconciliation.md).

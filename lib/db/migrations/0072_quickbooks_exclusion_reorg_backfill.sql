@@ -45,8 +45,9 @@
 --     ON CONFLICT (id) DO NOTHING. NOTHING is deleted.
 --
 --   psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0072_quickbooks_exclusion_reorg_backfill.sql
-
-BEGIN;
+--
+-- Run with `-1` (psql wraps the whole file in ONE transaction). Do NOT add an
+-- internal BEGIN/COMMIT — `-1` already provides the single-transaction guarantee.
 
 -- ─── 0. Schema safety (idempotent) ─────────────────────────────────────────
 -- counts_toward_goal reaches prod via the normal Publish (drizzle) diff; added
@@ -244,8 +245,6 @@ BEGIN
   RAISE NOTICE '0072: auto loan still excluded=% (expect 0), loan_repayment=%, loan_proceeds=%, note_payable=%, CSP non-goal=%',
     n_loan_left, n_repay, n_proceeds, n_note, n_csp_nongoal;
 END $$;
-
-COMMIT;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- OPTIONAL — physically drop the legacy enum values.
