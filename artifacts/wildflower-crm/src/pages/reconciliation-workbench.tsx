@@ -43,7 +43,6 @@ import {
   Check,
   CheckCheck,
   ChevronDown,
-  FlaskConical,
   GitMerge,
   Layers,
   Loader2,
@@ -54,7 +53,6 @@ import {
   Split,
   Trash2,
   Undo2,
-  UserPen,
   Wallet,
   X,
 } from "lucide-react";
@@ -80,6 +78,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -208,7 +214,6 @@ function evidenceBullets(card: ReconciliationCard): string[] {
   } else if (amt != null) {
     out.push(`QuickBooks amount ${money(card.amount)}`);
   }
-  if (card.qbPaymentMethod) out.push(`QB method: ${card.qbPaymentMethod}`);
   if (card.proposedDonorName) {
     out.push(
       `Donor: ${card.proposedDonorName}${card.proposedDonorKind ? ` (${card.proposedDonorKind})` : ""}`,
@@ -894,19 +899,34 @@ export default function ReconciliationWorkbench() {
             <LoadingRow />
           ) : cardsQuery.isError ? (
             <ErrorRow label="review queue" />
-          ) : queue === "review" ? (
-            buckets.review.length === 0 ? (
-              <EmptyState />
-            ) : (
-              buckets.review.map((card) => (
-                <WorkbenchCard
+          ) : (
+            // Needs review + QBO-only + Research + Sync gaps share one card.
+            (() => {
+              const bucket =
+                queue === "review"
+                  ? buckets.review
+                  : queue === "qbo"
+                    ? buckets.qbo
+                    : queue === "research"
+                      ? buckets.research
+                      : buckets.sync;
+              if (bucket.length === 0)
+                return queue === "review" ? (
+                  <EmptyState />
+                ) : (
+                  <EmptyBucket queue={queue} />
+                );
+              return bucket.map((card) => (
+                <ReconCard
                   key={card.stagedPaymentId}
                   card={card}
                   staged={staged.find(
                     (s) => s.stagedPaymentId === card.stagedPaymentId,
                   )}
                   expanded={expanded === card.stagedPaymentId}
-                  busy={busy}
+                  busy={busy || actionBusy}
+                  selected={selectedIds.has(card.stagedPaymentId)}
+                  onToggleSelect={() => toggleSelect(card.stagedPaymentId)}
                   onToggle={() =>
                     setExpanded((e) =>
                       e === card.stagedPaymentId ? null : card.stagedPaymentId,
@@ -915,32 +935,21 @@ export default function ReconciliationWorkbench() {
                   onConfirm={() => stageConfirm(card)}
                   onReject={() => stageReject(card)}
                   onRetarget={() => setRetargetCard(card)}
-                  onUnstage={() => unstage(card.stagedPaymentId)}
-                />
-              ))
-            )
-          ) : (
-            // QBO-only / Research / Sync gaps buckets
-            (() => {
-              const bucket =
-                queue === "qbo"
-                  ? buckets.qbo
-                  : queue === "research"
-                    ? buckets.research
-                    : buckets.sync;
-              if (bucket.length === 0) return <EmptyBucket queue={queue} />;
-              return bucket.map((card) => (
-                <QboActionCard
-                  key={card.stagedPaymentId}
-                  card={card}
-                  busy={actionBusy}
-                  selected={selectedIds.has(card.stagedPaymentId)}
-                  onToggleSelect={() => toggleSelect(card.stagedPaymentId)}
-                  onChangeDonor={() => setDonorCard(card)}
                   onCreateGift={() => handleCreateGift(card)}
+                  onChangeDonor={() => setDonorCard(card)}
                   onExclude={() => setExcludeCard(card)}
+                  onSplit={() => setSplitCard(card)}
+                  onGroup={() => {
+                    toggleSelect(card.stagedPaymentId);
+                    toast({
+                      title: "Selected for grouping",
+                      description:
+                        "Pick another payment, then Group into one gift.",
+                    });
+                  }}
                   onToggleSyncGap={() => handleToggleSyncGap(card)}
                   onToggleResearch={() => handleToggleResearch(card)}
+                  onUnstage={() => unstage(card.stagedPaymentId)}
                 />
               ));
             })()
@@ -978,8 +987,11 @@ export default function ReconciliationWorkbench() {
         />
       )}
 
-      {/* Group selected → one gift (QBO-only / Research / Sync buckets) */}
-      {(queue === "qbo" || queue === "research" || queue === "sync") &&
+      {/* Group selected → one gift (Review / QBO-only / Research / Sync buckets) */}
+      {(queue === "review" ||
+        queue === "qbo" ||
+        queue === "research" ||
+        queue === "sync") &&
         selectedIds.size > 0 && (
           <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border bg-card px-4 py-2 shadow-xl">
             <span className="text-sm font-medium">
@@ -1032,47 +1044,186 @@ export default function ReconciliationWorkbench() {
 
 // ─── Two-sided card ───────────────────────────────────────────────────────────
 
-function WorkbenchCard({
+/**
+ * Unified contextual "Resolve" menu — the full staged-payment action set on
+ * every card, grouped Matching / Classify / Restructure / Flag. Items are
+ * shown contextually (link-existing vs create-new) and each is wired to the
+ * same handler the page already uses; no new endpoints.
+ */
+function ResolveMenu({
+  card,
+  busy,
+  onConfirm,
+  onReject,
+  onRetarget,
+  onCreateGift,
+  onChangeDonor,
+  onExclude,
+  onSplit,
+  onGroup,
+  onToggleSyncGap,
+  onToggleResearch,
+}: {
+  card: ReconciliationCard;
+  busy: boolean;
+  onConfirm: () => void;
+  onReject: () => void;
+  onRetarget: () => void;
+  onCreateGift: () => void;
+  onChangeDonor: () => void;
+  onExclude: () => void;
+  onSplit: () => void;
+  onGroup: () => void;
+  onToggleSyncGap: () => void;
+  onToggleResearch: () => void;
+}) {
+  const hasGift = Boolean(card.resolvedGiftId || card.proposedGiftId);
+  const MI = (onClick: () => void, title: string, desc: string) => (
+    <DropdownMenuItem onClick={onClick} className="flex-col items-start gap-0">
+      <span className="font-medium">{title}</span>
+      <span className="text-[11px] text-muted-foreground">{desc}</span>
+    </DropdownMenuItem>
+  );
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant="outline" className="h-8 gap-1" disabled={busy}>
+          Resolve <ChevronDown className="h-3.5 w-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          Matching
+        </DropdownMenuLabel>
+        {hasGift && MI(onConfirm, "Confirm match", "approve this link")}
+        {hasGift && MI(onReject, "Reject match", "these are not the same")}
+        {hasGift && MI(onRetarget, "Re-target match", "link to a different gift")}
+        {!hasGift &&
+          MI(onCreateGift, "Create gift", "build a new gift from this payment")}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          Classify
+        </DropdownMenuLabel>
+        {MI(
+          onChangeDonor,
+          "Change donor / payer",
+          "payer-vehicle → donor; DAF / employer",
+        )}
+        {MI(
+          onExclude,
+          "Exclude payment",
+          "reason: vendor, reimbursement, loan…",
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          Restructure
+        </DropdownMenuLabel>
+        {MI(onSplit, "Split payment across gifts", "one payment → many gifts")}
+        {MI(
+          onGroup,
+          "Group payments → one gift",
+          "select rows that fund one gift",
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          Flag
+        </DropdownMenuLabel>
+        {MI(
+          onToggleSyncGap,
+          card.syncGap ? "Clear sync gap" : "Flag as sync gap",
+          "exists in CRM, missing from export",
+        )}
+        {MI(
+          onToggleResearch,
+          card.needsResearch ? "Clear research" : "Send to research",
+          "park with a note for later",
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * The single card surface used by Needs review, QBO-only, Research and Sync
+ * gaps. It distinguishes "link an existing gift" from "create a new gift",
+ * shows the QB payment method in the header, a legible balance meter, and the
+ * full contextual action set (inline primary + Reject + Resolve menu).
+ */
+function ReconCard({
   card,
   staged,
   expanded,
   busy,
+  selected,
+  onToggleSelect,
   onToggle,
   onConfirm,
   onReject,
   onRetarget,
+  onCreateGift,
+  onChangeDonor,
+  onExclude,
+  onSplit,
+  onGroup,
+  onToggleSyncGap,
+  onToggleResearch,
   onUnstage,
 }: {
   card: ReconciliationCard;
   staged: StagedChange | undefined;
   expanded: boolean;
   busy: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
   onToggle: () => void;
   onConfirm: () => void;
   onReject: () => void;
   onRetarget: () => void;
+  onCreateGift: () => void;
+  onChangeDonor: () => void;
+  onExclude: () => void;
+  onSplit: () => void;
+  onGroup: () => void;
+  onToggleSyncGap: () => void;
+  onToggleResearch: () => void;
   onUnstage: () => void;
 }) {
   const conf = confidenceOf(card);
   const meta = CONFIDENCE_META[conf];
   const bullets = evidenceBullets(card);
   const lanes = laneBadges(card.reconciliationLanes);
-  const giftName =
-    card.resolvedGiftName ?? card.proposedGiftName ?? card.proposedDonorName;
+  const hasGift = Boolean(card.resolvedGiftId || card.proposedGiftId);
+  const hasDonor = Boolean(card.proposedDonorId || card.proposedDonorName);
+  const linkedGiftName = card.resolvedGiftName ?? card.proposedGiftName;
 
   return (
     <div
       className={cn(
         "rounded-lg border bg-card shadow-sm",
-        staged && "ring-2 ring-primary/40",
+        (staged || selected) && "ring-2 ring-primary/40",
       )}
     >
       <div className="flex items-stretch gap-0">
-        {/* Left: QuickBooks anchor */}
+        {/* Select for grouping */}
+        <div className="flex items-start p-3 pr-0">
+          <Checkbox
+            checked={selected}
+            onCheckedChange={onToggleSelect}
+            className="mt-1"
+            aria-label="Select for grouping"
+          />
+        </div>
+
+        {/* Left: QuickBooks anchor (payment method in the header) */}
         <div className="flex-1 p-3">
-          <div className="mb-1 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            QuickBooks
+          <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>QuickBooks</span>
             {card.qbEntityType && <span>· {card.qbEntityType}</span>}
+            {card.qbPaymentMethod && (
+              <span className="rounded bg-muted px-1.5 py-0.5 normal-case">
+                {card.qbPaymentMethod}
+              </span>
+            )}
           </div>
           <div className="font-medium">{card.payerName ?? "Unknown payer"}</div>
           <div className="text-lg font-semibold tabular-nums">
@@ -1088,23 +1239,47 @@ function WorkbenchCard({
           <ArrowRight className="h-4 w-4" />
         </div>
 
-        {/* Right: proposed gift */}
+        {/* Right: CRM gift lane — link existing vs create new */}
         <div className="flex-1 p-3">
           <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             CRM gift
           </div>
-          {giftName ? (
+          {hasGift ? (
             <>
-              <div className="font-medium">{giftName}</div>
-              <div className="text-lg font-semibold tabular-nums">
-                {money(card.resolvedGiftAmount)}
+              <Badge variant="secondary" className="mb-1 text-[10px]">
+                {card.resolvedGiftId ? "Linked gift" : "Link existing gift"}
+              </Badge>
+              <div className="font-medium">{linkedGiftName ?? "Existing gift"}</div>
+              {num(card.resolvedGiftAmount) != null && (
+                <div className="text-lg font-semibold tabular-nums">
+                  {money(card.resolvedGiftAmount)}
+                </div>
+              )}
+              <div className="text-xs text-muted-foreground">
+                {card.proposedDonorKind ?? card.proposedDonorName ?? "—"}
+              </div>
+            </>
+          ) : hasDonor ? (
+            <>
+              <Badge className="mb-1 bg-emerald-100 text-emerald-800 text-[10px]">
+                Create new gift
+              </Badge>
+              <div className="font-medium">
+                {card.proposedDonorName ?? "New gift"}
               </div>
               <div className="text-xs text-muted-foreground">
-                {card.proposedDonorKind ?? "—"}
+                Mints a new gift from this payment for this donor.
               </div>
             </>
           ) : (
-            <div className="text-sm text-muted-foreground">No candidate gift</div>
+            <>
+              <Badge variant="outline" className="mb-1 text-[10px]">
+                No gift yet
+              </Badge>
+              <div className="text-sm text-muted-foreground">
+                Set a donor to create a new gift — or link an existing one.
+              </div>
+            </>
           )}
         </div>
 
@@ -1125,25 +1300,38 @@ function WorkbenchCard({
           >
             Details
             <ChevronDown
-              className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-180")}
+              className={cn(
+                "h-3.5 w-3.5 transition-transform",
+                expanded && "rotate-180",
+              )}
             />
           </button>
         </div>
       </div>
 
-      {/* Balance meter */}
+      {/* Balance meter (only when there's an applied amount to compare) */}
       <BalanceMeter
         paymentTotal={num(card.amount)}
         applied={num(card.resolvedGiftAmount)}
       />
 
-      {/* Evidence + lanes */}
+      {/* Lanes + evidence */}
       <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2">
         {lanes.map((b) => (
           <Badge key={b.key} variant={b.variant} className="text-[10px]">
             {b.label}
           </Badge>
         ))}
+        {card.syncGap && (
+          <Badge className="bg-orange-100 text-orange-800 text-[10px]">
+            Sync gap
+          </Badge>
+        )}
+        {card.needsResearch && (
+          <Badge className="bg-stone-200 text-stone-800 text-[10px]">
+            Research
+          </Badge>
+        )}
         {bullets.slice(0, 3).map((b, i) => (
           <span
             key={i}
@@ -1156,7 +1344,7 @@ function WorkbenchCard({
 
       {expanded && <LineageStrip stagedPaymentId={card.stagedPaymentId} />}
 
-      {/* Actions */}
+      {/* Actions: inline primary + Reject + full Resolve menu */}
       <div className="flex items-center gap-2 border-t px-3 py-2">
         {staged ? (
           <>
@@ -1174,25 +1362,49 @@ function WorkbenchCard({
           </>
         ) : (
           <>
+            {hasGift ? (
+              <Button
+                size="sm"
+                className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700"
+                onClick={onConfirm}
+                disabled={busy || !card.proposedGiftId}
+              >
+                <Check className="h-3.5 w-3.5" /> Approve
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onClick={onCreateGift}
+                disabled={busy || !hasDonor}
+              >
+                <Check className="mr-1 h-3.5 w-3.5" /> Create gift
+              </Button>
+            )}
             <Button
               size="sm"
-              onClick={onConfirm}
-              disabled={busy || !card.proposedGiftId}
-            >
-              Confirm match
-            </Button>
-            <Button size="sm" variant="outline" onClick={onRetarget} disabled={busy}>
-              Re-target
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="ml-auto text-muted-foreground"
+              variant="outline"
+              className="gap-1 border-red-200 text-red-700 hover:bg-red-50"
               onClick={onReject}
               disabled={busy}
             >
-              Reject
+              <X className="h-3.5 w-3.5" /> Reject
             </Button>
+            <div className="ml-auto">
+              <ResolveMenu
+                card={card}
+                busy={busy}
+                onConfirm={onConfirm}
+                onReject={onReject}
+                onRetarget={onRetarget}
+                onCreateGift={onCreateGift}
+                onChangeDonor={onChangeDonor}
+                onExclude={onExclude}
+                onSplit={onSplit}
+                onGroup={onGroup}
+                onToggleSyncGap={onToggleSyncGap}
+                onToggleResearch={onToggleResearch}
+              />
+            </div>
           </>
         )}
       </div>
@@ -1210,34 +1422,70 @@ function BalanceMeter({
   applied: number | null;
 }) {
   if (paymentTotal == null || applied == null) return null;
-  const delta = applied - paymentTotal;
-  const state =
-    Math.abs(delta) < 0.005 ? "balanced" : delta > 0 ? "over" : "under";
+  const remainder = +(paymentTotal - applied).toFixed(2);
+  const balanced = Math.abs(remainder) < 0.005;
+  const over = remainder < -0.005;
   const pct =
     paymentTotal > 0
       ? Math.max(0, Math.min(100, (applied / paymentTotal) * 100))
-      : 0;
-  const color =
-    state === "balanced"
-      ? "bg-emerald-500"
-      : state === "over"
-        ? "bg-amber-500"
-        : "bg-rose-500";
-  const label =
-    state === "balanced"
-      ? "Balanced"
-      : state === "over"
-        ? `Over by ${money(String(Math.abs(delta)))}`
-        : `Under by ${money(String(Math.abs(delta)))}`;
+      : applied > 0
+        ? 100
+        : 0;
   return (
     <div className="px-3 pb-2">
-      <div className="mb-0.5 flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>Applied {money(String(applied))}</span>
-        <span>{label}</span>
-        <span>Total {money(String(paymentTotal))}</span>
-      </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        <div className={cn("h-full rounded-full", color)} style={{ width: `${pct}%` }} />
+      <div
+        className={cn(
+          "rounded-lg border p-3 text-[12.5px]",
+          balanced
+            ? "border-emerald-200 bg-emerald-50/60"
+            : over
+              ? "border-red-200 bg-red-50/60"
+              : "border-amber-200 bg-amber-50/60",
+        )}
+      >
+        <div className="flex items-baseline justify-between tabular-nums">
+          <span className="text-muted-foreground">Applied</span>
+          <span className="font-semibold">{money(String(applied))}</span>
+        </div>
+        <div className="my-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn(
+              "h-full rounded-full transition-all",
+              over ? "bg-red-500" : balanced ? "bg-emerald-500" : "bg-amber-500",
+            )}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="flex items-baseline justify-between tabular-nums">
+          <span className="text-muted-foreground">Payment total</span>
+          <span className="font-semibold">{money(String(paymentTotal))}</span>
+        </div>
+        <div
+          className={cn(
+            "mt-2 flex items-center gap-1.5 font-semibold",
+            balanced
+              ? "text-emerald-700"
+              : over
+                ? "text-red-700"
+                : "text-amber-700",
+          )}
+        >
+          {balanced ? (
+            <>
+              <Check className="h-3.5 w-3.5" /> Balances — applied equals payment
+            </>
+          ) : over ? (
+            <>
+              <AlertCircle className="h-3.5 w-3.5" /> Over-applied by{" "}
+              {money(String(-remainder))}
+            </>
+          ) : (
+            <>
+              <AlertCircle className="h-3.5 w-3.5" /> {money(String(remainder))}{" "}
+              unapplied — route the remainder
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1973,119 +2221,6 @@ function EmptyBucket({ queue }: { queue: QueueId }) {
       <Check className="mb-2 h-8 w-8 text-emerald-500" />
       <p className="font-medium">All clear</p>
       <p className="text-sm">{copy}</p>
-    </div>
-  );
-}
-
-// ─── QBO-only / Research / Sync-gap action card ───────────────────────────────
-
-function QboActionCard({
-  card,
-  busy,
-  selected,
-  onToggleSelect,
-  onChangeDonor,
-  onCreateGift,
-  onExclude,
-  onToggleSyncGap,
-  onToggleResearch,
-}: {
-  card: ReconciliationCard;
-  busy: boolean;
-  selected: boolean;
-  onToggleSelect: () => void;
-  onChangeDonor: () => void;
-  onCreateGift: () => void;
-  onExclude: () => void;
-  onToggleSyncGap: () => void;
-  onToggleResearch: () => void;
-}) {
-  const lanes = laneBadges(card.reconciliationLanes);
-  const hasDonor = Boolean(card.proposedDonorId || card.proposedDonorName);
-  return (
-    <div
-      className={cn(
-        "rounded-lg border bg-card shadow-sm",
-        selected && "ring-2 ring-primary/40",
-      )}
-    >
-      <div className="flex items-start gap-3 p-3">
-        <Checkbox
-          checked={selected}
-          onCheckedChange={onToggleSelect}
-          className="mt-1"
-          aria-label="Select for grouping"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            QuickBooks
-            {card.qbEntityType && <span>· {card.qbEntityType}</span>}
-          </div>
-          <div className="font-medium">{card.payerName ?? "Unknown payer"}</div>
-          <div className="text-lg font-semibold tabular-nums">
-            {money(card.amount)}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {card.dateReceived ?? "—"}
-            {card.qbDocNumber ? ` · #${card.qbDocNumber}` : ""}
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {lanes.map((b) => (
-              <Badge key={b.key} variant={b.variant} className="text-[10px]">
-                {b.label}
-              </Badge>
-            ))}
-            {card.proposedDonorName && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                Donor guess: {card.proposedDonorName}
-              </span>
-            )}
-            {card.syncGap && (
-              <Badge className="bg-orange-100 text-orange-800 text-[10px]">
-                Sync gap
-              </Badge>
-            )}
-            {card.needsResearch && (
-              <Badge className="bg-stone-200 text-stone-800 text-[10px]">
-                Research
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2">
-        <Button size="sm" variant="outline" onClick={onChangeDonor} disabled={busy}>
-          <UserPen className="mr-1 h-3.5 w-3.5" />
-          {hasDonor ? "Change donor" : "Set donor"}
-        </Button>
-        <Button size="sm" onClick={onCreateGift} disabled={busy || !hasDonor}>
-          <Check className="mr-1 h-3.5 w-3.5" />
-          Create gift
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onToggleSyncGap} disabled={busy}>
-          <ArrowRight className="mr-1 h-3.5 w-3.5" />
-          {card.syncGap ? "Clear sync gap" : "Flag sync gap"}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onToggleResearch}
-          disabled={busy}
-        >
-          <FlaskConical className="mr-1 h-3.5 w-3.5" />
-          {card.needsResearch ? "Clear research" : "Send to research"}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="ml-auto text-muted-foreground"
-          onClick={onExclude}
-          disabled={busy}
-        >
-          Exclude…
-        </Button>
-      </div>
     </div>
   );
 }
