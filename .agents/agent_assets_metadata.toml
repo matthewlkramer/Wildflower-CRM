@@ -102,3 +102,9 @@ id = "rB6IDLDvGAhpfOqpEHoYY"
 uri = "file://.local/tasks/financial-reconciliation-gap-analysis.md"
 type = "text"
 title = "Reconciliation — Gap Analysis (current app vs requirements)"
+
+[[outputs]]
+id = "DeCRt0qwcp0xQYnysE-XL"
+uri = "file://exports/flagged-pledges-review.csv"
+type = "table"
+title = "Flagged pledges — review list (91 rows)"
