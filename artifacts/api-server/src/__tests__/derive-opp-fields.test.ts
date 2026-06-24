@@ -51,22 +51,21 @@ describe("deriveOppFields", () => {
       expect(r.status).toBe("cash_in");
       expect(r.stage).toBe("complete");
     });
-    it("legacy stage=cash_in latches writtenPledge → status=pledge when unpaid (cash_in is payment-driven)", () => {
+    it("legacy stage=cash_in no longer latches writtenPledge (cash-in is not a pledge)", () => {
       const r = deriveOppFields({ ...base, stage: "cash_in" });
-      expect(r.writtenPledge).toBe(true);
-      expect(r.status).toBe("pledge");
-      expect(r.stage).toBe("complete");
+      expect(r.writtenPledge).toBe(false);
+      expect(r.status).toBe("open");
     });
-    it("legacy stage=cash_in WITH full payment → status=cash_in", () => {
+    it("legacy stage=cash_in WITH full payment → status=cash_in (payment-driven), not a pledge", () => {
       const r = deriveOppFields({ ...base, stage: "cash_in", paidAmount: 1000 });
       expect(r.status).toBe("cash_in");
       expect(r.stage).toBe("complete");
+      expect(r.writtenPledge).toBe(false);
     });
-    it("legacy written_commitment → latches writtenPledge → status=pledge, stage=complete", () => {
+    it("legacy written_commitment stage no longer latches writtenPledge", () => {
       const r = deriveOppFields({ ...base, stage: "written_commitment" });
-      expect(r.writtenPledge).toBe(true);
-      expect(r.status).toBe("pledge");
-      expect(r.stage).toBe("complete");
+      expect(r.writtenPledge).toBe(false);
+      expect(r.status).toBe("open");
     });
     it("zero awarded with payments → not fully paid, stays pledge when written", () => {
       const r = deriveOppFields({
@@ -129,26 +128,38 @@ describe("deriveOppFields", () => {
   });
 
   describe("writtenPledge stickiness", () => {
-    it("flips false→true on legacy conditional_commitment stage", () => {
+    it("does NOT flip writtenPledge on legacy conditional_commitment stage", () => {
       const r = deriveOppFields({ ...base, stage: "conditional_commitment" });
-      expect(r.writtenPledge).toBe(true);
+      expect(r.writtenPledge).toBe(false);
+      expect(r.status).toBe("open");
     });
     it("does NOT flip writtenPledge on verbal_confirmation (funnel stage)", () => {
       const r = deriveOppFields({ ...base, stage: "verbal_confirmation" });
       expect(r.writtenPledge).toBe(false);
       expect(r.status).toBe("open");
     });
-    it("flips false→true on legacy written_commitment stage", () => {
+    it("does NOT flip writtenPledge on legacy written_commitment stage", () => {
       const r = deriveOppFields({ ...base, stage: "written_commitment" });
-      expect(r.writtenPledge).toBe(true);
+      expect(r.writtenPledge).toBe(false);
+      expect(r.status).toBe("open");
     });
-    it("flips false→true when grant letter url is set, even on a plain funnel stage", () => {
+    it("flips false→true when a grant letter is set on an unpaid opp, even on a plain funnel stage", () => {
       const r = deriveOppFields({
         ...base,
         stage: "cold_lead",
         grantLetterUrl: "/api/storage/objects/abc",
       });
       expect(r.writtenPledge).toBe(true);
+    });
+    it("does NOT latch on a grant letter when the money is already fully in", () => {
+      const r = deriveOppFields({
+        ...base,
+        stage: "cold_lead",
+        grantLetterUrl: "/api/storage/objects/abc",
+        paidAmount: 1000,
+      });
+      expect(r.writtenPledge).toBe(false);
+      expect(r.status).toBe("cash_in");
     });
     it("NEVER auto-clears: stays true even when stage rolls back with no letter", () => {
       const r = deriveOppFields({

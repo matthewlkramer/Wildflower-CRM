@@ -7,16 +7,11 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 // SEPARATE from the outcome. A WON row reads `complete`; everything else keeps
 // its real funnel stage.
 
-// Legacy commitment stages retained in the DB enum (imported / un-migrated
-// rows). No longer written by the app, but recognised on read so a historical
-// row still latches written_pledge correctly. `cash_in` is included: a legacy
-// cash-in row is a committed pledge that merely happened to be paid, so it
-// latches written_pledge and then derives status purely from payments.
-const LEGACY_COMMITMENT_STAGES = new Set([
-  "conditional_commitment",
-  "written_commitment",
-  "cash_in",
-]);
+// Legacy commitment stages (`conditional_commitment`, `written_commitment`,
+// `cash_in`) are retained in the DB enum for imported / un-migrated rows but
+// are NO LONGER written by the app and NO LONGER latch written_pledge.
+// Receiving money or reaching one of these stages does not make a record a
+// pledge — only a genuine written commitment does (see deriveOppFields).
 
 // When a win is undone we cannot recover the exact pre-win funnel stage (it was
 // overwritten by `complete`), so we revert to the terminal funnel stage. This
@@ -109,8 +104,10 @@ export interface DeriveOutput {
  * total paid against the opportunity. Mirrors applyDerivedOppFields so it can
  * be unit-tested without the DB.
  *
- *   written_pledge: sticky-true. Latches on a grant letter, a legacy
- *     commitment stage, or an explicit set. Never auto-cleared.
+ *   written_pledge: sticky-true. Latches ONLY on a grant letter (and only
+ *     while the money is not already fully in) or an explicit set. Receiving
+ *     payment (cash-in) and legacy commitment stages never latch it. Never
+ *     auto-cleared.
  *
  *   status (FULLY CALCULATED):
  *     loss_type set                                  → loss_type (dormant|lost)
@@ -128,12 +125,12 @@ export function deriveOppFields(input: DeriveInput): DeriveOutput {
   const awardedNum = Number(input.awardedAmount ?? 0);
   const fullyPaid = awardedNum > 0 && paidNum >= awardedNum;
 
+  // A record becomes a (sticky) written pledge ONLY when it carries a genuine
+  // written commitment — a grant letter — and the money has not already fully
+  // landed. A gift you were merely told about (no grant letter), or a grant
+  // whose payment already arrived, is NOT a pledge.
   let writtenPledge = input.writtenPledge ?? false;
-  if (
-    !writtenPledge &&
-    (!!input.grantLetterUrl ||
-      (input.stage != null && LEGACY_COMMITMENT_STAGES.has(input.stage)))
-  ) {
+  if (!writtenPledge && !!input.grantLetterUrl && !fullyPaid) {
     writtenPledge = true;
   }
 
