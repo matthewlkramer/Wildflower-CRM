@@ -108,3 +108,9 @@ id = "DeCRt0qwcp0xQYnysE-XL"
 uri = "file://exports/flagged-pledges-review.csv"
 type = "table"
 title = "Flagged pledges — review list (91 rows)"
+
+[[outputs]]
+id = "auA0Q8KZ-kEyTgwrRlvVm"
+uri = "file://exports/flagged-pledges-evidence.csv"
+type = "table"
+title = "Flagged pledges — evidence classification (91 rows)"
