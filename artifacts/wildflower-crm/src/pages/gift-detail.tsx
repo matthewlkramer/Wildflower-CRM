@@ -789,7 +789,7 @@ function GiftStripeChainCard({ giftId }: { giftId: string }) {
                 {RECON_CHAIN_LABEL[payout.qbReconciliationStatus]}
               </div>
               <Link
-                href="/stripe-reconciliation"
+                href="/reconciliation-workbench?queue=bundle"
                 className="text-xs underline-offset-2 hover:underline"
               >
                 View reconciliation queue →

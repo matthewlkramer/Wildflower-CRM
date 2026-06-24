@@ -29,15 +29,9 @@ import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import Admin from "@/pages/admin";
 import AuditLog from "@/pages/audit-log";
 import PotentialDuplicates from "@/pages/potential-duplicates";
-import FinancialCorrections from "@/pages/financial-corrections";
 import CleanupQueue from "@/pages/cleanup-queue";
 import FundableProjects from "@/pages/fundable-projects";
 import Settings from "@/pages/settings";
-import StagedPayments from "@/pages/staged-payments";
-import StripeStagedCharges from "@/pages/stripe-staged-charges";
-import StripeReconciliation from "@/pages/stripe-reconciliation";
-import DonorboxReview from "@/pages/donorbox-review";
-import Reconciliation from "@/pages/reconciliation";
 import ReconciliationWorkbench from "@/pages/reconciliation-workbench";
 import EmailIntelligence from "@/pages/email-intelligence";
 import GrantLeads from "@/pages/grant-leads";
@@ -217,11 +211,14 @@ function ClerkProviderWithRoutes() {
           
           <Route path="/gifts"><ProtectedRoute component={Gifts} /></Route>
           <Route path="/gifts/:id"><ProtectedRoute component={GiftDetail} /></Route>
-          <Route path="/staged-payments"><ProtectedRoute component={StagedPayments} /></Route>
-          <Route path="/stripe-staged-charges"><ProtectedRoute component={StripeStagedCharges} /></Route>
-          <Route path="/stripe-reconciliation"><ProtectedRoute component={StripeReconciliation} /></Route>
-          <Route path="/donorbox-review"><ProtectedRoute component={DonorboxReview} /></Route>
-          <Route path="/reconciliation"><ProtectedRoute component={Reconciliation} /></Route>
+          {/* Legacy reconciliation surfaces — superseded by the unified
+              Reconciliation Workbench. Redirect each old path to the workbench
+              with its matching queue preselected. */}
+          <Route path="/staged-payments"><Redirect to="/reconciliation-workbench?queue=review" /></Route>
+          <Route path="/stripe-staged-charges"><Redirect to="/reconciliation-workbench?queue=bundle" /></Route>
+          <Route path="/stripe-reconciliation"><Redirect to="/reconciliation-workbench?queue=bundle" /></Route>
+          <Route path="/donorbox-review"><Redirect to="/reconciliation-workbench?queue=bundle" /></Route>
+          <Route path="/reconciliation"><Redirect to="/reconciliation-workbench" /></Route>
           <Route path="/reconciliation-workbench"><ProtectedRoute component={ReconciliationWorkbench} /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>
           <Route path="/interactions"><ProtectedRoute component={Interactions} /></Route>
@@ -237,7 +234,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/admin"><ProtectedRoute component={Admin} /></Route>
           <Route path="/audit-log"><ProtectedRoute component={AuditLog} /></Route>
           <Route path="/potential-duplicates"><ProtectedRoute component={PotentialDuplicates} /></Route>
-          <Route path="/financial-corrections"><ProtectedRoute component={FinancialCorrections} /></Route>
+          <Route path="/financial-corrections"><Redirect to="/reconciliation-workbench?queue=split" /></Route>
           <Route path="/cleanup-queue"><ProtectedRoute component={CleanupQueue} /></Route>
           
           <Route component={NotFound} />

@@ -159,7 +159,7 @@ async function getPerson(id: string): Promise<{
   const res = await fetch(`${baseUrl}/api/people/${id}`);
   const body = await res.json();
   if (res.status !== 200) throw new Error(`person ${res.status}: ${JSON.stringify(body)}`);
-  return body;
+  return body as { lifetimeGiving: string | null; mostRecentGiftDate: string | null };
 }
 
 async function getTopPriorityPerson(id: string): Promise<{
@@ -167,9 +167,15 @@ async function getTopPriorityPerson(id: string): Promise<{
   lastGiftAmount: string | null;
 } | undefined> {
   const res = await fetch(`${baseUrl}/api/top-priorities`);
-  const body = await res.json();
+  const body = (await res.json()) as {
+    individuals: Array<{
+      id: string;
+      lastGiftDate: string | null;
+      lastGiftAmount: string | null;
+    }>;
+  };
   if (res.status !== 200) throw new Error(`top-priorities ${res.status}: ${JSON.stringify(body)}`);
-  return body.individuals.find((p: { id: string }) => p.id === id);
+  return body.individuals.find((p) => p.id === id);
 }
 
 beforeAll(async () => {

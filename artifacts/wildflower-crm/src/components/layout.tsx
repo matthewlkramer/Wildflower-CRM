@@ -21,17 +21,14 @@ import {
   Landmark,
   Star,
   FolderKanban,
-  ReceiptText,
   CreditCard,
   Scale,
-  Workflow,
   PanelLeftClose,
   PanelLeftOpen,
   Lightbulb,
   ScrollText,
   CopyCheck,
   ListChecks,
-  GitMerge,
 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
@@ -78,10 +75,7 @@ const navItems: NavEntry[] = [
 
   { section: "Finance" },
   { href: "/projections", label: "Projections", icon: LineChart },
-  { href: "/reconciliation", label: "Reconciliation", icon: Workflow },
-  { href: "/reconciliation-workbench", label: "Reconciliation Workbench", icon: Scale },
-  { href: "/donorbox-review", label: "Donorbox Review", icon: ReceiptText },
-  { href: "/financial-corrections", label: "Financial Corrections", icon: GitMerge, adminOnly: true },
+  { href: "/reconciliation-workbench", label: "Reconciliation", icon: Scale },
 
   { href: "/settings", label: "Settings", icon: Settings },
 

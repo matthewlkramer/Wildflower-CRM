@@ -163,7 +163,7 @@ function UnmatchedPayoutCard({ recon }: { recon: StripePayoutReconciliation }) {
         </div>
         <div>
           <Link
-            href="/stripe-staged-charges"
+            href="/reconciliation-workbench?queue=bundle"
             className="text-xs font-medium underline-offset-2 hover:underline"
           >
             View the charges behind this payout →

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListReconciliationCards,
@@ -245,7 +246,15 @@ export default function ReconciliationWorkbench() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [queue, setQueue] = useState<QueueId>("review");
+  // Old reconciliation routes redirect here with `?queue=<id>` so the matching
+  // queue is preselected. Read once on mount; the rail drives state thereafter.
+  const urlSearch = useSearch();
+  const [queue, setQueue] = useState<QueueId>(() => {
+    const requested = new URLSearchParams(urlSearch).get("queue");
+    return QUEUES.some((q) => q.id === requested)
+      ? (requested as QueueId)
+      : "review";
+  });
   const [axis, setAxis] = useState<AxisId>("all");
   const [search, setSearch] = useState("");
   const [staged, setStaged] = useState<StagedChange[]>([]);
