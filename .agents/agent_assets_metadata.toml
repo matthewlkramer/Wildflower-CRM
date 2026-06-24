@@ -114,3 +114,9 @@ id = "auA0Q8KZ-kEyTgwrRlvVm"
 uri = "file://exports/flagged-pledges-evidence.csv"
 type = "table"
 title = "Flagged pledges — evidence classification (91 rows)"
+
+[[outputs]]
+id = "h2Nc3cajU4NSmRJYI4YhT"
+uri = "file://exports/flagged-pledges-remaining.csv"
+type = "table"
+title = "Remaining review queue (53 rows)"
