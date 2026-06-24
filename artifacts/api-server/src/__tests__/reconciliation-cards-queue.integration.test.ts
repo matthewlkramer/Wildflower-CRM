@@ -79,13 +79,17 @@ async function apiGet(path: string): Promise<{ status: number; json: any }> {
   return { status: res.status, json };
 }
 
-async function seedGift(amount: string): Promise<string> {
+async function seedGift(
+  amount: string,
+  dateReceived: string | null = null,
+): Promise<string> {
   const id = nextId("gift");
   await db.insert(schema.giftsAndPayments).values({
     id,
     amount,
     organizationId: ORG_ID,
     details: "Queue-filter test gift",
+    dateReceived,
   });
   giftIds.push(id);
   return id;
@@ -117,37 +121,6 @@ async function seedStaged(opts: {
   return id;
 }
 
-// Seed one allocation row on a gift. displayUsage is set explicitly AND mirrored
-// via intendedUsage='gen_ops' so the value is deterministic whether or not the
-// display-usage trigger is present in the test DB.
-async function seedAllocation(giftId: string, subAmount: string): Promise<string> {
-  const id = nextId("alloc");
-  await db.insert(schema.giftAllocations).values({
-    id,
-    giftId,
-    subAmount,
-    intendedUsage: "gen_ops",
-    displayUsage: "Gen Ops",
-  });
-  allocationIds.push(id);
-  return id;
-}
-
-// Book `amountApplied` of a staged payment against a gift in the QB ledger.
-async function seedPaymentApplication(
-  paymentId: string,
-  giftId: string,
-  amountApplied: string,
-): Promise<void> {
-  await db.insert(schema.paymentApplications).values({
-    id: nextId("pa"),
-    paymentId,
-    giftId,
-    amountApplied,
-    evidenceSource: "quickbooks",
-  });
-}
-
 async function seedPayoutFor(
   stagedPaymentId: string,
   link: "proposed" | "matched" = "proposed",
@@ -175,6 +148,18 @@ async function cardIds(queue?: string): Promise<Set<string>> {
   const res = await apiGet(path);
   expect(res.status).toBe(200);
   return new Set<string>((res.json.data as Array<{ stagedPaymentId: string }>).map((c) => c.stagedPaymentId));
+}
+
+// Read the `ready` (one-click/bulk-approvable) flag for a single card.
+async function readyFor(stagedPaymentId: string): Promise<boolean> {
+  const q = `q=${encodeURIComponent(MARKER)}&limit=100`;
+  const res = await apiGet(`/api/reconciliation/cards?${q}`);
+  expect(res.status).toBe(200);
+  const card = (res.json.data as Array<{ stagedPaymentId: string; ready: boolean }>).find(
+    (c) => c.stagedPaymentId === stagedPaymentId,
+  );
+  expect(card, `card ${stagedPaymentId} should be in the queue`).toBeTruthy();
+  return card!.ready;
 }
 
 beforeAll(async () => {
@@ -306,55 +291,36 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
   }, 30_000);
 });
 
-/**
- * Allocation-aware "fidelity row" coverage. A $65k QB payment matched to an $80k
- * gift that splits into a $65k + $15k allocation pair must NOT read as
- * "over-applied by $15k": the card carries the gift's allocations (largest
- * first), the gift's total QB-ledger applied amount, and THIS payment's applied
- * amount — so the meter can say "this $65k is the $65k allocation of an $80k
- * gift" instead of comparing $65k against the full $80k.
- */
-async function cardFor(stagedPaymentId: string): Promise<any> {
-  const q = `q=${encodeURIComponent(MARKER)}&limit=100`;
-  const res = await apiGet(`/api/reconciliation/cards?${q}`);
-  expect(res.status).toBe(200);
-  const card = (res.json.data as Array<{ stagedPaymentId: string }>).find(
-    (c) => c.stagedPaymentId === stagedPaymentId,
-  );
-  expect(card, `card ${stagedPaymentId} should be in the queue`).toBeTruthy();
-  return card;
-}
-
-describe.skipIf(!HAS_DB)("Reconciliation fidelity fields — allocation-aware (integration)", () => {
-  it("surfaces gift allocations + QB-applied amounts for a partial-allocation match", async () => {
-    const gift = await seedGift("80000.00");
-    await seedAllocation(gift, "65000.00");
-    await seedAllocation(gift, "15000.00");
-
-    const stagedId = await seedStaged({
-      label: "fidelity-65k-of-80k",
+describe.skipIf(!HAS_DB)("Reconciliation readiness — date proximity (integration)", () => {
+  it("auto-readies a pending single-donor card only when a fee-band gift's date is within the window", async () => {
+    // In-window: a same-donor fee-band gift dated 5 days from the payment is the
+    // single confident proposal → the card is one-click/bulk approvable.
+    await seedGift("100.00", "2026-03-20");
+    const inStaged = await seedStaged({
+      label: "ready-date-in-window",
       status: "pending",
-      matchedGiftId: gift,
-      amount: "65000.00",
+      amount: "100.00",
     });
-    await seedPaymentApplication(stagedId, gift, "65000.00");
+    // Out-of-window: same donor + fee band, but the only candidate gift is dated
+    // far outside ~90 days, so no confident proposal exists → not ready.
+    await seedGift("200.00", "2026-09-01");
+    const outStaged = await seedStaged({
+      label: "ready-date-out-window",
+      status: "pending",
+      amount: "200.00",
+    });
+    // Unknown date: a gift with no date_received can't be proven in-window, so
+    // the strict clause keeps it out of the auto-ready pool → not ready.
+    await seedGift("300.00", null);
+    const nullStaged = await seedStaged({
+      label: "ready-date-null",
+      status: "pending",
+      amount: "300.00",
+    });
 
-    const card = await cardFor(stagedId);
-
-    // The resolved gift is the $80k header, not the $65k payment.
-    expect(card.resolvedGiftAmount).toBe("80000.00");
-
-    // Allocations come through ordered largest-first.
-    expect(Array.isArray(card.resolvedGiftAllocations)).toBe(true);
-    expect(card.resolvedGiftAllocations).toHaveLength(2);
-    expect(card.resolvedGiftAllocations[0].subAmount).toBe("65000.00");
-    expect(card.resolvedGiftAllocations[1].subAmount).toBe("15000.00");
-    expect(card.resolvedGiftAllocations[0].displayUsage).toBe("Gen Ops");
-
-    // Ledger sums: the whole gift has $65k applied so far; THIS payment is the
-    // $65k that was applied (so it reads as a clean allocation match, not
-    // over-applied against the full $80k).
-    expect(card.resolvedGiftQbAppliedAmount).toBe("65000.00");
-    expect(card.thisPaymentAppliedAmount).toBe("65000.00");
+    expect(await readyFor(inStaged)).toBe(true);
+    expect(await readyFor(outStaged)).toBe(false);
+    expect(await readyFor(nullStaged)).toBe(false);
   }, 30_000);
 });
+

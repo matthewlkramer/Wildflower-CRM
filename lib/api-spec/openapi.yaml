@@ -6391,14 +6391,6 @@ components:
           type: array
           items: { $ref: "#/components/schemas/SettlementLineageDonation" }
           description: "Donorbox donations tied to the chain — enrichment for the Stripe charges, or non-Stripe new money the reviewer linked to this deposit. Empty when none apply."
-    ReconciliationGiftAllocation:
-      type: object
-      required: [id]
-      description: "One allocation (child line) of a resolved CRM gift, summarised for the reconciler's fidelity meter so it can name the allocation a QB payment covers."
-      properties:
-        id:           { type: string }
-        subAmount:    { type: string, nullable: true, description: "This allocation's portion of the gift, major units." }
-        displayUsage: { type: string, nullable: true, description: "Human-readable label for the allocation's intended usage (e.g. 'Gen Ops', a school or project name)." }
     ReconciliationCard:
       type: object
       required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup, needsResearch, syncGap]
@@ -6436,13 +6428,6 @@ components:
         resolvedGiftId:     { type: string, nullable: true }
         resolvedGiftName:   { type: string, nullable: true }
         resolvedGiftAmount: { type: string, nullable: true }
-        resolvedGiftAllocations:
-          type: array
-          nullable: true
-          description: "Allocation (sub-amount) breakdown of the resolved CRM gift, so the fidelity meter can show that a QB payment covering ONE allocation of a larger multi-allocation gift is a legitimate partial application, not an over-application. Null when there is no resolved gift; empty array when the gift has no allocations."
-          items: { $ref: "#/components/schemas/ReconciliationGiftAllocation" }
-        resolvedGiftQbAppliedAmount: { type: string, nullable: true, description: "SUM(payment_applications.amount_applied) booked from ALL QuickBooks staged payments against the resolved gift (the gift's total QB-applied money). Lets the meter tell a multi-payment-funded gift apart from a true over-application. '0' / null when there is no QB ledger for the gift." }
-        thisPaymentAppliedAmount: { type: string, nullable: true, description: "SUM(payment_applications.amount_applied) booked from THIS staged payment against the resolved gift — how much of this QB payment lands on the gift. '0' / null when no QB ledger row yet (e.g. a legacy match booked before the ledger existed); the UI then falls back to the lesser of payment and gift total." }
         finalAmountSource:  { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
         ready:              { type: boolean, description: "Auto-proposal satisfies the consistency gate (one-click approve)." }
         needsResearch:      { type: boolean, description: "Plain human-set 'needs research' flag (parked for later); orthogonal to reconcile status. Set via /staged-payments/{id}/set-needs-research." }

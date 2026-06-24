@@ -108,3 +108,4 @@
 - [Individual org soft-credit](individual-org-soft-credit.md) — person lifetime/last-gift folds in org gifts (primary-contact|advisor|current-principal); disjoint via donor XOR (org_id NOT NULL); all paths now filter archived; org/hh totals unchanged.
 - [Orval custom query options require queryKey](orval-custom-query-options-querykey.md) — passing {query:{enabled}} to a generated useX hook needs queryKey too (TS2741); use get<Name>QueryKey(params).
 - [Bundle queue axis mapping](reconciliation-bundle-queue.md) — settlement bundles are payout-anchored; qg/qd axes intentionally empty, qs/ds/all show all; confirm-ties is additive enrich-only (NULL-fill, mints nothing).
+- [Reconciler card readiness pool](reconciler-card-readiness-pool.md) — n()/unlinkedDonorGiftWhere is the shared count/pick/ready gift pool (cards.ts only); STRICT ±90d date clause (not null-tolerant); separate from matcher's 60d.
