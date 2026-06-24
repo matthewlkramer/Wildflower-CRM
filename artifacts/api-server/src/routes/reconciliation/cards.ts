@@ -378,6 +378,12 @@ router.get(
           : null,
         // A group card's readiness can't come from the single-row auto hint.
         ready: !isSourceGroup && row.cardReady === true,
+        // Pure human-set annotation flags (orthogonal to reconcile status) —
+        // surfaced so the workbench can route cards into the Research / Sync-gap
+        // queues without a second fetch.
+        needsResearch: row.needsResearch === true,
+        syncGap: row.syncGap === true,
+        exclusionReason: row.exclusionReason ?? null,
         reconciliationLanes: deriveEvidenceLanes({
           status: row.status,
           donorPresent: donorId != null,

@@ -318,6 +318,14 @@ export const stagedPayments = pgTable(
     // reconcile status / matching — a pure annotation set via set-needs-research.
     needsResearch: boolean("needs_research").notNull().default(false),
 
+    // Plain human-set flag: this QuickBooks money exists in the CRM as a gift but
+    // was missing from the QuickBooks export (a "sync gap") — flagged so a
+    // reviewer can come back and reconcile once the export catches up. Like
+    // needsResearch it is a PURE annotation: never auto-derived, orthogonal to
+    // reconcile status, and with NO side effects on matching / status — set via
+    // set-sync-gap.
+    syncGap: boolean("sync_gap").notNull().default(false),
+
     // Derived "doesn't count toward fundraising goal" hint. Set to false at
     // ingest / reclassify when the money is detected as a GOVERNMENT
     // REIMBURSEMENT (the "CSP" payer marker) — real money that flows into the

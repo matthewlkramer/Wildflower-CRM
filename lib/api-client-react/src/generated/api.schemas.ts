@@ -2666,6 +2666,8 @@ export interface StagedPayment {
   fundingSourceProvenance: StagedPaymentFundingSourceProvenance;
   /** Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via /set-needs-research with no side effects on reconcile status or matching. */
   needsResearch: boolean;
+  /** Plain human-set flag: this QuickBooks money already exists in the CRM as a gift but was missing from the QuickBooks export (a sync gap). Never auto-derived; set via /set-sync-gap with no side effects on reconcile status or matching. */
+  syncGap: boolean;
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
@@ -3506,6 +3508,12 @@ export interface ReconciliationCard {
   finalAmountSource?: GiftFinalAmountSource | null;
   /** Auto-proposal satisfies the consistency gate (one-click approve). */
   ready: boolean;
+  /** Plain human-set 'needs research' flag (parked for later); orthogonal to reconcile status. Set via /staged-payments/{id}/set-needs-research. */
+  needsResearch: boolean;
+  /** Plain human-set 'sync gap' flag — the gift exists in the CRM but was missing from the QuickBooks export; orthogonal to reconcile status. Set via /staged-payments/{id}/set-sync-gap. */
+  syncGap: boolean;
+  /** Why this money was filed as a non-gift; set only when status='excluded'. Drives the Excluded queue's reason label. */
+  exclusionReason?: StagedPaymentExclusionReason | null;
   /** Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor/gift state: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge. */
   readonly reconciliationLanes?: ReconciliationLanes;
   /** Origin of this money (Stripe, brokerage, DAF, …). For a group card this is the members' common source, or null when they differ. Distinct from qbPaymentMethod (the instrument) and the funding lane. */
@@ -4114,6 +4122,14 @@ export interface SetStagedPaymentFundingSourceBody {
 export interface SetStagedPaymentNeedsResearchBody {
   /** True to flag this row for further research, false to clear it. */
   needsResearch: boolean;
+}
+
+/**
+ * Set or clear the plain human 'sync gap' flag on a staged payment (the gift exists in the CRM but was missing from the QuickBooks export). A pure annotation with no side effects on reconcile status or matching.
+ */
+export interface SetStagedPaymentSyncGapBody {
+  /** True to flag this row as a sync gap, false to clear it. */
+  syncGap: boolean;
 }
 
 /**

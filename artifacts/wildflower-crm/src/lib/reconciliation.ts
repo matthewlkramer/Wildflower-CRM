@@ -8,6 +8,7 @@ import {
   type GiftFinalAmountSource,
   type ReconciliationLaneStatus,
   type ReconciliationLanes,
+  type StagedPaymentExclusionReason,
 } from "@workspace/api-client-react";
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
@@ -445,3 +446,63 @@ export function deriveApproveBodyFromProposal(
     graph,
   });
 }
+
+/**
+ * Human-readable labels for every staged-payment exclusion reason (including
+ * reconciliation-only + legacy reasons, so historical rows still render).
+ * Mirrors the labels on the legacy staged-payments page.
+ */
+export const EXCLUSION_REASON_LABELS: Record<
+  StagedPaymentExclusionReason,
+  string
+> = {
+  zero_amount: "Zero amount",
+  loan_repayment: "Loan repayment",
+  loan_proceeds: "Borrowed funds / loan proceeds",
+  note_payable: "Note payable",
+  earned_income: "Earned income / fees for service",
+  other_revenue: "Other revenue (non-gift)",
+  interest: "Interest / investment income",
+  membership: "Membership contributions",
+  tax_refund: "Tax refund",
+  insurance: "Insurance / COBRA reimbursement",
+  expense_refund: "Expense refund (non-gift)",
+  expensify: "Expensify reimbursement (non-gift)",
+  intercompany_transfer: "Intercompany transfer",
+  miscoded_withdrawal: "Miscoded withdrawal",
+  returned_wire: "Returned wire (non-gift)",
+  other: "Other (not a gift)",
+  processor_payout: "Processor payout (reconciled to Stripe)",
+  loan: "Loan activity (legacy)",
+  government_reimbursement: "Government reimbursement (legacy)",
+  fiscally_sponsored: "Fiscally sponsored (legacy)",
+};
+
+/**
+ * Grouped families offered in the manual "Exclude as…" picker. Reconciliation-
+ * only (processor_payout) and legacy reasons are intentionally NOT offered —
+ * they are only ever set by automated flows, never by hand.
+ */
+export const MANUAL_EXCLUSION_FAMILIES: {
+  family: string;
+  reasons: StagedPaymentExclusionReason[];
+}[] = [
+  { family: "No money", reasons: ["zero_amount"] },
+  {
+    family: "Loans & borrowed funds",
+    reasons: ["loan_repayment", "loan_proceeds", "note_payable"],
+  },
+  {
+    family: "Non-gift income",
+    reasons: ["earned_income", "other_revenue", "interest", "membership"],
+  },
+  {
+    family: "Refunds & reimbursements",
+    reasons: ["tax_refund", "insurance", "expense_refund", "expensify"],
+  },
+  {
+    family: "Internal movement & corrections",
+    reasons: ["intercompany_transfer", "miscoded_withdrawal", "returned_wire"],
+  },
+  { family: "Other", reasons: ["other"] },
+];

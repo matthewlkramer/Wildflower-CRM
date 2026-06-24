@@ -2622,6 +2622,26 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /staged-payments/{id}/set-sync-gap:
+    post:
+      operationId: setStagedPaymentSyncGap
+      tags: [staged-payments]
+      summary: Set or clear the plain human "sync gap" flag on a staged payment.
+      description: |
+        Reviewer flags a staged QuickBooks payment as a sync gap — the money
+        already exists in the CRM as a gift but was missing from the QuickBooks
+        export, so it should be reconciled once the export catches up. A pure
+        annotation: orthogonal to reconcile status, allowed on a row in any
+        state, and never auto-derived. Flipping it has no side effects on
+        matching, status, or reconciliation.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SetStagedPaymentSyncGapBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /staged-payments/{id}/exclude:
     post:
       operationId: excludeStagedPayment
@@ -5639,7 +5659,7 @@ components:
         notes:           { type: string, nullable: true }
     StagedPayment:
       type: object
-      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, needsResearch, classificationSource, entitySource, fundingSourceProvenance, createdAt, updatedAt]
+      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, needsResearch, syncGap, classificationSource, entitySource, fundingSourceProvenance, createdAt, updatedAt]
       properties:
         id:                        { type: string }
         realmId:                   { type: string }
@@ -5723,6 +5743,7 @@ components:
         fundingSource:             { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true, description: "WHERE this money came from / how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown / not yet determined. Auto-seeded at ingest, human-correctable." }
         fundingSourceProvenance:   { $ref: "#/components/schemas/StagedPaymentFundingSourceProvenance" }
         needsResearch:             { type: boolean, description: "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via /set-needs-research with no side effects on reconcile status or matching." }
+        syncGap:                   { type: boolean, description: "Plain human-set flag: this QuickBooks money already exists in the CRM as a gift but was missing from the QuickBooks export (a sync gap). Never auto-derived; set via /set-sync-gap with no side effects on reconcile status or matching." }
         resolvedGiftId:            { type: string, nullable: true }
         resolvedGiftName:          { type: string, nullable: true }
         resolvedGiftAmount:        { type: string, nullable: true }
@@ -6330,7 +6351,7 @@ components:
           description: "Donorbox donations tied to the chain — enrichment for the Stripe charges, or non-Stripe new money the reviewer linked to this deposit. Empty when none apply."
     ReconciliationCard:
       type: object
-      required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup]
+      required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup, needsResearch, syncGap]
       description: "List item for the unified reconciler — one per QB staged payment (the anchor), OR one per manual 'same physical gift' source group (collapsed; stagedPaymentId is the representative member). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card."
       properties:
         stagedPaymentId: { type: string }
@@ -6367,6 +6388,9 @@ components:
         resolvedGiftAmount: { type: string, nullable: true }
         finalAmountSource:  { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
         ready:              { type: boolean, description: "Auto-proposal satisfies the consistency gate (one-click approve)." }
+        needsResearch:      { type: boolean, description: "Plain human-set 'needs research' flag (parked for later); orthogonal to reconcile status. Set via /staged-payments/{id}/set-needs-research." }
+        syncGap:            { type: boolean, description: "Plain human-set 'sync gap' flag — the gift exists in the CRM but was missing from the QuickBooks export; orthogonal to reconcile status. Set via /staged-payments/{id}/set-sync-gap." }
+        exclusionReason:    { allOf: [ { $ref: "#/components/schemas/StagedPaymentExclusionReason" } ], nullable: true, description: "Why this money was filed as a non-gift; set only when status='excluded'. Drives the Excluded queue's reason label." }
         reconciliationLanes: { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor/gift state: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge." }
         fundingSource:      { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true, description: "Origin of this money (Stripe, brokerage, DAF, …). For a group card this is the members' common source, or null when they differ. Distinct from qbPaymentMethod (the instrument) and the funding lane." }
         fundingSourceProvenance: { $ref: "#/components/schemas/StagedPaymentFundingSourceProvenance", nullable: true, description: "Whether fundingSource was derived (auto) or human-pinned (manual). Null on a group card whose members disagree." }
@@ -6809,6 +6833,12 @@ components:
       description: "Set or clear the plain human 'needs research' flag on a staged payment. A pure annotation with no side effects on reconcile status or matching."
       properties:
         needsResearch: { type: boolean, description: "True to flag this row for further research, false to clear it." }
+    SetStagedPaymentSyncGapBody:
+      type: object
+      required: [syncGap]
+      description: "Set or clear the plain human 'sync gap' flag on a staged payment (the gift exists in the CRM but was missing from the QuickBooks export). A pure annotation with no side effects on reconcile status or matching."
+      properties:
+        syncGap: { type: boolean, description: "True to flag this row as a sync gap, false to clear it." }
     GroupStagedPaymentsBody:
       type: object
       required: [stagedPaymentIds]

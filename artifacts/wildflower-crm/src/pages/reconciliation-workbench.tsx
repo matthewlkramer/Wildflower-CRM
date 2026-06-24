@@ -2,7 +2,15 @@ import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListReconciliationCards,
+  getListReconciliationCardsQueryKey,
   useGetReconciliationLineage,
+  useResolveStagedPayment,
+  useCreateGiftFromStagedPayment,
+  useExcludeStagedPayment,
+  useReIncludeStagedPayment,
+  useSetStagedPaymentNeedsResearch,
+  useSetStagedPaymentSyncGap,
+  useGroupStagedPayments,
   getGetReconciliationGraphQueryOptions,
   approveReconciliationCard,
   rejectStagedPayment,
@@ -10,6 +18,7 @@ import {
   type ReconciliationCard,
   type ReconciliationCandidate,
   type ApproveCompleteMatchBody,
+  type StagedPaymentExclusionReason,
 } from "@workspace/api-client-react";
 import {
   AlertCircle,
@@ -17,22 +26,37 @@ import {
   Check,
   CheckCheck,
   ChevronDown,
+  FlaskConical,
+  Layers,
   Loader2,
   Search,
   Sparkles,
   Trash2,
+  Undo2,
+  UserPen,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -40,7 +64,11 @@ import {
   laneBadges,
   extractGateIssues,
   deriveApproveBodyFromProposal,
+  EXCLUSION_REASON_LABELS,
+  MANUAL_EXCLUSION_FAMILIES,
 } from "@/lib/reconciliation";
+import { ReconciliationNodeTypeahead } from "@/components/reconciliation-node-typeahead";
+import { StrayGiftsWorklist } from "@/components/reconciliation-stray-gifts";
 
 // ─── Shell config (mockup structure, corrected to our money model) ──────────
 
@@ -59,14 +87,14 @@ type AxisId = "all" | "qg" | "qs" | "qd" | "ds";
 
 const QUEUES: { id: QueueId; name: string; dot: string; live: boolean }[] = [
   { id: "review", name: "Needs review", dot: "#9a6b00", live: true },
-  { id: "qbo", name: "QBO-only", dot: "#b23b2e", live: false },
-  { id: "crm", name: "CRM-only", dot: "#b23b2e", live: false },
+  { id: "qbo", name: "QBO-only", dot: "#b23b2e", live: true },
+  { id: "crm", name: "CRM-only", dot: "#b23b2e", live: true },
   { id: "split", name: "Splits & pledges", dot: "#6c4ea3", live: false },
   { id: "bundle", name: "Stripe/Donorbox bundles", dot: "#1a7a8c", live: false },
-  { id: "sync", name: "Sync gaps", dot: "#b8601c", live: false },
-  { id: "research", name: "Research", dot: "#857b73", live: false },
+  { id: "sync", name: "Sync gaps", dot: "#b8601c", live: true },
+  { id: "research", name: "Research", dot: "#857b73", live: true },
   { id: "confirmed", name: "Confirmed", dot: "#2f7d57", live: false },
-  { id: "excluded", name: "Excluded", dot: "#6c4ea3", live: false },
+  { id: "excluded", name: "Excluded", dot: "#6c4ea3", live: true },
 ];
 
 const AXES: { id: AxisId; label: string }[] = [
@@ -197,18 +225,33 @@ export default function ReconciliationWorkbench() {
   const [retargetCard, setRetargetCard] = useState<ReconciliationCard | null>(
     null,
   );
+  const [donorCard, setDonorCard] = useState<ReconciliationCard | null>(null);
+  const [excludeCard, setExcludeCard] = useState<ReconciliationCard | null>(
+    null,
+  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Needs-review queue = the active work queue (omit `queue` param).
-  const cardsQuery = useListReconciliationCards({ limit: 100, offset: 0 });
+  // Needs-review queue = the active work queue (omit `queue` param). Loaded
+  // once and split client-side into Sync gaps / Research / Needs review /
+  // QBO-only buckets (see `buckets` below).
+  const cardsQuery = useListReconciliationCards({ limit: 200, offset: 0 });
+  // Excluded queue — fetched on its own, only while that tab is open.
+  const excludedParams = { queue: "excluded", limit: 200, offset: 0 } as const;
+  const excludedQuery = useListReconciliationCards(excludedParams, {
+    query: {
+      enabled: queue === "excluded",
+      queryKey: getListReconciliationCardsQueryKey(excludedParams),
+    },
+  });
 
   const allCards = useMemo(
     () => cardsQuery.data?.data ?? [],
     [cardsQuery.data],
   );
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return allCards.filter((c) => {
+  const matchSearch = useCallback(
+    (c: ReconciliationCard) => {
+      const q = search.trim().toLowerCase();
       if (axis !== "all" && axisOf(c) !== axis) return false;
       if (!q) return true;
       const hay = [
@@ -222,12 +265,40 @@ export default function ReconciliationWorkbench() {
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
-    });
-  }, [allCards, axis, search]);
+    },
+    [axis, search],
+  );
+
+  const filtered = useMemo(
+    () => allCards.filter(matchSearch),
+    [allCards, matchSearch],
+  );
+
+  // Bucket the loaded needs_review cards by precedence:
+  // Sync gaps > Research > Needs review (has a candidate) > QBO-only.
+  const buckets = useMemo(() => {
+    const sync: ReconciliationCard[] = [];
+    const research: ReconciliationCard[] = [];
+    const review: ReconciliationCard[] = [];
+    const qbo: ReconciliationCard[] = [];
+    for (const c of filtered) {
+      if (c.syncGap) sync.push(c);
+      else if (c.needsResearch) research.push(c);
+      else if (c.proposedGiftId || c.proposedDonorId || c.resolvedGiftId)
+        review.push(c);
+      else qbo.push(c);
+    }
+    return { sync, research, review, qbo };
+  }, [filtered]);
+
+  const excludedCards = useMemo(
+    () => (excludedQuery.data?.data ?? []).filter(matchSearch),
+    [excludedQuery.data, matchSearch],
+  );
 
   const readyCount = useMemo(
-    () => filtered.filter((c) => c.ready).length,
-    [filtered],
+    () => buckets.review.filter((c) => c.ready).length,
+    [buckets.review],
   );
 
   const stagedIds = useMemo(
@@ -328,7 +399,7 @@ export default function ReconciliationWorkbench() {
   );
 
   const approveAllHighConfidence = useCallback(async () => {
-    const ready = filtered.filter(
+    const ready = buckets.review.filter(
       (c) => c.ready && !stagedIds.has(c.stagedPaymentId),
     );
     if (ready.length === 0) {
@@ -362,7 +433,7 @@ export default function ReconciliationWorkbench() {
           ? `${skipped} couldn't be staged (changed state) and were skipped.`
           : "Review the tray, then Apply to CRM.",
     });
-  }, [filtered, stagedIds, deriveConfirmBody, stage, toast]);
+  }, [buckets.review, stagedIds, deriveConfirmBody, stage, toast]);
 
   /** Apply each staged action individually through its existing guarded endpoint. */
   const applyToCrm = useCallback(async () => {
@@ -418,6 +489,188 @@ export default function ReconciliationWorkbench() {
     }
   }, [staged, queryClient, toast]);
 
+  // ─── QBO-only / Research / Sync-gap / Excluded direct actions ─────────────
+  // These buckets apply immediately through their existing guarded endpoints
+  // (not the confirm/reject pending tray, which is review-bucket specific).
+
+  const invalidateAll = useCallback(() => {
+    void queryClient.invalidateQueries({
+      predicate: (query) => {
+        const key = query.queryKey?.[0];
+        return (
+          typeof key === "string" && key.startsWith("/api/reconciliation/cards")
+        );
+      },
+    });
+    void queryClient.invalidateQueries({ queryKey: ["/api/staged-payments"] });
+    void queryClient.invalidateQueries({ queryKey: ["/api/gifts-and-payments"] });
+  }, [queryClient]);
+
+  const errMessage = useCallback((err: unknown): string => {
+    const issues = extractGateIssues(err);
+    if (issues.length > 0) return issues.join(" · ");
+    return err instanceof Error ? err.message : "Something went wrong.";
+  }, []);
+
+  const resolveM = useResolveStagedPayment();
+  const createGiftM = useCreateGiftFromStagedPayment();
+  const excludeM = useExcludeStagedPayment();
+  const reIncludeM = useReIncludeStagedPayment();
+  const syncGapM = useSetStagedPaymentSyncGap();
+  const researchM = useSetStagedPaymentNeedsResearch();
+  const groupM = useGroupStagedPayments();
+
+  const actionBusy =
+    resolveM.isPending ||
+    createGiftM.isPending ||
+    excludeM.isPending ||
+    reIncludeM.isPending ||
+    syncGapM.isPending ||
+    researchM.isPending ||
+    groupM.isPending;
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleCreateGift = useCallback(
+    async (card: ReconciliationCard) => {
+      try {
+        await createGiftM.mutateAsync({ id: card.stagedPaymentId });
+        invalidateAll();
+        toast({ title: "Gift created from QuickBooks payment." });
+      } catch (err) {
+        toast({ title: "Couldn't create gift", description: errMessage(err) });
+      }
+    },
+    [createGiftM, invalidateAll, toast, errMessage],
+  );
+
+  const handleResolveDonor = useCallback(
+    async (card: ReconciliationCard, donor: ReconciliationCandidate) => {
+      const body = {
+        organizationId:
+          donor.donorKind === "organization" ? donor.id : null,
+        individualGiverPersonId:
+          donor.donorKind === "person" ? donor.id : null,
+        householdId: donor.donorKind === "household" ? donor.id : null,
+      };
+      try {
+        await resolveM.mutateAsync({ id: card.stagedPaymentId, data: body });
+        invalidateAll();
+        setDonorCard(null);
+        toast({ title: `Donor set to ${donor.label}.` });
+      } catch (err) {
+        toast({ title: "Couldn't set donor", description: errMessage(err) });
+      }
+    },
+    [resolveM, invalidateAll, toast, errMessage],
+  );
+
+  const handleExclude = useCallback(
+    async (card: ReconciliationCard, reason: StagedPaymentExclusionReason) => {
+      try {
+        await excludeM.mutateAsync({
+          id: card.stagedPaymentId,
+          data: { exclusionReason: reason },
+        });
+        invalidateAll();
+        setExcludeCard(null);
+        toast({ title: "Payment excluded (not a gift)." });
+      } catch (err) {
+        toast({ title: "Couldn't exclude", description: errMessage(err) });
+      }
+    },
+    [excludeM, invalidateAll, toast, errMessage],
+  );
+
+  const handleReInclude = useCallback(
+    async (card: ReconciliationCard) => {
+      try {
+        await reIncludeM.mutateAsync({ id: card.stagedPaymentId });
+        invalidateAll();
+        toast({ title: "Re-included → back in the review queue." });
+      } catch (err) {
+        toast({ title: "Couldn't re-include", description: errMessage(err) });
+      }
+    },
+    [reIncludeM, invalidateAll, toast, errMessage],
+  );
+
+  const handleToggleSyncGap = useCallback(
+    async (card: ReconciliationCard) => {
+      try {
+        await syncGapM.mutateAsync({
+          id: card.stagedPaymentId,
+          data: { syncGap: !card.syncGap },
+        });
+        invalidateAll();
+      } catch (err) {
+        toast({ title: "Couldn't update sync-gap flag", description: errMessage(err) });
+      }
+    },
+    [syncGapM, invalidateAll, toast, errMessage],
+  );
+
+  const handleToggleResearch = useCallback(
+    async (card: ReconciliationCard) => {
+      try {
+        await researchM.mutateAsync({
+          id: card.stagedPaymentId,
+          data: { needsResearch: !card.needsResearch },
+        });
+        invalidateAll();
+      } catch (err) {
+        toast({ title: "Couldn't update research flag", description: errMessage(err) });
+      }
+    },
+    [researchM, invalidateAll, toast, errMessage],
+  );
+
+  const handleGroupSelected = useCallback(async () => {
+    const ids = [...selectedIds];
+    if (ids.length < 2) return;
+    const run = (confirmDonorConflict: boolean) =>
+      groupM.mutateAsync({
+        data: { stagedPaymentIds: ids, confirmDonorConflict },
+      });
+    try {
+      await run(false);
+    } catch (err) {
+      const code =
+        err && typeof err === "object" && "data" in err
+          ? (err as { data?: { error?: string } }).data?.error
+          : undefined;
+      if (
+        code === "donor_conflict" &&
+        window.confirm(
+          "These payments resolve to more than one donor. Group them into one gift anyway?",
+        )
+      ) {
+        try {
+          await run(true);
+        } catch (retryErr) {
+          toast({ title: "Couldn't group", description: errMessage(retryErr) });
+          return;
+        }
+      } else {
+        toast({ title: "Couldn't group", description: errMessage(err) });
+        return;
+      }
+    }
+    setSelectedIds(new Set());
+    invalidateAll();
+    toast({
+      title: `Grouped ${ids.length} payments`,
+      description: "Reconcile the group from its card in Needs review.",
+    });
+  }, [selectedIds, groupM, invalidateAll, toast, errMessage]);
+
   const activeQueue = QUEUES.find((q) => q.id === queue)!;
 
   return (
@@ -450,7 +703,27 @@ export default function ReconciliationWorkbench() {
               </span>
               {q.id === "review" && (
                 <Badge variant="secondary" className="ml-1">
-                  {cardsQuery.isLoading ? "…" : filtered.length}
+                  {cardsQuery.isLoading ? "…" : buckets.review.length}
+                </Badge>
+              )}
+              {q.id === "qbo" && buckets.qbo.length > 0 && (
+                <Badge variant="secondary" className="ml-1">
+                  {buckets.qbo.length}
+                </Badge>
+              )}
+              {q.id === "sync" && buckets.sync.length > 0 && (
+                <Badge variant="secondary" className="ml-1">
+                  {buckets.sync.length}
+                </Badge>
+              )}
+              {q.id === "research" && buckets.research.length > 0 && (
+                <Badge variant="secondary" className="ml-1">
+                  {buckets.research.length}
+                </Badge>
+              )}
+              {q.id === "excluded" && excludedQuery.data && (
+                <Badge variant="secondary" className="ml-1">
+                  {excludedCards.length}
                 </Badge>
               )}
               {!q.live && (
@@ -521,39 +794,83 @@ export default function ReconciliationWorkbench() {
         </header>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-28 pr-1">
-          {queue !== "review" ? (
+          {queue === "crm" ? (
+            <StrayGiftsWorklist />
+          ) : queue === "split" ||
+            queue === "bundle" ||
+            queue === "confirmed" ? (
             <ComingSoon name={activeQueue.name} />
+          ) : queue === "excluded" ? (
+            excludedQuery.isLoading ? (
+              <LoadingRow />
+            ) : excludedQuery.isError ? (
+              <ErrorRow label="excluded queue" />
+            ) : excludedCards.length === 0 ? (
+              <EmptyExcluded />
+            ) : (
+              excludedCards.map((card) => (
+                <ExcludedCard
+                  key={card.stagedPaymentId}
+                  card={card}
+                  busy={actionBusy}
+                  onReInclude={() => handleReInclude(card)}
+                />
+              ))
+            )
           ) : cardsQuery.isLoading ? (
-            <div className="flex items-center justify-center py-16 text-muted-foreground">
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading cards…
-            </div>
+            <LoadingRow />
           ) : cardsQuery.isError ? (
-            <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-              <AlertCircle className="h-4 w-4" /> Couldn't load the review queue.
-            </div>
-          ) : filtered.length === 0 ? (
-            <EmptyState />
+            <ErrorRow label="review queue" />
+          ) : queue === "review" ? (
+            buckets.review.length === 0 ? (
+              <EmptyState />
+            ) : (
+              buckets.review.map((card) => (
+                <WorkbenchCard
+                  key={card.stagedPaymentId}
+                  card={card}
+                  staged={staged.find(
+                    (s) => s.stagedPaymentId === card.stagedPaymentId,
+                  )}
+                  expanded={expanded === card.stagedPaymentId}
+                  busy={busy}
+                  onToggle={() =>
+                    setExpanded((e) =>
+                      e === card.stagedPaymentId ? null : card.stagedPaymentId,
+                    )
+                  }
+                  onConfirm={() => stageConfirm(card)}
+                  onReject={() => stageReject(card)}
+                  onRetarget={() => setRetargetCard(card)}
+                  onUnstage={() => unstage(card.stagedPaymentId)}
+                />
+              ))
+            )
           ) : (
-            filtered.map((card) => (
-              <WorkbenchCard
-                key={card.stagedPaymentId}
-                card={card}
-                staged={staged.find(
-                  (s) => s.stagedPaymentId === card.stagedPaymentId,
-                )}
-                expanded={expanded === card.stagedPaymentId}
-                busy={busy}
-                onToggle={() =>
-                  setExpanded((e) =>
-                    e === card.stagedPaymentId ? null : card.stagedPaymentId,
-                  )
-                }
-                onConfirm={() => stageConfirm(card)}
-                onReject={() => stageReject(card)}
-                onRetarget={() => setRetargetCard(card)}
-                onUnstage={() => unstage(card.stagedPaymentId)}
-              />
-            ))
+            // QBO-only / Research / Sync gaps buckets
+            (() => {
+              const bucket =
+                queue === "qbo"
+                  ? buckets.qbo
+                  : queue === "research"
+                    ? buckets.research
+                    : buckets.sync;
+              if (bucket.length === 0) return <EmptyBucket queue={queue} />;
+              return bucket.map((card) => (
+                <QboActionCard
+                  key={card.stagedPaymentId}
+                  card={card}
+                  busy={actionBusy}
+                  selected={selectedIds.has(card.stagedPaymentId)}
+                  onToggleSelect={() => toggleSelect(card.stagedPaymentId)}
+                  onChangeDonor={() => setDonorCard(card)}
+                  onCreateGift={() => handleCreateGift(card)}
+                  onExclude={() => setExcludeCard(card)}
+                  onToggleSyncGap={() => handleToggleSyncGap(card)}
+                  onToggleResearch={() => handleToggleResearch(card)}
+                />
+              ));
+            })()
           )}
         </div>
       </main>
@@ -576,6 +893,55 @@ export default function ReconciliationWorkbench() {
           busy={busy}
           onClose={() => setRetargetCard(null)}
           onPick={(gift) => stageRetarget(retargetCard, gift)}
+        />
+      )}
+
+      {/* Group selected → one gift (QBO-only / Research / Sync buckets) */}
+      {(queue === "qbo" || queue === "research" || queue === "sync") &&
+        selectedIds.size > 0 && (
+          <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border bg-card px-4 py-2 shadow-xl">
+            <span className="text-sm font-medium">
+              {selectedIds.size} selected
+            </span>
+            <Button
+              size="sm"
+              onClick={handleGroupSelected}
+              disabled={actionBusy || selectedIds.size < 2}
+            >
+              {groupM.isPending ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Layers className="mr-1 h-4 w-4" />
+              )}
+              Group into one gift
+            </Button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
+      {/* Change donor dialog */}
+      {donorCard && (
+        <ChangeDonorDialog
+          card={donorCard}
+          busy={resolveM.isPending}
+          onClose={() => setDonorCard(null)}
+          onPick={(donor) => handleResolveDonor(donorCard, donor)}
+        />
+      )}
+
+      {/* Exclude dialog */}
+      {excludeCard && (
+        <ExcludeDialog
+          card={excludeCard}
+          busy={excludeM.isPending}
+          onClose={() => setExcludeCard(null)}
+          onConfirm={(reason) => handleExclude(excludeCard, reason)}
         />
       )}
     </div>
@@ -1083,5 +1449,317 @@ function ComingSoon({ name }: { name: string }) {
         Use the existing reconciliation pages for now.
       </p>
     </div>
+  );
+}
+
+function LoadingRow() {
+  return (
+    <div className="flex items-center justify-center py-16 text-muted-foreground">
+      <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading cards…
+    </div>
+  );
+}
+
+function ErrorRow({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+      <AlertCircle className="h-4 w-4" /> Couldn't load the {label}.
+    </div>
+  );
+}
+
+function EmptyExcluded() {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center text-muted-foreground">
+      <Check className="mb-2 h-8 w-8 text-emerald-500" />
+      <p className="font-medium">Nothing excluded</p>
+      <p className="text-sm">
+        No QuickBooks money has been filed as a non-gift.
+      </p>
+    </div>
+  );
+}
+
+function EmptyBucket({ queue }: { queue: QueueId }) {
+  const copy =
+    queue === "qbo"
+      ? "No QuickBooks money is waiting without a CRM candidate."
+      : queue === "research"
+        ? "Nothing is flagged for research."
+        : "Nothing is flagged as a sync gap.";
+  return (
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center text-muted-foreground">
+      <Check className="mb-2 h-8 w-8 text-emerald-500" />
+      <p className="font-medium">All clear</p>
+      <p className="text-sm">{copy}</p>
+    </div>
+  );
+}
+
+// ─── QBO-only / Research / Sync-gap action card ───────────────────────────────
+
+function QboActionCard({
+  card,
+  busy,
+  selected,
+  onToggleSelect,
+  onChangeDonor,
+  onCreateGift,
+  onExclude,
+  onToggleSyncGap,
+  onToggleResearch,
+}: {
+  card: ReconciliationCard;
+  busy: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onChangeDonor: () => void;
+  onCreateGift: () => void;
+  onExclude: () => void;
+  onToggleSyncGap: () => void;
+  onToggleResearch: () => void;
+}) {
+  const lanes = laneBadges(card.reconciliationLanes);
+  const hasDonor = Boolean(card.proposedDonorId || card.proposedDonorName);
+  return (
+    <div
+      className={cn(
+        "rounded-lg border bg-card shadow-sm",
+        selected && "ring-2 ring-primary/40",
+      )}
+    >
+      <div className="flex items-start gap-3 p-3">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={onToggleSelect}
+          className="mt-1"
+          aria-label="Select for grouping"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            QuickBooks
+            {card.qbEntityType && <span>· {card.qbEntityType}</span>}
+          </div>
+          <div className="font-medium">{card.payerName ?? "Unknown payer"}</div>
+          <div className="text-lg font-semibold tabular-nums">
+            {money(card.amount)}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {card.dateReceived ?? "—"}
+            {card.qbDocNumber ? ` · #${card.qbDocNumber}` : ""}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {lanes.map((b) => (
+              <Badge key={b.key} variant={b.variant} className="text-[10px]">
+                {b.label}
+              </Badge>
+            ))}
+            {card.proposedDonorName && (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                Donor guess: {card.proposedDonorName}
+              </span>
+            )}
+            {card.syncGap && (
+              <Badge className="bg-orange-100 text-orange-800 text-[10px]">
+                Sync gap
+              </Badge>
+            )}
+            {card.needsResearch && (
+              <Badge className="bg-stone-200 text-stone-800 text-[10px]">
+                Research
+              </Badge>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2">
+        <Button size="sm" variant="outline" onClick={onChangeDonor} disabled={busy}>
+          <UserPen className="mr-1 h-3.5 w-3.5" />
+          {hasDonor ? "Change donor" : "Set donor"}
+        </Button>
+        <Button size="sm" onClick={onCreateGift} disabled={busy || !hasDonor}>
+          <Check className="mr-1 h-3.5 w-3.5" />
+          Create gift
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onToggleSyncGap} disabled={busy}>
+          <ArrowRight className="mr-1 h-3.5 w-3.5" />
+          {card.syncGap ? "Clear sync gap" : "Flag sync gap"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onToggleResearch}
+          disabled={busy}
+        >
+          <FlaskConical className="mr-1 h-3.5 w-3.5" />
+          {card.needsResearch ? "Clear research" : "Send to research"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto text-muted-foreground"
+          onClick={onExclude}
+          disabled={busy}
+        >
+          Exclude…
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Excluded card (read + re-include) ────────────────────────────────────────
+
+function ExcludedCard({
+  card,
+  busy,
+  onReInclude,
+}: {
+  card: ReconciliationCard;
+  busy: boolean;
+  onReInclude: () => void;
+}) {
+  const reasonLabel = card.exclusionReason
+    ? (EXCLUSION_REASON_LABELS[card.exclusionReason] ?? card.exclusionReason)
+    : "Excluded";
+  return (
+    <div className="rounded-lg border bg-card p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-medium">{card.payerName ?? "Unknown payer"}</div>
+          <div className="text-lg font-semibold tabular-nums">
+            {money(card.amount)}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {card.dateReceived ?? "—"}
+            {card.qbDocNumber ? ` · #${card.qbDocNumber}` : ""}
+          </div>
+          <Badge variant="secondary" className="mt-2 text-[11px]">
+            {reasonLabel}
+          </Badge>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onReInclude}
+          disabled={busy}
+          className="shrink-0"
+        >
+          <Undo2 className="mr-1 h-3.5 w-3.5" />
+          Re-include → review
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Change-donor dialog ──────────────────────────────────────────────────────
+
+function ChangeDonorDialog({
+  card,
+  busy,
+  onClose,
+  onPick,
+}: {
+  card: ReconciliationCard;
+  busy: boolean;
+  onClose: () => void;
+  onPick: (donor: ReconciliationCandidate) => void;
+}) {
+  const [donor, setDonor] = useState<ReconciliationCandidate | null>(null);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Set donor</DialogTitle>
+          <DialogDescription>
+            Attribute {card.payerName ?? "this payment"} ({money(card.amount)})
+            to a CRM donor. For DAF / employer-matched gifts, pick the underlying
+            individual or organization — the processor stays a payment
+            intermediary, not the donor.
+          </DialogDescription>
+        </DialogHeader>
+        <ReconciliationNodeTypeahead
+          nodeType="donor"
+          stagedPaymentId={card.stagedPaymentId}
+          value={donor}
+          onChange={setDonor}
+          placeholder="Search organizations, people, households…"
+        />
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={() => donor && onPick(donor)} disabled={busy || !donor}>
+            {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+            Set donor
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Exclude dialog ───────────────────────────────────────────────────────────
+
+function ExcludeDialog({
+  card,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  card: ReconciliationCard;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: (reason: StagedPaymentExclusionReason) => void;
+}) {
+  const [reason, setReason] = useState<StagedPaymentExclusionReason | "">("");
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Exclude payment</DialogTitle>
+          <DialogDescription>
+            File {card.payerName ?? "this payment"} ({money(card.amount)}) under a
+            non-gift category. It stays in QuickBooks — this only tells the CRM it
+            is not a gift. You can re-include it later.
+          </DialogDescription>
+        </DialogHeader>
+        <Select
+          value={reason}
+          onValueChange={(v) => setReason(v as StagedPaymentExclusionReason)}
+          disabled={busy}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Choose a reason…" />
+          </SelectTrigger>
+          <SelectContent>
+            {MANUAL_EXCLUSION_FAMILIES.map((group) => (
+              <SelectGroup key={group.family}>
+                <SelectLabel>{group.family}</SelectLabel>
+                {group.reasons.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {EXCLUSION_REASON_LABELS[value]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => reason && onConfirm(reason)}
+            disabled={busy || !reason}
+          >
+            {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+            Exclude
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
