@@ -161,6 +161,73 @@ export const GetReconciliationGraphResponse = zod.object({
 }).describe('The full 4-node match graph for one card. Read-only — nothing is mutated.')
 
 /**
+ * Traces the SAME physical money across processors for one QB staged-payment
+anchor, so the workbench can show where the deposit came from. Read-only —
+nothing is mutated. The chain is derived from existing pulled join keys
+(payout↔QB tie, charge.stripePayoutId, donation.stripeChargeId) PLUS any
+human-confirmed cross-processor links persisted on the staged charges /
+donations. Each leg's `linkSource` records HOW it was tied (a pulled key vs
+a reviewer confirmation). Any leg is empty/null when it doesn't apply
+(e.g. a check deposit has no Stripe payout or Donorbox donation).
+
+ * @summary Read-only settlement lineage for one card — QB deposit ↔ Stripe payout ↔ Stripe charges ↔ Donorbox donations.
+ */
+export const GetReconciliationLineageParams = zod.object({
+  "stagedPaymentId": zod.coerce.string()
+})
+
+export const GetReconciliationLineageResponse = zod.object({
+  "stagedPaymentId": zod.string(),
+  "deposit": zod.object({
+  "stagedPaymentId": zod.string(),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().date().nullish(),
+  "payerName": zod.string().nullish(),
+  "paymentMethod": zod.string().nullish(),
+  "docNumber": zod.string().nullish(),
+  "depositId": zod.string().nullish().describe('QB deposit transaction id this row was deposited into (read-only, derived from qb_raw).'),
+  "depositToAccountName": zod.string().nullish()
+}).describe('The QB staged-payment anchor (the bank deposit lump this card reconciles).'),
+  "payout": zod.object({
+  "payoutId": zod.string(),
+  "amount": zod.string().nullish().describe('Net amount that hit the bank.'),
+  "grossTotal": zod.string().nullish(),
+  "feeTotal": zod.string().nullish(),
+  "netTotal": zod.string().nullish(),
+  "chargeCount": zod.number().nullish(),
+  "arrivalDate": zod.string().date().nullish(),
+  "status": zod.string().nullish(),
+  "reconciliationStatus": zod.string().nullish().describe('The payout\'s QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …).'),
+  "linkSource": zod.enum(['pulled', 'qb_confirmed', 'stripe_pulled', 'stripe_confirmed']).describe('HOW a lineage leg was tied to the anchor.\npulled: from a Stripe-pulled join key (payout↔QB tie, or charge.stripePayoutId).\nqb_confirmed: a reviewer-confirmed link directly to the QB staged row (charge.linkedQbStagedPaymentId \/ donation.linkedQbStagedPaymentId).\nstripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donation.stripeChargeId key.\nstripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).\n')
+}).nullish().describe('The Stripe payout tied to this deposit (null when no Stripe payout backs the money).'),
+  "charges": zod.array(zod.object({
+  "chargeId": zod.string(),
+  "grossAmount": zod.string().nullish(),
+  "feeAmount": zod.string().nullish(),
+  "netAmount": zod.string().nullish(),
+  "dateReceived": zod.string().date().nullish(),
+  "payerName": zod.string().nullish(),
+  "payerEmail": zod.string().nullish(),
+  "description": zod.string().nullish(),
+  "refunded": zod.boolean().optional(),
+  "disputed": zod.boolean().optional(),
+  "linkSource": zod.enum(['pulled', 'qb_confirmed', 'stripe_pulled', 'stripe_confirmed']).describe('HOW a lineage leg was tied to the anchor.\npulled: from a Stripe-pulled join key (payout↔QB tie, or charge.stripePayoutId).\nqb_confirmed: a reviewer-confirmed link directly to the QB staged row (charge.linkedQbStagedPaymentId \/ donation.linkedQbStagedPaymentId).\nstripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donation.stripeChargeId key.\nstripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).\n')
+}).describe('One Stripe charge in the settlement chain (the per-donor gross behind a payout).')).describe('The individual Stripe charges behind the payout (and any reviewer-confirmed per-charge ties to this deposit). Empty when no Stripe charges back the money.'),
+  "donations": zod.array(zod.object({
+  "donationId": zod.string(),
+  "donationType": zod.string().nullish().describe('stripe | paypal | … — distinguishes enrichment (stripe) from new money.'),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().date().nullish(),
+  "donorName": zod.string().nullish(),
+  "donorEmail": zod.string().nullish(),
+  "campaignName": zod.string().nullish(),
+  "designation": zod.string().nullish(),
+  "refunded": zod.boolean().optional(),
+  "linkSource": zod.enum(['pulled', 'qb_confirmed', 'stripe_pulled', 'stripe_confirmed']).describe('HOW a lineage leg was tied to the anchor.\npulled: from a Stripe-pulled join key (payout↔QB tie, or charge.stripePayoutId).\nqb_confirmed: a reviewer-confirmed link directly to the QB staged row (charge.linkedQbStagedPaymentId \/ donation.linkedQbStagedPaymentId).\nstripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donation.stripeChargeId key.\nstripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).\n')
+}).describe('One Donorbox donation in the settlement chain (enrichment for a Stripe charge, or non-Stripe money landing in the QB deposit).')).describe('Donorbox donations tied to the chain — enrichment for the Stripe charges, or non-Stripe new money the reviewer linked to this deposit. Empty when none apply.')
+}).describe('Read-only settlement lineage for one card: the QB deposit (anchor) and the\nSAME money traced across Stripe (payout + charges) and Donorbox (donations).\nDerived from pulled join keys plus any human-confirmed cross-processor links;\na leg is null\/empty when it doesn\'t apply to this deposit.\n')
+
+/**
  * Powers the four cross-filtering search boxes. Always scoped to a card
 (stagedPaymentId) so amount/date windows come from the QB anchor; pass
 donorId to cross-filter gift/opportunity candidates to a chosen donor

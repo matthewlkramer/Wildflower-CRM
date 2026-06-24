@@ -403,3 +403,45 @@ export function deriveApproveBody(args: {
     reason: "Choose a gift, an opportunity, or a donor to approve.",
   };
 }
+
+/**
+ * Derive the one-click approve body from a graph's SERVER-PROPOSED selections —
+ * the auto-locked candidate on each node (`selectedId`). Used by the workbench's
+ * "confirm" and "approve all high-confidence" actions, which accept the existing
+ * auto-proposal as-is rather than re-picking nodes by hand. Reuses
+ * deriveApproveBody so the body (and the Stripe-gross precedence) is identical to
+ * the per-node reconciler. An optional gift override re-targets the match to a
+ * different gift while keeping the rest of the proposal.
+ *
+ * Whenever a gift is in play (auto-selected OR overridden) we pass `donor: null`
+ * so the link cleanly ADOPTS the gift's own donor — confirming/​re-targeting a
+ * proposal must never silently SWITCH a gift's donor (that override path is
+ * reserved for an explicit human donor re-pick in the per-node reconciler, which
+ * surfaces a confirmation dialog this one-click flow does not). On re-target we
+ * also drop the original opportunity, since the chosen gift may be unrelated to
+ * the auto-proposed pledge.
+ */
+export function deriveApproveBodyFromProposal(
+  graph: ReconciliationGraph,
+  giftOverride?: ReconciliationCandidate | null,
+): DeriveResult {
+  const pick = (
+    nodeType: "donor" | "gift" | "opportunity",
+  ): ReconciliationCandidate | null => {
+    const node = graph.nodes.find((n) => n.nodeType === nodeType);
+    if (!node || !node.selectedId) return null;
+    return node.candidates.find((c) => c.id === node.selectedId) ?? null;
+  };
+  const isOverride = giftOverride !== undefined;
+  const gift = isOverride ? giftOverride : pick("gift");
+  return deriveApproveBody({
+    // Adopt the gift's donor (null) when a gift is chosen; only fall back to the
+    // proposed donor for the donor-only create_gift path.
+    donor: gift ? null : pick("donor"),
+    gift,
+    opportunity: isOverride ? null : pick("opportunity"),
+    outcomeChoice: "create_gift_from_opportunity",
+    overrideAmountMismatchReason: "",
+    graph,
+  });
+}

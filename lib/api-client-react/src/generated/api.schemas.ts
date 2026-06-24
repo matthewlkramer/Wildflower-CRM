@@ -3336,6 +3336,110 @@ export interface ReconciliationGraph {
   blockers: string[];
 }
 
+/**
+ * HOW a lineage leg was tied to the anchor.
+pulled: from a Stripe-pulled join key (payout↔QB tie, or charge.stripePayoutId).
+qb_confirmed: a reviewer-confirmed link directly to the QB staged row (charge.linkedQbStagedPaymentId / donation.linkedQbStagedPaymentId).
+stripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donation.stripeChargeId key.
+stripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).
+
+ */
+export type SettlementLineageLinkSource = typeof SettlementLineageLinkSource[keyof typeof SettlementLineageLinkSource];
+
+
+export const SettlementLineageLinkSource = {
+  pulled: 'pulled',
+  qb_confirmed: 'qb_confirmed',
+  stripe_pulled: 'stripe_pulled',
+  stripe_confirmed: 'stripe_confirmed',
+} as const;
+
+/**
+ * One Stripe charge in the settlement chain (the per-donor gross behind a payout).
+ */
+export interface SettlementLineageCharge {
+  chargeId: string;
+  grossAmount?: string | null;
+  feeAmount?: string | null;
+  netAmount?: string | null;
+  dateReceived?: string | null;
+  payerName?: string | null;
+  payerEmail?: string | null;
+  description?: string | null;
+  refunded?: boolean;
+  disputed?: boolean;
+  linkSource: SettlementLineageLinkSource;
+}
+
+/**
+ * One Donorbox donation in the settlement chain (enrichment for a Stripe charge, or non-Stripe money landing in the QB deposit).
+ */
+export interface SettlementLineageDonation {
+  donationId: string;
+  /** stripe | paypal | … — distinguishes enrichment (stripe) from new money. */
+  donationType?: string | null;
+  amount?: string | null;
+  dateReceived?: string | null;
+  donorName?: string | null;
+  donorEmail?: string | null;
+  campaignName?: string | null;
+  designation?: string | null;
+  refunded?: boolean;
+  linkSource: SettlementLineageLinkSource;
+}
+
+/**
+ * The QB staged-payment anchor (the bank deposit lump this card reconciles).
+ */
+export type SettlementLineageDeposit = {
+  stagedPaymentId: string;
+  amount?: string | null;
+  dateReceived?: string | null;
+  payerName?: string | null;
+  paymentMethod?: string | null;
+  docNumber?: string | null;
+  /** QB deposit transaction id this row was deposited into (read-only, derived from qb_raw). */
+  depositId?: string | null;
+  depositToAccountName?: string | null;
+};
+
+/**
+ * The Stripe payout tied to this deposit (null when no Stripe payout backs the money).
+ */
+export type SettlementLineagePayout = {
+  payoutId: string;
+  /** Net amount that hit the bank. */
+  amount?: string | null;
+  grossTotal?: string | null;
+  feeTotal?: string | null;
+  netTotal?: string | null;
+  chargeCount?: number | null;
+  arrivalDate?: string | null;
+  status?: string | null;
+  /** The payout's QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …). */
+  reconciliationStatus?: string | null;
+  linkSource: SettlementLineageLinkSource;
+} | null;
+
+/**
+ * Read-only settlement lineage for one card: the QB deposit (anchor) and the
+SAME money traced across Stripe (payout + charges) and Donorbox (donations).
+Derived from pulled join keys plus any human-confirmed cross-processor links;
+a leg is null/empty when it doesn't apply to this deposit.
+
+ */
+export interface SettlementLineage {
+  stagedPaymentId: string;
+  /** The QB staged-payment anchor (the bank deposit lump this card reconciles). */
+  deposit: SettlementLineageDeposit;
+  /** The Stripe payout tied to this deposit (null when no Stripe payout backs the money). */
+  payout?: SettlementLineagePayout;
+  /** The individual Stripe charges behind the payout (and any reviewer-confirmed per-charge ties to this deposit). Empty when no Stripe charges back the money. */
+  charges: SettlementLineageCharge[];
+  /** Donorbox donations tied to the chain — enrichment for the Stripe charges, or non-Stripe new money the reviewer linked to this deposit. Empty when none apply. */
+  donations: SettlementLineageDonation[];
+}
+
 export type ReconciliationCardProposedDonorKind = typeof ReconciliationCardProposedDonorKind[keyof typeof ReconciliationCardProposedDonorKind] | null;
 
 

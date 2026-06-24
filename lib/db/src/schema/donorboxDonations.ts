@@ -23,6 +23,8 @@ import { households } from "./households";
 import { paymentIntermediaries } from "./paymentIntermediaries";
 import { giftsAndPayments } from "./giftsAndPayments";
 import { users } from "./users";
+import { stagedPayments } from "./stagedPayments";
+import { stripeStagedCharges } from "./stripeStagedCharges";
 
 /**
  * Canonical store of Donorbox donations pulled (read-only) from the Donorbox
@@ -162,6 +164,34 @@ export const donorboxDonations = pgTable(
       { onDelete: "set null" },
     ),
 
+    // ── Cross-processor link (human-confirmed, additive) ────────────────
+    // Reviewer-confirmed ties to the SAME money recorded elsewhere, so the
+    // Reconciliation Workbench can persist a confirmed cross-processor tie
+    // WITHOUT re-deriving the settlement lineage each time. Purely additive
+    // provenance — never mints/mutates a gift, never written back to any
+    // processor.
+    //   linkedQbStagedPaymentId — the QuickBooks staged_payments row recording
+    //     this donation (covers non-Stripe Donorbox money — PayPal/ACH — that
+    //     lands in a QB bank deposit and has no pulled processor join).
+    //   linkedStripeChargeId — the human-CONFIRMED Stripe charge counterpart
+    //     (complements the read-only PULLED `stripeChargeId` join key above;
+    //     lets a reviewer override/affirm the derived 1:1 Stripe match).
+    // Both SET NULL if the referenced row is removed.
+    linkedQbStagedPaymentId: text("linked_qb_staged_payment_id").references(
+      () => stagedPayments.id,
+      { onDelete: "set null" },
+    ),
+    linkedStripeChargeId: text("linked_stripe_charge_id").references(
+      () => stripeStagedCharges.id,
+      { onDelete: "set null" },
+    ),
+    crossProcessorLinkedByUserId: text(
+      "cross_processor_linked_by_user_id",
+    ).references(() => users.id, { onDelete: "set null" }),
+    crossProcessorLinkedAt: timestamp("cross_processor_linked_at", {
+      withTimezone: true,
+    }),
+
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -188,6 +218,12 @@ export const donorboxDonations = pgTable(
       t.individualGiverPersonId,
     ),
     index("donorbox_donations_household_id_idx").on(t.householdId),
+    index("donorbox_donations_linked_qb_staged_payment_id_idx").on(
+      t.linkedQbStagedPaymentId,
+    ),
+    index("donorbox_donations_linked_stripe_charge_id_idx").on(
+      t.linkedStripeChargeId,
+    ),
     // One-to-one donation↔gift linkage (same guard as staged rows).
     uniqueIndex("donorbox_donations_matched_gift_id_uq")
       .on(t.matchedGiftId)

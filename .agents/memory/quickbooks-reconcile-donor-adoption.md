@@ -29,3 +29,15 @@ the staged-row donor adoption all use `effectiveGiftDonor`). Guards on this path
 pledge/opp owned by a *different* donor, the switch is **blocked** with 409
 `gift_pledge_donor_conflict` (fix the pledge first). So: silent Match → adopt the
 gift's donor; explicit confirmed switch → re-point it. Don't collapse the two.
+
+**One-click "confirm the proposal" flows must null the donor when a gift is
+chosen.** A reusable approve-body deriver that takes {donor, gift, opportunity}
+turns on the `switchGiftDonor` override whenever a gift AND a *differing* donor
+are both passed. So any one-click flow (confirm-as-proposed, bulk approve,
+re-target) that feeds it the auto-proposed donor node alongside the selected gift
+will SILENTLY re-point the gift's donor — there is no confirmation dialog on these
+paths. Rule: when a gift is in play, pass `donor: null` so the link adopts the
+gift's own donor; only keep the proposed donor for the donor-only create_gift
+path. On re-target also drop the original opportunity (the chosen gift may be
+unrelated to the auto-proposed pledge). The explicit donor-switch override stays
+reserved for the per-node reconciler, which surfaces a confirm prompt.

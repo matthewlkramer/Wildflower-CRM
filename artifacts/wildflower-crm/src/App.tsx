@@ -38,6 +38,7 @@ import StripeStagedCharges from "@/pages/stripe-staged-charges";
 import StripeReconciliation from "@/pages/stripe-reconciliation";
 import DonorboxReview from "@/pages/donorbox-review";
 import Reconciliation from "@/pages/reconciliation";
+import ReconciliationWorkbench from "@/pages/reconciliation-workbench";
 import EmailIntelligence from "@/pages/email-intelligence";
 import GrantLeads from "@/pages/grant-leads";
 import EmailTracking from "@/pages/email-tracking";
@@ -221,6 +222,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/stripe-reconciliation"><ProtectedRoute component={StripeReconciliation} /></Route>
           <Route path="/donorbox-review"><ProtectedRoute component={DonorboxReview} /></Route>
           <Route path="/reconciliation"><ProtectedRoute component={Reconciliation} /></Route>
+          <Route path="/reconciliation-workbench"><ProtectedRoute component={ReconciliationWorkbench} /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>
           <Route path="/interactions"><ProtectedRoute component={Interactions} /></Route>
           <Route path="/projections"><ProtectedRoute component={Projections} /></Route>

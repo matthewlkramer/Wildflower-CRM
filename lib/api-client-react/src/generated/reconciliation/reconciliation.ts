@@ -37,7 +37,8 @@ import type {
   ReconciliationProposalWithContextList,
   ReconciliationSearchList,
   SearchReconciliationNodeParams,
-  SearchReconciliationQbStagedParams
+  SearchReconciliationQbStagedParams,
+  SettlementLineage
 } from '../api.schemas';
 
 import { customFetch } from '../../custom-fetch';
@@ -212,6 +213,89 @@ export function useGetReconciliationGraph<TData = Awaited<ReturnType<typeof getR
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetReconciliationGraphQueryOptions(stagedPaymentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Traces the SAME physical money across processors for one QB staged-payment
+anchor, so the workbench can show where the deposit came from. Read-only —
+nothing is mutated. The chain is derived from existing pulled join keys
+(payout↔QB tie, charge.stripePayoutId, donation.stripeChargeId) PLUS any
+human-confirmed cross-processor links persisted on the staged charges /
+donations. Each leg's `linkSource` records HOW it was tied (a pulled key vs
+a reviewer confirmation). Any leg is empty/null when it doesn't apply
+(e.g. a check deposit has no Stripe payout or Donorbox donation).
+
+ * @summary Read-only settlement lineage for one card — QB deposit ↔ Stripe payout ↔ Stripe charges ↔ Donorbox donations.
+ */
+export const getGetReconciliationLineageUrl = (stagedPaymentId: string,) => {
+
+
+  
+
+  return `/api/reconciliation/cards/${stagedPaymentId}/lineage`
+}
+
+export const getReconciliationLineage = async (stagedPaymentId: string, options?: RequestInit): Promise<SettlementLineage> => {
+  
+  return customFetch<SettlementLineage>(getGetReconciliationLineageUrl(stagedPaymentId),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetReconciliationLineageQueryKey = (stagedPaymentId: string,) => {
+    return [
+    `/api/reconciliation/cards/${stagedPaymentId}/lineage`
+    ] as const;
+    }
+
+    
+export const getGetReconciliationLineageQueryOptions = <TData = Awaited<ReturnType<typeof getReconciliationLineage>>, TError = ErrorType<NotFoundResponse>>(stagedPaymentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReconciliationLineage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetReconciliationLineageQueryKey(stagedPaymentId);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReconciliationLineage>>> = ({ signal }) => getReconciliationLineage(stagedPaymentId, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(stagedPaymentId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReconciliationLineage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetReconciliationLineageQueryResult = NonNullable<Awaited<ReturnType<typeof getReconciliationLineage>>>
+export type GetReconciliationLineageQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Read-only settlement lineage for one card — QB deposit ↔ Stripe payout ↔ Stripe charges ↔ Donorbox donations.
+ */
+
+export function useGetReconciliationLineage<TData = Awaited<ReturnType<typeof getReconciliationLineage>>, TError = ErrorType<NotFoundResponse>>(
+ stagedPaymentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReconciliationLineage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetReconciliationLineageQueryOptions(stagedPaymentId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

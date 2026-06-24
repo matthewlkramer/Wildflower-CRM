@@ -27,6 +27,7 @@ import { paymentIntermediaries } from "./paymentIntermediaries";
 import { giftsAndPayments } from "./giftsAndPayments";
 import { users } from "./users";
 import { stripePayouts } from "./stripePayouts";
+import { stagedPayments } from "./stagedPayments";
 
 /**
  * Review queue for incoming Stripe charges, one row per charge grouped under
@@ -173,6 +174,25 @@ export const stripeStagedCharges = pgTable(
     ),
     refundConfirmedAt: timestamp("refund_confirmed_at", { withTimezone: true }),
 
+    // ── Cross-processor link (human-confirmed, additive) ────────────────
+    // A reviewer-confirmed tie from this Stripe charge to the QuickBooks
+    // staged_payments row that records the SAME money (a per-charge QB↔Stripe
+    // link, finer than the payout-level `stripe_payouts.matched_qb_staged_payment_id`).
+    // Purely additive provenance so the Reconciliation Workbench can persist a
+    // confirmed cross-processor tie WITHOUT re-deriving the settlement lineage
+    // every time. Never mints/mutates a gift and never written back to any
+    // processor. SET NULL if the QB staged row is removed.
+    linkedQbStagedPaymentId: text("linked_qb_staged_payment_id").references(
+      () => stagedPayments.id,
+      { onDelete: "set null" },
+    ),
+    crossProcessorLinkedByUserId: text(
+      "cross_processor_linked_by_user_id",
+    ).references(() => users.id, { onDelete: "set null" }),
+    crossProcessorLinkedAt: timestamp("cross_processor_linked_at", {
+      withTimezone: true,
+    }),
+
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -189,6 +209,9 @@ export const stripeStagedCharges = pgTable(
     index("stripe_staged_charges_status_idx").on(t.status),
     index("stripe_staged_charges_match_status_idx").on(t.matchStatus),
     index("stripe_staged_charges_payout_id_idx").on(t.stripePayoutId),
+    index("stripe_staged_charges_linked_qb_staged_payment_id_idx").on(
+      t.linkedQbStagedPaymentId,
+    ),
     index("stripe_staged_charges_date_received_idx").on(t.dateReceived),
     index("stripe_staged_charges_gross_amount_idx").on(t.grossAmount),
     index("stripe_staged_charges_organization_id_idx").on(t.organizationId),

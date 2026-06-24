@@ -3628,6 +3628,25 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationGraph" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/cards/{stagedPaymentId}/lineage:
+    get:
+      operationId: getReconciliationLineage
+      tags: [reconciliation]
+      summary: Read-only settlement lineage for one card — QB deposit ↔ Stripe payout ↔ Stripe charges ↔ Donorbox donations.
+      description: |
+        Traces the SAME physical money across processors for one QB staged-payment
+        anchor, so the workbench can show where the deposit came from. Read-only —
+        nothing is mutated. The chain is derived from existing pulled join keys
+        (payout↔QB tie, charge.stripePayoutId, donation.stripeChargeId) PLUS any
+        human-confirmed cross-processor links persisted on the staged charges /
+        donations. Each leg's `linkSource` records HOW it was tied (a pulled key vs
+        a reviewer confirmation). Any leg is empty/null when it doesn't apply
+        (e.g. a check deposit has no Stripe payout or Donorbox donation).
+      parameters:
+        - { name: stagedPaymentId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SettlementLineage" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
   /reconciliation/search/{nodeType}:
     get:
       operationId: searchReconciliationNode
@@ -6222,6 +6241,93 @@ components:
         evidence: { $ref: "#/components/schemas/ReconciliationEvidence" }
         ready:    { type: boolean, description: "True when a confident, non-conflicting selection exists for the required nodes (donor + gift) so the card can be one-click approved." }
         blockers: { type: array, items: { type: string }, description: "Human-readable reasons the card is not ready (ambiguous donor, conflicting opportunity, gift already linked, amount mismatch, etc.)." }
+    SettlementLineageLinkSource:
+      type: string
+      enum: [pulled, qb_confirmed, stripe_pulled, stripe_confirmed]
+      description: |
+        HOW a lineage leg was tied to the anchor.
+        pulled: from a Stripe-pulled join key (payout↔QB tie, or charge.stripePayoutId).
+        qb_confirmed: a reviewer-confirmed link directly to the QB staged row (charge.linkedQbStagedPaymentId / donation.linkedQbStagedPaymentId).
+        stripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donation.stripeChargeId key.
+        stripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).
+    SettlementLineageCharge:
+      type: object
+      required: [chargeId, linkSource]
+      description: "One Stripe charge in the settlement chain (the per-donor gross behind a payout)."
+      properties:
+        chargeId:     { type: string }
+        grossAmount:  { type: string, nullable: true }
+        feeAmount:    { type: string, nullable: true }
+        netAmount:    { type: string, nullable: true }
+        dateReceived: { type: string, format: date, nullable: true }
+        payerName:    { type: string, nullable: true }
+        payerEmail:   { type: string, nullable: true }
+        description:  { type: string, nullable: true }
+        refunded:     { type: boolean }
+        disputed:     { type: boolean }
+        linkSource:   { $ref: "#/components/schemas/SettlementLineageLinkSource" }
+    SettlementLineageDonation:
+      type: object
+      required: [donationId, linkSource]
+      description: "One Donorbox donation in the settlement chain (enrichment for a Stripe charge, or non-Stripe money landing in the QB deposit)."
+      properties:
+        donationId:   { type: string }
+        donationType: { type: string, nullable: true, description: "stripe | paypal | … — distinguishes enrichment (stripe) from new money." }
+        amount:       { type: string, nullable: true }
+        dateReceived: { type: string, format: date, nullable: true }
+        donorName:    { type: string, nullable: true }
+        donorEmail:   { type: string, nullable: true }
+        campaignName: { type: string, nullable: true }
+        designation:  { type: string, nullable: true }
+        refunded:     { type: boolean }
+        linkSource:   { $ref: "#/components/schemas/SettlementLineageLinkSource" }
+    SettlementLineage:
+      type: object
+      required: [stagedPaymentId, deposit, charges, donations]
+      description: |
+        Read-only settlement lineage for one card: the QB deposit (anchor) and the
+        SAME money traced across Stripe (payout + charges) and Donorbox (donations).
+        Derived from pulled join keys plus any human-confirmed cross-processor links;
+        a leg is null/empty when it doesn't apply to this deposit.
+      properties:
+        stagedPaymentId: { type: string }
+        deposit:
+          type: object
+          required: [stagedPaymentId]
+          description: "The QB staged-payment anchor (the bank deposit lump this card reconciles)."
+          properties:
+            stagedPaymentId:        { type: string }
+            amount:                 { type: string, nullable: true }
+            dateReceived:           { type: string, format: date, nullable: true }
+            payerName:              { type: string, nullable: true }
+            paymentMethod:          { type: string, nullable: true }
+            docNumber:              { type: string, nullable: true }
+            depositId:              { type: string, nullable: true, description: "QB deposit transaction id this row was deposited into (read-only, derived from qb_raw)." }
+            depositToAccountName:   { type: string, nullable: true }
+        payout:
+          type: object
+          nullable: true
+          required: [payoutId, linkSource]
+          description: "The Stripe payout tied to this deposit (null when no Stripe payout backs the money)."
+          properties:
+            payoutId:             { type: string }
+            amount:               { type: string, nullable: true, description: "Net amount that hit the bank." }
+            grossTotal:           { type: string, nullable: true }
+            feeTotal:             { type: string, nullable: true }
+            netTotal:             { type: string, nullable: true }
+            chargeCount:          { type: integer, nullable: true }
+            arrivalDate:          { type: string, format: date, nullable: true }
+            status:               { type: string, nullable: true }
+            reconciliationStatus: { type: string, nullable: true, description: "The payout's QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …)." }
+            linkSource:           { $ref: "#/components/schemas/SettlementLineageLinkSource" }
+        charges:
+          type: array
+          items: { $ref: "#/components/schemas/SettlementLineageCharge" }
+          description: "The individual Stripe charges behind the payout (and any reviewer-confirmed per-charge ties to this deposit). Empty when no Stripe charges back the money."
+        donations:
+          type: array
+          items: { $ref: "#/components/schemas/SettlementLineageDonation" }
+          description: "Donorbox donations tied to the chain — enrichment for the Stripe charges, or non-Stripe new money the reviewer linked to this deposit. Empty when none apply."
     ReconciliationCard:
       type: object
       required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup]

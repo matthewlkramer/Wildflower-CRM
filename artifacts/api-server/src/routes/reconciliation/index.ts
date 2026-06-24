@@ -5,6 +5,7 @@ import searchRouter from "./search";
 import approveRouter from "./approve";
 import giftsMissingQbRouter from "./gifts-missing-qb";
 import proposalsRouter from "./proposals";
+import lineageRouter from "./lineage";
 
 /**
  * Unified "complete-match" reconciler. One card per money event, anchored on a
@@ -25,5 +26,6 @@ router.use(searchRouter);
 router.use(approveRouter);
 router.use(giftsMissingQbRouter);
 router.use(proposalsRouter);
+router.use(lineageRouter);
 
 export default router;
