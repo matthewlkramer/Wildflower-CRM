@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListReconciliationCards,
@@ -15,10 +15,17 @@ import {
   approveReconciliationCard,
   rejectStagedPayment,
   searchReconciliationNode,
+  splitStagedPayment,
+  useListGiftsAndPayments,
+  getListGiftsAndPaymentsQueryKey,
+  getGetGiftOrPaymentQueryOptions,
   type ReconciliationCard,
   type ReconciliationCandidate,
   type ApproveCompleteMatchBody,
+  type SplitStagedPaymentBody,
   type StagedPaymentExclusionReason,
+  type GiftOrPayment,
+  type GiftOrPaymentDetail,
 } from "@workspace/api-client-react";
 import {
   AlertCircle,
@@ -27,13 +34,18 @@ import {
   CheckCheck,
   ChevronDown,
   FlaskConical,
+  GitMerge,
   Layers,
   Loader2,
+  Plus,
+  Scissors,
   Search,
   Sparkles,
+  Split,
   Trash2,
   Undo2,
   UserPen,
+  Wallet,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -69,6 +81,13 @@ import {
 } from "@/lib/reconciliation";
 import { ReconciliationNodeTypeahead } from "@/components/reconciliation-node-typeahead";
 import { StrayGiftsWorklist } from "@/components/reconciliation-stray-gifts";
+import {
+  MergeGiftsDialog,
+  MergeIntoPledgeDialog,
+  SplitGiftIntoPledgeDialog,
+} from "@/components/gift-merge-dialogs";
+import { DonorFieldPicker, type DonorType } from "@/components/entity-picker";
+import FinancialCorrectionsPage from "@/pages/financial-corrections";
 
 // ─── Shell config (mockup structure, corrected to our money model) ──────────
 
@@ -89,7 +108,7 @@ const QUEUES: { id: QueueId; name: string; dot: string; live: boolean }[] = [
   { id: "review", name: "Needs review", dot: "#9a6b00", live: true },
   { id: "qbo", name: "QBO-only", dot: "#b23b2e", live: true },
   { id: "crm", name: "CRM-only", dot: "#b23b2e", live: true },
-  { id: "split", name: "Splits & pledges", dot: "#6c4ea3", live: false },
+  { id: "split", name: "Splits & pledges", dot: "#6c4ea3", live: true },
   { id: "bundle", name: "Stripe/Donorbox bundles", dot: "#1a7a8c", live: false },
   { id: "sync", name: "Sync gaps", dot: "#b8601c", live: true },
   { id: "research", name: "Research", dot: "#857b73", live: true },
@@ -195,7 +214,7 @@ function evidenceBullets(card: ReconciliationCard): string[] {
 
 // ─── Pending tray model ─────────────────────────────────────────────────────
 
-type StagedKind = "confirm" | "retarget" | "reject";
+type StagedKind = "confirm" | "retarget" | "reject" | "split";
 
 interface StagedChange {
   key: string;
@@ -203,8 +222,10 @@ interface StagedChange {
   stagedPaymentId: string;
   label: string;
   detail: string;
-  /** Approve body for confirm / retarget; null for reject. */
+  /** Approve body for confirm / retarget; null for reject / split. */
   body: ApproveCompleteMatchBody | null;
+  /** Split body for kind === "split"; null otherwise. */
+  splitBody?: SplitStagedPaymentBody | null;
   /** Set after a failed Apply so the row stays staged with a reason. */
   failure?: string | null;
 }
@@ -226,6 +247,7 @@ export default function ReconciliationWorkbench() {
     null,
   );
   const [donorCard, setDonorCard] = useState<ReconciliationCard | null>(null);
+  const [splitCard, setSplitCard] = useState<ReconciliationCard | null>(null);
   const [excludeCard, setExcludeCard] = useState<ReconciliationCard | null>(
     null,
   );
@@ -320,6 +342,27 @@ export default function ReconciliationWorkbench() {
       prev.filter((s) => s.stagedPaymentId !== stagedPaymentId),
     );
   }, []);
+
+  /** Stage a split-across-gifts (+ optional remainder) change into the tray. */
+  const stageSplit = useCallback(
+    (card: ReconciliationCard, splitBody: SplitStagedPaymentBody, detail: string) => {
+      stage({
+        key: `split:${card.stagedPaymentId}`,
+        kind: "split",
+        stagedPaymentId: card.stagedPaymentId,
+        label: card.payerName ?? "Staged payment",
+        detail,
+        body: null,
+        splitBody,
+      });
+      setSplitCard(null);
+      toast({
+        title: "Split staged",
+        description: "Review the tray, then Apply to CRM.",
+      });
+    },
+    [stage, toast],
+  );
 
   /** Fetch the card's graph and derive the auto-proposal approve body. */
   const deriveConfirmBody = useCallback(
@@ -445,6 +488,12 @@ export default function ReconciliationWorkbench() {
       try {
         if (change.kind === "reject") {
           await rejectStagedPayment(change.stagedPaymentId);
+        } else if (change.kind === "split") {
+          if (!change.splitBody) {
+            remaining.push({ ...change, failure: "Missing split body." });
+            continue;
+          }
+          await splitStagedPayment(change.stagedPaymentId, change.splitBody);
         } else if (change.body) {
           await approveReconciliationCard(change.stagedPaymentId, change.body);
         } else {
@@ -796,9 +845,13 @@ export default function ReconciliationWorkbench() {
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-28 pr-1">
           {queue === "crm" ? (
             <StrayGiftsWorklist />
-          ) : queue === "split" ||
-            queue === "bundle" ||
-            queue === "confirmed" ? (
+          ) : queue === "split" ? (
+            <SplitsPledgesQueue
+              cards={[...buckets.review, ...buckets.qbo]}
+              loading={cardsQuery.isLoading}
+              onSplit={(c) => setSplitCard(c)}
+            />
+          ) : queue === "bundle" || queue === "confirmed" ? (
             <ComingSoon name={activeQueue.name} />
           ) : queue === "excluded" ? (
             excludedQuery.isLoading ? (
@@ -893,6 +946,15 @@ export default function ReconciliationWorkbench() {
           busy={busy}
           onClose={() => setRetargetCard(null)}
           onPick={(gift) => stageRetarget(retargetCard, gift)}
+        />
+      )}
+
+      {/* Split-across-gifts editor */}
+      {splitCard && (
+        <SplitEditorDialog
+          card={splitCard}
+          onClose={() => setSplitCard(null)}
+          onStage={stageSplit}
         />
       )}
 
@@ -1761,5 +1823,591 @@ function ExcludeDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Splits & pledges queue ───────────────────────────────────────────────────
+
+const FEE_BAND_FLOOR = 0.9;
+const FEE_BAND_CEIL = 1.1;
+
+/** Does the applied total sit inside the processor fee-band the split endpoint accepts? */
+function withinFeeBand(applied: number, total: number): boolean {
+  if (total <= 0) return Math.abs(applied) < 0.005;
+  return applied >= total * FEE_BAND_FLOOR - 1 && applied <= total * FEE_BAND_CEIL + 1;
+}
+
+function SplitsPledgesQueue({
+  cards,
+  loading,
+  onSplit,
+}: {
+  cards: ReconciliationCard[];
+  loading: boolean;
+  onSplit: (card: ReconciliationCard) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <section className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Scissors className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Split a payment across gifts</h2>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          One QuickBooks payment that covers several gifts. Open the editor to
+          spread it across existing gifts and (optionally) route the remainder to
+          a new gift — the balance meter must balance before you can stage it.
+        </p>
+        {loading ? (
+          <LoadingRow />
+        ) : cards.length === 0 ? (
+          <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+            No staged payments waiting to be split.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {cards.map((card) => (
+              <div
+                key={card.stagedPaymentId}
+                className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 shadow-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">
+                    {card.payerName ?? "Unknown payer"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {card.dateReceived ?? "—"}
+                    {card.qbDocNumber ? ` · #${card.qbDocNumber}` : ""}
+                  </div>
+                </div>
+                <div className="text-right text-lg font-semibold tabular-nums">
+                  {money(card.amount)}
+                </div>
+                <Button size="sm" variant="outline" onClick={() => onSplit(card)}>
+                  <Scissors className="mr-1 h-3.5 w-3.5" />
+                  Split across gifts
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <Separator />
+
+      <GiftRestructurePanel />
+
+      <Separator />
+
+      <section className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Wallet className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Detected gift corrections</h2>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Likely duplicate or mis-split gifts the system has flagged. Apply or
+          dismiss each correction at parity with the standalone corrections page.
+        </p>
+        <div className="rounded-lg border bg-card p-1">
+          <FinancialCorrectionsPage />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ─── Split-across-gifts editor (shared application-rows + balance meter) ───────
+
+function SplitEditorDialog({
+  card,
+  onClose,
+  onStage,
+}: {
+  card: ReconciliationCard;
+  onClose: () => void;
+  onStage: (
+    card: ReconciliationCard,
+    body: SplitStagedPaymentBody,
+    detail: string,
+  ) => void;
+}) {
+  const paymentTotal = num(card.amount);
+  const [rows, setRows] = useState<ReconciliationCandidate[]>([]);
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<ReconciliationCandidate[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  const [remainderOn, setRemainderOn] = useState(false);
+  const [remAmount, setRemAmount] = useState("");
+  const [remDonorType, setRemDonorType] = useState<DonorType>("organization");
+  const [remDonorId, setRemDonorId] = useState<string | null>(null);
+
+  const runSearch = useCallback(async () => {
+    setSearching(true);
+    try {
+      const res = await searchReconciliationNode("gift", {
+        stagedPaymentId: card.stagedPaymentId,
+        q: q.trim() || undefined,
+        limit: 20,
+      });
+      setResults(res.data ?? []);
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [card.stagedPaymentId, q]);
+
+  const addRow = useCallback((gift: ReconciliationCandidate) => {
+    setRows((prev) =>
+      prev.some((r) => r.id === gift.id) ? prev : [...prev, gift],
+    );
+  }, []);
+  const removeRow = useCallback((id: string) => {
+    setRows((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
+  const appliedExisting = rows.reduce((sum, r) => sum + (num(r.amount) ?? 0), 0);
+  const remAmountNum = remainderOn ? (num(remAmount) ?? 0) : 0;
+  const applied = appliedExisting + remAmountNum;
+  const linkCount = rows.length + (remainderOn ? 1 : 0);
+
+  const suggestRemainder = useCallback(() => {
+    if (paymentTotal == null) return;
+    const leftover = Math.max(0, paymentTotal - appliedExisting);
+    setRemAmount(leftover.toFixed(2));
+  }, [paymentTotal, appliedExisting]);
+
+  const remainderValid =
+    !remainderOn || (remAmountNum > 0 && remDonorId != null);
+  const amountOk =
+    paymentTotal != null && withinFeeBand(applied, paymentTotal);
+  const canStage = linkCount >= 2 && remainderValid && amountOk;
+
+  const handleStage = useCallback(() => {
+    if (!canStage) return;
+    const donorFields: {
+      organizationId?: string | null;
+      individualGiverPersonId?: string | null;
+      householdId?: string | null;
+    } =
+      remDonorType === "organization"
+        ? { organizationId: remDonorId }
+        : remDonorType === "individual"
+          ? { individualGiverPersonId: remDonorId }
+          : { householdId: remDonorId };
+    const body: SplitStagedPaymentBody = {
+      giftIds: rows.map((r) => r.id),
+      ...(remainderOn
+        ? {
+            remainderGift: {
+              amount: remAmountNum.toFixed(2),
+              ...donorFields,
+            },
+          }
+        : {}),
+    };
+    const detail = `Split across ${linkCount} gifts${remainderOn ? " (incl. new remainder gift)" : ""}`;
+    onStage(card, body, detail);
+  }, [
+    canStage,
+    rows,
+    remainderOn,
+    remAmountNum,
+    remDonorType,
+    remDonorId,
+    linkCount,
+    onStage,
+    card,
+  ]);
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Split payment across gifts</DialogTitle>
+          <DialogDescription>
+            {card.payerName ?? "This payment"} ({money(card.amount)}) — link two
+            or more existing gifts and/or a new remainder gift. Each existing
+            gift is applied at its own booked amount.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Application rows — existing gifts */}
+        <div className="space-y-1.5">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Applied to gifts
+          </div>
+          {rows.length === 0 ? (
+            <p className="rounded-md border border-dashed py-4 text-center text-xs text-muted-foreground">
+              No gifts added yet — search below and add at least two links.
+            </p>
+          ) : (
+            rows.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{r.label}</div>
+                  {r.sublabel && (
+                    <div className="truncate text-xs text-muted-foreground">
+                      {r.sublabel}
+                    </div>
+                  )}
+                </div>
+                <span className="tabular-nums">{money(r.amount)}</span>
+                <button
+                  type="button"
+                  onClick={() => removeRow(r.id)}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Gift search */}
+        <div className="flex gap-2">
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runSearch()}
+            placeholder="Search gifts by donor or amount…"
+          />
+          <Button onClick={runSearch} disabled={searching} variant="outline">
+            {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
+          </Button>
+        </div>
+        {results.length > 0 && (
+          <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-1">
+            {results.map((g) => {
+              const linked = g.alreadyLinkedStagedPaymentId != null;
+              const added = rows.some((r) => r.id === g.id);
+              return (
+                <button
+                  key={g.id}
+                  type="button"
+                  disabled={linked || added}
+                  onClick={() => addRow(g)}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm",
+                    linked || added
+                      ? "cursor-not-allowed opacity-50"
+                      : "hover:bg-muted",
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{g.label}</span>
+                    {g.sublabel && (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {g.sublabel}
+                      </span>
+                    )}
+                  </span>
+                  <span className="ml-2 flex shrink-0 items-center gap-1 tabular-nums text-muted-foreground">
+                    {money(g.amount)}
+                    {linked ? (
+                      <span className="text-[10px]">(linked)</span>
+                    ) : added ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-500" />
+                    ) : (
+                      <Plus className="h-3.5 w-3.5" />
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Remainder → new gift */}
+        <div className="rounded-md border p-3">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <Checkbox
+              checked={remainderOn}
+              onCheckedChange={(v) => {
+                const on = v === true;
+                setRemainderOn(on);
+                if (on) suggestRemainder();
+              }}
+            />
+            Route remainder to a new gift
+          </label>
+          {remainderOn && (
+            <div className="mt-3 space-y-3">
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    Remainder amount
+                  </div>
+                  <Input
+                    value={remAmount}
+                    onChange={(e) => setRemAmount(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={suggestRemainder}
+                >
+                  Use leftover
+                </Button>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">
+                  New gift donor
+                </div>
+                <DonorFieldPicker
+                  type={remDonorType}
+                  id={remDonorId}
+                  onChange={(t, id) => {
+                    setRemDonorType(t);
+                    setRemDonorId(id);
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Balance meter */}
+        <div className="rounded-md border">
+          <BalanceMeter paymentTotal={paymentTotal} applied={applied} />
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleStage} disabled={!canStage}>
+            {canStage ? "Stage split" : "Balance to enable"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Gift restructuring (merge / pledge) panel ────────────────────────────────
+
+function GiftRestructurePanel() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loadedGifts, setLoadedGifts] = useState<GiftOrPaymentDetail[]>([]);
+  const [loadError, setLoadError] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [dialog, setDialog] = useState<"merge" | "pledge" | "split" | null>(
+    null,
+  );
+
+  // Debounce the search box so we don't refetch on every keystroke.
+  const onSearchChange = useCallback((v: string) => {
+    setSearch(v);
+  }, []);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const listParams = { search: debounced || undefined, limit: 20, offset: 0 };
+  const giftsQuery = useListGiftsAndPayments(listParams, {
+    query: {
+      enabled: debounced.length > 0,
+      queryKey: getListGiftsAndPaymentsQueryKey(listParams),
+    },
+  });
+  const gifts: GiftOrPayment[] = giftsQuery.data?.data ?? [];
+
+  const toggle = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const openDialog = useCallback(
+    async (which: "merge" | "pledge" | "split") => {
+      const ids = [...selected];
+      setLoading(true);
+      setLoadError(false);
+      try {
+        const details = await Promise.all(
+          ids.map((id) =>
+            queryClient.fetchQuery(getGetGiftOrPaymentQueryOptions(id)),
+          ),
+        );
+        setLoadedGifts(details);
+      } catch {
+        setLoadError(true);
+        setLoadedGifts([]);
+      } finally {
+        setLoading(false);
+        setDialog(which);
+      }
+    },
+    [selected, queryClient],
+  );
+
+  const closeDialog = useCallback(() => {
+    setDialog(null);
+    setLoadedGifts([]);
+    setLoadError(false);
+  }, []);
+
+  const onDone = useCallback(() => {
+    closeDialog();
+    setSelected(new Set());
+    toast({ title: "Gift restructuring applied." });
+  }, [closeDialog, toast]);
+
+  const count = selected.size;
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-2">
+        <GitMerge className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-semibold">Restructure existing gifts</h2>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Find gifts already in the CRM and merge duplicates into one, roll several
+        payments up into a pledge, or split one gift into a pledge with
+        installments. Pledge stage and paid-amount re-derive on the server.
+      </p>
+
+      <div className="relative">
+        <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search gifts by donor, amount, reference…"
+          className="pl-7"
+        />
+      </div>
+
+      {debounced.length > 0 && (
+        <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border p-1">
+          {giftsQuery.isLoading ? (
+            <p className="py-4 text-center text-xs text-muted-foreground">
+              Searching…
+            </p>
+          ) : gifts.length === 0 ? (
+            <p className="py-4 text-center text-xs text-muted-foreground">
+              No gifts found.
+            </p>
+          ) : (
+            gifts.map((g) => {
+              const donor =
+                g.organizationName ??
+                g.individualGiverPersonName ??
+                g.householdName ??
+                "—";
+              return (
+                <label
+                  key={g.id}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
+                >
+                  <Checkbox
+                    checked={selected.has(g.id)}
+                    onCheckedChange={() => toggle(g.id)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">
+                      {g.name || donor}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {donor} · {g.dateReceived ?? "—"}
+                    </span>
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {money(g.amount)}
+                  </span>
+                </label>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {count > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+          <span className="text-sm font-medium">{count} selected</span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={count < 2 || loading}
+            onClick={() => openDialog("merge")}
+          >
+            <GitMerge className="mr-1 h-3.5 w-3.5" />
+            Merge into one
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={count < 1 || loading}
+            onClick={() => openDialog("pledge")}
+          >
+            <Wallet className="mr-1 h-3.5 w-3.5" />
+            Merge into pledge
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={count !== 1 || loading}
+            onClick={() => openDialog("split")}
+          >
+            <Split className="mr-1 h-3.5 w-3.5" />
+            Split into pledge
+          </Button>
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          <button
+            type="button"
+            onClick={() => setSelected(new Set())}
+            className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {dialog === "merge" && (
+        <MergeGiftsDialog
+          open
+          onOpenChange={(o) => !o && closeDialog()}
+          gifts={loadedGifts}
+          expectedCount={count}
+          loadError={loadError}
+          onDone={onDone}
+        />
+      )}
+      {dialog === "pledge" && (
+        <MergeIntoPledgeDialog
+          open
+          onOpenChange={(o) => !o && closeDialog()}
+          gifts={loadedGifts}
+          expectedCount={count}
+          loadError={loadError}
+          onDone={() => onDone()}
+        />
+      )}
+      {dialog === "split" && loadedGifts[0] && (
+        <SplitGiftIntoPledgeDialog
+          open
+          onOpenChange={(o) => !o && closeDialog()}
+          gift={loadedGifts[0]}
+          onDone={() => onDone()}
+        />
+      )}
+    </section>
   );
 }

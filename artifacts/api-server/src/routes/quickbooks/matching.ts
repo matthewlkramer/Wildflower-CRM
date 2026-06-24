@@ -14,9 +14,11 @@ import {
   GroupReconcileStagedPaymentsBody,
   ConfirmStagedPaymentMatchesBody,
   SplitStagedPaymentBody,
+  validateGiftInvariants,
 } from "@workspace/api-zod";
 import { donorOf, hasExactlyOneDonor } from "../../lib/quickbooksLink";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
+import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import {
   stampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
@@ -598,14 +600,46 @@ router.post(
       });
       return;
     }
-    // De-dupe; require at least two distinct gifts.
+    // De-dupe the existing-gift ids. A split needs at least two TOTAL links —
+    // existing gifts plus an optional remainder gift minted for the leftover.
     const giftIds = Array.from(new Set(parsed.data.giftIds));
-    if (giftIds.length < 2) {
+    const remainder = parsed.data.remainderGift ?? null;
+    const totalLinks = giftIds.length + (remainder ? 1 : 0);
+    if (totalLinks < 2) {
       res.status(400).json({
         error: "split_too_small",
-        message: "Split across at least two distinct gifts.",
+        message:
+          "Split across at least two links (existing gifts and/or a remainder gift).",
       });
       return;
+    }
+
+    // The remainder routes the leftover to a brand-new gift: positive amount and
+    // exactly one donor (Donor XOR) — validated up front for a clean 400.
+    let remainderAmount = 0;
+    if (remainder) {
+      remainderAmount = Number(remainder.amount ?? 0);
+      if (!(remainderAmount > 0)) {
+        res.status(400).json({
+          error: "validation_error",
+          message: "The remainder gift amount must be a positive number.",
+          details: { issues: [{ path: ["remainderGift", "amount"] }] },
+        });
+        return;
+      }
+      const donorIssues = validateGiftInvariants({
+        organizationId: remainder.organizationId ?? null,
+        individualGiverPersonId: remainder.individualGiverPersonId ?? null,
+        householdId: remainder.householdId ?? null,
+      });
+      if (donorIssues.length) {
+        res.status(400).json({
+          error: "validation_error",
+          message: "The remainder gift needs exactly one donor (Donor XOR).",
+          details: { issues: donorIssues },
+        });
+        return;
+      }
     }
 
     // A grouped row is reconciled only as part of its whole group (the tx below
@@ -634,6 +668,7 @@ router.post(
     let toleranceDetail: { combinedTotal: number; stagedAmount: number } | null =
       null;
     let splitTotal = 0;
+    let createdGiftId: string | null = null;
     try {
       await db.transaction(async (tx) => {
         const locked = await tx
@@ -690,26 +725,73 @@ router.post(
           (acc, g) => acc + Number(g.amount ?? 0),
           0,
         );
+        // Combined GROSS = existing gifts + the optional remainder gift.
+        const combinedTotal = sumGifts + remainderAmount;
         const staged = Number(locked.amount ?? 0);
-        if (!(sumGifts >= staged * 0.9 - 1 && sumGifts <= staged * 1.1 + 1)) {
-          toleranceDetail = { combinedTotal: sumGifts, stagedAmount: staged };
+        if (
+          !(combinedTotal >= staged * 0.9 - 1 && combinedTotal <= staged * 1.1 + 1)
+        ) {
+          toleranceDetail = { combinedTotal, stagedAmount: staged };
           throw new Error(TOLERANCE);
         }
-        splitTotal = sumGifts;
+        splitTotal = combinedTotal;
 
-        // Insert one split link per gift (sub_amount = that gift's own gross).
+        // Mint the remainder gift HEADER (no allocations — same as every other
+        // QuickBooks mint; a fundraiser allocates afterward). Anchored to this
+        // staged payment so its QB tie derives `tied`. Donor XOR was validated
+        // up front.
+        if (remainder) {
+          createdGiftId = newId();
+          await tx.insert(giftsAndPayments).values({
+            ...buildGiftValuesFromStaged(
+              createdGiftId,
+              {
+                qbEntityType: locked.qbEntityType,
+                qbEntityId: locked.qbEntityId,
+                amount: remainder.amount,
+                dateReceived: locked.dateReceived,
+                payerName: locked.payerName,
+                rawReference: locked.rawReference,
+                organizationId: remainder.organizationId ?? null,
+                individualGiverPersonId:
+                  remainder.individualGiverPersonId ?? null,
+                householdId: remainder.householdId ?? null,
+                matchedPaymentIntermediaryId:
+                  locked.matchedPaymentIntermediaryId,
+                countsTowardGoal: locked.countsTowardGoal,
+              },
+              user.id,
+            ),
+            amount: remainder.amount,
+            finalAmountSource: "quickbooks" as const,
+            finalAmountQbStagedPaymentId: id,
+            finalAmountStripeChargeId: null,
+            originalHumanCrmAmount: null,
+          });
+        }
+
+        // Insert one split link per gift (sub_amount = that gift's own gross),
+        // plus one for the remainder gift (sub_amount = the remainder amount).
         // The unique index on gift_id catches a write-skew race (caught below as
         // a 409 conflict).
+        const splitRows = gifts.map((g) => ({
+          id: newId(),
+          stagedPaymentId: id,
+          giftId: g.id,
+          subAmount: g.amount ?? "0",
+          createdByUserId: user.id,
+        }));
+        if (createdGiftId) {
+          splitRows.push({
+            id: newId(),
+            stagedPaymentId: id,
+            giftId: createdGiftId,
+            subAmount: remainder!.amount,
+            createdByUserId: user.id,
+          });
+        }
         try {
-          await tx.insert(stagedPaymentSplits).values(
-            gifts.map((g) => ({
-              id: newId(),
-              stagedPaymentId: id,
-              giftId: g.id,
-              subAmount: g.amount ?? "0",
-              createdByUserId: user.id,
-            })),
-          );
+          await tx.insert(stagedPaymentSplits).values(splitRows);
         } catch (e) {
           if (
             typeof e === "object" &&
@@ -739,6 +821,19 @@ router.post(
             confirmedByUserId: user.id,
             confirmedAt: new Date(),
             createdTheGift: false,
+            tolerance: splitLedgerTolerance,
+          });
+        }
+        if (createdGiftId) {
+          await applyPaymentApplication(tx, {
+            paymentId: id,
+            giftId: createdGiftId,
+            amountApplied: remainder!.amount,
+            evidenceSource: "quickbooks",
+            matchMethod: "human",
+            confirmedByUserId: user.id,
+            confirmedAt: new Date(),
+            createdTheGift: true,
             tolerance: splitLedgerTolerance,
           });
         }
@@ -818,13 +913,16 @@ router.post(
       throw e;
     }
 
-    // The split now ties each gift to part of this QB record — persist ties.
-    await applyGiftQbTieMany(...giftIds);
+    // The split now ties each gift to part of this QB record — persist ties for
+    // every linked gift, including the freshly minted remainder gift.
+    const allGiftIds = createdGiftId ? [...giftIds, createdGiftId] : giftIds;
+    await applyGiftQbTieMany(...allGiftIds);
 
     res.json({
       stagedPaymentId: id,
-      giftIds,
+      giftIds: allGiftIds,
       splitTotal: splitTotal.toFixed(2),
+      createdGiftId,
     });
   }),
 );

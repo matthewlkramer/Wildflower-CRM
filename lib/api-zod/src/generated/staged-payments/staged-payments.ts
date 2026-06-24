@@ -1277,38 +1277,46 @@ export const ReconcileStagedPaymentResponse = zod.object({
 })
 
 /**
- * Reconciles ONE staged payment to TWO OR MORE already-recorded gifts for
+ * Reconciles ONE staged payment to one or more already-recorded gifts for
 different donors — the case where a single incoming-money record (e.g. a
 Stripe payout that nets fees into a lump sum) covers several donors'
 gifts. Each portion links to an existing gift for that gift's own gross
-amount; no new gift is minted and QuickBooks is never written back. The
-staged row is marked approved (human-confirmed) and its own donor /
-single-gift link columns are cleared — its resolution lives entirely in
-the split links. Guards: the row is pending; at least two distinct gifts;
-each gift exists, carries a single valid donor, and is not already linked
-to ANY staged payment (matched, created, group-reconciled, or split); and
-the gifts' combined GROSS total sits in the processor fee-band tolerance
-around the staged NET amount (sum >= staged - 0.01 AND sum <= staged *
+amount; any unmatched remainder may be routed to a NEW gift (minted with
+a single donor, Donor XOR). QuickBooks is never written back. The staged
+row is marked approved (human-confirmed) and its own donor / single-gift
+link columns are cleared — its resolution lives entirely in the split
+links. Guards: the row is pending; at least two total links (existing
+gifts + optional remainder); each existing gift exists, carries a single
+valid donor, and is not already linked to ANY staged payment (matched,
+created, group-reconciled, or split); and the combined GROSS total
+(existing gifts + remainder) sits in the processor fee-band tolerance
+around the staged NET amount (sum >= staged * 0.9 - 1 AND sum <= staged *
 1.1 + 1). Reversible as a whole via the revert endpoint (unsplit).
 
- * @summary Split one staged payment across several existing gifts (no new gift is created).
+ * @summary Split one staged payment across several existing gifts, optionally minting a new gift for the remainder.
  */
 export const SplitStagedPaymentParams = zod.object({
   "id": zod.coerce.string()
 })
 
-export const splitStagedPaymentBodyGiftIdsMin = 2;
 
 
 
 export const SplitStagedPaymentBody = zod.object({
-  "giftIds": zod.array(zod.string()).min(splitStagedPaymentBodyGiftIdsMin).describe('Ids of the existing gifts to split this staged payment across. Must be at least two distinct gifts, each unlinked everywhere, each with a single valid donor; their combined gross total must sit in the fee-band around the staged net amount.')
-}).describe('Split one staged payment across several existing gifts. Each portion is the linked gift\'s own gross amount; no new gift is created.')
+  "giftIds": zod.array(zod.string()).min(1).describe('Ids of the existing gifts to split this staged payment across. Each must be unlinked everywhere and carry a single valid donor. Combined with an optional remainder gift, the split must cover at least two links; the summed gross (existing gifts + remainder) must sit in the fee-band around the staged net amount.'),
+  "remainderGift": zod.object({
+  "amount": zod.string().describe('Gross amount of the new remainder gift (the leftover not covered by the existing gifts).'),
+  "organizationId": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish()
+}).optional().describe('Route the unmatched remainder of the payment to a brand-new gift. Exactly one donor (Donor XOR). Its amount is added to the split\'s combined gross for the fee-band check.')
+}).describe('Split one staged payment across several existing gifts, with any unmatched remainder optionally routed to a NEW gift. Each existing portion is the linked gift\'s own gross amount; the optional remainder mints one new gift for the leftover. The total links (existing gifts + remainder) must be at least two.')
 
 export const SplitStagedPaymentResponse = zod.object({
   "stagedPaymentId": zod.string(),
-  "giftIds": zod.array(zod.string()),
-  "splitTotal": zod.string().describe('Combined gross total of the split gifts.')
+  "giftIds": zod.array(zod.string()).describe('All gift ids the payment was split across, including the newly minted remainder gift (if any).'),
+  "splitTotal": zod.string().describe('Combined gross total of the split gifts (existing + remainder).'),
+  "createdGiftId": zod.string().nullish().describe('Id of the newly minted remainder gift, when a remainder gift was requested; null otherwise.')
 })
 
 /**

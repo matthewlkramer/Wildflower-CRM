@@ -4016,21 +4016,36 @@ export interface ReconcileStagedPaymentBody {
 }
 
 /**
- * Split one staged payment across several existing gifts. Each portion is the linked gift's own gross amount; no new gift is created.
+ * Route the unmatched remainder of the payment to a brand-new gift. Exactly one donor (Donor XOR). Its amount is added to the split's combined gross for the fee-band check.
+ */
+export interface SplitStagedPaymentRemainderGift {
+  /** Gross amount of the new remainder gift (the leftover not covered by the existing gifts). */
+  amount: string;
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+}
+
+/**
+ * Split one staged payment across several existing gifts, with any unmatched remainder optionally routed to a NEW gift. Each existing portion is the linked gift's own gross amount; the optional remainder mints one new gift for the leftover. The total links (existing gifts + remainder) must be at least two.
  */
 export interface SplitStagedPaymentBody {
   /**
-   * Ids of the existing gifts to split this staged payment across. Must be at least two distinct gifts, each unlinked everywhere, each with a single valid donor; their combined gross total must sit in the fee-band around the staged net amount.
-   * @minItems 2
+   * Ids of the existing gifts to split this staged payment across. Each must be unlinked everywhere and carry a single valid donor. Combined with an optional remainder gift, the split must cover at least two links; the summed gross (existing gifts + remainder) must sit in the fee-band around the staged net amount.
+   * @minItems 1
    */
   giftIds: string[];
+  remainderGift?: SplitStagedPaymentRemainderGift;
 }
 
 export interface SplitStagedPaymentResponse {
   stagedPaymentId: string;
+  /** All gift ids the payment was split across, including the newly minted remainder gift (if any). */
   giftIds: string[];
-  /** Combined gross total of the split gifts. */
+  /** Combined gross total of the split gifts (existing + remainder). */
   splitTotal: string;
+  /** Id of the newly minted remainder gift, when a remainder gift was requested; null otherwise. */
+  createdGiftId?: string | null;
 }
 
 /**
