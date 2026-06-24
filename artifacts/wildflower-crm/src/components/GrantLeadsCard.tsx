@@ -74,7 +74,7 @@ export default function GrantLeadsCard() {
           className="text-sm font-medium text-primary hover:underline"
           data-testid="link-grant-leads-all"
         >
-          {isLoading ? "…" : total > 0 ? `${total} active` : "Open"}
+          {isLoading ? "…" : `${total} pending`}
         </Link>
       </CardHeader>
       <CardContent>

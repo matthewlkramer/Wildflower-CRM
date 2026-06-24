@@ -432,8 +432,14 @@ export default function Opportunities({
     ...(effectiveStatuses.length > 0
       ? { status: effectiveStatuses as OpportunityStatus[] }
       : {}),
-    ...(stages.length > 0 ? { stage: [...stages].sort() as OpportunityStage[] } : {}),
-    ...(types.length > 0 ? { type: [...types].sort() as OpportunityType[] } : {}),
+    // Pledges intentionally have no stage/type filter — never let stale
+    // persisted state or a saved view silently narrow the pledges query.
+    ...(pledgeView !== "pledges" && stages.length > 0
+      ? { stage: [...stages].sort() as OpportunityStage[] }
+      : {}),
+    ...(pledgeView !== "pledges" && types.length > 0
+      ? { type: [...types].sort() as OpportunityType[] }
+      : {}),
     ...(fiscalYears.length > 0 ? { fiscalYear: [...fiscalYears].sort() } : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
     ...(globalEntityIds.length > 0
@@ -509,8 +515,8 @@ export default function Opportunities({
     );
 
   const registry = useMemo(
-    () =>
-      buildColumns({
+    () => {
+      const cols = buildColumns({
         isPledgeView,
         basePath,
         userNames,
@@ -531,7 +537,10 @@ export default function Opportunities({
         onStartEdit: (o) => inlineEdit.start(o),
         onArchive: archiveOpp,
         onUnarchive: unarchiveOpp,
-      }),
+      });
+      // Pledges hide the Stage column (stage is irrelevant once committed).
+      return isPledgeView ? cols.filter((c) => c.key !== "stage") : cols;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [isPledgeView, basePath, userNames, entityNameById, isAdmin, inlineEdit, navigate],
   );
@@ -550,7 +559,8 @@ export default function Opportunities({
   // computed columns are opt-in (defaultVisible:false). Each def's
   // `clear` resets its value so hiding an active filter stops narrowing.
   const filterRegistry = useMemo<FilterDef[]>(
-    () => [
+    () => {
+      const defs: FilterDef[] = [
       {
         key: "status",
         label: "Status",
@@ -561,9 +571,8 @@ export default function Opportunities({
             label="Status"
             selected={statuses}
             onChange={(v) => { setStatuses(v); setPage(1); selection.clear(); }}
-            options={STATUSES}
+            options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] ?? formatEnum(s) }))}
             testId="select-opp-status"
-            includeBlank
           />
         ),
       },
@@ -669,9 +678,16 @@ export default function Opportunities({
           />
         ),
       },
-    ],
+      ];
+      // Pledges drop the stage filter (stage is irrelevant once committed) and
+      // the type filter (solicitation/renewal/open_application is a funnel
+      // attribute) — both belong to the opportunities funnel, not pledges.
+      return isPledgeView
+        ? defs.filter((d) => d.key !== "stage" && d.key !== "type")
+        : defs;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [statuses, stages, types, fiscalYears, owners, paidPresence, coveredFysPresence, entitiesPresence, sameDefaultStatus, defaultStatusArr],
+    [statuses, stages, types, fiscalYears, owners, paidPresence, coveredFysPresence, entitiesPresence, sameDefaultStatus, defaultStatusArr, isPledgeView],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -729,8 +745,8 @@ export default function Opportunities({
   const hasActiveFilters =
     !!search ||
     !sameDefaultStatus ||
-    stages.length > 0 ||
-    types.length > 0 ||
+    (!isPledgeView && stages.length > 0) ||
+    (!isPledgeView && types.length > 0) ||
     fiscalYears.length > 0 ||
     owners.length > 0 ||
     !!paidPresence ||
@@ -758,8 +774,8 @@ export default function Opportunities({
   const currentView: OppsView = {
     search,
     statuses,
-    stages,
-    types,
+    stages: isPledgeView ? [] : stages,
+    types: isPledgeView ? [] : types,
     fiscalYears,
     owners,
     paidPresence,
@@ -789,8 +805,8 @@ export default function Opportunities({
     apply: (s) => {
       setSearch(s.search ?? "");
       setStatuses(s.statuses ?? defaultStatusArr);
-      setStages(s.stages ?? []);
-      setTypes(s.types ?? []);
+      setStages(isPledgeView ? [] : (s.stages ?? []));
+      setTypes(isPledgeView ? [] : (s.types ?? []));
       setFiscalYears(s.fiscalYears ?? []);
       setOwners(s.owners ?? []);
       setPaidPresence(s.paidPresence ?? undefined);
@@ -808,8 +824,8 @@ export default function Opportunities({
       return (
         !s.search &&
         sortedStatuses === sortedDefaults &&
-        (s.stages?.length ?? 0) === 0 &&
-        (s.types?.length ?? 0) === 0 &&
+        (isPledgeView || (s.stages?.length ?? 0) === 0) &&
+        (isPledgeView || (s.types?.length ?? 0) === 0) &&
         (s.fiscalYears?.length ?? 0) === 0 &&
         (s.owners?.length ?? 0) === 0 &&
         !s.paidPresence &&

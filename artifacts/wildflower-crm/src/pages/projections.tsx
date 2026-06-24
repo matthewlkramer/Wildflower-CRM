@@ -20,7 +20,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const UNBUCKETED = "__unbucketed__";
 
@@ -54,7 +53,7 @@ export default function Projections() {
     query: { queryKey: getListFiscalYearsQueryKey() },
   });
 
-  const { fyRows, entityCols, cell, fyTotals, entityTotals, grandAlloc, grandAsk, grandExpected } =
+  const { fyRows, entityCols, cell, fyTotals, entityTotals, grandExpected } =
     useMemo(() => {
       const rows = (proj.data?.rows ?? []).filter((r) => r.category === category);
 
@@ -90,9 +89,7 @@ export default function Projections() {
       const cell = new Map<string, { ask: number; expected: number; n: number }>();
       const fyTotals = new Map<string, { ask: number; expected: number; n: number }>();
       const entityTotals = new Map<string, { ask: number; expected: number; n: number }>();
-      let grandAsk = 0,
-        grandExpected = 0,
-        grandAlloc = 0;
+      let grandExpected = 0;
       for (const r of rows) {
         const fy = r.grantYear ?? UNBUCKETED;
         const ent = r.entityId ?? UNBUCKETED;
@@ -115,11 +112,9 @@ export default function Projections() {
         et.expected += expected;
         et.n += n;
         entityTotals.set(ent, et);
-        grandAsk += ask;
         grandExpected += expected;
-        grandAlloc += n;
       }
-      return { fyRows, entityCols, cell, fyTotals, entityTotals, grandAlloc, grandAsk, grandExpected };
+      return { fyRows, entityCols, cell, fyTotals, entityTotals, grandExpected };
     }, [proj.data, entitiesQ.data, category]);
 
   const entityName = (id: string) => {
@@ -192,13 +187,6 @@ export default function Projections() {
             {c.label}
           </button>
         ))}
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SummaryTile label="Allocation rows" value={grandAlloc.toLocaleString()} />
-        <SummaryTile label="Total ask" value={formatCurrency(grandAsk)} />
-        <SummaryTile label="Total expected" value={formatCurrency(grandExpected)} />
-        <SummaryTile label="Fiscal years" value={fyRows.length.toLocaleString()} />
       </div>
 
       <div className="rounded-md border bg-card overflow-x-auto">
@@ -282,20 +270,5 @@ export default function Projections() {
         </Table>
       </div>
     </div>
-  );
-}
-
-function SummaryTile({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          {label}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-2xl font-serif font-bold text-foreground">{value}</p>
-      </CardContent>
-    </Card>
   );
 }

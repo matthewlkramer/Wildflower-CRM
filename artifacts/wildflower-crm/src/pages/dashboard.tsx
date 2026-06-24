@@ -211,7 +211,7 @@ export default function Dashboard() {
                   selectedTrack === "revenue" ? "font-medium text-foreground" : "text-muted-foreground",
                 )}
               >
-                Regular fundraising
+                Grants
               </span>
               <Switch
                 checked={selectedTrack === "loanCapital"}

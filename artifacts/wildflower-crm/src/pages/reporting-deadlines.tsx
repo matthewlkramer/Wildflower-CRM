@@ -17,7 +17,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useUserNameMap } from "@/components/user-picker";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
-import { DonorFieldPicker, type DonorType } from "@/components/entity-picker";
+import {
+  EntityCombobox,
+  useOrganizationSearch,
+  useOrganizationName,
+  usePersonSearch,
+  usePersonName,
+  useHouseholdSearch,
+  useHouseholdName,
+} from "@/components/entity-picker";
 import { formatDate } from "@/lib/format";
 import { CheckCircle2, Clock, FileClock } from "lucide-react";
 
@@ -42,31 +50,32 @@ export default function ReportingDeadlinesPage() {
     "wf.list.reporting-deadlines.owners",
     [],
   );
-  // Donor filter — narrows to reporting deadlines whose linked
-  // opportunity/pledge has this donor. Donor lives on the opportunity, so the
-  // /tasks endpoint resolves it through opportunity_ids (donor-XOR: at most one
-  // of the three opportunity* params is sent). donorId === null = no filter.
-  const [donorType, setDonorType] = usePersistedState<DonorType>(
-    "wf.list.reporting-deadlines.donorType",
-    "organization",
+  // Donor filters — narrow to reporting deadlines whose linked
+  // opportunity/pledge has the given donor(s). Donors live on the opportunity,
+  // so the /tasks endpoint resolves them through opportunity_ids. These are now
+  // three independent filters; each set id sends its own opportunity* param and
+  // the server ANDs them through the linked opportunity. null = that filter off.
+  const [orgId, setOrgId] = usePersistedState<string | null>(
+    "wf.list.reporting-deadlines.orgId",
+    null,
   );
-  const [donorId, setDonorId] = usePersistedState<string | null>(
-    "wf.list.reporting-deadlines.donorId",
+  const [individualId, setIndividualId] = usePersistedState<string | null>(
+    "wf.list.reporting-deadlines.individualId",
+    null,
+  );
+  const [householdId, setHouseholdId] = usePersistedState<string | null>(
+    "wf.list.reporting-deadlines.householdId",
     null,
   );
   const params = {
     kind: ["reporting_deadline"] as TaskKind[],
     status: showCompleted ? ALL_STATUSES : INCOMPLETE_STATUSES,
     limit: 500,
-    ...(donorId && donorType === "organization"
-      ? { opportunityOrganizationId: donorId }
+    ...(orgId ? { opportunityOrganizationId: orgId } : {}),
+    ...(individualId
+      ? { opportunityIndividualGiverPersonId: individualId }
       : {}),
-    ...(donorId && donorType === "individual"
-      ? { opportunityIndividualGiverPersonId: donorId }
-      : {}),
-    ...(donorId && donorType === "household"
-      ? { opportunityHouseholdId: donorId }
-      : {}),
+    ...(householdId ? { opportunityHouseholdId: householdId } : {}),
   };
   const { data, isLoading, isError, error } = useListTasks(params);
   const userNames = useUserNameMap();
@@ -123,26 +132,62 @@ export default function ReportingDeadlinesPage() {
           testId="filter-reporting-deadlines-owner"
           label="Assignee"
         />
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-muted-foreground">Donor</span>
-          <DonorFieldPicker
-            type={donorType}
-            id={donorId}
-            onChange={(t, id) => {
-              setDonorType(t);
-              setDonorId(id);
-            }}
-            testIdBase="filter-reporting-deadlines-donor"
+        <div className="flex flex-col gap-1 min-w-[200px]">
+          <span className="text-xs font-medium text-muted-foreground">
+            Organization
+          </span>
+          <EntityCombobox
+            useSearch={useOrganizationSearch}
+            useResolve={useOrganizationName}
+            value={orgId}
+            onChange={setOrgId}
+            allowNull
+            placeholder="Search funders…"
+            testId="filter-reporting-deadlines-organization"
           />
         </div>
-        {(owners.length > 0 || showCompleted || donorId) && (
+        <div className="flex flex-col gap-1 min-w-[200px]">
+          <span className="text-xs font-medium text-muted-foreground">
+            Individual
+          </span>
+          <EntityCombobox
+            useSearch={usePersonSearch}
+            useResolve={usePersonName}
+            value={individualId}
+            onChange={setIndividualId}
+            allowNull
+            placeholder="Search people…"
+            testId="filter-reporting-deadlines-individual"
+          />
+        </div>
+        <div className="flex flex-col gap-1 min-w-[200px]">
+          <span className="text-xs font-medium text-muted-foreground">
+            Household
+          </span>
+          <EntityCombobox
+            useSearch={useHouseholdSearch}
+            useResolve={useHouseholdName}
+            value={householdId}
+            onChange={setHouseholdId}
+            allowNull
+            placeholder="Search households…"
+            testId="filter-reporting-deadlines-household"
+          />
+        </div>
+        {(owners.length > 0 ||
+          showCompleted ||
+          orgId ||
+          individualId ||
+          householdId) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setOwners([]);
               setShowCompleted(false);
-              setDonorId(null);
+              setOrgId(null);
+              setIndividualId(null);
+              setHouseholdId(null);
             }}
           >
             Clear

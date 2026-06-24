@@ -6031,6 +6031,12 @@ Multi-value: repeat or comma-separate.
 
  */
 regionIds?: string[];
+/**
+ * Filter to organizations whose `interestsThematic` array overlaps the
+given set (OR semantics). Multi-value: repeat or comma-separate.
+
+ */
+interestsThematic?: string[];
 type?: string[];
 /**
  * @minimum 1

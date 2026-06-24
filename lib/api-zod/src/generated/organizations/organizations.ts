@@ -33,6 +33,7 @@ export const ListOrganizationsQueryParams = zod.object({
   "ownerUserId": zod.array(zod.coerce.string()).optional(),
   "priority": zod.array(zod.coerce.string()).optional().describe('Filter to organizations whose `priority` tier is in the given set\n(top\/high\/medium\/low). Multi-value: repeat or comma-separate.\nAccepts the literal `__blank__` to match rows with no priority set.\n'),
   "regionIds": zod.array(zod.coerce.string()).optional().describe('Filter to organizations whose `regionIds` array overlaps the given set.\nMulti-value: repeat or comma-separate.\n'),
+  "interestsThematic": zod.array(zod.coerce.string()).optional().describe('Filter to organizations whose `interestsThematic` array overlaps the\ngiven set (OR semantics). Multi-value: repeat or comma-separate.\n'),
   "type": zod.array(zod.coerce.string()).optional(),
   "limit": zod.coerce.number().min(1).max(listOrganizationsQueryLimitMax).default(listOrganizationsQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listOrganizationsQueryPageDefault)

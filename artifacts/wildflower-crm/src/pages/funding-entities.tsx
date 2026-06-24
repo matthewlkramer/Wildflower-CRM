@@ -77,6 +77,9 @@ import { PriorityTooltip } from "@/components/priority-tooltip";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { RegionMultiFilter } from "@/components/region-multi-filter";
+import { INTERESTS_THEMATIC_SUGGESTIONS } from "@/components/multi-select-picker";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { useUserNameMap } from "@/components/user-picker";
 import { canSeeIdentity, displayOrganizationName, ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
 import { useRegionNameMap } from "@/components/region-picker";
@@ -115,7 +118,13 @@ const SUBTYPES: string[] = [
 const DEFAULT_SUBTYPES: string[] = [];
 
 const ACTIVE_STATUSES: ActiveStatus[] = ["active", "defunct", "spenddown"];
-const DEFAULT_ACTIVE_STATUSES: ActiveStatus[] = ["active", "spenddown"];
+// The explicit active-status filter is opt-in and unfiltered by default; the
+// "Show defunct" toggle now governs defunct visibility instead.
+const DEFAULT_ACTIVE_STATUSES: ActiveStatus[] = [];
+// Sent when "Show defunct" is off and no explicit active-status filter is
+// applied: every non-defunct status plus the blank sentinel so null-status
+// organizations (which aren't defunct) still appear.
+const NON_DEFUNCT_STATUS_PARAM: string[] = ["active", "spenddown", "__blank__"];
 const CONNECTION_STATUSES: ConnectionStatus[] = [
   "connected",
   "have_a_connector",
@@ -198,10 +207,10 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
     },
     {
       key: "priorityTier",
-      label: "Priority tier",
+      label: "Priority",
       header: (
         <span className="inline-flex items-center gap-1">
-          Priority tier
+          Priority
           <PriorityTooltip />
         </span>
       ),
@@ -537,7 +546,9 @@ export default function Organizations() {
   const [capacityTiers, setCapacityTiers] = usePersistedState<string[]>("wf.list.funders.capacity", []);
   const [enthusiasms, setEnthusiasms] = usePersistedState<string[]>("wf.list.funders.enthusiasms", []);
   const [strategicAlignments, setStrategicAlignments] = usePersistedState<string[]>("wf.list.funders.strategicAlignments", []);
+  const [interestsThematicSel, setInterestsThematicSel] = usePersistedState<string[]>("wf.list.funders.interestsThematic", []);
   const [regionIdsSel, setRegionIdsSel] = usePersistedState<string[]>("wf.list.funders.regionIds", []);
+  const [showDefunct, setShowDefunct] = usePersistedState<boolean>("wf.list.funders.showDefunct", false);
   const [page, setPage] = usePersistedState<number>("wf.list.funders.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     "wf.list.funders.columns",
@@ -576,9 +587,13 @@ export default function Organizations() {
     ...(issuesGrants !== undefined ? { issuesGrants } : {}),
     ...(makesPris !== undefined ? { makesPris } : {}),
     ...(subtypes.length > 0 ? { entityType: [...subtypes].sort() } : {}),
+    // Explicit active-status filter wins; otherwise "Show defunct" governs:
+    // off hides defunct only (null-status orgs still show), on adds no filter.
     ...(activeStatuses.length > 0
       ? { activeStatus: [...activeStatuses].sort() as ActiveStatus[] }
-      : {}),
+      : showDefunct
+        ? {}
+        : { activeStatus: NON_DEFUNCT_STATUS_PARAM as ActiveStatus[] }),
     ...(connectionStatuses.length > 0
       ? { connectionStatus: [...connectionStatuses].sort() as ConnectionStatus[] }
       : {}),
@@ -592,6 +607,7 @@ export default function Organizations() {
     ...(capacityTiers.length > 0 ? { capacityRating: [...capacityTiers].sort() as CapacityRating[] } : {}),
     ...(enthusiasms.length > 0 ? { enthusiasm: [...enthusiasms].sort() } : {}),
     ...(strategicAlignments.length > 0 ? { strategicAlignment: [...strategicAlignments].sort() } : {}),
+    ...(interestsThematicSel.length > 0 ? { interestsThematic: [...interestsThematicSel].sort() } : {}),
     ...(regionIdsSel.length > 0 ? { regionIds: [...regionIdsSel].sort() } : {}),
   };
 
@@ -855,6 +871,7 @@ export default function Organizations() {
       {
         key: "activeStatus",
         label: "Active status",
+        defaultVisible: false,
         active: !sameDefaultActiveStatuses,
         clear: () => { setActiveStatuses(DEFAULT_ACTIVE_STATUSES); setPage(1); selection.clear(); },
         render: () => (
@@ -978,7 +995,6 @@ export default function Organizations() {
       {
         key: "enthusiasm",
         label: "Enthusiasm",
-        defaultVisible: false,
         active: enthusiasms.length > 0,
         clear: () => { setEnthusiasms([]); setPage(1); selection.clear(); },
         render: () => (
@@ -989,6 +1005,21 @@ export default function Organizations() {
             options={[...ENTHUSIASM_OPTIONS]}
             testId="select-funder-enthusiasm"
             includeBlank
+          />
+        ),
+      },
+      {
+        key: "interestsThematic",
+        label: "Interests",
+        active: interestsThematicSel.length > 0,
+        clear: () => { setInterestsThematicSel([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Interests"
+            selected={interestsThematicSel}
+            onChange={(v) => { setInterestsThematicSel(v); setPage(1); selection.clear(); }}
+            options={INTERESTS_THEMATIC_SUGGESTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            testId="select-funder-interests"
           />
         ),
       },
@@ -1025,7 +1056,7 @@ export default function Organizations() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [issuesGrants, makesPris, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, regionIdsSel],
+    [issuesGrants, makesPris, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, interestsThematicSel, regionIdsSel],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -1090,6 +1121,7 @@ export default function Organizations() {
     capacityTiers.length > 0 ||
     enthusiasms.length > 0 ||
     strategicAlignments.length > 0 ||
+    interestsThematicSel.length > 0 ||
     regionIdsSel.length > 0;
 
   // ─── Saved views ─────────────────────────────────────────────────
@@ -1108,6 +1140,7 @@ export default function Organizations() {
     capacityTiers: string[];
     enthusiasms: string[];
     strategicAlignments: string[];
+    interestsThematicSel: string[];
     regionIdsSel: string[];
     sort: SortState;
     columns: ColumnsState | null;
@@ -1128,6 +1161,7 @@ export default function Organizations() {
     capacityTiers,
     enthusiasms,
     strategicAlignments,
+    interestsThematicSel,
     regionIdsSel,
     sort: ts.sort,
     columns: columnsState,
@@ -1148,6 +1182,7 @@ export default function Organizations() {
     setCapacityTiers([]);
     setEnthusiasms([]);
     setStrategicAlignments([]);
+    setInterestsThematicSel([]);
     setRegionIdsSel([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
@@ -1171,6 +1206,7 @@ export default function Organizations() {
       setCapacityTiers(s.capacityTiers ?? []);
       setEnthusiasms(s.enthusiasms ?? []);
       setStrategicAlignments(s.strategicAlignments ?? []);
+      setInterestsThematicSel(s.interestsThematicSel ?? []);
       setRegionIdsSel(s.regionIdsSel ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
@@ -1196,6 +1232,7 @@ export default function Organizations() {
         (s.capacityTiers?.length ?? 0) === 0 &&
         (s.enthusiasms?.length ?? 0) === 0 &&
         (s.strategicAlignments?.length ?? 0) === 0 &&
+        (s.interestsThematicSel?.length ?? 0) === 0 &&
         (s.regionIdsSel?.length ?? 0) === 0 &&
         (s.sort?.key ?? null) === null &&
         (s.columns ?? null) === null &&
@@ -1221,6 +1258,24 @@ export default function Organizations() {
               }}
               testId="toggle-show-archived-organizations"
             />
+            <div className="flex items-center gap-2">
+              <Switch
+                id="toggle-show-defunct-organizations"
+                checked={showDefunct}
+                onCheckedChange={(v) => {
+                  setShowDefunct(v);
+                  setPage(1);
+                  selection.clear();
+                }}
+                data-testid="toggle-show-defunct-organizations"
+              />
+              <Label
+                htmlFor="toggle-show-defunct-organizations"
+                className="cursor-pointer text-sm text-muted-foreground whitespace-nowrap"
+              >
+                Show defunct
+              </Label>
+            </div>
             <div className="flex rounded-md border overflow-hidden">
               <Button
                 variant={viewMode === "list" ? "secondary" : "ghost"}
@@ -1303,6 +1358,7 @@ export default function Organizations() {
               setCapacityTiers([]);
               setEnthusiasms([]);
               setStrategicAlignments([]);
+              setInterestsThematicSel([]);
               setRegionIdsSel([]);
               setPage(1);
               selection.clear();

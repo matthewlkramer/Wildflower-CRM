@@ -78,6 +78,8 @@ import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { CreatePersonDialog } from "@/components/create-person-dialog";
 import { PriorityStar } from "@/components/priority-star";
 import {
@@ -106,15 +108,6 @@ const CAPACITY_TIERS: CapacityRating[] = [
   "tier_50k_250k",
   "tier_250k_1m",
   "tier_1m_plus",
-];
-// Living/Deceased is conceptually a boolean filter — but for UI
-// consistency with every other filter on the page, we surface it as a
-// multi-select with both options. Picking 0 or 2 options is equivalent
-// to "no filter" and we omit the query param entirely; picking exactly
-// one sends the single boolean to the server.
-const DECEASED_OPTIONS: MultiFilterOption[] = [
-  { value: "false", label: "Living" },
-  { value: "true", label: "Deceased" },
 ];
 const PRIORITY_LABEL: Record<string, string> = { top: "Top", high: "High", medium: "Medium", low: "Low" };
 const PRIORITIES = ["top", "high", "medium", "low"] as const;
@@ -207,7 +200,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
     },
     {
       key: "priorityTier",
-      label: "Priority tier",
+      label: "Priority",
       cell: (p) =>
         ctx.inline.isEditing(p.id) ? (
           <Select
@@ -244,7 +237,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
     },
     {
       key: "region",
-      label: "Region",
+      label: "Home region",
       cell: (p) =>
         p.currentHomeRegionId
           ? (ctx.regionNames.get(p.currentHomeRegionId) ?? p.currentHomeRegionId)
@@ -522,7 +515,6 @@ export default function Individuals() {
   // detail page restores the same filtered view.
   const [search, setSearch] = usePersistedState<string>("wf.list.people.search", "");
   const debouncedSearch = useDebounce(search, 250);
-  const [deceasedSel, setDeceasedSel] = usePersistedState<string[]>("wf.list.people.deceased", []);
   const [capacityTiers, setCapacityTiers] = usePersistedState<string[]>("wf.list.people.capacity", []);
   const [owners, setOwners] = usePersistedState<string[]>("wf.list.people.owners", []);
   // Presence filters on computed rollup columns (has value vs blank).
@@ -563,6 +555,12 @@ export default function Individuals() {
     "wf.list.people.showArchived",
     false,
   );
+  // Deceased people are hidden by default; the "Show deceased" toggle (next
+  // to "Show archived") opts them back in. Off = send deceased:false.
+  const [showDeceased, setShowDeceased] = usePersistedState<boolean>(
+    "wf.list.people.showDeceased",
+    false,
+  );
 
   const ts = useTableState("individuals");
   const sortActive = ts.sort.key !== null;
@@ -571,10 +569,8 @@ export default function Individuals() {
     page: viewMode === "kanban" ? 1 : (sortActive ? 1 : page),
     ...(isAdmin && showArchived ? { includeArchived: true } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-    // Only send the boolean when exactly one option is picked. 0 or 2 = unfiltered.
-    ...(deceasedSel.length === 1
-      ? { deceased: deceasedSel[0] === "true" }
-      : {}),
+    // Hide deceased people unless the "Show deceased" toggle is on.
+    ...(showDeceased ? {} : { deceased: false }),
     ...(capacityTiers.length > 0
       ? { capacityRating: [...capacityTiers].sort() as CapacityRating[] }
       : {}),
@@ -786,21 +782,6 @@ export default function Individuals() {
   const filterRegistry = useMemo<FilterDef[]>(
     () => [
       {
-        key: "status",
-        label: "Status",
-        active: deceasedSel.length > 0,
-        clear: () => { setDeceasedSel([]); setPage(1); selection.clear(); },
-        render: () => (
-          <MultiFilterSelect
-            label="Status"
-            selected={deceasedSel}
-            onChange={(v) => { setDeceasedSel(v); setPage(1); selection.clear(); }}
-            options={DECEASED_OPTIONS}
-            testId="select-deceased"
-          />
-        ),
-      },
-      {
         key: "capacity",
         label: "Capacity",
         active: capacityTiers.length > 0,
@@ -892,7 +873,6 @@ export default function Individuals() {
       {
         key: "connectionStatus",
         label: "Connection",
-        defaultVisible: false,
         active: connectionStatusSel.length > 0,
         clear: () => { setConnectionStatusSel([]); setPage(1); selection.clear(); },
         render: () => (
@@ -909,7 +889,6 @@ export default function Individuals() {
       {
         key: "enthusiasm",
         label: "Enthusiasm",
-        defaultVisible: false,
         active: enthusiasmSel.length > 0,
         clear: () => { setEnthusiasmSel([]); setPage(1); selection.clear(); },
         render: () => (
@@ -926,7 +905,6 @@ export default function Individuals() {
       {
         key: "priority",
         label: "Priority",
-        defaultVisible: false,
         active: prioritySel.length > 0,
         clear: () => { setPrioritySel([]); setPage(1); selection.clear(); },
         render: () => (
@@ -942,8 +920,7 @@ export default function Individuals() {
       },
       {
         key: "region",
-        label: "Region",
-        defaultVisible: false,
+        label: "Home region",
         active: regionIdsSel.length > 0,
         clear: () => { setRegionIdsSel([]); setPage(1); selection.clear(); },
         render: () => (
@@ -951,6 +928,7 @@ export default function Individuals() {
             selected={regionIdsSel}
             onChange={(v) => { setRegionIdsSel(v); setPage(1); selection.clear(); }}
             testId="select-person-region"
+            label="Home region"
           />
         ),
       },
@@ -972,7 +950,7 @@ export default function Individuals() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [deceasedSel, capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel, newsletterSel],
+    [capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel, newsletterSel],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -1028,7 +1006,6 @@ export default function Individuals() {
 
   const hasActiveFilters =
     !!search ||
-    deceasedSel.length > 0 ||
     capacityTiers.length > 0 ||
     owners.length > 0 ||
     !!lifetimeGivingPresence ||
@@ -1048,7 +1025,6 @@ export default function Individuals() {
   // (presentation, not data).
   type IndividualsView = {
     search: string;
-    deceasedSel: string[];
     capacityTiers: string[];
     owners: string[];
     lifetimeGivingPresence: PresenceValue;
@@ -1066,7 +1042,6 @@ export default function Individuals() {
   };
   const currentView: IndividualsView = {
     search,
-    deceasedSel,
     capacityTiers,
     owners,
     lifetimeGivingPresence,
@@ -1084,7 +1059,6 @@ export default function Individuals() {
   };
   const clearAll = () => {
     setSearch("");
-    setDeceasedSel([]);
     setCapacityTiers([]);
     setOwners([]);
     setLifetimeGivingPresence(undefined);
@@ -1108,7 +1082,6 @@ export default function Individuals() {
     current: currentView,
     apply: (s) => {
       setSearch(s.search ?? "");
-      setDeceasedSel(s.deceasedSel ?? []);
       setCapacityTiers(s.capacityTiers ?? []);
       setOwners(s.owners ?? []);
       setLifetimeGivingPresence(s.lifetimeGivingPresence ?? undefined);
@@ -1131,7 +1104,6 @@ export default function Individuals() {
     },
     isDefault: (s) =>
       !s.search &&
-      (s.deceasedSel?.length ?? 0) === 0 &&
       (s.capacityTiers?.length ?? 0) === 0 &&
       (s.owners?.length ?? 0) === 0 &&
       !s.lifetimeGivingPresence &&
@@ -1165,6 +1137,24 @@ export default function Individuals() {
               }}
               testId="toggle-show-archived-people"
             />
+            <div className="flex items-center gap-2">
+              <Switch
+                id="toggle-show-deceased-people"
+                checked={showDeceased}
+                onCheckedChange={(v) => {
+                  setShowDeceased(v);
+                  setPage(1);
+                  selection.clear();
+                }}
+                data-testid="toggle-show-deceased-people"
+              />
+              <Label
+                htmlFor="toggle-show-deceased-people"
+                className="cursor-pointer text-sm text-muted-foreground whitespace-nowrap"
+              >
+                Show deceased
+              </Label>
+            </div>
             <div className="flex rounded-md border overflow-hidden">
               <Button
                 variant={viewMode === "list" ? "secondary" : "ghost"}
@@ -1234,7 +1224,6 @@ export default function Individuals() {
             size="sm"
             onClick={() => {
               setSearch("");
-              setDeceasedSel([]);
               setCapacityTiers([]);
               setOwners([]);
               setLifetimeGivingPresence(undefined);

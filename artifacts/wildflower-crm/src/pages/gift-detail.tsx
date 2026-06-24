@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { DetailSkeleton } from "@/components/ui/skeleton";
+import { DetailSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetGiftOrPayment,
@@ -9,10 +9,12 @@ import {
   useGetHousehold,
   useGetPaymentIntermediary,
   useGetGiftStripeChain,
+  useGetGiftAuditReconciliation,
   getGetGiftOrPaymentQueryKey,
   getGetOrganizationQueryKey,
   getGetHouseholdQueryKey,
   getGetPaymentIntermediaryQueryKey,
+  getGetGiftAuditReconciliationQueryKey,
   getListGiftsAndPaymentsQueryKey,
   type GiftOrPaymentDetail,
   type UpdateGiftOrPaymentBody,
@@ -20,6 +22,7 @@ import {
   type GiftPaymentMethod,
   type PeopleEntityRole,
   type StripePayoutReconciliationStatus,
+  type GiftAuditReconciliationRecord,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
@@ -525,6 +528,8 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
             )}
           </FieldCard>
 
+          <GiftQbPaymentsCard giftId={gift.id} />
+
           <RelatedCard title="Allocations" count={allocations.length}>
             <div className="px-2 py-1">
               <GiftAllocationsEditor
@@ -824,6 +829,91 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span className="text-right">{children}</span>
     </div>
+  );
+}
+
+const QB_LINK_TYPE_LABELS: Record<
+  GiftAuditReconciliationRecord["linkType"],
+  string
+> = {
+  matched: "Matched",
+  created: "Created",
+  group: "Deposit group",
+  split: "Split",
+};
+
+// Read-only audit view of the QuickBooks payment record(s) this gift is tied to,
+// plus the key reconciliation summary fields, so it's clear at a glance what
+// money records are attached. Off-books gifts (offBooks) legitimately carry no
+// QuickBooks records — they get the muted empty message, not an error.
+function GiftQbPaymentsCard({ giftId }: { giftId: string }) {
+  const { data, isLoading } = useGetGiftAuditReconciliation(giftId, {
+    query: {
+      queryKey: getGetGiftAuditReconciliationQueryKey(giftId),
+      enabled: !!giftId,
+    },
+  });
+
+  const records = data?.quickbooksRecords ?? [];
+
+  return (
+    <FieldCard title="Linked QuickBooks payments">
+      {isLoading ? (
+        <div className="space-y-2" data-testid="gift-qb-payments-loading">
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-12 w-full" />
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <Row label="QuickBooks tie">
+              <GiftQbTieBadge status={data?.quickbooksTieStatus} />
+            </Row>
+            <Row label="Reconciliation">
+              <ReconciliationLaneBadges lanes={data?.reconciliationLanes} />
+            </Row>
+            <Row label="Off-books">{data?.offBooks ? "Yes" : "No"}</Row>
+            {data?.amount != null ? (
+              <Row label="Audit amount">{formatCurrency(data.amount)}</Row>
+            ) : null}
+          </div>
+
+          {records.length === 0 ? (
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="gift-qb-payments-empty"
+            >
+              No linked QuickBooks payments
+            </p>
+          ) : (
+            <div className="space-y-2" data-testid="gift-qb-payments-list">
+              {records.map((record) => (
+                <div
+                  key={record.stagedPaymentId}
+                  className="rounded-md border px-3 py-2"
+                  data-testid={`gift-qb-payment-${record.stagedPaymentId}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge variant="secondary">
+                      {QB_LINK_TYPE_LABELS[record.linkType]}
+                    </Badge>
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatCurrency(record.amount)}
+                    </span>
+                  </div>
+                  <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                    <div>Doc #: {record.qbDocNumber || "—"}</div>
+                    <div>Deposit to: {record.qbDepositToAccountName || "—"}</div>
+                    <div>Received: {formatDate(record.dateReceived)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </FieldCard>
   );
 }
 

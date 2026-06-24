@@ -757,6 +757,14 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
+        - name: interestsThematic
+          in: query
+          description: |
+            Filter to organizations whose `interestsThematic` array overlaps the
+            given set (OR semantics). Multi-value: repeat or comma-separate.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - name: type
           in: query
           style: form

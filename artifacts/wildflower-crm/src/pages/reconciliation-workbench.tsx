@@ -746,12 +746,9 @@ export default function ReconciliationWorkbench() {
   const activeQueue = QUEUES.find((q) => q.id === queue)!;
 
   return (
-    <div className="flex h-full min-h-0 gap-4 p-4">
-      {/* Queue rail */}
-      <aside className="w-56 shrink-0 space-y-1">
-        <h2 className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Queues
-        </h2>
+    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
+      {/* Queue nav (horizontal) */}
+      <nav className="flex flex-wrap items-center gap-1 border-b pb-2">
         {QUEUES.map((q) => {
           const active = q.id === queue;
           return (
@@ -760,43 +757,33 @@ export default function ReconciliationWorkbench() {
               type="button"
               onClick={() => setQueue(q.id)}
               className={cn(
-                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
                 active
                   ? "bg-muted font-medium text-foreground"
                   : "text-muted-foreground hover:bg-muted/60",
               )}
             >
-              <span className="flex items-center gap-2">
-                <span
-                  className="inline-block h-2 w-2 rounded-full"
-                  style={{ backgroundColor: q.dot }}
-                />
-                {q.name}
-              </span>
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ backgroundColor: q.dot }}
+              />
+              {q.name}
               {q.id === "review" && (
-                <Badge variant="secondary" className="ml-1">
+                <Badge variant="secondary">
                   {cardsQuery.isLoading ? "…" : buckets.review.length}
                 </Badge>
               )}
               {q.id === "qbo" && buckets.qbo.length > 0 && (
-                <Badge variant="secondary" className="ml-1">
-                  {buckets.qbo.length}
-                </Badge>
+                <Badge variant="secondary">{buckets.qbo.length}</Badge>
               )}
               {q.id === "sync" && buckets.sync.length > 0 && (
-                <Badge variant="secondary" className="ml-1">
-                  {buckets.sync.length}
-                </Badge>
+                <Badge variant="secondary">{buckets.sync.length}</Badge>
               )}
               {q.id === "research" && buckets.research.length > 0 && (
-                <Badge variant="secondary" className="ml-1">
-                  {buckets.research.length}
-                </Badge>
+                <Badge variant="secondary">{buckets.research.length}</Badge>
               )}
               {q.id === "excluded" && excludedQuery.data && (
-                <Badge variant="secondary" className="ml-1">
-                  {excludedCards.length}
-                </Badge>
+                <Badge variant="secondary">{excludedCards.length}</Badge>
               )}
               {!q.live && (
                 <span className="text-[10px] uppercase text-muted-foreground/70">
@@ -806,7 +793,7 @@ export default function ReconciliationWorkbench() {
             </button>
           );
         })}
-      </aside>
+      </nav>
 
       {/* Main column */}
       <main className="flex min-h-0 flex-1 flex-col">
@@ -1342,7 +1329,12 @@ function ReconCard({
         ))}
       </div>
 
-      {expanded && <LineageStrip stagedPaymentId={card.stagedPaymentId} />}
+      {expanded && (
+        <LineageStrip
+          stagedPaymentId={card.stagedPaymentId}
+          feeAmount={feeRemainder(num(card.amount), num(card.resolvedGiftAmount))}
+        />
+      )}
 
       {/* Actions: inline primary + Reject + full Resolve menu */}
       <div className="flex items-center gap-2 border-t px-3 py-2">
@@ -1425,6 +1417,11 @@ function BalanceMeter({
   const remainder = +(paymentTotal - applied).toFixed(2);
   const balanced = Math.abs(remainder) < 0.005;
   const over = remainder < -0.005;
+  // When the gift exceeds the QB deposit by an amount inside the processor
+  // fee-band, that gap is the processor fee (gift is gross, deposit is net) —
+  // not an over-application error.
+  const fee = feeRemainder(paymentTotal, applied);
+  const isFee = fee != null;
   const pct =
     paymentTotal > 0
       ? Math.max(0, Math.min(100, (applied / paymentTotal) * 100))
@@ -1438,9 +1435,11 @@ function BalanceMeter({
           "rounded-lg border p-3 text-[12.5px]",
           balanced
             ? "border-emerald-200 bg-emerald-50/60"
-            : over
-              ? "border-red-200 bg-red-50/60"
-              : "border-amber-200 bg-amber-50/60",
+            : isFee
+              ? "border-sky-200 bg-sky-50/60"
+              : over
+                ? "border-red-200 bg-red-50/60"
+                : "border-amber-200 bg-amber-50/60",
         )}
       >
         <div className="flex items-baseline justify-between tabular-nums">
@@ -1451,7 +1450,13 @@ function BalanceMeter({
           <div
             className={cn(
               "h-full rounded-full transition-all",
-              over ? "bg-red-500" : balanced ? "bg-emerald-500" : "bg-amber-500",
+              isFee
+                ? "bg-sky-500"
+                : over
+                  ? "bg-red-500"
+                  : balanced
+                    ? "bg-emerald-500"
+                    : "bg-amber-500",
             )}
             style={{ width: `${pct}%` }}
           />
@@ -1465,14 +1470,21 @@ function BalanceMeter({
             "mt-2 flex items-center gap-1.5 font-semibold",
             balanced
               ? "text-emerald-700"
-              : over
-                ? "text-red-700"
-                : "text-amber-700",
+              : isFee
+                ? "text-sky-700"
+                : over
+                  ? "text-red-700"
+                  : "text-amber-700",
           )}
         >
           {balanced ? (
             <>
               <Check className="h-3.5 w-3.5" /> Balances — applied equals payment
+            </>
+          ) : isFee ? (
+            <>
+              <Check className="h-3.5 w-3.5" /> {money(String(fee))} fee — gift is
+              gross; deposit is net of the processor fee
             </>
           ) : over ? (
             <>
@@ -1493,7 +1505,13 @@ function BalanceMeter({
 
 // ─── Settlement lineage strip ─────────────────────────────────────────────────
 
-function LineageStrip({ stagedPaymentId }: { stagedPaymentId: string }) {
+function LineageStrip({
+  stagedPaymentId,
+  feeAmount,
+}: {
+  stagedPaymentId: string;
+  feeAmount?: number | null;
+}) {
   const { data, isLoading, isError } = useGetReconciliationLineage(stagedPaymentId);
 
   if (isLoading) {
@@ -1565,6 +1583,15 @@ function LineageStrip({ stagedPaymentId }: { stagedPaymentId: string }) {
           </div>
         ))}
       </div>
+      {feeAmount != null && (
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          Processor fee:{" "}
+          <span className="font-medium tabular-nums">
+            {money(String(feeAmount))}
+          </span>{" "}
+          — gift recorded gross; QB deposit is net.
+        </div>
+      )}
     </div>
   );
 }
@@ -2389,6 +2416,21 @@ const FEE_BAND_CEIL = 1.1;
 function withinFeeBand(applied: number, total: number): boolean {
   if (total <= 0) return Math.abs(applied) < 0.005;
   return applied >= total * FEE_BAND_FLOOR - 1 && applied <= total * FEE_BAND_CEIL + 1;
+}
+
+/**
+ * When the gift (gross) exceeds the QB deposit (net) by an amount that sits
+ * inside the processor fee-band, that difference IS the processor fee, not an
+ * over-application. Returns the fee, else null.
+ */
+function feeRemainder(
+  paymentTotal: number | null,
+  applied: number | null,
+): number | null {
+  if (paymentTotal == null || applied == null) return null;
+  if (applied <= paymentTotal) return null;
+  if (!withinFeeBand(applied, paymentTotal)) return null;
+  return +(applied - paymentTotal).toFixed(2);
 }
 
 function SplitsPledgesQueue({

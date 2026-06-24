@@ -59,6 +59,7 @@ const ORGANIZATIONS_ARRAY_PARAMS = [
   "ownerUserId",
   "priority",
   "regionIds",
+  "interestsThematic",
 ] as const;
 
 const router: IRouter = Router();
@@ -247,6 +248,16 @@ router.get(
       if (ids && ids.length > 0) {
         filters.push(
           sql`${organizations.regionIds} && ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::text[]`,
+        );
+      }
+    }
+    {
+      // OR-semantics filter: organizations whose interestsThematic array
+      // overlaps any of the selected interests.
+      const vals = q.interestsThematic as string[] | undefined;
+      if (vals && vals.length > 0) {
+        filters.push(
+          sql`${organizations.interestsThematic} && ARRAY[${sql.join(vals.map((v) => sql`${v}`), sql`, `)}]::text[]`,
         );
       }
     }
