@@ -358,9 +358,18 @@ export const BulkUpdateOrganizationsBody = zod.object({
   "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).nullish(),
   "enthusiasm": zod.enum(['7-advocate', '6-supportive', '5-warm', '4-neutral', '3-cool', '2-unsupportive', '1-hostile']).nullish(),
   "priority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "strategicAlignment": zod.enum(['high', 'medium', 'low']).nullish(),
   "entityType": zod.string().nullish(),
   "issuesGrants": zod.boolean().optional(),
-  "makesPris": zod.boolean().nullish()
+  "makesPris": zod.boolean().nullish(),
+  "interestsThematic": zod.array(zod.string()).optional().describe('Thematic-interest tags on each organization (organizations.interests_thematic). Combined with interestsThematicMode.'),
+  "interestsThematicMode": zod.enum(['replace', 'append']).optional().describe('replace = overwrite the organization\'s interests_thematic with this set (DESTRUCTIVE). append = union this set into the existing tags.'),
+  "interestsAges": zod.array(zod.string()).optional().describe('Age-band interest tags on each organization (organizations.interests_ages). Combined with interestsAgesMode.'),
+  "interestsAgesMode": zod.enum(['replace', 'append']).optional().describe('replace = overwrite (DESTRUCTIVE). append = union into existing tags.'),
+  "interestsGovModels": zod.array(zod.string()).optional().describe('Governance-model interest tags on each organization (organizations.interests_gov_models). Combined with interestsGovModelsMode.'),
+  "interestsGovModelsMode": zod.enum(['replace', 'append']).optional().describe('replace = overwrite (DESTRUCTIVE). append = union into existing tags.'),
+  "regionIds": zod.array(zod.string()).optional().describe('Region-interest ids on each organization (organizations.region_ids). Combined with regionIdsMode.'),
+  "regionIdsMode": zod.enum(['replace', 'append']).optional().describe('replace = overwrite (DESTRUCTIVE). append = union into existing ids.')
 })
 })
 

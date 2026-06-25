@@ -1,7 +1,7 @@
 import type { Response } from "express";
 import { db } from "@workspace/db";
 import { bulkOperations } from "@workspace/db/schema";
-import { eq, inArray, type SQL } from "drizzle-orm";
+import { eq, inArray, type AnyColumn, type SQL } from "drizzle-orm";
 import { newId, parseOrBadRequest } from "./helpers";
 import type { Request } from "express";
 import { getAppUser } from "./appRequest";
@@ -268,4 +268,63 @@ export async function executeBulkUpdate<Row extends Record<string, unknown>, P e
     succeededIds,
     failed,
   });
+}
+
+/**
+ * One text[]-column reconcile spec for `reconcileArrayColumns`.
+ * - `valueKey`  — virtual-patch key holding the desired string[] set,
+ *   ALSO the drizzle schema property name written via .set().
+ * - `modeKey`   — virtual-patch key holding the "replace" | "append" mode.
+ * - `column`    — the drizzle text[] column (used to read existing values
+ *   when appending).
+ */
+export type ArrayColumnSpec<P extends object> = {
+  valueKey: keyof P & string;
+  modeKey: keyof P & string;
+  column: AnyColumn;
+};
+
+/**
+ * Reconcile one row's text[] columns (e.g. people/organizations'
+ * interests_* and region_ids) from a bulk virtual-patch. For each spec
+ * whose `valueKey` is present in `vp`:
+ *   - replace = overwrite the column with the requested set (DESTRUCTIVE).
+ *   - append  = union the requested set into the existing values (deduped).
+ * All touched columns are written in a single UPDATE (with updatedAt).
+ * Designed to be called from a route's `extraApply` inside the per-row
+ * savepoint.
+ */
+export async function reconcileArrayColumns<P extends object>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: TX,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  table: any,
+  id: string,
+  vp: Partial<P>,
+  specs: ReadonlyArray<ArrayColumnSpec<P>>,
+): Promise<void> {
+  const updates: Record<string, string[]> = {};
+  for (const spec of specs) {
+    if (!Object.prototype.hasOwnProperty.call(vp, spec.valueKey)) continue;
+    const next = (vp as Record<string, unknown>)[spec.valueKey] as string[] | undefined;
+    if (!next) continue;
+    const mode =
+      (vp as Record<string, unknown>)[spec.modeKey] === "append" ? "append" : "replace";
+    if (mode === "append") {
+      const rows = (await tx
+        .select({ v: spec.column })
+        .from(table)
+        .where(eq(table.id, id))) as Array<{ v: string[] | null }>;
+      const existing = rows[0]?.v ?? [];
+      updates[spec.valueKey] = Array.from(new Set([...existing, ...next]));
+    } else {
+      updates[spec.valueKey] = next;
+    }
+  }
+  if (Object.keys(updates).length > 0) {
+    await tx
+      .update(table)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(table.id, id));
+  }
 }

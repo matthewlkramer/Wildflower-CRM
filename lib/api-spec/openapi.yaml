@@ -8242,9 +8242,43 @@ components:
         ownerUserId:         { type: string, nullable: true }
         currentHomeRegionId: { type: string, nullable: true }
         capacityRating:      { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
+        connectionStatus:    { allOf: [ { $ref: "#/components/schemas/ConnectionStatus" } ], nullable: true }
+        enthusiasm:          { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
         priority:            { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
         deceased:            { type: boolean }
         newsletter:          { type: boolean, description: "Newsletter subscription flag. Changes are mirrored out to Flodesk (precedence rules apply — a Flodesk unsubscribe still wins)." }
+        interestsThematic:
+          type: array
+          items: { type: string }
+          description: "Thematic-interest tags on each person (people.interests_thematic). Combined with interestsThematicMode."
+        interestsThematicMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = overwrite the person's interests_thematic with this set (DESTRUCTIVE). append = union this set into the existing tags."
+        interestsAges:
+          type: array
+          items: { type: string }
+          description: "Age-band interest tags on each person (people.interests_ages). Combined with interestsAgesMode."
+        interestsAgesMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = overwrite (DESTRUCTIVE). append = union into existing tags."
+        interestsGovModels:
+          type: array
+          items: { type: string }
+          description: "Governance-model interest tags on each person (people.interests_gov_models). Combined with interestsGovModelsMode."
+        interestsGovModelsMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = overwrite (DESTRUCTIVE). append = union into existing tags."
+        regionIds:
+          type: array
+          items: { type: string }
+          description: "Region-interest ids on each person (people.region_ids). Combined with regionIdsMode."
+        regionIdsMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = overwrite (DESTRUCTIVE). append = union into existing ids."
     BulkUpdatePeopleBody:
       type: object
       required: [ids, patch]
@@ -8260,9 +8294,42 @@ components:
         capacityRating:       { allOf: [ { $ref: "#/components/schemas/CapacityRating" } ], nullable: true }
         enthusiasm:           { allOf: [ { $ref: "#/components/schemas/Enthusiasm" } ], nullable: true }
         priority:             { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
+        strategicAlignment:   { allOf: [ { $ref: "#/components/schemas/StrategicAlignment" } ], nullable: true }
         entityType:           { type: string, nullable: true }
         issuesGrants:         { type: boolean }
         makesPris:            { type: boolean, nullable: true }
+        interestsThematic:
+          type: array
+          items: { type: string }
+          description: "Thematic-interest tags on each organization (organizations.interests_thematic). Combined with interestsThematicMode."
+        interestsThematicMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = overwrite the organization's interests_thematic with this set (DESTRUCTIVE). append = union this set into the existing tags."
+        interestsAges:
+          type: array
+          items: { type: string }
+          description: "Age-band interest tags on each organization (organizations.interests_ages). Combined with interestsAgesMode."
+        interestsAgesMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = overwrite (DESTRUCTIVE). append = union into existing tags."
+        interestsGovModels:
+          type: array
+          items: { type: string }
+          description: "Governance-model interest tags on each organization (organizations.interests_gov_models). Combined with interestsGovModelsMode."
+        interestsGovModelsMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = overwrite (DESTRUCTIVE). append = union into existing tags."
+        regionIds:
+          type: array
+          items: { type: string }
+          description: "Region-interest ids on each organization (organizations.region_ids). Combined with regionIdsMode."
+        regionIdsMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = overwrite (DESTRUCTIVE). append = union into existing ids."
     BulkUpdateOrganizationsBody:
       type: object
       required: [ids, patch]
@@ -8288,6 +8355,16 @@ components:
         type:        { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
         writtenPledge:   { type: boolean, nullable: true }
         actualCompletionDate: { type: string, format: date, nullable: true, description: "Optional close date when bulk-setting lossType to lost (or stage to cash_in). Left null is allowed to support historical cleanup workflows." }
+        projectedCloseDate:   { type: string, format: date, nullable: true, description: "Projected close date on each opportunity." }
+        applicationDeadline:  { type: string, format: date, nullable: true, description: "Application deadline on each opportunity." }
+        entities:
+          type: array
+          items: { type: string }
+          description: "Set of entity ids to attach to each opportunity via pledge_allocations. Combined with entitiesMode."
+        entitiesMode:
+          type: string
+          enum: [replace, append]
+          description: "replace = wipe pledge_allocations rows whose entity_id is set (DESTRUCTIVE) and recreate one minimal row per entity. append = add allocations only for entities not already present."
         coveredFiscalYears:
           type: array
           items: { type: string }
@@ -8314,6 +8391,8 @@ components:
       properties:
         ownerUserId: { type: string, nullable: true }
         type:        { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
+        paymentMethod: { allOf: [ { $ref: "#/components/schemas/GiftPaymentMethod" } ], nullable: true }
+        dateReceived:  { type: string, format: date, nullable: true, description: "Date the gift/payment was received." }
         entityIds:
           type: array
           items: { type: string }

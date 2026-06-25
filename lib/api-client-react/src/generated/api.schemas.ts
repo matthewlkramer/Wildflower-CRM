@@ -5549,16 +5549,78 @@ export interface BulkArchiveBody {
 }
 
 /**
+ * replace = overwrite the person's interests_thematic with this set (DESTRUCTIVE). append = union this set into the existing tags.
+ */
+export type BulkUpdatePeoplePatchInterestsThematicMode = typeof BulkUpdatePeoplePatchInterestsThematicMode[keyof typeof BulkUpdatePeoplePatchInterestsThematicMode];
+
+
+export const BulkUpdatePeoplePatchInterestsThematicMode = {
+  replace: 'replace',
+  append: 'append',
+} as const;
+
+/**
+ * replace = overwrite (DESTRUCTIVE). append = union into existing tags.
+ */
+export type BulkUpdatePeoplePatchInterestsAgesMode = typeof BulkUpdatePeoplePatchInterestsAgesMode[keyof typeof BulkUpdatePeoplePatchInterestsAgesMode];
+
+
+export const BulkUpdatePeoplePatchInterestsAgesMode = {
+  replace: 'replace',
+  append: 'append',
+} as const;
+
+/**
+ * replace = overwrite (DESTRUCTIVE). append = union into existing tags.
+ */
+export type BulkUpdatePeoplePatchInterestsGovModelsMode = typeof BulkUpdatePeoplePatchInterestsGovModelsMode[keyof typeof BulkUpdatePeoplePatchInterestsGovModelsMode];
+
+
+export const BulkUpdatePeoplePatchInterestsGovModelsMode = {
+  replace: 'replace',
+  append: 'append',
+} as const;
+
+/**
+ * replace = overwrite (DESTRUCTIVE). append = union into existing ids.
+ */
+export type BulkUpdatePeoplePatchRegionIdsMode = typeof BulkUpdatePeoplePatchRegionIdsMode[keyof typeof BulkUpdatePeoplePatchRegionIdsMode];
+
+
+export const BulkUpdatePeoplePatchRegionIdsMode = {
+  replace: 'replace',
+  append: 'append',
+} as const;
+
+/**
  * Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged.
  */
 export interface BulkUpdatePeoplePatch {
   ownerUserId?: string | null;
   currentHomeRegionId?: string | null;
   capacityRating?: CapacityRating | null;
+  connectionStatus?: ConnectionStatus | null;
+  enthusiasm?: Enthusiasm | null;
   priority?: Priority | null;
   deceased?: boolean;
   /** Newsletter subscription flag. Changes are mirrored out to Flodesk (precedence rules apply — a Flodesk unsubscribe still wins). */
   newsletter?: boolean;
+  /** Thematic-interest tags on each person (people.interests_thematic). Combined with interestsThematicMode. */
+  interestsThematic?: string[];
+  /** replace = overwrite the person's interests_thematic with this set (DESTRUCTIVE). append = union this set into the existing tags. */
+  interestsThematicMode?: BulkUpdatePeoplePatchInterestsThematicMode;
+  /** Age-band interest tags on each person (people.interests_ages). Combined with interestsAgesMode. */
+  interestsAges?: string[];
+  /** replace = overwrite (DESTRUCTIVE). append = union into existing tags. */
+  interestsAgesMode?: BulkUpdatePeoplePatchInterestsAgesMode;
+  /** Governance-model interest tags on each person (people.interests_gov_models). Combined with interestsGovModelsMode. */
+  interestsGovModels?: string[];
+  /** replace = overwrite (DESTRUCTIVE). append = union into existing tags. */
+  interestsGovModelsMode?: BulkUpdatePeoplePatchInterestsGovModelsMode;
+  /** Region-interest ids on each person (people.region_ids). Combined with regionIdsMode. */
+  regionIds?: string[];
+  /** replace = overwrite (DESTRUCTIVE). append = union into existing ids. */
+  regionIdsMode?: BulkUpdatePeoplePatchRegionIdsMode;
 }
 
 export interface BulkUpdatePeopleBody {
@@ -5570,6 +5632,50 @@ export interface BulkUpdatePeopleBody {
   patch: BulkUpdatePeoplePatch;
 }
 
+/**
+ * replace = overwrite the organization's interests_thematic with this set (DESTRUCTIVE). append = union this set into the existing tags.
+ */
+export type BulkUpdateOrganizationsPatchInterestsThematicMode = typeof BulkUpdateOrganizationsPatchInterestsThematicMode[keyof typeof BulkUpdateOrganizationsPatchInterestsThematicMode];
+
+
+export const BulkUpdateOrganizationsPatchInterestsThematicMode = {
+  replace: 'replace',
+  append: 'append',
+} as const;
+
+/**
+ * replace = overwrite (DESTRUCTIVE). append = union into existing tags.
+ */
+export type BulkUpdateOrganizationsPatchInterestsAgesMode = typeof BulkUpdateOrganizationsPatchInterestsAgesMode[keyof typeof BulkUpdateOrganizationsPatchInterestsAgesMode];
+
+
+export const BulkUpdateOrganizationsPatchInterestsAgesMode = {
+  replace: 'replace',
+  append: 'append',
+} as const;
+
+/**
+ * replace = overwrite (DESTRUCTIVE). append = union into existing tags.
+ */
+export type BulkUpdateOrganizationsPatchInterestsGovModelsMode = typeof BulkUpdateOrganizationsPatchInterestsGovModelsMode[keyof typeof BulkUpdateOrganizationsPatchInterestsGovModelsMode];
+
+
+export const BulkUpdateOrganizationsPatchInterestsGovModelsMode = {
+  replace: 'replace',
+  append: 'append',
+} as const;
+
+/**
+ * replace = overwrite (DESTRUCTIVE). append = union into existing ids.
+ */
+export type BulkUpdateOrganizationsPatchRegionIdsMode = typeof BulkUpdateOrganizationsPatchRegionIdsMode[keyof typeof BulkUpdateOrganizationsPatchRegionIdsMode];
+
+
+export const BulkUpdateOrganizationsPatchRegionIdsMode = {
+  replace: 'replace',
+  append: 'append',
+} as const;
+
 export interface BulkUpdateOrganizationsPatch {
   ownerUserId?: string | null;
   activeStatus?: ActiveStatus | null;
@@ -5577,9 +5683,26 @@ export interface BulkUpdateOrganizationsPatch {
   capacityRating?: CapacityRating | null;
   enthusiasm?: Enthusiasm | null;
   priority?: Priority | null;
+  strategicAlignment?: StrategicAlignment | null;
   entityType?: string | null;
   issuesGrants?: boolean;
   makesPris?: boolean | null;
+  /** Thematic-interest tags on each organization (organizations.interests_thematic). Combined with interestsThematicMode. */
+  interestsThematic?: string[];
+  /** replace = overwrite the organization's interests_thematic with this set (DESTRUCTIVE). append = union this set into the existing tags. */
+  interestsThematicMode?: BulkUpdateOrganizationsPatchInterestsThematicMode;
+  /** Age-band interest tags on each organization (organizations.interests_ages). Combined with interestsAgesMode. */
+  interestsAges?: string[];
+  /** replace = overwrite (DESTRUCTIVE). append = union into existing tags. */
+  interestsAgesMode?: BulkUpdateOrganizationsPatchInterestsAgesMode;
+  /** Governance-model interest tags on each organization (organizations.interests_gov_models). Combined with interestsGovModelsMode. */
+  interestsGovModels?: string[];
+  /** replace = overwrite (DESTRUCTIVE). append = union into existing tags. */
+  interestsGovModelsMode?: BulkUpdateOrganizationsPatchInterestsGovModelsMode;
+  /** Region-interest ids on each organization (organizations.region_ids). Combined with regionIdsMode. */
+  regionIds?: string[];
+  /** replace = overwrite (DESTRUCTIVE). append = union into existing ids. */
+  regionIdsMode?: BulkUpdateOrganizationsPatchRegionIdsMode;
 }
 
 export interface BulkUpdateOrganizationsBody {
@@ -5605,6 +5728,17 @@ export interface BulkUpdateHouseholdsBody {
 }
 
 /**
+ * replace = wipe pledge_allocations rows whose entity_id is set (DESTRUCTIVE) and recreate one minimal row per entity. append = add allocations only for entities not already present.
+ */
+export type BulkUpdateOpportunitiesPatchEntitiesMode = typeof BulkUpdateOpportunitiesPatchEntitiesMode[keyof typeof BulkUpdateOpportunitiesPatchEntitiesMode];
+
+
+export const BulkUpdateOpportunitiesPatchEntitiesMode = {
+  replace: 'replace',
+  append: 'append',
+} as const;
+
+/**
  * replace = wipe existing pledge_allocations on each opp and recreate one minimal row per FY (DESTRUCTIVE: loses subAmount/intendedUsage on those rows). append = add allocations only for FYs not already present.
  */
 export type BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode = typeof BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode[keyof typeof BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode];
@@ -5623,6 +5757,14 @@ export interface BulkUpdateOpportunitiesPatch {
   writtenPledge?: boolean | null;
   /** Optional close date when bulk-setting lossType to lost (or stage to cash_in). Left null is allowed to support historical cleanup workflows. */
   actualCompletionDate?: string | null;
+  /** Projected close date on each opportunity. */
+  projectedCloseDate?: string | null;
+  /** Application deadline on each opportunity. */
+  applicationDeadline?: string | null;
+  /** Set of entity ids to attach to each opportunity via pledge_allocations. Combined with entitiesMode. */
+  entities?: string[];
+  /** replace = wipe pledge_allocations rows whose entity_id is set (DESTRUCTIVE) and recreate one minimal row per entity. append = add allocations only for entities not already present. */
+  entitiesMode?: BulkUpdateOpportunitiesPatchEntitiesMode;
   /** Set of fiscal-year slugs (e.g. 'fy2026') to attach to each opportunity via pledge_allocations. Combined with coveredFiscalYearsMode. */
   coveredFiscalYears?: string[];
   /** replace = wipe existing pledge_allocations on each opp and recreate one minimal row per FY (DESTRUCTIVE: loses subAmount/intendedUsage on those rows). append = add allocations only for FYs not already present. */
@@ -5667,6 +5809,9 @@ export const BulkUpdateGiftsPatchGrantYearsMode = {
 export interface BulkUpdateGiftsPatch {
   ownerUserId?: string | null;
   type?: GiftType | null;
+  paymentMethod?: GiftPaymentMethod | null;
+  /** Date the gift/payment was received. */
+  dateReceived?: string | null;
   /** Set of entity ids to attach to each gift via gift_allocations. Combined with entityIdsMode. */
   entityIds?: string[];
   /** replace = wipe gift_allocations rows whose entity_id is set (DESTRUCTIVE) and recreate one minimal row per entity. append = add allocations only for entities not already present. */

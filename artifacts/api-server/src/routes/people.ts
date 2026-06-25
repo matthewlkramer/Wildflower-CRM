@@ -13,7 +13,7 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { auditCreate, auditUpdate } from "../lib/audit";
-import { executeBulkUpdate } from "../lib/bulkUpdate";
+import { executeBulkUpdate, reconcileArrayColumns } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, requireAdmin, unarchiveOne } from "../lib/archive";
 import { mergeEntity, PERSON_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
@@ -372,10 +372,44 @@ router.post(
         "ownerUserId",
         "currentHomeRegionId",
         "capacityRating",
+        "connectionStatus",
+        "enthusiasm",
         "priority",
         "deceased",
         "newsletter",
       ],
+      // text[] interest/region columns reconciled via extraApply
+      // (replace/append) rather than written as a single column SET.
+      virtualFields: [
+        "interestsThematic",
+        "interestsThematicMode",
+        "interestsAges",
+        "interestsAgesMode",
+        "interestsGovModels",
+        "interestsGovModelsMode",
+        "regionIds",
+        "regionIdsMode",
+      ],
+      extraApply: async (tx, id, vp) => {
+        await reconcileArrayColumns(tx, people, id, vp, [
+          {
+            valueKey: "interestsThematic",
+            modeKey: "interestsThematicMode",
+            column: people.interestsThematic,
+          },
+          {
+            valueKey: "interestsAges",
+            modeKey: "interestsAgesMode",
+            column: people.interestsAges,
+          },
+          {
+            valueKey: "interestsGovModels",
+            modeKey: "interestsGovModelsMode",
+            column: people.interestsGovModels,
+          },
+          { valueKey: "regionIds", modeKey: "regionIdsMode", column: people.regionIds },
+        ]);
+      },
       // Mirror newsletter changes out to Flodesk per updated row, the
       // same way the single PATCH does. Fire-and-forget + no-op when
       // Flodesk isn't configured; precedence rules still apply (a

@@ -347,11 +347,27 @@ router.post(
       entity: "opportunities_and_pledges",
       table: opportunitiesAndPledges,
       bodySchema: BulkUpdateOpportunitiesAndPledgesBody,
-      allowedFields: ["ownerUserId", "lossType", "stage", "type", "writtenPledge", "actualCompletionDate"],
+      allowedFields: [
+        "ownerUserId",
+        "lossType",
+        "stage",
+        "type",
+        "writtenPledge",
+        "actualCompletionDate",
+        "projectedCloseDate",
+        "applicationDeadline",
+      ],
       // Allocation-table reconciliation fields — not columns on
       // opportunities_and_pledges, so they go through extraApply and
       // are excluded from the column SET.
-      virtualFields: ["coveredFiscalYears", "coveredFiscalYearsMode", "intendedUsage", "fundableProjectId"],
+      virtualFields: [
+        "entities",
+        "entitiesMode",
+        "coveredFiscalYears",
+        "coveredFiscalYearsMode",
+        "intendedUsage",
+        "fundableProjectId",
+      ],
       // Donor xor is preserved (no donor fields in this patch). The
       // closed_requires_completion_date CHECK was dropped from the DB
       // schema (see opportunitiesAndPledges.ts) so won/lost no longer
@@ -382,11 +398,48 @@ router.post(
       // insert allocations only for FYs not already represented.
       extraApply: async (tx, id, vp) => {
         const v = vp as {
+          entities?: string[];
+          entitiesMode?: string;
           coveredFiscalYears?: string[];
           coveredFiscalYearsMode?: string;
           intendedUsage?: NewPledgeAllocation["intendedUsage"];
           fundableProjectId?: string | null;
         };
+        // Reconcile pledge_allocations.entity_id like gifts' entityIds:
+        // replace wipes allocation rows whose entity_id is set and
+        // recreates one minimal row per entity (DESTRUCTIVE); append
+        // adds rows only for entities not already present.
+        if (v.entities) {
+          const mode = v.entitiesMode === "append" ? "append" : "replace";
+          if (mode === "replace") {
+            await tx
+              .delete(pledgeAllocations)
+              .where(
+                and(
+                  eq(pledgeAllocations.pledgeOrOpportunityId, id),
+                  sql`${pledgeAllocations.entityId} IS NOT NULL`,
+                ),
+              );
+          }
+          const existingEntities =
+            mode === "append"
+              ? (
+                  await tx
+                    .select({ e: pledgeAllocations.entityId })
+                    .from(pledgeAllocations)
+                    .where(eq(pledgeAllocations.pledgeOrOpportunityId, id))
+                )
+                  .map((r: { e: string | null }) => r.e)
+                  .filter((e: string | null): e is string => !!e)
+              : [];
+          for (const entityId of v.entities.filter((e) => !existingEntities.includes(e))) {
+            await tx.insert(pledgeAllocations).values({
+              id: newId(),
+              pledgeOrOpportunityId: id,
+              entityId,
+            });
+          }
+        }
         const fys = v.coveredFiscalYears;
         if (fys) {
           const mode = v.coveredFiscalYearsMode === "append" ? "append" : "replace";

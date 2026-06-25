@@ -42,7 +42,7 @@ import {
   paramId,
   splitBlank,
 } from "../lib/helpers";
-import { executeBulkUpdate } from "../lib/bulkUpdate";
+import { executeBulkUpdate, reconcileArrayColumns } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, requireAdmin, unarchiveOne } from "../lib/archive";
 import { mergeEntity, ORGANIZATION_MERGE_CONFIG } from "../lib/mergeEntities";
 import { auditCreate, auditUpdate } from "../lib/audit";
@@ -349,10 +349,47 @@ router.post(
         "capacityRating",
         "enthusiasm",
         "priority",
+        "strategicAlignment",
         "entityType",
         "issuesGrants",
         "makesPris",
       ],
+      // text[] interest/region columns reconciled via extraApply
+      // (replace/append) rather than written as a single column SET.
+      virtualFields: [
+        "interestsThematic",
+        "interestsThematicMode",
+        "interestsAges",
+        "interestsAgesMode",
+        "interestsGovModels",
+        "interestsGovModelsMode",
+        "regionIds",
+        "regionIdsMode",
+      ],
+      extraApply: async (tx, id, vp) => {
+        await reconcileArrayColumns(tx, organizations, id, vp, [
+          {
+            valueKey: "interestsThematic",
+            modeKey: "interestsThematicMode",
+            column: organizations.interestsThematic,
+          },
+          {
+            valueKey: "interestsAges",
+            modeKey: "interestsAgesMode",
+            column: organizations.interestsAges,
+          },
+          {
+            valueKey: "interestsGovModels",
+            modeKey: "interestsGovModelsMode",
+            column: organizations.interestsGovModels,
+          },
+          {
+            valueKey: "regionIds",
+            modeKey: "regionIdsMode",
+            column: organizations.regionIds,
+          },
+        ]);
+      },
     });
   }),
 );

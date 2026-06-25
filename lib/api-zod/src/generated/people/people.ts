@@ -351,9 +351,19 @@ export const BulkUpdatePeopleBody = zod.object({
   "ownerUserId": zod.string().nullish(),
   "currentHomeRegionId": zod.string().nullish(),
   "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).nullish(),
+  "connectionStatus": zod.enum(['connected', 'have_a_connector', 'no_connection']).nullish(),
+  "enthusiasm": zod.enum(['7-advocate', '6-supportive', '5-warm', '4-neutral', '3-cool', '2-unsupportive', '1-hostile']).nullish(),
   "priority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
   "deceased": zod.boolean().optional(),
-  "newsletter": zod.boolean().optional().describe('Newsletter subscription flag. Changes are mirrored out to Flodesk (precedence rules apply — a Flodesk unsubscribe still wins).')
+  "newsletter": zod.boolean().optional().describe('Newsletter subscription flag. Changes are mirrored out to Flodesk (precedence rules apply — a Flodesk unsubscribe still wins).'),
+  "interestsThematic": zod.array(zod.string()).optional().describe('Thematic-interest tags on each person (people.interests_thematic). Combined with interestsThematicMode.'),
+  "interestsThematicMode": zod.enum(['replace', 'append']).optional().describe('replace = overwrite the person\'s interests_thematic with this set (DESTRUCTIVE). append = union this set into the existing tags.'),
+  "interestsAges": zod.array(zod.string()).optional().describe('Age-band interest tags on each person (people.interests_ages). Combined with interestsAgesMode.'),
+  "interestsAgesMode": zod.enum(['replace', 'append']).optional().describe('replace = overwrite (DESTRUCTIVE). append = union into existing tags.'),
+  "interestsGovModels": zod.array(zod.string()).optional().describe('Governance-model interest tags on each person (people.interests_gov_models). Combined with interestsGovModelsMode.'),
+  "interestsGovModelsMode": zod.enum(['replace', 'append']).optional().describe('replace = overwrite (DESTRUCTIVE). append = union into existing tags.'),
+  "regionIds": zod.array(zod.string()).optional().describe('Region-interest ids on each person (people.region_ids). Combined with regionIdsMode.'),
+  "regionIdsMode": zod.enum(['replace', 'append']).optional().describe('replace = overwrite (DESTRUCTIVE). append = union into existing ids.')
 }).describe('Only fields present here are written. All fields are optional and forward-only — omit to leave unchanged.')
 })
 

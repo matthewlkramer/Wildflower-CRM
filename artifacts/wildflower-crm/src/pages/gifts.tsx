@@ -69,6 +69,7 @@ import {
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
 import {
@@ -846,13 +847,29 @@ export default function Gifts() {
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="grow min-w-[200px]">
-          <Input
-            placeholder="Search by name…"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); selection.clear(); }}
-            aria-label="Search gifts by name"
-            data-testid="input-search-gifts"
-          />
+          <div className="relative">
+            <Input
+              placeholder="Search by name…"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); selection.clear(); }}
+              aria-label="Search gifts by name"
+              data-testid="input-search-gifts"
+              className="pr-8"
+            />
+            {search && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => { setSearch(""); setPage(1); selection.clear(); }}
+                aria-label="Clear search"
+                data-testid="button-clear-search-gifts"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
         {visibleFilters.map((f) => (
           <div key={f.key}>{f.render()}</div>

@@ -686,6 +686,8 @@ export const BulkUpdateGiftsAndPaymentsBody = zod.object({
   "patch": zod.object({
   "ownerUserId": zod.string().nullish(),
   "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift']).nullish(),
+  "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).nullish(),
+  "dateReceived": zod.string().date().nullish().describe('Date the gift\/payment was received.'),
   "entityIds": zod.array(zod.string()).optional().describe('Set of entity ids to attach to each gift via gift_allocations. Combined with entityIdsMode.'),
   "entityIdsMode": zod.enum(['replace', 'append']).optional().describe('replace = wipe gift_allocations rows whose entity_id is set (DESTRUCTIVE) and recreate one minimal row per entity. append = add allocations only for entities not already present.'),
   "grantYears": zod.array(zod.string()).optional().describe('Set of fiscal-year slugs to attach via gift_allocations. Combined with grantYearsMode.'),

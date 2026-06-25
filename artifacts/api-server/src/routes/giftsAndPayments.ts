@@ -397,7 +397,7 @@ router.post(
       entity: "gifts_and_payments",
       table: giftsAndPayments,
       bodySchema: BulkUpdateGiftsAndPaymentsBody,
-      allowedFields: ["ownerUserId", "type"],
+      allowedFields: ["ownerUserId", "type", "paymentMethod", "dateReceived"],
       // Mirror the authoritative loan_or_grant flag whenever a bulk edit
       // changes the gift `type` (legacy `type` stays the read source this
       // phase); written atomically in the same per-row UPDATE.

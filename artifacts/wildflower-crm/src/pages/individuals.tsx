@@ -21,7 +21,7 @@ import {
   type Priority,
   type Person,
 } from "@workspace/api-client-react";
-import { LayoutList, Columns3 } from "lucide-react";
+import { LayoutList, Columns3, X } from "lucide-react";
 import { EntityKanban, DraggableCard, type EntityKanbanPatch } from "@/components/entity-kanban";
 import { MergeDialog, type MergeField, type MergeRecord } from "@/components/merge-dialog";
 import { canSeeIdentity, displayPersonName, ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
@@ -1240,17 +1240,37 @@ export default function Individuals() {
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="grow min-w-[200px]">
-          <Input
-            placeholder="Search by name…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-              selection.clear();
-            }}
-            aria-label="Search people by name"
-            data-testid="input-search-people"
-          />
+          <div className="relative">
+            <Input
+              placeholder="Search by name…"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+                selection.clear();
+              }}
+              aria-label="Search people by name"
+              data-testid="input-search-people"
+              className="pr-8"
+            />
+            {search && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setSearch("");
+                  setPage(1);
+                  selection.clear();
+                }}
+                aria-label="Clear search"
+                data-testid="button-clear-search-people"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
 
         {visibleFilters.map((f) => (

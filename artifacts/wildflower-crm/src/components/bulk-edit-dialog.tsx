@@ -17,6 +17,11 @@ import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { userDisplayName } from "@/components/user-picker";
 import { regionDisplayName, buildRegionIndex } from "@/components/region-picker";
 import {
+  INTERESTS_THEMATIC_SUGGESTIONS,
+  INTERESTS_AGES_SUGGESTIONS,
+  INTERESTS_GOV_MODELS_SUGGESTIONS,
+} from "@/components/multi-select-picker";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -250,8 +255,17 @@ export type BulkField =
       modeKey: string;
       label: string;
       /** Where to pull the option set from. */
-      source: "fiscalYears" | "entities";
+      source: BulkArraySource;
     };
+
+/** Option source for a `string-array` bulk field. */
+export type BulkArraySource =
+  | "fiscalYears"
+  | "entities"
+  | "regions"
+  | "interestsThematic"
+  | "interestsAges"
+  | "interestsGovModels";
 
 // Per-field draft state. Each field starts disabled (`enabled=false`)
 // and is only included in the outbound patch when the user toggles its
@@ -408,8 +422,21 @@ export function BulkEditDialog({
     [fundableProjectsData],
   );
 
-  function optionsFor(source: "fiscalYears" | "entities") {
-    return source === "fiscalYears" ? fyOptions : entityOptions;
+  function optionsFor(source: BulkArraySource): ReadonlyArray<{ value: string; label: string }> {
+    switch (source) {
+      case "fiscalYears":
+        return fyOptions;
+      case "entities":
+        return entityOptions;
+      case "regions":
+        return regionOptions;
+      case "interestsThematic":
+        return INTERESTS_THEMATIC_SUGGESTIONS;
+      case "interestsAges":
+        return INTERESTS_AGES_SUGGESTIONS;
+      case "interestsGovModels":
+        return INTERESTS_GOV_MODELS_SUGGESTIONS;
+    }
   }
 
   function reset() {

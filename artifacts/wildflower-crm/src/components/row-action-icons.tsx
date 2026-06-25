@@ -1,4 +1,4 @@
-import { Eye, Pencil, Archive, ArchiveRestore, Trash2, Check, X } from "lucide-react";
+import { ChevronRight, Pencil, Archive, ArchiveRestore, Trash2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export type RowActionIconsProps = {
@@ -50,7 +50,7 @@ export function RowActionIcons({
           title="Open"
           data-testid={`button-open-${testIdPrefix}`}
         >
-          <Eye className="h-4 w-4" />
+          <ChevronRight className="h-4 w-4" />
         </Button>
       )}
       {onEdit && (
