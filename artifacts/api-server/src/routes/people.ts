@@ -166,6 +166,19 @@ const peopleCurrentFoundationRoleExists = sql`EXISTS (
     AND per.organization_id = ${FOUNDATION_ORG_ID}
 )`;
 
+// Default list sort key. Mirrors the client's personDisplayName() so the
+// server-paginated order matches the name shown in the UI (the full
+// "First Last" name), instead of the old last_name,first_name order — which
+// looked unsorted next to the displayed name and disagreed with the
+// click-to-sort "Name" order. Uses the same fallback chain as
+// personDisplayName (full name → first+last → nickname → "Person <id>").
+const peopleDisplayNameOrder = sql`lower(coalesce(
+  nullif(btrim("people"."full_name"), ''),
+  nullif(btrim(concat_ws(' ', "people"."first_name", "people"."last_name")), ''),
+  nullif(btrim("people"."nickname"), ''),
+  'Person ' || "people"."id"
+))`;
+
 const peopleListSelect = {
   ...getTableColumns(people),
   lifetimeGiving: sql<string | null>`${peopleLifetimeGivingExpr}::text`.as("lifetime_giving"),
@@ -313,7 +326,8 @@ router.get(
         .select(peopleListSelect)
         .from(people)
         .where(where)
-        .orderBy(asc(people.lastName), asc(people.firstName))
+        // Tiebreak on id so offset pagination is stable for duplicate names.
+        .orderBy(asc(peopleDisplayNameOrder), asc(people.id))
         .limit(limit)
         .offset(offset),
       db.select({ value: count() }).from(people).where(where),
