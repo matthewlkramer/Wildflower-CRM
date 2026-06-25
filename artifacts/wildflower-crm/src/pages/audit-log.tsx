@@ -6,8 +6,10 @@ import {
   type AuditChange,
 } from "@workspace/api-client-react";
 import { useIsAdmin } from "@/hooks/use-is-admin";
+import { useDebounce } from "@/hooks/use-debounce";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -95,6 +97,54 @@ function formatWhen(iso: string): string {
   }
 }
 
+type DateMode = "any" | "on" | "before" | "after" | "between";
+
+const DATE_MODE_LABEL: Record<DateMode, string> = {
+  any: "Any date",
+  on: "On",
+  before: "Before",
+  after: "After",
+  between: "Between",
+};
+
+// Shift a YYYY-MM-DD string by whole calendar days, returning YYYY-MM-DD.
+// Used to turn "before D" / "after D" into inclusive day bounds.
+function shiftDay(ymd: string, days: number): string {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return ymd;
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Translate the chosen mode + date(s) into inclusive Chicago-day bounds the API
+// understands: On D → [D, D]; Before D → upper bound D-1; After D → lower bound
+// D+1; Between D1–D2 → [D1, D2].
+function computeDateBounds(
+  mode: DateMode,
+  a: string,
+  b: string,
+): { dateFrom?: string; dateTo?: string } {
+  switch (mode) {
+    case "on":
+      return a ? { dateFrom: a, dateTo: a } : {};
+    case "before":
+      return a ? { dateTo: shiftDay(a, -1) } : {};
+    case "after":
+      return a ? { dateFrom: shiftDay(a, 1) } : {};
+    case "between": {
+      if (!a && !b) return {};
+      // Tolerate a reversed range by ordering the two bounds.
+      if (a && b) {
+        const [from, to] = a <= b ? [a, b] : [b, a];
+        return { dateFrom: from, dateTo: to };
+      }
+      return a ? { dateFrom: a } : { dateTo: b };
+    }
+    default:
+      return {};
+  }
+}
+
 function formatValue(v: unknown): string {
   if (v === null || v === undefined) return "—";
   if (typeof v === "string") return v === "" ? "(empty)" : v;
@@ -144,12 +194,22 @@ export default function AuditLogPage() {
   const [page, setPage] = useState(1);
   const [action, setAction] = useState<string>("all");
   const [entityType, setEntityType] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 250);
+  const [dateMode, setDateMode] = useState<DateMode>("any");
+  const [dateA, setDateA] = useState("");
+  const [dateB, setDateB] = useState("");
+
+  const { dateFrom, dateTo } = computeDateBounds(dateMode, dateA, dateB);
 
   const params = {
     page,
     limit: PAGE_SIZE,
     ...(action !== "all" ? { action } : {}),
     ...(entityType !== "all" ? { entityType } : {}),
+    ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+    ...(dateFrom ? { dateFrom } : {}),
+    ...(dateTo ? { dateTo } : {}),
   };
   const { data, isLoading, isError } = useListAuditLog(params, {
     query: { enabled: isAdmin, queryKey: getListAuditLogQueryKey(params) },
@@ -186,6 +246,19 @@ export default function AuditLogPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
+        <div className="grow min-w-[220px] max-w-sm">
+          <Input
+            placeholder="Search names, summaries, changes…"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Search audit log"
+            data-testid="input-search-audit"
+          />
+        </div>
+
         <Select value={action} onValueChange={resetTo(setAction)}>
           <SelectTrigger className="w-44" data-testid="select-audit-action">
             <SelectValue placeholder="All actions" />
@@ -213,6 +286,57 @@ export default function AuditLogPage() {
             ))}
           </SelectContent>
         </Select>
+
+        <Select
+          value={dateMode}
+          onValueChange={(v) => {
+            setDateMode(v as DateMode);
+            setDateA("");
+            setDateB("");
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="w-36" data-testid="select-audit-date-mode">
+            <SelectValue placeholder="Any date" />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(DATE_MODE_LABEL) as DateMode[]).map((m) => (
+              <SelectItem key={m} value={m}>
+                {DATE_MODE_LABEL[m]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {dateMode !== "any" && (
+          <Input
+            type="date"
+            className="w-40"
+            value={dateA}
+            onChange={(e) => {
+              setDateA(e.target.value);
+              setPage(1);
+            }}
+            aria-label={
+              dateMode === "between" ? "Start date" : "Filter date"
+            }
+            data-testid="input-audit-date-from"
+          />
+        )}
+
+        {dateMode === "between" && (
+          <Input
+            type="date"
+            className="w-40"
+            value={dateB}
+            onChange={(e) => {
+              setDateB(e.target.value);
+              setPage(1);
+            }}
+            aria-label="End date"
+            data-testid="input-audit-date-to"
+          />
+        )}
 
         <span className="ml-auto text-sm text-muted-foreground">
           {total.toLocaleString()} {total === 1 ? "entry" : "entries"}

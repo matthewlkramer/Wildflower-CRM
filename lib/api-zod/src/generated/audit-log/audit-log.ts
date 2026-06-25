@@ -23,6 +23,9 @@ export const ListAuditLogQueryParams = zod.object({
   "entityId": zod.coerce.string().optional().describe('Filter to a single entity\'s timeline (usually paired with entityType).'),
   "actorUserId": zod.coerce.string().optional().describe('Filter to actions taken by one user.'),
   "action": zod.coerce.string().optional().describe('Filter to one action (create\/update\/archive\/unarchive\/merge\/bulk_update\/bulk_archive).'),
+  "search": zod.coerce.string().optional().describe('Case-insensitive partial match across the entry summary, the actor\'s name\/email, and the recorded field changes.'),
+  "dateFrom": zod.coerce.string().date().optional().describe('Inclusive lower bound — only entries on or after the start of this America\/Chicago calendar day.'),
+  "dateTo": zod.coerce.string().date().optional().describe('Inclusive upper bound — only entries on or before the end of this America\/Chicago calendar day.'),
   "limit": zod.coerce.number().min(1).max(listAuditLogQueryLimitMax).default(listAuditLogQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listAuditLogQueryPageDefault)
 })

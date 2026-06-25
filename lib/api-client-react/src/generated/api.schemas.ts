@@ -7021,6 +7021,18 @@ actorUserId?: string;
  */
 action?: string;
 /**
+ * Case-insensitive partial match across the entry summary, the actor's name/email, and the recorded field changes.
+ */
+search?: string;
+/**
+ * Inclusive lower bound — only entries on or after the start of this America/Chicago calendar day.
+ */
+dateFrom?: string;
+/**
+ * Inclusive upper bound — only entries on or before the end of this America/Chicago calendar day.
+ */
+dateTo?: string;
+/**
  * @minimum 1
  * @maximum 10000
  */
