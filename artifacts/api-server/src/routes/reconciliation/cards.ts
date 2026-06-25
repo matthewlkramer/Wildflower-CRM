@@ -1,6 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { stagedPayments } from "@workspace/db/schema";
+import {
+  stagedPayments,
+  stagedPaymentExclusionReasonEnum,
+} from "@workspace/db/schema";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { opportunitiesAndPledges } from "@workspace/db/schema";
@@ -224,6 +227,14 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
       )
     )`;
   if (queue === "reconciled") return eq(stagedPayments.status, "reconciled");
+  // Research parking queue: pending money a human flagged needs_research. Its
+  // own server-side query so flagged rows surface regardless of where they fall
+  // in the (paged) needs_review set.
+  if (queue === "research")
+    return and(
+      eq(stagedPayments.status, "pending"),
+      eq(stagedPayments.needsResearch, true),
+    );
   return queueWhere(queue as Queue);
 }
 
@@ -248,12 +259,24 @@ router.get(
         : req.query["ready"] === "false"
           ? false
           : undefined;
-    const limit = clampInt(req.query["limit"], 50, 1, 200);
+    // Excluded-queue reason filter. Validate against the enum so an arbitrary
+    // string never reaches a pg-enum comparison (which would 500); an invalid
+    // value is silently ignored.
+    const reasonValues =
+      stagedPaymentExclusionReasonEnum.enumValues as readonly string[];
+    const rawReason = req.query["exclusionReason"];
+    const exclusionReason =
+      typeof rawReason === "string" && reasonValues.includes(rawReason)
+        ? (rawReason as (typeof stagedPaymentExclusionReasonEnum.enumValues)[number])
+        : undefined;
+    const limit = clampInt(req.query["limit"], 50, 1, 500);
     const offset = clampInt(req.query["offset"], 0, 0, 1_000_000);
 
     const conds: SQL[] = [];
     const queueCond = reconciliationQueueWhere(queue);
     if (queueCond) conds.push(queueCond);
+    if (exclusionReason && queue === "excluded")
+      conds.push(eq(stagedPayments.exclusionReason, exclusionReason));
     if (entityId) {
       const ew = entityWhere(entityId);
       if (ew) conds.push(ew);

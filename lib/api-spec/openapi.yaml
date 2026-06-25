@@ -3634,11 +3634,12 @@ paths:
         same money. `reconciled` cards are excluded by default (filter with
         queue=reconciled). Use the graph endpoint for the full candidate detail.
       parameters:
-        - { name: queue, in: query, schema: { $ref: "#/components/schemas/QuickbooksStagedPaymentQueue" }, description: "Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable)." }
+        - { name: queue, in: query, schema: { $ref: "#/components/schemas/ReconciliationCardQueue" }, description: "Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable), or queue=research for pending money flagged needs_research." }
         - { name: q, in: query, schema: { type: string }, description: "Free-text over payer name / reference / memo." }
         - { name: entityId, in: query, schema: { type: string }, description: "Filter to one Wildflower legal entity attribution." }
         - { name: ready, in: query, schema: { type: boolean }, description: "Filter to cards whose auto-proposal passes (true) / fails (false) the consistency gate." }
-        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+        - { name: exclusionReason, in: query, schema: { $ref: "#/components/schemas/StagedPaymentExclusionReason" }, description: "Filter the Excluded queue to a single exclusion reason. Only meaningful with queue=excluded; ignored otherwise." }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 500 } }
         - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationCardList" } } } }
@@ -5519,6 +5520,7 @@ components:
     StripeRefundPropagationStatus: { type: string, enum: [none, proposed, applied, dismissed], description: "Lifecycle of a Stripe refund/chargeback proposal against a charge already booked into a CRM gift (INV-13). none: no refund/dispute or no linked gift. proposed: detected, awaiting human confirm. applied: human confirmed (gift reversed/reduced). dismissed: human declined to propagate." }
     StripeRefundKind: { type: string, enum: [full_refund, partial_refund, chargeback], description: "Kind of Stripe reversal. full_refund/chargeback reverse (archive) the gift; partial_refund reduces the gift amount." }
     QuickbooksStagedPaymentQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected, reconciled], description: "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review)." }
+    ReconciliationCardQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected, reconciled, research], description: "Queue buckets accepted by the reconciliation cards endpoint query param. Superset of QuickbooksStagedPaymentQueue adding the research parking queue (pending money a human flagged needs_research) — a query-time filter over the needs_research flag, never a derived response bucket (so it is NOT part of the staged-payment response queue enum)." }
     StagedPaymentSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc, payer_asc, payer_desc] }
     GiftSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc] }
     QuickbooksOauthStatus:

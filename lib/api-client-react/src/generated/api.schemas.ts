@@ -2313,6 +2313,23 @@ export const QuickbooksStagedPaymentQueue = {
   reconciled: 'reconciled',
 } as const;
 
+/**
+ * Queue buckets accepted by the reconciliation cards endpoint query param. Superset of QuickbooksStagedPaymentQueue adding the research parking queue (pending money a human flagged needs_research) — a query-time filter over the needs_research flag, never a derived response bucket (so it is NOT part of the staged-payment response queue enum).
+ */
+export type ReconciliationCardQueue = typeof ReconciliationCardQueue[keyof typeof ReconciliationCardQueue];
+
+
+export const ReconciliationCardQueue = {
+  needs_review: 'needs_review',
+  fiscally_sponsored: 'fiscally_sponsored',
+  auto_matched: 'auto_matched',
+  excluded: 'excluded',
+  done: 'done',
+  rejected: 'rejected',
+  reconciled: 'reconciled',
+  research: 'research',
+} as const;
+
 export type StagedPaymentSort = typeof StagedPaymentSort[keyof typeof StagedPaymentSort];
 
 
@@ -7023,9 +7040,9 @@ userId: string;
 
 export type ListReconciliationCardsParams = {
 /**
- * Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable).
+ * Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable), or queue=research for pending money flagged needs_research.
  */
-queue?: QuickbooksStagedPaymentQueue;
+queue?: ReconciliationCardQueue;
 /**
  * Free-text over payer name / reference / memo.
  */
@@ -7039,8 +7056,12 @@ entityId?: string;
  */
 ready?: boolean;
 /**
+ * Filter the Excluded queue to a single exclusion reason. Only meaningful with queue=excluded; ignored otherwise.
+ */
+exclusionReason?: StagedPaymentExclusionReason;
+/**
  * @minimum 1
- * @maximum 200
+ * @maximum 500
  */
 limit?: number;
 /**

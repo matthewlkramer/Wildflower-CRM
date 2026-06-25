@@ -19,7 +19,7 @@ queue=reconciled). Use the graph endpoint for the full candidate detail.
  * @summary List reconciliation cards — one per QuickBooks staged-payment anchor.
  */
 export const listReconciliationCardsQueryLimitDefault = 50;
-export const listReconciliationCardsQueryLimitMax = 200;
+export const listReconciliationCardsQueryLimitMax = 500;
 
 export const listReconciliationCardsQueryOffsetDefault = 0;
 export const listReconciliationCardsQueryOffsetMin = 0;
@@ -27,10 +27,11 @@ export const listReconciliationCardsQueryOffsetMin = 0;
 
 
 export const ListReconciliationCardsQueryParams = zod.object({
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('Queue bucket to list. Omit for the active work queue (excludes reconciled\/excluded\/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled', 'research']).optional().describe('Queue bucket to list. Omit for the active work queue (excludes reconciled\/excluded\/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable), or queue=research for pending money flagged needs_research.'),
   "q": zod.coerce.string().optional().describe('Free-text over payer name \/ reference \/ memo.'),
   "entityId": zod.coerce.string().optional().describe('Filter to one Wildflower legal entity attribution.'),
   "ready": zod.coerce.boolean().optional().describe('Filter to cards whose auto-proposal passes (true) \/ fails (false) the consistency gate.'),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).optional().describe('Filter the Excluded queue to a single exclusion reason. Only meaningful with queue=excluded; ignored otherwise.'),
   "limit": zod.coerce.number().min(1).max(listReconciliationCardsQueryLimitMax).default(listReconciliationCardsQueryLimitDefault),
   "offset": zod.coerce.number().min(listReconciliationCardsQueryOffsetMin).default(listReconciliationCardsQueryOffsetDefault)
 })
