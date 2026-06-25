@@ -231,8 +231,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0">
-                <div className="flex h-14 items-center border-b px-4 gap-2 font-serif font-semibold text-primary">
+              <SheetContent side="left" className="flex w-72 flex-col gap-0 p-0">
+                <div className="flex h-14 shrink-0 items-center border-b px-4 gap-2 font-serif font-semibold text-primary">
                   <svg viewBox="0 0 100 100" className="h-6 w-6" fill="none">
                     <circle cx="50" cy="50" r="45" fill="#E8F3E8"/>
                     <path d="M50 85 C50 85 45 60 50 40" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/>
@@ -242,10 +242,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   </svg>
                   Wildflower CRM
                 </div>
-                <div className="flex-1 overflow-y-auto p-4">
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
                   <NavLinks onNavigate={() => setMobileOpen(false)} />
                 </div>
-                <div className="border-t p-4">
+                <div className="shrink-0 border-t p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <Avatar className="h-8 w-8">
