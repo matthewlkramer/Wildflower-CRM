@@ -16,15 +16,16 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EntityMultiSelect } from "@/components/entity-filter";
 import GoogleConnectSection from "@/components/google-connect-section";
 import GoogleSyncStatusSection from "@/components/google-sync-status-section";
-import QuickbooksConnectSection from "@/components/quickbooks-connect-section";
 import ExtensionTokenSection from "@/components/extension-token-section";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 
 // User-level settings. Per-user prefs and per-user connections live here;
-// admin-level config (entities, goals, sync health) stays on /admin.
+// admin-level config (entities, goals, sync health, org-wide integrations like
+// QuickBooks) stays on /admin.
 export default function Settings() {
   return (
     <div className="space-y-8 max-w-3xl">
@@ -37,25 +38,29 @@ export default function Settings() {
         </p>
       </div>
 
-      <DefaultEntitySection />
-      <EmailPrivacySection />
-      <GoogleConnectSection returnTo="/settings" />
-      <GoogleSyncStatusSection />
-      <QuickbooksAdminSection />
-      <ExtensionTokenSection />
+      <Tabs defaultValue="general" className="space-y-6">
+        <TabsList className="flex h-auto flex-wrap justify-start gap-1">
+          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="email">Email</TabsTrigger>
+          <TabsTrigger value="connections">Connections</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="general" className="space-y-8">
+          <DefaultEntitySection />
+        </TabsContent>
+
+        <TabsContent value="email" className="space-y-8">
+          <EmailPrivacySection />
+          <GoogleSyncStatusSection />
+        </TabsContent>
+
+        <TabsContent value="connections" className="space-y-8">
+          <GoogleConnectSection returnTo="/settings" />
+          <ExtensionTokenSection />
+        </TabsContent>
+      </Tabs>
     </div>
   );
-}
-
-// QuickBooks is an org-wide connection configured once by an admin, so the
-// connect/disconnect controls are only shown to admins. The review queue
-// (where fundraisers approve payments) lives on its own page.
-function QuickbooksAdminSection() {
-  const { data: me } = useGetCurrentUser({
-    query: { queryKey: getGetCurrentUserQueryKey() },
-  });
-  if (me?.role !== "admin") return null;
-  return <QuickbooksConnectSection returnTo="/settings" />;
 }
 
 function EmailPrivacySection() {
