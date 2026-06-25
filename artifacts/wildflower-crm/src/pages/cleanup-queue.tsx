@@ -31,6 +31,7 @@ const STATUS_LABEL: Record<CleanupQueueStatus, string> = {
 
 const REASON_LABEL: Record<string, string> = {
   conditional_commitment_stage: "Conditional commitment",
+  needs_research: "Research needed",
 };
 
 function targetHref(type: string, id: string): string {
