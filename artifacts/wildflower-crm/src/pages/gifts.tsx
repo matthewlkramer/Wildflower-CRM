@@ -75,10 +75,10 @@ import {
   Pagination,
   PaginationContent,
   PaginationItem,
-  PaginationLink,
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { PageJumper } from "@/components/page-jumper";
 import { DonorCell } from "@/components/donor-cell";
 import { GiftFormDialog } from "@/components/gift-form-dialog";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
@@ -1021,7 +1021,12 @@ export default function Gifts() {
               <PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setPage((p) => Math.max(1, p - 1)); }} aria-disabled={page <= 1} className={page <= 1 ? "pointer-events-none opacity-50" : undefined} />
             </PaginationItem>
             <PaginationItem>
-              <PaginationLink href="#" isActive>{page} / {totalPages}</PaginationLink>
+              <PageJumper
+                page={page}
+                totalPages={totalPages}
+                onJump={setPage}
+                className="mx-2"
+              />
             </PaginationItem>
             <PaginationItem>
               <PaginationNext href="#" onClick={(e) => { e.preventDefault(); setPage((p) => Math.min(totalPages, p + 1)); }} aria-disabled={page >= totalPages} className={page >= totalPages ? "pointer-events-none opacity-50" : undefined} />

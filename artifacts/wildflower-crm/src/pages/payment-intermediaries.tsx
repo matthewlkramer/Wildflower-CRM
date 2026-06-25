@@ -59,10 +59,10 @@ import {
   Pagination,
   PaginationContent,
   PaginationItem,
-  PaginationLink,
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { PageJumper } from "@/components/page-jumper";
 
 const PAGE_SIZE = 50;
 
@@ -541,22 +541,14 @@ export default function PaymentIntermediaries() {
                 className={page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
               />
             </PaginationItem>
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
-              .map((p, idx, arr) => (
-                <PaginationItem key={p}>
-                  {idx > 0 && arr[idx - 1] !== p - 1 ? (
-                    <span className="px-2 text-muted-foreground">…</span>
-                  ) : null}
-                  <PaginationLink
-                    isActive={p === page}
-                    onClick={() => setPage(p)}
-                    className="cursor-pointer"
-                  >
-                    {p}
-                  </PaginationLink>
-                </PaginationItem>
-              ))}
+            <PaginationItem>
+              <PageJumper
+                page={page}
+                totalPages={totalPages}
+                onJump={setPage}
+                className="mx-2"
+              />
+            </PaginationItem>
             <PaginationItem>
               <PaginationNext
                 onClick={() => setPage(Math.min(totalPages, page + 1))}

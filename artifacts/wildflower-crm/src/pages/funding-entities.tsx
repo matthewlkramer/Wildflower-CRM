@@ -87,10 +87,10 @@ import {
   Pagination,
   PaginationContent,
   PaginationItem,
-  PaginationLink,
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { PageJumper } from "@/components/page-jumper";
 
 const SUBTYPES: string[] = [
   "family_foundation",
@@ -1536,9 +1536,12 @@ export default function Organizations() {
               />
             </PaginationItem>
             <PaginationItem>
-              <PaginationLink href="#" isActive>
-                {page} / {totalPages}
-              </PaginationLink>
+              <PageJumper
+                page={page}
+                totalPages={totalPages}
+                onJump={setPage}
+                className="mx-2"
+              />
             </PaginationItem>
             <PaginationItem>
               <PaginationNext

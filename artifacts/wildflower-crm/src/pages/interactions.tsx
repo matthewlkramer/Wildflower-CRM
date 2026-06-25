@@ -22,10 +22,10 @@ import {
   Pagination,
   PaginationContent,
   PaginationItem,
-  PaginationLink,
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { PageJumper } from "@/components/page-jumper";
 import { LogInteractionDialog } from "@/components/log-interaction-dialog";
 import {
   MultiFilterSelect,
@@ -213,7 +213,12 @@ export default function Interactions() {
               />
             </PaginationItem>
             <PaginationItem>
-              <PaginationLink isActive>{page}</PaginationLink>
+              <PageJumper
+                page={page}
+                totalPages={pageCount}
+                onJump={setPage}
+                className="mx-2"
+              />
             </PaginationItem>
             <PaginationItem>
               <PaginationNext
