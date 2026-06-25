@@ -140,13 +140,20 @@ mid-run as noise (retry), not a blocker.
   derived server-side.
 - **Opportunity derivation** — `status` (`open` / `pledge` / `cash_in` / `dormant` /
   `lost`) is **fully calculated** from stage + payments + the user-set `loss_type`
-  override — never written directly (`status='pledge'` comes only from stage
-  `written_commitment`; full payment ⇒ `cash_in`). Computed by a pure
+  override — never written directly. Precedence: `loss_type` (`dormant`/`lost`) >
+  `cash_in` (recorded gifts ≥ awarded > 0 — payment-driven only) > `pledge` (the
+  sticky `written_pledge`/`was_pledge` flag is true) > `open`. Computed by a pure
   `deriveOppFields` + a DB-touching `applyDerivedOppFields` wrapper (backfill script
-  available). A separate sticky `was_pledge` flag — latched once a row hits a
-  commitment stage or gets a grant letter, never auto-cleared — drives the
-  Pledges-page filter, not status. Grant-letter upload via object storage (presigned
-  GCS URL).
+  available); a won row (`pledge`/`cash_in`) forces `stage='complete'`.
+  `status='pledge'` is driven by the sticky flag, **never** by the funnel stage.
+  The sticky `written_pledge` flag — never auto-cleared — **auto-latches true only
+  when an *unpaid* grant letter exists** (a documented written commitment whose
+  money has not fully landed); otherwise it is set explicitly (the
+  written-confirmation "this is a pledge" choice, gift→pledge conversion,
+  reconciliation). A fully-paid grant, or money merely described to us, is NOT a
+  pledge. (The broader Pledges-page filter additionally includes rows whose stage
+  is `conditional_commitment`/`written_commitment`.) Grant-letter upload via object
+  storage (presigned GCS URL).
 - **Fundraising categories (revenue vs loan capital)** — loan-fund capital is a
   first-class track parallel to revenue across analytics, never mixed in.
   `fundraising_category` enum (`revenue` | `loan_capital`); opportunities carry

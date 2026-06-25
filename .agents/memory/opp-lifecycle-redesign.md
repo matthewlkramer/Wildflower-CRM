@@ -5,6 +5,18 @@ description: Final intended end-state for the opp/pledge lifecycle (cash-in, was
 
 # Opportunity / pledge lifecycle — confirmed end-state
 
+> **REVISED 2026-06-25 (items 2–4 partially superseded).** After the user saw
+> too many plain gifts showing up as pledges ("a lot of gifts seem like they got
+> converted to pledges…how is that?"), they redefined a *real* pledge as money
+> **committed and arriving over time / still outstanding** (multiple payment
+> dates ⇒ pledge). The committed code (`deriveOppFields`, commit "only mark as
+> written if a grant letter exists and is unpaid") now AUTO-latches
+> `written_pledge` when an **unpaid grant letter** exists — i.e. a grant letter
+> DOES mark a pledge, but only while the money has not fully landed; a fully-paid
+> grant is just a gift. This supersedes item 3 below ("grant letter no longer
+> auto-marks a pledge") and softens item 2 (explicit choice is still a valid
+> latch path, but it is no longer the ONLY one). Items 1 and 5 stand.
+
 User-confirmed design (2026-06-04). Implement on main **only after the
 verbal-confirmation reclassification task merges** — that task rewrites
 `pledgeStage.ts`, the opportunity schema, routes, and `opportunity-detail.tsx`,

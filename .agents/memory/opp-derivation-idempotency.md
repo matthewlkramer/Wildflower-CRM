@@ -19,10 +19,15 @@ no longer sees `stage='cash_in'`, the status falls back to open/pledge, and the
 **The rule (matches task-360 spec):**
 - `status='cash_in'` is **payment-driven only** (`paid >= awarded > 0`). Never a
   status trigger from the deprecated `stage='cash_in'` value.
-- The deprecated commitment stages (`conditional_commitment`,
-  `written_commitment`, `cash_in`) are **written_pledge latch signals** —
-  a legacy `cash_in` row latches `written_pledge=true`, then derives status
-  purely from payments (unpaid ⇒ `pledge`, fully paid ⇒ `cash_in`).
+- **UPDATED 2026-06-25:** the pure `deriveOppFields` no longer latches
+  `written_pledge` from any stage value. It auto-latches `written_pledge=true`
+  ONLY when an **unpaid grant letter** exists (`grantLetterUrl && !fullyPaid`);
+  otherwise the flag is whatever was explicitly set. Status precedence stays
+  `loss_type > cash_in (paid≥awarded>0) > pledge (written_pledge) > open`.
+  ⚠️ The old prod backfill SQL (`0070_opportunity_lifecycle_backfill.sql`)
+  predates this and mirrors the STAGE-latch logic — it must be re-mirrored to the
+  grant-letter-unpaid rule before any re-backfill, or it will re-introduce
+  over-pledging.
 - A won row (`status` pledge|cash_in) ⇒ `stage='complete'`; a stale `complete`
   on a non-won row reverts to `verbal_confirmation`. lost/dormant keep their
   cultivation stage (loss_type override wins, stage never overwritten).

@@ -1,10 +1,10 @@
 import { db } from "@workspace/db";
-import { schools } from "@workspace/db/schema";
+import { schools, giftAllocations } from "@workspace/db/schema";
 import type {
   schoolStatusEnum,
   governanceModelEnum,
 } from "@workspace/db/schema";
-import { sql } from "drizzle-orm";
+import { count, countDistinct, inArray } from "drizzle-orm";
 import { logger } from "./logger";
 import { listAllRecords, type AirtableRecord } from "./airtableClient";
 
@@ -22,9 +22,10 @@ import { listAllRecords, type AirtableRecord } from "./airtableClient";
  *     the schools PK convention), so it is idempotent and safe to re-run.
  *   - NEVER deletes schools that fall out of the source view. Instead it counts
  *     them (and logs the gift-reference counts) so an operator can decide what
- *     to do. Rationale: gifts_and_payments.school_recipient_id is ON DELETE
+ *     to do. Rationale: gift_allocations.school_recipient_id is ON DELETE
  *     RESTRICT (money-trail data) — a truncate-and-reload would either fail or
- *     silently orphan gift history.
+ *     silently orphan gift history. (School recipient is allocation-level
+ *     scope; gifts_and_payments has no school column.)
  */
 
 const BASE_ID = "appJBT9a4f3b7hWQ2";
@@ -193,31 +194,50 @@ export async function syncSchoolsFromAirtable(
 
   // Detect stale schools (present in DB, absent from the source view) and
   // report them with gift-reference counts. Do NOT delete — the RESTRICT FK
-  // from gifts_and_payments.school_recipient_id blocks it, and a silent SET
-  // NULL is not what we want for money-trail data.
-  const sourceIds = records.map((r) => r.id);
-  const staleResult = await db.execute<{
-    id: string;
-    name: string;
-    gift_refs: number;
-    alloc_refs: number;
-  }>(sql`
-    SELECT s.id, s.name,
-           (SELECT COUNT(*)::int FROM gifts_and_payments
-              WHERE school_recipient_id = s.id) AS gift_refs,
-           (SELECT COUNT(*)::int FROM gift_allocations
-              WHERE school_recipient_id = s.id) AS alloc_refs
-      FROM schools s
-     WHERE s.id <> ALL(${sourceIds}::text[])
-     ORDER BY gift_refs DESC, s.name
-  `);
+  // from gift_allocations.school_recipient_id blocks it, and a silent SET
+  // NULL is not what we want for money-trail data. School recipient is
+  // allocation-level scope, so references are counted on gift_allocations
+  // (gifts_and_payments has no school column).
+  const sourceIds = new Set(records.map((r) => r.id));
+  const dbSchools = await db
+    .select({ id: schools.id, name: schools.name })
+    .from(schools);
+  const staleSchools = dbSchools.filter((s) => !sourceIds.has(s.id));
 
-  const stale: StaleSchool[] = staleResult.rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    giftRefs: Number(r.gift_refs),
-    allocRefs: Number(r.alloc_refs),
-  }));
+  const stale: StaleSchool[] = [];
+  if (staleSchools.length) {
+    const staleIds = staleSchools.map((s) => s.id);
+    const refRows = await db
+      .select({
+        schoolId: giftAllocations.schoolRecipientId,
+        allocRefs: count(),
+        giftRefs: countDistinct(giftAllocations.giftId),
+      })
+      .from(giftAllocations)
+      .where(inArray(giftAllocations.schoolRecipientId, staleIds))
+      .groupBy(giftAllocations.schoolRecipientId);
+
+    const refsBySchool = new Map(
+      refRows.map((r) => [
+        r.schoolId,
+        { allocRefs: Number(r.allocRefs), giftRefs: Number(r.giftRefs) },
+      ]),
+    );
+
+    for (const s of staleSchools) {
+      const refs = refsBySchool.get(s.id);
+      stale.push({
+        id: s.id,
+        name: s.name,
+        giftRefs: refs?.giftRefs ?? 0,
+        allocRefs: refs?.allocRefs ?? 0,
+      });
+    }
+    // Most-referenced first, then by name (matches the prior query's ORDER BY).
+    stale.sort(
+      (a, b) => b.giftRefs - a.giftRefs || a.name.localeCompare(b.name),
+    );
+  }
 
   if (stale.length) {
     logger.warn(

@@ -109,3 +109,4 @@
 - [Orval custom query options require queryKey](orval-custom-query-options-querykey.md) — passing {query:{enabled}} to a generated useX hook needs queryKey too (TS2741); use get<Name>QueryKey(params).
 - [Bundle queue axis mapping](reconciliation-bundle-queue.md) — settlement bundles are payout-anchored; qg/qd axes intentionally empty, qs/ds/all show all; confirm-ties is additive enrich-only (NULL-fill, mints nothing).
 - [Reconciler card readiness pool](reconciler-card-readiness-pool.md) — n()/unlinkedDonorGiftWhere is the shared count/pick/ready gift pool (cards.ts only); STRICT ±90d date clause (not null-tolerant); separate from matcher's 60d.
+- [Airtable→schools sync & school-recipient FK](school-sync-recipient-fk.md) — school recipient is allocation-level ONLY (no gifts_and_payments.school_recipient_id); sync upserts before stale-check so an error status can hide already-synced data; token prefers AIRTABLE_API_TOKEN.

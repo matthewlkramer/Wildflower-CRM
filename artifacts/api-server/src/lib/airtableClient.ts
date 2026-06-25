@@ -41,7 +41,9 @@ export class AirtableApiError extends Error {
 }
 
 function getStaticToken(): string | null {
-  const t = process.env["AIRTABLE_TOKEN"]?.trim();
+  const t =
+    process.env["AIRTABLE_API_TOKEN"]?.trim() ||
+    process.env["AIRTABLE_TOKEN"]?.trim();
   return t ? t : null;
 }
 
