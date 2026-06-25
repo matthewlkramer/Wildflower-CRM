@@ -93,10 +93,10 @@ import {
   Pagination,
   PaginationContent,
   PaginationItem,
-  PaginationLink,
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { PageJumper } from "@/components/page-jumper";
 import { personDisplayName } from "@/lib/person";
 
 const PAGE_SIZE = 50;
@@ -1440,9 +1440,12 @@ export default function Individuals() {
               />
             </PaginationItem>
             <PaginationItem>
-              <PaginationLink href="#" isActive>
-                {page} / {totalPages}
-              </PaginationLink>
+              <PageJumper
+                page={page}
+                totalPages={totalPages}
+                onJump={setPage}
+                className="mx-2"
+              />
             </PaginationItem>
             <PaginationItem>
               <PaginationNext
